@@ -21,7 +21,7 @@ class Geometry {
           break;
         }
         case 'p': {
-          int i;
+          size_t i;
           while (ss >> i) {
             points_.push_back(i);
             if (ss.peek() == '\n') {
@@ -31,7 +31,7 @@ class Geometry {
           break;
         }
         case 's': {
-          int source, target;
+          size_t source, target;
           while (ss >> source) {
             ss >> target;
             segments_.emplace_back(source, target);
@@ -40,6 +40,25 @@ class Geometry {
             }
           }
           break;
+        }
+        case 'f': {
+          size_t v;
+          faces_.emplace_back();
+          auto& face_with_holes = faces_.back();
+          auto& face = faces_.back().first;
+          while (ss >> v) {
+            face.push_back(v);
+          }
+        }
+        case 'h': {
+          size_t v;
+          auto& face = faces_.back();
+          auto& holes = face.second;
+          holes.emplace_back();
+          auto& hole = holes.back();
+          while (ss >> v) {
+            hole.push_back(v);
+          }
         }
       }
     }
@@ -64,6 +83,22 @@ class Geometry {
       }
       ss << "\n";
     }
+    if (!faces_.empty()) {
+      for (const auto& [face, holes] : faces_) {
+        ss << "f";
+        for (const auto& v : face) {
+          ss << " " << v;
+        }
+        ss << "\n";
+        for (const auto& hole : holes) {
+          ss << "h";
+          for (const auto& v : hole) {
+            ss << " " << v;
+          }
+          ss << "\n";
+        }
+      }
+    }
     text = ss.str();
   }
 
@@ -77,8 +112,9 @@ class Geometry {
 
  public:
   std::vector<CGAL::Point_3<EK>> vertices_;
-  std::vector<int> points_;
-  std::vector<std::pair<int, int>> segments_;
+  std::vector<size_t> points_;
+  std::vector<std::pair<size_t, size_t>> segments_;
+  std::vector<std::pair<std::vector<size_t>, std::vector<std::vector<size_t>>>> faces_;
 };
 
 class GeometryWrapper : public Napi::ObjectWrap<GeometryWrapper> {

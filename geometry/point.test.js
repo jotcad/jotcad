@@ -17,6 +17,6 @@ test('Point', (t) => {
 
 test('Points', (t) => {
   withAssets(() => {
-    t.deepEqual(assets.text[Points([1, 0, 0], [2, 0 ,0]).geometry], 'v 1 0 0\nv 2 0 0\np 0 1');
+    t.deepEqual(assets.text[Points([[1, 0, 0], [2, 0 ,0]]).geometry], 'v 1 0 0\nv 2 0 0\np 0 1');
   });
 });
