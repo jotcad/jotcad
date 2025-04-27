@@ -1,8 +1,8 @@
 import { shape } from './shape.js';
-import { getId } from './geometry.js';
+import { textId } from './assets.js';
 
 export const Point = (x = 0, y = 0, z = 0) =>
-  shape({ geometry: [getId({ type: 'points', points: `${x} ${y} ${z}` })] });
+  shape({ geometry: textId(`v ${x} ${y} ${z}\np 0`) });
 
-export const Points = (points) =>
-  shape({ geometry: [getId({ type: 'points', points: points.map(point => `${x} ${y} ${z}`).join(' ') })] });
+export const Points = (...points) =>
+  shape({ geometry: textId(`${points.map(([x, y, z]) => `v ${x} ${y} ${z}`).join('\n')}\np ${points.map((_, n) => `${n}`).join(' ')}`) });

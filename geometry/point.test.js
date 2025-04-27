@@ -1,32 +1,22 @@
 import { Point, Points } from './point.js';
-import { fromId, withGeometry } from './geometry.js';
+import { assets, withAssets } from './assets.js';
 
+import { cgalIsReady } from './getCgal.js';
 import test from 'ava';
 
-test('Point', t => {
-  withGeometry(() => {
-    t.deepEqual(Point(1, 2, 3),
-      {
-        geometry: ['acQ5TzAH5wRVbyo+JVR/0WOG78NDgiYNtp0Fb+Agwuk='],
-        shapes: [],
-        tags: {},
-        tf: null,
-      });
-    t.deepEqual(fromId('acQ5TzAH5wRVbyo+JVR/0WOG78NDgiYNtp0Fb+Agwuk='),
-                { points: [[ 1, 2, 3, ]], type: 'points', });
+test.beforeEach(async (t) => {
+  await cgalIsReady;
+});
+
+
+test('Point', (t) => {
+  withAssets(() => {
+    t.deepEqual(assets.text[Point(1, 0, 0).geometry], 'v 1 0 0\np 0');
   });
 });
 
-test('Points', t => {
-  withGeometry(() => {
-    t.deepEqual(Points([[1, 2, 3], [4, 5, 6]]),
-      {
-        geometry: ['pGWoNPmpsLtM1pyBuc5WuFgSiwQ6E4JD7lxF1Uipcr8='],
-        shapes: [],
-        tags: {},
-        tf: null,
-      });
-    t.deepEqual(fromId('pGWoNPmpsLtM1pyBuc5WuFgSiwQ6E4JD7lxF1Uipcr8='),
-                { points: [[ 1, 2, 3, ], [4, 5, 6]], type: 'points', });
+test('Points', (t) => {
+  withAssets(() => {
+    t.deepEqual(assets.text[Points([1, 0, 0], [2, 0 ,0]).geometry], 'v 1 0 0\nv 2 0 0\np 0 1');
   });
 });
