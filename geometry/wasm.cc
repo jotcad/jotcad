@@ -3,6 +3,7 @@
 
 #include "CGAL/Exact_predicates_exact_constructions_kernel.h"
 
+#include "fill.h"
 #include "link2.h"
 #include "make_absolute.h"
 #include "transform.h"
@@ -22,6 +23,18 @@ static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
   assertArgCount(info, 1);
   Napi::String text = info[0].As<Napi::String>();
   return Napi::String::New(info.Env(), ComputeTextHash(text.Utf8Value()));
+}
+
+static Napi::Value FillBinding(const Napi::CallbackInfo& info) {
+  assertArgCount(info, 4);
+  Assets assets(info[0].As<Napi::Object>());
+  Napi::Array jsShapes = info[1].As<Napi::Array>();
+  bool holes = info[2].As<Napi::Boolean>().Value();
+  std::vector<Shape> shapes;
+  for (uint32_t nth = 0; nth < jsShapes.Length(); nth++) {
+    shapes.emplace_back(jsShapes.Get(nth).As<Napi::Object>());
+  }
+  return Fill(assets, shapes, holes);
 }
 
 static Napi::Value LinkBinding(const Napi::CallbackInfo& info) {
@@ -58,6 +71,7 @@ Napi::String World(const Napi::CallbackInfo& info) {
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
+  exports.Set(Napi::String::New(env, "Fill"), Napi::Function::New(env, FillBinding));
   exports.Set(Napi::String::New(env, "Link"), Napi::Function::New(env, LinkBinding));
   exports.Set(Napi::String::New(env, "MakeAbsolute"), Napi::Function::New(env, MakeAbsoluteBinding));
   exports.Set(Napi::String::New(env, "SimplifyTransform"), Napi::Function::New(env, SimplifyTransformBinding));

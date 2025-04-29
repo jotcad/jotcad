@@ -110,6 +110,12 @@ class Geometry {
     return transformed;
   }
 
+  size_t AddVertex(const CGAL::Point_3<EK>& point) {
+    size_t index = vertices_.size();
+    vertices_.push_back(point);
+    return index;
+  }
+
  public:
   std::vector<CGAL::Point_3<EK>> vertices_;
   std::vector<size_t> points_;
