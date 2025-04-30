@@ -1,4 +1,12 @@
 #pragma once
+
+#include <CGAL/Polygon_mesh_processing/orientation.h>
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
+#include <CGAL/Surface_mesh.h>
+
 #include "hash.h"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
@@ -8,11 +16,57 @@ class Geometry {
  public:
   Geometry() {}
 
+  Geometry (CGAL::Surface_mesh<EK::Point_3> mesh) {
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+    if (mesh.has_garbage()) {
+      mesh.collect_garbage();
+    }
+
+    for (const auto& vertex : mesh.vertices()) {
+      const auto& point = mesh.point(vertex);
+      vertices_.push_back(point);
+    }
+    for (const auto& facet : mesh.faces()) {
+      const auto a = mesh.halfedge(facet);
+      const auto b = mesh.next(a);
+      const auto c = mesh.next(b);
+      triangles_.push_back({ size_t(mesh.source(a)), size_t(mesh.source(b)), size_t(mesh.source(c)) });
+    }
+  }
+
+  void FillSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
+#if 0
+    CGAL::Polygon_mesh_processing::repair_polygon_soup(vertices_, triangles_);
+    std::cout << "is_polygon_soup_a_polygon_mesh: " << CGAL::Polygon_mesh_processing::is_polygon_soup_a_polygon_mesh(triangles_) << std::endl;
+    CGAL::Polygon_mesh_processing::orient_polygon_soup(vertices_, triangles_);
+    CGAL::Polygon_mesh_processing::polygon_soup_to_polygon_mesh(vertices_, triangles_, mesh);
+    CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
+#else
+    typedef CGAL::Surface_mesh<EK::Point_3>::Vertex_index Vertex_index;
+    for (const auto& vertex : vertices_) {
+      mesh.add_vertex(vertex);
+    }
+    for (const auto& triangle : triangles_) {
+      if (mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[1]), Vertex_index(triangle[2])) == mesh.null_face()) {
+      }
+    }
+#endif
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+#if 0
+    std::cout << "is_closed: " << CGAL::is_closed(mesh) << std::endl;
+    std::cout << "does_bound_a_volume: " << CGAL::Polygon_mesh_processing::does_bound_a_volume(mesh) << std::endl;
+    std::cout << "orientation: " << CGAL::Polygon_mesh_processing::is_outward_oriented(mesh) << std::endl;
+#endif
+  }
+    
   void Decode(const std::string& text) {
     std::istringstream ss(text);
-    while (!ss.eof()) {
+    for (;;) {
       char key;
       ss >> key;
+      if (ss.eof()) {
+        break;
+      }
       switch (key) {
         case 'v': {
           CGAL::Point_3<EK> point;
@@ -41,6 +95,18 @@ class Geometry {
           }
           break;
         }
+        case 't': {
+          size_t v;
+          triangles_.emplace_back();
+          auto& triangle = triangles_.back();
+          while (ss >> v) {
+            triangle.push_back(v);
+            if (ss.peek() == '\n') {
+              break;
+            }
+          }
+          break;
+        }
         case 'f': {
           size_t v;
           faces_.emplace_back();
@@ -48,7 +114,11 @@ class Geometry {
           auto& face = faces_.back().first;
           while (ss >> v) {
             face.push_back(v);
+            if (ss.peek() == '\n') {
+              break;
+            }
           }
+          break;
         }
         case 'h': {
           size_t v;
@@ -58,7 +128,11 @@ class Geometry {
           auto& hole = holes.back();
           while (ss >> v) {
             hole.push_back(v);
+            if (ss.peek() == '\n') {
+              break;
+            }
           }
+          break;
         }
       }
     }
@@ -82,6 +156,11 @@ class Geometry {
         ss << " " << s << " " << t;
       }
       ss << "\n";
+    }
+    if (!triangles_.empty()) {
+      for (const auto& triangle : triangles_) {
+        ss << "t " << triangle[0] << " " << triangle[1] << " " << triangle[2] << "\n";
+      }
     }
     if (!faces_.empty()) {
       for (const auto& [face, holes] : faces_) {
@@ -120,8 +199,16 @@ class Geometry {
   std::vector<CGAL::Point_3<EK>> vertices_;
   std::vector<size_t> points_;
   std::vector<std::pair<size_t, size_t>> segments_;
+  std::vector<std::vector<size_t>> triangles_;
   std::vector<std::pair<std::vector<size_t>, std::vector<std::vector<size_t>>>> faces_;
 };
+
+std::ostream& operator<<(std::ostream& os, const Geometry& g) {
+  std::string text;
+  g.Encode(text);
+  os << text;
+  return os;
+}
 
 class GeometryWrapper : public Napi::ObjectWrap<GeometryWrapper> {
 public:

@@ -1,6 +1,10 @@
 #pragma once
 
+#include <CGAL/Surface_mesh.h>
+
 #include "geometry.h"
+#include "surface_mesh.h"
+
 typedef Napi::Value GeometryId;
 
 class Assets {
@@ -33,22 +37,39 @@ class Assets {
   const std::string GetText(const GeometryId& id) {
     // This expects to always find an id.
     Napi::Object space = Space("text");
-    return space.Get(id).As<Napi::String>().Utf8Value();
+    auto result = space.Get(id).As<Napi::String>().Utf8Value();
+    return result;
   }
 
   Geometry& GetGeometry(const GeometryId& id) {
     Napi::Object space = Space("geometry");
-    Napi::Object geometry = space.Get(id).As<Napi::Object>();
-    if (geometry == undefined_) {
+    Napi::Object wrapped_geometry = space.Get(id).As<Napi::Object>();
+    if (wrapped_geometry == undefined_) {
       std::string text = GetText(id);
       auto native = std::make_unique<Geometry>();
       native->Decode(text);
       Geometry* r = native.release();
-      geometry = GeometryWrapper::WrapNativeObject(napi_.Env(), r);
-      space.Set(id, geometry);
+      wrapped_geometry = GeometryWrapper::WrapNativeObject(napi_.Env(), r);
+      space.Set(id, wrapped_geometry);
     }
-    Geometry& result = Napi::ObjectWrap<GeometryWrapper>::Unwrap(geometry)->Get();
+    Geometry& result = Napi::ObjectWrap<GeometryWrapper>::Unwrap(wrapped_geometry)->Get();
     return result;
+  }
+
+  CGAL::Surface_mesh<EK::Point_3>& GetSurfaceMesh(const GeometryId& id) {
+    Napi::Object space = Space("surface_mesh");
+    Napi::Object wrapped_mesh = space.Get(id).As<Napi::Object>();
+    if (wrapped_mesh == undefined_) {
+      Geometry& geometry = GetGeometry(id);
+      CGAL::Surface_mesh<EK::Point_3> mesh;
+      geometry.FillSurfaceMesh(mesh);
+      auto native = std::make_unique<CGAL::Surface_mesh<EK::Point_3>>();
+      geometry.FillSurfaceMesh(*native);
+      CGAL::Surface_mesh<EK::Point_3> * r = native.release();
+      wrapped_mesh = SurfaceMeshWrapper::WrapNativeObject(napi_.Env(), r);
+      space.Set(id, wrapped_mesh);
+    }
+    return Napi::ObjectWrap<SurfaceMeshWrapper>::Unwrap(wrapped_mesh)->Get();
   }
 
  public:

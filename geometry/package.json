@@ -23,8 +23,12 @@
   "keywords": [],
   "license": "MIT",
   "dependencies": {
+    "@jotcad/threejs": "^0.0.1",
+    "@jotcad/sys": "^0.0.1",
     "node-addon-api": "^8.3.1",
-    "colord": "^2.0.1"
+    "colord": "^2.0.1",
+    "gl": "^8.1.6",
+    "upng-js": "^2.1.0"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.27.0",

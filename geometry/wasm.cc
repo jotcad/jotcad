@@ -4,9 +4,12 @@
 #include "CGAL/Exact_predicates_exact_constructions_kernel.h"
 
 #include "fill.h"
+#include "geometry.h"
 #include "link2.h"
 #include "make_absolute.h"
+#include "surface_mesh.h"
 #include "transform.h"
+#include "triangulate.h"
 
 namespace jot_cgal {
 
@@ -59,22 +62,34 @@ static GeometryId MakeAbsoluteBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value SimplifyTransformBinding(const Napi::CallbackInfo& info) {
+  assertArgCount(info, 1);
   Napi::Env env = info.Env();
   Tf tf = DecodeTf(info[0].As<Napi::Value>());
   return EncodeTf(tf, env);
 }
 
+static Napi::Value TriangulateBinding(const Napi::CallbackInfo& info) {
+  assertArgCount(info, 2);
+  Napi::Env env = info.Env();
+  Assets assets(info[0].As<Napi::Object>());
+  GeometryId id = info[1].As<Napi::Value>();
+  return Triangulate(assets, id);
+}
+
 Napi::String World(const Napi::CallbackInfo& info) {
+  assertArgCount(info, 1);
   Napi::Env env = info.Env();
   return Napi::String::New(env, "world");
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
+  SurfaceMeshWrapper::Init(env, exports);
   exports.Set(Napi::String::New(env, "Fill"), Napi::Function::New(env, FillBinding));
   exports.Set(Napi::String::New(env, "Link"), Napi::Function::New(env, LinkBinding));
   exports.Set(Napi::String::New(env, "MakeAbsolute"), Napi::Function::New(env, MakeAbsoluteBinding));
   exports.Set(Napi::String::New(env, "SimplifyTransform"), Napi::Function::New(env, SimplifyTransformBinding));
+  exports.Set(Napi::String::New(env, "Triangulate"), Napi::Function::New(env, TriangulateBinding));
   // exports.Set(Napi::String::New(env, "Transform"), Napi::Function::New(env, TransformBinding));
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));
   exports.Set(Napi::String::New(env, "ComputeTextHash"), Napi::Function::New(env, ComputeTextHashBinding));

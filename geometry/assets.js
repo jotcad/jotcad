@@ -13,9 +13,9 @@ export const endAssets = () => {
   assets = null;
 };
 
-export const withAssets = (op) => {
+export const withAssets = async (op) => {
   beginAssets();
-  const result = op();
+  const result = await op();
   endAssets();
   return result;
 };
