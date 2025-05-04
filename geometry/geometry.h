@@ -10,6 +10,7 @@
 #include "hash.h"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel IK;
 typedef CGAL::Aff_transformation_3<EK> Tf;
 
 class Geometry {
@@ -71,6 +72,8 @@ class Geometry {
         case 'v': {
           CGAL::Point_3<EK> point;
           ss >> point;
+          CGAL::Point_3<IK> inexactPoint;
+          ss >> inexactPoint;
           vertices_.push_back(point);
           break;
         }
@@ -141,7 +144,11 @@ class Geometry {
   void Encode(std::string& text) const {
     std::ostringstream ss;
     for (const auto& v : vertices_) {
-      ss << "v " << v.x().exact() << " " << v.y().exact() << " " << v.z().exact() << "\n";
+      ss << "v ";
+      ss << v.x().exact() << " ";
+      ss << v.y().exact() << " ";
+      ss << v.z().exact() << " ";
+      ss << v << "\n";
     }
     if (!points_.empty()) {
       ss << "p";
@@ -190,9 +197,22 @@ class Geometry {
   }
 
   size_t AddVertex(const CGAL::Point_3<EK>& point) {
+    // TODO: Make this efficient.
+    for (size_t nth = 0; nth < vertices_.size(); nth++) {
+      if (vertices_[nth] == point) {
+        return nth;
+      }
+    }
     size_t index = vertices_.size();
     vertices_.push_back(point);
     return index;
+  }
+
+  void AddSegment(const CGAL::Point_3<EK>& source, const CGAL::Point_3<EK>& target) {
+    if (source == target) {
+      return;
+    }
+    segments_.emplace_back(AddVertex(source), AddVertex(target));
   }
 
  public:

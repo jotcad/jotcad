@@ -3,9 +3,11 @@
 
 #include "CGAL/Exact_predicates_exact_constructions_kernel.h"
 
+#include "arc_slice.h"
 #include "fill.h"
+#include "ft.h"
 #include "geometry.h"
-#include "link2.h"
+#include "link.h"
 #include "make_absolute.h"
 #include "surface_mesh.h"
 #include "transform.h"
@@ -20,6 +22,15 @@ static void assertArgCount(const Napi::CallbackInfo& info, uint32_t count) {
     Napi::TypeError::New(info.Env(), "Wrong number of arguments")
         .ThrowAsJavaScriptException();
   }
+}
+
+static Napi::Value ArcSlice2Binding(const Napi::CallbackInfo& info) {
+  assertArgCount(info, 4);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  EK::FT start = DecodeFT(info[2].As<Napi::Value>());
+  EK::FT end = DecodeFT(info[3].As<Napi::Value>());
+  return ArcSlice2(assets, shape, start, end);
 }
 
 static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
@@ -50,7 +61,7 @@ static Napi::Value LinkBinding(const Napi::CallbackInfo& info) {
   for (uint32_t nth = 0; nth < jsShapes.Length(); nth++) {
     shapes.emplace_back(jsShapes.Get(nth).As<Napi::Object>());
   }
-  return Link2(assets, shapes, close, reverse);
+  return Link(assets, shapes, close, reverse);
 }
 
 static GeometryId MakeAbsoluteBinding(const Napi::CallbackInfo& info) {
@@ -85,12 +96,12 @@ Napi::String World(const Napi::CallbackInfo& info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
   SurfaceMeshWrapper::Init(env, exports);
+  exports.Set(Napi::String::New(env, "ArcSlice2"), Napi::Function::New(env, ArcSlice2Binding));
   exports.Set(Napi::String::New(env, "Fill"), Napi::Function::New(env, FillBinding));
   exports.Set(Napi::String::New(env, "Link"), Napi::Function::New(env, LinkBinding));
   exports.Set(Napi::String::New(env, "MakeAbsolute"), Napi::Function::New(env, MakeAbsoluteBinding));
   exports.Set(Napi::String::New(env, "SimplifyTransform"), Napi::Function::New(env, SimplifyTransformBinding));
   exports.Set(Napi::String::New(env, "Triangulate"), Napi::Function::New(env, TriangulateBinding));
-  // exports.Set(Napi::String::New(env, "Transform"), Napi::Function::New(env, TransformBinding));
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));
   exports.Set(Napi::String::New(env, "ComputeTextHash"), Napi::Function::New(env, ComputeTextHashBinding));
   return exports;

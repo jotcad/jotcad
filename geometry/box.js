@@ -1,19 +1,19 @@
 import { cgal, cgalIsReady } from './getCgal.js';
+import { scale, translate, transform } from './transform.js';
 
 import { assets } from './assets.js';
 import { shape } from './shape.js';
 import { textId } from './assets.js';
 
-export const Box = ([x0, y0, z0], [x1, y1, z1]) => {
-  const text = `
-v ${x0} ${y0} ${z0}
-v ${x1} ${y0} ${z0}
-v ${x0} ${y1} ${z0}
-v ${x1} ${y1} ${z0}
-v ${x0} ${y0} ${z1}
-v ${x1} ${y0} ${z1}
-v ${x0} ${y1} ${z1}
-v ${x1} ${y1} ${z1}
+const unitBox3Text = `
+v 0 0 0 0 0 0
+v 1 0 0 1 0 0
+v 0 1 0 0 1 0
+v 1 1 0 1 1 0
+v 0 0 1 0 0 1
+v 1 0 1 1 0 1
+v 0 1 1 0 1 1
+v 1 1 1 1 1 1
 t 7 3 2
 t 2 6 7
 t 7 6 4
@@ -28,20 +28,26 @@ t 6 2 0
 t 0 4 6
 `;
 
-  return shape({ geometry: cgal.Triangulate(assets, textId(text)) });
+export const Box3 = ([x0, y0, z0], [x1, y1, z1]) => {
+  return transform(
+           translate(-x0, -y0, -z0),
+           transform(
+             scale(x1 - x0, y1 - y0, z1 - z0),
+             shape({ geometry: textId(unitBox3Text) })));
 };
 
-`
-t 4 5 7
-t 7 6 4
-t 5 1 3
-t 3 7 5
-t 2 6 7
-t 3 2 7
-t 1 5 4
-t 4 0 1
-t 1 0 2
-t 1 2 3
-t 4 6 2
-t 2 0 4
-`
+const unitBox2Text = `
+v 0 0 0 0 0 0
+v 1 0 0 1 0 0
+v 1 1 0 1 1 0
+v 0 1 0 0 1 0
+s 0 1 1 2 2 3 3 0
+`;
+
+export const Box2 = ([x0, y0], [x1, y1]) => {
+  return transform(
+           translate(-x0, -y0),
+           transform(
+             scale(x1 - x0, y1 - y0),
+             shape({ geometry: textId(unitBox2Text) })));
+};

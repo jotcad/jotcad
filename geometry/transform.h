@@ -335,6 +335,22 @@ static Napi::Value EncodeTf(const Tf& tf, Napi::Env env) {
   } else {
     std::ostringstream ss;
     ss << "m ";
+    ss << tf.cartesian(0, 0).exact() << " ";
+    ss << tf.cartesian(1, 0).exact() << " ";
+    ss << tf.cartesian(2, 0).exact() << " ";
+
+    ss << tf.cartesian(0, 1).exact() << " ";
+    ss << tf.cartesian(1, 1).exact() << " ";
+    ss << tf.cartesian(2, 1).exact() << " ";
+
+    ss << tf.cartesian(0, 2).exact() << " ";
+    ss << tf.cartesian(1, 2).exact() << " ";
+    ss << tf.cartesian(2, 2).exact() << " ";
+
+    ss << tf.cartesian(0, 3).exact() << " ";
+    ss << tf.cartesian(1, 3).exact() << " ";
+    ss << tf.cartesian(2, 3).exact() << " ";
+
     ss << tf.cartesian(0, 0) << " ";
     ss << tf.cartesian(1, 0) << " ";
     ss << tf.cartesian(2, 0) << " ";

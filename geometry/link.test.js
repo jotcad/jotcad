@@ -1,32 +1,37 @@
+import { assets, withAssets } from './assets.js';
 import { cgal, cgalIsReady } from './getCgal.js';
 
 import { Point } from './point.js';
+import { Link } from './link.js';
+import { renderPng } from './renderPng.js';
 import { shape } from './shape.js';
-import { assets, withAssets } from './assets.js';
 import test from 'ava';
+import { writeFile } from 'node:fs/promises';
 
 test.beforeEach(async (t) => {
   await cgalIsReady;
 });
 
-test('Link open', (t) => {
-  withAssets(() => {
-    const id = cgal.Link(assets, [Point(1, 0, 0), Point(0, 1, 0), Point(0, 0, 1)], false, false);
-    t.deepEqual(assets.text[id], 'v 1 0 0\nv 0 1 0\nv 0 0 1\ns 0 1 1 2\n');
-  });
-});
+test('open', (t) =>
+  withAssets(async () => {
+    const shape = Link([Point(1, 0, 0), Point(0, 1, 0), Point(0, 0, 1)], false, false);
+    t.deepEqual(assets.text[shape.geometry], 'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 1 1 2\n');
+    const image = await renderPng(assets, shape, { view: { position: [0, 0, 20] }, width: 512, height: 512 });
+    await writeFile('link.test.open.png', Buffer.from(image));
+  }));
 
-test('Link closed', (t) => {
-  withAssets(() => {
-    const id = cgal.Link(assets, [Point(1, 0, 0), Point(0, 1, 0), Point(0, 0, 1)], true, false);
-    t.deepEqual(assets.text[id], 'v 1 0 0\nv 0 1 0\nv 0 0 1\ns 0 1 1 2 2 0\n');
+test('closed', (t) =>
+  withAssets(async () => {
+    const shape = Link([Point(1, 0, 0), Point(0, 1, 0), Point(0, 0, 1)], true, false);
+    t.deepEqual(assets.text[shape.geometry], 'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 1 1 2 2 0\n');
+    const image = await renderPng(assets, shape, { view: { position: [0, 0, 20] }, width: 512, height: 512 });
+    await writeFile('link.test.closed.png', Buffer.from(image));
+  }));
 
-  });
-});
-
-test('Link reverse', (t) => {
-  withAssets(() => {
-    const id = cgal.Link(assets, [Point(1, 0, 0), Point(0, 1, 0), Point(0, 0, 1)], true, true);
-    t.deepEqual(assets.text[id], 'v 1 0 0\nv 0 1 0\nv 0 0 1\ns 0 2 2 1 1 0\n');
-  });
-});
+test('reverse', (t) =>
+  withAssets(async () => {
+    const shape = Link([Point(1, 0, 0), Point(0, 1, 0), Point(0, 0, 1)], true, true);
+    t.deepEqual(assets.text[shape.geometry], 'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 2 2 1 1 0\n');
+    const image = await renderPng(assets, shape, { view: { position: [0, 0, 20] }, width: 512, height: 512 });
+    await writeFile('link.test.reverse.png', Buffer.from(image));
+  }));
