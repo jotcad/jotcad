@@ -40,7 +40,7 @@ static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value FillBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 4);
+  assertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Napi::Array jsShapes = info[1].As<Napi::Array>();
   bool holes = info[2].As<Napi::Boolean>().Value();

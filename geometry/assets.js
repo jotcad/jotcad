@@ -1,26 +1,14 @@
-// import { computeHash } from '@jotcad/sys';
 import { cgal } from './getCgal.js';
 
-export let assets = null;
-
-export const beginAssets = () => {
-  assets = {
+export const withAssets = async (op) => {
+  const assets = {
     text: {}
   };
-};
-
-export const endAssets = () => {
-  assets = null;
-};
-
-export const withAssets = async (op) => {
-  beginAssets();
-  const result = await op();
-  endAssets();
+  const result = await op(assets);
   return result;
 };
 
-export const textId = (text) => {
+export const textId = (assets, text) => {
   const hash = cgal.ComputeTextHash(text);
   if (assets.text[hash] === undefined) {
     assets.text[hash] = text;

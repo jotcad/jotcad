@@ -5,6 +5,7 @@ import {
   Box3,
   BufferGeometry,
   Color,
+  DoubleSide,
   EdgesGeometry,
   Float32BufferAttribute,
   Frustum,
@@ -36,6 +37,8 @@ import {
   WireframeGeometry,
 } from '@jotcad/threejs';
 
+import earcut from 'earcut';
+
 export const GEOMETRY_LAYER = 0;
 export const SKETCH_LAYER = 1;
 
@@ -63,6 +66,43 @@ const makeScaleMatrix = (scaleX, scaleY, scaleZ) => {
   return scaleMatrix;
 };
 
+const makeRotateXMatrix = (angle) => {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const matrix = new Matrix4();
+  matrix.set(
+     1,  0,  0,  0,
+     0,  c, -s,  0,
+     0,  s,  c,  0,
+     0,  0,  0,  1
+  );
+  return matrix;
+};
+
+const makeRotateYMatrix = (angle) => {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const matrix = new Matrix4();
+  matrix.set(
+     c,  0,  s,  0,
+     0,  1,  0,  0,
+    -s,  0,  c,  0,
+     0,  0,  0,  1);
+  return matrix;
+};
+
+const makeRotateZMatrix = (angle) => {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const matrix = new Matrix4();
+  matrix.set(
+      c,  -s,  0,  0,
+      s,  c,  0,  0,
+      0,  0,  1,  0,
+      0,  0,  0,  1);
+  return matrix;
+};
+
 export const decodeTf = (tf) => {
   if (tf === undefined) {
     return identityMatrix;
@@ -73,17 +113,17 @@ export const decodeTf = (tf) => {
         pieces.shift();
         const tau = parseFloat(pieces.shift());
         matrix.rotateX(Math.PI * 2 * tau);
-        return Matrix4.makeRotationX(Math.PI * 2 * tau);
+        return makeRotateXMatrix(Math.PI * 2 * tau);
       }
       case 'y': {
         pieces.shift();
         const tau = parseFloat(pieces.shift());
-        return Matrix4.makeRotationY(Math.PI * 2 * tau);
+        return makeRotateYMatrix(Math.PI * 2 * tau);
       }
       case 'z': {
         pieces.shift();
         const tau = parseFloat(pieces.shift());
-        return Matrix4.makeRotationZ(Math.PI * 2 * tau);
+        return makeRotateZMatrix(Math.PI * 2 * tau);
       }
       case 's': {
         pieces.shift();
@@ -141,6 +181,27 @@ export const decodeTf = (tf) => {
   }
 };
 
+const triangulateFaceWithHoles = (points, face, holes) => {
+  console.log(`QQ/triangulateFaceWithHoles: ${JSON.stringify({ points, face, holes })}`);
+  const vertices = [];
+  const holeIndices = [];
+  for (const vertex of face) {
+    const point = points[vertex];
+    vertices.push(point[0], point[1]);
+  }
+  for (const hole of holes) {
+    holeIndices.push(vertices.length / 2);
+    for (const vertex of hole) {
+      const point = points[vertex];
+      vertices.push(point[0], point[1]);
+    }
+  }
+  console.log(`QQ/triangulateFaceWithHoles: ${JSON.stringify({ vertices, holeIndices })}`);
+  const triangles = earcut(vertices, holeIndices);
+  console.log(`QQ/triangulateFaceWithHoles: ${JSON.stringify({ vertices, holeIndices, triangles })}`);
+  return triangles;
+};
+
 export const buildMeshes = async ({
   assets,
   shape,
@@ -157,6 +218,7 @@ export const buildMeshes = async ({
       const vertices = [];
       const segments = [];
       const triangles = [];
+      const faces = [];
 
       for (const line of assets.text[shape.geometry].split('\n')) {
         const pieces = line.split(' ');
@@ -188,6 +250,23 @@ export const buildMeshes = async ({
               triangle.push(parseInt(pieces.shift()));
             }
             triangles.push(triangle);
+            break;
+          }
+          case 'f': {
+            const face = [];
+            while (pieces.length >= 1) {
+              face.push(parseInt(pieces.shift()));
+            }
+            faces.push([face]);
+            break;
+          }
+          case 'h': {
+            const hole = [];
+            while (pieces.length >= 1) {
+              hole.push(parseInt(pieces.shift()));
+            }
+            faces.at(-1).push(hole);
+            break;
           }
         }
       }
@@ -207,10 +286,33 @@ export const buildMeshes = async ({
           new Float32BufferAttribute(positions, 3)
         );
         const mesh = new LineSegments(bufferGeometry, material);
-        if (matrix) {
-          mesh.applyMatrix4(matrix);
-        }
+        mesh.applyMatrix4(matrix);
         scene.add(mesh);
+      }
+      if (faces.length > 0) {
+        for (const [face, ...holes] of faces) {
+          const triangulationIndices = triangulateFaceWithHoles(vertices, face, holes);
+          const geometry = new BufferGeometry();
+          const verticesArray = [];
+          for (const vertex of face) {
+            verticesArray.push(...vertices[vertex]);
+          }
+          for (const hole of holes) {
+            for (const vertex of hole) {
+              verticesArray.push(...vertices[vertex]);
+            }
+          }
+          geometry.setAttribute('position', new Float32BufferAttribute(verticesArray, 3));
+          const adjustedIndices = [];
+          for (let i = 0; i < triangulationIndices.length; i += 3) {
+              adjustedIndices.push(triangulationIndices[i], triangulationIndices[i + 1], triangulationIndices[i + 2]);
+          }
+          geometry.setIndex(adjustedIndices);
+          const material = new MeshBasicMaterial({ color: 0xff0000, side: DoubleSide });
+          const mesh = new Mesh(geometry, material);
+          mesh.applyMatrix4(matrix);
+          scene.add(mesh);
+        }
       }
       if (triangles.length > 0) {
         const positions = [];
@@ -242,9 +344,7 @@ export const buildMeshes = async ({
         );
         const material = new MeshNormalMaterial();
         const mesh = new Mesh(bufferGeometry, material);
-        if (matrix) {
-          mesh.applyMatrix4(matrix);
-        }
+        mesh.applyMatrix4(matrix);
         scene.add(mesh);
       }
     }

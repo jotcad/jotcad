@@ -12,5 +12,5 @@ const buildHolesText = (holes) =>
 
 const buildFaceWithHolesText = (points, holes) => buildFaceText(points) + buildHolesText(holes);
 
-export const Face = (points, holes = []) =>
-  shape({ geometry: textId(buildFaceWithHolesText(points, holes)) });
+export const Face = (assets, points, holes = []) =>
+  shape({ geometry: textId(assets, buildFaceWithHolesText(points, holes)) });

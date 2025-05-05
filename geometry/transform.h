@@ -314,23 +314,23 @@ static Napi::Value EncodeTf(const Tf& tf, Napi::Env env) {
     return env.Undefined();
   } else if (turn = DecodeXTurnTf(tf), turn) {
     std::ostringstream ss;
-    ss << "x " << turn->exact();
+    ss << "x " << turn->exact() << " " << *turn;
     return Napi::String::New(env, ss.str());
   } else if (turn = DecodeYTurnTf(tf), turn) {
     std::ostringstream ss;
-    ss << "y " << turn->exact();
+    ss << "y " << turn->exact() << " " << *turn;
     return Napi::String::New(env, ss.str());
   } else if (turn = DecodeZTurnTf(tf), turn) {
     std::ostringstream ss;
-    ss << "z " << turn->exact();
+    ss << "z " << turn->exact() << " " << *turn;
     return Napi::String::New(env, ss.str());
   } else if (vector = DecodeTranslateTf(tf), vector) {
     std::ostringstream ss;
-    ss << "t " << vector->x().exact() << " " << vector->y().exact() << " " << vector->z().exact();
+    ss << "t " << vector->x().exact() << " " << vector->y().exact() << " " << vector->z().exact() << " " << *vector;
     return Napi::String::New(env, ss.str());
   } else if (vector = DecodeScaleTf(tf), vector) {
     std::ostringstream ss;
-    ss << "s " << vector->x().exact() << " " << vector->y().exact() << " " << vector->z().exact();
+    ss << "s " << vector->x().exact() << " " << vector->y().exact() << " " << vector->z().exact() << " " << *vector;
     return Napi::String::New(env, ss.str());
   } else {
     std::ostringstream ss;
@@ -365,7 +365,7 @@ static Napi::Value EncodeTf(const Tf& tf, Napi::Env env) {
 
     ss << tf.cartesian(0, 3) << " ";
     ss << tf.cartesian(1, 3) << " ";
-    ss << tf.cartesian(2, 3) << " ";
+    ss << tf.cartesian(2, 3);
 
     return Napi::String::New(env, ss.str());
   }

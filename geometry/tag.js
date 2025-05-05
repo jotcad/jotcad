@@ -1,13 +1,14 @@
 import { rewrite } from './rewrite.js';
+import { shape as makeShape } from './shape.js';
 
 export const tag = (shape, name, value) =>
   rewrite(
     shape,
     (shape, rewrite) => {
-      return {
+      return makeShape({
         tags: { ...shape.tags, [name]: value },
-        shapes: shape.shapes.map(rewrite),
+        shapes: shape.shapes?.map(rewrite),
         geometry: shape.geometry,
         tf: shape.tf
-      }
+      });
     });

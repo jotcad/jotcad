@@ -1,7 +1,7 @@
-import { cgal, cgalIsReady } from './getCgal.js';
-import { scale, translate, transform } from './transform.js';
+import './transform.js';
 
-import { assets } from './assets.js';
+import { cgal, cgalIsReady } from './getCgal.js';
+
 import { shape } from './shape.js';
 import { textId } from './assets.js';
 
@@ -28,13 +28,8 @@ t 6 2 0
 t 0 4 6
 `;
 
-export const Box3 = ([x0, y0, z0], [x1, y1, z1]) => {
-  return transform(
-           translate(-x0, -y0, -z0),
-           transform(
-             scale(x1 - x0, y1 - y0, z1 - z0),
-             shape({ geometry: textId(unitBox3Text) })));
-};
+export const Box3 = (assets, [x0, y0, z0], [x1, y1, z1]) =>
+  shape({ geometry: textId(assets, unitBox3Text) }).scale(x1 - x0, y1 - y0, z1 - z0).move(-x0, -y0, -z0);
 
 const unitBox2Text = `
 v 0 0 0 0 0 0
@@ -44,10 +39,5 @@ v 0 1 0 0 1 0
 s 0 1 1 2 2 3 3 0
 `;
 
-export const Box2 = ([x0, y0], [x1, y1]) => {
-  return transform(
-           translate(-x0, -y0),
-           transform(
-             scale(x1 - x0, y1 - y0),
-             shape({ geometry: textId(unitBox2Text) })));
-};
+export const Box2 = (assets, [x0, y0], [x1, y1]) => 
+  shape({ geometry: textId(assets, unitBox2Text) }).scale(x1 - x0, y1 - y0).move(-x0, -y0);

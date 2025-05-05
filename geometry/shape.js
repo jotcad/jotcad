@@ -1,16 +1,18 @@
-export const shape = ({ shapes=undefined, geometry=undefined, tags=undefined, tf=undefined } = {}) => {
-  const shape = {};
-  if (shapes !== undefined) {
-    shape.shapes = shapes;
+export class Shape {
+  constructor ({ shapes=undefined, geometry=undefined, tags=undefined, tf=undefined } = {}) {
+    if (shapes !== undefined) {
+      this.shapes = shapes;
+    }
+    if (geometry !== undefined) {
+      this.geometry = geometry;
+    }
+    if (tags !== undefined) {
+      this.tags = tags;
+    }
+    if (tf !== undefined) {
+      this.tf = tf;
+    }
   }
-  if (geometry !== undefined) {
-    shape.geometry = geometry;
-  }
-  if (tags !== undefined) {
-    shape.tags = tags;
-  }
-  if (tf !== undefined) {
-    shape.tf = tf;
-  }
-  return shape;
 };
+
+export const shape = (args) => new Shape(args);
