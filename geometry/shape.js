@@ -13,6 +13,12 @@ export class Shape {
       this.tf = tf;
     }
   }
+
+  withGeometry(geometry) {
+    return shape({ geometry, tags: this.tags, tf: this.tf });
+  }
 };
 
 export const shape = (args) => new Shape(args);
+
+export const group = (shapes) => shape({ shapes });

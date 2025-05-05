@@ -5,6 +5,8 @@
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
+#include <CGAL/Polygon_triangulation_decomposition_2.h>
+#include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh.h>
 
 #include "hash.h"
@@ -12,6 +14,26 @@
 typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
 typedef CGAL::Exact_predicates_inexact_constructions_kernel IK;
 typedef CGAL::Aff_transformation_3<EK> Tf;
+
+template <typename K>
+static typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index
+EnsureVertex(
+    CGAL::Surface_mesh<typename K::Point_3>& mesh,
+    std::map<typename K::Point_3,
+             typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>&
+        vertices,
+    const typename K::Point_3& point) {
+  auto it = vertices.find(point);
+  if (it == vertices.end()) {
+    auto new_vertex = mesh.add_vertex(point);
+    vertices[point] = new_vertex;
+    return new_vertex;
+  }
+  return it->second;
+}
+
+class Geometry;
+std::ostream& operator<<(std::ostream& os, const Geometry& g);
 
 class Geometry {
  public:
@@ -36,13 +58,6 @@ class Geometry {
   }
 
   void FillSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
-#if 0
-    CGAL::Polygon_mesh_processing::repair_polygon_soup(vertices_, triangles_);
-    std::cout << "is_polygon_soup_a_polygon_mesh: " << CGAL::Polygon_mesh_processing::is_polygon_soup_a_polygon_mesh(triangles_) << std::endl;
-    CGAL::Polygon_mesh_processing::orient_polygon_soup(vertices_, triangles_);
-    CGAL::Polygon_mesh_processing::polygon_soup_to_polygon_mesh(vertices_, triangles_, mesh);
-    CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
-#else
     typedef CGAL::Surface_mesh<EK::Point_3>::Vertex_index Vertex_index;
     for (const auto& vertex : vertices_) {
       mesh.add_vertex(vertex);
@@ -51,13 +66,53 @@ class Geometry {
       if (mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[1]), Vertex_index(triangle[2])) == mesh.null_face()) {
       }
     }
-#endif
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
-#if 0
-    std::cout << "is_closed: " << CGAL::is_closed(mesh) << std::endl;
-    std::cout << "does_bound_a_volume: " << CGAL::Polygon_mesh_processing::does_bound_a_volume(mesh) << std::endl;
-    std::cout << "orientation: " << CGAL::Polygon_mesh_processing::is_outward_oriented(mesh) << std::endl;
-#endif
+  }
+
+  bool FillFaceSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
+    const EK::Plane_3 plane(0, 0, 1, 0);
+    std::vector<CGAL::Polygon_with_holes_2<EK>> pwhs;
+    std::map<EK::Point_3, CGAL::Surface_mesh<EK::Point_3>::Vertex_index> vertex_map;
+    CGAL::Polygon_triangulation_decomposition_2<EK> triangulator;
+    std::cout << "QQ/FillFaceSurfaceMesh/1: geometry=" << *this << std::endl;
+    for (const auto& [face, holes] : faces_) {
+      std::cout << "QQ/FillFaceSurfaceMesh/2" << std::endl;
+      CGAL::Polygon_2<EK> pwh_boundary;
+      std::vector<CGAL::Polygon_2<EK>> pwh_holes;
+      for (const auto& point : face) {
+        pwh_boundary.push_back(plane.to_2d(vertices_[point]));
+      }
+      for (const auto& hole : holes) {
+        CGAL::Polygon_2<EK> polygon;
+        for (const auto& point : hole) {
+          polygon.push_back(plane.to_2d(vertices_[point]));
+        }
+        pwh_holes.push_back(std::move(polygon));
+      }
+      pwhs.emplace_back(pwh_boundary, pwh_holes.begin(), pwh_holes.end());
+    }
+    for (const auto& pwh : pwhs) {
+      std::cout << "QQ/FillFaceSurfaceMesh/3" << std::endl;
+      std::vector<CGAL::Polygon_2<EK>> facets;
+      triangulator(pwh, std::back_inserter(facets));
+      for (auto& facet : facets) {
+        std::cout << "QQ/FillFaceSurfaceMesh/4" << std::endl;
+        if (facet.orientation() != CGAL::Sign::POSITIVE) {
+          facet.reverse_orientation();
+        }
+        std::vector<CGAL::Surface_mesh<EK::Point_3>::Vertex_index> vertices;
+        for (const auto& point : facet) {
+          vertices.push_back(
+              EnsureVertex<EK>(mesh, vertex_map, plane.to_3d(point)));
+        }
+        if (mesh.add_face(vertices) == CGAL::Surface_mesh<CGAL::Point_3<EK>>::null_face()) {
+          std::cout << "QQ/FillFaceSurfaceMesh/5" << std::endl;
+          return false;
+        }
+      }
+    }
+    std::cout << "QQ/FillFaceSurfaceMesh/6" << std::endl;
+    return true;
   }
     
   void Decode(const std::string& text) {

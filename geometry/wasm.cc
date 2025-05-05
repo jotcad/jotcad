@@ -4,6 +4,7 @@
 #include "CGAL/Exact_predicates_exact_constructions_kernel.h"
 
 #include "arc_slice.h"
+#include "extrude.h"
 #include "fill.h"
 #include "ft.h"
 #include "geometry.h"
@@ -37,6 +38,17 @@ static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
   assertArgCount(info, 1);
   Napi::String text = info[0].As<Napi::String>();
   return Napi::String::New(info.Env(), ComputeTextHash(text.Utf8Value()));
+}
+
+static Napi::Value ExtrudeBinding(const Napi::CallbackInfo& info) {
+  assertArgCount(info, 5);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Shape top(info[2].As<Napi::Object>());
+  Shape bottom(info[3].As<Napi::Object>());
+  Napi::Array results = info[4].As<Napi::Array>();
+  Extrude(assets, shape, top, bottom, results);
+  return info.Env().Undefined();
 }
 
 static Napi::Value FillBinding(const Napi::CallbackInfo& info) {
@@ -97,6 +109,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
   SurfaceMeshWrapper::Init(env, exports);
   exports.Set(Napi::String::New(env, "ArcSlice2"), Napi::Function::New(env, ArcSlice2Binding));
+  exports.Set(Napi::String::New(env, "Extrude"), Napi::Function::New(env, ExtrudeBinding));
   exports.Set(Napi::String::New(env, "Fill"), Napi::Function::New(env, FillBinding));
   exports.Set(Napi::String::New(env, "Link"), Napi::Function::New(env, LinkBinding));
   exports.Set(Napi::String::New(env, "MakeAbsolute"), Napi::Function::New(env, MakeAbsoluteBinding));

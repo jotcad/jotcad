@@ -13,7 +13,6 @@ test.beforeEach(async (t) => {
   await cgalIsReady;
 });
 
-if (false)
 test('triangle', (t) =>
   withAssets(async (assets) => {
     const box = shape({ geometry: cgal.Link(assets, [Point(assets, 1, 0, 0), Point(assets, 0, 1, 0), Point(assets, 0, 0, 1)], true, false) });
