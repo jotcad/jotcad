@@ -1,5 +1,10 @@
 export class Shape {
-  constructor ({ shapes=undefined, geometry=undefined, tags=undefined, tf=undefined } = {}) {
+  constructor({
+    shapes = undefined,
+    geometry = undefined,
+    tags = undefined,
+    tf = undefined,
+  } = {}) {
     if (shapes !== undefined) {
       this.shapes = shapes;
     }
@@ -17,7 +22,7 @@ export class Shape {
   withGeometry(geometry) {
     return shape({ geometry, tags: this.tags, tf: this.tf });
   }
-};
+}
 
 export const shape = (args) => new Shape(args);
 

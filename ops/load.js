@@ -1,7 +1,8 @@
-import { Op } from '@jsxcad/op';
-import { write } from '@jsxcad/sys';
+import { Op } from '@jotcad/op';
+import { write } from '@jotcad/sys';
 
-Op.registerOp(
+export const Load = Op.registerOp(
   'Load',
   [null, ['string'], 'shape'],
-  (path) => () => read(`shape/${path}`));
+  (path) => () => read(`shape/${path}`)
+);

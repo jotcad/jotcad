@@ -6,20 +6,26 @@ import pngjs from 'pngjs';
 const isFilePresent = async (path) => {
   try {
     await access(path);
-    return true
+    return true;
   } catch (error) {
     return false;
   }
 };
 
-export const testPng = async (expectedPngPath, observedPng, threshold=1000) => {
+export const testPng = async (
+  expectedPngPath,
+  observedPng,
+  threshold = 1000
+) => {
   const observedPngPath = `observed.${expectedPngPath}`;
   await writeFile(observedPngPath, Buffer.from(observedPng));
   const observedPngImage = pngjs.PNG.sync.read(await readFile(observedPngPath));
   const { width, height } = observedPngImage;
   let numFailedPixels = 0;
   if (await isFilePresent(expectedPngPath)) {
-    const expectedPngImage = pngjs.PNG.sync.read(await readFile(expectedPngPath));
+    const expectedPngImage = pngjs.PNG.sync.read(
+      await readFile(expectedPngPath)
+    );
     const differencePng = new pngjs.PNG({ width, height });
     numFailedPixels = pixelmatch(
       expectedPngImage.data,
@@ -40,7 +46,9 @@ export const testPng = async (expectedPngPath, observedPng, threshold=1000) => {
     await writeFile(expectedPngPath, Buffer.from(observedPng));
     return true;
   } else {
-    console.log(`testPng: ${expectedPngPath} differs from ${observedPngPath} by ${numFailedPixels} pixels`);
+    console.log(
+      `testPng: ${expectedPngPath} differs from ${observedPngPath} by ${numFailedPixels} pixels`
+    );
     return false;
   }
 };

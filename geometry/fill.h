@@ -13,7 +13,6 @@
 // We limit fill to the Z0 plane.
 
 static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
-  std::cout << "Fill/1" << std::endl;
   typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
   typedef CGAL::Arr_segment_traits_2<EK> Traits_2;
   typedef CGAL::Arr_extended_dcel<Traits_2, size_t, size_t, size_t>
@@ -26,13 +25,9 @@ static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
   CGAL::Plane_3<EK> plane(0, 0, 1, 0);
 
   for (Shape& shape : shapes) {
-    std::cout << "Fill/2" << std::endl;
     const auto id = shape.GeometryId();
-    std::cout << "Fill/2a" << std::endl;
     Tf tf = shape.GetTf();
-    std::cout << "Fill/2b" << std::endl;
     Geometry geometry = assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
-    std::cout << "Fill/3" << std::endl;
     for (const auto& [source, target] : geometry.segments_) {
       CGAL::Segment_3<EK> s3(geometry.vertices_[source], geometry.vertices_[target]);
       if (s3.source() == s3.target()) {
@@ -45,7 +40,6 @@ static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
       insert(arrangement, s2);
     }
   }
-  std::cout << "Fill/5" << std::endl;
 
   // Convert the arrangements to polygons.
 
@@ -73,6 +67,5 @@ static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
       }
     }
   }
-  std::cout << "Fill/10" << std::endl;
   return assets.TextId(filled);
 }

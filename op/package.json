@@ -23,6 +23,7 @@
   "keywords": [],
   "license": "MIT",
   "dependencies": {
+    "@jotcad/sys": "^0.0.1"
   },
   "devDependencies": {
     "ava": "^4.3.0",

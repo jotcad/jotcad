@@ -1,4 +1,4 @@
-import { computeHash } from '@jsxcad/sys';
+import { computeHash } from '@jotcad/sys';
 
 export let ops;
 export let nextId;
@@ -68,7 +68,9 @@ export const registerOp = (name, signature, code) => {
   const { [name]: method } = {
     [name]: function (...args) {
       const input = this ? this.getId() : null;
-      return emitOp(new Op({ name, input, args: args.map((arg) => resolve(input, arg)) }));
+      return emitOp(
+        new Op({ name, input, args: args.map((arg) => resolve(input, arg)) })
+      );
     },
   };
   Op.prototype[name] = method;

@@ -33,7 +33,14 @@ const extractPixels = (context) => {
 export const renderPng = async (
   assets,
   shape,
-  { view = {}, withAxes = false, withGrid = false, definitions, width, height } = {},
+  {
+    view = {},
+    withAxes = false,
+    withGrid = false,
+    definitions,
+    width,
+    height,
+  } = {}
 ) => {
   let context;
   let canvas;
@@ -54,20 +61,18 @@ export const renderPng = async (
   const position = [0, 0, 20];
   const up = [0, 0.0001, 1];
 
-  const { renderer } = await staticDisplay(
-    {
-      assets,
-      view: { target, position, up, ...view },
-      canvas,
-      context,
-      definitions,
-      shape,
-      withAxes,
-      withGrid,
-      width,
-      height
-    },
-  );
+  const { renderer } = await staticDisplay({
+    assets,
+    view: { target, position, up, ...view },
+    canvas,
+    context,
+    definitions,
+    shape,
+    withAxes,
+    withGrid,
+    width,
+    height,
+  });
   const { pixels } = extractPixels(renderer.getContext());
   return UPNG.encode([pixels], width, height, 256);
 };

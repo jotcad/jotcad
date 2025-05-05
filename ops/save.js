@@ -1,7 +1,8 @@
-import { Op } from '@jsxcad/op';
-import { write } from '@jsxcad/sys';
+import { Op } from '@jotcad/op';
+import { write } from '@jotcad/sys';
 
-Op.registerOp(
+export const save = Op.registerOp(
   'save',
   ['shape', ['string'], 'shape'],
-  (path) => (input) => write(`shape/${path}`, input));
+  (path) => (input) => write(`shape/${path}`, input)
+);

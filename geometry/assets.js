@@ -2,7 +2,7 @@ import { cgal } from './getCgal.js';
 
 export const withAssets = async (op) => {
   const assets = {
-    text: {}
+    text: {},
   };
   const result = await op(assets);
   return result;

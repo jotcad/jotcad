@@ -3,5 +3,6 @@ export {
   beginOps,
   endOps,
   isSymbol,
-  resolve
+  resolve,
+  run
 } from './op.js';

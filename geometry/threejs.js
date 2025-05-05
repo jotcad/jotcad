@@ -11,9 +11,9 @@ import {
   Frustum,
   GridHelper,
   Group,
+  Layers,
   LineBasicMaterial,
   LineSegments,
-  Layers,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -47,10 +47,22 @@ const identityMatrix = new Matrix4();
 const makeTranslateMatrix = (translateX, translateY, translateZ) => {
   const translationMatrix = new Matrix4();
   translationMatrix.set(
-    1, 0, 0, translateX,
-    0, 1, 0, translateY,
-    0, 0, 1, translateZ,
-    0, 0, 0, 1
+    1,
+    0,
+    0,
+    translateX,
+    0,
+    1,
+    0,
+    translateY,
+    0,
+    0,
+    1,
+    translateZ,
+    0,
+    0,
+    0,
+    1
   );
   return translationMatrix;
 };
@@ -58,10 +70,22 @@ const makeTranslateMatrix = (translateX, translateY, translateZ) => {
 const makeScaleMatrix = (scaleX, scaleY, scaleZ) => {
   const scaleMatrix = new Matrix4();
   scaleMatrix.set(
-    scaleX, 0,      0,      0,
-    0,      scaleY, 0,      0,
-    0,      0,      scaleZ, 0,
-    0,      0,      0,      1
+    scaleX,
+    0,
+    0,
+    0,
+    0,
+    scaleY,
+    0,
+    0,
+    0,
+    0,
+    scaleZ,
+    0,
+    0,
+    0,
+    0,
+    1
   );
   return scaleMatrix;
 };
@@ -70,12 +94,7 @@ const makeRotateXMatrix = (angle) => {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   const matrix = new Matrix4();
-  matrix.set(
-     1,  0,  0,  0,
-     0,  c, -s,  0,
-     0,  s,  c,  0,
-     0,  0,  0,  1
-  );
+  matrix.set(1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1);
   return matrix;
 };
 
@@ -83,11 +102,7 @@ const makeRotateYMatrix = (angle) => {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   const matrix = new Matrix4();
-  matrix.set(
-     c,  0,  s,  0,
-     0,  1,  0,  0,
-    -s,  0,  c,  0,
-     0,  0,  0,  1);
+  matrix.set(c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, 0, 0, 0, 1);
   return matrix;
 };
 
@@ -95,18 +110,14 @@ const makeRotateZMatrix = (angle) => {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   const matrix = new Matrix4();
-  matrix.set(
-      c,  -s,  0,  0,
-      s,  c,  0,  0,
-      0,  0,  1,  0,
-      0,  0,  0,  1);
+  matrix.set(c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
   return matrix;
 };
 
 export const decodeTf = (tf) => {
   if (tf === undefined) {
     return identityMatrix;
-  } else if (typeof(tf) === 'string') {
+  } else if (typeof tf === 'string') {
     const pieces = tf.split(' ');
     switch (pieces.shift()) {
       case 'x': {
@@ -182,7 +193,6 @@ export const decodeTf = (tf) => {
 };
 
 const triangulateFaceWithHoles = (points, face, holes) => {
-  console.log(`QQ/triangulateFaceWithHoles: ${JSON.stringify({ points, face, holes })}`);
   const vertices = [];
   const holeIndices = [];
   for (const vertex of face) {
@@ -196,9 +206,7 @@ const triangulateFaceWithHoles = (points, face, holes) => {
       vertices.push(point[0], point[1]);
     }
   }
-  console.log(`QQ/triangulateFaceWithHoles: ${JSON.stringify({ vertices, holeIndices })}`);
   const triangles = earcut(vertices, holeIndices);
-  console.log(`QQ/triangulateFaceWithHoles: ${JSON.stringify({ vertices, holeIndices, triangles })}`);
   return triangles;
 };
 
@@ -229,7 +237,11 @@ export const buildMeshes = async ({
               pieces.shift();
               pieces.shift();
               pieces.shift();
-              vertices.push([parseFloat(pieces.shift()), parseFloat(pieces.shift()), parseFloat(pieces.shift())]);
+              vertices.push([
+                parseFloat(pieces.shift()),
+                parseFloat(pieces.shift()),
+                parseFloat(pieces.shift()),
+              ]);
             }
             break;
           case 'p':
@@ -239,9 +251,9 @@ export const buildMeshes = async ({
             break;
           case 's':
             while (pieces.length >= 2) {
-             const source = parseInt(pieces.shift());
-             const target = parseInt(pieces.shift());
-             segments.push([source, target]);
+              const source = parseInt(pieces.shift());
+              const target = parseInt(pieces.shift());
+              segments.push([source, target]);
             }
             break;
           case 't': {
@@ -291,7 +303,11 @@ export const buildMeshes = async ({
       }
       if (faces.length > 0) {
         for (const [face, ...holes] of faces) {
-          const triangulationIndices = triangulateFaceWithHoles(vertices, face, holes);
+          const triangulationIndices = triangulateFaceWithHoles(
+            vertices,
+            face,
+            holes
+          );
           const geometry = new BufferGeometry();
           const verticesArray = [];
           for (const vertex of face) {
@@ -302,13 +318,23 @@ export const buildMeshes = async ({
               verticesArray.push(...vertices[vertex]);
             }
           }
-          geometry.setAttribute('position', new Float32BufferAttribute(verticesArray, 3));
+          geometry.setAttribute(
+            'position',
+            new Float32BufferAttribute(verticesArray, 3)
+          );
           const adjustedIndices = [];
           for (let i = 0; i < triangulationIndices.length; i += 3) {
-              adjustedIndices.push(triangulationIndices[i], triangulationIndices[i + 1], triangulationIndices[i + 2]);
+            adjustedIndices.push(
+              triangulationIndices[i],
+              triangulationIndices[i + 1],
+              triangulationIndices[i + 2]
+            );
           }
           geometry.setIndex(adjustedIndices);
-          const material = new MeshBasicMaterial({ color: 0xff0000, side: DoubleSide });
+          const material = new MeshBasicMaterial({
+            color: 0xff0000,
+            side: DoubleSide,
+          });
           const mesh = new Mesh(geometry, material);
           mesh.applyMatrix4(matrix);
           scene.add(mesh);
@@ -320,9 +346,9 @@ export const buildMeshes = async ({
         for (const triangle of triangles) {
           const plane = new Plane();
           plane.setFromCoplanarPoints(
-              new Vector3(...vertices[triangle[0]]),
-              new Vector3(...vertices[triangle[1]]),
-              new Vector3(...vertices[triangle[2]])
+            new Vector3(...vertices[triangle[0]]),
+            new Vector3(...vertices[triangle[1]]),
+            new Vector3(...vertices[triangle[2]])
           );
           positions.push(...vertices[triangle[0]]);
           positions.push(...vertices[triangle[1]]);
@@ -441,19 +467,17 @@ export const buildScene = ({
   return { camera, canvas: renderer.domElement, renderer, scene };
 };
 
-export const staticDisplay = async (
-  {
-    view = {},
-    assets,
-    canvas,
-    shape,
-    withAxes = false,
-    withGrid = false,
-    definitions,
-    width,
-    height
-  } = {},
-) => {
+export const staticDisplay = async ({
+  view = {},
+  assets,
+  canvas,
+  shape,
+  withAxes = false,
+  withGrid = false,
+  definitions,
+  width,
+  height,
+} = {}) => {
   if (!canvas) {
     canvas = new OffscreenCanvas(width, height);
   }

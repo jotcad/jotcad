@@ -1,9 +1,11 @@
-import { run } from '@jsxcad/op';
-import { Triangle } from './main.js';
-import { read } from '@jsxcad/sys';
+import { Box2 } from './box.js';
+import { color } from './color.js';
+import { read } from '@jotcad/sys';
+import { run } from '@jotcad/op';
+import { save } from './save.js';
 import test from 'ava';
 
-test('Simple', async t => {
-  const graph = run(() => Triangle(10).color('blue').save('out'));
-  t.deepEqual(await read('shape/out'), {});
+test('Simple', async (t) => {
+  const graph = run(() => Box2(10, 20).color('blue').save('out'));
+  t.deepEqual(await read('shape/out'), undefined);
 });

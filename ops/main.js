@@ -1,6 +1,5 @@
-import { Op } from '@jsxcad/op';
+import { Op } from '@jotcad/op';
 
-export { Triangle } from './triangle.js';
+export { Load } from './load.js';
 export { color } from './color.js';
-export { load } from './load.js';
 export { save } from './save.js';

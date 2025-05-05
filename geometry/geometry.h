@@ -74,9 +74,7 @@ class Geometry {
     std::vector<CGAL::Polygon_with_holes_2<EK>> pwhs;
     std::map<EK::Point_3, CGAL::Surface_mesh<EK::Point_3>::Vertex_index> vertex_map;
     CGAL::Polygon_triangulation_decomposition_2<EK> triangulator;
-    std::cout << "QQ/FillFaceSurfaceMesh/1: geometry=" << *this << std::endl;
     for (const auto& [face, holes] : faces_) {
-      std::cout << "QQ/FillFaceSurfaceMesh/2" << std::endl;
       CGAL::Polygon_2<EK> pwh_boundary;
       std::vector<CGAL::Polygon_2<EK>> pwh_holes;
       for (const auto& point : face) {
@@ -92,11 +90,9 @@ class Geometry {
       pwhs.emplace_back(pwh_boundary, pwh_holes.begin(), pwh_holes.end());
     }
     for (const auto& pwh : pwhs) {
-      std::cout << "QQ/FillFaceSurfaceMesh/3" << std::endl;
       std::vector<CGAL::Polygon_2<EK>> facets;
       triangulator(pwh, std::back_inserter(facets));
       for (auto& facet : facets) {
-        std::cout << "QQ/FillFaceSurfaceMesh/4" << std::endl;
         if (facet.orientation() != CGAL::Sign::POSITIVE) {
           facet.reverse_orientation();
         }
@@ -106,12 +102,10 @@ class Geometry {
               EnsureVertex<EK>(mesh, vertex_map, plane.to_3d(point)));
         }
         if (mesh.add_face(vertices) == CGAL::Surface_mesh<CGAL::Point_3<EK>>::null_face()) {
-          std::cout << "QQ/FillFaceSurfaceMesh/5" << std::endl;
           return false;
         }
       }
     }
-    std::cout << "QQ/FillFaceSurfaceMesh/6" << std::endl;
     return true;
   }
     

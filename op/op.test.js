@@ -115,5 +115,11 @@ test('Test recompute', async (t) => {
   });
 
   // All says were recomputed.
-  t.deepEqual(emits['recompute'], ['hello', 'world', 'world!', 'hello!', 'world!']);
+  t.deepEqual(emits['recompute'], [
+    'hello',
+    'world',
+    'world!',
+    'hello!',
+    'world!',
+  ]);
 });

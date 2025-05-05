@@ -7,12 +7,12 @@
   "module": "dist/main.js",
   "type": "module",
   "scripts": {
-    "depcheck": "depcheck --ignores '@jotcad/eslint*,eslint*,@babel/*'",
+    "depcheck": "depcheck --ignores 'node-addon-api,emnapi,eslint*,@babel/*,@emnapi/*,@tybys/*,buffer' --ignore-patterns 'glm/*,boost/*,CGAL/*,Eigen/*,emnapi/*,glpk/*,gmp/*,mpfr/*,eigen/*'",
     "lint": "eslint *.js",
     "lintfix": "eslint --fix *.js",
     "rollup": "rollup -c rollup_main.js",
     "test": "ava --timeout=600s",
-    "tests": "ava --timeout=600s *.test.js"
+    "tests": "./tests.sh"
   },
   "contributors": [
     {
@@ -30,6 +30,7 @@
     "earcut": "^3.0.1",
     "gl": "^8.1.6",
     "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
     "upng-js": "^2.1.0"
   },
   "devDependencies": {
@@ -53,12 +54,9 @@
     "eslint-plugin-promise": "^4.0.1",
     "eslint-plugin-react": "^7.17.0",
     "eslint-plugin-standard": "^4.0.0",
-    "memfs-browser": "^3.5.10302",
-    "modern-node-polyfills": "^1.0.0",
     "rollup": "^4.40.0",
     "rollup-plugin-cjs-es": "^3.0.0",
     "rollup-plugin-node-builtins": "^2.1.2",
-    "rollup-plugin-node-globals": "^1.4.0",
     "rollup-plugin-node-polyfills": "^0.2.1",
     "rollup-plugin-hypothetical": "^2.1.1"
   },
