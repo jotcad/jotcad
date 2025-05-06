@@ -22,6 +22,17 @@ export class Shape {
   withGeometry(geometry) {
     return shape({ geometry, tags: this.tags, tf: this.tf });
   }
+
+  walk(op) {
+    const descend = () => {
+      if (this.shapes) {
+        for (const shape of this.shapes) {
+          shape.walk(op);
+        }
+      }
+    };
+    op(this, descend);
+  }
 }
 
 export const shape = (args) => new Shape(args);

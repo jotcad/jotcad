@@ -124,6 +124,7 @@ export const run = async (context, code) => {
   const graph = {};
   beginOps();
   await code();
-  await resolve(context, graph, endOps());
+  await resolve(context, graph, ops);
+  endOps();
   return graph;
 };

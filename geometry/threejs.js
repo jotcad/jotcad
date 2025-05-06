@@ -37,6 +37,8 @@ import {
   WireframeGeometry,
 } from '@jotcad/threejs';
 
+import { DecodeInexactGeometryText } from './geometry.js';
+
 import earcut from 'earcut';
 
 export const GEOMETRY_LAYER = 0;
@@ -221,68 +223,12 @@ export const buildMeshes = async ({
   const walk = async (shape) => {
     if (shape.geometry) {
       const matrix = decodeTf(shape.tf);
-
-      // This requires triangulated geometry.
-      const vertices = [];
-      const segments = [];
-      const triangles = [];
-      const faces = [];
-
-      for (const line of assets.text[shape.geometry].split('\n')) {
-        const pieces = line.split(' ');
-        const code = pieces.shift();
-        switch (code) {
-          case 'v':
-            while (pieces.length >= 3) {
-              pieces.shift();
-              pieces.shift();
-              pieces.shift();
-              vertices.push([
-                parseFloat(pieces.shift()),
-                parseFloat(pieces.shift()),
-                parseFloat(pieces.shift()),
-              ]);
-            }
-            break;
-          case 'p':
-            while (pieces.length >= 1) {
-              points.push(parseInt(pieces.shift()));
-            }
-            break;
-          case 's':
-            while (pieces.length >= 2) {
-              const source = parseInt(pieces.shift());
-              const target = parseInt(pieces.shift());
-              segments.push([source, target]);
-            }
-            break;
-          case 't': {
-            const triangle = [];
-            while (pieces.length >= 1) {
-              triangle.push(parseInt(pieces.shift()));
-            }
-            triangles.push(triangle);
-            break;
-          }
-          case 'f': {
-            const face = [];
-            while (pieces.length >= 1) {
-              face.push(parseInt(pieces.shift()));
-            }
-            faces.push([face]);
-            break;
-          }
-          case 'h': {
-            const hole = [];
-            while (pieces.length >= 1) {
-              hole.push(parseInt(pieces.shift()));
-            }
-            faces.at(-1).push(hole);
-            break;
-          }
-        }
-      }
-
+      const {
+        vertices,
+        segments,
+        triangles,
+        faces
+      } = DecodeInexactGeometryText(assets.text[shape.geometry]);
       if (segments.length > 0) {
         const bufferGeometry = new BufferGeometry();
         const material = new LineBasicMaterial({
@@ -388,8 +334,8 @@ export const buildMeshes = async ({
 export const buildScene = ({
   canvas,
   context,
-  width,
-  height,
+  width=512,
+  height=512,
   view,
   withAxes = true,
   renderer,

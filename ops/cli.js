@@ -15,16 +15,18 @@ process.on('uncaughtException', (err) => {
 
 const cli = async (scriptPath, ...args) => {
   const outputMap = new Map();
-  for (const arg of args) {
-  }
+  const bindings = { ...api };
+  args.forEach((arg, index) => {
+    bindings[`$${index + 1}`] = arg;
+  });
   const cwd = process.cwd();
   const script = readFileSync(scriptPath, 'utf8');
   const lines = script.split('\n');
   const ecmascript = lines.slice(1).join('\n');
   const assets = { text: {} };
-  const evaluator = new Function(`{ ${Object.keys(api).join(', ')} }`, ecmascript);
+  const evaluator = new Function(`{ ${Object.keys({ ...bindings }).join(', ')} }`, ecmascript);
   await cgalIsReady;
-  const graph = await run(assets, () => evaluator(api));
+  const graph = await run(assets, () => evaluator(bindings));
 };
 
 cli(...argv.slice(2));

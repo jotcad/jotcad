@@ -29,6 +29,7 @@
     "colord": "^2.0.1",
     "earcut": "^3.0.1",
     "gl": "^8.1.6",
+    "parse-stl-ascii": "^1.0.2",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0",
     "upng-js": "^2.1.0"
