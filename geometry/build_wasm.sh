@@ -1,5 +1,9 @@
 . emsdk/emsdk_env.sh
 
+ls -la boost
+ls -la boost/boost
+ls -la boost/boost/config.hpp
+
 em++ -O3 \
      -DBUILDING_NODE_EXTENSION \
      "-DNAPI_EXTERN=__attribute__((__import_module__(\"env\")))" \
