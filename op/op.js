@@ -80,7 +80,7 @@ export const registerOp = (name, signature, code) => {
 
 Op.registerOp = registerOp;
 
-export const resolve = async (graph, ops) => {
+export const resolve = async (context, graph, ops) => {
   let ready;
   const isReady = new Promise((resolve, reject) => {
     ready = resolve;
@@ -105,10 +105,10 @@ export const resolve = async (graph, ops) => {
         }
       }
       try {
-        const result = Op.code[name](evaluatedInput, ...evaluatedArgs);
+        const result = Op.code[name](context, evaluatedInput, ...evaluatedArgs);
         resolve(result);
       } catch (e) {
-        raise;
+        throw e;
       }
     });
     promise.name = dd;
@@ -120,10 +120,10 @@ export const resolve = async (graph, ops) => {
   }
 };
 
-export const run = async (code) => {
+export const run = async (context, code) => {
   const graph = {};
   beginOps();
-  code();
-  resolve(graph, endOps());
+  await code();
+  await resolve(context, graph, endOps());
   return graph;
 };
