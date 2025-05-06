@@ -1,8 +1,8 @@
 import { Op } from '@jotcad/op';
-import { write } from '@jotcad/sys';
+import { readFile } from 'node:fs/promises';
 
 export const Load = Op.registerOp(
   'Load',
   [null, ['string'], 'shape'],
-  (path) => () => read(`shape/${path}`)
+  (path) => () => readFile(`shape/${path}`)
 );

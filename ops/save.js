@@ -1,8 +1,8 @@
 import { Op } from '@jotcad/op';
-import { write } from '@jotcad/sys';
+import { writeFile } from 'node:fs/promises';
 
 export const save = Op.registerOp(
   'save',
   ['shape', ['string'], 'shape'],
-  (assets, input, path) => write(`shape/${path}`, input)
+  (assets, input, path) => writeFile(`shape/${path}`, input)
 );

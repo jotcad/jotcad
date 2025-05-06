@@ -1,7 +1,11 @@
 import UPNG from 'upng-js';
 import gl from 'gl';
-import { isNode } from '@jotcad/sys';
 import { staticDisplay } from './threejs.js';
+
+export const isNode =
+  typeof process !== 'undefined' &&
+  process.versions != null &&
+  process.versions.node != null;
 
 const extractPixels = (context) => {
   const width = context.drawingBufferWidth;

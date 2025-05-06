@@ -24,8 +24,7 @@
   "license": "MIT",
   "dependencies": {
     "@jotcad/geometry": "^0.0.1",
-    "@jotcad/op": "^0.0.1",
-    "@jotcad/sys": "^0.0.1"
+    "@jotcad/op": "^0.0.1"
   },
   "devDependencies": {
     "ava": "^4.3.0",

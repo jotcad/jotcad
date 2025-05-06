@@ -1,4 +1,4 @@
-import { computeHash } from '@jotcad/sys';
+import { computeHash } from './hash.js';
 
 export let ops;
 export let nextId;

@@ -23,7 +23,8 @@
   "keywords": [],
   "license": "MIT",
   "dependencies": {
-    "@jotcad/sys": "^0.0.1"
+    "base64-arraybuffer": "^1.0.1",
+    "digest-js": "^0.3.0"
   },
   "devDependencies": {
     "ava": "^4.3.0",
