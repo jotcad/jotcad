@@ -1,3 +1,5 @@
+. emsdk/emsdk_env.sh
+
 em++ -O3 \
      -DBUILDING_NODE_EXTENSION \
      "-DNAPI_EXTERN=__attribute__((__import_module__(\"env\")))" \
