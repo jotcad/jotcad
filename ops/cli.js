@@ -24,7 +24,10 @@ const cli = async (scriptPath, ...args) => {
   const lines = script.split('\n');
   const ecmascript = lines.slice(1).join('\n');
   const assets = { text: {} };
-  const evaluator = new Function(`{ ${Object.keys({ ...bindings }).join(', ')} }`, ecmascript);
+  const evaluator = new Function(
+    `{ ${Object.keys({ ...bindings }).join(', ')} }`,
+    ecmascript
+  );
   await cgalIsReady;
   const graph = await run(assets, () => evaluator(bindings));
 };

@@ -15,7 +15,10 @@ test.beforeEach(async (t) => {
 test('simple', async (t) => {
   const assets = { text: {} };
   const graph = await run(assets, () =>
-    Box2([0, 0], [10, 20]).color('blue').save('out').png('ops.test.simple.png', [0, 0, 10])
+    Box2([0, 0], [10, 20])
+      .color('blue')
+      .save('out')
+      .png('ops.test.simple.png', [0, 0, 10])
   );
   t.deepEqual(
     await read('shape/out'),

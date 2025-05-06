@@ -223,12 +223,8 @@ export const buildMeshes = async ({
   const walk = async (shape) => {
     if (shape.geometry) {
       const matrix = decodeTf(shape.tf);
-      const {
-        vertices,
-        segments,
-        triangles,
-        faces
-      } = DecodeInexactGeometryText(assets.text[shape.geometry]);
+      const { vertices, segments, triangles, faces } =
+        DecodeInexactGeometryText(assets.text[shape.geometry]);
       if (segments.length > 0) {
         const bufferGeometry = new BufferGeometry();
         const material = new LineBasicMaterial({
@@ -334,8 +330,8 @@ export const buildMeshes = async ({
 export const buildScene = ({
   canvas,
   context,
-  width=512,
-  height=512,
+  width = 512,
+  height = 512,
   view,
   withAxes = true,
   renderer,

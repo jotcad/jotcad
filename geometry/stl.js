@@ -1,4 +1,7 @@
-import { DecodeInexactGeometryText, EncodeInexactGeometryText } from './geometry.js';
+import {
+  DecodeInexactGeometryText,
+  EncodeInexactGeometryText,
+} from './geometry.js';
 
 import parseStlAscii from 'parse-stl-ascii';
 import { parse as parseStlBinary } from './parseStlBinary.js';
@@ -33,15 +36,12 @@ const parse = (data, format) => {
   }
 };
 
-export const fromStl = (
-  assets,
-  stl,
-  {
-    format = 'ascii',
-  } = {}
-) => {
+export const fromStl = (assets, stl, { format = 'ascii' } = {}) => {
   const { positions, cells } = parse(stl, format);
-  const text = EncodeInexactGeometryText({ vertices: positions, triangles: cells });
+  const text = EncodeInexactGeometryText({
+    vertices: positions,
+    triangles: cells,
+  });
   return shape({ geometry: textId(assets, text) });
 };
 
@@ -164,11 +164,13 @@ const compareTriangles = (t1, t2) => {
   return 0;
 };
 
-export const toStl = (assets, shape, tolerance=0.001) => {
+export const toStl = (assets, shape, tolerance = 0.001) => {
   const stlTriangles = [];
   shape.walk((shape, descend) => {
     if (shape.geometry) {
-      const { vertices, triangles } = DecodeInexactGeometryText(assets.text[shape.geometry]);
+      const { vertices, triangles } = DecodeInexactGeometryText(
+        assets.text[shape.geometry]
+      );
       for (const [a, b, c] of triangles) {
         stlTriangles.push(
           orderVertices([

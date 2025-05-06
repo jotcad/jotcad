@@ -66,10 +66,17 @@ export const DecodeInexactGeometryText = (text) => {
   };
 };
 
-export const EncodeInexactGeometryText = ({ vertices=[], segments=[], triangles=[], faces=[] }) => {
+export const EncodeInexactGeometryText = ({
+  vertices = [],
+  segments = [],
+  triangles = [],
+  faces = [],
+}) => {
   const lines = [];
   for (const vertex of vertices) {
-    lines.push(`v ${vertex[0]} ${vertex[1]} ${vertex[2]} ${vertex[0]} ${vertex[1]} ${vertex[2]}\n`);
+    lines.push(
+      `v ${vertex[0]} ${vertex[1]} ${vertex[2]} ${vertex[0]} ${vertex[1]} ${vertex[2]}\n`
+    );
   }
   if (segments.length > 0) {
     const pieces = [];
@@ -81,7 +88,7 @@ export const EncodeInexactGeometryText = ({ vertices=[], segments=[], triangles=
   for (const triangle of triangles) {
     lines.push(`t ${triangle[0]} ${triangle[1]} ${triangle[2]}\n`);
   }
-  for (const [face, holes=[]] of faces) {
+  for (const [face, holes = []] of faces) {
     lines.push(`f ${face.join(' ')}\n`);
     for (const hole of holes) {
       lines.push(`h ${hole.join(' ')}\n`);
