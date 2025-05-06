@@ -27,7 +27,7 @@ jobs:
       - run: (sudo apt-get install libboost-all-dev)
       - run: (sudo apt-get install -y build-essential libxi-dev libglu1-mesa-dev libglew-dev pkg-config xvfb)
       - run: npm ci
-      - run: (cd geometry; ./install_native.sh)
+      - run: (cd geometry; ./install_wasm.sh)
       - run: npm run bootstrap
       - run: npm run depcheck
       - run: npm run lint
