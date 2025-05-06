@@ -1,5 +1,5 @@
-(ls -la ../node_modules/node-addon-api &&
- ./install_emscripten.sh &&
+(./install_emscripten.sh &&
+ ./install_boost.sh &
  ./install_cgal.sh &&
  ./install_eigen.sh &&
  ./install_glm.sh &&
