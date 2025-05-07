@@ -31,7 +31,7 @@ jobs:
       - run: (cd geometry; ./install_wasm.sh)
       - run: npm run depcheck
       - run: npm run lint
-      - run: npm run test
+      - run: xvfb-run -s "-ac -screen 0 1280x1024x24" npm run test
         env:
           NODE_OPTIONS: --max_old_space_size=4096
       - name: Make wasm available
