@@ -9,5 +9,6 @@ geometry/glpk*
 geometry/gmp*
 geometry/mpfr*
 geometry/eigen*
+geometry/test*
 dist
 x

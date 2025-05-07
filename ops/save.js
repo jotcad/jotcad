@@ -4,5 +4,8 @@ import { writeFile } from 'node:fs/promises';
 export const save = Op.registerOp(
   'save',
   ['shape', ['string'], 'shape'],
-  (assets, input, path) => writeFile(`shape/${path}`, input)
+  async (assets, input, path) => {
+    await writeFile(path, JSON.stringify(input));
+    return input;
+  }
 );

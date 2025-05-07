@@ -4,5 +4,5 @@ import { readFile } from 'node:fs/promises';
 export const Load = Op.registerOp(
   'Load',
   [null, ['string'], 'shape'],
-  (path) => () => readFile(`shape/${path}`)
+  (path) => () => readFile(path)
 );
