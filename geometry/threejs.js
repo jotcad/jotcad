@@ -212,6 +212,33 @@ const triangulateFaceWithHoles = (points, face, holes) => {
   return triangles;
 };
 
+const buildMeshMaterial = (shape) => {
+  const { color } = shape.tags || {};
+  if (color === undefined) {
+    return new MeshNormalMaterial();
+  } else {
+    return new MeshStandardMaterial({ color });
+  }
+};
+
+const buildLineMaterial = (shape) => {
+  const { color, linewidth = 2 } = shape.tags || {};
+  if (color === undefined) {
+    return new LineBasicMaterial({ color: new Color('black'), linewidth: 2 });
+  } else {
+    return new LineBasicMaterial({ color: new Color(color), linewidth: 2 });
+  }
+};
+
+const buildEdges = (geometry) => {
+  const edges = new EdgesGeometry(geometry);
+  const lines = new LineSegments(
+    edges,
+    new LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+  );
+  return lines;
+};
+
 export const buildMeshes = async ({
   assets,
   shape,
@@ -227,10 +254,6 @@ export const buildMeshes = async ({
         DecodeInexactGeometryText(assets.text[shape.geometry]);
       if (segments.length > 0) {
         const bufferGeometry = new BufferGeometry();
-        const material = new LineBasicMaterial({
-          color: new Color('black'),
-          linewidth: 2,
-        });
         const positions = [];
         for (const [source, target] of segments) {
           positions.push(...vertices[source], ...vertices[target]);
@@ -239,6 +262,7 @@ export const buildMeshes = async ({
           'position',
           new Float32BufferAttribute(positions, 3)
         );
+        const material = buildLineMaterial(shape);
         const mesh = new LineSegments(bufferGeometry, material);
         mesh.applyMatrix4(matrix);
         scene.add(mesh);
@@ -273,13 +297,13 @@ export const buildMeshes = async ({
             );
           }
           geometry.setIndex(adjustedIndices);
-          const material = new MeshBasicMaterial({
-            color: 0xff0000,
-            side: DoubleSide,
-          });
+          const material = buildMeshMaterial(shape);
           const mesh = new Mesh(geometry, material);
           mesh.applyMatrix4(matrix);
           scene.add(mesh);
+          const edges = buildEdges(geometry);
+          edges.applyMatrix4(matrix);
+          scene.add(edges);
         }
       }
       if (triangles.length > 0) {
@@ -310,10 +334,13 @@ export const buildMeshes = async ({
           'normal',
           new Float32BufferAttribute(normals, 3)
         );
-        const material = new MeshNormalMaterial();
+        const material = buildMeshMaterial(shape);
         const mesh = new Mesh(bufferGeometry, material);
         mesh.applyMatrix4(matrix);
         scene.add(mesh);
+        const edges = buildEdges(bufferGeometry);
+        edges.applyMatrix4(matrix);
+        scene.add(edges);
       }
     }
 
