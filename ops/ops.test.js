@@ -1,6 +1,7 @@
 import './intervalSpec.js';
 import './shapeSpec.js';
 import './stringSpec.js';
+import './vectorSpec.js';
 
 import { cgal, cgalIsReady } from '@jotcad/geometry';
 

@@ -4,6 +4,7 @@ import './optionsSpec.js';
 import './shapeSpec.js';
 import './shapesSpec.js';
 import './stringSpec.js';
+import './vectorSpec.js';
 
 export { And } from './and.js';
 export { Arc2 } from './arc.js';

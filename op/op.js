@@ -44,6 +44,10 @@ export class Op {
     return this.node.output;
   }
 
+  getInput() {
+    return this.node.input;
+  }
+
   setInput(input) {
     this.node.input = input;
     return this;
@@ -82,8 +86,18 @@ export class Op {
   }
 
   static resolveOp(input, value) {
+    // If we have Foo(Bar().Qux()) then Bar() will lack its input.
+    // Set the input of Bar() in this case to be the input
+    // of Foo so that it has the right context.
+    //
+    // However, note that Qux() should already have its input as
+    // Bar() which should not be overridden.
     if (value instanceof Op) {
-      return value.setInput(input).getId();
+      if (value.getInput()) {
+        return value;
+      } else {
+        return value.setInput(input).getId();
+      }
     } else if (value instanceof Array) {
       return value.map((item) => Op.resolveOp(input, item));
     } else if (value instanceof Object) {
@@ -188,6 +202,8 @@ export const resolve = async (context, graph, ops) => {
         for (const value of args) {
           if (isSymbol(value)) {
             evaluatedArgs.push(await graph[value]);
+          } else if (value instanceof Op) {
+            evaluatedArgs.push(await graph[value.getOutput()]);
           } else if (value instanceof Array) {
             evaluatedArgs.push(await evaluateArgs(value));
           } else {
