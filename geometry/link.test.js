@@ -3,7 +3,6 @@ import { cgal, cgalIsReady } from './getCgal.js';
 import { Link } from './link.js';
 import { Point } from './point.js';
 import { renderPng } from './renderPng.js';
-import { shape } from './shape.js';
 import test from 'ava';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';

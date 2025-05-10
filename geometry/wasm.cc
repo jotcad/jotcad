@@ -1,9 +1,9 @@
-#include <stddef.h>
 #include <napi.h>
+#include <stddef.h>
 
 #include "CGAL/Exact_predicates_exact_constructions_kernel.h"
-
 #include "arc_slice.h"
+#include "cut.h"
 #include "extrude.h"
 #include "fill.h"
 #include "ft.h"
@@ -38,6 +38,18 @@ static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
   assertArgCount(info, 1);
   Napi::String text = info[0].As<Napi::String>();
   return Napi::String::New(info.Env(), ComputeTextHash(text.Utf8Value()));
+}
+
+static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
+  assertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Napi::Array jsTools(info[2].As<Napi::Array>());
+  std::vector<Shape> tools;
+  for (uint32_t nth = 0; nth < jsTools.Length(); nth++) {
+    tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
+  }
+  return Cut(assets, shape, tools);
 }
 
 static Napi::Value ExtrudeBinding(const Napi::CallbackInfo& info) {
@@ -108,15 +120,25 @@ Napi::String World(const Napi::CallbackInfo& info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
   SurfaceMeshWrapper::Init(env, exports);
-  exports.Set(Napi::String::New(env, "ArcSlice2"), Napi::Function::New(env, ArcSlice2Binding));
-  exports.Set(Napi::String::New(env, "Extrude"), Napi::Function::New(env, ExtrudeBinding));
-  exports.Set(Napi::String::New(env, "Fill"), Napi::Function::New(env, FillBinding));
-  exports.Set(Napi::String::New(env, "Link"), Napi::Function::New(env, LinkBinding));
-  exports.Set(Napi::String::New(env, "MakeAbsolute"), Napi::Function::New(env, MakeAbsoluteBinding));
-  exports.Set(Napi::String::New(env, "SimplifyTransform"), Napi::Function::New(env, SimplifyTransformBinding));
-  exports.Set(Napi::String::New(env, "Triangulate"), Napi::Function::New(env, TriangulateBinding));
+  exports.Set(Napi::String::New(env, "ArcSlice2"),
+              Napi::Function::New(env, ArcSlice2Binding));
+  exports.Set(Napi::String::New(env, "Cut"),
+              Napi::Function::New(env, CutBinding));
+  exports.Set(Napi::String::New(env, "Extrude"),
+              Napi::Function::New(env, ExtrudeBinding));
+  exports.Set(Napi::String::New(env, "Fill"),
+              Napi::Function::New(env, FillBinding));
+  exports.Set(Napi::String::New(env, "Link"),
+              Napi::Function::New(env, LinkBinding));
+  exports.Set(Napi::String::New(env, "MakeAbsolute"),
+              Napi::Function::New(env, MakeAbsoluteBinding));
+  exports.Set(Napi::String::New(env, "SimplifyTransform"),
+              Napi::Function::New(env, SimplifyTransformBinding));
+  exports.Set(Napi::String::New(env, "Triangulate"),
+              Napi::Function::New(env, TriangulateBinding));
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));
-  exports.Set(Napi::String::New(env, "ComputeTextHash"), Napi::Function::New(env, ComputeTextHashBinding));
+  exports.Set(Napi::String::New(env, "ComputeTextHash"),
+              Napi::Function::New(env, ComputeTextHashBinding));
   return exports;
 }
 

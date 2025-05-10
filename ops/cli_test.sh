@@ -1,8 +1,9 @@
 #!/usr/bin/env -S node cli
 
-Box2([0, 0], [5, 10])
+Box2([0, 0], [5, 5])
   .fill()
-  .extrude(z(2), z(0))
+  .extrude(z(5), z(0))
   .color('blue')
-  .png('box.png', [0, 0, 10])
+  .cut([Box3([2, 2, 2], [5, 5, 5])])
+  .png('box.png', [15, 15, 15])
   .stl('box.stl');

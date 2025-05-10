@@ -62,6 +62,8 @@ export const registerOp = (name, signature, code) => {
   const resolve = (input, value) => {
     if (value instanceof Op) {
       return value.setInput(input).getId();
+    } else if (value instanceof Array) {
+      return value.map((item) => resolve(input, item));
     }
     return value;
   };
@@ -96,14 +98,20 @@ export const resolve = async (context, graph, ops) => {
       await isReady;
       const name = node.name;
       const evaluatedInput = await graph[node.input];
-      const evaluatedArgs = [];
-      for (const value of node.args) {
-        if (isSymbol(value)) {
-          evaluatedArgs.push(await graph[value]);
-        } else {
-          evaluatedArgs.push(await value);
+      const evaluateArgs = async (args) => {
+        const evaluatedArgs = [];
+        for (const value of args) {
+          if (isSymbol(value)) {
+            evaluatedArgs.push(await graph[value]);
+          } else if (value instanceof Array) {
+            evaluatedArgs.push(await evaluateArgs(value));
+          } else {
+            evaluatedArgs.push(await value);
+          }
         }
-      }
+        return evaluatedArgs;
+      };
+      const evaluatedArgs = await evaluateArgs(node.args);
       try {
         const result = Op.code[name](context, evaluatedInput, ...evaluatedArgs);
         resolve(result);

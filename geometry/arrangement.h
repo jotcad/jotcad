@@ -7,7 +7,8 @@
 
 template <typename K>
 static bool toPolygonsWithHolesFromBoundariesAndHoles(
-    std::vector<CGAL::Polygon_2<K>>& boundaries, std::vector<CGAL::Polygon_2<K>>& holes,
+    std::vector<CGAL::Polygon_2<K>>& boundaries,
+    std::vector<CGAL::Polygon_2<K>>& holes,
     std::vector<CGAL::Polygon_with_holes_2<K>>& pwhs) {
   for (auto& boundary : boundaries) {
     if (boundary.size() == 0) {
@@ -33,7 +34,8 @@ static bool toPolygonsWithHolesFromBoundariesAndHoles(
             << hole << std::endl;
         return false;
       }
-      const typename CGAL::Polygon_2<K>::Point_2& representative_point = hole[0];
+      const typename CGAL::Polygon_2<K>::Point_2& representative_point =
+          hole[0];
       if (!boundary.has_on_negative_side(representative_point)) {
         // We permit holes to touch a boundary.
         if (hole.orientation() != CGAL::Sign::NEGATIVE) {
@@ -248,7 +250,8 @@ static void toSimplePolygonsWithHolesFromBoundariesAndHoles(
 // FIX: handle holes properly.
 template <typename Arrangement_2>
 static bool convertArrangementToPolygonsWithHolesNonZero(
-    Arrangement_2& arrangement, std::vector<CGAL::Polygon_with_holes_2<EK>>& out,
+    Arrangement_2& arrangement,
+    std::vector<CGAL::Polygon_with_holes_2<EK>>& out,
     std::vector<CGAL::Segment_2<EK>>& non_simple) {
   analyzeArrangementRegions(arrangement);
 
@@ -310,7 +313,8 @@ static bool convertArrangementToPolygonsWithHolesNonZero(
 
 template <typename Arrangement_2>
 static bool convertArrangementToPolygonsWithHolesNonZero(
-    Arrangement_2& arrangement, std::vector<CGAL::Polygon_with_holes_2<EK>>& out) {
+    Arrangement_2& arrangement,
+    std::vector<CGAL::Polygon_with_holes_2<EK>>& out) {
   std::vector<CGAL::Segment_2<EK>> non_simple;
   return convertArrangementToPolygonsWithHolesNonZero(arrangement, out,
                                                       non_simple);
@@ -318,7 +322,8 @@ static bool convertArrangementToPolygonsWithHolesNonZero(
 
 template <typename Arrangement_2>
 static bool convertArrangementToPolygonsWithHolesEvenOdd(
-    Arrangement_2& arrangement, std::vector<CGAL::Polygon_with_holes_2<EK>>& out,
+    Arrangement_2& arrangement,
+    std::vector<CGAL::Polygon_with_holes_2<EK>>& out,
     std::vector<CGAL::Segment_2<EK>>& non_simple) {
   analyzeArrangementRegions(arrangement);
 
@@ -440,9 +445,9 @@ static bool convertArrangementToPolygonsWithHolesEvenOdd(
 
 template <typename Arrangement_2>
 static bool convertArrangementToPolygonsWithHolesEvenOdd(
-    Arrangement_2& arrangement, std::vector<CGAL::Polygon_with_holes_2<EK>>& out) {
+    Arrangement_2& arrangement,
+    std::vector<CGAL::Polygon_with_holes_2<EK>>& out) {
   std::vector<CGAL::Segment_2<EK>> non_simple;
   return convertArrangementToPolygonsWithHolesEvenOdd(arrangement, out,
                                                       non_simple);
 }
-

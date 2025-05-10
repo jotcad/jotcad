@@ -64,7 +64,7 @@ test('Compose', (t) => {
   );
   // These produce a complex matrix.
   t.is(
-    'm 0 0 1 0 -1 0 1 0 0 0 0 0 0 0 1 0 -1 0 1 0 0 0 0 0',
+    'm 0 0 -1 0 -1 0 -1 0 0 0 0 0 0 0 -1 0 -1 0 -1 0 0 0 0 0',
     cgal.SimplifyTransform(compose(makeRotateX(0.5), makeRotateY(0.25)))
   );
 });

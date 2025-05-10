@@ -1,4 +1,4 @@
-import { shape as makeShape } from './shape.js';
+import { makeShape } from './shape.js';
 import { rewrite } from './rewrite.js';
 
 export const tag = (shape, name, value) =>

@@ -4,8 +4,8 @@
 #include <CGAL/Surface_mesh.h>
 
 #include "assets.h"
-#include "shape.h"
 #include "geometry.h"
+#include "shape.h"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
 

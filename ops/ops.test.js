@@ -1,4 +1,4 @@
-import { cgal, cgalIsReady, shape } from '@jotcad/geometry';
+import { cgal, cgalIsReady } from '@jotcad/geometry';
 
 import { Box2 } from './box.js';
 import { color } from './color.js';

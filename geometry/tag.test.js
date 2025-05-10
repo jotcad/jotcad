@@ -1,25 +1,27 @@
-import { shape } from './shape.js';
+import { makeShape } from './shape.js';
 import { tag } from './tag.js';
 import test from 'ava';
 
 test('tag leaf', (t) => {
   t.deepEqual(
-    tag(shape(), 'color', 'blue'),
-    shape({ tags: { color: 'blue' } })
+    tag(makeShape(), 'color', 'blue'),
+    makeShape({ tags: { color: 'blue' } })
   );
 });
 
 test('tag branch', (t) => {
   t.deepEqual(
     tag(
-      shape({ shapes: [shape({ tags: { material: 'copper' } }), shape()] }),
+      makeShape({
+        shapes: [makeShape({ tags: { material: 'copper' } }), makeShape()],
+      }),
       'color',
       'blue'
     ),
-    shape({
+    makeShape({
       shapes: [
-        shape({ tags: { color: 'blue', material: 'copper' } }),
-        shape({ tags: { color: 'blue' } }),
+        makeShape({ tags: { color: 'blue', material: 'copper' } }),
+        makeShape({ tags: { color: 'blue' } }),
       ],
       tags: { color: 'blue' },
     })

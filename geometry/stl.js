@@ -3,9 +3,10 @@ import {
   EncodeInexactGeometryText,
 } from './geometry.js';
 
+import { makeAbsolute } from './makeAbsolute.js';
+import { makeShape } from './shape.js';
 import parseStlAscii from 'parse-stl-ascii';
 import { parse as parseStlBinary } from './parseStlBinary.js';
-import { shape } from './shape.js';
 import { textId } from './assets.js';
 
 const parse = (data, format) => {
@@ -42,7 +43,7 @@ export const fromStl = (assets, stl, { format = 'ascii' } = {}) => {
     vertices: positions,
     triangles: cells,
   });
-  return shape({ geometry: textId(assets, text) });
+  return makeShape({ geometry: textId(assets, text) });
 };
 
 const X = 0;
@@ -165,8 +166,9 @@ const compareTriangles = (t1, t2) => {
 };
 
 export const toStl = (assets, shape, tolerance = 0.001) => {
+  const absolute = makeAbsolute(assets, shape);
   const stlTriangles = [];
-  shape.walk((shape, descend) => {
+  absolute.walk((shape, descend) => {
     if (shape.geometry) {
       const { vertices, triangles } = DecodeInexactGeometryText(
         assets.text[shape.geometry]

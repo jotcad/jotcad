@@ -9,8 +9,8 @@
 #include <CGAL/Surface_mesh.h>
 
 #include "assets.h"
-#include "shape.h"
 #include "geometry.h"
+#include "shape.h"
 
 template <typename MAP>
 struct Project {
@@ -25,26 +25,34 @@ struct Project {
   const Tf tf_;
 };
 
-static void Extrude(Assets& assets, Shape& shape, Shape& top, Shape& bottom, Napi::Array results) {
+static void Extrude(Assets& assets, Shape& shape, Shape& top, Shape& bottom,
+                    Napi::Array results) {
   typedef typename boost::property_map<CGAL::Surface_mesh<EK::Point_3>,
                                        CGAL::vertex_point_t>::type VPMap;
   uint32_t nth = 0;
 
   auto extrude_surface_mesh = [&](CGAL::Surface_mesh<CGAL::Point_3<EK>>& mesh) {
     if (!CGAL::is_closed(mesh) && !CGAL::is_empty(mesh)) {
-      CGAL::Polygon_mesh_processing::transform(shape.GetTf(), mesh, CGAL::parameters::all_default());
+      CGAL::Polygon_mesh_processing::transform(shape.GetTf(), mesh,
+                                               CGAL::parameters::all_default());
       // No protection against self-intersection.
       CGAL::Surface_mesh<CGAL::Point_3<EK>> extruded_mesh;
-      Project<VPMap> top_projection(get(CGAL::vertex_point, extruded_mesh), top.GetTf());
-      Project<VPMap> bottom_projection(get(CGAL::vertex_point, extruded_mesh), bottom.GetTf());
-      CGAL::Polygon_mesh_processing::extrude_mesh(mesh, extruded_mesh, bottom_projection, top_projection);
+      Project<VPMap> top_projection(get(CGAL::vertex_point, extruded_mesh),
+                                    top.GetTf());
+      Project<VPMap> bottom_projection(get(CGAL::vertex_point, extruded_mesh),
+                                       bottom.GetTf());
+      CGAL::Polygon_mesh_processing::extrude_mesh(
+          mesh, extruded_mesh, bottom_projection, top_projection);
       CGAL::Polygon_mesh_processing::triangulate_faces(extruded_mesh);
-      EK::FT volume = CGAL::Polygon_mesh_processing::volume(extruded_mesh, CGAL::parameters::all_default());
+      EK::FT volume = CGAL::Polygon_mesh_processing::volume(
+          extruded_mesh, CGAL::parameters::all_default());
       if (volume < 0) {
         CGAL::Polygon_mesh_processing::reverse_face_orientations(extruded_mesh);
       }
       if (volume != 0) {
-        CGAL::Polygon_mesh_processing::transform(shape.GetTf().inverse(), extruded_mesh, CGAL::parameters::all_default());
+        CGAL::Polygon_mesh_processing::transform(
+            shape.GetTf().inverse(), extruded_mesh,
+            CGAL::parameters::all_default());
         results.Set(nth++, assets.TextId(extruded_mesh));
       }
     }
@@ -52,12 +60,14 @@ static void Extrude(Assets& assets, Shape& shape, Shape& top, Shape& bottom, Nap
 
   {
     // Extrude open meshes.
-    CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh = assets.GetSurfaceMesh(shape.GeometryId());
+    CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh =
+        assets.GetSurfaceMesh(shape.GeometryId());
     extrude_surface_mesh(mesh);
   }
   {
     // Extrude faces.
-    CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh = assets.GetFaceSurfaceMesh(shape.GeometryId());
+    CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh =
+        assets.GetFaceSurfaceMesh(shape.GeometryId());
     extrude_surface_mesh(mesh);
   }
 }

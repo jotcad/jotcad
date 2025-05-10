@@ -9,9 +9,7 @@ typedef Napi::Value GeometryId;
 
 class Assets {
  public:
-  Assets(Napi::Object napi):
-    napi_(napi), undefined_(napi.Env().Undefined()) {
-  }
+  Assets(Napi::Object napi) : napi_(napi), undefined_(napi.Env().Undefined()) {}
 
   Napi::Object Space(const std::string& key) {
     Napi::Object obj = napi_.Get(key).As<Napi::Object>();
@@ -22,9 +20,7 @@ class Assets {
     return obj;
   }
 
-  Napi::Env Env() const {
-    return napi_.Env();
-  }
+  Napi::Env Env() const { return napi_.Env(); }
 
   GeometryId TextId(const Geometry& geometry) {
     std::string text;
@@ -34,9 +30,7 @@ class Assets {
     return key;
   }
 
-  GeometryId UndefinedId() {
-    return undefined_;
-  }
+  GeometryId UndefinedId() { return undefined_; }
 
   const std::string GetText(const GeometryId& id) {
     // This expects to always find an id.
@@ -56,7 +50,8 @@ class Assets {
       wrapped_geometry = GeometryWrapper::WrapNativeObject(napi_.Env(), r);
       space.Set(id, wrapped_geometry);
     }
-    Geometry& result = Napi::ObjectWrap<GeometryWrapper>::Unwrap(wrapped_geometry)->Get();
+    Geometry& result =
+        Napi::ObjectWrap<GeometryWrapper>::Unwrap(wrapped_geometry)->Get();
     return result;
   }
 
@@ -66,8 +61,8 @@ class Assets {
     if (wrapped_mesh == undefined_) {
       Geometry& geometry = GetGeometry(id);
       auto native = std::make_unique<CGAL::Surface_mesh<EK::Point_3>>();
-      geometry.FillSurfaceMesh(*native);
-      CGAL::Surface_mesh<EK::Point_3> * r = native.release();
+      geometry.EncodeSurfaceMesh(*native);
+      CGAL::Surface_mesh<EK::Point_3>* r = native.release();
       wrapped_mesh = SurfaceMeshWrapper::WrapNativeObject(napi_.Env(), r);
       space.Set(id, wrapped_mesh);
     }
@@ -80,8 +75,8 @@ class Assets {
     if (wrapped_mesh == undefined_) {
       Geometry& geometry = GetGeometry(id);
       auto native = std::make_unique<CGAL::Surface_mesh<EK::Point_3>>();
-      geometry.FillFaceSurfaceMesh(*native);
-      CGAL::Surface_mesh<EK::Point_3> * r = native.release();
+      geometry.EncodeFaceSurfaceMesh(*native);
+      CGAL::Surface_mesh<EK::Point_3>* r = native.release();
       wrapped_mesh = SurfaceMeshWrapper::WrapNativeObject(napi_.Env(), r);
       space.Set(id, wrapped_mesh);
     }

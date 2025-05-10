@@ -1,4 +1,4 @@
-import { shape } from './shape.js';
+import { makeShape } from './shape.js';
 import { textId } from './assets.js';
 
 const buildFaceText = (points) =>
@@ -18,4 +18,6 @@ const buildFaceWithHolesText = (points, holes) =>
   buildFaceText(points) + buildHolesText(holes);
 
 export const Face = (assets, points, holes = []) =>
-  shape({ geometry: textId(assets, buildFaceWithHolesText(points, holes)) });
+  makeShape({
+    geometry: textId(assets, buildFaceWithHolesText(points, holes)),
+  });

@@ -1,8 +1,6 @@
-. emsdk/emsdk_env.sh
+clang-format --style=google -i *.h *.cc
 
-ls -la boost
-ls -la boost/boost
-ls -la boost/boost/config.hpp
+. emsdk/emsdk_env.sh
 
 em++ -O3 \
      -DBUILDING_NODE_EXTENSION \

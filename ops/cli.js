@@ -1,6 +1,6 @@
 import * as api from './main.js';
 
-import { cgal, cgalIsReady, shape } from '@jotcad/geometry';
+import { cgal, cgalIsReady } from '@jotcad/geometry';
 import { readFileSync, writeFileSync } from 'fs';
 
 import { argv } from 'process';

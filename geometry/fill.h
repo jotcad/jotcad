@@ -1,14 +1,13 @@
 #pragma once
 
-#include <CGAL/Arr_segment_traits_2.h>
 #include <CGAL/Arr_extended_dcel.h>
+#include <CGAL/Arr_segment_traits_2.h>
 #include <CGAL/Arrangement_2.h>
 
-#include "assets.h"
-#include "shape.h"
-#include "geometry.h"
-
 #include "arrangement.h"
+#include "assets.h"
+#include "geometry.h"
+#include "shape.h"
 
 // We limit fill to the Z0 plane.
 
@@ -27,13 +26,16 @@ static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
   for (Shape& shape : shapes) {
     const auto id = shape.GeometryId();
     Tf tf = shape.GetTf();
-    Geometry geometry = assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
+    Geometry geometry =
+        assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
     for (const auto& [source, target] : geometry.segments_) {
-      CGAL::Segment_3<EK> s3(geometry.vertices_[source], geometry.vertices_[target]);
+      CGAL::Segment_3<EK> s3(geometry.vertices_[source],
+                             geometry.vertices_[target]);
       if (s3.source() == s3.target()) {
         continue;
       }
-      CGAL::Segment_2<EK> s2(plane.to_2d(s3.source()), plane.to_2d(s3.target()));
+      CGAL::Segment_2<EK> s2(plane.to_2d(s3.source()),
+                             plane.to_2d(s3.target()));
       if (s2.source() == s2.target()) {
         continue;
       }

@@ -19,8 +19,13 @@ export class Shape {
     }
   }
 
-  withGeometry(geometry) {
-    return shape({ geometry, tags: this.tags, tf: this.tf });
+  derive({
+    geometry = this.geometry,
+    shapes = this.shapes,
+    tags = this.tags,
+    tf = this.tf,
+  }) {
+    return makeShape({ geometry, shapes, tags, tf });
   }
 
   walk(op) {
@@ -33,8 +38,22 @@ export class Shape {
     };
     op(this, descend);
   }
+
+  rewrite(op) {
+    const descend = () => {
+      let rewrittenShapes;
+      if (this.shapes) {
+        rewrittenShapes = [];
+        for (const shape of this.shapes) {
+          rewrittenShapes.push(shape.rewrite(op));
+        }
+      }
+      return rewrittenShapes;
+    };
+    return op(this, descend);
+  }
 }
 
-export const shape = (args) => new Shape(args);
+export const makeShape = (args) => new Shape(args);
 
-export const group = (shapes) => shape({ shapes });
+export const makeGroup = (shapes) => makeShape({ shapes });

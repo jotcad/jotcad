@@ -4,8 +4,8 @@ import { Arc2 } from './arc.js';
 import { Point } from './point.js';
 import { extrude } from './extrude.js';
 import { fill } from './fill.js';
+import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
-import { shape } from './shape.js';
 import test from 'ava';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
@@ -16,7 +16,7 @@ test.beforeEach(async (t) => {
 
 test('triangle', (t) =>
   withAssets(async (assets) => {
-    const triangle = shape({
+    const triangle = makeShape({
       geometry: cgal.Link(
         assets,
         [
@@ -45,7 +45,7 @@ test('triangle', (t) =>
 
 test('shrink', (t) =>
   withAssets(async (assets) => {
-    const triangle = shape({
+    const triangle = makeShape({
       geometry: cgal.Link(
         assets,
         [

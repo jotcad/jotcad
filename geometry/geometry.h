@@ -1,7 +1,7 @@
 #pragma once
 
-#include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
@@ -39,7 +39,7 @@ class Geometry {
  public:
   Geometry() {}
 
-  Geometry (CGAL::Surface_mesh<EK::Point_3> mesh) {
+  Geometry(CGAL::Surface_mesh<EK::Point_3> mesh) {
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
     if (mesh.has_garbage()) {
       mesh.collect_garbage();
@@ -53,26 +53,40 @@ class Geometry {
       const auto a = mesh.halfedge(facet);
       const auto b = mesh.next(a);
       const auto c = mesh.next(b);
-      triangles_.push_back({ size_t(mesh.source(a)), size_t(mesh.source(b)), size_t(mesh.source(c)) });
+      triangles_.push_back({size_t(mesh.source(a)), size_t(mesh.source(b)),
+                            size_t(mesh.source(c))});
     }
   }
 
-  void FillSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
+  void DecodeSurfaceMesh(const CGAL::Surface_mesh<EK::Point_3>& mesh) {
+    for (const auto& face : mesh.faces()) {
+      const auto a = mesh.halfedge(face);
+      const auto b = mesh.next(a);
+      const auto c = mesh.next(b);
+      // This is not very efficient.
+      AddTriangle(mesh.point(mesh.source(a)), mesh.point(mesh.source(b)),
+                  mesh.point(mesh.source(c)));
+    }
+  }
+
+  void EncodeSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
     typedef CGAL::Surface_mesh<EK::Point_3>::Vertex_index Vertex_index;
     for (const auto& vertex : vertices_) {
       mesh.add_vertex(vertex);
     }
     for (const auto& triangle : triangles_) {
-      if (mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[1]), Vertex_index(triangle[2])) == mesh.null_face()) {
+      if (mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[1]),
+                        Vertex_index(triangle[2])) == mesh.null_face()) {
       }
     }
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
   }
 
-  bool FillFaceSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
+  bool EncodeFaceSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
     const EK::Plane_3 plane(0, 0, 1, 0);
     std::vector<CGAL::Polygon_with_holes_2<EK>> pwhs;
-    std::map<EK::Point_3, CGAL::Surface_mesh<EK::Point_3>::Vertex_index> vertex_map;
+    std::map<EK::Point_3, CGAL::Surface_mesh<EK::Point_3>::Vertex_index>
+        vertex_map;
     CGAL::Polygon_triangulation_decomposition_2<EK> triangulator;
     for (const auto& [face, holes] : faces_) {
       CGAL::Polygon_2<EK> pwh_boundary;
@@ -101,14 +115,15 @@ class Geometry {
           vertices.push_back(
               EnsureVertex<EK>(mesh, vertex_map, plane.to_3d(point)));
         }
-        if (mesh.add_face(vertices) == CGAL::Surface_mesh<CGAL::Point_3<EK>>::null_face()) {
+        if (mesh.add_face(vertices) ==
+            CGAL::Surface_mesh<CGAL::Point_3<EK>>::null_face()) {
           return false;
         }
       }
     }
     return true;
   }
-    
+
   void Decode(const std::string& text) {
     std::istringstream ss(text);
     for (;;) {
@@ -215,7 +230,8 @@ class Geometry {
     }
     if (!triangles_.empty()) {
       for (const auto& triangle : triangles_) {
-        ss << "t " << triangle[0] << " " << triangle[1] << " " << triangle[2] << "\n";
+        ss << "t " << triangle[0] << " " << triangle[1] << " " << triangle[2]
+           << "\n";
       }
     }
     if (!faces_.empty()) {
@@ -257,11 +273,21 @@ class Geometry {
     return index;
   }
 
-  void AddSegment(const CGAL::Point_3<EK>& source, const CGAL::Point_3<EK>& target) {
+  void AddSegment(const CGAL::Point_3<EK>& source,
+                  const CGAL::Point_3<EK>& target) {
     if (source == target) {
       return;
     }
     segments_.emplace_back(AddVertex(source), AddVertex(target));
+  }
+
+  void AddTriangle(const CGAL::Point_3<EK>& a, const CGAL::Point_3<EK>& b,
+                   const CGAL::Point_3<EK>& c) {
+    if (a == b || b == c || c == a) {
+      return;
+    }
+    std::vector<size_t> triangle = {AddVertex(a), AddVertex(b), AddVertex(c)};
+    triangles_.push_back(std::move(triangle));
   }
 
  public:
@@ -269,7 +295,8 @@ class Geometry {
   std::vector<size_t> points_;
   std::vector<std::pair<size_t, size_t>> segments_;
   std::vector<std::vector<size_t>> triangles_;
-  std::vector<std::pair<std::vector<size_t>, std::vector<std::vector<size_t>>>> faces_;
+  std::vector<std::pair<std::vector<size_t>, std::vector<std::vector<size_t>>>>
+      faces_;
 };
 
 std::ostream& operator<<(std::ostream& os, const Geometry& g) {
@@ -280,30 +307,36 @@ std::ostream& operator<<(std::ostream& os, const Geometry& g) {
 }
 
 class GeometryWrapper : public Napi::ObjectWrap<GeometryWrapper> {
-public:
+ public:
   static Napi::Object Init(Napi::Env env, Napi::Object exports) {
     Napi::HandleScope scope(env);
 
-    Napi::Function func = DefineClass(env, "Geometry", {}); // No methods exposed
+    Napi::Function func =
+        DefineClass(env, "Geometry", {});  // No methods exposed
 
     constructor = Napi::Persistent(func);
     constructor.SuppressDestruct();
 
-    exports.Set("wrapNative", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value {
-      if (info.Length() != 1 || !info[0].IsExternal()) {
-        Napi::TypeError::New(info.Env(), "Expected an external for wrapNative").ThrowAsJavaScriptException();
-        return info.Env().Undefined();
-      }
-      Geometry* native = static_cast<Geometry*>(info[0].As<Napi::External<Geometry>>().Data());
-      return WrapNativeObject(info.Env(), native);
-    }));
+    exports.Set("wrapNative",
+                Napi::Function::New(
+                    env, [](const Napi::CallbackInfo& info) -> Napi::Value {
+                      if (info.Length() != 1 || !info[0].IsExternal()) {
+                        Napi::TypeError::New(
+                            info.Env(), "Expected an external for wrapNative")
+                            .ThrowAsJavaScriptException();
+                        return info.Env().Undefined();
+                      }
+                      Geometry* native = static_cast<Geometry*>(
+                          info[0].As<Napi::External<Geometry>>().Data());
+                      return WrapNativeObject(info.Env(), native);
+                    }));
 
     return exports;
   }
 
   static Napi::Object WrapNativeObject(Napi::Env env, Geometry* nativeObject) {
     auto external = Napi::External<Geometry>::New(env, nativeObject);
-    Napi::Object obj = constructor.New({ external });
+    Napi::Object obj = constructor.New({external});
     GeometryWrapper* wrapper = Napi::ObjectWrap<GeometryWrapper>::Unwrap(obj);
     if (wrapper) {
       wrapper->_geometry = nativeObject;
@@ -313,19 +346,21 @@ public:
 
   Geometry& Get() { return *_geometry; }
 
-  GeometryWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<GeometryWrapper>(info) {
+  GeometryWrapper(const Napi::CallbackInfo& info)
+      : Napi::ObjectWrap<GeometryWrapper>(info) {
     Napi::Env env = info.Env();
     Napi::HandleScope scope(env);
     if (info.Length() == 1 && info[0].IsExternal()) {
-      _geometry = static_cast<Geometry*>(info[0].As<Napi::External<Geometry>>().Data());
+      _geometry =
+          static_cast<Geometry*>(info[0].As<Napi::External<Geometry>>().Data());
     } else {
-      Napi::TypeError::New(env, "Internal constructor expects a single external").ThrowAsJavaScriptException();
+      Napi::TypeError::New(env,
+                           "Internal constructor expects a single external")
+          .ThrowAsJavaScriptException();
     }
   }
 
-  ~GeometryWrapper() {
-    delete _geometry;
-  }
+  ~GeometryWrapper() { delete _geometry; }
 
   static Napi::FunctionReference constructor;
   Geometry* _geometry;

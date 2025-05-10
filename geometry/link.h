@@ -1,16 +1,18 @@
 #pragma once
 #include "assets.h"
-#include "shape.h"
 #include "geometry.h"
+#include "shape.h"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
 
-static GeometryId Link(Assets& assets, std::vector<Shape>& shapes, bool close, bool reverse) {
+static GeometryId Link(Assets& assets, std::vector<Shape>& shapes, bool close,
+                       bool reverse) {
   bool first = true;
   size_t last_vertex_id;
   Geometry linked;
-  for (auto& shape: shapes) {
-    Geometry geometry = assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
+  for (auto& shape : shapes) {
+    Geometry geometry =
+        assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
     for (const auto& vertex : geometry.vertices_) {
       size_t vertex_id = linked.AddVertex(vertex);
       if (first) {

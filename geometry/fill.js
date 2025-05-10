@@ -1,5 +1,5 @@
 import { cgal } from './getCgal.js';
-import { shape } from './shape.js';
+import { makeShape } from './shape.js';
 
 export const fill = (assets, shapes, holes = false) =>
-  shape({ geometry: cgal.Fill(assets, shapes, holes) });
+  makeShape({ geometry: cgal.Fill(assets, shapes, holes) });

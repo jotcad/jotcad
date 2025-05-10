@@ -1,8 +1,8 @@
 import { cgal, cgalIsReady } from './getCgal.js';
 
 import { Point } from './point.js';
+import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
-import { shape } from './shape.js';
 import test from 'ava';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
@@ -24,7 +24,7 @@ test('triangle', (t) =>
       assets.text[id],
       'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 2 2 1 1 0\n'
     );
-    const triangle = shape({ geometry: id });
+    const triangle = makeShape({ geometry: id });
     const image = await renderPng(assets, triangle, {
       width: 512,
       height: 512,

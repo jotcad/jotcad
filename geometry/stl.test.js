@@ -1,7 +1,7 @@
 import { cgal, cgalIsReady } from './getCgal.js';
 import { fromStl, toStl } from './stl.js';
 
-import { shape } from './shape.js';
+import { makeShape } from './shape.js';
 import test from 'ava';
 
 test.beforeEach(async (t) => {
@@ -33,7 +33,9 @@ test('to', (t) => {
   };
   t.is(
     stlText,
-    new TextDecoder('utf8').decode(toStl(assets, shape({ geometry: 'test' })))
+    new TextDecoder('utf8').decode(
+      toStl(assets, makeShape({ geometry: 'test' }))
+    )
   );
 });
 

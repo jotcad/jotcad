@@ -1,13 +1,13 @@
-import { shape } from './shape.js';
+import { makeShape } from './shape.js';
 import { textId } from './assets.js';
 
 export const Point = (assets, x = 0, y = 0, z = 0, ix = x, iy = y, iz = z) =>
-  shape({
+  makeShape({
     geometry: textId(assets, `v ${x} ${y} ${z} ${ix} ${iy} ${iz}\np 0`),
   });
 
 export const Points = (assets, points) =>
-  shape({
+  makeShape({
     geometry: textId(
       assets,
       `${points

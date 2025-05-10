@@ -2,7 +2,6 @@ import { Box2, Box3 } from './box.js';
 import { cgal, cgalIsReady } from './getCgal.js';
 
 import { renderPng } from './renderPng.js';
-import { shape } from './shape.js';
 import test from 'ava';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';

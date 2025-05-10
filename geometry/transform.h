@@ -2,51 +2,58 @@
 
 #include <CGAL/Aff_transformation_3.h>
 #include <CGAL/rational_rotation.h>
+
 #include <cmath>
 #include <optional>
 
 #include "geometry.h"
 
 template <typename Kernel>
-static void ComputeTurn(const typename Kernel::FT& tau, typename Kernel::RT& sin_alpha, typename Kernel::RT& cos_alpha, typename Kernel::RT& w) {
+static void ComputeTurn(const typename Kernel::FT& tau,
+                        typename Kernel::RT& sin_alpha,
+                        typename Kernel::RT& cos_alpha,
+                        typename Kernel::RT& w) {
   // Convert tau to radians.
   double radians = CGAL::to_double(tau) * 2 * CGAL_PI;
-  CGAL::rational_rotation_approximation(radians, sin_alpha, cos_alpha, w, typename Kernel::RT(1), typename Kernel::RT(1000));
+  CGAL::rational_rotation_approximation(radians, sin_alpha, cos_alpha, w,
+                                        typename Kernel::RT(1),
+                                        typename Kernel::RT(1000));
 }
 
 template <typename Kernel>
 static Tf ComputeXTurnTf(const typename Kernel::FT& tau) {
   typename Kernel::RT sin_alpha, cos_alpha, w;
   ComputeTurn<Kernel>(tau, sin_alpha, cos_alpha, w);
-  return Tf(w, 0, 0, 0, 0, cos_alpha, -sin_alpha, 0, 0, sin_alpha, cos_alpha, 0, w);
+  return Tf(w, 0, 0, 0, 0, cos_alpha, -sin_alpha, 0, 0, sin_alpha, cos_alpha, 0,
+            w);
 }
 
 template <typename Kernel>
 static Tf ComputeYTurnTf(const typename Kernel::FT& tau) {
   typename Kernel::RT sin_alpha, cos_alpha, w;
   ComputeTurn<Kernel>(tau, sin_alpha, cos_alpha, w);
-  return Tf(cos_alpha, 0, -sin_alpha, 0, 0, w, 0, 0, sin_alpha, 0, cos_alpha, 0, w);
+  return Tf(cos_alpha, 0, -sin_alpha, 0, 0, w, 0, 0, sin_alpha, 0, cos_alpha, 0,
+            w);
 }
 
 template <typename Kernel>
 static Tf ComputeZTurnTf(const typename Kernel::FT& tau) {
   typename Kernel::RT sin_alpha, cos_alpha, w;
   ComputeTurn<Kernel>(tau, sin_alpha, cos_alpha, w);
-  return Tf(cos_alpha, sin_alpha, 0, 0, -sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0, w);
+  return Tf(cos_alpha, sin_alpha, 0, 0, -sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0,
+            w);
 }
 
 template <typename Kernel>
 CGAL::Aff_transformation_3<Kernel> ComputeScaleTf(
-    const typename Kernel::FT& x_scale,
-    const typename Kernel::FT& y_scale,
+    const typename Kernel::FT& x_scale, const typename Kernel::FT& y_scale,
     const typename Kernel::FT& z_scale) {
   using FT = typename Kernel::FT;
   FT zero = FT(0);
   FT one = FT(1);
-  CGAL::Aff_transformation_3<Kernel> transform(
-      x_scale, zero, zero, zero, zero,
-      y_scale, zero, zero, zero, zero,
-      z_scale, zero, one);
+  CGAL::Aff_transformation_3<Kernel> transform(x_scale, zero, zero, zero, zero,
+                                               y_scale, zero, zero, zero, zero,
+                                               z_scale, zero, one);
   return transform;
 }
 
@@ -113,7 +120,7 @@ static Tf DecodeTf(Napi::Value value) {
       return result;
     } else {
       Tf at = DecodeTf(a);
-      return bt * at;
+      return at * bt;
     }
   }
   // Really should throw an error.
@@ -125,23 +132,31 @@ bool IsIdentityTf(const CGAL::Aff_transformation_3<Kernel>& tf) {
   using FT = typename Kernel::FT;
   FT one = FT(1);
   FT zero = FT(0);
-  return (tf.cartesian(0, 0) == one && tf.cartesian(0, 1) == zero && tf.cartesian(0, 2) == zero && tf.cartesian(0, 3) == zero &&
-          tf.cartesian(1, 0) == zero && tf.cartesian(1, 1) == one && tf.cartesian(1, 2) == zero && tf.cartesian(1, 3) == zero &&
-          tf.cartesian(2, 0) == zero && tf.cartesian(2, 1) == zero && tf.cartesian(2, 2) == one && tf.cartesian(2, 3) == zero &&
-          tf.cartesian(3, 0) == zero && tf.cartesian(3, 1) == zero && tf.cartesian(3, 2) == zero && tf.cartesian(3, 3) == one);
+  return (tf.cartesian(0, 0) == one && tf.cartesian(0, 1) == zero &&
+          tf.cartesian(0, 2) == zero && tf.cartesian(0, 3) == zero &&
+          tf.cartesian(1, 0) == zero && tf.cartesian(1, 1) == one &&
+          tf.cartesian(1, 2) == zero && tf.cartesian(1, 3) == zero &&
+          tf.cartesian(2, 0) == zero && tf.cartesian(2, 1) == zero &&
+          tf.cartesian(2, 2) == one && tf.cartesian(2, 3) == zero &&
+          tf.cartesian(3, 0) == zero && tf.cartesian(3, 1) == zero &&
+          tf.cartesian(3, 2) == zero && tf.cartesian(3, 3) == one);
 }
 
 template <typename Kernel>
-std::optional<typename Kernel::FT> DecodeXTurnTf(const CGAL::Aff_transformation_3<Kernel>& tf) {
+std::optional<typename Kernel::FT> DecodeXTurnTf(
+    const CGAL::Aff_transformation_3<Kernel>& tf) {
   using FT = typename Kernel::FT;
   FT one = FT(1);
   FT zero = FT(0);
   // 1. Check for zero translation and correct last row
-  if (tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero || tf.cartesian(2, 3) != zero ||
-      tf.cartesian(3, 0) != zero || tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero || tf.cartesian(3, 3) != one) {
+  if (tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero ||
+      tf.cartesian(2, 3) != zero || tf.cartesian(3, 0) != zero ||
+      tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero ||
+      tf.cartesian(3, 3) != one) {
     return std::nullopt;
   }
-  // 2. Check for the specific structure of an x-rotation matrix and extract cos/sin
+  // 2. Check for the specific structure of an x-rotation matrix and extract
+  // cos/sin
   FT m00 = tf.cartesian(0, 0);
   FT m01 = tf.cartesian(0, 1);
   FT m02 = tf.cartesian(0, 2);
@@ -151,15 +166,15 @@ std::optional<typename Kernel::FT> DecodeXTurnTf(const CGAL::Aff_transformation_
   FT m20 = tf.cartesian(2, 0);
   FT m21 = tf.cartesian(2, 1);
   FT m22 = tf.cartesian(2, 2);
-  if (m00 != one || m01 != zero || m02 != zero ||
-      m10 != zero || m20 != zero ||
+  if (m00 != one || m01 != zero || m02 != zero || m10 != zero || m20 != zero ||
       m11 != m22 || m12 != -m21) {
     return std::nullopt;
   }
   FT cos_theta = m11;
   FT sin_theta = m21;
   // 3. Calculate the angle in radians using atan2
-  FT angle_radians = atan2(CGAL::to_double(sin_theta), CGAL::to_double(cos_theta));
+  FT angle_radians =
+      atan2(CGAL::to_double(sin_theta), CGAL::to_double(cos_theta));
   // 4. Convert radians to tau and normalize
   FT x_tau_value = angle_radians / (2 * CGAL_PI);
   if (x_tau_value < zero) {
@@ -171,18 +186,22 @@ std::optional<typename Kernel::FT> DecodeXTurnTf(const CGAL::Aff_transformation_
 }
 
 template <typename Kernel>
-std::optional<typename Kernel::FT> DecodeYTurnTf(const CGAL::Aff_transformation_3<Kernel>& tf) {
+std::optional<typename Kernel::FT> DecodeYTurnTf(
+    const CGAL::Aff_transformation_3<Kernel>& tf) {
   using FT = typename Kernel::FT;
   FT one = FT(1);
   FT zero = FT(0);
 
   // 1. Check for zero translation and correct last row
-  if (tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero || tf.cartesian(2, 3) != zero ||
-      tf.cartesian(3, 0) != zero || tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero || tf.cartesian(3, 3) != one) {
+  if (tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero ||
+      tf.cartesian(2, 3) != zero || tf.cartesian(3, 0) != zero ||
+      tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero ||
+      tf.cartesian(3, 3) != one) {
     return std::nullopt;
   }
 
-  // 2. Check for the specific structure of a y-rotation matrix and extract cos/sin
+  // 2. Check for the specific structure of a y-rotation matrix and extract
+  // cos/sin
   FT m00 = tf.cartesian(0, 0);
   FT m01 = tf.cartesian(0, 1);
   FT m02 = tf.cartesian(0, 2);
@@ -193,8 +212,8 @@ std::optional<typename Kernel::FT> DecodeYTurnTf(const CGAL::Aff_transformation_
   FT m21 = tf.cartesian(2, 1);
   FT m22 = tf.cartesian(2, 2);
 
-  if (m01 != zero || m10 != zero || m12 != zero ||
-      m21 != zero || m11 != one || m00 != m22 || m02 != -m20) {
+  if (m01 != zero || m10 != zero || m12 != zero || m21 != zero || m11 != one ||
+      m00 != m22 || m02 != -m20) {
     return std::nullopt;
   }
 
@@ -202,7 +221,8 @@ std::optional<typename Kernel::FT> DecodeYTurnTf(const CGAL::Aff_transformation_
   FT sin_theta = m02;
 
   // 3. Calculate the angle in radians using atan2
-  FT angle_radians = atan2(CGAL::to_double(sin_theta), CGAL::to_double(cos_theta));
+  FT angle_radians =
+      atan2(CGAL::to_double(sin_theta), CGAL::to_double(cos_theta));
 
   // 4. Convert radians to tau and normalize
   FT y_tau_value = angle_radians / (2 * CGAL_PI);
@@ -216,18 +236,22 @@ std::optional<typename Kernel::FT> DecodeYTurnTf(const CGAL::Aff_transformation_
 }
 
 template <typename Kernel>
-std::optional<typename Kernel::FT> DecodeZTurnTf(const CGAL::Aff_transformation_3<Kernel>& tf) {
+std::optional<typename Kernel::FT> DecodeZTurnTf(
+    const CGAL::Aff_transformation_3<Kernel>& tf) {
   using FT = typename Kernel::FT;
   FT one = FT(1);
   FT zero = FT(0);
 
   // 1. Check for zero translation and correct last row
-  if (tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero || tf.cartesian(2, 3) != zero ||
-      tf.cartesian(3, 0) != zero || tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero || tf.cartesian(3, 3) != one) {
+  if (tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero ||
+      tf.cartesian(2, 3) != zero || tf.cartesian(3, 0) != zero ||
+      tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero ||
+      tf.cartesian(3, 3) != one) {
     return std::nullopt;
   }
 
-  // 2. Check for the specific structure of a z-rotation matrix and extract cos/sin
+  // 2. Check for the specific structure of a z-rotation matrix and extract
+  // cos/sin
   FT m00 = tf.cartesian(0, 0);
   FT m01 = tf.cartesian(0, 1);
   FT m02 = tf.cartesian(0, 2);
@@ -238,8 +262,8 @@ std::optional<typename Kernel::FT> DecodeZTurnTf(const CGAL::Aff_transformation_
   FT m21 = tf.cartesian(2, 1);
   FT m22 = tf.cartesian(2, 2);
 
-  if (m02 != zero || m12 != zero || m20 != zero ||
-      m21 != zero || m22 != one || m00 != m11 || m01 != -m10) {
+  if (m02 != zero || m12 != zero || m20 != zero || m21 != zero || m22 != one ||
+      m00 != m11 || m01 != -m10) {
     return std::nullopt;
   }
 
@@ -247,7 +271,8 @@ std::optional<typename Kernel::FT> DecodeZTurnTf(const CGAL::Aff_transformation_
   FT sin_theta = m10;
 
   // 3. Calculate the angle in radians using atan2
-  FT angle_radians = atan2(CGAL::to_double(sin_theta), CGAL::to_double(cos_theta));
+  FT angle_radians =
+      atan2(CGAL::to_double(sin_theta), CGAL::to_double(cos_theta));
 
   // 4. Convert radians to tau and normalize
   FT z_tau_value = angle_radians / (2 * CGAL_PI);
@@ -268,15 +293,20 @@ std::optional<CGAL::Vector_3<Kernel>> DecodeTranslateTf(
   FT one = FT(1);
 
   // Check if the linear part is the identity matrix
-  if (tf.cartesian(0, 0) != one || tf.cartesian(0, 1) != zero || tf.cartesian(0, 2) != zero ||
-      tf.cartesian(1, 0) != zero || tf.cartesian(1, 1) != one || tf.cartesian(1, 2) != zero ||
-      tf.cartesian(2, 0) != zero || tf.cartesian(2, 1) != zero || tf.cartesian(2, 2) != one ||
-      tf.cartesian(3, 0) != zero || tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero || tf.cartesian(3, 3) != one) {
+  if (tf.cartesian(0, 0) != one || tf.cartesian(0, 1) != zero ||
+      tf.cartesian(0, 2) != zero || tf.cartesian(1, 0) != zero ||
+      tf.cartesian(1, 1) != one || tf.cartesian(1, 2) != zero ||
+      tf.cartesian(2, 0) != zero || tf.cartesian(2, 1) != zero ||
+      tf.cartesian(2, 2) != one || tf.cartesian(3, 0) != zero ||
+      tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero ||
+      tf.cartesian(3, 3) != one) {
     return std::nullopt;
   }
 
-  // If the linear part is identity, the translation vector is in the last column
-  CGAL::Vector_3<Kernel> translation(tf.cartesian(0, 3), tf.cartesian(1, 3), tf.cartesian(2, 3));
+  // If the linear part is identity, the translation vector is in the last
+  // column
+  CGAL::Vector_3<Kernel> translation(tf.cartesian(0, 3), tf.cartesian(1, 3),
+                                     tf.cartesian(2, 3));
   return translation;
 }
 
@@ -292,9 +322,11 @@ std::optional<CGAL::Vector_3<Kernel>> DecodeScaleTf(
       tf.cartesian(1, 0) != zero || tf.cartesian(1, 2) != zero ||
       tf.cartesian(2, 0) != zero || tf.cartesian(2, 1) != zero ||
       // Check if the translation components are zero
-      tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero || tf.cartesian(2, 3) != zero ||
+      tf.cartesian(0, 3) != zero || tf.cartesian(1, 3) != zero ||
+      tf.cartesian(2, 3) != zero ||
       // Check the last row
-      tf.cartesian(3, 0) != zero || tf.cartesian(3, 1) != zero || tf.cartesian(3, 2) != zero || tf.cartesian(3, 3) != one) {
+      tf.cartesian(3, 0) != zero || tf.cartesian(3, 1) != zero ||
+      tf.cartesian(3, 2) != zero || tf.cartesian(3, 3) != one) {
     return std::nullopt;
   }
 
@@ -326,11 +358,13 @@ static Napi::Value EncodeTf(const Tf& tf, Napi::Env env) {
     return Napi::String::New(env, ss.str());
   } else if (vector = DecodeTranslateTf(tf), vector) {
     std::ostringstream ss;
-    ss << "t " << vector->x().exact() << " " << vector->y().exact() << " " << vector->z().exact() << " " << *vector;
+    ss << "t " << vector->x().exact() << " " << vector->y().exact() << " "
+       << vector->z().exact() << " " << *vector;
     return Napi::String::New(env, ss.str());
   } else if (vector = DecodeScaleTf(tf), vector) {
     std::ostringstream ss;
-    ss << "s " << vector->x().exact() << " " << vector->y().exact() << " " << vector->z().exact() << " " << *vector;
+    ss << "s " << vector->x().exact() << " " << vector->y().exact() << " "
+       << vector->z().exact() << " " << *vector;
     return Napi::String::New(env, ss.str());
   } else {
     std::ostringstream ss;
