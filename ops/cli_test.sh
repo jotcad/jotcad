@@ -6,5 +6,5 @@ Box2([0, 5], [0, 5])
   .color('blue')
   .cut([Box3([2, 5], [2, 5], [2, 5])])
   .and(Arc2(20, { give: 1 }))
-  .png('box.png', [15, 15, 15])
-  .stl('box.stl');
+  .png('cli_test.png', [15, 15, 15])
+  .stl('cli_test.stl');
