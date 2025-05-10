@@ -1,0 +1,67 @@
+{
+  "name": "@jotcad/geometry",
+  "version": "0.0.1",
+  "description": "Geometry",
+  "repository": "https://github.com/jotcad/jotcad",
+  "main": "main.js",
+  "module": "dist/main.js",
+  "type": "module",
+  "scripts": {
+    "depcheck": "depcheck --ignores 'node-addon-api,emnapi,eslint*,@babel/*,@emnapi/*,@tybys/*,buffer' --ignore-patterns 'glm/*,boost/*,CGAL/*,Eigen/*,emnapi/*,glpk/*,gmp/*,mpfr/*,eigen/*'",
+    "lint": "eslint *.js",
+    "lintfix": "eslint --fix *.js",
+    "rollup": "rollup -c rollup_main.js",
+    "test": "ava --timeout=600s",
+    "tests": "./tests.sh"
+  },
+  "contributors": [
+    {
+      "name": "Brian Spilsbury",
+      "url": "http://github.com/pentacular/"
+    }
+  ],
+  "keywords": [],
+  "license": "MIT",
+  "dependencies": {
+    "@jotcad/threejs": "^0.0.1",
+    "node-addon-api": "^8.3.1",
+    "colord": "^2.0.1",
+    "earcut": "^3.0.1",
+    "gl": "^8.1.6",
+    "parse-stl-ascii": "^1.0.2",
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
+    "upng-js": "^2.1.0"
+  },
+  "devDependencies": {
+    "@babel/eslint-parser": "^7.27.0",
+    "@babel/plugin-syntax-bigint": "^7.8.3",
+    "@babel/preset-env": "^7.7.4",
+    "@emnapi/runtime": "^1.4.0",
+    "@emnapi/core": "^1.4.0",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-commonjs": "^28.0.3",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@tybys/wasm-util": "^0.9.0",
+    "ava": "^4.3.0",
+    "buffer": "^6.0.3",
+    "depcheck": "^1.4.1",
+    "emnapi": "^1.4.0",
+    "eslint": "^9.0.0",
+    "eslint-config-standard": "^12.0.0",
+    "eslint-plugin-import": "^2.16.0",
+    "eslint-plugin-node": "^8.0.1",
+    "eslint-plugin-promise": "^4.0.1",
+    "eslint-plugin-react": "^7.17.0",
+    "eslint-plugin-standard": "^4.0.0",
+    "rollup": "^4.40.0",
+    "rollup-plugin-cjs-es": "^3.0.0",
+    "rollup-plugin-node-builtins": "^2.1.2",
+    "rollup-plugin-node-polyfills": "^0.2.1",
+    "rollup-plugin-hypothetical": "^2.1.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "gitHead": "bfa6fefb9b9d1416e45db35e9eeb438be9047e44"
+}
