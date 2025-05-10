@@ -1,4 +1,11 @@
-import { Op, beginOps, endOps, ops, resolve } from './op.js';
+import {
+  Op,
+  beginOps,
+  endOps,
+  ops,
+  predicateValueHandler,
+  resolve,
+} from './op.js';
 import test from 'ava';
 
 const emits = {};
@@ -10,15 +17,21 @@ const emit = (set, value) => {
   emits[set].push(value);
 };
 
+export const isNumber = (value) => typeof value === 'number';
+export const isString = (value) => typeof value === 'string';
+
+Op.registerSpecHandler(predicateValueHandler('number', isNumber));
+Op.registerSpecHandler(predicateValueHandler('string', isString));
+
 export const Plus = Op.registerOp(
   'Plus',
-  'number { value: number } number',
+  ['number', ['number'], 'number'],
   (context, input = 0, value) => input + value
 );
 
 export const Say = Op.registerOp(
   'Say',
-  'number { value: string } number',
+  ['number', ['string', 'string'], 'number'],
   (context, input, set, value) => {
     emit(set, value);
     return input;

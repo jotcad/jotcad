@@ -43,8 +43,8 @@ test('triangle', (t) =>
 test('ring', (t) =>
   withAssets(async (assets) => {
     const outline = [
-      Arc2(assets, [-20, -20], [20, 20]),
-      Arc2(assets, [-10, -10], [10, 10]),
+      Arc2(assets, [-20, 20], [-20, 20]),
+      Arc2(assets, [-10, 10], [-10, 10]),
     ];
     const outlineImage = await renderPng(
       assets,

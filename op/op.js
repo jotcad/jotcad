@@ -28,6 +28,10 @@ export const emitOp = (op) => {
 };
 
 export class Op {
+  static specs = {};
+  static code = {};
+  static specHandlers = [];
+
   constructor(node) {
     this.node = node;
     this.node.output = null;
@@ -49,44 +53,125 @@ export class Op {
     return this.getId();
   }
 
+  getOutputType() {
+    const [, , outputType] = Op.specs[this.node.name];
+    return outputType;
+  }
+
   getNode() {
     return this.node;
   }
-}
 
-export const opCode = {};
+  static registerOp(name, specs, code) {
+    const { [name]: method } = {
+      [name]: function (...args) {
+        const input = this ? this.getId() : null;
+        const destructuredArgs = Op.destructure(name, specs, input, args);
+        return emitOp(new Op({ name, input, args: destructuredArgs }));
+      },
+    };
+    Op.prototype[name] = method;
+    Op.code[name] = code;
+    Op.specs[name] = specs;
+    return method;
+  }
 
-Op.code = opCode;
+  static registerSpecHandler(code) {
+    Op.specHandlers.push(code);
+    return code;
+  }
 
-export const registerOp = (name, signature, code) => {
-  const resolve = (input, value) => {
+  static resolveOp(input, value) {
     if (value instanceof Op) {
       return value.setInput(input).getId();
     } else if (value instanceof Array) {
-      return value.map((item) => resolve(input, item));
+      return value.map((item) => Op.resolveOp(input, item));
+    } else if (value instanceof Object) {
+      const resolved = {};
+      for (const key of Object.keys(value)) {
+        resolved[key] = Op.resolveOp(input, value[key]);
+      }
+      return resolved;
+    } else {
+      return value;
     }
-    return value;
-  };
-  const { [name]: method } = {
-    [name]: function (...args) {
-      const input = this ? this.getId() : null;
-      return emitOp(
-        new Op({ name, input, args: args.map((arg) => resolve(input, arg)) })
-      );
-    },
-  };
-  Op.prototype[name] = method;
-  Op.code[name] = code;
-  return method;
+  }
+
+  static destructure(name, specs, input, args) {
+    const [inputSpec, argSpecs, outputSpec] = specs;
+    const destructured = [];
+    for (const spec of argSpecs) {
+      const rest = [];
+      let found = false;
+      for (const specHandler of Op.specHandlers) {
+        const handler = specHandler(spec);
+        if (!handler) {
+          continue;
+        }
+        const value = handler(spec, input, args, rest);
+        const resolvedValue = Op.resolveOp(input, value);
+        destructured.push(resolvedValue);
+        args = rest;
+        found = true;
+        break;
+      }
+      if (!found) {
+        throw new Error(
+          `Cannot destructure: spec=${spec} args=${JSON.stringify(args)}`
+        );
+      }
+      args = rest;
+    }
+    return destructured;
+  }
+}
+
+export const specEquals = (a, b) => {
+  if (a === b) {
+    return true;
+  } else if (
+    a instanceof Array &&
+    b instanceof Array &&
+    a.length === b.length
+  ) {
+    for (let nth = 0; nth < a.length; nth++) {
+      if (a[nth] !== b[nth]) {
+        return false;
+      }
+    }
+    return true;
+  } else {
+    return false;
+  }
 };
 
-Op.registerOp = registerOp;
+export const predicateValueHandler = (name, predicate) => (spec) =>
+  spec === name &&
+  ((spec, input, args, rest) => {
+    let result;
+    while (args.length >= 1) {
+      const arg = args.shift();
+      if (
+        predicate(arg) ||
+        (arg instanceof Op && specEquals(arg.getOutputType(), spec))
+      ) {
+        result = arg;
+        break;
+      }
+      rest.push(arg);
+    }
+    rest.push(...args);
+    return result;
+  });
 
 export const resolve = async (context, graph, ops) => {
   let ready;
   const isReady = new Promise((resolve, reject) => {
     ready = resolve;
   });
+  if (ops === undefined) {
+    throw Error('resolve: ops=undefined');
+  }
   for (const op of ops) {
     const node = op.getNode();
     if (graph[op.getOutput()] !== undefined) {

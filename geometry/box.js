@@ -28,7 +28,7 @@ t 6 2 0
 t 0 4 6
 `;
 
-export const Box3 = (assets, [x0, y0, z0], [x1, y1, z1]) =>
+export const Box3 = (assets, [x0, x1], [y0, y1], [z0, z1]) =>
   makeShape({ geometry: textId(assets, unitBox3Text) })
     .scale(x1 - x0, y1 - y0, z1 - z0)
     .move(x0, y0, z0);
@@ -41,7 +41,7 @@ v 0 1 0 0 1 0
 s 0 1 1 2 2 3 3 0
 `;
 
-export const Box2 = (assets, [x0, y0], [x1, y1]) =>
+export const Box2 = (assets, [x0, x1], [y0, y1]) =>
   makeShape({ geometry: textId(assets, unitBox2Text) })
     .scale(x1 - x0, y1 - y0)
     .move(x0, y0);

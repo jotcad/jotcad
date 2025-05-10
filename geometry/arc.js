@@ -31,15 +31,12 @@ export const ArcSlice2 = (assets, arc, start, end) =>
 
 export const Arc2 = (
   assets,
-  [x0, y0],
-  [x1, y1],
-  sides = undefined,
-  start = 0,
-  end = 1,
-  spin = 0
+  [x0, x1],
+  [y0, y1],
+  { sides = undefined, start = 0, end = 1, spin = 0, give = 0.1 } = {}
 ) => {
   if (sides === undefined) {
-    sides = zag(Math.max(x1 - x0, y1 - y0));
+    sides = zag(Math.max(x1 - x0, y1 - y0), give);
   }
   let arc = unitArc2(assets, sides).rotateZ(spin);
   if (start !== 0 || end !== 1) {

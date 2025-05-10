@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 
 export const png = Op.registerOp(
   'png',
-  [null, [], 'shape'],
+  [null, ['string'], 'shape'],
   async (assets, input, path, position) => {
     const image = await renderPng(assets, input, {
       view: { position },
