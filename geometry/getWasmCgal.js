@@ -19,4 +19,4 @@ const getCgal = () => cgal;
 
 initCgal();
 
-export { cgal, cgalIsReady, initCgal, getCgal };
+export { cgal, cgalIsReady };

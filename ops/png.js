@@ -1,6 +1,6 @@
 import { Op } from '@jotcad/op';
 import { renderPng } from '@jotcad/geometry';
-import { writeFile } from 'node:fs/promises';
+import { writeFile } from './fs.js';
 
 export const png = Op.registerOp(
   'png',

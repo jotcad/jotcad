@@ -2,7 +2,7 @@
 
 Box2([0, 5], [0, 5])
   .fill()
-  .extrude(z(5), z(0))
+  .extrude(z(5))
   .color('blue')
   .cut([Box3([2, 5], [2, 5], [2, 5])])
   .and(Arc2(20, { give: 1 }).color('red'))

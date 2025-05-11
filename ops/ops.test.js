@@ -10,7 +10,7 @@ import { color } from './color.js';
 import { extrude } from './extrude.js';
 import { fill } from './fill.js';
 import { png } from './png.js';
-import { readFile } from 'node:fs/promises';
+import { readFile } from './fs.js';
 import { run } from '@jotcad/op';
 import { save } from './save.js';
 import test from 'ava';

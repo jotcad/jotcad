@@ -2,7 +2,7 @@
   "name": "@jotcad/threejs",
   "version": "0.0.1",
   "description": "ThreeJS algorithm integration for JotCAD",
-  "repository": "https://github.com/jotcad/JotCAD",
+  "repository": "https://github.com/jotcad/jotcad",
   "main": "main.js",
   "module": "dist/main.js",
   "type": "module",

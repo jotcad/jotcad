@@ -1,7 +1,7 @@
 {
-  "name": "@jotcad/op",
+  "name": "@jotcad/web",
   "version": "0.0.1",
-  "description": "Operation graph resolution",
+  "description": "JotCAD Web Browser Support",
   "repository": "https://github.com/jotcad/jotcad",
   "main": "main.js",
   "module": "dist/main.js",
@@ -10,9 +10,9 @@
     "depcheck": "depcheck --ignores '@jsxcad/eslint*,eslint*,@babel/*'",
     "lint": "eslint *.js",
     "lintfix": "eslint --fix *.js",
-    "rollup": "rollup -c rollup_main.js",
-    "test": "ava --serial --timeout=600s",
-    "tests": "ava --serial --timeout=600s *.test.js"
+    "rollup": "echo na",
+    "test": "ava --timeout=600s",
+    "tests": "ava --timeout=600s *.test.js"
   },
   "contributors": [
     {
@@ -23,8 +23,9 @@
   "keywords": [],
   "license": "MIT",
   "dependencies": {
-    "base64-arraybuffer": "^1.0.1",
-    "digest-js": "^0.3.0"
+    "@jotcad/geometry": "^0.0.1",
+    "@jotcad/op": "^0.0.1",
+    "@jotcad/ops": "^0.0.1"
   },
   "devDependencies": {
     "ava": "^4.3.0",

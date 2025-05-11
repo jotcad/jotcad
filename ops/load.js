@@ -1,5 +1,5 @@
 import { Op } from '@jotcad/op';
-import { readFile } from 'node:fs/promises';
+import { readFile } from './fs.js';
 
 export const Load = Op.registerOp(
   'Load',

@@ -1,7 +1,7 @@
 {
   "name": "@jotcad/geometry",
   "version": "0.0.1",
-  "description": "Geometry",
+  "description": "JotCAD Geometry",
   "repository": "https://github.com/jotcad/jotcad",
   "main": "main.js",
   "module": "dist/main.js",
@@ -31,7 +31,7 @@
     "parse-stl-ascii": "^1.0.2",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0",
-    "upng-js": "^2.1.0"
+    "fast-png": "^6.3.0"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.27.0",
