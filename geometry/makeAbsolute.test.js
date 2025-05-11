@@ -11,7 +11,7 @@ test.beforeEach(async (t) => {
 
 test('box', (t) =>
   withAssets(async (assets) => {
-    const box = Box3(assets, [1, 1, 1], [3, 3, 3]);
+    const box = Box3(assets, [1, 3], [1, 3], [1, 3]);
     const absoluteBox = makeAbsolute(assets, box);
     t.is(
       `v 1 1 1 1 1 1

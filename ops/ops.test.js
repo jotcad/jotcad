@@ -1,3 +1,8 @@
+import './intervalSpec.js';
+import './shapeSpec.js';
+import './stringSpec.js';
+import './vectorSpec.js';
+
 import { cgal, cgalIsReady } from '@jotcad/geometry';
 
 import { Box2 } from './box.js';
@@ -18,7 +23,7 @@ test.beforeEach(async (t) => {
 test('simple', async (t) => {
   const assets = { text: {} };
   const graph = await run(assets, () =>
-    Box2([0, 0], [3, 5])
+    Box2([0, 3], [0, 5])
       .fill()
       .extrude(z(0), z(1))
       .color('blue')

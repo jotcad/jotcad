@@ -9,7 +9,7 @@ import { run } from '@jotcad/op';
 Error.stackTraceLimit = Infinity;
 
 process.on('uncaughtException', (err) => {
-  console.error('There was an uncaught error', err);
+  console.error('There was an uncaught error', err, err.stack);
   process.exit(1); // mandatory (as per the Node.js docs)
 });
 

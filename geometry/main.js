@@ -1,7 +1,9 @@
 export { cgal, cgalIsReady } from './getCgal.js';
 
+export { Arc2 } from './arc.js';
 export { Box2 } from './box.js';
 export { Box3 } from './box.js';
+
 export { cut } from './cut.js';
 export { extrude } from './extrude.js';
 export { fill } from './fill.js';

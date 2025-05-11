@@ -13,7 +13,7 @@ test.beforeEach(async (t) => {
 
 test('Box3', (t) =>
   withAssets(async (assets) => {
-    const box = Box3(assets, [-1, -1, -1], [1, 1, 1]);
+    const box = Box3(assets, [-1, 1], [-1, 1], [-1, 1]);
     const image = await renderPng(assets, box, {
       view: { position: [3 * 2, 4 * 2, 5 * 2] },
       width: 512,
@@ -24,7 +24,7 @@ test('Box3', (t) =>
 
 test('Box2', (t) =>
   withAssets(async (assets) => {
-    const box = Box2(assets, [0, 0], [1, 1]);
+    const box = Box2(assets, [0, 1], [0, 1]);
     const image = await renderPng(assets, box, {
       view: { position: [3, 4, 5] },
       width: 512,

@@ -1,0 +1,46 @@
+import { Op, specEquals } from '@jotcad/op';
+
+import { isArray } from './arraySpec.js';
+
+const isKeysConforming = (schema, options) => {
+  for (const key of Object.keys(options)) {
+    if (!schema.hasOwnProperty(key)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+Op.registerSpecHandler(
+  (spec) =>
+    isArray(spec) &&
+    spec[0] === 'options' &&
+    ((spec, input, args, rest) => {
+      let result;
+      const schema = spec[1];
+      while (args.length >= 1) {
+        const arg = args.shift();
+        if (arg instanceof Op && specEquals(Op.getOutputType(), spec)) {
+          // TODO: Handle post-validation.
+          result = arg;
+          break;
+        } else if (arg instanceof Object && isKeysConforming(schema, arg)) {
+          const resolved = {};
+          for (const key of Object.keys(arg)) {
+            const [value] = Op.destructure(
+              'options',
+              [null, [schema[key]], null],
+              input,
+              [arg[key]]
+            );
+            resolved[key] = value;
+          }
+          result = resolved;
+          break;
+        }
+        rest.push(arg);
+      }
+      rest.push(...args);
+      return result;
+    })
+);

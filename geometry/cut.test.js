@@ -13,8 +13,8 @@ test.beforeEach(async (t) => {
 
 test('corner', (t) =>
   withAssets(async (assets) => {
-    const box = Box3(assets, [0, 0, 0], [2, 2, 2]);
-    const tool = Box3(assets, [1, 1, 1], [2, 2, 2]);
+    const box = Box3(assets, [0, 2], [0, 2], [0, 2]);
+    const tool = Box3(assets, [1, 2], [1, 2], [1, 2]);
     const cutBox = cut(assets, box, [tool]);
     const image = await renderPng(assets, cutBox, {
       view: { position: [15, 15, 15] },
