@@ -1,8 +1,8 @@
 {
   "name": "@jotcad/ops",
   "version": "0.0.1",
-  "description": "JOT Ops",
-  "repository": "https://github.com/jsxcad/JSxCAD",
+  "description": "JotCAD Ops",
+  "repository": "https://github.com/jotcad/jotcad",
   "main": "main.js",
   "module": "dist/main.js",
   "type": "module",
@@ -24,7 +24,8 @@
   "license": "MIT",
   "dependencies": {
     "@jotcad/geometry": "^0.0.1",
-    "@jotcad/op": "^0.0.1"
+    "@jotcad/op": "^0.0.1",
+    "memfs": "^4.17.1"
   },
   "devDependencies": {
     "ava": "^4.3.0",
@@ -40,6 +41,7 @@
     "eslint-plugin-react": "^7.17.0",
     "eslint-plugin-standard": "^4.0.0",
     "rollup": "^4.40.0",
+    "rollup-plugin-hypothetical": "^2.1.1",
     "rollup-plugin-node-builtins": "^2.1.2",
     "rollup-plugin-node-globals": "^1.4.0"
   },

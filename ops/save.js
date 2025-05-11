@@ -1,5 +1,5 @@
 import { Op } from '@jotcad/op';
-import { writeFile } from 'node:fs/promises';
+import { writeFile } from './fs.js';
 
 export const save = Op.registerOp(
   'save',

@@ -1,17 +1,20 @@
 import { Op } from '@jotcad/op';
 import { renderPng } from '@jotcad/geometry';
-import { writeFile } from 'node:fs/promises';
+import { writeFile } from './fs.js';
 
 export const png = Op.registerOp(
   'png',
   [null, ['string', 'vector3'], 'shape'],
   async (assets, input, path, position) => {
+    const width = 512;
+    const height = 512;
     const image = await renderPng(assets, input, {
       view: { position },
-      width: 512,
-      height: 512,
+      width,
+      height,
     });
-    await writeFile(path, Buffer.from(image));
+    const data = Buffer.from(image);
+    await writeFile(path, data);
     return input;
   }
 );

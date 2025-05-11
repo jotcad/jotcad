@@ -1,4 +1,5 @@
-import UPNG from 'upng-js';
+// import UPNG from 'upng-js';
+import { encode } from 'fast-png';
 import gl from 'gl';
 import { staticDisplay } from './threejs.js';
 
@@ -78,5 +79,5 @@ export const renderPng = async (
     height,
   });
   const { pixels } = extractPixels(renderer.getContext());
-  return UPNG.encode([pixels], width, height, 256);
+  return encode({ width, height, data: pixels, channels: 4 });
 };

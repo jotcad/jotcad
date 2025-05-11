@@ -1,7 +1,7 @@
 {
-  "name": "@jotcad/op",
+  "name": "@jotcad/web",
   "version": "0.0.1",
-  "description": "Operation graph resolution",
+  "description": "JotCAD Web Browser Support",
   "repository": "https://github.com/jotcad/jotcad",
   "main": "main.js",
   "module": "dist/main.js",
@@ -10,9 +10,9 @@
     "depcheck": "depcheck --ignores '@jsxcad/eslint*,eslint*,@babel/*'",
     "lint": "eslint *.js",
     "lintfix": "eslint --fix *.js",
-    "rollup": "rollup -c rollup_main.js",
-    "test": "ava --serial --timeout=600s",
-    "tests": "ava --serial --timeout=600s *.test.js"
+    "rollup": "echo ok",
+    "test": "echo ok",
+    "tests": "echo ok"
   },
   "contributors": [
     {
@@ -22,26 +22,17 @@
   ],
   "keywords": [],
   "license": "MIT",
-  "dependencies": {
-    "base64-arraybuffer": "^1.0.1",
-    "digest-js": "^0.3.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "ava": "^4.3.0",
     "depcheck": "^1.4.1",
     "eslint": "^9.0.0",
     "@babel/eslint-parser": "^7.27.0",
-    "@rollup/plugin-commonjs": "^28.0.3",
-    "@rollup/plugin-node-resolve": "^16.0.1",
     "eslint-config-standard": "^12.0.0",
     "eslint-plugin-import": "^2.16.0",
     "eslint-plugin-node": "^8.0.1",
     "eslint-plugin-promise": "^4.0.1",
     "eslint-plugin-react": "^7.17.0",
-    "eslint-plugin-standard": "^4.0.0",
-    "rollup": "^4.40.0",
-    "rollup-plugin-node-builtins": "^2.1.2",
-    "rollup-plugin-node-globals": "^1.4.0"
+    "eslint-plugin-standard": "^4.0.0"
   },
   "publishConfig": {
     "access": "public"

@@ -16,10 +16,14 @@ export { Stl } from './stl.js';
 
 export { and } from './and.js';
 export { color } from './color.js';
+export { clip } from './clip.js';
 export { cut } from './cut.js';
 export { fill } from './fill.js';
 export { extrude } from './extrude.js';
+export { join } from './join.js';
 export { png } from './png.js';
+export { readFile } from './fs.js';
 export { save } from './save.js';
 export { stl } from './stl.js';
+export { writeFile } from './fs.js';
 export { z } from './z.js';

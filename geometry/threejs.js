@@ -1,40 +1,28 @@
 /* global OffscreenCanvas */
 
 import {
+  AlwaysDepth,
   AxesHelper,
-  Box3,
   BufferGeometry,
   Color,
-  DoubleSide,
   EdgesGeometry,
   Float32BufferAttribute,
-  Frustum,
-  GridHelper,
-  Group,
   Layers,
+  LessEqualDepth,
   LineBasicMaterial,
   LineSegments,
   Matrix4,
   Mesh,
-  MeshBasicMaterial,
   MeshNormalMaterial,
   MeshStandardMaterial,
   Object3D,
   PCFShadowMap,
-  Path,
   PerspectiveCamera,
   Plane,
-  PlaneGeometry,
-  Points,
-  PointsMaterial,
   Scene,
-  Shape,
-  ShapeGeometry,
   SpotLight,
-  Vector2,
   Vector3,
   WebGLRenderer,
-  WireframeGeometry,
 } from '@jotcad/threejs';
 
 import { DecodeInexactGeometryText } from './geometry.js';
@@ -234,7 +222,10 @@ const buildEdges = (geometry) => {
   const edges = new EdgesGeometry(geometry);
   const lines = new LineSegments(
     edges,
-    new LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+    new LineBasicMaterial({
+      color: 0x000000,
+      linewidth: 2,
+    })
   );
   return lines;
 };

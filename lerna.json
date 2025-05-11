@@ -11,5 +11,5 @@
       "npmClientArgs": ["--no-package-lock"]
     }
   },
-  "packages": ["geometry", "op", "ops", "sys", "threejs"]
+  "packages": ["cli", "geometry", "op", "ops", "sys", "threejs", "web"]
 }

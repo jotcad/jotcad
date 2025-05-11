@@ -9,7 +9,7 @@ Op.registerSpecHandler(
         const arg = args.shift();
         if (arg instanceof Op && specEquals(arg.getOutputType(), 'shape')) {
           results.push(arg);
-          break;
+          continue;
         } else if (arg === undefined) {
           break;
         }
