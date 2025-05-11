@@ -10,9 +10,9 @@ export const compose = (a, b) => {
   }
 };
 
-export const makeIdentity = (t) => undefined;
+export const makeIdentity = () => undefined;
 
-export const makeInvert = (t) => 'i';
+export const makeInvert = () => 'i';
 
 export const makeMatrix = (a, b, c, d, e, f, g, h, i, j, k, l, m) =>
   `m ${a} ${b} ${c} ${d} ${e} ${f} ${g} ${h} ${i} ${j} ${k} ${l} ${m}`;

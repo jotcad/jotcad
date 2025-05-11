@@ -4,8 +4,9 @@ Box2([0, 5], [0, 5])
   .fill()
   .extrude(z(5))
   .color('blue')
-  .cut([Box3([2, 5], [2, 5], [2, 5])])
+  .cut(Box3([2, 5], [2, 5], [2, 5]).color('green'))
   .and(Arc2(20, { give: 1 }).color('red'))
   .save('cli_test.json')
   .png('cli_test.png', [25, 25, 25])
-  .stl('cli_test.stl');
+  .stl('cli_test.stl')
+  .view([25, 25, 25]);

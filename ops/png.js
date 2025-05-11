@@ -6,12 +6,15 @@ export const png = Op.registerOp(
   'png',
   [null, ['string', 'vector3'], 'shape'],
   async (assets, input, path, position) => {
+    const width = 512;
+    const height = 512;
     const image = await renderPng(assets, input, {
       view: { position },
-      width: 512,
-      height: 512,
+      width,
+      height,
     });
-    await writeFile(path, Buffer.from(image));
+    const data = Buffer.from(image);
+    await writeFile(path, data);
     return input;
   }
 );
