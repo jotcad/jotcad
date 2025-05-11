@@ -5,8 +5,7 @@ import { readFile } from './dist/jotcad-ops.js';
 import { run } from './dist/jotcad-op.js';
 
 export const demo = async () => {
-  const ecmascript =
-    `Box2([0, 5], [0, 5])
+  const ecmascript = `Box2([0, 5], [0, 5])
        .fill()
        .extrude(z(5))
        .color('blue')

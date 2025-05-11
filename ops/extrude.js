@@ -4,5 +4,5 @@ import { extrude as op } from '@jotcad/geometry';
 export const extrude = Op.registerOp(
   'extrude',
   ['shape', ['shape', 'shape'], 'shape'],
-  (assets, input, top=input, bottom=input) => op(assets, input, top, bottom)
+  (assets, input, top = input, bottom = input) => op(assets, input, top, bottom)
 );
