@@ -1,12 +1,14 @@
 /* global OffscreenCanvas */
 
 import {
+  AlwaysDepth,
   AxesHelper,
   BufferGeometry,
   Color,
   EdgesGeometry,
   Float32BufferAttribute,
   Layers,
+  LessEqualDepth,
   LineBasicMaterial,
   LineSegments,
   Matrix4,
@@ -220,7 +222,10 @@ const buildEdges = (geometry) => {
   const edges = new EdgesGeometry(geometry);
   const lines = new LineSegments(
     edges,
-    new LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+    new LineBasicMaterial({
+      color: 0x000000,
+      linewidth: 2,
+    })
   );
   return lines;
 };

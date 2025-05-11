@@ -51,10 +51,9 @@ CGAL::Aff_transformation_3<Kernel> ComputeScaleTf(
   using FT = typename Kernel::FT;
   FT zero = FT(0);
   FT one = FT(1);
-  CGAL::Aff_transformation_3<Kernel> transform(x_scale, zero, zero, zero,
-                                               zero, y_scale, zero, zero,
-                                               zero, zero, z_scale, zero,
-                                               one);
+  CGAL::Aff_transformation_3<Kernel> transform(x_scale, zero, zero, zero, zero,
+                                               y_scale, zero, zero, zero, zero,
+                                               z_scale, zero, one);
   return transform;
 }
 

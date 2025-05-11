@@ -1,4 +1,5 @@
 export {
+  AlwaysDepth,
   ArrowHelper,
   AxesHelper,
   Box3,
@@ -17,6 +18,7 @@ export {
   Group,
   HemisphereLight,
   Layers,
+  LessEqualDepth,
   Line,
   LineBasicMaterial,
   LineSegments,

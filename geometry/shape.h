@@ -18,6 +18,11 @@ class Shape {
     return *id_;
   }
 
+  bool HasGeometryId() {
+    Napi::String id = GeometryId();
+    return id != napi_.Env().Undefined();
+  }
+
   void SetTf(Napi::String tf) { napi_.Set("tf", tf); }
 
   void SetTf(const std::string& tf) {
@@ -29,6 +34,21 @@ class Shape {
       tf_ = DecodeTf(napi_.Get("tf"));
     }
     return *tf_;
+  }
+
+  bool Walk(const std::function<bool(Shape&)>& op) {
+    if (!op(*this)) {
+      return false;
+    }
+    Napi::Array shapes = napi_.Get("shapes").As<Napi::Array>();
+    if (shapes == napi_.Env().Undefined()) {
+      return true;
+    }
+    for (uint32_t nth = 0; nth < shapes.Length(); nth++) {
+      Shape shape(shapes.Get(nth).As<Napi::Object>());
+      shape.Walk(op);
+    }
+    return true;
   }
 
  public:
