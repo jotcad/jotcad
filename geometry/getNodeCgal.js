@@ -16,8 +16,15 @@ const initCgal = async () => {
   cgal = module.emnapiInit({ context: getDefaultContext() });
   FS = module.FS;
   FS.mkdir('/assets');
-  FS.mkdir('/assets/text');
-  FS.mount(FS.filesystems.NODEFS, { root: '/tmp/assets' }, '/assets');
+  FS.mount(FS.filesystems.NODEFS, { root: '.' }, '/assets');
+  try {
+    FS.mkdir('/assets/text');
+  } catch (e) {
+    if (e.errno !== 20) {
+      // (EEXIST)
+      throw e; // Re-throw other errors
+    }
+  }
   assertCgalIsReady();
 };
 
