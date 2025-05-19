@@ -14,7 +14,8 @@ test('box', (t) =>
     const box = Box3(assets, [1, 3], [1, 3], [1, 3]);
     const absoluteBox = makeAbsolute(assets, box);
     t.is(
-      `v 1 1 1 1 1 1
+      `V 8
+v 1 1 1 1 1 1
 v 3 1 1 3 1 1
 v 1 3 1 1 3 1
 v 3 3 1 3 3 1
@@ -22,6 +23,7 @@ v 1 1 3 1 1 3
 v 3 1 3 3 1 3
 v 1 3 3 1 3 3
 v 3 3 3 3 3 3
+T 12
 t 7 3 2
 t 2 6 7
 t 7 6 4
@@ -35,6 +37,6 @@ t 5 4 0
 t 6 2 0
 t 0 4 6
 `,
-      assets.text[absoluteBox.geometry]
+      assets.getText(absoluteBox.geometry)
     );
   }));

@@ -13,6 +13,7 @@ class SurfaceMeshWrapper : public Napi::ObjectWrap<SurfaceMeshWrapper> {
     constructor = Napi::Persistent(func);
     constructor.SuppressDestruct();
 
+#if 0
     exports.Set(
         "wrapNative",
         Napi::Function::New(
@@ -30,6 +31,9 @@ class SurfaceMeshWrapper : public Napi::ObjectWrap<SurfaceMeshWrapper> {
                           .Data());
               return WrapNativeObject(info.Env(), native);
             }));
+#endif
+
+    exports.Set("SurfaceMesh", func);
 
     return exports;
   }

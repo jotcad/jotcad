@@ -37,8 +37,8 @@ static GeometryId ArcSlice2(Assets& assets, Shape& shape, EK::FT start,
           done = true;
           break;
         } else {
-          sliced.segments_.emplace_back(sliced.AddVertex(s3.source()),
-                                        sliced.AddVertex(s3.target()));
+          sliced.segments_.emplace_back(sliced.AddVertex(s3.source(), true),
+                                        sliced.AddVertex(s3.target(), true));
           last = s3.target();
         }
       } else {

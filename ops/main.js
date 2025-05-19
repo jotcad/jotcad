@@ -1,3 +1,5 @@
+import './booleanSpec.js';
+import './flagsSpec.js';
 import './intervalSpec.js';
 import './numberSpec.js';
 import './optionsSpec.js';
@@ -15,6 +17,7 @@ import { Op } from '@jotcad/op';
 export { Stl } from './stl.js';
 
 export { and } from './and.js';
+export { approximate } from './approximate.js';
 export { color } from './color.js';
 export { clip } from './clip.js';
 export { cut } from './cut.js';
@@ -24,6 +27,10 @@ export { join } from './join.js';
 export { png } from './png.js';
 export { readFile } from './fs.js';
 export { save } from './save.js';
+export { simplify } from './simplify.js';
 export { stl } from './stl.js';
+export { test } from './test.js';
 export { writeFile } from './fs.js';
+export { x } from './x.js';
+export { y } from './y.js';
 export { z } from './z.js';

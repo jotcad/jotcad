@@ -3,9 +3,9 @@ import './transform.js';
 import { cgal, cgalIsReady } from './getCgal.js';
 
 import { makeShape } from './shape.js';
-import { textId } from './assets.js';
 
 const unitBox3Text = `
+V 8
 v 0 0 0 0 0 0
 v 1 0 0 1 0 0
 v 0 1 0 0 1 0
@@ -14,6 +14,7 @@ v 0 0 1 0 0 1
 v 1 0 1 1 0 1
 v 0 1 1 0 1 1
 v 1 1 1 1 1 1
+T 12
 t 7 3 2
 t 2 6 7
 t 7 6 4
@@ -29,11 +30,12 @@ t 0 4 6
 `;
 
 export const Box3 = (assets, [x0, x1], [y0, y1], [z0, z1]) =>
-  makeShape({ geometry: textId(assets, unitBox3Text) })
+  makeShape({ geometry: assets.textId(unitBox3Text) })
     .scale(x1 - x0, y1 - y0, z1 - z0)
     .move(x0, y0, z0);
 
 const unitBox2Text = `
+V 4
 v 0 0 0 0 0 0
 v 1 0 0 1 0 0
 v 1 1 0 1 1 0
@@ -41,7 +43,7 @@ v 0 1 0 0 1 0
 s 0 1 1 2 2 3 3 0
 `;
 
-export const Box2 = (assets, [x0, x1], [y0, y1]) =>
-  makeShape({ geometry: textId(assets, unitBox2Text) })
+export const Box2 = async (assets, [x0, x1], [y0, y1]) =>
+  makeShape({ geometry: assets.textId(unitBox2Text) })
     .scale(x1 - x0, y1 - y0)
     .move(x0, y0);

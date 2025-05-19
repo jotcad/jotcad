@@ -21,8 +21,8 @@ test('triangle', (t) =>
       true
     );
     t.deepEqual(
-      assets.text[id],
-      'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 2 2 1 1 0\n'
+      assets.getText(id),
+      'V 3\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 2 2 1 1 0\n'
     );
     const triangle = makeShape({ geometry: id });
     const image = await renderPng(assets, triangle, {

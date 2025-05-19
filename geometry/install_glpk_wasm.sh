@@ -1,3 +1,5 @@
+# export EMCFLAGS="$EMCFLAGS -sMEMORY64=1"
+
 (rm -rf glpk-5.0 &&
  . emsdk/emsdk_env.sh &&
  mkdir -p wasm &&
@@ -8,3 +10,5 @@
  make &&
  make install &&
  cd ..)
+
+# emconfigure ./configure CFLAGS="-sMEMORY64=1" --disable-assembly --host none --enable-cxx --prefix=${PWD}/../wasm &&

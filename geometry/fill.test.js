@@ -29,8 +29,8 @@ test('triangle', (t) =>
     });
     const filledBox = fill(assets, [box], false);
     t.deepEqual(
-      assets.text[filledBox.geometry],
-      'v 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nf 0 1 2\n'
+      assets.getText(filledBox.geometry),
+      'V 3\nv 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nf 0 1 2\n'
     );
     const image = await renderPng(assets, filledBox, {
       view: { position: [0, 0, 20] },

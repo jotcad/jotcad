@@ -59,13 +59,13 @@ static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
     auto& face = filled.faces_.back().first;
     auto& holes = filled.faces_.back().second;
     for (const auto& point : pwh.outer_boundary()) {
-      face.push_back(filled.AddVertex(plane.to_3d(point)));
+      face.push_back(filled.AddVertex(plane.to_3d(point), true));
     }
     for (const auto& pwh_hole : pwh.holes()) {
       holes.emplace_back();
       auto& hole = holes.back();
       for (const auto& point : pwh_hole) {
-        hole.push_back(filled.AddVertex(plane.to_3d(point)));
+        hole.push_back(filled.AddVertex(plane.to_3d(point), true));
       }
     }
   }

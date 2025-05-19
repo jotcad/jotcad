@@ -20,8 +20,8 @@ test('open', (t) =>
       false
     );
     t.deepEqual(
-      assets.text[shape.geometry],
-      'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 1 1 2\n'
+      assets.getText(shape.geometry),
+      'V 3\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 1 1 2\n'
     );
     const image = await renderPng(assets, shape, {
       view: { position: [0, 0, 20] },
@@ -40,8 +40,8 @@ test('closed', (t) =>
       false
     );
     t.deepEqual(
-      assets.text[shape.geometry],
-      'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 1 1 2 2 0\n'
+      assets.getText(shape.geometry),
+      'V 3\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 1 1 2 2 0\n'
     );
     const image = await renderPng(assets, shape, {
       view: { position: [0, 0, 20] },
@@ -60,8 +60,8 @@ test('reverse', (t) =>
       true
     );
     t.deepEqual(
-      assets.text[shape.geometry],
-      'v 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 2 2 1 1 0\n'
+      assets.getText(shape.geometry),
+      'V 3\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nv 0 0 1 0 0 1\ns 0 2 2 1 1 0\n'
     );
     const image = await renderPng(assets, shape, {
       view: { position: [0, 0, 20] },

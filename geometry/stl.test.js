@@ -3,6 +3,7 @@ import { fromStl, toStl } from './stl.js';
 
 import { makeShape } from './shape.js';
 import test from 'ava';
+import { withAssets } from './assets.js';
 
 test.beforeEach(async (t) => {
   await cgalIsReady;
@@ -19,28 +20,27 @@ endfacet
 endsolid JotCad
 `;
 
-const geometryText = `v 0 0 0 0 0 0
+const geometryText = `V 3
+v 0 0 0 0 0 0
 v 1 0 0 1 0 0
 v 0 1 0 0 1 0
+T 1
 t 0 1 2
 `;
 
-test('to', (t) => {
-  const assets = {
-    text: {
-      test: 'v 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nt 0 1 2\n',
-    },
-  };
-  t.is(
-    stlText,
-    new TextDecoder('utf8').decode(
-      toStl(assets, makeShape({ geometry: 'test' }))
-    )
-  );
-});
+test('to', (t) =>
+  withAssets(async (assets) => {
+    const id = assets.textId(
+      'V 3\nv 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nT 1\nt 0 1 2\n'
+    );
+    t.is(
+      stlText,
+      new TextDecoder('utf8').decode(toStl(assets, makeShape({ geometry: id })))
+    );
+  }));
 
-test('from', (t) => {
-  const assets = { text: {} };
-  const shape = fromStl(assets, new TextEncoder('utf8').encode(stlText));
-  t.is(geometryText, assets.text[shape.geometry]);
-});
+test('from', (t) =>
+  withAssets(async (assets) => {
+    const shape = fromStl(assets, new TextEncoder('utf8').encode(stlText));
+    t.is(geometryText, assets.getText(shape.geometry));
+  }));

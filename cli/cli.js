@@ -1,8 +1,9 @@
 import * as api from '@jotcad/ops';
 
-import { cgal, cgalIsReady } from '@jotcad/geometry';
+import { cgal, cgalIsReady, withAssets } from '@jotcad/geometry';
 
 import { argv } from 'process';
+import { note } from './note.js';
 import { readFile } from '@jotcad/ops';
 import { run } from '@jotcad/op';
 import { view } from './view.js';
@@ -24,13 +25,14 @@ const cli = async (scriptPath, ...args) => {
   const script = await readFile(scriptPath, 'utf8');
   const lines = script.split('\n');
   const ecmascript = lines.slice(1).join('\n');
-  const assets = { text: {} };
   const evaluator = new Function(
     `{ ${Object.keys({ ...bindings }).join(', ')} }`,
     ecmascript
   );
   await cgalIsReady;
-  const graph = await run(assets, () => evaluator(bindings));
+  return withAssets(async (assets) => {
+    const graph = await run(assets, () => evaluator(bindings));
+  });
 };
 
 cli(...argv.slice(2));

@@ -7,12 +7,17 @@ const cgalIsReady = new Promise((resolve, reject) => {
 });
 
 let cgal;
+let FS;
 
 const initCgal = async () => {
   const module = await Module({
     /* Emscripten module init options */
   });
   cgal = module.emnapiInit({ context: getDefaultContext() });
+  FS = module.FS;
+  FS.mkdir('/assets');
+  FS.mkdir('/assets/text');
+  FS.mount(FS.filesystems.NODEFS, { root: '/tmp/assets' }, '/assets');
   assertCgalIsReady();
 };
 
@@ -20,4 +25,4 @@ const getCgal = () => cgal;
 
 initCgal();
 
-export { cgal, cgalIsReady, getCgal };
+export { FS, cgal, cgalIsReady, getCgal };

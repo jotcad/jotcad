@@ -1,9 +1,10 @@
 import './intervalSpec.js';
+import './optionsSpec.js';
 import './shapeSpec.js';
 import './stringSpec.js';
 import './vectorSpec.js';
 
-import { cgal, cgalIsReady } from '@jotcad/geometry';
+import { cgal, cgalIsReady, testPng, withAssets } from '@jotcad/geometry';
 
 import { Box2 } from './box.js';
 import { color } from './color.js';
@@ -20,27 +21,14 @@ test.beforeEach(async (t) => {
   await cgalIsReady;
 });
 
-test('simple', async (t) => {
-  const assets = { text: {} };
-  const graph = await run(assets, () =>
-    Box2([0, 3], [0, 5])
-      .fill()
-      .extrude(z(0), z(1))
-      .color('blue')
-      .save('ops.test.simple.json')
-      .png('ops.test.simple.png', [-5, -5, 10])
-  );
-  t.deepEqual(
-    JSON.parse(await readFile('ops.test.simple.json', { encoding: 'utf8' })),
-    {
-      shapes: [
-        {
-          geometry:
-            'd92318f35bba6cfdeeee3ed63a30220aeac4bf1c9cbbb2087383849985d77b07',
-          tags: { color: 'blue' },
-        },
-      ],
-      tags: { color: 'blue' },
-    }
-  );
-});
+test('simple', async (t) =>
+  withAssets(async (assets) => {
+    const graph = await run(assets, () =>
+      Box2([0, 3], [0, 5])
+        .fill()
+        .extrude(z(0), z(1))
+        .color('blue')
+        .png('observed.ops.test.simple.png', [-5, -5, 10])
+    );
+    t.true(await testPng('ops.test.simple.png'));
+  }));

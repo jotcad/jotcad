@@ -237,12 +237,13 @@ export const buildMeshes = async ({
   render,
   definitions,
   pageSize = [],
+  doOutlineEdges = true,
 }) => {
   const walk = async (shape) => {
     if (shape.geometry) {
       const matrix = decodeTf(shape.tf);
       const { vertices, segments, triangles, faces } =
-        DecodeInexactGeometryText(assets.text[shape.geometry]);
+        DecodeInexactGeometryText(assets.getText(shape.geometry));
       if (segments.length > 0) {
         const bufferGeometry = new BufferGeometry();
         const positions = [];
@@ -292,9 +293,11 @@ export const buildMeshes = async ({
           const mesh = new Mesh(geometry, material);
           mesh.applyMatrix4(matrix);
           scene.add(mesh);
-          const edges = buildEdges(geometry);
-          edges.applyMatrix4(matrix);
-          scene.add(edges);
+          if (doOutlineEdges) {
+            const edges = buildEdges(geometry);
+            edges.applyMatrix4(matrix);
+            scene.add(edges);
+          }
         }
       }
       if (triangles.length > 0) {
@@ -329,9 +332,11 @@ export const buildMeshes = async ({
         const mesh = new Mesh(bufferGeometry, material);
         mesh.applyMatrix4(matrix);
         scene.add(mesh);
-        const edges = buildEdges(bufferGeometry);
-        edges.applyMatrix4(matrix);
-        scene.add(edges);
+        if (doOutlineEdges) {
+          const edges = buildEdges(bufferGeometry);
+          edges.applyMatrix4(matrix);
+          scene.add(edges);
+        }
       }
     }
 
@@ -437,6 +442,7 @@ export const staticDisplay = async ({
   definitions,
   width,
   height,
+  doOutlineEdges = true,
 } = {}) => {
   if (!canvas) {
     canvas = new OffscreenCanvas(width, height);
@@ -478,7 +484,14 @@ export const staticDisplay = async ({
   const pageSize = [];
 
   try {
-    await buildMeshes({ assets, shape, scene, definitions, pageSize });
+    await buildMeshes({
+      assets,
+      shape,
+      scene,
+      definitions,
+      pageSize,
+      doOutlineEdges,
+    });
   } catch (e) {
     console.log(e.stack);
     throw e;

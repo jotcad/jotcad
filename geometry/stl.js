@@ -3,11 +3,11 @@ import {
   EncodeInexactGeometryText,
 } from './geometry.js';
 
+import { cgal } from './getCgal.js';
 import { makeAbsolute } from './makeAbsolute.js';
 import { makeShape } from './shape.js';
 import parseStlAscii from 'parse-stl-ascii';
 import { parse as parseStlBinary } from './parseStlBinary.js';
-import { textId } from './assets.js';
 
 const parse = (data, format) => {
   switch (format) {
@@ -37,13 +37,19 @@ const parse = (data, format) => {
   }
 };
 
-export const fromStl = (assets, stl, { format = 'ascii' } = {}) => {
+export const fromStl = (assets, stl, { format = 'binary' } = {}) => {
+  // We assume cgal is ready.
+  const geometry = new cgal.Geometry();
   const { positions, cells } = parse(stl, format);
-  const text = EncodeInexactGeometryText({
-    vertices: positions,
-    triangles: cells,
-  });
-  return makeShape({ geometry: textId(assets, text) });
+  geometry.ReserveVertices(positions.length);
+  for (const [x, y, z] of positions) {
+    geometry.AddVertexInexact(x, y, z);
+  }
+  geometry.ReserveTriangles(cells.length);
+  for (const [a, b, c] of cells) {
+    geometry.AddTriangle(a, b, c);
+  }
+  return makeShape({ geometry: cgal.TextId(assets, geometry) });
 };
 
 const X = 0;
@@ -171,7 +177,7 @@ export const toStl = (assets, shape, tolerance = 0.001) => {
   absolute.walk((shape, descend) => {
     if (shape.geometry) {
       const { vertices, triangles } = DecodeInexactGeometryText(
-        assets.text[shape.geometry]
+        assets.getText(shape.geometry)
       );
       for (const [a, b, c] of triangles) {
         stlTriangles.push(

@@ -1,5 +1,9 @@
+// #define CGAL_SURFACE_MESH_APPROXIMATION_DEBUG
+
 #include <napi.h>
 #include <stddef.h>
+
+#include "CGAL/Exact_predicates_exact_constructions_kernel.h"
 
 std::string NapiToJson(Napi::Value value) {
   auto json = value.Env().Global().Get("JSON").As<Napi::Object>();
@@ -7,7 +11,14 @@ std::string NapiToJson(Napi::Value value) {
   return stringify.Call(json, {value}).As<Napi::String>().Utf8Value();
 }
 
-#include "CGAL/Exact_predicates_exact_constructions_kernel.h"
+static void AssertArgCount(const Napi::CallbackInfo& info, uint32_t count) {
+  if (info.Length() != count) {
+    Napi::TypeError::New(info.Env(), "Wrong number of arguments")
+        .ThrowAsJavaScriptException();
+  }
+}
+
+#include "approximate.h"
 #include "arc_slice.h"
 #include "clip.h"
 #include "cut.h"
@@ -18,7 +29,9 @@ std::string NapiToJson(Napi::Value value) {
 #include "join.h"
 #include "link.h"
 #include "make_absolute.h"
+#include "simplify.h"
 #include "surface_mesh.h"
+#include "test.h"
 #include "transform.h"
 #include "triangulate.h"
 
@@ -26,15 +39,17 @@ namespace jot_cgal {
 
 using namespace Napi;
 
-static void assertArgCount(const Napi::CallbackInfo& info, uint32_t count) {
-  if (info.Length() != count) {
-    Napi::TypeError::New(info.Env(), "Wrong number of arguments")
-        .ThrowAsJavaScriptException();
-  }
+static Napi::Value ApproximateBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 4);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  uint32_t faceCount = info[2].As<Napi::Number>().Uint32Value();
+  double minErrorDrop = info[3].As<Napi::Number>().DoubleValue();
+  return Approximate(assets, shape, faceCount, minErrorDrop);
 }
 
 static Napi::Value ArcSlice2Binding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 4);
+  AssertArgCount(info, 4);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   EK::FT start = DecodeFT(info[2].As<Napi::Value>());
@@ -43,13 +58,13 @@ static Napi::Value ArcSlice2Binding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 1);
+  AssertArgCount(info, 1);
   Napi::String text = info[0].As<Napi::String>();
   return Napi::String::New(info.Env(), ComputeTextHash(text.Utf8Value()));
 }
 
 static Napi::Value ClipBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 3);
+  AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   Napi::Array jsTools(info[2].As<Napi::Array>());
@@ -61,7 +76,7 @@ static Napi::Value ClipBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 3);
+  AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   Napi::Array jsTools(info[2].As<Napi::Array>());
@@ -73,7 +88,7 @@ static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value ExtrudeBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 5);
+  AssertArgCount(info, 5);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   Shape top(info[2].As<Napi::Object>());
@@ -84,7 +99,7 @@ static Napi::Value ExtrudeBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value FillBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 3);
+  AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Napi::Array jsShapes = info[1].As<Napi::Array>();
   bool holes = info[2].As<Napi::Boolean>().Value();
@@ -96,7 +111,7 @@ static Napi::Value FillBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value JoinBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 3);
+  AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   Napi::Array jsTools(info[2].As<Napi::Array>());
@@ -108,7 +123,7 @@ static Napi::Value JoinBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value LinkBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 4);
+  AssertArgCount(info, 4);
   Assets assets(info[0].As<Napi::Object>());
   Napi::Array jsShapes = info[1].As<Napi::Array>();
   bool close = info[2].As<Napi::Boolean>().Value();
@@ -121,22 +136,46 @@ static Napi::Value LinkBinding(const Napi::CallbackInfo& info) {
 }
 
 static GeometryId MakeAbsoluteBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 2);
+  AssertArgCount(info, 2);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   auto result = MakeAbsolute(assets, shape);
   return result;
 }
 
+static Napi::Value SimplifyBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  uint32_t face_count = info[2].As<Napi::Number>().Uint32Value();
+  return Simplify(assets, shape, face_count);
+}
+
 static Napi::Value SimplifyTransformBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 1);
+  AssertArgCount(info, 1);
   Napi::Env env = info.Env();
   Tf tf = DecodeTf(info[0].As<Napi::Value>());
   return EncodeTf(tf, env);
 }
 
+static Napi::Value TestBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  bool si = info[2].As<Napi::Boolean>().Value();
+  return Napi::Boolean::New(info.Env(), Test(assets, shape, si));
+}
+
+static Napi::Value TextIdBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 2);
+  Assets assets(info[0].As<Napi::Object>());
+  Napi::Object obj = info[1].As<Napi::Object>();
+  GeometryWrapper* wrapper = Napi::ObjectWrap<GeometryWrapper>::Unwrap(obj);
+  return assets.TextId(wrapper->Get());
+}
+
 static Napi::Value TriangulateBinding(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 2);
+  AssertArgCount(info, 2);
   Napi::Env env = info.Env();
   Assets assets(info[0].As<Napi::Object>());
   GeometryId id = info[1].As<Napi::Value>();
@@ -144,7 +183,7 @@ static Napi::Value TriangulateBinding(const Napi::CallbackInfo& info) {
 }
 
 Napi::String World(const Napi::CallbackInfo& info) {
-  assertArgCount(info, 1);
+  AssertArgCount(info, 1);
   Napi::Env env = info.Env();
   return Napi::String::New(env, "world");
 }
@@ -152,6 +191,8 @@ Napi::String World(const Napi::CallbackInfo& info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
   SurfaceMeshWrapper::Init(env, exports);
+  exports.Set(Napi::String::New(env, "Approximate"),
+              Napi::Function::New(env, ApproximateBinding));
   exports.Set(Napi::String::New(env, "ArcSlice2"),
               Napi::Function::New(env, ArcSlice2Binding));
   exports.Set(Napi::String::New(env, "Clip"),
@@ -168,8 +209,14 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, LinkBinding));
   exports.Set(Napi::String::New(env, "MakeAbsolute"),
               Napi::Function::New(env, MakeAbsoluteBinding));
+  exports.Set(Napi::String::New(env, "Simplify"),
+              Napi::Function::New(env, SimplifyBinding));
   exports.Set(Napi::String::New(env, "SimplifyTransform"),
               Napi::Function::New(env, SimplifyTransformBinding));
+  exports.Set(Napi::String::New(env, "Test"),
+              Napi::Function::New(env, TestBinding));
+  exports.Set(Napi::String::New(env, "TextId"),
+              Napi::Function::New(env, TextIdBinding));
   exports.Set(Napi::String::New(env, "Triangulate"),
               Napi::Function::New(env, TriangulateBinding));
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));

@@ -73,29 +73,29 @@ test('Translate Point', (t) => {
   withAssets((assets) => {
     const transformedPoint = Point(assets, 1, 2, 3).move(3, 2, 1);
     const id = cgal.MakeAbsolute(assets, transformedPoint);
-    t.is('v 4 4 4 4 4 4\np 0\n', assets.text[id]);
+    t.is('V 1\nv 4 4 4 4 4 4\np 0\n', assets.getText(id));
   });
 });
 
 test('Rotate Point', (t) => {
   withAssets((assets) => {
     t.is(
-      'v 0 -1 0 0 -1 0\np 0\n',
-      assets.text[
+      'V 1\nv 0 -1 0 0 -1 0\np 0\n',
+      assets.getText(
         cgal.MakeAbsolute(assets, Point(assets, 1, 0, 0).rotateZ(1 / 4))
-      ]
+      )
     );
     t.is(
-      'v -1 0 0 -1 0 0\np 0\n',
-      assets.text[
+      'V 1\nv -1 0 0 -1 0 0\np 0\n',
+      assets.getText(
         cgal.MakeAbsolute(assets, Point(assets, 1, 0, 0).rotateZ(1 / 2))
-      ]
+      )
     );
     t.is(
-      'v -451/901 -780/901 0 -0.500555 -0.865705 0\np 0\n',
-      assets.text[
+      'V 1\nv -451/901 -780/901 0 -0.500555 -0.865705 0\np 0\n',
+      assets.getText(
         cgal.MakeAbsolute(assets, Point(assets, 1, 0, 0).rotateZ(1 / 3))
-      ]
+      )
     );
   });
 });
