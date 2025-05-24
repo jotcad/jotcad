@@ -43,12 +43,13 @@ export const fromStl = (assets, stl, { format = 'binary' } = {}) => {
   const { positions, cells } = parse(stl, format);
   geometry.ReserveVertices(positions.length);
   for (const [x, y, z] of positions) {
-    geometry.AddVertexInexact(x, y, z);
+    geometry.AddVertexInexact(x, y, z, false);
   }
   geometry.ReserveTriangles(cells.length);
   for (const [a, b, c] of cells) {
     geometry.AddTriangle(a, b, c);
   }
+  geometry.Repair();
   return makeShape({ geometry: cgal.TextId(assets, geometry) });
 };
 

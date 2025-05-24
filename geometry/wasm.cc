@@ -1,9 +1,10 @@
 // #define CGAL_SURFACE_MESH_APPROXIMATION_DEBUG
 
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Simple_cartesian.h>
 #include <napi.h>
 #include <stddef.h>
-
-#include "CGAL/Exact_predicates_exact_constructions_kernel.h"
 
 std::string NapiToJson(Napi::Value value) {
   auto json = value.Env().Global().Get("JSON").As<Napi::Object>();
@@ -17,6 +18,11 @@ static void AssertArgCount(const Napi::CallbackInfo& info, uint32_t count) {
         .ThrowAsJavaScriptException();
   }
 }
+
+typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel IK;
+typedef CGAL::Simple_cartesian<double> CK;
+typedef CGAL::Aff_transformation_3<EK> Tf;
 
 #include "approximate.h"
 #include "arc_slice.h"
@@ -98,7 +104,7 @@ static Napi::Value ExtrudeBinding(const Napi::CallbackInfo& info) {
   return info.Env().Undefined();
 }
 
-static Napi::Value FillBinding(const Napi::CallbackInfo& info) {
+static Napi::Value Fill2Binding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Napi::Array jsShapes = info[1].As<Napi::Array>();
@@ -107,7 +113,14 @@ static Napi::Value FillBinding(const Napi::CallbackInfo& info) {
   for (uint32_t nth = 0; nth < jsShapes.Length(); nth++) {
     shapes.emplace_back(jsShapes.Get(nth).As<Napi::Object>());
   }
-  return Fill(assets, shapes, holes);
+  return Fill2(assets, shapes, holes);
+}
+
+static Napi::Value Fill3Binding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 2);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  return Fill3(assets, shape);
 }
 
 static Napi::Value JoinBinding(const Napi::CallbackInfo& info) {
@@ -201,8 +214,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, CutBinding));
   exports.Set(Napi::String::New(env, "Extrude"),
               Napi::Function::New(env, ExtrudeBinding));
-  exports.Set(Napi::String::New(env, "Fill"),
-              Napi::Function::New(env, FillBinding));
+  exports.Set(Napi::String::New(env, "Fill2"),
+              Napi::Function::New(env, Fill2Binding));
+  exports.Set(Napi::String::New(env, "Fill3"),
+              Napi::Function::New(env, Fill3Binding));
   exports.Set(Napi::String::New(env, "Join"),
               Napi::Function::New(env, JoinBinding));
   exports.Set(Napi::String::New(env, "Link"),

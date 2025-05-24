@@ -14,7 +14,7 @@ static GeometryId Link(Assets& assets, std::vector<Shape>& shapes, bool close,
     Geometry geometry =
         assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
     for (const auto& vertex : geometry.vertices_) {
-      size_t vertex_id = linked.AddVertex(vertex, true);
+      size_t vertex_id = linked.AddVertex(vertex);
       if (first) {
         first = false;
       } else {

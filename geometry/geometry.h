@@ -12,11 +12,7 @@
 #include <CGAL/Surface_mesh.h>
 
 #include "hash.h"
-
-typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
-typedef CGAL::Exact_predicates_inexact_constructions_kernel IK;
-typedef CGAL::Simple_cartesian<double> CK;
-typedef CGAL::Aff_transformation_3<EK> Tf;
+#include "repair_util.h"
 
 template <typename K>
 static typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index
@@ -47,9 +43,9 @@ class Geometry {
     CGAL::Cartesian_converter<K, EK> to_EK;
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
     if (mesh.has_garbage()) {
+      // Alternatively we could use a vertex map.
       mesh.collect_garbage();
     }
-
     for (const auto& vertex : mesh.vertices()) {
       const auto& point = mesh.point(vertex);
       vertices_.push_back(to_EK(point));
@@ -64,10 +60,12 @@ class Geometry {
   }
 
   template <typename K>
-  void DecodeSurfaceMesh(const CGAL::Surface_mesh<typename K::Point_3>& mesh) {
+  void DecodeSurfaceMesh(CGAL::Surface_mesh<typename K::Point_3> mesh) {
+    // Would we be better off using a vertex map?
+    mesh.collect_garbage();
     CGAL::Cartesian_converter<K, EK> to_EK;
     for (const auto& vertex : mesh.vertices()) {
-      AddVertex(mesh.point(vertex));
+      AddVertex(mesh.point(vertex), false);
     }
     for (const auto& face : mesh.faces()) {
       const auto a = mesh.halfedge(face);
@@ -83,11 +81,14 @@ class Geometry {
         Vertex_index;
     CGAL::Cartesian_converter<EK, K> to_K;
     for (const auto& vertex : vertices_) {
-      mesh.add_vertex(to_K(vertex));
+      auto vid = mesh.add_vertex(to_K(vertex));
     }
     for (const auto& triangle : triangles_) {
-      if (mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[1]),
-                        Vertex_index(triangle[2])) == mesh.null_face()) {
+      auto fid =
+          mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[1]),
+                        Vertex_index(triangle[2]));
+      if (fid == mesh.null_face()) {
+        std::cout << "EncodeSurfaceMesh: failed to add face" << std::endl;
       }
     }
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
@@ -288,20 +289,20 @@ class Geometry {
   }
 
   template <typename K>
-  size_t AddVertex(const CGAL::Point_3<K>& point, bool deduplicate = false) {
-    // TODO: Make this efficient.
+  size_t AddVertex(const CGAL::Point_3<K>& point, bool merge = true) {
     CGAL::Cartesian_converter<K, EK> to_EK;
     CGAL::Point_3<EK> ek_point = to_EK(point);
-    if (deduplicate) {
-      for (size_t nth = 0; nth < vertices_.size(); nth++) {
-        if (vertices_[nth] == ek_point) {
-          return nth;
-        }
+    if (merge) {
+      auto& vm = GetVertexMap();
+      auto [it, is_new] = vm.insert({ek_point, vertices_.size()});
+      if (is_new) {
+        vertices_.push_back(ek_point);
       }
+      return it->second;
+    } else {
+      vertices_.push_back(ek_point);
+      return vertices_.size() - 1;
     }
-    size_t index = vertices_.size();
-    vertices_.push_back(ek_point);
-    return index;
   }
 
   template <typename K>
@@ -335,8 +336,59 @@ class Geometry {
     return index;
   }
 
+  std::map<CGAL::Point_3<EK>, size_t>& GetVertexMap() {
+    if (!vertex_map_.has_value()) {
+      vertex_map_.emplace();
+      auto& map = *vertex_map_;
+      size_t index = 0;
+      for (const auto& vertex : vertices_) {
+        map[vertex] = index++;
+      }
+    }
+    return *vertex_map_;
+  }
+
+  void Repair() {
+    CGAL::Polygon_mesh_processing::repair_polygon_soup(vertices_, triangles_);
+    CGAL::Polygon_mesh_processing::orient_polygon_soup(vertices_, triangles_);
+    bool is_mesh =
+        CGAL::Polygon_mesh_processing::is_polygon_soup_a_polygon_mesh(
+            triangles_);
+    if (!is_mesh) {
+      std::cout << "Geometry/Repair: is not a valid mesh" << std::endl;
+    }
+    CGAL::Surface_mesh<EK::Point_3> mesh;
+    CGAL::Polygon_mesh_processing::polygon_soup_to_polygon_mesh(
+        vertices_, triangles_, mesh);
+    repair_degeneracies<EK>(mesh);
+    repair_self_touches<EK>(mesh);
+    size_t self_intersection_count = number_of_self_intersections(mesh);
+    if (self_intersection_count > 0) {
+      std::cout << "Geometry/Repair: number_of_self_intersections="
+                << self_intersection_count << std::endl;
+    }
+    size_t non_manifold_vertex_count = number_of_non_manifold_vertices(mesh);
+    if (non_manifold_vertex_count > 0) {
+      std::cout << "Geometry/Repair: number_of_non_manifold_vertices="
+                << non_manifold_vertex_count << std::endl;
+    }
+    Clear();
+    DecodeSurfaceMesh<EK>(mesh);
+  }
+
+  void Clear() {
+    vertices_.clear();
+    if (vertex_map_.has_value()) {
+      GetVertexMap().clear();
+    }
+    points_.clear();
+    triangles_.clear();
+    faces_.clear();
+  }
+
  public:
   std::vector<CGAL::Point_3<EK>> vertices_;
+  std::optional<std::map<CGAL::Point_3<EK>, size_t>> vertex_map_;
   std::vector<size_t> points_;
   std::vector<std::pair<size_t, size_t>> segments_;
   std::vector<std::vector<size_t>> triangles_;
@@ -360,31 +412,13 @@ class GeometryWrapper : public Napi::ObjectWrap<GeometryWrapper> {
         env, "Geometry",
         {InstanceMethod("AddTriangle", &GeometryWrapper::AddTriangle),
          InstanceMethod("AddVertexInexact", &GeometryWrapper::AddVertexInexact),
+         InstanceMethod("Repair", &GeometryWrapper::Repair),
          InstanceMethod("ReserveVertices", &GeometryWrapper::ReserveVertices),
          InstanceMethod("ReserveTriangles",
                         &GeometryWrapper::ReserveTriangles)});
-
     constructor = Napi::Persistent(func);
     constructor.SuppressDestruct();
-
-#if 0
-    exports.Set("wrapNative",
-                Napi::Function::New(
-                    env, [](const Napi::CallbackInfo& info) -> Napi::Value {
-                      if (info.Length() != 1 || !info[0].IsExternal()) {
-                        Napi::TypeError::New(
-                            info.Env(), "Expected an external for wrapNative")
-                            .ThrowAsJavaScriptException();
-                        return info.Env().Undefined();
-                      }
-                      Geometry* native = static_cast<Geometry*>(
-                          info[0].As<Napi::External<Geometry>>().Data());
-                      return WrapNativeObject(info.Env(), native);
-                    }));
-#endif
-
     exports.Set("Geometry", func);
-
     return exports;
   }
 
@@ -417,11 +451,15 @@ class GeometryWrapper : public Napi::ObjectWrap<GeometryWrapper> {
   }
 
   Napi::Value AddVertexInexact(const Napi::CallbackInfo& info) {
-    AssertArgCount(info, 3);
+    // AssertArgCount(info, 3);
     double x = info[0].As<Napi::Number>().DoubleValue();
     double y = info[1].As<Napi::Number>().DoubleValue();
     double z = info[2].As<Napi::Number>().DoubleValue();
-    size_t index = Get().AddVertex(IK::Point_3(x, y, z), false);
+    bool merge = true;
+    if (info.Length() == 4) {
+      merge = info[3].As<Napi::Boolean>().Value();
+    }
+    size_t index = Get().AddVertex(IK::Point_3(x, y, z), merge);
     return Napi::Number::New(info.Env(), index);
   }
 
@@ -445,6 +483,12 @@ class GeometryWrapper : public Napi::ObjectWrap<GeometryWrapper> {
     AssertArgCount(info, 1);
     uint32_t count = info[0].As<Napi::Number>().Uint32Value();
     Get().triangles_.reserve(count);
+    return info.Env().Undefined();
+  }
+
+  Napi::Value Repair(const Napi::CallbackInfo& info) {
+    AssertArgCount(info, 0);
+    Get().Repair();
     return info.Env().Undefined();
   }
 

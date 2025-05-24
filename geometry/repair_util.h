@@ -11,11 +11,16 @@
 #include <CGAL/Polygon_mesh_processing/repair_self_intersections.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
 
-// #include "unit_util.h"
-// #include "wrap_util.h"
+#include "unit_util.h"
 
-typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
-typedef CGAL::Exact_predicates_inexact_constructions_kernel IK;
+template <typename K>
+static bool number_of_holes(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
+  std::vector<typename CGAL::Surface_mesh<typename K::Point_3>::halfedge_index>
+      border_cycles;
+  CGAL::Polygon_mesh_processing::extract_boundary_cycles(
+      mesh, std::back_inserter(border_cycles));
+  return border_cycles.size();
+}
 
 template <typename K>
 static size_t number_of_self_intersections(

@@ -3,7 +3,7 @@ import { cgal, cgalIsReady } from './getCgal.js';
 import { Arc2 } from './arc.js';
 import { Point } from './point.js';
 import { extrude } from './extrude.js';
-import { fill } from './fill.js';
+import { fill2 } from './fill.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import test from 'ava';
@@ -28,7 +28,7 @@ test('triangle', (t) =>
         false
       ),
     });
-    const filledTriangle = fill(assets, [triangle], true);
+    const filledTriangle = fill2(assets, [triangle], true);
     const extrudedTriangle = extrude(
       assets,
       filledTriangle,
@@ -57,7 +57,7 @@ test('shrink', (t) =>
         false
       ),
     });
-    const filledTriangle = fill(assets, [triangle], true);
+    const filledTriangle = fill2(assets, [triangle], true);
     const extrudedTriangle = extrude(
       assets,
       filledTriangle,

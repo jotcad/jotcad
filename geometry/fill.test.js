@@ -2,7 +2,7 @@ import { cgal, cgalIsReady } from './getCgal.js';
 
 import { Arc2 } from './arc.js';
 import { Point } from './point.js';
-import { fill } from './fill.js';
+import { fill2 } from './fill.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import test from 'ava';
@@ -27,7 +27,7 @@ test('triangle', (t) =>
         false
       ),
     });
-    const filledBox = fill(assets, [box], false);
+    const filledBox = fill2(assets, [box], false);
     t.deepEqual(
       assets.getText(filledBox.geometry),
       'V 3\nv 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nf 0 1 2\n'
@@ -56,7 +56,7 @@ test('ring', (t) =>
       }
     );
     t.true(await testPng('fill.test.ring_outline.png', outlineImage));
-    const ring = fill(assets, outline, true);
+    const ring = fill2(assets, outline, true);
     const image = await renderPng(assets, ring, {
       view: { position: [0, 0, 100] },
       width: 512,

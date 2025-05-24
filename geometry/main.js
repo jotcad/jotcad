@@ -1,14 +1,14 @@
-export { cgal, cgalIsReady } from './getCgal.js';
-
 export { Arc2 } from './arc.js';
 export { Box2 } from './box.js';
 export { Box3 } from './box.js';
-
 export { approximate } from './approximate.js';
+export { cgal } from './getCgal.js';
+export { cgalIsReady } from './getCgal.js';
 export { clip } from './clip.js';
 export { cut } from './cut.js';
 export { extrude } from './extrude.js';
-export { fill } from './fill.js';
+export { fill2 } from './fill.js';
+export { fill3 } from './fill.js';
 export { fromStl } from './stl.js';
 export { join } from './join.js';
 export { makeAbsolute } from './makeAbsolute.js';
