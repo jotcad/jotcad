@@ -12,7 +12,7 @@ static GeometryId Join(Assets& assets, Shape& shape,
   Geometry target =
       assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
   CGAL::Surface_mesh<CGAL::Point_3<EK>> target_mesh;
-  target.EncodeSurfaceMesh(target_mesh);
+  target.EncodeSurfaceMesh<EK>(target_mesh);
 
   for (Shape& shape : shapes) {
     shape.Walk([&](Shape& shape) {
@@ -22,7 +22,7 @@ static GeometryId Join(Assets& assets, Shape& shape,
       Geometry tool =
           assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
       CGAL::Surface_mesh<CGAL::Point_3<EK>> tool_mesh;
-      tool.EncodeSurfaceMesh(tool_mesh);
+      tool.EncodeSurfaceMesh<EK>(tool_mesh);
       if (!CGAL::Polygon_mesh_processing::corefine_and_compute_union(
               target_mesh, tool_mesh, target_mesh,
               CGAL::parameters::throw_on_self_intersection(true),
@@ -40,7 +40,7 @@ static GeometryId Join(Assets& assets, Shape& shape,
                                                        output_mesh);
   CGAL::Polygon_mesh_processing::triangulate_faces(output_mesh);
   Geometry output;
-  output.DecodeSurfaceMesh(output_mesh);
+  output.DecodeSurfaceMesh<EK>(output_mesh);
 
   return assets.TextId(output.Transform(shape.GetTf().inverse()));
 }

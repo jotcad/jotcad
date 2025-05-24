@@ -3,7 +3,7 @@ import { cgal, cgalIsReady } from './getCgal.js';
 import { Arc2 } from './arc.js';
 import { Point } from './point.js';
 import { extrude } from './extrude.js';
-import { fill } from './fill.js';
+import { fill2 } from './fill.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import test from 'ava';
@@ -20,20 +20,20 @@ test('triangle', (t) =>
       geometry: cgal.Link(
         assets,
         [
-          Point(assets, 1, 0, 0),
-          Point(assets, 0, 1, 0),
-          Point(assets, 0, 0, 1),
+          await Point(assets, 1, 0, 0),
+          await Point(assets, 0, 1, 0),
+          await Point(assets, 0, 0, 1),
         ],
         true,
         false
       ),
     });
-    const filledTriangle = fill(assets, [triangle], true);
+    const filledTriangle = fill2(assets, [triangle], true);
     const extrudedTriangle = extrude(
       assets,
       filledTriangle,
-      Point(assets, 0, 0, 0).move(0, 0, 1),
-      Point(assets, 0, 0, 0).move(0, 0, -1)
+      (await Point(assets, 0, 0, 0)).move(0, 0, 1),
+      (await Point(assets, 0, 0, 0)).move(0, 0, -1)
     );
     const image = await renderPng(assets, extrudedTriangle, {
       view: { position: [5, 5, 10] },
@@ -49,20 +49,20 @@ test('shrink', (t) =>
       geometry: cgal.Link(
         assets,
         [
-          Point(assets, 1, 0, 0),
-          Point(assets, 0, 1, 0),
-          Point(assets, 0, 0, 1),
+          await Point(assets, 1, 0, 0),
+          await Point(assets, 0, 1, 0),
+          await Point(assets, 0, 0, 1),
         ],
         true,
         false
       ),
     });
-    const filledTriangle = fill(assets, [triangle], true);
+    const filledTriangle = fill2(assets, [triangle], true);
     const extrudedTriangle = extrude(
       assets,
       filledTriangle,
-      Point(assets, 0, 0, 0).scale('1/2', '1/2').move(0, 0, 1),
-      Point(assets, 0, 0, 0).move(0, 0, -1)
+      (await Point(assets, 0, 0, 0)).scale('1/2', '1/2').move(0, 0, 1),
+      (await Point(assets, 0, 0, 0)).move(0, 0, -1)
     );
     const image = await renderPng(assets, extrudedTriangle, {
       view: { position: [5, 5, 10] },

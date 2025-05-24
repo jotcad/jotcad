@@ -8,3 +8,5 @@
  make &&
  make install &&
  cd ..)
+
+# emconfigure ./configure CFLAGS="-sMEMORY64=1" --disable-assembly --host none --enable-cxx --prefix=${PWD}/../wasm &&

@@ -1,15 +1,13 @@
 import { makeShape } from './shape.js';
-import { textId } from './assets.js';
 
 export const Point = (assets, x = 0, y = 0, z = 0, ix = x, iy = y, iz = z) =>
   makeShape({
-    geometry: textId(assets, `v ${x} ${y} ${z} ${ix} ${iy} ${iz}\np 0`),
+    geometry: assets.textId(`v ${x} ${y} ${z} ${ix} ${iy} ${iz}\np 0`),
   });
 
 export const Points = (assets, points) =>
   makeShape({
-    geometry: textId(
-      assets,
+    geometry: assets.textId(
       `${points
         .map(
           ([x, y, z, ix = x, iy = y, iz = z]) =>

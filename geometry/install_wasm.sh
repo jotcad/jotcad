@@ -6,5 +6,5 @@
  ./install_glpk_wasm.sh &&
  ./install_gmp_wasm.sh &&
  ./install_mpfr_wasm.sh &&
- ./build_wasm.sh
+ ./build_wasm_node.sh
 )

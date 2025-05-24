@@ -16,7 +16,7 @@ test.beforeEach(async (t) => {
 
 test('full', (t) =>
   withAssets(async (assets) => {
-    const full = Arc2(assets, [-10, 10], [-10, 10], { start: 0, end: 1 });
+    const full = await Arc2(assets, [-10, 10], [-10, 10], { start: 0, end: 1 });
     const absoluteFull = makeAbsolute(assets, full);
     const image = await renderPng(assets, full, {
       view: { position: [0, 0, 100] },
@@ -28,7 +28,7 @@ test('full', (t) =>
 
 test('give', (t) =>
   withAssets(async (assets) => {
-    const full = Arc2(assets, [-10, 10], [-10, 10], { give: 1 });
+    const full = await Arc2(assets, [-10, 10], [-10, 10], { give: 1 });
     const absoluteFull = makeAbsolute(assets, full);
     const image = await renderPng(assets, full, {
       view: { position: [0, 0, 100] },
@@ -40,7 +40,10 @@ test('give', (t) =>
 
 test('half', (t) =>
   withAssets(async (assets) => {
-    const half = Arc2(assets, [-10, 10], [-10, 10], { start: 0, end: '1/2' });
+    const half = await Arc2(assets, [-10, 10], [-10, 10], {
+      start: 0,
+      end: '1/2',
+    });
     const image = await renderPng(assets, half, {
       view: { position: [0, 0, 100] },
       width: 512,
@@ -51,7 +54,10 @@ test('half', (t) =>
 
 test('quarter', (t) =>
   withAssets(async (assets) => {
-    const half = Arc2(assets, [-10, 10], [-10, 10], { start: 0, end: '1/4' });
+    const half = await Arc2(assets, [-10, 10], [-10, 10], {
+      start: 0,
+      end: '1/4',
+    });
     const image = await renderPng(assets, half, {
       view: { position: [0, 0, 10] },
       width: 512,
@@ -62,7 +68,7 @@ test('quarter', (t) =>
 
 test('half_square', (t) =>
   withAssets(async (assets) => {
-    const half = Arc2(assets, [-1, 1], [-1, 1], {
+    const half = await Arc2(assets, [-1, 1], [-1, 1], {
       sides: 4,
       start: 0,
       end: '1/2',
@@ -77,7 +83,7 @@ test('half_square', (t) =>
 
 test('quarter_square', (t) =>
   withAssets(async (assets) => {
-    const quarter = Arc2(assets, [-1, 1], [-1, 1], {
+    const quarter = await Arc2(assets, [-1, 1], [-1, 1], {
       sides: 4,
       start: 0,
       end: '1/4',
@@ -92,7 +98,7 @@ test('quarter_square', (t) =>
 
 test('half_square_spin', (t) =>
   withAssets(async (assets) => {
-    const quarter = Arc2(assets, [-1, 1], [-1, 1], {
+    const quarter = await Arc2(assets, [-1, 1], [-1, 1], {
       sides: 4,
       start: 0,
       end: '2/4',

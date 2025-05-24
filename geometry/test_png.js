@@ -18,7 +18,9 @@ export const testPng = async (
   threshold = 1000
 ) => {
   const observedPngPath = `observed.${expectedPngPath}`;
-  await writeFile(observedPngPath, Buffer.from(observedPng));
+  if (observedPng) {
+    await writeFile(observedPngPath, Buffer.from(observedPng));
+  }
   const observedPngImage = pngjs.PNG.sync.read(await readFile(observedPngPath));
   const { width, height } = observedPngImage;
   let numFailedPixels = 0;
@@ -43,7 +45,11 @@ export const testPng = async (
     );
   }
   if (numFailedPixels < threshold) {
-    await writeFile(expectedPngPath, Buffer.from(observedPng));
+    if (observedPng) {
+      await writeFile(expectedPngPath, Buffer.from(observedPng));
+    } else {
+      // TODO: copy the file.
+    }
     return true;
   } else {
     console.log(

@@ -66,6 +66,8 @@ export const DecodeInexactGeometryText = (text) => {
   };
 };
 
+const round = (value, give) => Math.round(value / give) * give;
+
 export const EncodeInexactGeometryText = ({
   vertices = [],
   segments = [],

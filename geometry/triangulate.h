@@ -11,6 +11,7 @@ typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
 
 static GeometryId Triangulate(Assets& assets, GeometryId id) {
   CGAL::Surface_mesh<EK::Point_3> mesh = assets.GetSurfaceMesh(id);
-  Geometry triangulated(mesh);
+  Geometry triangulated;
+  triangulated.DecodeSurfaceMesh<EK>(mesh);
   return assets.TextId(triangulated);
 }
