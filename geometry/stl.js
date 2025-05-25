@@ -38,7 +38,6 @@ const parse = (data, format) => {
 };
 
 export const fromStl = (assets, stl, { format = 'binary' } = {}) => {
-  // We assume cgal is ready.
   const geometry = new cgal.Geometry();
   const { positions, cells } = parse(stl, format);
   geometry.ReserveVertices(positions.length);

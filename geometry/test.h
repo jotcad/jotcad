@@ -9,7 +9,6 @@
 #include "shape.h"
 
 static bool Test(Assets& assets, Shape& shape, bool si) {
-  std::cout << "QQ/Test" << std::endl;
   Geometry target =
       assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
   CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh;

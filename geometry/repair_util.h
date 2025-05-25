@@ -279,11 +279,9 @@ static bool repair_self_touches(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
 }
 
 template <typename K>
-static bool repair_zero_volume(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
+static void repair_zero_volume(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
   CGAL::Polygon_mesh_processing::remove_connected_components_of_negligible_size(
       mesh, CGAL::parameters::volume_threshold(0.01).area_threshold(0));
-  std::cout << "repair_zero_volume/done" << std::endl;
-  // std::cout << mesh << std::endl;
 }
 
 template <typename K>

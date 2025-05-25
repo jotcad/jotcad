@@ -1,14 +1,5 @@
-// import { readFile, writeFile } from 'node:fs/promises';
-
 import { FS, cgal } from './getCgal.js';
 import { existsSync, mkdirSync } from 'node:fs';
-
-// TODO: Split this out to be node specific.
-// Set up local filesystem.
-
-// TODO: Make this configurable.
-// Ensure that the target directory exists.
-// mkdirSync('/tmp/assets/text', { recursive: true });
 
 let basePath;
 
