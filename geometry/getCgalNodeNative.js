@@ -1,5 +1,5 @@
-import nodeFS from 'node:fs';
 import { createRequire } from 'node:module';
+import nodeFS from 'node:fs';
 const require = createRequire(import.meta.url);
 
 // import { nativeNode } from './native.node.cjs';

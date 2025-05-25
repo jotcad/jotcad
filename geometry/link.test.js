@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 
 import { Link } from './link.js';
 import { Point } from './point.js';
-import { renderPng } from './renderPng.js';
 import assert from 'node:assert/strict';
+import { renderPng } from './renderPng.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
 

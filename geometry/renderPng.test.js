@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test';
 
+import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
-import { Point } from './point.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';

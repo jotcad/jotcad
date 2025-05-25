@@ -10,9 +10,9 @@ import {
 } from './transform.js';
 import { describe, it } from 'node:test';
 
+import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
-import { Point } from './point.js';
 import { withAssets } from './assets.js';
 
 describe('transform', () => {

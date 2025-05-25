@@ -1,10 +1,10 @@
 import './transform.js';
 
-import { describe, it, beforeEach } from 'node:test';
-import { cgal } from './getCgal.js';
+import { beforeEach, describe, it } from 'node:test';
 
 import { Arc2 } from './arc.js';
 import assert from 'node:assert/strict';
+import { cgal } from './getCgal.js';
 import { makeAbsolute } from './makeAbsolute.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';

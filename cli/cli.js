@@ -1,6 +1,6 @@
 import * as api from '@jotcad/ops';
 
-import { cgal, cgalIsReady, withAssets } from '@jotcad/geometry';
+import { cgal, withAssets } from '@jotcad/geometry';
 
 import { argv } from 'process';
 import { note } from './note.js';
@@ -29,7 +29,6 @@ const cli = async (scriptPath, ...args) => {
     `{ ${Object.keys({ ...bindings }).join(', ')} }`,
     ecmascript
   );
-  await cgalIsReady;
   return withAssets(async (assets) => {
     const graph = await run(assets, () => evaluator(bindings));
   });

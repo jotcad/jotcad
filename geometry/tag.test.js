@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import { makeShape } from './shape.js';
 import { tag } from './tag.js';
-import assert from 'node:assert/strict';
 
 describe('tag', () => {
   it('should add a blue color tag', () =>

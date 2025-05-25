@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 
-import assert from 'node:assert/strict';
 import { Box3 } from './box.js';
+import assert from 'node:assert/strict';
 import { join } from './join.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
