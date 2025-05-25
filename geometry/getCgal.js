@@ -1,1 +1,1 @@
-export { FS, cgal, cgalIsReady } from './getNodeCgal.js';
+export { FS, cgal } from './getCgalNodeNative.js';

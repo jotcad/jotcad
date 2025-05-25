@@ -28,7 +28,7 @@ class Assets {
     auto id = ComputeTextHash(text);
     auto key = Napi::String::New(napi_.Env(), id);
     Space("text").Set(key, Napi::Boolean::New(napi_.Env(), true));
-    std::string path = "/assets/text/" + id;
+    std::string path = base_path_ + "/text/" + id;
     std::ofstream out(path);
     out << text;
     out.close();
@@ -40,7 +40,8 @@ class Assets {
   const std::ifstream GetTextStream(const GeometryId& id) {
     // This expects to always find an id.
     Napi::Object space = Space("text");
-    std::string path = "/assets/text/" + id.As<Napi::String>().Utf8Value();
+    std::string path =
+        base_path_ + "/text/" + id.As<Napi::String>().Utf8Value();
     std::ifstream in(path);
     return std::move(in);
   }
@@ -89,7 +90,14 @@ class Assets {
     return Napi::ObjectWrap<SurfaceMeshWrapper>::Unwrap(wrapped_mesh)->Get();
   }
 
+  static void SetBasePath(const std::string& base_path) {
+    base_path_ = base_path;
+  }
+
  public:
   const Napi::Object napi_;
   const Napi::Value undefined_;
+  static std::string base_path_;
 };
+
+std::string Assets::base_path_;

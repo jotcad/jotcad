@@ -1,7 +1,6 @@
 import './transform.js';
 
-import { cgal, cgalIsReady } from './getCgal.js';
-
+import { cgal } from './getCgal.js';
 import { makeShape } from './shape.js';
 
 const unitBox3Text = `

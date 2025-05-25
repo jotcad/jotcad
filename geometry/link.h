@@ -11,6 +11,7 @@ static GeometryId Link(Assets& assets, std::vector<Shape>& shapes, bool close,
   size_t last_vertex_id;
   Geometry linked;
   for (auto& shape : shapes) {
+    Geometry base = assets.GetGeometry(shape.GeometryId());
     Geometry geometry =
         assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
     for (const auto& vertex : geometry.vertices_) {

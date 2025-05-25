@@ -1,51 +1,47 @@
-import { Face } from './face.js';
+import { describe, it } from 'node:test';
 
-import { cgalIsReady } from './getCgal.js';
-import test from 'ava';
+import { Face } from './face.js';
+import assert from 'node:assert/strict';
 import { withAssets } from './assets.js';
 
-test.beforeEach(async (t) => {
-  await cgalIsReady;
-});
+describe('face', () => {
+  it('should create a face', () =>
+    withAssets((assets) => {
+      assert.deepEqual(
+        assets.getText(
+          Face(assets, [
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 0],
+          ]).geometry
+        ),
+        'v 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 0\nf 0 1 2 3\n'
+      );
+    }));
 
-test('Face', (t) => {
-  withAssets((assets) => {
-    t.deepEqual(
-      assets.getText(
-        Face(assets, [
+  it('should create a face with a hole', () =>
+    withAssets((assets) => {
+      const fwh = Face(
+        assets,
+        [
           [1, 0, 0],
           [1, 1, 0],
           [0, 1, 0],
           [0, 0, 0],
-        ]).geometry
-      ),
-      'v 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 0\nf 0 1 2 3\n'
-    );
-  });
-});
-
-test('FaceWithHole', (t) => {
-  withAssets((assets) => {
-    const fwh = Face(
-      assets,
-      [
-        [1, 0, 0],
-        [1, 1, 0],
-        [0, 1, 0],
-        [0, 0, 0],
-      ],
-      [
-        [
-          [0.75, 0.25, 0.25],
-          [0.75, 0.75, 0.25],
-          [0.25, 0.75, 0.25],
-          [0.25, 0.25, 0.25],
         ],
-      ]
-    );
-    t.deepEqual(
-      assets.getText(fwh.geometry),
-      'v 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 0\nf 0 1 2 3\nv 0.75 0.25 0.25\nv 0.75 0.75 0.25\nv 0.25 0.75 0.25\nv 0.25 0.25 0.25\nh 0 1 2 3\n'
-    );
-  });
+        [
+          [
+            [0.75, 0.25, 0.25],
+            [0.75, 0.75, 0.25],
+            [0.25, 0.75, 0.25],
+            [0.25, 0.25, 0.25],
+          ],
+        ]
+      );
+      assert.deepEqual(
+        assets.getText(fwh.geometry),
+        'v 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 0\nf 0 1 2 3\nv 0.75 0.25 0.25\nv 0.75 0.75 0.25\nv 0.25 0.75 0.25\nv 0.25 0.25 0.25\nh 0 1 2 3\n'
+      );
+    }));
 });

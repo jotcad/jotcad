@@ -143,6 +143,11 @@ class Geometry {
       if (ss.eof()) {
         break;
       }
+      if (!ss) {
+        std::cout << "Decode error: fail=" << ss.fail() << " bad=" << ss.bad()
+                  << std::endl;
+        break;
+      }
       switch (key) {
         case 'V': {
           size_t count;

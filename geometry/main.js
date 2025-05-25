@@ -3,7 +3,6 @@ export { Box2 } from './box.js';
 export { Box3 } from './box.js';
 export { approximate } from './approximate.js';
 export { cgal } from './getCgal.js';
-export { cgalIsReady } from './getCgal.js';
 export { clip } from './clip.js';
 export { cut } from './cut.js';
 export { extrude } from './extrude.js';

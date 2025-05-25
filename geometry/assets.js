@@ -10,6 +10,16 @@ import { existsSync, mkdirSync } from 'node:fs';
 // Ensure that the target directory exists.
 // mkdirSync('/tmp/assets/text', { recursive: true });
 
+let basePath;
+
+export const setBasePath = (path) => {
+  basePath = path;
+  cgal.SetAssetsBasePath(path);
+};
+
+FS.mkdir('assets/text');
+setBasePath('assets');
+
 class Assets {
   constructor() {
     this.tag = 'Assets';
@@ -17,12 +27,15 @@ class Assets {
   }
 
   getText(id) {
-    return FS.readFile(`/assets/text/${id}`, { encoding: 'utf8' });
+    return FS.readFile(`${basePath}/text/${id}`, { encoding: 'utf8' });
   }
 
   textId(text) {
     const id = cgal.ComputeTextHash(text);
-    const path = `/assets/text/${id}`;
+    const path = `${basePath}/text/${id}`;
+    if (basePath === undefined) {
+      throw Error('die');
+    }
     if (this.text[id]) {
       return id;
     }
