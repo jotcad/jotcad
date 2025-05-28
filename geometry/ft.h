@@ -15,5 +15,7 @@ static EK::FT DecodeFT(Napi::Value value) {
     EK::FT ft;
     ss >> ft;
     return ft;
+  } else {
+    return 0;
   }
 }

@@ -11,8 +11,8 @@
     "lint": "eslint *.js",
     "lintfix": "eslint --fix *.js",
     "rollup": "rollup -c rollup_main.js",
-    "test": "ava --timeout=600s",
-    "tests": "ava --timeout=600s *.test.js"
+    "test": "node --test",
+    "tests": "node --test *.test.js"
   },
   "contributors": [
     {
@@ -28,7 +28,6 @@
     "memfs": "^4.17.1"
   },
   "devDependencies": {
-    "ava": "^4.3.0",
     "depcheck": "^1.4.1",
     "eslint": "^9.0.0",
     "@babel/eslint-parser": "^7.27.0",

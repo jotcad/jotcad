@@ -1,12 +1,9 @@
-import { cgal, cgalIsReady } from './getCgal.js';
+import { describe, it } from 'node:test';
 import { fromStl, toStl } from './stl.js';
 
+import assert from 'node:assert/strict';
 import { makeShape } from './shape.js';
-import test from 'ava';
-
-test.beforeEach(async (t) => {
-  await cgalIsReady;
-});
+import { withAssets } from './assets.js';
 
 const stlText = `solid JotCad
 facet normal 0 0 1
@@ -19,28 +16,31 @@ endfacet
 endsolid JotCad
 `;
 
-const geometryText = `v 0 0 0 0 0 0
+const geometryText = `V 3
+v 0 0 0 0 0 0
 v 1 0 0 1 0 0
 v 0 1 0 0 1 0
-t 0 1 2
+T 1
+t 2 0 1
 `;
 
-test('to', (t) => {
-  const assets = {
-    text: {
-      test: 'v 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nt 0 1 2\n',
-    },
-  };
-  t.is(
-    stlText,
-    new TextDecoder('utf8').decode(
-      toStl(assets, makeShape({ geometry: 'test' }))
-    )
-  );
-});
+describe('stl', () => {
+  it('should convert to an stl', () =>
+    withAssets(async (assets) => {
+      const id = assets.textId(
+        'V 3\nv 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nT 1\nt 0 1 2\n'
+      );
+      assert.strictEqual(
+        stlText,
+        new TextDecoder('utf8').decode(
+          toStl(assets, makeShape({ geometry: id }))
+        )
+      );
+    }));
 
-test('from', (t) => {
-  const assets = { text: {} };
-  const shape = fromStl(assets, new TextEncoder('utf8').encode(stlText));
-  t.is(geometryText, assets.text[shape.geometry]);
+  it('should convert from an stl', () =>
+    withAssets(async (assets) => {
+      const shape = fromStl(assets, new TextEncoder('utf8').encode(stlText));
+      assert.ok(geometryText, assets.getText(shape.geometry));
+    }));
 });

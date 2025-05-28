@@ -8,6 +8,7 @@ geometry/glm*
 geometry/glpk*
 geometry/gmp*
 geometry/mpfr*
+geometry/native*
 geometry/eigen*
 geometry/test*
 dist

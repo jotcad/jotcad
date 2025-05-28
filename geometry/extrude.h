@@ -53,7 +53,9 @@ static void Extrude(Assets& assets, Shape& shape, Shape& top, Shape& bottom,
         CGAL::Polygon_mesh_processing::transform(
             shape.GetTf().inverse(), extruded_mesh,
             CGAL::parameters::all_default());
-        results.Set(nth++, assets.TextId(extruded_mesh));
+        Geometry geometry;
+        geometry.DecodeSurfaceMesh<EK>(extruded_mesh);
+        results.Set(nth++, assets.TextId(geometry));
       }
     }
   };

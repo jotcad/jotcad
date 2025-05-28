@@ -3,14 +3,15 @@ import { renderPng } from '@jotcad/geometry';
 
 export const view = Op.registerOp(
   'view',
-  [null, ['vector3'], 'shape'],
-  async (assets, input, position) => {
+  [null, ['vector3', ['options', { edge: 'boolean' }]], 'shape'],
+  async (assets, input, position, { edge = true } = {}) => {
     const width = 512;
     const height = 512;
     const image = await renderPng(assets, input, {
       view: { position },
       width,
       height,
+      doOutlineEdges: edge,
     });
     const data = Buffer.from(image);
     const b64 = data.toString('base64');

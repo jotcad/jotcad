@@ -1,5 +1,4 @@
 import { makeShape } from './shape.js';
-import { textId } from './assets.js';
 
 const buildFaceText = (points) =>
   `${points.map(([x, y, z]) => `v ${x} ${y} ${z}`).join('\n')}\nf ${points
@@ -19,5 +18,5 @@ const buildFaceWithHolesText = (points, holes) =>
 
 export const Face = (assets, points, holes = []) =>
   makeShape({
-    geometry: textId(assets, buildFaceWithHolesText(points, holes)),
+    geometry: assets.textId(buildFaceWithHolesText(points, holes)),
   });

@@ -1,20 +1,18 @@
-import { cgal, cgalIsReady } from './getCgal.js';
+import { describe, it } from 'node:test';
 
 import { Box3 } from './box.js';
+import assert from 'node:assert/strict';
 import { makeAbsolute } from './makeAbsolute.js';
-import test from 'ava';
 import { withAssets } from './assets.js';
 
-test.beforeEach(async (t) => {
-  await cgalIsReady;
-});
-
-test('box', (t) =>
-  withAssets(async (assets) => {
-    const box = Box3(assets, [1, 3], [1, 3], [1, 3]);
-    const absoluteBox = makeAbsolute(assets, box);
-    t.is(
-      `v 1 1 1 1 1 1
+describe('makeAbsolute', () =>
+  it('should make a box absolute', () =>
+    withAssets(async (assets) => {
+      const box = Box3(assets, [1, 3], [1, 3], [1, 3]);
+      const absoluteBox = makeAbsolute(assets, box);
+      assert.strictEqual(
+        `V 8
+v 1 1 1 1 1 1
 v 3 1 1 3 1 1
 v 1 3 1 1 3 1
 v 3 3 1 3 3 1
@@ -22,6 +20,7 @@ v 1 1 3 1 1 3
 v 3 1 3 3 1 3
 v 1 3 3 1 3 3
 v 3 3 3 3 3 3
+T 12
 t 7 3 2
 t 2 6 7
 t 7 6 4
@@ -35,6 +34,6 @@ t 5 4 0
 t 6 2 0
 t 0 4 6
 `,
-      assets.text[absoluteBox.geometry]
-    );
-  }));
+        assets.getText(absoluteBox.geometry)
+      );
+    })));

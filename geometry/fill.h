@@ -11,7 +11,8 @@
 
 // We limit fill to the Z0 plane.
 
-static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
+static GeometryId Fill2(Assets& assets, std::vector<Shape>& shapes,
+                        bool holes) {
   typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
   typedef CGAL::Arr_segment_traits_2<EK> Traits_2;
   typedef CGAL::Arr_extended_dcel<Traits_2, size_t, size_t, size_t>
@@ -70,4 +71,15 @@ static GeometryId Fill(Assets& assets, std::vector<Shape>& shapes, bool holes) {
     }
   }
   return assets.TextId(filled);
+}
+
+static GeometryId Fill3(Assets& assets, Shape& shape) {
+  Geometry source = assets.GetGeometry(shape.GeometryId());
+  CGAL::Surface_mesh<EK::Point_3> mesh;
+  source.EncodeSurfaceMesh<EK>(mesh);
+  repair_stitching<EK>(mesh);
+  size_t remaining_hole_count = repair_close_holes<EK>(mesh);
+  Geometry target;
+  target.DecodeSurfaceMesh<EK>(mesh);
+  return assets.TextId(target);
 }

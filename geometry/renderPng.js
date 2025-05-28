@@ -1,4 +1,3 @@
-// import UPNG from 'upng-js';
 import { encode } from 'fast-png';
 import gl from 'gl';
 import { staticDisplay } from './threejs.js';
@@ -45,6 +44,7 @@ export const renderPng = async (
     definitions,
     width,
     height,
+    doOutlineEdges = true,
   } = {}
 ) => {
   let context;
@@ -77,6 +77,7 @@ export const renderPng = async (
     withGrid,
     width,
     height,
+    doOutlineEdges,
   });
   const { pixels } = extractPixels(renderer.getContext());
   return encode({ width, height, data: pixels, channels: 4 });

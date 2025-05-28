@@ -11,8 +11,8 @@
     "lint": "eslint *.js",
     "lintfix": "eslint --fix *.js",
     "rollup": "rollup -c rollup_main.js",
-    "test": "ava --timeout=600s",
-    "tests": "./tests.sh"
+    "test": "node --test",
+    "tests": "node --test *.test.js"
   },
   "contributors": [
     {
@@ -42,7 +42,6 @@
     "@rollup/plugin-babel": "^6.0.4",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@tybys/wasm-util": "^0.9.0",
-    "ava": "^4.3.0",
     "buffer": "^6.0.3",
     "depcheck": "^1.4.1",
     "emnapi": "^1.4.0",

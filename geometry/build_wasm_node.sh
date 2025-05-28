@@ -14,15 +14,24 @@ em++ -O3 \
      -I./glm -I./glm/glm -I./wasm/include \
      -L../node_modules/emnapi/lib/wasm32-emscripten \
      --js-library=../node_modules/emnapi/dist/library_napi.js \
-     -sEXPORTED_FUNCTIONS="['_malloc','_free','_napi_register_wasm_v1','_node_api_module_get_api_version_v1']" \
+     -sEXPORTED_FUNCTIONS="['_malloc','_free','_napi_register_wasm_v1','_node_api_module_get_api_version_v1', 'FS']" \
      -sEXPORTED_RUNTIME_METHODS=['emnapiInit'] \
      -sMODULARIZE=1 \
      -sASSERTIONS=1 \
+     -sALLOW_MEMORY_GROWTH=1 \
+     -sENVIRONMENT=node \
+     ./wasm/lib/libgmpxx.a ./wasm/lib/libmpfr.a ./wasm/lib/libgmp.a \
      -o wasm.cjs \
      -fwasm-exceptions \
      -fexceptions \
      wasm.cc \
-     ./wasm/lib/libglpk.a ./wasm/lib/libgmpxx.a ./wasm/lib/libmpfr.a ./wasm/lib/libgmp.a \
-     -lemnapi
+     -lemnapi \
+     -lnodefs.js
+
+# ./wasm/lib/libglpk.a ./wasm/lib/libgmpxx.a ./wasm/lib/libmpfr.a ./wasm/lib/libgmp.a \
+#
+#     -sEXPORTED_FUNCTIONS="['_malloc','_free','_napi_register_wasm_v1','_node_api_module_get_api_version_v1', 'FS']" \
+#     -sENVIRONMENT=node \
 
 # -DNAPI_DISABLE_CPP_EXCEPTIONS \
+# -sMEMORY64=1 \

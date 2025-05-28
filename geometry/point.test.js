@@ -1,32 +1,28 @@
 import { Point, Points } from './point.js';
+import { describe, it } from 'node:test';
 
-import { cgalIsReady } from './getCgal.js';
-import test from 'ava';
+import assert from 'node:assert/strict';
 import { withAssets } from './assets.js';
 
-test.beforeEach(async (t) => {
-  await cgalIsReady;
-});
+describe('point', () => {
+  it('should create a point', () =>
+    withAssets((assets) => {
+      assert.deepEqual(
+        assets.getText(Point(assets, 1, 0, 0).geometry),
+        'v 1 0 0 1 0 0\np 0'
+      );
+    }));
 
-test('Point', (t) => {
-  withAssets((assets) => {
-    t.deepEqual(
-      assets.text[Point(assets, 1, 0, 0).geometry],
-      'v 1 0 0 1 0 0\np 0'
-    );
-  });
-});
-
-test('Points', (t) => {
-  withAssets((assets) => {
-    t.deepEqual(
-      assets.text[
-        Points(assets, [
-          [1, 0, 0],
-          [2, 0, 0],
-        ]).geometry
-      ],
-      'v 1 0 0 1 0 0\nv 2 0 0 2 0 0\np 0 1'
-    );
-  });
+  it('should create points', () =>
+    withAssets((assets) =>
+      assert.deepEqual(
+        assets.getText(
+          Points(assets, [
+            [1, 0, 0],
+            [2, 0, 0],
+          ]).geometry
+        ),
+        'v 1 0 0 1 0 0\nv 2 0 0 2 0 0\np 0 1'
+      )
+    ));
 });

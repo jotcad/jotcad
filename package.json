@@ -13,14 +13,12 @@
     "doc": "node doc/update.js",
     "cli": "node cli/cli.js",
     "rollup": "lerna run rollup",
-    "test": "lerna run tests --stream --concurrency=1",
-    "tests": "lerna run tests --stream --concurrency=1 --loglevel=silly"
+    "tests": "node --test '*/*.test.js'"
   },
   "contributors": [],
   "keywords": [],
   "license": "MIT",
   "devDependencies": {
-    "ava": "^4.3.0",
     "@babel/eslint-parser": "^7.27.0",
     "@lerna/legacy-package-management": "^8.2.1",
     "eslint": "^9.0.0",

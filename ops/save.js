@@ -5,7 +5,7 @@ export const save = Op.registerOp(
   'save',
   ['shape', ['string'], 'shape'],
   async (assets, input, path) => {
-    await writeFile(path, JSON.stringify(input));
+    await writeFile(path, JSON.stringify({ assets, input }));
     return input;
   }
 );

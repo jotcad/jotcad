@@ -1,17 +1,49 @@
-import { cgal } from './getCgal.js';
+import { FS, cgal } from './getCgal.js';
+import { existsSync, mkdirSync } from 'node:fs';
 
-export const withAssets = async (op) => {
-  const assets = {
-    text: {},
-  };
-  const result = await op(assets);
-  return result;
+let basePath;
+
+export const setBasePath = (path) => {
+  basePath = path;
+  cgal.SetAssetsBasePath(path);
 };
 
-export const textId = (assets, text) => {
-  const hash = cgal.ComputeTextHash(text);
-  if (assets.text[hash] === undefined) {
-    assets.text[hash] = text;
+FS.mkdir('assets/text');
+setBasePath('assets');
+
+class Assets {
+  constructor() {
+    this.tag = 'Assets';
+    this.text = {};
   }
-  return hash;
+
+  getText(id) {
+    return FS.readFile(`${basePath}/text/${id}`, { encoding: 'utf8' });
+  }
+
+  textId(text) {
+    const id = cgal.ComputeTextHash(text);
+    const path = `${basePath}/text/${id}`;
+    if (basePath === undefined) {
+      throw Error('die');
+    }
+    if (this.text[id]) {
+      return id;
+    }
+    try {
+      FS.stat(path);
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        const result = FS.writeFile(path, text, { encoding: 'utf8' });
+      }
+    }
+    this.text[id] = true;
+    return id;
+  }
+}
+
+export const withAssets = async (op) => {
+  const assets = new Assets();
+  const result = await op(assets);
+  return result;
 };
