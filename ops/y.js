@@ -1,7 +1,9 @@
 import { Op } from '@jotcad/op';
+import { makeShape } from '@jotcad/geometry';
 
 export const y = Op.registerOp(
   'y',
-  ['shape', ['number'], 'shape'],
-  (assets, input, offset) => input.move(0, offset, 0)
+  ['shape', ['numbers'], 'shape'],
+  (assets, input, offsets) =>
+    makeShape({ shapes: offsets.map((offset) => input.move(0, offset, 0)) })
 );

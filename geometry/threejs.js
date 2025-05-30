@@ -341,8 +341,13 @@ export const buildMeshes = async ({
     }
 
     if (shape.shapes) {
-      for (const subShape of shape.shapes) {
-        walk(subShape);
+      try {
+        for (const subShape of shape.shapes) {
+          walk(subShape);
+        }
+      } catch (e) {
+        console.log(JSON.stringify(shape));
+        throw e;
       }
     }
   };

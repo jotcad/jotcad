@@ -52,6 +52,21 @@ export class Shape {
     };
     return op(this, descend);
   }
+
+  nth(...indices) {
+    const shapes = [];
+    this.walk((shape, descend) => {
+      if (shape.geometry) {
+        shapes.push(shape.derive({ shapes: undefined }));
+      }
+      descend();
+    });
+    const results = [];
+    for (const index of indices) {
+      results.push(shapes[index]);
+    }
+    return results;
+  }
 }
 
 export const makeShape = (args) => new Shape(args);

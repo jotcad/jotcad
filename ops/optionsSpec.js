@@ -15,13 +15,14 @@ Op.registerSpecHandler(
   (spec) =>
     isArray(spec) &&
     spec[0] === 'options' &&
-    ((spec, input, args, rest) => {
+    ((spec, caller, args, rest) => {
       let result;
       const schema = spec[1];
       while (args.length >= 1) {
         const arg = args.shift();
         if (arg instanceof Op && specEquals(Op.getOutputType(), spec)) {
           // TODO: Handle post-validation.
+          arg.caller = caller;
           result = arg;
           break;
         } else if (arg instanceof Object && isKeysConforming(schema, arg)) {
@@ -30,7 +31,7 @@ Op.registerSpecHandler(
             const [value] = Op.destructure(
               'options',
               [null, [schema[key]], null],
-              input,
+              caller,
               [arg[key]]
             );
             resolved[key] = value;
