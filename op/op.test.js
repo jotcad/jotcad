@@ -5,6 +5,7 @@ import {
   ops,
   predicateValueHandler,
   resolve,
+  run,
 } from './op.js';
 
 import { describe, it } from 'node:test';
@@ -25,113 +26,96 @@ export const isString = (value) => typeof value === 'string';
 Op.registerSpecHandler(predicateValueHandler('number', isNumber));
 Op.registerSpecHandler(predicateValueHandler('string', isString));
 
-export const Plus = Op.registerOp(
-  'Plus',
-  ['number', ['number'], 'number'],
-  (context, input = 0, value) => input + value
-);
+export const Plus = Op.registerOp({
+  name: 'Plus',
+  spec: ['number', ['number'], 'number'],
+  code: (context, input = 0, value) => input + value,
+});
 
-export const Say = Op.registerOp(
-  'Say',
-  ['number', ['string', 'string'], 'number'],
-  (context, input, set, value) => {
+export const Say = Op.registerOp({
+  name: 'Say',
+  spec: ['number', ['string', 'string'], 'number'],
+  code: (context, input, set, value) => {
     emit(set, value);
     return input;
-  }
-);
+  },
+});
 
 describe('op', () => {
   it('should resolve a single op', async () => {
-    beginOps();
-    Plus(1);
-    const context = {};
-    const graph = {};
-    await resolve(context, graph, ops);
-    endOps();
+    const graph = await run({}, () => Plus(1));
     assert.deepEqual(graph, {
-      ' qTpGXcksSiPD5sdeFbjL2Rji/0tjowby2sn9P6ZRbxk=': 1,
+      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
     });
   });
 
   it('should resolve an op', async (t) => {
-    beginOps();
-    Plus(1).Plus(2);
-    const context = {};
-    const graph = {};
-    await resolve(context, graph, ops);
-    endOps();
+    const graph = await run({}, () => Plus(1).Plus(2));
     assert.deepEqual(graph, {
-      ' H6F6k3Z7kUDXFLCv7pochRLLcABMpMtsQjfOmdC1dVg=': 3,
-      ' qTpGXcksSiPD5sdeFbjL2Rji/0tjowby2sn9P6ZRbxk=': 1,
+      ' X8NguZFn2KML+oEjdUEtxijaZ78cO90OnmId4q/VDEM=': 3,
+      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
     });
   });
 
   it('should resolve an op with an argument', async () => {
-    beginOps();
-    Plus(1).Plus(Plus(5));
-    const context = {};
-    const graph = {};
-    await resolve(context, graph, ops);
-    endOps();
+    const graph = await run({}, () => Plus(1).Plus(Plus(5)));
     assert.deepEqual(graph, {
-      ' ghBkIkq4TM++8L1DCkPzO20T1PiI/qpEpZu8hM2q4FE=': 7,
-      ' mEkVZKR9NY3KetPPXL036R8cHPZbeno6nY/VhcpykZo=': 6,
-      ' qTpGXcksSiPD5sdeFbjL2Rji/0tjowby2sn9P6ZRbxk=': 1,
+      ' 1Gshky5DzE54oJCYlDuAGQXQsNVp9bnU8CZEmftasdI=': 6,
+      ' GBoCpRj6SVnSNFkNcG5auMP8isEJCFWMokJc2TF06jg=': 7,
+      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
     });
   });
 
   it('should only recompute changed subgraphs', async () => {
-    beginOps();
-    Plus(1).Say('recompute', 'hello').Say('recompute', 'world');
-    const context = {};
-    const graph = {};
-    await resolve(context, graph, ops);
-    assert.deepEqual(graph, {
-      ' 8QqKQon47Dg0I49ETgU7Av+jukFaGX7uqDrL4hYoV+g=': 1,
-      ' qTpGXcksSiPD5sdeFbjL2Rji/0tjowby2sn9P6ZRbxk=': 1,
-      ' rpAgjXymLt6UWwl75415sMJVJPZ3ZlP/lpS42Hdr62E=': 1,
+    const graph1 = await run({}, () =>
+      Plus(1).Say('recompute', 'hello').Say('recompute', 'world')
+    );
+    assert.deepEqual(graph1, {
+      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
+      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
+      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
     });
     assert.deepEqual(emits['recompute'], ['hello', 'world']);
 
-    // The graph remains resolved.
-    await resolve(context, graph, ops);
-    endOps();
-    assert.deepEqual(graph, {
-      ' 8QqKQon47Dg0I49ETgU7Av+jukFaGX7uqDrL4hYoV+g=': 1,
-      ' qTpGXcksSiPD5sdeFbjL2Rji/0tjowby2sn9P6ZRbxk=': 1,
-      ' rpAgjXymLt6UWwl75415sMJVJPZ3ZlP/lpS42Hdr62E=': 1,
+    const graph2 = await run({}, () => undefined, graph1);
+    assert.deepEqual(graph2, {
+      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
+      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
+      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
     });
 
     // Since Say() was not recomputed we see 'hello', 'world' once.
     assert.deepEqual(emits['recompute'], ['hello', 'world']);
 
-    beginOps();
-    Plus(1).Say('recompute', 'hello').Say('recompute', 'world!');
+    const graph3 = await run(
+      {},
+      () => Plus(1).Say('recompute', 'hello').Say('recompute', 'world!'),
+      graph2
+    );
 
-    await resolve(context, graph, ops);
-    endOps();
-    assert.deepEqual(graph, {
-      ' 8QqKQon47Dg0I49ETgU7Av+jukFaGX7uqDrL4hYoV+g=': 1,
-      ' miiMCCN8fu0OBEH4bD+sOIi8adyEIvxX8EDoq+mm+e0=': 1,
-      ' qTpGXcksSiPD5sdeFbjL2Rji/0tjowby2sn9P6ZRbxk=': 1,
-      ' rpAgjXymLt6UWwl75415sMJVJPZ3ZlP/lpS42Hdr62E=': 1,
+    assert.deepEqual(graph3, {
+      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
+      ' e7Iet5QOUW613v2zDH0O1i3ZBesS+ZuG/jCAcsiGiDs=': 1,
+      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
+      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
     });
 
     // Since only the second Say() was recomputed we see 'hello', 'world', 'world!'.
     assert.deepEqual(emits['recompute'], ['hello', 'world', 'world!']);
 
-    beginOps();
-    Plus(1).Say('recompute', 'hello!').Say('recompute', 'world!');
+    const graph4 = await run(
+      {},
+      () => Plus(1).Say('recompute', 'hello!').Say('recompute', 'world!'),
+      graph3
+    );
 
-    await resolve(context, graph, ops);
-    endOps();
-    assert.deepEqual(graph, {
-      ' 8QqKQon47Dg0I49ETgU7Av+jukFaGX7uqDrL4hYoV+g=': 1,
-      ' G5UU8j16G4Ey5p/QPlBvyB6a2e8Tg/IYnG/srrPCquI=': 1,
-      ' KkJyemrsf0Ggyg7roFm7N0AyDX85yCK7iyLivFk5kYE=': 1,
-      ' miiMCCN8fu0OBEH4bD+sOIi8adyEIvxX8EDoq+mm+e0=': 1,
-      ' qTpGXcksSiPD5sdeFbjL2Rji/0tjowby2sn9P6ZRbxk=': 1,
-      ' rpAgjXymLt6UWwl75415sMJVJPZ3ZlP/lpS42Hdr62E=': 1,
+    assert.deepEqual(graph4, {
+      ' 5ncnXdM9yNN/8eYEbamRkDiwK2e+9/AI0b89i6WbHR0=': 1,
+      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
+      ' e7Iet5QOUW613v2zDH0O1i3ZBesS+ZuG/jCAcsiGiDs=': 1,
+      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
+      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
+      ' wgAulLiQM7eUCDWtA4K+nj6pvp0ZEmKEwEe80M1mjSI=': 1,
     });
 
     // All says were recomputed.

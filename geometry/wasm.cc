@@ -24,7 +24,6 @@ typedef CGAL::Exact_predicates_inexact_constructions_kernel IK;
 typedef CGAL::Simple_cartesian<double> CK;
 typedef CGAL::Aff_transformation_3<EK> Tf;
 
-#include "approximate.h"
 #include "arc_slice.h"
 #include "clip.h"
 #include "cut.h"
@@ -44,15 +43,6 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 namespace jot_cgal {
 
 using namespace Napi;
-
-static Napi::Value ApproximateBinding(const Napi::CallbackInfo& info) {
-  AssertArgCount(info, 4);
-  Assets assets(info[0].As<Napi::Object>());
-  Shape shape(info[1].As<Napi::Object>());
-  uint32_t faceCount = info[2].As<Napi::Number>().Uint32Value();
-  double minErrorDrop = info[3].As<Napi::Number>().DoubleValue();
-  return Approximate(assets, shape, faceCount, minErrorDrop);
-}
 
 static Napi::Value ArcSlice2Binding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 4);
@@ -212,8 +202,6 @@ Napi::Value SetAssetsBasePathBinding(const Napi::CallbackInfo& info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
   SurfaceMeshWrapper::Init(env, exports);
-  exports.Set(Napi::String::New(env, "Approximate"),
-              Napi::Function::New(env, ApproximateBinding));
   exports.Set(Napi::String::New(env, "ArcSlice2"),
               Napi::Function::New(env, ArcSlice2Binding));
   exports.Set(Napi::String::New(env, "Clip"),

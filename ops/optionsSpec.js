@@ -15,7 +15,7 @@ Op.registerSpecHandler(
   (spec) =>
     isArray(spec) &&
     spec[0] === 'options' &&
-    ((spec, input, args, rest) => {
+    ((spec, caller, args, rest) => {
       let result;
       const schema = spec[1];
       while (args.length >= 1) {
@@ -30,7 +30,7 @@ Op.registerSpecHandler(
             const [value] = Op.destructure(
               'options',
               [null, [schema[key]], null],
-              input,
+              caller,
               [arg[key]]
             );
             resolved[key] = value;

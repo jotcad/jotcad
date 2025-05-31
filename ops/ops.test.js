@@ -27,7 +27,7 @@ describe('ops', () => {
           .fill2()
           .extrude(z(0), z(1))
           .color('blue')
-          .png('observed.ops.test.simple.png', [-5, -5, 10])
+          .png('observed.ops.test.simple.png', [-40, -40, 80])
       );
       assert.ok(await testPng('ops.test.simple.png'));
     }));
