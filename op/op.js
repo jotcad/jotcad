@@ -31,11 +31,11 @@ export const emitOp = (op) => {
 };
 
 export class Op {
-  static specs = {};
+  static spec = {};
   static code = {};
   static specHandlers = [];
 
-  constructor({ name=null, input=null, args=[], caller=null }) {
+  constructor({ name = null, input = null, args = [], caller = null }) {
     this.name = name;
     this.input = input;
     this.args = args;
@@ -55,21 +55,40 @@ export class Op {
   }
 
   getOutputType() {
-    const [, , outputType] = Op.specs[this.name];
+    const [, , outputType] = Op.spec[this.name];
     return outputType;
   }
 
-  static registerOp(name, specs, code) {
+  $chain(op) {
+    if (op) {
+      op.input = this;
+      return op;
+    } else {
+      return this;
+    }
+  }
+
+  static registerOp({ name, spec, args, code }) {
     const { [name]: method } = {
-      [name]: function (...args) {
+      [name]: function (...argList) {
         const input = this;
-        const destructuredArgs = Op.destructure(name, specs, input, args);
-        return emitOp(new Op({ name, input, args: destructuredArgs }));
+        const op = new Op({ name, input });
+        op.args = Op.destructure(name, spec, op, argList);
+        if (args) {
+          op.args = args(...op.args);
+        }
+        for (const arg of op.args) {
+          if (arg instanceof Op) {
+            arg.caller = op;
+          }
+        }
+        emitOp(op);
+        return op;
       },
     };
     Op.prototype[name] = method;
     Op.code[name] = code;
-    Op.specs[name] = specs;
+    Op.spec[name] = spec;
     return method;
   }
 
@@ -110,9 +129,9 @@ export class Op {
         return value.node.output;
       }
       const node = {
-        name: value.name, 
+        name: value.name,
         input: value.input ? Op.resolveNode(value.input) : null,
-        args: Op.resolveNode(value.args)
+        args: Op.resolveNode(value.args),
       };
       node.output = makeSymbol(computeHash(node));
       value.node = node;
@@ -130,8 +149,8 @@ export class Op {
     }
   }
 
-  static destructure(name, specs, caller, args) {
-    const [inputSpec, argSpecs, outputSpec] = specs;
+  static destructure(name, spec, caller, args) {
+    const [inputSpec, argSpecs, outputSpec] = spec;
     const destructured = [];
     for (const spec of argSpecs) {
       const rest = [];
@@ -188,7 +207,6 @@ export const predicateValueHandler = (name, predicate) => (spec) =>
         result = arg;
         break;
       } else if (arg instanceof Op && specEquals(arg.getOutputType(), spec)) {
-        arg.caller = caller;
         result = arg;
         break;
       }
@@ -220,7 +238,6 @@ export const resolve = async (context, ops, graph) => {
       // This node has already been computed.
       continue;
     }
-    const dd = JSON.stringify(op);
     const promise = new Promise(async (resolve, reject) => {
       await isReady;
       const { input, name, args } = node;
@@ -259,7 +276,6 @@ export const resolve = async (context, ops, graph) => {
         throw e;
       }
     });
-    promise.name = dd;
     graph[node.output] = promise;
   }
   return { assertIsReady, graph };

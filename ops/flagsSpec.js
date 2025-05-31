@@ -13,7 +13,6 @@ Op.registerSpecHandler(
         const arg = args.shift();
         if (arg instanceof Op && specEquals(Op.getOutputType(), spec)) {
           // TODO: Handle post-validation.
-          arg.caller = caller;
           result = arg;
           continue;
         } else if (schema.includes(arg)) {

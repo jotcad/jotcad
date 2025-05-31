@@ -10,7 +10,6 @@ Op.registerSpecHandler(
       while (args.length >= 1) {
         const arg = args.shift();
         if (arg instanceof Op && specEquals(arg.getOutputType(), 'numbers')) {
-          arg.caller = caller;
           results.push(arg);
           continue;
         } else if (arg instanceof Object) {

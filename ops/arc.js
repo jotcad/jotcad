@@ -1,9 +1,9 @@
 import { Op } from '@jotcad/op';
 import { Arc2 as op2 } from '@jotcad/geometry';
 
-export const Arc2 = Op.registerOp(
-  'Arc2',
-  [
+export const Arc2 = Op.registerOp({
+  name: 'Arc2',
+  spec: [
     null,
     [
       'interval',
@@ -21,5 +21,5 @@ export const Arc2 = Op.registerOp(
     ],
     'shape',
   ],
-  (assets, input, x, y = x, options = {}) => op2(assets, x, y, options)
-);
+  code: (assets, input, x, y = x, options = {}) => op2(assets, x, y, options),
+});

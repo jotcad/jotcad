@@ -35,7 +35,6 @@ Op.registerSpecHandler(
         const arg = args.shift();
         if (arg instanceof Op && arg.getOutputType() === 'interval') {
           // TODO: Handle deferred normalization.
-          arg.caller = caller;
           result = arg;
           break;
         } else if (
