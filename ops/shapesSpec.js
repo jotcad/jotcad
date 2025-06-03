@@ -3,7 +3,7 @@ import { Op, specEquals } from '@jotcad/op';
 Op.registerSpecHandler(
   (spec) =>
     spec === 'shapes' &&
-    ((spec, input, args, rest) => {
+    ((spec, caller, args, rest) => {
       const results = [];
       while (args.length >= 1) {
         const arg = args.shift();

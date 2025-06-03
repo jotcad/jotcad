@@ -29,7 +29,7 @@ export const normalizeInterval = (value) => {
 Op.registerSpecHandler(
   (spec) =>
     spec === 'interval' &&
-    ((spec, input, args, rest) => {
+    ((spec, caller, args, rest) => {
       let result;
       while (args.length >= 1) {
         const arg = args.shift();

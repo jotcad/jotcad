@@ -40,12 +40,12 @@ export const makeMove = (x = 0, y = 0, z = 0, ix = x, iy = y, iz = z) => {
 };
 
 function transform(tf) {
-  return new Shape({
-    shape: this.shapes,
-    geometry: this.geometry,
-    tags: this.tags,
-    tf: compose(tf, this.tf),
-  });
+  return this.rewrite((shape, descend) =>
+    shape.derive({
+      shapes: descend(),
+      tf: compose(tf, shape.tf),
+    })
+  );
 }
 
 function invert() {

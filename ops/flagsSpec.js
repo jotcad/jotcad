@@ -6,7 +6,7 @@ Op.registerSpecHandler(
   (spec) =>
     isArray(spec) &&
     spec[0] === 'flags' &&
-    ((spec, input, args, rest) => {
+    ((spec, caller, args, rest) => {
       const results = {};
       const schema = spec[1];
       while (args.length >= 1) {
