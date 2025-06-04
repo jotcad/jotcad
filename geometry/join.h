@@ -9,10 +9,7 @@
 
 static GeometryId Join(Assets& assets, Shape& shape,
                        std::vector<Shape>& shapes) {
-  Geometry target =
-      assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
   CGAL::Surface_mesh<CGAL::Point_3<EK>> target_mesh;
-  target.EncodeSurfaceMesh<EK>(target_mesh);
 
   for (Shape& shape : shapes) {
     shape.Walk([&](Shape& shape) {

@@ -12,7 +12,7 @@ export const compose = (a, b) => {
 
 export const makeIdentity = () => undefined;
 
-export const makeInvert = () => 'i';
+export const makeInverse = () => 'i';
 
 export const makeMatrix = (a, b, c, d, e, f, g, h, i, j, k, l, m) =>
   `m ${a} ${b} ${c} ${d} ${e} ${f} ${g} ${h} ${i} ${j} ${k} ${l} ${m}`;
@@ -48,8 +48,13 @@ function transform(tf) {
   );
 }
 
-function invert() {
-  return this.transform(makeInvert());
+function revert() {
+  return this.rewrite((shape, descend) =>
+    shape.derive({
+      shapes: descend(),
+      tf: null,
+    })
+  );
 }
 
 function rotateX(t = 0, it = t) {
@@ -73,7 +78,7 @@ function move(x = 0, y = 0, z = 0, ix = x, iy = y, iz = z) {
 }
 
 Shape.prototype.transform = transform;
-Shape.prototype.invert = invert;
+Shape.prototype.revert = revert;
 Shape.prototype.rotateX = rotateX;
 Shape.prototype.rotateY = rotateY;
 Shape.prototype.rotateZ = rotateZ;

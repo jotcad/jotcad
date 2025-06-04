@@ -1,12 +1,26 @@
-import { makeShape } from './shape.js';
+import { makeGroup } from './shape.js';
 import { rewrite } from './rewrite.js';
 
-export const tag = (shape, name, value) =>
-  rewrite(shape, (shape, rewrite) => {
-    return makeShape({
+export const setTag = (shape, name, value) =>
+  shape.rewrite((shape, descend) =>
+    shape.derive({
       tags: { ...shape.tags, [name]: value },
-      shapes: shape.shapes?.map(rewrite),
-      geometry: shape.geometry,
-      tf: shape.tf,
-    });
+      shapes: descend(),
+    })
+  );
+
+export const getTagValues = (shape, name) => {
+  console.log(`QQ/GTV: shape=${JSON.stringify(shape)}`);
+  const values = new Set();
+  shape.walk((shape, descend) => {
+    const value = shape.tags?.[name];
+    if (value !== undefined) {
+      values.add(value);
+    }
+    descend();
   });
+  return [...values];
+};
+
+export const getShapesByTag = (shape, name, value) =>
+  makeGroup(shape.get((shape) => shape.tags?.[name] === value));

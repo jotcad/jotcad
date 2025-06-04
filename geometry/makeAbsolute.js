@@ -6,6 +6,6 @@ export const makeAbsolute = (assets, shape, tools) =>
     shape.derive({
       geometry: shape.geometry && cgal.MakeAbsolute(assets, shape),
       shapes: descend(),
-      tf: makeIdentity(),
+      tf: null,
     })
   );

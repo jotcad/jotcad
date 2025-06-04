@@ -5,16 +5,16 @@ export class Shape {
     tags = undefined,
     tf = undefined,
   } = {}) {
-    if (shapes !== undefined) {
+    if (shapes) {
       this.shapes = shapes;
     }
-    if (geometry !== undefined) {
+    if (geometry) {
       this.geometry = geometry;
     }
-    if (tags !== undefined) {
+    if (tags) {
       this.tags = tags;
     }
-    if (tf !== undefined) {
+    if (tf) {
       this.tf = tf;
     }
   }
@@ -53,18 +53,38 @@ export class Shape {
     return op(this, descend);
   }
 
-  nth(...indices) {
+  flatten() {
     const shapes = [];
     this.walk((shape, descend) => {
       if (shape.geometry) {
-        shapes.push(shape.derive({ shapes: undefined }));
+        shapes.push(shape.derive({ shapes: null }));
       }
       descend();
     });
+    return shapes;
+  }
+
+  nth(...indices) {
+    const shapes = this.flatten();
     const results = [];
     for (const index of indices) {
       results.push(shapes[index]);
     }
+    return results;
+  }
+
+  get(predicate) {
+    const results = [];
+    const walk = (shape) => {
+      if (predicate(shape)) {
+        results.push(shape);
+      } else if (shape.shapes) {
+        for (const subShape of shape.shapes) {
+          walk(subShape);
+        }
+      }
+    };
+    walk(this);
     return results;
   }
 }

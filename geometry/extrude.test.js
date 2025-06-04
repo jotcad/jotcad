@@ -4,7 +4,7 @@ import { Arc2 } from './arc.js';
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
-import { extrude } from './extrude.js';
+import { extrude2 } from './extrude.js';
 import { fill2 } from './fill.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
@@ -27,7 +27,7 @@ describe('extrude', () => {
         ),
       });
       const filledTriangle = fill2(assets, [triangle], true);
-      const extrudedTriangle = extrude(
+      const extrudedTriangle = extrude2(
         assets,
         filledTriangle,
         (await Point(assets, 0, 0, 0)).move(0, 0, 1),
@@ -56,7 +56,7 @@ describe('extrude', () => {
         ),
       });
       const filledTriangle = fill2(assets, [triangle], true);
-      const extrudedTriangle = extrude(
+      const extrudedTriangle = extrude2(
         assets,
         filledTriangle,
         (await Point(assets, 0, 0, 0)).scale('1/2', '1/2').move(0, 0, 1),
