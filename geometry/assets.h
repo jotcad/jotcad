@@ -82,7 +82,7 @@ class Assets {
     if (wrapped_mesh == undefined_) {
       Geometry& geometry = GetGeometry(id);
       auto native = std::make_unique<CGAL::Surface_mesh<EK::Point_3>>();
-      geometry.EncodeFaceSurfaceMesh(*native);
+      geometry.EncodeFaceSurfaceMesh<EK>(*native);
       CGAL::Surface_mesh<EK::Point_3>* r = native.release();
       wrapped_mesh = SurfaceMeshWrapper::WrapNativeObject(napi_.Env(), r);
       space.Set(id, wrapped_mesh);

@@ -11,7 +11,7 @@ import { describe, it } from 'node:test';
 import { Box2 } from './box.js';
 import assert from 'node:assert/strict';
 import { color } from './color.js';
-import { extrude } from './extrude.js';
+import { extrude2 } from './extrude.js';
 import { fill2 } from './fill.js';
 import { png } from './png.js';
 import { readFile } from './fs.js';
@@ -25,9 +25,9 @@ describe('ops', () => {
       const graph = await run(assets, () =>
         Box2([0, 3], [0, 5])
           .fill2()
-          .extrude(z(0), z(1))
+          .extrude2(z(0), z(1))
           .color('blue')
-          .png('observed.ops.test.simple.png', [-40, -40, 80])
+          .png('observed.ops.test.simple.png', [-20, -20, 40])
       );
       assert.ok(await testPng('ops.test.simple.png'));
     }));

@@ -165,6 +165,10 @@ export const decodeTf = (tf) => {
         matrix.set(a, b, c, d, e, f, g, h, i, j, k, l, 0, 0, 0, m);
         return matrix;
       }
+      case 'i': {
+        // The inverse of the identity matrix is the identity matrix.
+        return identityMatrix;
+      }
       default: {
         throw Error(`Undecoded tf: ${tf}`);
       }
@@ -240,115 +244,120 @@ export const buildMeshes = async ({
   doOutlineEdges = true,
 }) => {
   const walk = async (shape) => {
-    if (shape.geometry) {
-      const matrix = decodeTf(shape.tf);
-      const { vertices, segments, triangles, faces } =
-        DecodeInexactGeometryText(assets.getText(shape.geometry));
-      if (segments.length > 0) {
-        const bufferGeometry = new BufferGeometry();
-        const positions = [];
-        for (const [source, target] of segments) {
-          positions.push(...vertices[source], ...vertices[target]);
-        }
-        bufferGeometry.setAttribute(
-          'position',
-          new Float32BufferAttribute(positions, 3)
-        );
-        const material = buildLineMaterial(shape);
-        const mesh = new LineSegments(bufferGeometry, material);
-        mesh.applyMatrix4(matrix);
-        scene.add(mesh);
-      }
-      if (faces.length > 0) {
-        for (const [face, ...holes] of faces) {
-          const triangulationIndices = triangulateFaceWithHoles(
-            vertices,
-            face,
-            holes
-          );
-          const geometry = new BufferGeometry();
-          const verticesArray = [];
-          for (const vertex of face) {
-            verticesArray.push(...vertices[vertex]);
+    try {
+      if (shape.geometry) {
+        const matrix = decodeTf(shape.tf);
+        const { vertices, segments, triangles, faces } =
+          DecodeInexactGeometryText(assets.getText(shape.geometry));
+        if (segments.length > 0) {
+          const bufferGeometry = new BufferGeometry();
+          const positions = [];
+          for (const [source, target] of segments) {
+            positions.push(...vertices[source], ...vertices[target]);
           }
-          for (const hole of holes) {
-            for (const vertex of hole) {
+          bufferGeometry.setAttribute(
+            'position',
+            new Float32BufferAttribute(positions, 3)
+          );
+          const material = buildLineMaterial(shape);
+          const mesh = new LineSegments(bufferGeometry, material);
+          mesh.applyMatrix4(matrix);
+          scene.add(mesh);
+        }
+        if (faces.length > 0) {
+          for (const [face, ...holes] of faces) {
+            const triangulationIndices = triangulateFaceWithHoles(
+              vertices,
+              face,
+              holes
+            );
+            const geometry = new BufferGeometry();
+            const verticesArray = [];
+            for (const vertex of face) {
               verticesArray.push(...vertices[vertex]);
             }
-          }
-          geometry.setAttribute(
-            'position',
-            new Float32BufferAttribute(verticesArray, 3)
-          );
-          const adjustedIndices = [];
-          for (let i = 0; i < triangulationIndices.length; i += 3) {
-            adjustedIndices.push(
-              triangulationIndices[i],
-              triangulationIndices[i + 1],
-              triangulationIndices[i + 2]
+            for (const hole of holes) {
+              for (const vertex of hole) {
+                verticesArray.push(...vertices[vertex]);
+              }
+            }
+            geometry.setAttribute(
+              'position',
+              new Float32BufferAttribute(verticesArray, 3)
             );
+            const adjustedIndices = [];
+            for (let i = 0; i < triangulationIndices.length; i += 3) {
+              adjustedIndices.push(
+                triangulationIndices[i],
+                triangulationIndices[i + 1],
+                triangulationIndices[i + 2]
+              );
+            }
+            geometry.setIndex(adjustedIndices);
+            const material = buildMeshMaterial(shape);
+            const mesh = new Mesh(geometry, material);
+            mesh.applyMatrix4(matrix);
+            scene.add(mesh);
+            if (doOutlineEdges) {
+              const edges = buildEdges(geometry);
+              edges.applyMatrix4(matrix);
+              scene.add(edges);
+            }
           }
-          geometry.setIndex(adjustedIndices);
+        }
+        if (triangles.length > 0) {
+          const positions = [];
+          const normals = [];
+          for (const triangle of triangles) {
+            const plane = new Plane();
+            plane.setFromCoplanarPoints(
+              new Vector3(...vertices[triangle[0]]),
+              new Vector3(...vertices[triangle[1]]),
+              new Vector3(...vertices[triangle[2]])
+            );
+            positions.push(...vertices[triangle[0]]);
+            positions.push(...vertices[triangle[1]]);
+            positions.push(...vertices[triangle[2]]);
+            plane.normalize();
+            const { x, y, z } = plane.normal;
+            normals.push(x, y, z);
+            normals.push(x, y, z);
+            normals.push(x, y, z);
+          }
+          const bufferGeometry = new BufferGeometry();
+          bufferGeometry.setAttribute(
+            'position',
+            new Float32BufferAttribute(positions, 3)
+          );
+          bufferGeometry.setAttribute(
+            'normal',
+            new Float32BufferAttribute(normals, 3)
+          );
           const material = buildMeshMaterial(shape);
-          const mesh = new Mesh(geometry, material);
+          const mesh = new Mesh(bufferGeometry, material);
           mesh.applyMatrix4(matrix);
           scene.add(mesh);
           if (doOutlineEdges) {
-            const edges = buildEdges(geometry);
+            const edges = buildEdges(bufferGeometry);
             edges.applyMatrix4(matrix);
             scene.add(edges);
           }
         }
       }
-      if (triangles.length > 0) {
-        const positions = [];
-        const normals = [];
-        for (const triangle of triangles) {
-          const plane = new Plane();
-          plane.setFromCoplanarPoints(
-            new Vector3(...vertices[triangle[0]]),
-            new Vector3(...vertices[triangle[1]]),
-            new Vector3(...vertices[triangle[2]])
-          );
-          positions.push(...vertices[triangle[0]]);
-          positions.push(...vertices[triangle[1]]);
-          positions.push(...vertices[triangle[2]]);
-          plane.normalize();
-          const { x, y, z } = plane.normal;
-          normals.push(x, y, z);
-          normals.push(x, y, z);
-          normals.push(x, y, z);
-        }
-        const bufferGeometry = new BufferGeometry();
-        bufferGeometry.setAttribute(
-          'position',
-          new Float32BufferAttribute(positions, 3)
-        );
-        bufferGeometry.setAttribute(
-          'normal',
-          new Float32BufferAttribute(normals, 3)
-        );
-        const material = buildMeshMaterial(shape);
-        const mesh = new Mesh(bufferGeometry, material);
-        mesh.applyMatrix4(matrix);
-        scene.add(mesh);
-        if (doOutlineEdges) {
-          const edges = buildEdges(bufferGeometry);
-          edges.applyMatrix4(matrix);
-          scene.add(edges);
-        }
-      }
-    }
 
-    if (shape.shapes) {
-      try {
-        for (const subShape of shape.shapes) {
-          walk(subShape);
+      if (shape.shapes) {
+        try {
+          for (const subShape of shape.shapes) {
+            walk(subShape);
+          }
+        } catch (e) {
+          console.log(JSON.stringify(shape));
+          throw e;
         }
-      } catch (e) {
-        console.log(JSON.stringify(shape));
-        throw e;
       }
+    } catch (e) {
+      console.log(`QQ/shape: ${JSON.stringify(shape)}`);
+      throw e;
     }
   };
 

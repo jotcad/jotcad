@@ -83,15 +83,22 @@ static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
   return Cut(assets, shape, tools);
 }
 
-static Napi::Value ExtrudeBinding(const Napi::CallbackInfo& info) {
-  AssertArgCount(info, 5);
+static Napi::Value Extrude2Binding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 4);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   Shape top(info[2].As<Napi::Object>());
   Shape bottom(info[3].As<Napi::Object>());
-  Napi::Array results = info[4].As<Napi::Array>();
-  Extrude(assets, shape, top, bottom, results);
-  return info.Env().Undefined();
+  return Extrude2(assets, shape, top, bottom);
+}
+
+static Napi::Value Extrude3Binding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 4);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Shape top(info[2].As<Napi::Object>());
+  Shape bottom(info[3].As<Napi::Object>());
+  return Extrude3(assets, shape, top, bottom);
 }
 
 static Napi::Value Fill2Binding(const Napi::CallbackInfo& info) {
@@ -208,8 +215,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, ClipBinding));
   exports.Set(Napi::String::New(env, "Cut"),
               Napi::Function::New(env, CutBinding));
-  exports.Set(Napi::String::New(env, "Extrude"),
-              Napi::Function::New(env, ExtrudeBinding));
+  exports.Set(Napi::String::New(env, "Extrude2"),
+              Napi::Function::New(env, Extrude2Binding));
+  exports.Set(Napi::String::New(env, "Extrude3"),
+              Napi::Function::New(env, Extrude3Binding));
   exports.Set(Napi::String::New(env, "Fill2"),
               Napi::Function::New(env, Fill2Binding));
   exports.Set(Napi::String::New(env, "Fill3"),

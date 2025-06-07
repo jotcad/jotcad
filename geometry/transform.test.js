@@ -1,7 +1,7 @@
 import {
   compose,
   makeIdentity,
-  makeInvert,
+  makeInverse,
   makeMove,
   makeRotateX,
   makeRotateY,
@@ -42,10 +42,10 @@ describe('transform', () => {
   });
 
   it('should perform an inversion', () => {
-    assert.strictEqual('i', makeInvert());
+    assert.strictEqual('i', makeInverse());
     assert.strictEqual(
       'x 3/4 0.75',
-      cgal.SimplifyTransform(compose(makeInvert(), makeRotateX('1/4')))
+      cgal.SimplifyTransform(compose(makeInverse(), makeRotateX('1/4')))
     );
   });
 

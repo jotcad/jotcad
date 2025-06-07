@@ -60,12 +60,20 @@ export class Op {
   }
 
   $chain(op) {
+    const tailOp = op;
     if (op) {
+      while (op.input && !op.inputResolved) {
+        op = op.input;
+      }
       op.input = this;
-      return op;
-    } else {
-      return this;
+      op.inputResolved = true;
     }
+    return tailOp;
+  }
+
+  $calledBy(caller) {
+    this.caller = caller;
+    return this;
   }
 
   static registerOp({ name, spec, args, code }) {
@@ -75,7 +83,7 @@ export class Op {
         const op = new Op({ name, input });
         op.args = Op.destructure(name, spec, op, argList);
         if (args) {
-          op.args = args(...op.args);
+          op.args = args(input, ...op.args);
         }
         for (const arg of op.args) {
           if (arg instanceof Op) {
@@ -113,10 +121,14 @@ export class Op {
     // The caller has input to delegate;
     for (;;) {
       // Walk back to the head of this op chain.
+      if (op.inputResolved) {
+        break;
+      }
       if (!op.input) {
         // This is the head.
         // Set the input to the caller's input.
         op.input = input;
+        op.inputResolved = true;
         break;
       }
       op = op.input;
@@ -216,6 +228,37 @@ export const predicateValueHandler = (name, predicate) => (spec) =>
     return result;
   });
 
+export const dumpGraphviz = async (path, ops) => {
+  const nodes = [];
+  for (const { node } of ops) {
+    nodes.push(`"${node.output}" [label="${node.name}"];`);
+  }
+  const edges = [];
+  for (const { node } of ops) {
+    edges.push(`"${node.input}" -> "${node.output}";`);
+    const walk = (arg) => {
+      if (isSymbol(arg)) {
+        edges.push(`"${arg}" -> "${node.output}";`);
+      } else if (arg instanceof Array) {
+        for (const elt of arg) {
+          walk(elt);
+        }
+      } else if (arg instanceof Object) {
+        for (const value of Object.values(arg)) {
+          walk(value);
+        }
+      }
+    };
+    walk(node.args);
+  }
+  console.log(`
+digraph jot {
+  ${nodes.join('\n')}
+  ${edges.join('\n')}
+}
+`);
+};
+
 export const resolve = async (context, ops, graph) => {
   let assertIsReady;
   const isReady = new Promise((resolve, reject) => {
@@ -232,6 +275,7 @@ export const resolve = async (context, ops, graph) => {
   for (const op of ops) {
     nodes.push(Op.resolveNode(op));
   }
+  // await dumpGraphviz('/tmp/jotcat.gv', ops);
   for (const op of ops) {
     const { node } = op;
     if (graph[node.output] !== undefined) {

@@ -94,20 +94,21 @@ class Geometry {
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
   }
 
-  bool EncodeFaceSurfaceMesh(CGAL::Surface_mesh<EK::Point_3>& mesh) {
-    const EK::Plane_3 plane(0, 0, 1, 0);
-    std::vector<CGAL::Polygon_with_holes_2<EK>> pwhs;
-    std::map<EK::Point_3, CGAL::Surface_mesh<EK::Point_3>::Vertex_index>
+  template <typename K>
+  bool EncodeFaceSurfaceMesh(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
+    const typename K::Plane_3 plane(0, 0, 1, 0);
+    std::vector<CGAL::Polygon_with_holes_2<K>> pwhs;
+    std::map<typename K::Point_3, typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>
         vertex_map;
-    CGAL::Polygon_triangulation_decomposition_2<EK> triangulator;
+    CGAL::Polygon_triangulation_decomposition_2<K> triangulator;
     for (const auto& [face, holes] : faces_) {
-      CGAL::Polygon_2<EK> pwh_boundary;
-      std::vector<CGAL::Polygon_2<EK>> pwh_holes;
+      CGAL::Polygon_2<K> pwh_boundary;
+      std::vector<CGAL::Polygon_2<K>> pwh_holes;
       for (const auto& point : face) {
         pwh_boundary.push_back(plane.to_2d(vertices_[point]));
       }
       for (const auto& hole : holes) {
-        CGAL::Polygon_2<EK> polygon;
+        CGAL::Polygon_2<K> polygon;
         for (const auto& point : hole) {
           polygon.push_back(plane.to_2d(vertices_[point]));
         }
@@ -116,19 +117,19 @@ class Geometry {
       pwhs.emplace_back(pwh_boundary, pwh_holes.begin(), pwh_holes.end());
     }
     for (const auto& pwh : pwhs) {
-      std::vector<CGAL::Polygon_2<EK>> facets;
+      std::vector<CGAL::Polygon_2<K>> facets;
       triangulator(pwh, std::back_inserter(facets));
       for (auto& facet : facets) {
         if (facet.orientation() != CGAL::Sign::POSITIVE) {
           facet.reverse_orientation();
         }
-        std::vector<CGAL::Surface_mesh<EK::Point_3>::Vertex_index> vertices;
+        std::vector<typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index> vertices;
         for (const auto& point : facet) {
           vertices.push_back(
-              EnsureVertex<EK>(mesh, vertex_map, plane.to_3d(point)));
+              EnsureVertex<K>(mesh, vertex_map, plane.to_3d(point)));
         }
         if (mesh.add_face(vertices) ==
-            CGAL::Surface_mesh<CGAL::Point_3<EK>>::null_face()) {
+            CGAL::Surface_mesh<CGAL::Point_3<K>>::null_face()) {
           return false;
         }
       }
