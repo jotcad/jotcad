@@ -1,14 +1,15 @@
-import { Op } from '@jotcad/op';
 import { makeShape } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const And = Op.registerOp({
+export const And = registerOp({
   name: 'And',
   spec: ['shape', ['shapes'], 'shape'],
-  code: (assets, input, shapes) => makeShape({ shapes }),
+  code: (id, assets, input, shapes) => makeShape({ shapes }),
 });
 
-export const and = Op.registerOp({
+export const and = registerOp({
   name: 'and',
   spec: ['shape', ['shapes'], 'shape'],
-  code: (assets, input, shapes) => makeShape({ shapes: [input, ...shapes] }),
+  code: (id, assets, input, shapes) =>
+    makeShape({ shapes: [input, ...shapes] }),
 });

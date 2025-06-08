@@ -1,9 +1,9 @@
 import { getShapesByTag, makeGroup } from '@jotcad/geometry';
 
-import { Op } from '@jotcad/op';
+import { registerOp } from './op.js';
 
-export const get = Op.registerOp({
+export const get = registerOp({
   name: 'get',
   spec: ['shape', ['string', 'string'], 'shape'],
-  code: (assets, input, name, value) => getShapesByTag(input, name, value),
+  code: (id, assets, input, name, value) => getShapesByTag(input, name, value),
 });

@@ -1,10 +1,10 @@
-import { Op } from '@jotcad/op';
+import { registerOp } from './op.js';
 import { writeFile } from './fs.js';
 
-export const save = Op.registerOp({
+export const save = registerOp({
   name: 'save',
   spec: ['shape', ['string'], 'shape'],
-  code: async (assets, input, path) => {
+  code: async (id, assets, input, path) => {
     await writeFile(path, JSON.stringify({ assets, input }));
     return input;
   },

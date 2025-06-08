@@ -1,9 +1,9 @@
-import { Op } from '@jotcad/op';
 import { makeGroup } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const x = Op.registerOp({
+export const x = registerOp({
   name: 'x',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (assets, input, offsets) =>
+  code: (id, assets, input, offsets) =>
     makeGroup(offsets.map((offset) => input.move(offset, 0, 0))),
 });

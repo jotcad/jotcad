@@ -1,8 +1,8 @@
-import { Op } from '@jotcad/op';
 import { makeAbsolute } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const absolute = Op.registerOp({
+export const absolute = registerOp({
   name: 'absolute',
   spec: ['shape', [], 'shape'],
-  code: (assets, input) => makeAbsolute(assets, input),
+  code: (id, assets, input) => makeAbsolute(assets, input),
 });

@@ -1,9 +1,9 @@
-import { Op } from '@jotcad/op';
 import { makeShape } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const ry = Op.registerOp({
+export const ry = registerOp({
   name: 'ry',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (assets, input, turns) =>
+  code: (id, assets, input, turns) =>
     makeShape({ shapes: turns.map((turn) => input.rotateY(turn)) }),
 });

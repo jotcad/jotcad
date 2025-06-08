@@ -1,10 +1,11 @@
-import { Op } from '@jotcad/op';
 import { simplify as op } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const simplify = Op.registerOp({
+export const simplify = registerOp({
   name: 'simplify',
   spec: [null, ['number', ['options', { faceCount: 'number' }]], 'shape'],
   code: (
+    id,
     assets,
     input,
     implicitFaceCount = 10000,

@@ -1,9 +1,9 @@
 import './shapeSpec.js';
 
-import { Op } from '@jotcad/op';
+import { registerOp } from './op.js';
 
-export const transform = Op.registerOp({
+export const transform = registerOp({
   name: 'transform',
   spec: ['shape', ['shape'], 'shape'],
-  code: (assets, input, tf) => input.transform(tf.tf),
+  code: (id, assets, input, tf) => input.transform(tf.tf),
 });

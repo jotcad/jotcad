@@ -29,13 +29,13 @@ Op.registerSpecHandler(predicateValueHandler('string', isString));
 export const Plus = Op.registerOp({
   name: 'Plus',
   spec: ['number', ['number'], 'number'],
-  code: (context, input = 0, value) => input + value,
+  code: (id, context, input = 0, value) => input + value,
 });
 
 export const Say = Op.registerOp({
   name: 'Say',
   spec: ['number', ['string', 'string'], 'number'],
-  code: (context, input, set, value) => {
+  code: (id, context, input, set, value) => {
     emit(set, value);
     return input;
   },
@@ -45,24 +45,24 @@ describe('op', () => {
   it('should resolve a single op', async () => {
     const graph = await run({}, () => Plus(1));
     assert.deepEqual(graph, {
-      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
+      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
     });
   });
 
   it('should resolve an op', async (t) => {
     const graph = await run({}, () => Plus(1).Plus(2));
     assert.deepEqual(graph, {
-      ' X8NguZFn2KML+oEjdUEtxijaZ78cO90OnmId4q/VDEM=': 3,
-      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
+      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
+      ' d681edb3fa7c49cc515b95be9926a9a5111d06e6': 3,
     });
   });
 
   it('should resolve an op with an argument', async () => {
     const graph = await run({}, () => Plus(1).Plus(Plus(5)));
     assert.deepEqual(graph, {
-      ' 1Gshky5DzE54oJCYlDuAGQXQsNVp9bnU8CZEmftasdI=': 6,
-      ' GBoCpRj6SVnSNFkNcG5auMP8isEJCFWMokJc2TF06jg=': 7,
-      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
+      ' 4f15fa67ed8aebc619dd87f44f2e0f7d513ab4fd': 6,
+      ' 864479c35ecdb08f9e5c6e27b097f7c30fda3da8': 7,
+      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
     });
   });
 
@@ -71,17 +71,17 @@ describe('op', () => {
       Plus(1).Say('recompute', 'hello').Say('recompute', 'world')
     );
     assert.deepEqual(graph1, {
-      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
-      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
-      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
+      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
+      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
+      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
     });
     assert.deepEqual(emits['recompute'], ['hello', 'world']);
 
     const graph2 = await run({}, () => undefined, graph1);
     assert.deepEqual(graph2, {
-      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
-      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
-      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
+      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
+      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
+      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
     });
 
     // Since Say() was not recomputed we see 'hello', 'world' once.
@@ -94,10 +94,10 @@ describe('op', () => {
     );
 
     assert.deepEqual(graph3, {
-      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
-      ' e7Iet5QOUW613v2zDH0O1i3ZBesS+ZuG/jCAcsiGiDs=': 1,
-      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
-      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
+      ' 578ddb98f7d0868ee58743e3d5303363acba2de2': 1,
+      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
+      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
+      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
     });
 
     // Since only the second Say() was recomputed we see 'hello', 'world', 'world!'.
@@ -110,12 +110,12 @@ describe('op', () => {
     );
 
     assert.deepEqual(graph4, {
-      ' 5ncnXdM9yNN/8eYEbamRkDiwK2e+9/AI0b89i6WbHR0=': 1,
-      ' SYq7C0qyoqwTKUDMyZnR14JRU73NpketIccwh7tEBV8=': 1,
-      ' e7Iet5QOUW613v2zDH0O1i3ZBesS+ZuG/jCAcsiGiDs=': 1,
-      ' oJaKB8L2k/oeMZbQeddD90yevN5BRqVNQzBJDVxaryU=': 1,
-      ' t1IUthHGe2PJ6Hs1bNxtZeWv7lShL6+WIzb1WAsVCi4=': 1,
-      ' wgAulLiQM7eUCDWtA4K+nj6pvp0ZEmKEwEe80M1mjSI=': 1,
+      ' 578ddb98f7d0868ee58743e3d5303363acba2de2': 1,
+      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
+      ' 9b957d5b25017b9f8baaabc01870fbf335062fb0': 1,
+      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
+      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
+      ' c9696e2dfc0353ba4fccf7aa31f07814d44b6e59': 1,
     });
 
     // All says were recomputed.

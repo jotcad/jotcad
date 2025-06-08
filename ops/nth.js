@@ -1,10 +1,10 @@
-import { Op } from '@jotcad/op';
 import { makeShape } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const nth = Op.registerOp({
+export const nth = registerOp({
   name: 'nth',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (assets, input, indices) => {
+  code: (id, assets, input, indices) => {
     const shapes = input.nth(...indices);
     if (shapes.length == 1) {
       return shapes[0];

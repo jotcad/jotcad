@@ -284,7 +284,7 @@ export const resolve = async (context, ops, graph) => {
     }
     const promise = new Promise(async (resolve, reject) => {
       await isReady;
-      const { input, name, args } = node;
+      const { args, input, name, output } = node;
       let evaluatedInput;
       if (isSymbol(input)) {
         evaluatedInput = await graph[input];
@@ -314,7 +314,12 @@ export const resolve = async (context, ops, graph) => {
       };
       const evaluatedArgs = await evaluateArg(node.args);
       try {
-        const result = Op.code[name](context, evaluatedInput, ...evaluatedArgs);
+        const result = Op.code[name](
+          output,
+          context,
+          evaluatedInput,
+          ...evaluatedArgs
+        );
         resolve(result);
       } catch (e) {
         throw e;

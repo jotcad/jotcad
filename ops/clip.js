@@ -1,8 +1,8 @@
-import { Op } from '@jotcad/op';
 import { clip as op } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const clip = Op.registerOp({
+export const clip = registerOp({
   name: 'clip',
   spec: ['shape', ['shapes'], 'shape'],
-  code: (assets, input, tools) => op(assets, input, tools),
+  code: (id, assets, input, tools) => op(assets, input, tools),
 });
