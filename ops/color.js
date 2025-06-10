@@ -1,8 +1,8 @@
-import { Op } from '@jotcad/op';
+import { registerOp } from './op.js';
 import { setTag } from '@jotcad/geometry';
 
-export const color = Op.registerOp({
+export const color = registerOp({
   name: 'color',
   spec: ['shape', ['string'], 'shape'],
-  code: (assets, input, name) => setTag(input, 'color', name),
+  code: (id, assets, input, name) => setTag(input, 'color', name),
 });

@@ -1,10 +1,10 @@
-import { Op } from '@jotcad/op';
 import { test as op } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const test = Op.registerOp({
+export const test = registerOp({
   name: 'test',
   spec: ['shape', [['flags', ['si']], 'string'], 'shape'],
-  code: (assets, input, flags, note) => {
+  code: (id, assets, input, flags, note) => {
     if (op(assets, input, flags)) {
       throw Error(`test: ${note}`);
     }

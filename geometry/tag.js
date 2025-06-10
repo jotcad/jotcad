@@ -10,7 +10,6 @@ export const setTag = (shape, name, value) =>
   );
 
 export const getTagValues = (shape, name) => {
-  console.log(`QQ/GTV: shape=${JSON.stringify(shape)}`);
   const values = new Set();
   shape.walk((shape, descend) => {
     const value = shape.tags?.[name];

@@ -1,3 +1,6 @@
+import hash from 'object-hash';
+
+/*
 import Digest from 'digest-js';
 import { encode } from 'base64-arraybuffer';
 
@@ -59,3 +62,6 @@ export const fromStringToIntegerHash = (s) =>
   Math.abs(
     s.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
   );
+*/
+
+export { hash as computeHash };

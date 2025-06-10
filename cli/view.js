@@ -4,7 +4,7 @@ import { renderPng } from '@jotcad/geometry';
 export const view = Op.registerOp({
   name: 'view',
   spec: [null, ['vector3', ['options', { edge: 'boolean' }]], 'shape'],
-  code: async (assets, input, position, { edge = true } = {}) => {
+  code: async (id, assets, input, position, { edge = true } = {}) => {
     const width = 512;
     const height = 512;
     const image = await renderPng(assets, input, {

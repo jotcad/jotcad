@@ -1,10 +1,10 @@
 import './vectorSpec.js';
 
-import { Op } from '@jotcad/op';
 import { Point as op } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const Point = Op.registerOp({
+export const Point = registerOp({
   name: 'Point',
   spec: ['shape', ['vector3'], 'shape'],
-  code: (assets, input, vector = []) => op(assets, ...vector),
+  code: (id, assets, input, vector = []) => op(assets, ...vector),
 });

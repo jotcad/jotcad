@@ -1,15 +1,15 @@
-import { Op } from '@jotcad/op';
 import { fill2 as op2 } from '@jotcad/geometry';
 import { fill3 as op3 } from '@jotcad/geometry';
+import { registerOp } from './op.js';
 
-export const fill2 = Op.registerOp({
+export const fill2 = registerOp({
   name: 'fill2',
   spec: ['shape', ['shapes'], 'shape'],
-  code: (assets, input, shapes) => op2(assets, [input, ...shapes], true),
+  code: (id, assets, input, shapes) => op2(assets, [input, ...shapes], true),
 });
 
-export const fill3 = Op.registerOp({
+export const fill3 = registerOp({
   name: 'fill3',
   spec: ['shape', [], 'shape'],
-  code: (assets, input) => op3(assets, input),
+  code: (id, assets, input) => op3(assets, input),
 });

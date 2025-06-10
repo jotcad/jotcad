@@ -23,8 +23,7 @@
   "keywords": [],
   "license": "MIT",
   "dependencies": {
-    "base64-arraybuffer": "^1.0.1",
-    "digest-js": "^0.3.0"
+    "object-hash": "^3.0.0"
   },
   "devDependencies": {
     "depcheck": "^1.4.1",

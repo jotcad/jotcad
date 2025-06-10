@@ -9,6 +9,7 @@ export const setBasePath = (path) => {
 };
 
 FS.mkdir('assets/text');
+FS.mkdir('assets/result');
 setBasePath('assets');
 
 class Assets {
@@ -19,6 +20,25 @@ class Assets {
 
   getText(id) {
     return FS.readFile(`${basePath}/text/${id}`, { encoding: 'utf8' });
+  }
+
+  getResult(id) {
+    try {
+      return JSON.parse(
+        FS.readFile(`${basePath}/result/${id}`, { encoding: 'utf8' })
+      );
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        return undefined;
+      }
+      throw e;
+    }
+  }
+
+  setResult(id, result) {
+    return FS.writeFile(`${basePath}/result/${id}`, JSON.stringify(result), {
+      encoding: 'utf8',
+    });
   }
 
   textId(text) {

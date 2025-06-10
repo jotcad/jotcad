@@ -13,7 +13,6 @@ export { And } from './and.js';
 export { Arc2 } from './arc.js';
 export { Box2 } from './box.js';
 export { Box3 } from './box.js';
-export { Load } from './load.js';
 import { Op } from '@jotcad/op';
 export { Point } from './point.js';
 export { Stl } from './stl.js';

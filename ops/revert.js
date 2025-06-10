@@ -1,9 +1,9 @@
 import './shapeSpec.js';
 
-import { Op } from '@jotcad/op';
+import { registerOp } from './op.js';
 
-export const revert = Op.registerOp({
+export const revert = registerOp({
   name: 'revert',
   spec: ['shape', [], 'shape'],
-  code: (assets, input) => input.revert(),
+  code: (id, assets, input) => input.revert(),
 });

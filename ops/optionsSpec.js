@@ -1,6 +1,7 @@
 import { Op, specEquals } from '@jotcad/op';
 
 import { isArray } from './arraySpec.js';
+import { registerOp } from './op.js';
 
 const isKeysConforming = (schema, options) => {
   for (const key of Object.keys(options)) {
