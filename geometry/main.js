@@ -2,6 +2,7 @@ export { Arc2 } from './arc.js';
 export { Box2 } from './box.js';
 export { Box3 } from './box.js';
 export { Point } from './point.js';
+export { Shape } from './shape.js';
 export { cgal } from './getCgal.js';
 export { clip } from './clip.js';
 export { cut } from './cut.js';
