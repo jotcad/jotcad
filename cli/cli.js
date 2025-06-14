@@ -6,6 +6,7 @@ import { argv } from 'process';
 import { note } from './note.js';
 import { readFile } from '@jotcad/ops';
 import { run } from '@jotcad/op';
+import { testPng } from './testPng.js';
 import { view } from './view.js';
 
 Error.stackTraceLimit = Infinity;
