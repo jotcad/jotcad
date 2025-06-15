@@ -8,19 +8,20 @@
 #include "shape.h"
 
 static GeometryId Cut(Assets& assets, Shape& shape,
-                      std::vector<Shape>& shapes) {
+                      std::vector<Shape>& tool_shapes) {
   Geometry target =
       assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
   CGAL::Surface_mesh<CGAL::Point_3<EK>> target_mesh;
   target.EncodeSurfaceMesh<EK>(target_mesh);
 
-  for (Shape& shape : shapes) {
-    shape.Walk([&](Shape& shape) {
-      if (!shape.HasGeometryId()) {
-        return true;
-      }
+  std::function<bool(Shape&)> walk = [&](Shape& tool_shape) {
+    Shape mask_shape;
+    if (tool_shape.GetMask(mask_shape)) {
+      // Use any mask to cut.
+      walk(mask_shape);
+    } else if (tool_shape.HasGeometryId()) {
       Geometry tool =
-          assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
+          assets.GetGeometry(tool_shape.GeometryId()).Transform(tool_shape.GetTf());
       CGAL::Surface_mesh<CGAL::Point_3<EK>> tool_mesh;
       tool.EncodeSurfaceMesh<EK>(tool_mesh);
       if (!CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
@@ -30,8 +31,13 @@ static GeometryId Cut(Assets& assets, Shape& shape,
               CGAL::parameters::all_default())) {
         std::cout << "Cut: non-manifold" << std::endl;
       }
-      return true;
-    });
+      tool_shape.ForShapes(walk);
+    }
+    return true;
+  };
+
+  for (Shape& tool_shape : tool_shapes) {
+    walk(tool_shape);
   }
 
   // TODO: Preserve the non-triangle geometry.
