@@ -7,7 +7,9 @@
 
 class Shape {
  public:
+  Shape() {}
   Shape(Napi::Object shape) : napi_(shape) {}
+  Shape(const Shape& source) : napi_(source.ToNapi()) {}
 
   Napi::Object ToNapi() const { return napi_; }
 
@@ -21,6 +23,15 @@ class Shape {
   bool HasGeometryId() {
     Napi::String id = GeometryId();
     return id != napi_.Env().Undefined();
+  }
+
+  bool GetMask(Shape& mask) {
+    Napi::Object object = napi_.Get("mask").As<Napi::Object>();
+    if (object == napi_.Env().Undefined()) {
+      return false;
+    }
+    mask = Shape(object);
+    return true;
   }
 
   void SetTf(Napi::String tf) { napi_.Set("tf", tf); }
@@ -51,8 +62,22 @@ class Shape {
     return true;
   }
 
+  bool ForShapes(const std::function<bool(Shape&)> op) {
+    Napi::Array shapes = napi_.Get("shapes").As<Napi::Array>();
+    if (shapes == napi_.Env().Undefined()) {
+      return true;
+    }
+    for (uint32_t nth = 0; nth < shapes.Length(); nth++) {
+      Shape shape(shapes.Get(nth).As<Napi::Object>());
+      if (!op(shape)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
  public:
-  const Napi::Object napi_;
+  Napi::Object napi_;
   std::optional<Tf> tf_;
   std::optional<Napi::String> id_;
 };
