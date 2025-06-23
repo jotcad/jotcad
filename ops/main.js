@@ -31,6 +31,7 @@ export { fill3 } from './fill.js';
 export { get } from './get.js';
 export { join } from './join.js';
 export { nth } from './nth.js';
+export { mask } from './mask.js';
 export { png } from './png.js';
 export { readFile } from './fs.js';
 export { revert } from './revert.js';

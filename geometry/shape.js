@@ -1,15 +1,19 @@
 export class Shape {
   constructor({
-    shapes = undefined,
     geometry = undefined,
+    mask = undefined,
+    shapes = undefined,
     tags = undefined,
     tf = undefined,
   } = {}) {
-    if (shapes) {
-      this.shapes = shapes;
-    }
     if (geometry) {
       this.geometry = geometry;
+    }
+    if (mask) {
+      this.mask = mask;
+    }
+    if (shapes) {
+      this.shapes = shapes;
     }
     if (tags) {
       this.tags = tags;
@@ -21,11 +25,12 @@ export class Shape {
 
   derive({
     geometry = this.geometry,
+    mask = this.mask,
     shapes = this.shapes,
     tags = this.tags,
     tf = this.tf,
   }) {
-    return makeShape({ geometry, shapes, tags, tf });
+    return makeShape({ geometry, mask, shapes, tags, tf });
   }
 
   walk(op) {
