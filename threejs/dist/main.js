@@ -49274,13 +49274,13 @@ class SVGLoader extends Loader {
     let identifier = 0;
 
     let scanlineMinX = BIGNUMBER;
-    let scanlineMaxX = -999999999;
+    let scanlineMaxX = -BIGNUMBER;
 
     let simplePaths = shapePath.subPaths.map((p) => {
       const points = p.getPoints();
-      let maxY = -999999999;
+      let maxY = -BIGNUMBER;
       let minY = BIGNUMBER;
-      let maxX = -999999999;
+      let maxX = -BIGNUMBER;
       let minX = BIGNUMBER;
 
       //points.forEach(p => p.y *= -1);
@@ -50879,4 +50879,4 @@ class TrackballControls extends EventDispatcher {
 
 }
 
-export { ArrowHelper, AxesHelper, Box3, BoxGeometry, BufferGeometry, ColladaLoader, Color, CylinderGeometry, DataTexture, DoubleSide, EdgesGeometry, Euler, EventDispatcher, Float32BufferAttribute, Frustum, GridHelper, Group, HemisphereLight, Layers, Line, LineBasicMaterial, LineSegments, Matrix3, Matrix4, Mesh, MeshBasicMaterial, MeshNormalMaterial, MeshPhongMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Object3D, OctahedronGeometry, PCFShadowMap, Path, PerspectiveCamera, Plane, PlaneGeometry, Points, PointsMaterial, Quaternion, RGBAFormat, Raycaster, RepeatWrapping, SRGBColorSpace, SVGLoader, Scene, Shape, ShapeGeometry, SphereGeometry, SpotLight, SpotLightHelper, TorusGeometry, TrackballControls, UnsignedByteType, Vector2, Vector3, WebGLRenderTarget, WebGLRenderer, WireframeGeometry };
+export { AlwaysDepth, ArrowHelper, AxesHelper, Box3, BoxGeometry, BufferGeometry, ColladaLoader, Color, CylinderGeometry, DataTexture, DoubleSide, EdgesGeometry, Euler, EventDispatcher, Float32BufferAttribute, Frustum, GridHelper, Group, HemisphereLight, Layers, LessEqualDepth, Line, LineBasicMaterial, LineSegments, Matrix3, Matrix4, Mesh, MeshBasicMaterial, MeshNormalMaterial, MeshPhongMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Object3D, OctahedronGeometry, PCFShadowMap, Path, PerspectiveCamera, Plane, PlaneGeometry, Points, PointsMaterial, Quaternion, RGBAFormat, Raycaster, RepeatWrapping, SRGBColorSpace, SVGLoader, Scene, Shape, ShapeGeometry, SphereGeometry, SpotLight, SpotLightHelper, TorusGeometry, TrackballControls, UnsignedByteType, Vector2, Vector3, WebGLRenderTarget, WebGLRenderer, WireframeGeometry };
