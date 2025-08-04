@@ -4,15 +4,12 @@
   "description": "Javascript CAD",
   "repository": "https://github.com/jsxcad/JSxCAD",
   "scripts": {
-    "bootstrap": "lerna bootstrap --hoist",
-    "depcheck": "lerna run depcheck",
-    "lint": "lerna run lint",
-    "lintfix": "lerna run lintfix",
+    "depcheck": "npm run depcheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "lintfix": "npm run lintfix --workspaces --if-present",
     "prettier": "prettier --write .",
-    "publish-npm": "lerna publish",
-    "doc": "node doc/update.js",
     "cli": "node cli/cli.js",
-    "rollup": "lerna run rollup",
+    "rollup": "npm run rollup --workspaces --if-present",
     "tests": "node --test '*/*.test.js'"
   },
   "contributors": [],
@@ -20,7 +17,6 @@
   "license": "MIT",
   "devDependencies": {
     "@babel/eslint-parser": "^7.27.0",
-    "@lerna/legacy-package-management": "^8.2.1",
     "eslint": "^9.0.0",
     "eslint-config-standard": "^12.0.0",
     "eslint-plugin-import": "^2.16.0",
@@ -29,10 +25,18 @@
     "eslint-plugin-promise": "^4.0.1",
     "eslint-plugin-react": "^7.17.0",
     "eslint-plugin-standard": "^4.0.0",
-    "lerna": "^8.2.1",
     "prettier": "^2.3.1"
   },
   "publishConfig": {
     "access": "restricted"
-  }
+  },
+  "workspaces": [
+    "cli",
+    "geometry",
+    "op",
+    "ops",
+    "sys",
+    "threejs",
+    "web"
+  ]
 }
