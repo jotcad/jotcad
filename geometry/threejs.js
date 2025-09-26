@@ -113,7 +113,6 @@ export const decodeTf = (tf) => {
       case 'x': {
         pieces.shift();
         const tau = parseFloat(pieces.shift());
-        matrix.rotateX(Math.PI * 2 * tau);
         return makeRotateXMatrix(Math.PI * 2 * tau);
       }
       case 'y': {
