@@ -4,11 +4,11 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { URL } from 'url';
 import { compile } from './compiler.js';
 import { createReadStream } from 'node:fs';
+import hash from 'string-hash';
 import http from 'http';
 import { note } from './note.js';
 import path from 'path';
 import { run } from '@jotcad/op';
-import hash from 'string-hash';
 import { view } from './view.js';
 import { withFs } from '@jotcad/ops';
 
@@ -96,11 +96,16 @@ process.on('uncaughtException', (err) => {
 const joinPaths = (baseDir, ...targetPaths) => {
   const absoluteBase = path.resolve(baseDir);
   const absoluteTarget = path.resolve(absoluteBase, ...targetPaths);
-  if (!absoluteTarget.startsWith(absoluteBase + path.sep) && absoluteTarget !== absoluteBase) {
-    throw new Error(`Path Traversal Detected: "${targetPath}" attempts to escape base directory "${absoluteBase}"`);
+  if (
+    !absoluteTarget.startsWith(absoluteBase + path.sep) &&
+    absoluteTarget !== absoluteBase
+  ) {
+    throw new Error(
+      `Path Traversal Detected: "${targetPath}" attempts to escape base directory "${absoluteBase}"`
+    );
   }
   return absoluteTarget;
-}
+};
 
 const getContentType = (filePath) => {
   const ext = path.extname(filePath);
@@ -182,7 +187,7 @@ const handleGet = async (req, res) => {
 
     res.writeHead(200, {
       'Content-Type': contentType,
-      'Content-Length': stats.size 
+      'Content-Length': stats.size,
     });
 
     readStream.pipe(res);
