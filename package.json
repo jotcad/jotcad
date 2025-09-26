@@ -35,6 +35,7 @@
     "geometry",
     "op",
     "ops",
+    "server",
     "sys",
     "threejs",
     "web"

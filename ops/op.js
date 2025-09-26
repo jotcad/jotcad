@@ -1,10 +1,10 @@
 import { Op } from '@jotcad/op';
 import { Shape } from '@jotcad/geometry';
 
-export const registerOp = ({ name, spec, args, code }) => {
+export const registerOp = ({ name, effect = false, spec, args, code }) => {
   const cachingCode = async (id, assets, ...args) => {
     const result = assets.getResult(id);
-    if (result) {
+    if (result && effect === false) {
       const { value } = result;
       const walk = (shape) => {
         Object.setPrototypeOf(shape, Shape.prototype);

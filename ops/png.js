@@ -4,6 +4,7 @@ import { writeFile } from './fs.js';
 
 export const png = registerOp({
   name: 'png',
+  effect: true,
   spec: [
     null,
     ['string', 'vector3', ['options', { edge: 'boolean' }]],
@@ -19,7 +20,8 @@ export const png = registerOp({
       doOutlineEdges: edge,
     });
     const data = Buffer.from(image);
-    await writeFile(path, data);
+    console.log(`QQ/png: path=${path}`);
+    await writeFile(path, data, { id });
     return input;
   },
 });
