@@ -21,6 +21,8 @@ export const Arc2 = registerOp({
     ],
     'shape',
   ],
-  code: (id, assets, input, x, y = x, options = {}) =>
-    op2(assets, x, y, options),
+  code: (id, assets, input, x, y = x, options = {}) => {
+    console.log(`QQ/Arc2`);
+    return op2(assets, x, y, options);
+  },
 });

@@ -1,17 +1,18 @@
 {
-  "name": "@jotcad/threejs",
+  "name": "@jotcad/server",
   "version": "0.0.1",
-  "description": "ThreeJS algorithm integration for JotCAD",
+  "description": "JotCAD Web Server",
   "repository": "https://github.com/jotcad/jotcad",
   "main": "main.js",
   "module": "dist/main.js",
   "type": "module",
   "scripts": {
-    "depcheck": "depcheck --ignores '@jotcad/eslint*,eslint*,@babel/*' --ignore-patterns 'emsdk/**'",
-    "lint": "echo ok",
-    "lintfix": "echo ok",
-    "rollup": "rollup -c rollup_main.js",
-    "tests": "echo ok"
+    "depcheck": "depcheck --ignores '@jsxcad/eslint*,eslint*,@babel/*'",
+    "lint": "eslint *.js",
+    "lintfix": "eslint --fix *.js",
+    "rollup": "echo ok",
+    "test": "node --test",
+    "tests": "node --test *.test.js"
   },
   "contributors": [
     {
@@ -20,27 +21,26 @@
     }
   ],
   "keywords": [],
-  "license": "LGPL",
+  "license": "MIT",
   "dependencies": {
-    "style-to-object": "^0.3.0",
-    "three": "^0.162.0",
-    "xmldom": "^0.6.0"
+    "@jotcad/geometry": "^0.0.1",
+    "@jotcad/op": "^0.0.1",
+    "@jotcad/ops": "^0.0.1",
+    "acorn": "^8.15.0",
+    "acorn-walk": "^8.3.4",
+    "escodegen": "^2.1.0",
+    "string-hash": "^1.1.3"
   },
   "devDependencies": {
-    "@babel/eslint-parser": "^7.27.0",
     "depcheck": "^1.4.1",
     "eslint": "^9.0.0",
+    "@babel/eslint-parser": "^7.27.0",
     "eslint-config-standard": "^12.0.0",
     "eslint-plugin-import": "^2.16.0",
     "eslint-plugin-node": "^8.0.1",
     "eslint-plugin-promise": "^4.0.1",
     "eslint-plugin-react": "^7.17.0",
-    "eslint-plugin-standard": "^4.0.0",
-    "rollup": "^4.40.0",
-    "rollup-plugin-commonjs": "^9.3.4",
-    "rollup-plugin-node-builtins": "^2.0.0",
-    "rollup-plugin-node-globals": "^1.4.0",
-    "rollup-plugin-node-resolve": "^4.2.3"
+    "eslint-plugin-standard": "^4.0.0"
   },
   "publishConfig": {
     "access": "public"

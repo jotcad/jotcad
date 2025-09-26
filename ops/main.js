@@ -48,3 +48,5 @@ export { writeFile } from './fs.js';
 export { x } from './x.js';
 export { y } from './y.js';
 export { z } from './z.js';
+
+export { withFs } from './fs.js';

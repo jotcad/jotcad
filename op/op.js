@@ -35,8 +35,15 @@ export class Op {
   static code = {};
   static specHandlers = [];
 
-  constructor({ name = null, input = null, args = [], caller = null }) {
+  constructor({
+    name = null,
+    effect = null,
+    input = null,
+    args = [],
+    caller = null,
+  }) {
     this.name = name;
+    this.effect = effect;
     this.input = input;
     this.args = args;
     this.caller = null;
