@@ -1,0 +1,11 @@
+node_modules
+**/observed.*.test.*.png
+**/assets/*
+geometry/native.node
+geometry/Eigen/**
+geometry/eigen-*/**
+geometry/glpk-*/**
+geometry/gmp-*/**
+geometry/mpfr-*/**
+geometry/native/**
+geometry/*.tar.*
