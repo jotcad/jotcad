@@ -176,7 +176,7 @@ const handleGet = async (req, res) => {
         },
       };
 
-      await withAssets(session.path, async (assets) => {
+      await withAssets(session.assetsPath, async (assets) => {
         await withFs(fs, async () => {
           await run(assets, () => evaluator(bindings));
         });
@@ -278,7 +278,7 @@ const handlePost = async (req, res) => {
       },
     };
 
-    await withAssets(session.path, async (assets) => {
+    await withAssets(session.assetsPath, async (assets) => {
       await withFs(fs, async () => {
         await run(assets, () => evaluator(bindings));
       });

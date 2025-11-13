@@ -4,15 +4,18 @@ import { existsSync, mkdirSync } from 'node:fs';
 class Assets {
   constructor(basePath) {
     this.basePath = basePath;
+    console.log(`[JS Assets] constructor: basePath = ${basePath}`); // Log basePath
     this.tag = 'Assets';
     this.text = {};
-    // Create subdirectories
+    // Ensure subdirectories exist within the provided basePath
     FS.mkdir(`${basePath}/text`, { recursive: true });
     FS.mkdir(`${basePath}/result`, { recursive: true });
   }
 
   getText(id) {
-    return FS.readFile(`${this.basePath}/text/${id}`, { encoding: 'utf8' });
+    const path = `${this.basePath}/text/${id}`;
+    console.log(`[JS Assets] getText: basePath = ${this.basePath}, path = ${path}`); // Log basePath and path
+    return FS.readFile(path, { encoding: 'utf8' });
   }
 
   getResult(id) {
@@ -34,9 +37,10 @@ class Assets {
     });
   }
 
-  async textId(text) {
+  textId(text) {
     const id = cgal.ComputeTextHash(text);
     const path = `${this.basePath}/text/${id}`;
+    console.log(`[JS Assets] textId: basePath = ${this.basePath}, path = ${path}`); // Log basePath and path
     if (this.basePath === undefined) {
       throw Error('die');
     }
@@ -44,10 +48,10 @@ class Assets {
       return id;
     }
     try {
-      await FS.stat(path);
+      FS.stat(path); // Check if file exists
     } catch (e) {
       if (e.code === 'ENOENT') {
-        await FS.writeFile(path, text, { encoding: 'utf8' });
+        const result = FS.writeFile(path, text, { encoding: 'utf8' });
       }
     }
     this.text[id] = true;

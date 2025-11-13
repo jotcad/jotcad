@@ -13,16 +13,18 @@ export const getOrCreateSession = async (sessionId) => {
     return sessions.get(sessionId);
   }
   const sessionPath = path.join(SESSIONS_DIR, createHash('sha256').update(sessionId).digest('hex'));
-  const filesPath = path.join(sessionPath, 'files'); // files is now directly under sessionPath
+  const assetsPath = path.join(sessionPath, 'assets');
+  const filesPath = path.join(sessionPath, 'files');
   const session = {
     id: sessionId,
-    path: sessionPath, // sessionPath is now the base for Assets
+    path: sessionPath,
+    assetsPath: assetsPath,
     filesPath: filesPath,
     createdAt: Date.now(),
   };
   sessions.set(sessionId, session);
-  await mkdir(sessionPath, { recursive: true }); // Ensure sessionPath exists
-  await mkdir(filesPath, { recursive: true }); // Ensure filesPath exists
+  await mkdir(assetsPath, { recursive: true });
+  await mkdir(filesPath, { recursive: true });
   return session;
 };
 
