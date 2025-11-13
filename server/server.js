@@ -317,8 +317,8 @@ const handlePost = async (req, res) => {
   }
 };
 
-const hostname = '127.0.0.1';
-const port = 3000;
+const hostname = process.env.HOSTNAME || '127.0.0.1';
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 const server = http.createServer((req, res) => {
   switch (req.method) {
