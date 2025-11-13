@@ -9,7 +9,9 @@ typedef Napi::Value GeometryId;
 
 class Assets {
  public:
-  Assets(Napi::Object napi) : napi_(napi), undefined_(napi.Env().Undefined()) {}
+  Assets(Napi::Object napi) : napi_(napi), undefined_(napi.Env().Undefined()) {
+    base_path_ = napi.Get("basePath").As<Napi::String>().Utf8Value();
+  }
 
   Napi::Object Space(const std::string& key) {
     Napi::Object obj = napi_.Get(key).As<Napi::Object>();
@@ -90,14 +92,8 @@ class Assets {
     return Napi::ObjectWrap<SurfaceMeshWrapper>::Unwrap(wrapped_mesh)->Get();
   }
 
-  static void SetBasePath(const std::string& base_path) {
-    base_path_ = base_path;
-  }
-
  public:
   const Napi::Object napi_;
   const Napi::Value undefined_;
-  static std::string base_path_;
+  std::string base_path_;
 };
-
-std::string Assets::base_path_;

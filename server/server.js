@@ -1,6 +1,8 @@
 import * as api from './api.js';
-import { cgal, withAssets } from '@jotcad/geometry';
+
+import { getOrCreateSession, startCleanup } from './session.js';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+
 import { URL } from 'url';
 import { compile } from './compiler.js';
 import { createReadStream } from 'node:fs';
@@ -10,6 +12,8 @@ import { note } from './note.js';
 import path from 'path';
 import { run } from '@jotcad/op';
 import { view } from './view.js';
+import vm from 'node:vm';
+import { withAssets } from '@jotcad/geometry';
 import { withFs } from '@jotcad/ops';
 
 const bindings = { ...api, note, view };
@@ -84,6 +88,17 @@ const whitelist = {
     'z',
   ],
   globals: [],
+  nodes: [
+    'Program',
+    'ExpressionStatement',
+    'CallExpression',
+    'Identifier',
+    'Literal',
+    'MemberExpression',
+  ],
+  operators: [
+    '+', '-', '*', '/', '=',
+  ],
 };
 
 Error.stackTraceLimit = Infinity;
@@ -101,7 +116,7 @@ const joinPaths = (baseDir, ...targetPaths) => {
     absoluteTarget !== absoluteBase
   ) {
     throw new Error(
-      `Path Traversal Detected: "${targetPath}" attempts to escape base directory "${absoluteBase}"`
+      `Path Traversal Detected: "${targetPaths}" attempts to escape base directory "${absoluteBase}"`
     );
   }
   return absoluteTarget;
@@ -131,79 +146,172 @@ const getContentType = (filePath) => {
 const handleGet = async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    const [op, code, downloadFile] = url.pathname.split('/');
-    if (code === 'favicon.ico') {
+    const [op, sessionId, ...rest] = url.pathname.split('/').slice(1);
+
+    if (!sessionId) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Session ID is required.');
+      return;
+    }
+
+    if (sessionId === 'favicon.ico') {
       throw Error('favicon');
     }
-    const ecmascript = compile(decodeURIComponent(code), whitelist);
-    console.log(`Run ${ecmascript} ${downloadFile}`);
 
-    const evaluator = new Function(
-      `{ ${Object.keys({ ...bindings }).join(', ')} }`,
-      ecmascript
-    );
+    const session = await getOrCreateSession(sessionId);
 
-    let output = 'ok';
-    let mimeType = 'text/plain';
+    if (op === 'run') {
+      const [code, downloadFile] = rest;
+      const ecmascript = compile(decodeURIComponent(code), whitelist);
+      console.log(`Run ${ecmascript}`);
 
-    const basePath = `./io/${hash(ecmascript)}`;
-    const downloadPath = joinPaths(basePath, downloadFile);
+      const context = vm.createContext({ ...bindings });
+      const script = new vm.Script(ecmascript);
+      const evaluator = () => script.runInContext(context, { timeout: 5000 });
+
+      const fs = {
+        writeFile: async (file, data) => {
+          const path = joinPaths(session.filesPath, file);
+          await writeFile(path, data);
+        },
+      };
+
+      await withAssets(session.path, async (assets) => {
+        await withFs(fs, async () => {
+          await run(assets, () => evaluator(bindings));
+        });
+      });
+
+      if (downloadFile) {
+        const downloadPath = joinPaths(session.filesPath, downloadFile);
+        const stats = await stat(downloadPath);
+        const contentType = getContentType(downloadPath);
+        const readStream = createReadStream(downloadPath);
+
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Content-Length': stats.size,
+        });
+
+        readStream.pipe(res);
+
+        readStream.on('error', (streamErr) => {
+          console.error('Stream Error:', streamErr);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end('Server error.');
+          } else {
+            res.end();
+          }
+        });
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('ok');
+      }
+    } else if (op === 'get') {
+      const [downloadFile] = rest;
+      const downloadPath = joinPaths(session.filesPath, downloadFile);
+      const stats = await stat(downloadPath);
+      const contentType = getContentType(downloadPath);
+      const readStream = createReadStream(downloadPath);
+
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': stats.size,
+      });
+
+      readStream.pipe(res);
+
+      readStream.on('error', (streamErr) => {
+        console.error('Stream Error:', streamErr);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Server error.');
+        } else {
+          res.end();
+        }
+      });
+    } else {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Invalid operation. Use "run" or "get".');
+    }
+  } catch (e) {
+    console.log(`QQ/error: ${e}`);
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('' + e);
+  }
+};
+
+const handlePost = async (req, res) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const [op, sessionId, downloadFile] = url.pathname.split('/').slice(1);
+
+    if (op !== 'run') {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Invalid operation. Use "run".');
+      return;
+    }
+
+    if (!sessionId) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Session ID is required.');
+      return;
+    }
+
+    const session = await getOrCreateSession(sessionId);
+    let body = '';
+    for await (const chunk of req) {
+      body += chunk;
+    }
+    const ecmascript = compile(body, whitelist);
+    console.log(`Run ${ecmascript}`);
+
+    const context = vm.createContext({ ...bindings });
+    const script = new vm.Script(ecmascript);
+    const evaluator = () => script.runInContext(context, { timeout: 5000 });
 
     const fs = {
       writeFile: async (file, data) => {
-        // Write our session artifacts.
-        const path = joinPaths(basePath, file);
+        const path = joinPaths(session.filesPath, file);
         await writeFile(path, data);
-        if (file === path) {
-          output = data;
-          if (file.endsWith('.png')) {
-            mimeType = 'image/png';
-          } else if (file.endsWith('.svg')) {
-            mimeType = 'image/svg+xml';
-          }
-        }
       },
     };
 
-    await mkdir(basePath, { recursive: true });
+    await withAssets(session.path, async (assets) => {
+      await withFs(fs, async () => {
+        await run(assets, () => evaluator(bindings));
+      });
+    });
 
-    let stats;
-    try {
-      stats = await stat(downloadPath);
-    } catch (e) {
-      if (e.code === 'ENOENT') {
-        await withAssets(async (assets) => {
-          await withFs(fs, async () => {
-            const graph = await run(assets, () => evaluator(bindings));
-          });
-        });
-      }
-      stats = await stat(downloadPath);
+    if (downloadFile) {
+      const downloadPath = joinPaths(session.filesPath, downloadFile);
+      const stats = await stat(downloadPath);
+      const contentType = getContentType(downloadPath);
+      const readStream = createReadStream(downloadPath);
+
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': stats.size,
+      });
+
+      readStream.pipe(res);
+
+      readStream.on('error', (streamErr) => {
+        console.error('Stream Error:', streamErr);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Server error.');
+        } else {
+          res.end();
+        }
+      });
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('ok');
     }
-
-    const contentType = getContentType(downloadPath);
-
-    const readStream = createReadStream(downloadPath);
-
-    res.writeHead(200, {
-      'Content-Type': contentType,
-      'Content-Length': stats.size,
-    });
-
-    readStream.pipe(res);
-
-    readStream.on('error', (streamErr) => {
-      console.error('Stream Error:', streamErr);
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end('Server error.');
-      } else {
-        res.end();
-      }
-    });
-    return;
   } catch (e) {
-    console.log(`QQ/error: ${e}`);
+    console.error(`Error handling POST request: ${e}`);
     res.writeHead(500, { 'Content-Type': 'text/plain' });
     res.end('' + e);
   }
@@ -216,10 +324,20 @@ const server = http.createServer((req, res) => {
   switch (req.method) {
     case 'GET': {
       handleGet(req, res);
+      break;
+    }
+    case 'POST': {
+      handlePost(req, res);
+      break;
+    }
+    default: {
+      res.writeHead(405, { 'Content-Type': 'text/plain' });
+      res.end('Method Not Allowed');
     }
   }
 });
 
 server.listen(port, hostname, () => {
   console.log(`Server running at http://${hostname}:${port}/`);
+  startCleanup();
 });

@@ -46,11 +46,7 @@ export const compile = (sourceCode, whitelist) => {
   // Pass 1: Collect all 'var' declarations
   simple(ast, {
     VariableDeclaration(node) {
-      if (node.kind !== 'var') {
-        throw new Error(
-          `Invalid variable declaration keyword: '${node.kind}' is not allowed. Only 'var' is.`
-        );
-      }
+      // Allow 'var', 'let', and 'const'. The sandbox prevents access to global Node.js objects.
       node.declarations.forEach((decl) => {
         if (decl.id && decl.id.type === 'Identifier') {
           declaredVariables.add(decl.id.name);

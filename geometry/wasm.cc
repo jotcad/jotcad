@@ -198,13 +198,7 @@ Napi::String World(const Napi::CallbackInfo& info) {
   return Napi::String::New(env, "world");
 }
 
-Napi::Value SetAssetsBasePathBinding(const Napi::CallbackInfo& info) {
-  AssertArgCount(info, 1);
-  Napi::Env env = info.Env();
-  Napi::String path = info[0].As<Napi::String>();
-  Assets::SetBasePath(path.Utf8Value());
-  return info.Env().Undefined();
-}
+
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);
@@ -239,8 +233,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, TextIdBinding));
   exports.Set(Napi::String::New(env, "Triangulate"),
               Napi::Function::New(env, TriangulateBinding));
-  exports.Set(Napi::String::New(env, "SetAssetsBasePath"),
-              Napi::Function::New(env, SetAssetsBasePathBinding));
+
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));
   exports.Set(Napi::String::New(env, "ComputeTextHash"),
               Napi::Function::New(env, ComputeTextHashBinding));
