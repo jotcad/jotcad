@@ -34,7 +34,7 @@ class Assets {
     });
   }
 
-  textId(text) {
+  async textId(text) {
     const id = cgal.ComputeTextHash(text);
     const path = `${this.basePath}/text/${id}`;
     if (this.basePath === undefined) {
@@ -44,10 +44,10 @@ class Assets {
       return id;
     }
     try {
-      FS.stat(path);
+      await FS.stat(path);
     } catch (e) {
       if (e.code === 'ENOENT') {
-        const result = FS.writeFile(path, text, { encoding: 'utf8' });
+        await FS.writeFile(path, text, { encoding: 'utf8' });
       }
     }
     this.text[id] = true;
