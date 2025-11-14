@@ -1,5 +1,8 @@
-import { cgal } from './getCgal.js';
+import './transform.js'; // Added this line
+
 import { buildCorners, computeMiddle, computeScale } from './corners.js';
+
+import { cgal } from './getCgal.js';
 import { makeShape } from './shape.js'; // Added
 
 const DEFAULT_ORB_ZAG = 1;

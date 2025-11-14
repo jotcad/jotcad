@@ -1,6 +1,6 @@
 import * as api from './api.js';
 
-import { getOrCreateSession, startCleanup, cleanupSessions } from './session.js'; // Added cleanupSessions
+import { cleanupSessions, getOrCreateSession, startCleanup } from './session.js'; // Added cleanupSessions
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 
 import { URL } from 'url';
@@ -15,15 +15,15 @@ import { view } from './view.js';
 import vm from 'node:vm';
 import { withAssets } from '@jotcad/geometry';
 import { withFs } from '@jotcad/ops';
-import { Orb } from '../ops/orb.js';
 
-const bindings = { ...api, note, view, Orb };
+const bindings = { ...api, note, view };
 
 const whitelist = {
   functions: [
     'And',
     'Arc2',
     'Box2',
+    'Orb',
     'Point',
     'Z',
     'absolute',
@@ -53,12 +53,12 @@ const whitelist = {
     'x',
     'y',
     'z',
-    'Orb',
   ],
   methods: [
     'And',
     'Arc2',
     'Box2',
+    'Orb',
     'Point',
     'Z',
     'absolute',
