@@ -1,8 +1,5 @@
 #pragma once
 
-#define GEOMETRY_MESH 0
-#define STATUS_OK 0
-
 #include <CGAL/Cartesian_converter.h>
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>

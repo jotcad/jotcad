@@ -1,4 +1,5 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path'; // Import the path module
 
 import pixelmatch from 'pixelmatch';
 import pngjs from 'pngjs';
@@ -17,10 +18,15 @@ export const testPng = async (
   observedPng,
   threshold = 1000
 ) => {
-  const observedPngPath = `observed.${expectedPngPath}`;
-  if (observedPng) {
-    await writeFile(observedPngPath, Buffer.from(observedPng));
-  }
+  const dir = path.dirname(expectedPngPath);
+  const filename = path.basename(expectedPngPath);
+    const observedPngPath = path.join(dir, `observed.${filename}`);
+    console.log(`[testPng] observedPngPath: ${observedPngPath}`);
+    console.log(`[testPng] observedPng is defined: ${observedPng !== undefined && observedPng !== null}`);
+  
+    if (observedPng) {
+      await writeFile(observedPngPath, Buffer.from(observedPng));
+    }
   const observedPngImage = pngjs.PNG.sync.read(await readFile(observedPngPath));
   const { width, height } = observedPngImage;
   let numFailedPixels = 0;

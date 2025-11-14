@@ -200,11 +200,8 @@ static Napi::Value MakeOrbBinding(const Napi::CallbackInfo& info) {
   double radius_bound = info[2].As<Napi::Number>().DoubleValue();
   double distance_bound = info[3].As<Napi::Number>().DoubleValue();
 
-  Geometry geometry; // Create a temporary Geometry object
-  MakeOrb(&geometry, angular_bound, radius_bound, distance_bound); // Pass pointer to MakeOrb
-
-  // Convert the created geometry to a GeometryId using assets.TextId
-  return assets.TextId(geometry);
+  // Directly call the updated MakeOrb function and return its GeometryId
+  return MakeOrb(assets, angular_bound, radius_bound, distance_bound);
 }
 
 Napi::String World(const Napi::CallbackInfo& info) {

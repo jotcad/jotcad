@@ -25,8 +25,8 @@ t 2 0 1
 `;
 
 describe('stl', () => {
-  it('should convert to an stl', () =>
-    withAssets(async (assets) => {
+  it('should convert to an stl', async () => {
+    await withAssets(async (assets) => {
       const id = assets.textId(
         'V 3\nv 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nT 1\nt 0 1 2\n'
       );
@@ -36,11 +36,13 @@ describe('stl', () => {
           toStl(assets, makeShape({ geometry: id }))
         )
       );
-    }));
+    });
+  });
 
-  it('should convert from an stl', () =>
-    withAssets(async (assets) => {
+  it('should convert from an stl', async () => {
+    await withAssets(async (assets) => {
       const shape = fromStl(assets, new TextEncoder('utf8').encode(stlText));
       assert.ok(geometryText, assets.getText(shape.geometry));
-    }));
+    });
+  });
 });

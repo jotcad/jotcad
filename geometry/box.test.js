@@ -8,8 +8,8 @@ import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('box', () => {
-  it('should created a 3d box', () =>
-    withAssets(async (assets) => {
+  it('should created a 3d box', async () => {
+    await withAssets(async (assets) => {
       const box = await Box3(assets, [-1, 1], [-1, 1], [-1, 1]);
       const image = await renderPng(assets, box, {
         view: { position: [3 * 2, 4 * 2, 5 * 2] },
@@ -17,10 +17,11 @@ describe('box', () => {
         height: 512,
       });
       assert.ok(await testPng('box.test.Box3.png', image));
-    }));
+    });
+  });
 
-  it('should create a 2d box', () =>
-    withAssets(async (assets) => {
+  it('should create a 2d box', async () => {
+    await withAssets(async (assets) => {
       const box = await Box2(assets, [0, 1], [0, 1]);
       const image = await renderPng(assets, box, {
         view: { position: [3, 4, 5] },
@@ -28,5 +29,6 @@ describe('box', () => {
         height: 512,
       });
       assert.ok(await testPng('box.test.Box2.png', image));
-    }));
+    });
+  });
 });

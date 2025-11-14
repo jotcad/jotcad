@@ -20,7 +20,7 @@ static FT unitSphereFunction(Point p) {
   return x2 + y2 + z2 - 1;
 }
 
-static int MakeOrb(Geometry* geometry, double angular_bound,
+static GeometryId MakeOrb(Assets& assets, double angular_bound,
                           double radius_bound, double distance_bound) {
   typedef CGAL::Exact_predicates_inexact_constructions_kernel IK;
   typedef CGAL::Surface_mesh_default_triangulation_3 Tr;
@@ -45,9 +45,7 @@ static int MakeOrb(Geometry* geometry, double angular_bound,
   CGAL::Surface_mesh<IK::Point_3> epick_mesh;
   CGAL::facets_in_complex_2_to_triangle_mesh(c2t3, epick_mesh);
 
-  // Use assets to add geometry
-  geometry->DecodeSurfaceMesh<IK>(epick_mesh);
-  // TODO: How to return this geometry via assets?
-  // For now, we'll just return STATUS_OK, but this needs to be fixed.
-  return STATUS_OK;
+  Geometry geometry; // Create a local Geometry object
+  geometry.DecodeSurfaceMesh<IK>(epick_mesh);
+  return assets.TextId(geometry); // Return GeometryId via assets
 }

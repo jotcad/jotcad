@@ -8,8 +8,8 @@ import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('link', () => {
-  it('should produce an open linkage of points', () =>
-    withAssets(async (assets) => {
+  it('should produce an open linkage of points', async () => {
+    await withAssets(async (assets) => {
       const shape = Link(
         assets,
         [
@@ -30,10 +30,11 @@ describe('link', () => {
         height: 512,
       });
       await writeFile('link.test.open.png', Buffer.from(image));
-    }));
+    });
+  });
 
-  it('should produce a closed linkage of points', () =>
-    withAssets(async (assets) => {
+  it('should produce a closed linkage of points', async () => {
+    await withAssets(async (assets) => {
       const shape = Link(
         assets,
         [
@@ -54,10 +55,11 @@ describe('link', () => {
         height: 512,
       });
       await writeFile('link.test.closed.png', Buffer.from(image));
-    }));
+    });
+  });
 
-  it('should produce a reversed linkage of points', () =>
-    withAssets(async (assets) => {
+  it('should produce a reversed linkage of points', async () => {
+    await withAssets(async (assets) => {
       const shape = Link(
         assets,
         [
@@ -78,5 +80,6 @@ describe('link', () => {
         height: 512,
       });
       await writeFile('link.test.reverse.png', Buffer.from(image));
-    }));
+    });
+  });
 });

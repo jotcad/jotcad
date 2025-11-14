@@ -6,8 +6,8 @@ import { makeAbsolute } from './makeAbsolute.js';
 import { withAssets } from './assets.js';
 
 describe('makeAbsolute', () =>
-  it('should make a box absolute', () =>
-    withAssets(async (assets) => {
+  it('should make a box absolute', async () => {
+    await withAssets(async (assets) => {
       const box = Box3(assets, [1, 3], [1, 3], [1, 3]);
       const absoluteBox = makeAbsolute(assets, box);
       assert.strictEqual(
@@ -36,4 +36,5 @@ t 0 4 6
 `,
         assets.getText(absoluteBox.geometry)
       );
-    })));
+    });
+  }));

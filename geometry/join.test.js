@@ -8,8 +8,8 @@ import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 
 describe('join', () =>
-  it('should join two boxes at a corner', () =>
-    withAssets(async (assets) => {
+  it('should join two boxes at a corner', async () => {
+    await withAssets(async (assets) => {
       const box = Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = Box3(assets, [1, 2], [1, 2], [1, 4]);
       const joinedBox = join(assets, box, [tool]);
@@ -19,4 +19,5 @@ describe('join', () =>
         height: 512,
       });
       assert.ok(await testPng('join.test.corner.png', image));
-    })));
+    });
+  }));
