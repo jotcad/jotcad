@@ -18,15 +18,17 @@ geometry/*.tar.gz
 geometry/eigen-3.3.9/
 geometry/glpk-5.0/
 geometry/gmp-6.2.1/
+geometry/gmp-6.2.1
+geometry/gmp-6.2.1.tar.xz
 geometry/mpfr-4.2.1/
+geometry/mpfr-4.2.1.tar.xz
+geometry/CGAL
 geometry/CGAL/
 geometry/Eigen/
 geometry/glm/
 geometry/cgal/
 
 # Ignore test output images
-geometry/*.png
-*.test.png
 observed.*.png
 
 # Ignore temporary files
@@ -39,9 +41,3 @@ geometry/.orb.js.swp
 # Ignore generated assets
 server/assets/
 geometry/assets/
-
-# Ignore explanation file (temporary)
-EXPLANATION_OF_CLEANUP_BEHAVIOR.md
-
-# Ignore duplicate Orb.js (if it somehow reappears)
-geometry/Orb.js

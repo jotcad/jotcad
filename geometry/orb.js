@@ -3,7 +3,7 @@ import './transform.js'; // Added this line
 import { buildCorners, computeMiddle, computeScale } from './corners.js';
 
 import { cgal } from './getCgal.js';
-import { makeShape } from './shape.js'; // Added
+import { makeShape } from './shape.js';
 
 const DEFAULT_ORB_ZAG = 1;
 
@@ -15,11 +15,11 @@ export const Orb = (assets, x = 1, y = x, z = x, zag = DEFAULT_ORB_ZAG) => {
 
   const [c1, c2] = buildCorners(x, y, z);
   const scale = scaleVector(0.5, computeScale(c1, c2));
-  const middle = computeMiddle(c1, c2); // Compute middle
+  const middle = computeMiddle(c1, c2);
   const radius = Math.max(...scale);
   const tolerance = zag / radius;
 
-  const angularBound = 30; // Hardcoded as in original JSxCAD
+  const angularBound = 30;
   const radiusBound = tolerance;
   const distanceBound = tolerance;
 
@@ -27,6 +27,6 @@ export const Orb = (assets, x = 1, y = x, z = x, zag = DEFAULT_ORB_ZAG) => {
 
   // Create a Shape object and apply transformations
   return makeShape({ geometry: geometryId })
-    .scale(scale[0], scale[1], scale[2]) // Apply scale
-    .move(middle[0], middle[1], middle[2]); // Apply move
+    .scale(scale[0], scale[1], scale[2])
+    .move(middle[0], middle[1], middle[2]);
 };

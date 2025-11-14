@@ -14,6 +14,6 @@ describe('Orb', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('orb.test.png', image)); // Reference image name
+      assert.ok(await testPng('geometry/orb.test.png', image)); // Reference image name
     }));
 });
