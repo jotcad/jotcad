@@ -23,7 +23,12 @@ export const Orb = (assets, x = 1, y = x, z = x, zag = DEFAULT_ORB_ZAG) => {
   const radiusBound = tolerance;
   const distanceBound = tolerance;
 
-  const geometryId = cgal.MakeOrb(assets, angularBound, radiusBound, distanceBound);
+  const geometryId = cgal.MakeOrb(
+    assets,
+    angularBound,
+    radiusBound,
+    distanceBound
+  );
 
   // Create a Shape object and apply transformations
   return makeShape({ geometry: geometryId })

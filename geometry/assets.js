@@ -31,9 +31,13 @@ class Assets {
   }
 
   setResult(id, result) {
-    return FS.writeFile(`${this.basePath}/result/${id}`, JSON.stringify(result), {
-      encoding: 'utf8',
-    });
+    return FS.writeFile(
+      `${this.basePath}/result/${id}`,
+      JSON.stringify(result),
+      {
+        encoding: 'utf8',
+      }
+    );
   }
 
   textId(text) {
@@ -62,9 +66,12 @@ let testCounter = 0;
 
 export const withAssets = async (op) => {
   // Generate a unique basePath for each test
-  const testId = createHash('sha256').update(op.toString()).digest('hex').substring(0, 10);
+  const testId = createHash('sha256')
+    .update(op.toString())
+    .digest('hex')
+    .substring(0, 10);
   const basePath = `/tmp/jotcad/tests/${testId}-${testCounter++}`;
-  
+
   const assets = new Assets(basePath);
   const result = await op(assets);
   return result;

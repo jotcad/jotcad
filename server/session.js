@@ -1,4 +1,12 @@
-import { mkdir, readdir, rename, rm, rmdir, stat, unlink } from 'node:fs/promises'; // Added stat
+import {
+  mkdir,
+  readdir,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  unlink,
+} from 'node:fs/promises'; // Added stat
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
@@ -11,7 +19,10 @@ export const getOrCreateSession = async (sessionId) => {
   if (sessions.has(sessionId)) {
     return sessions.get(sessionId);
   }
-  const sessionPath = path.join(SESSIONS_DIR, createHash('sha256').update(sessionId).digest('hex'));
+  const sessionPath = path.join(
+    SESSIONS_DIR,
+    createHash('sha256').update(sessionId).digest('hex')
+  );
   const assetsPath = path.join(sessionPath, 'assets');
   const filesPath = path.join(sessionPath, 'files');
   const session = {
@@ -32,12 +43,14 @@ export const getSession = (sessionId) => sessions.get(sessionId);
 // New function to check if a directory on disk is expired
 const isDirectoryExpired = (dirPath, mtime) => {
   const now = Date.now();
-  return dirPath.endsWith('.deleteme') || (now - mtime) > ONE_HOUR_IN_MS;
+  return dirPath.endsWith('.deleteme') || now - mtime > ONE_HOUR_IN_MS;
 };
 
 // Helper function to delete the known contents of a session directory (non-recursive)
 const deleteSessionDirectoryContents = async (sessionPath, sessionId) => {
-  console.log(`Attempting to clean up directory: ${sessionPath} for session ${sessionId}`);
+  console.log(
+    `Attempting to clean up directory: ${sessionPath} for session ${sessionId}`
+  );
 
   const assetsPath = path.join(sessionPath, 'assets');
   const filesPath = path.join(sessionPath, 'files');
@@ -49,14 +62,21 @@ const deleteSessionDirectoryContents = async (sessionPath, sessionId) => {
     try {
       // Use rm with recursive: true to ensure the directory and its contents are fully removed
       await rm(dirPath, { recursive: true, force: true });
-      console.log(`Deleted ${type} directory and its contents: ${dirPath} in session ${sessionId}`);
+      console.log(
+        `Deleted ${type} directory and its contents: ${dirPath} in session ${sessionId}`
+      );
       return true; // Indicate success
     } catch (err) {
       if (err.code === 'ENOENT') {
-        console.log(`${type} directory not found, skipping: ${dirPath} for session ${sessionId}`);
+        console.log(
+          `${type} directory not found, skipping: ${dirPath} for session ${sessionId}`
+        );
         return true; // Not found is also a form of success for cleanup
       } else {
-        console.error(`Error cleaning ${type} directory ${dirPath} for session ${sessionId}:`, err);
+        console.error(
+          `Error cleaning ${type} directory ${dirPath} for session ${sessionId}:`,
+          err
+        );
         return false; // Indicate failure
       }
     }
@@ -71,21 +91,32 @@ const deleteSessionDirectoryContents = async (sessionPath, sessionId) => {
   if (assetsCleaned && filesCleaned && resultCleaned && textCleaned) {
     try {
       await rmdir(sessionPath);
-      console.log(`Deleted empty session directory: ${sessionPath} for session ${sessionId}`);
+      console.log(
+        `Deleted empty session directory: ${sessionPath} for session ${sessionId}`
+      );
     } catch (err) {
       if (err.code === 'ENOENT') {
-        console.log(`Session directory not found, skipping: ${sessionPath} for session ${sessionId}`);
+        console.log(
+          `Session directory not found, skipping: ${sessionPath} for session ${sessionId}`
+        );
       } else if (err.code === 'ENOTEMPTY') {
-        console.error(`Error: Session directory ${sessionPath} for session ${sessionId} is not empty (contains unexpected files/subdirectories). Keeping this directory.`, err);
+        console.error(
+          `Error: Session directory ${sessionPath} for session ${sessionId} is not empty (contains unexpected files/subdirectories). Keeping this directory.`,
+          err
+        );
       } else {
-        console.error(`Error deleting session directory ${sessionPath} for session ${sessionId}:`, err);
+        console.error(
+          `Error deleting session directory ${sessionPath} for session ${sessionId}:`,
+          err
+        );
       }
     }
   } else {
-    console.log(`Skipping deletion of session directory ${sessionPath} for session ${sessionId} because some expected subdirectories could not be fully cleaned.`);
+    console.log(
+      `Skipping deletion of session directory ${sessionPath} for session ${sessionId} because some expected subdirectories could not be fully cleaned.`
+    );
   }
 };
-
 
 export const cleanupSessions = async () => {
   console.log('Running session cleanup...');
@@ -102,7 +133,9 @@ export const cleanupSessions = async () => {
         stats = await stat(sessionPath);
       } catch (err) {
         if (err.code === 'ENOENT') {
-          console.log(`Directory ${sessionPath} not found during scan, skipping.`);
+          console.log(
+            `Directory ${sessionPath} not found during scan, skipping.`
+          );
           continue;
         }
         console.error(`Error getting stats for ${sessionPath}:`, err);
@@ -112,7 +145,13 @@ export const cleanupSessions = async () => {
       console.log(`Considering directory for cleanup: ${sessionPath}`);
 
       if (isDirectoryExpired(sessionPath, stats.mtimeMs)) {
-        console.log(`Decision: Cleaning up directory ${sessionPath}. Rationale: ${sessionPath.endsWith('.deleteme') ? 'Marked .deleteme' : 'Expired by modification time'}`);
+        console.log(
+          `Decision: Cleaning up directory ${sessionPath}. Rationale: ${
+            sessionPath.endsWith('.deleteme')
+              ? 'Marked .deleteme'
+              : 'Expired by modification time'
+          }`
+        );
         await deleteSessionDirectoryContents(sessionPath, sessionId);
         // If this session was in the map, remove it.
         // We need to derive the original sessionId from dirName if it's a hash.
@@ -120,12 +159,16 @@ export const cleanupSessions = async () => {
         // This part needs more thought if we want to remove from the map reliably.
         // For now, we'll just clean up the directory on disk.
       } else {
-        console.log(`Decision: Keeping directory ${sessionPath}. Rationale: Not expired.`);
+        console.log(
+          `Decision: Keeping directory ${sessionPath}. Rationale: Not expired.`
+        );
       }
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
-      console.log(`Session directory ${SESSIONS_DIR} not found, skipping cleanup scan.`);
+      console.log(
+        `Session directory ${SESSIONS_DIR} not found, skipping cleanup scan.`
+      );
     } else {
       console.error(`Error scanning SESSIONS_DIR for cleanup:`, error);
     }

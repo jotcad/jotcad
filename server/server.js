@@ -1,6 +1,10 @@
 import * as api from './api.js';
 
-import { cleanupSessions, getOrCreateSession, startCleanup } from './session.js'; // Added cleanupSessions
+import {
+  cleanupSessions,
+  getOrCreateSession,
+  startCleanup,
+} from './session.js'; // Added cleanupSessions
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 
 import { URL } from 'url';
@@ -98,9 +102,7 @@ const whitelist = {
     'Literal',
     'MemberExpression',
   ],
-  operators: [
-    '+', '-', '*', '/', '=',
-  ],
+  operators: ['+', '-', '*', '/', '='],
 };
 
 Error.stackTraceLimit = Infinity;
