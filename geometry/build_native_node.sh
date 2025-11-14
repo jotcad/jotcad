@@ -3,7 +3,7 @@ g++ -O3 \
     -DBUILDING_NODE_EXTENSION \
     -DIGNORE_NO_ATOMICS=1 \
     -DOCCT_NO_PLUGINS \
-    -I./native/include/CGAL/include/ \
+    -I./cgal/include/ \
     -I../node_modules/emnapi/include/node \
     -I../node_modules/node-addon-api \
     -I. \

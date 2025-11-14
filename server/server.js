@@ -1,6 +1,6 @@
 import * as api from './api.js';
 
-import { getOrCreateSession, startCleanup } from './session.js';
+import { getOrCreateSession, startCleanup, cleanupSessions } from './session.js'; // Added cleanupSessions
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 
 import { URL } from 'url';
@@ -15,8 +15,9 @@ import { view } from './view.js';
 import vm from 'node:vm';
 import { withAssets } from '@jotcad/geometry';
 import { withFs } from '@jotcad/ops';
+import { Orb } from '../ops/orb.js';
 
-const bindings = { ...api, note, view };
+const bindings = { ...api, note, view, Orb };
 
 const whitelist = {
   functions: [
@@ -52,6 +53,7 @@ const whitelist = {
     'x',
     'y',
     'z',
+    'Orb',
   ],
   methods: [
     'And',
@@ -337,7 +339,15 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(port, hostname, () => {
-  console.log(`Server running at http://${hostname}:${port}/`);
-  startCleanup();
-});
+// Check for --cleanup-and-exit argument
+if (process.argv.includes('--cleanup-and-exit')) {
+  console.log('Cleanup and exit requested. Performing session cleanup...');
+  await cleanupSessions(); // Call cleanupSessions directly
+  console.log('Session cleanup complete. Exiting.');
+  process.exit(0);
+} else {
+  server.listen(port, hostname, () => {
+    console.log(`Server running at http://${hostname}:${port}/`);
+    startCleanup();
+  });
+}
