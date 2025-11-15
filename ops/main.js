@@ -14,6 +14,7 @@ export { Arc2 } from './arc.js';
 export { Box2 } from './box.js';
 export { Box3 } from './box.js';
 import { Op } from '@jotcad/op';
+import { Orb } from './orb.js';
 export { Point } from './point.js';
 export { Stl } from './stl.js';
 export { Z } from './z.js';
