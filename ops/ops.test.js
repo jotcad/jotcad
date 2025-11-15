@@ -25,7 +25,7 @@ import { z } from './z.js';
 describe('ops', () => {
   it('should handle a simple chain', async () =>
     withFs(fs, async () => {
-      await withAssets(async (assets) => {
+      await withAssets('ops_test_simple_chain', async (assets) => {
         const graph = await run(assets, () =>
           Box2([0, 3], [0, 5])
             .fill2()
