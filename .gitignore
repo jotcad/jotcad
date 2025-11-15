@@ -42,3 +42,4 @@ geometry/.orb.js.swp
 server/assets/
 geometry/assets/
 geometry/*.png
+*.png
