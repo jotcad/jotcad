@@ -5,11 +5,11 @@ import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
 import { fill2 } from './fill.js';
+import { getTestDir } from './test_util.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('fill', () => {
   it('should fill a triangle', async () => {

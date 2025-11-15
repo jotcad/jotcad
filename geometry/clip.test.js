@@ -3,10 +3,10 @@ import { describe, it } from 'node:test';
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
 import { clip } from './clip.js';
+import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('clip', () =>
   it('should clip the corner of a box', async () => {

@@ -2,9 +2,9 @@ import { describe, it } from 'node:test';
 
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { makeAbsolute } from './makeAbsolute.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('makeAbsolute', () =>
   it('should make a box absolute', async () => {

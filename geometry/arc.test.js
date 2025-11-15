@@ -5,12 +5,12 @@ import { beforeEach, describe, it } from 'node:test';
 import { Arc2 } from './arc.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
+import { getTestDir } from './test_util.js';
 import { makeAbsolute } from './makeAbsolute.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('arc', () => {
   it('should build a full arc', async () => {

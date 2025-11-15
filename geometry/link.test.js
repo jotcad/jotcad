@@ -3,10 +3,11 @@ import { describe, it } from 'node:test';
 import { Link } from './link.js';
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
+import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('link', () => {
   it('should produce an open linkage of points', async () => {
@@ -30,7 +31,7 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      await writeFile('link.test.open.png', Buffer.from(image));
+      assert.ok(await testPng('link.test.open.png', image));
     });
   });
 
@@ -55,7 +56,7 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      await writeFile('link.test.closed.png', Buffer.from(image));
+      assert.ok(await testPng('link.test.closed.png', image));
     });
   });
 
@@ -80,7 +81,7 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      await writeFile('link.test.reverse.png', Buffer.from(image));
+      assert.ok(await testPng('link.test.reverse.png', image));
     });
   });
 });

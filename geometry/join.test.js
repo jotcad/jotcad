@@ -2,11 +2,11 @@ import { describe, it } from 'node:test';
 
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { join } from './join.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('join', () =>
   it('should join two boxes at a corner', async () => {

@@ -13,8 +13,8 @@ import { describe, it } from 'node:test';
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
+import { getTestDir } from './test_util.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('transform', () => {
   it('should simplify rotations', () => {

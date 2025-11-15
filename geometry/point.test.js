@@ -2,8 +2,8 @@ import { Point, Points } from './point.js';
 import { describe, it } from 'node:test';
 
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('point', () => {
   it('should create a point', async () => {

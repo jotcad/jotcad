@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test';
 
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('assets', () =>
   it('should create an asset textId', async () => {

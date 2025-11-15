@@ -2,9 +2,9 @@ import { describe, it } from 'node:test';
 import { fromStl, toStl } from './stl.js';
 
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { makeShape } from './shape.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 const stlText = `solid JotCad
 facet normal 0 0 1

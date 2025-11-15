@@ -2,11 +2,11 @@ import { Box2, Box3 } from './box.js';
 import { describe, it } from 'node:test';
 
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('box', () => {
   it('should created a 3d box', async () => {

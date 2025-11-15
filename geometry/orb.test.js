@@ -2,10 +2,10 @@ import { describe, it } from 'node:test';
 
 import { Orb } from './orb.js';
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
-import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('Orb', () => {
   it('should create a 3d orb', async () => {
