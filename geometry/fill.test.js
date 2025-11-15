@@ -11,8 +11,8 @@ import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 
 describe('fill', () => {
-  it('should fill a triangle', () =>
-    withAssets(async (assets) => {
+  it('should fill a triangle', async () => {
+    await withAssets(async (assets) => {
       const box = makeShape({
         geometry: cgal.Link(
           assets,
@@ -36,10 +36,11 @@ describe('fill', () => {
         height: 512,
       });
       assert.ok(await testPng('fill.test.triangle.png', image));
-    }));
+    });
+  });
 
-  it('should fill the perimeter of a hollow ring', () =>
-    withAssets(async (assets) => {
+  it('should fill the perimeter of a hollow ring', async () => {
+    await withAssets(async (assets) => {
       const outline = [
         Arc2(assets, [-20, 20], [-20, 20]),
         Arc2(assets, [-10, 10], [-10, 10]),
@@ -61,5 +62,6 @@ describe('fill', () => {
         height: 512,
       });
       assert.ok(await testPng('fill.test.ring.png', image));
-    }));
+    });
+  });
 });

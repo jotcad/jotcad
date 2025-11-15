@@ -8,8 +8,8 @@ import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 
 describe('clip', () =>
-  it('should clip the corner of a box', () =>
-    withAssets(async (assets) => {
+  it('should clip the corner of a box', async () => {
+    await withAssets(async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 4]);
       const joinedBox = clip(assets, box, [tool]);
@@ -19,4 +19,5 @@ describe('clip', () =>
         height: 512,
       });
       assert.ok(await testPng('clip.test.corner.png', image));
-    })));
+    });
+  }));

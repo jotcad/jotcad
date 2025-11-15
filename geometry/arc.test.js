@@ -12,8 +12,8 @@ import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('arc', () => {
-  it('should build a full arc', () =>
-    withAssets(async (assets) => {
+  it('should build a full arc', async () => {
+    await withAssets(async (assets) => {
       const full = await Arc2(assets, [-10, 10], [-10, 10], {
         start: 0,
         end: 1,
@@ -25,10 +25,11 @@ describe('arc', () => {
         height: 512,
       });
       assert.ok(await testPng('arc.test.full.png', image));
-    }));
+    });
+  });
 
-  it('should build an arc with the specified give', () =>
-    withAssets(async (assets) => {
+  it('should build an arc with the specified give', async () => {
+    await withAssets(async (assets) => {
       const full = await Arc2(assets, [-10, 10], [-10, 10], { give: 1 });
       const absoluteFull = makeAbsolute(assets, full);
       const image = await renderPng(assets, full, {
@@ -37,10 +38,11 @@ describe('arc', () => {
         height: 512,
       });
       assert.ok(await testPng('arc.test.give.png', image));
-    }));
+    });
+  });
 
-  it('should build a half-arc', () =>
-    withAssets(async (assets) => {
+  it('should build a half-arc', async () => {
+    await withAssets(async (assets) => {
       const half = await Arc2(assets, [-10, 10], [-10, 10], {
         start: 0,
         end: '1/2',
@@ -51,10 +53,11 @@ describe('arc', () => {
         height: 512,
       });
       assert.ok(await testPng('arc.test.half.png', image));
-    }));
+    });
+  });
 
-  it('should build a quarter arc', () =>
-    withAssets(async (assets) => {
+  it('should build a quarter arc', async () => {
+    await withAssets(async (assets) => {
       const half = await Arc2(assets, [-10, 10], [-10, 10], {
         start: 0,
         end: '1/4',
@@ -65,10 +68,11 @@ describe('arc', () => {
         height: 512,
       });
       assert.ok(await testPng('arc.test.quarter.png', image));
-    }));
+    });
+  });
 
-  it('should build a half square arc', () =>
-    withAssets(async (assets) => {
+  it('should build a half square arc', async () => {
+    await withAssets(async (assets) => {
       const half = await Arc2(assets, [-1, 1], [-1, 1], {
         sides: 4,
         start: 0,
@@ -80,10 +84,11 @@ describe('arc', () => {
         height: 512,
       });
       assert.ok(await testPng('arc.test.half_square.png', image));
-    }));
+    });
+  });
 
-  it('should build a quarter square arc', () =>
-    withAssets(async (assets) => {
+  it('should build a quarter square arc', async () => {
+    await withAssets(async (assets) => {
       const quarter = await Arc2(assets, [-1, 1], [-1, 1], {
         sides: 4,
         start: 0,
@@ -95,10 +100,11 @@ describe('arc', () => {
         height: 512,
       });
       assert.ok(await testPng('arc.test.quarter_square.png', image));
-    }));
+    });
+  });
 
-  it('should build a half square arc with the flats rotated', () =>
-    withAssets(async (assets) => {
+  it('should build a half square arc with the flats rotated', async () => {
+    await withAssets(async (assets) => {
       const quarter = await Arc2(assets, [-1, 1], [-1, 1], {
         sides: 4,
         start: 0,
@@ -111,5 +117,6 @@ describe('arc', () => {
         height: 512,
       });
       assert.ok(await testPng('arc.test.half_square_spin.png', image));
-    }));
+    });
+  });
 });

@@ -67,15 +67,16 @@ describe('transform', () => {
     );
   });
 
-  it('should translate a point', () =>
-    withAssets((assets) => {
+  it('should translate a point', async () => {
+    await withAssets(async (assets) => {
       const transformedPoint = Point(assets, 1, 2, 3).move(3, 2, 1);
       const id = cgal.MakeAbsolute(assets, transformedPoint);
       assert.strictEqual('V 1\nv 4 4 4 4 4 4\np 0\n', assets.getText(id));
-    }));
+    });
+  });
 
-  it('should rotate points', () =>
-    withAssets((assets) => {
+  it('should rotate points', async () => {
+    await withAssets(async (assets) => {
       assert.strictEqual(
         'V 1\nv 0 -1 0 0 -1 0\np 0\n',
         assets.getText(
@@ -94,5 +95,6 @@ describe('transform', () => {
           cgal.MakeAbsolute(assets, Point(assets, 1, 0, 0).rotateZ(1 / 3))
         )
       );
-    }));
+    });
+  });
 });

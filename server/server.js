@@ -1,6 +1,10 @@
 import * as api from './api.js';
 
-import { getOrCreateSession, startCleanup } from './session.js';
+import {
+  cleanupSessions,
+  getOrCreateSession,
+  startCleanup,
+} from './session.js'; // Added cleanupSessions
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 
 import { URL } from 'url';
@@ -23,6 +27,7 @@ const whitelist = {
     'And',
     'Arc2',
     'Box2',
+    'Orb',
     'Point',
     'Z',
     'absolute',
@@ -57,6 +62,7 @@ const whitelist = {
     'And',
     'Arc2',
     'Box2',
+    'Orb',
     'Point',
     'Z',
     'absolute',
@@ -96,9 +102,7 @@ const whitelist = {
     'Literal',
     'MemberExpression',
   ],
-  operators: [
-    '+', '-', '*', '/', '=',
-  ],
+  operators: ['+', '-', '*', '/', '='],
 };
 
 Error.stackTraceLimit = Infinity;
@@ -337,7 +341,15 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(port, hostname, () => {
-  console.log(`Server running at http://${hostname}:${port}/`);
-  startCleanup();
-});
+// Check for --cleanup-and-exit argument
+if (process.argv.includes('--cleanup-and-exit')) {
+  console.log('Cleanup and exit requested. Performing session cleanup...');
+  await cleanupSessions(); // Call cleanupSessions directly
+  console.log('Session cleanup complete. Exiting.');
+  process.exit(0);
+} else {
+  server.listen(port, hostname, () => {
+    console.log(`Server running at http://${hostname}:${port}/`);
+    startCleanup();
+  });
+}

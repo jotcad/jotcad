@@ -1,0 +1,43 @@
+# Ignore Node.js modules
+node_modules/
+cli/node_modules/
+geometry/node_modules/
+op/node_modules/
+ops/node_modules/
+server/node_modules/
+threejs/node_modules/
+
+# Ignore build artifacts
+geometry/native.node
+geometry/native/
+geometry/wasm.js
+geometry/wasm.wasm
+
+# Ignore downloaded dependencies (source archives)
+geometry/*.tar.gz
+geometry/eigen-3.3.9/
+geometry/glpk-5.0/
+geometry/gmp-6.2.1/
+geometry/gmp-6.2.1
+geometry/gmp-6.2.1.tar.xz
+geometry/mpfr-4.2.1/
+geometry/mpfr-4.2.1.tar.xz
+geometry/CGAL
+geometry/CGAL/
+geometry/Eigen/
+geometry/glm/
+geometry/cgal/
+
+# Ignore test output images
+observed.*.png
+
+# Ignore temporary files
+*.swp
+*~
+*.bak
+*.tmp
+geometry/.orb.js.swp
+
+# Ignore generated assets
+server/assets/
+geometry/assets/

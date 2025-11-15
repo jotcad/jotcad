@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import { withAssets } from './assets.js';
 
 describe('face', () => {
-  it('should create a face', () =>
-    withAssets((assets) => {
+  it('should create a face', async () => {
+    await withAssets(async (assets) => {
       assert.deepEqual(
         assets.getText(
           Face(assets, [
@@ -18,10 +18,11 @@ describe('face', () => {
         ),
         'v 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 0\nf 0 1 2 3\n'
       );
-    }));
+    });
+  });
 
-  it('should create a face with a hole', () =>
-    withAssets((assets) => {
+  it('should create a face with a hole', async () => {
+    await withAssets(async (assets) => {
       const fwh = Face(
         assets,
         [
@@ -43,5 +44,6 @@ describe('face', () => {
         assets.getText(fwh.geometry),
         'v 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 0\nf 0 1 2 3\nv 0.75 0.25 0.25\nv 0.75 0.75 0.25\nv 0.25 0.75 0.25\nv 0.25 0.25 0.25\nh 0 1 2 3\n'
       );
-    }));
+    });
+  });
 });

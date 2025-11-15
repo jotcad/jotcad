@@ -10,8 +10,8 @@ import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('renderPng', () =>
-  it('should render a triangle', () =>
-    withAssets(async (assets) => {
+  it('should render a triangle', async () => {
+    await withAssets(async (assets) => {
       const id = cgal.Link(
         assets,
         [
@@ -32,4 +32,5 @@ describe('renderPng', () =>
         height: 512,
       });
       assert.ok(await testPng('renderPng.test.triangle.png', image));
-    })));
+    });
+  }));

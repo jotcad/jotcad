@@ -1,10 +1,10 @@
 import { FS, cgal } from './getCgal.js';
 import { existsSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto'; // Import createHash
 
 class Assets {
   constructor(basePath) {
     this.basePath = basePath;
-    console.log(`[JS Assets] constructor: basePath = ${basePath}`); // Log basePath
     this.tag = 'Assets';
     this.text = {};
     // Ensure subdirectories exist within the provided basePath
@@ -14,7 +14,6 @@ class Assets {
 
   getText(id) {
     const path = `${this.basePath}/text/${id}`;
-    console.log(`[JS Assets] getText: basePath = ${this.basePath}, path = ${path}`); // Log basePath and path
     return FS.readFile(path, { encoding: 'utf8' });
   }
 
@@ -32,15 +31,18 @@ class Assets {
   }
 
   setResult(id, result) {
-    return FS.writeFile(`${this.basePath}/result/${id}`, JSON.stringify(result), {
-      encoding: 'utf8',
-    });
+    return FS.writeFile(
+      `${this.basePath}/result/${id}`,
+      JSON.stringify(result),
+      {
+        encoding: 'utf8',
+      }
+    );
   }
 
   textId(text) {
     const id = cgal.ComputeTextHash(text);
     const path = `${this.basePath}/text/${id}`;
-    console.log(`[JS Assets] textId: basePath = ${this.basePath}, path = ${path}`); // Log basePath and path
     if (this.basePath === undefined) {
       throw Error('die');
     }
@@ -59,7 +61,17 @@ class Assets {
   }
 }
 
-export const withAssets = async (basePath, op) => {
+// Global counter for unique test directories
+let testCounter = 0;
+
+export const withAssets = async (op) => {
+  // Generate a unique basePath for each test
+  const testId = createHash('sha256')
+    .update(op.toString())
+    .digest('hex')
+    .substring(0, 10);
+  const basePath = `/tmp/jotcad/tests/${testId}-${testCounter++}`;
+
   const assets = new Assets(basePath);
   const result = await op(assets);
   return result;

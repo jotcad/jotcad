@@ -39,6 +39,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
+#include "orb.h"
 
 namespace jot_cgal {
 
@@ -192,6 +193,17 @@ static Napi::Value TriangulateBinding(const Napi::CallbackInfo& info) {
   return Triangulate(assets, id);
 }
 
+static Napi::Value MakeOrbBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 4);
+  Assets assets(info[0].As<Napi::Object>());
+  double angular_bound = info[1].As<Napi::Number>().DoubleValue();
+  double radius_bound = info[2].As<Napi::Number>().DoubleValue();
+  double distance_bound = info[3].As<Napi::Number>().DoubleValue();
+
+  // Directly call the updated MakeOrb function and return its GeometryId
+  return MakeOrb(assets, angular_bound, radius_bound, distance_bound);
+}
+
 Napi::String World(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 0);
   Napi::Env env = info.Env();
@@ -233,6 +245,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, TextIdBinding));
   exports.Set(Napi::String::New(env, "Triangulate"),
               Napi::Function::New(env, TriangulateBinding));
+  exports.Set(Napi::String::New(env, "MakeOrb"),
+              Napi::Function::New(env, MakeOrbBinding));
 
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));
   exports.Set(Napi::String::New(env, "ComputeTextHash"),

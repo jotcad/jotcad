@@ -8,8 +8,8 @@ import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 
 describe('cut', (t) =>
-  it('should cut the corner out of a box', () =>
-    withAssets(async (assets) => {
+  it('should cut the corner out of a box', async () => {
+    await withAssets(async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 2]);
       const cutBox = cut(assets, box, [tool]);
@@ -19,11 +19,12 @@ describe('cut', (t) =>
         height: 512,
       });
       assert.ok(await testPng('cut.test.corner.png', image));
-    })));
+    });
+  }));
 
 describe('masked cut', (t) =>
-  it('should cut the corner out of a box', () =>
-    withAssets(async (assets) => {
+  it('should cut the corner out of a box', async () => {
+    await withAssets(async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 2]);
       const mask = await Box3(assets, [0, 2], [1, 2], [1, 2]);
@@ -35,4 +36,5 @@ describe('masked cut', (t) =>
         height: 512,
       });
       assert.ok(await testPng('cut.test.masked_cut.png', image));
-    })));
+    });
+  }));

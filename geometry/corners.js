@@ -52,3 +52,15 @@ export const buildCorners = (x = 1, y = x, z = 0) => {
   }
   return [c1, c2];
 };
+
+export const computeMiddle = (c1, c2) => [
+  (c1[X] + c2[X]) / 2,
+  (c1[Y] + c2[Y]) / 2,
+  (c1[Z] + c2[Z]) / 2,
+];
+
+export const computeScale = (c1, c2) => [
+  Math.abs(c1[X] - c2[X]),
+  Math.abs(c1[Y] - c2[Y]),
+  Math.abs(c1[Z] - c2[Z]),
+];
