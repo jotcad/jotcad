@@ -2,11 +2,12 @@ import { describe, it } from 'node:test';
 
 import { Face } from './face.js';
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { withAssets } from './assets.js';
 
 describe('face', () => {
   it('should create a face', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should create a face'), async (assets) => {
       assert.deepEqual(
         assets.getText(
           Face(assets, [
@@ -22,7 +23,7 @@ describe('face', () => {
   });
 
   it('should create a face with a hole', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should create a face with a hole'), async (assets) => {
       const fwh = Face(
         assets,
         [

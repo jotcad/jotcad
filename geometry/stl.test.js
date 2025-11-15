@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import { fromStl, toStl } from './stl.js';
 
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { makeShape } from './shape.js';
 import { withAssets } from './assets.js';
 
@@ -26,7 +27,7 @@ t 2 0 1
 
 describe('stl', () => {
   it('should convert to an stl', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should convert to an stl'), async (assets) => {
       const id = assets.textId(
         'V 3\nv 0 0 0 0 0 0\nv 1 0 0 1 0 0\nv 0 1 0 0 1 0\nT 1\nt 0 1 2\n'
       );
@@ -40,7 +41,7 @@ describe('stl', () => {
   });
 
   it('should convert from an stl', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should convert from an stl'), async (assets) => {
       const shape = fromStl(assets, new TextEncoder('utf8').encode(stlText));
       assert.ok(geometryText, assets.getText(shape.geometry));
     });

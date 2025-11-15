@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { join } from './join.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
@@ -9,7 +10,7 @@ import { withAssets } from './assets.js';
 
 describe('join', () =>
   it('should join two boxes at a corner', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should join two boxes at a corner'), async (assets) => {
       const box = Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = Box3(assets, [1, 2], [1, 2], [1, 4]);
       const joinedBox = join(assets, box, [tool]);

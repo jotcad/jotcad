@@ -3,13 +3,14 @@ import { describe, it } from 'node:test';
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
 import { cut } from './cut.js';
+import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 
 describe('cut', (t) =>
   it('should cut the corner out of a box', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should cut the corner out of a box'), async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 2]);
       const cutBox = cut(assets, box, [tool]);
@@ -24,7 +25,7 @@ describe('cut', (t) =>
 
 describe('masked cut', (t) =>
   it('should cut the corner out of a box', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should cut the corner out of a box (masked)'), async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 2]);
       const mask = await Box3(assets, [0, 2], [1, 2], [1, 2]);

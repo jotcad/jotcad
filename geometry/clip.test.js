@@ -3,13 +3,14 @@ import { describe, it } from 'node:test';
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
 import { clip } from './clip.js';
+import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 
 describe('clip', () =>
   it('should clip the corner of a box', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should clip the corner of a box'), async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 4]);
       const joinedBox = clip(assets, box, [tool]);

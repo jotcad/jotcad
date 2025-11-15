@@ -5,6 +5,7 @@ import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
 import { fill2 } from './fill.js';
+import { getTestDir } from './test_util.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
@@ -12,7 +13,7 @@ import { withAssets } from './assets.js';
 
 describe('fill', () => {
   it('should fill a triangle', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should fill a triangle'), async (assets) => {
       const box = makeShape({
         geometry: cgal.Link(
           assets,
@@ -40,7 +41,7 @@ describe('fill', () => {
   });
 
   it('should fill the perimeter of a hollow ring', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should fill the perimeter of a hollow ring'), async (assets) => {
       const outline = [
         Arc2(assets, [-20, 20], [-20, 20]),
         Arc2(assets, [-10, 10], [-10, 10]),

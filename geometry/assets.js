@@ -1,6 +1,5 @@
 import { FS, cgal } from './getCgal.js';
 import { existsSync, mkdirSync } from 'node:fs';
-import { createHash } from 'node:crypto'; // Import createHash
 
 class Assets {
   constructor(basePath) {
@@ -61,17 +60,7 @@ class Assets {
   }
 }
 
-// Global counter for unique test directories
-let testCounter = 0;
-
-export const withAssets = async (op) => {
-  // Generate a unique basePath for each test
-  const testId = createHash('sha256')
-    .update(op.toString())
-    .digest('hex')
-    .substring(0, 10);
-  const basePath = `/tmp/jotcad/tests/${testId}-${testCounter++}`;
-
+export const withAssets = async (basePath, op) => {
   const assets = new Assets(basePath);
   const result = await op(assets);
   return result;

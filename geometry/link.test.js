@@ -3,13 +3,15 @@ import { describe, it } from 'node:test';
 import { Link } from './link.js';
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
+import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
+import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('link', () => {
   it('should produce an open linkage of points', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should produce an open linkage of points'), async (assets) => {
       const shape = Link(
         assets,
         [
@@ -29,12 +31,12 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      await writeFile('link.test.open.png', Buffer.from(image));
+      assert.ok(await testPng('link.test.open.png', image));
     });
   });
 
   it('should produce a closed linkage of points', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should produce a closed linkage of points'), async (assets) => {
       const shape = Link(
         assets,
         [
@@ -54,12 +56,12 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      await writeFile('link.test.closed.png', Buffer.from(image));
+      assert.ok(await testPng('link.test.closed.png', image));
     });
   });
 
   it('should produce a reversed linkage of points', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should produce a reversed linkage of points'), async (assets) => {
       const shape = Link(
         assets,
         [
@@ -79,7 +81,7 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      await writeFile('link.test.reverse.png', Buffer.from(image));
+      assert.ok(await testPng('link.test.reverse.png', image));
     });
   });
 });
