@@ -5,10 +5,11 @@ import assert from 'node:assert/strict';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
+import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('Orb', () => {
   it('should create a 3d orb', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should create a 3d orb'), async (assets) => {
       const orb = Orb(assets, 1, 1, 1); // Example Orb with dimensions
       const image = await renderPng(assets, orb, {
         view: { position: [3 * 2, 4 * 2, 5 * 2] }, // Similar view to Box3 test

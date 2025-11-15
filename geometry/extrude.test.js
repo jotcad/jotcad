@@ -10,10 +10,11 @@ import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
+import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('extrude', () => {
   it('should extrude a triangle', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should extrude a triangle'), async (assets) => {
       const triangle = makeShape({
         geometry: cgal.Link(
           assets,
@@ -43,7 +44,7 @@ describe('extrude', () => {
   });
 
   it('should extrude a triangle while shrinking the top', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should extrude a triangle while shrinking the top'), async (assets) => {
       const triangle = makeShape({
         geometry: cgal.Link(
           assets,

@@ -6,10 +6,11 @@ import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
+import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('box', () => {
   it('should created a 3d box', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should created a 3d box'), async (assets) => {
       const box = await Box3(assets, [-1, 1], [-1, 1], [-1, 1]);
       const image = await renderPng(assets, box, {
         view: { position: [3 * 2, 4 * 2, 5 * 2] },
@@ -21,7 +22,7 @@ describe('box', () => {
   });
 
   it('should create a 2d box', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should create a 2d box'), async (assets) => {
       const box = await Box2(assets, [0, 1], [0, 1]);
       const image = await renderPng(assets, box, {
         view: { position: [3, 4, 5] },

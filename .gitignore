@@ -41,3 +41,4 @@ geometry/.orb.js.swp
 # Ignore generated assets
 server/assets/
 geometry/assets/
+geometry/*.png

@@ -8,10 +8,11 @@ import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
+import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('renderPng', () =>
   it('should render a triangle', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should render a triangle'), async (assets) => {
       const id = cgal.Link(
         assets,
         [

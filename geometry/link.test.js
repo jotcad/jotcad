@@ -6,10 +6,11 @@ import assert from 'node:assert/strict';
 import { renderPng } from './renderPng.js';
 import { withAssets } from './assets.js';
 import { writeFile } from 'node:fs/promises';
+import { getTestDir } from './test_util.js'; // Import getTestDir
 
 describe('link', () => {
   it('should produce an open linkage of points', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should produce an open linkage of points'), async (assets) => {
       const shape = Link(
         assets,
         [
@@ -34,7 +35,7 @@ describe('link', () => {
   });
 
   it('should produce a closed linkage of points', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should produce a closed linkage of points'), async (assets) => {
       const shape = Link(
         assets,
         [
@@ -59,7 +60,7 @@ describe('link', () => {
   });
 
   it('should produce a reversed linkage of points', async () => {
-    await withAssets(async (assets) => {
+    await withAssets(getTestDir('should produce a reversed linkage of points'), async (assets) => {
       const shape = Link(
         assets,
         [
