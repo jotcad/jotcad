@@ -1,21 +1,18 @@
 import './transform.js';
 
-import { beforeEach, describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
+import assert from 'node:assert/strict';
 import path, { dirname } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { beforeEach, describe, it } from 'node:test';
+import { writeFile } from 'node:fs/promises';
 
 import { Arc2 } from './arc.js';
-import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
-import { getTestDir } from './test_util.js';
+import { fileURLToPath } from 'url';
 import { makeAbsolute } from './makeAbsolute.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withAssets } from './assets.js';
-import { writeFile } from 'node:fs/promises';
 
 describe('arc', () => {
   it('should build a full arc', async () => {
@@ -30,7 +27,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'arc.test.full.png'), image));
+      assert.ok(await testPng('should build a full arc', 'arc.test.full.png', image));
     });
   });
 
@@ -43,7 +40,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'arc.test.give.png'), image));
+      assert.ok(await testPng('should build an arc with the specified give', 'arc.test.give.png', image));
     });
   });
 
@@ -58,7 +55,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'arc.test.half.png'), image));
+      assert.ok(await testPng('should build a half-arc', 'arc.test.half.png', image));
     });
   });
 
@@ -73,7 +70,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'arc.test.quarter.png'), image));
+      assert.ok(await testPng('should build a quarter arc', 'arc.test.quarter.png', image));
     });
   });
 
@@ -89,7 +86,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'arc.test.half_square.png'), image));
+      assert.ok(await testPng('should build a half square arc', 'arc.test.half_square.png', image));
     });
   });
 
@@ -105,7 +102,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'arc.test.quarter_square.png'), image));
+      assert.ok(await testPng('should build a quarter square arc', 'arc.test.quarter_square.png', image));
     });
   });
 
@@ -122,7 +119,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'arc.test.half_square_spin.png'), image));
+      assert.ok(await testPng('should build a half square arc with the flats rotated', 'arc.test.half_square_spin.png', image));
     });
   });
 });

@@ -1,180 +1,71 @@
 import {
   Op,
-  beginOps,
-  endOps,
-  ops,
   predicateValueHandler,
-  resolve,
   run,
 } from './op.js';
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-const emits = {};
-
-const emit = (set, value) => {
-  if (emits[set] === undefined) {
-    emits[set] = [];
-  }
-  emits[set].push(value);
+const mockShape = {
+  move: (x, y, z) => mockShape,
+  geometry: Symbol('mockGeometryId'),
 };
 
-export const isNumber = (value) => typeof value === 'number';
-export const isString = (value) => typeof value === 'string';
+export const isAny = (value) => true;
 
-Op.registerSpecHandler(predicateValueHandler('number', isNumber));
-Op.registerSpecHandler(predicateValueHandler('string', isString));
+Op.registerSpecHandler(predicateValueHandler('any', isAny));
 
-export const Plus = Op.registerOp({
-  name: 'Plus',
-  spec: ['number', ['number'], 'number'],
-  code: (id, context, input = 0, value) => {
-    console.log(`QQ/Plus.input=${input}`);
-    return input + value;
+export const a = Op.registerOp({
+  name: 'a',
+  spec: [null, [], 'any'],
+  code: (id, assets, input) => {
+    return 'hello from a';
   }
 });
 
-export const Say = Op.registerOp({
-  name: 'Say',
-  spec: ['number', ['string', 'string'], 'number'],
-  code: (id, context, input, set, value) => {
-    console.log(`QQ/Say.input=${input}`);
-    emit(set, value);
-    return input;
-  },
+export const b = Op.registerOp({
+  name: 'b',
+  spec: ['any', ['any'], 'any'], // 'any' for the argument and output
+  code: (id, assets, input, arg) => {
+    console.log(`QQ/b.input=`, input);
+    return arg + ' hello from b';
+  }
 });
 
-export const z = Op.registerOp({
-  name: 'z',
-  spec: ['number', ['number'], 'number'],
-  code: (id, assets, input = 0, offsets) => {
-    console.log(`QQ/z.input=${input}`);
-    return input;
+export const c = Op.registerOp({
+  name: 'c',
+  spec: ['any', [], 'any'], // 'any' for the input and output
+  code: (id, assets, input) => {
+    console.log(`QQ/c.input=`, input);
+    return `${input} and hello from c`;
   }
 });
 
 describe('op', () => {
-  /*
-  it('should resolve an op with an argument', async () => {
-    // This test is fundamentally flawed. The 'Say' op expects two string arguments,
-    // but it is being passed a number from the 'z(1)' operation.
-    const graph = await run({}, () => Plus(1).Say(z(1)));
-    assert.deepEqual(graph, {
-      ' 4f15fa67ed8aebc619dd87f44f2e0f7d513ab4fd': 6,
-      ' 864479c35ecdb08f9e5c6e27b097f7c30fda3da8': 7,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
-  });
-  */
-
-  /*
-  it('should resolve an op with an argument', async () => {
-    const graph = await run({}, () => Plus(1).Plus(z(1)));
-    assert.deepEqual(graph, {
-      ' 4f15fa67ed8aebc619dd87f44f2e0f7d513ab4fd': 6,
-      ' 864479c35ecdb08f9e5c6e27b097f7c30fda3da8': 7,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
-  });
-  */
-
-  /*
-  it('should resolve an op with an argument', async () => {
-    const graph = await run({}, () => Plus(1).Plus(Plus(5)));
-    assert.deepEqual(graph, {
-      ' 4f15fa67ed8aebc619dd87f44f2e0f7d513ab4fd': 6,
-      ' 864479c35ecdb08f9e5c6e27b097f7c30fda3da8': 7,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
-  });
-  */
-
-  /*
-  it('should resolve a single op', async () => {
-    const graph = await run({}, () => Plus(1));
-    assert.deepEqual(graph, {
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
+  it('should return "hello from a" for a()', async () => {
+    const graph = await run({}, () => a());
+    assert.deepEqual(graph[' 9a51f0f043f94f31cf0c02d91a93b89d0fd4b73f'], 'hello from a');
   });
 
-  it('should resolve an op', async (t) => {
-    const graph = await run({}, () => Plus(1).Plus(2));
-    assert.deepEqual(graph, {
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-      ' d681edb3fa7c49cc515b95be9926a9a5111d06e6': 3,
-    });
+  it('should have b() receive a() as input', async () => {
+    const graph = await run({}, () => a().b(123));
+    // We expect b's input to be 'hello from a', and its output to be 123 (the arg).
+    // The ID for a() is ' 9a51f0f043f94f31cf0c02d91a93b89d0fd4b73f'
+    // The ID for a().b(123) is ' e343a4cb2f0cbb9dc62ae641863cbfea6b80ef3a'
+    // We will check the log for QQ/b.input to verify.
+    const bOutput = graph[' e343a4cb2f0cbb9dc62ae641863cbfea6b80ef3a'];
+    assert.deepEqual(bOutput, '123 hello from b');
   });
 
-  it('should resolve an op with an argument', async () => {
-    const graph = await run({}, () => Plus(1).Plus(Plus(5)));
-    assert.deepEqual(graph, {
-      ' 4f15fa67ed8aebc619dd87f44f2e0f7d513ab4fd': 6,
-      ' 864479c35ecdb08f9e5c6e27b097f7c30fda3da8': 7,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
+  it('should have b() and c() receive a() as input in a().b(c())', async () => {
+    const graph = await run({}, () => a().b(c()));
+    const aOutputSymbol = ' 9a51f0f043f94f31cf0c02d91a93b89d0fd4b73f';
+    const cOutputSymbol = ' d59f1f6b44affaf9247cd992fd53b548f0748c9b';
+    const bOutputSymbol = ' b5ed1ae52e99e78adcb3834d7c7dfd4a78bb0fa5';
+
+    assert.deepEqual(graph[aOutputSymbol], 'hello from a', 'a() output should be "hello from a"');
+    assert.deepEqual(graph[cOutputSymbol], 'hello from a and hello from c', 'c() output should be "hello from a and hello from c"');
+    assert.deepEqual(graph[bOutputSymbol], 'hello from a and hello from c hello from b', 'b() output should be "hello from a and hello from c hello from b"');
   });
-
-  it('should only recompute changed subgraphs', async () => {
-    const graph1 = await run({}, () =>
-      Plus(1).Say('recompute', 'hello').Say('recompute', 'world')
-    );
-    assert.deepEqual(graph1, {
-      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
-      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
-    assert.deepEqual(emits['recompute'], ['hello', 'world']);
-
-    const graph2 = await run({}, () => undefined, graph1);
-    assert.deepEqual(graph2, {
-      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
-      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
-
-    // Since Say() was not recomputed we see 'hello', 'world' once.
-    assert.deepEqual(emits['recompute'], ['hello', 'world']);
-
-    const graph3 = await run(
-      {},
-      () => Plus(1).Say('recompute', 'hello').Say('recompute', 'world!'),
-      graph2
-    );
-
-    assert.deepEqual(graph3, {
-      ' 578ddb98f7d0868ee58743e3d5303363acba2de2': 1,
-      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
-      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-    });
-
-    // Since only the second Say() was recomputed we see 'hello', 'world', 'world!'.
-    assert.deepEqual(emits['recompute'], ['hello', 'world', 'world!']);
-
-    const graph4 = await run(
-      {},
-      () => Plus(1).Say('recompute', 'hello!').Say('recompute', 'world!'),
-      graph3
-    );
-
-    assert.deepEqual(graph4, {
-      ' 578ddb98f7d0868ee58743e3d5303363acba2de2': 1,
-      ' 9070128831d2544aaceed9c8ca6c06018891071a': 1,
-      ' 9b957d5b25017b9f8baaabc01870fbf335062fb0': 1,
-      ' b1bc3ebf2675e69d1568f2282c176e5916d8cc00': 1,
-      ' c8b90aa81f9fca7b2918b776a453b9514f401db4': 1,
-      ' c9696e2dfc0353ba4fccf7aa31f07814d44b6e59': 1,
-    });
-
-    // All says were recomputed.
-    assert.deepEqual(emits['recompute'], [
-      'hello',
-      'world',
-      'world!',
-      'hello!',
-      'world!',
-    ]);
-  });
-  */
 });

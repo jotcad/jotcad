@@ -22,15 +22,7 @@ export default [
           VariableDeclarator: 'first',
         },
       ],
-      'sort-imports': [
-        'error',
-        {
-          ignoreCase: false,
-          ignoreDeclarationSort: false,
-          ignoreMemberSort: false,
-          memberSyntaxSortOrder: ['none', 'all', 'multiple', 'single'],
-        },
-      ],
+      'sort-imports': 'off',
       'space-before-function-paren': [0, 'ignore'],
       'comma-dangle': [0, 'ignore'],
       'space-in-parens': [0, 'ignore'],
