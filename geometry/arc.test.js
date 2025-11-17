@@ -1,6 +1,11 @@
 import './transform.js';
 
 import { beforeEach, describe, it } from 'node:test';
+import { fileURLToPath } from 'url';
+import path, { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 import { Arc2 } from './arc.js';
 import assert from 'node:assert/strict';
@@ -25,7 +30,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('arc.test.full.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'arc.test.full.png'), image));
     });
   });
 
@@ -38,7 +43,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('arc.test.give.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'arc.test.give.png'), image));
     });
   });
 
@@ -53,7 +58,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('arc.test.half.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'arc.test.half.png'), image));
     });
   });
 
@@ -68,7 +73,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('arc.test.quarter.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'arc.test.quarter.png'), image));
     });
   });
 
@@ -84,7 +89,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('arc.test.half_square.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'arc.test.half_square.png'), image));
     });
   });
 
@@ -100,7 +105,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('arc.test.quarter_square.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'arc.test.quarter_square.png'), image));
     });
   });
 
@@ -117,7 +122,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('arc.test.half_square_spin.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'arc.test.half_square_spin.png'), image));
     });
   });
 });

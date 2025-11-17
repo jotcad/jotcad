@@ -1,4 +1,9 @@
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'url';
+import path, { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
@@ -19,7 +24,7 @@ describe('cut', (t) =>
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('cut.test.corner.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'cut.test.corner.png'), image));
     });
   }));
 
@@ -36,6 +41,6 @@ describe('masked cut', (t) =>
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('cut.test.masked_cut.png', image));
+      assert.ok(await testPng(path.join(__dirname, 'cut.test.masked_cut.png'), image));
     });
   }));

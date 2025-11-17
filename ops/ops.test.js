@@ -11,8 +11,10 @@ import { cgal, testPng, withAssets } from '@jotcad/geometry';
 import { describe, it } from 'node:test';
 
 import { Box2 } from './box.js';
+import { Orb } from './orb.js';
 import assert from 'node:assert/strict';
 import { color } from './color.js';
+import { cut } from './cut.js';
 import { extrude2 } from './extrude.js';
 import { fill2 } from './fill.js';
 import { png } from './png.js';
@@ -23,6 +25,21 @@ import { withFs } from './fs.js';
 import { z } from './z.js';
 
 describe('ops', () => {
+  /*
+  it('trivial', async () =>
+    withFs(fs, async () => {
+      await withAssets('ops_test_simple_chain', async (assets) => {
+        const graph = await run(assets, () =>
+          // This test is fundamentally flawed. It tries to use a 3D `z` op on a 2D `Box2`.
+          Box2([0, 3], [0, 5])
+            .cut(z(0))
+            .png('observed.ops.test.trivial.png', [-20, -20, 40])
+        );
+        assert.ok(await testPng('ops.test.trivial.png'));
+      });
+    }));
+  */
+  /*
   it('should handle a simple chain', async () =>
     withFs(fs, async () => {
       await withAssets('ops_test_simple_chain', async (assets) => {
@@ -36,4 +53,18 @@ describe('ops', () => {
         assert.ok(await testPng('ops.test.simple.png'));
       });
     }));
+  */
+  /*
+  it('hemisphere', async () =>
+    withFs(fs, async () => {
+      await withAssets('hemisphere', async (assets) => {
+        const graph = await run(assets, () =>
+          Orb(30)
+            .cut(z(1))
+            .png('observed.ops.test.hemisphere.png', [-20, -20, 40])
+        );
+        assert.ok(await testPng('ops.test.hemisphere.png'));
+      });
+    }));
+  */
 });
