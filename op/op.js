@@ -113,25 +113,30 @@ export class Op {
   }
 
   static resolveInput(op) {
+    console.log(`QQ/resolveInput: op=${op.name}`);
     const { caller } = op;
     if (!caller) {
       // This is not an argument.
       // The input is already resolved.
+      console.log(`QQ/resolveInput: no caller`);
       return;
     }
     const { input } = caller;
     if (!input) {
       // The caller has no input.
       // No input to resolve.
+      console.log(`QQ/resolveInput: no input`);
       return;
     }
     // The caller has input to delegate;
     for (;;) {
       // Walk back to the head of this op chain.
       if (op.inputResolved) {
+        console.log(`QQ/resolveInput: head`);
         break;
       }
       if (!op.input) {
+        console.log(`QQ/resolveInput: linked`);
         // This is the head.
         // Set the input to the caller's input.
         op.input = input;
@@ -143,8 +148,11 @@ export class Op {
   }
 
   static resolveNode(value) {
+    console.log(`QQ/resolveNode: value=${value}`);
     if (value instanceof Op) {
+      console.log(`QQ/resolveNode: Op name=${value.name}`);
       if (value.node) {
+        console.log(`QQ/resolveNode: value.node.output=${JSON.stringify(value.node.output)}`);
         return value.node.output;
       }
       const node = {
@@ -154,16 +162,20 @@ export class Op {
       };
       node.output = makeSymbol(computeHash(node));
       value.node = node;
+      console.log(`QQ/resolveNode: node=${JSON.stringify(node)}`);
       return node.output;
     } else if (value instanceof Array) {
+      console.log(`QQ/resolveNode: Array`);
       return value.map((op) => Op.resolveNode(op));
     } else if (value instanceof Object) {
+      console.log(`QQ/resolveNode: Object`);
       const resolved = {};
       for (const key of Object.keys(value)) {
         resolved[key] = Op.resolveNode(value[key]);
       }
       return resolved;
     } else {
+      console.log(`QQ/resolveNode: other`);
       return value;
     }
   }
@@ -321,6 +333,7 @@ export const resolve = async (context, ops, graph) => {
       };
       const evaluatedArgs = await evaluateArg(node.args);
       try {
+	console.log(`QQ/op: op=${name} evaluatedInput=${JSON.stringify(evaluatedInput)}`);
         const result = Op.code[name](
           output,
           context,
