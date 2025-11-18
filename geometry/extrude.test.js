@@ -48,32 +48,35 @@ describe('extrude', () => {
   });
 
   it('should extrude a triangle while shrinking the top', async () => {
-    await withTestAssets('should extrude a triangle while shrinking the top', async (assets) => {
-      const triangle = makeShape({
-        geometry: cgal.Link(
+    await withTestAssets(
+      'should extrude a triangle while shrinking the top',
+      async (assets) => {
+        const triangle = makeShape({
+          geometry: cgal.Link(
+            assets,
+            [
+              await Point(assets, 1, 0, 0),
+              await Point(assets, 0, 1, 0),
+              await Point(assets, 0, 0, 1),
+            ],
+            true,
+            false
+          ),
+        });
+        const filledTriangle = fill2(assets, [triangle], true);
+        const extrudedTriangle = extrude2(
           assets,
-          [
-            await Point(assets, 1, 0, 0),
-            await Point(assets, 0, 1, 0),
-            await Point(assets, 0, 0, 1),
-          ],
-          true,
-          false
-        ),
-      });
-      const filledTriangle = fill2(assets, [triangle], true);
-      const extrudedTriangle = extrude2(
-        assets,
-        filledTriangle,
-        (await Point(assets, 0, 0, 0)).scale('1/2', '1/2').move(0, 0, 1),
-        (await Point(assets, 0, 0, 0)).move(0, 0, -1)
-      );
-      const image = await renderPng(assets, extrudedTriangle, {
-        view: { position: [5, 5, 10] },
-        width: 512,
-        height: 512,
-      });
-      assert.ok(await testPng(assets, 'extrude.test.shrink.png', image));
-    });
+          filledTriangle,
+          (await Point(assets, 0, 0, 0)).scale('1/2', '1/2').move(0, 0, 1),
+          (await Point(assets, 0, 0, 0)).move(0, 0, -1)
+        );
+        const image = await renderPng(assets, extrudedTriangle, {
+          view: { position: [5, 5, 10] },
+          width: 512,
+          height: 512,
+        });
+        assert.ok(await testPng(assets, 'extrude.test.shrink.png', image));
+      }
+    );
   });
 });

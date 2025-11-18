@@ -70,9 +70,7 @@ describe('ops', () => {
   it('Orb(10).cut(z(1))', async () =>
     withFs(fs, async () => {
       await withAssets('ops_test_failing_op', async (assets) => {
-        const graph = await run(assets, () =>
-          Orb(10).cut(z(1))
-        );
+        const graph = await run(assets, () => Orb(10).cut(z(1)));
         assert.ok(graph);
       });
     }));

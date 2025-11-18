@@ -1,7 +1,8 @@
 import { computeHash } from './hash.js';
 
 export let graph;
-export let ops; console.log('ops declared (initial):', ops);
+export let ops;
+console.log('ops declared (initial):', ops);
 export let nextId;
 
 export const symbolPrefix = '\uE000 ';
@@ -12,7 +13,8 @@ export const makeSymbol = (string) => symbolPrefix + string;
 
 export const beginOps = (graphToUse = {}) => {
   graph = graphToUse;
-  ops = []; console.log('ops assigned in beginOps:', ops);
+  ops = [];
+  console.log('ops assigned in beginOps:', ops);
   nextId = 0;
   return ops;
 };
@@ -20,14 +22,16 @@ export const beginOps = (graphToUse = {}) => {
 export const endOps = () => {
   const result = { graph, ops };
   graph = undefined;
-  ops = undefined; console.log('ops assigned in endOps:', ops);
+  ops = undefined;
+  console.log('ops assigned in endOps:', ops);
   nextId = undefined;
   return result;
 };
 
 export const emitOp = (op) => {
   console.log('ops in emitOp (before push):', ops);
-  ops.push(op); console.log('ops in emitOp (after push):', ops);
+  ops.push(op);
+  console.log('ops in emitOp (after push):', ops);
   return op;
 };
 
@@ -196,7 +200,11 @@ export class Op {
     if (value instanceof Op) {
       console.log(`QQ/resolveNode: Op name=${value.name}`);
       if (value.node) {
-        console.log(`QQ/resolveNode: value.node.output=${JSON.stringify(value.node.output)}`);
+        console.log(
+          `QQ/resolveNode: value.node.output=${JSON.stringify(
+            value.node.output
+          )}`
+        );
         return value.node.output;
       }
       const node = {
@@ -352,10 +360,16 @@ export const resolve = async (context, ops, graph) => {
       console.log(`QQ/resolve: input for ${name}:`, input);
       if (isSymbol(input)) {
         evaluatedInput = await graph[input];
-        console.log(`QQ/resolve: evaluatedInput for ${name} (from symbol):`, evaluatedInput);
+        console.log(
+          `QQ/resolve: evaluatedInput for ${name} (from symbol):`,
+          evaluatedInput
+        );
       } else {
         evaluatedInput = input;
-        console.log(`QQ/resolve: evaluatedInput for ${name} (direct):`, evaluatedInput);
+        console.log(
+          `QQ/resolve: evaluatedInput for ${name} (direct):`,
+          evaluatedInput
+        );
       }
       const evaluateArg = async (arg) => {
         if (isSymbol(arg)) {
@@ -383,7 +397,9 @@ export const resolve = async (context, ops, graph) => {
       const evaluatedArgs = await evaluateArg(node.args);
       try {
         console.log(`QQ/resolve: Before Op.code[${name}] call. ops:`, ops);
-	console.log(`QQ/op: op=${name} evaluatedInput=${JSON.stringify(evaluatedInput)}`);
+        console.log(
+          `QQ/op: op=${name} evaluatedInput=${JSON.stringify(evaluatedInput)}`
+        );
         const result = Op.code[name](
           output,
           context,

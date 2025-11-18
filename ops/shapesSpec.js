@@ -11,7 +11,10 @@ Op.registerSpecHandler(
         if (isShape(arg)) {
           results.push(arg);
           continue;
-        } else if (arg instanceof Op && specEquals(arg.getOutputType(), 'shape')) {
+        } else if (
+          arg instanceof Op &&
+          specEquals(arg.getOutputType(), 'shape')
+        ) {
           results.push(arg);
           continue;
         } else if (arg === undefined) {

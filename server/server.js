@@ -27,6 +27,7 @@ const whitelist = {
     'And',
     'Arc2',
     'Box2',
+    'Box3',
     'Orb',
     'Point',
     'Z',

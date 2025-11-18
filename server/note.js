@@ -1,10 +1,11 @@
-import { Op } from '@jotcad/op';
+import '@jotcad/ops';
+import { registerOp } from '@jotcad/ops';
 
-export const note = Op.registerOp(
-  'note',
-  ['shape', ['string'], 'shape'],
-  async (assets, input, note) => {
+export const note = registerOp({
+  name: 'note',
+  spec: ['shape', ['shapes'], 'shape'],
+  code: (id, assets, input, tools) => {
     console.log(note);
     return input;
-  }
-);
+  },
+});
