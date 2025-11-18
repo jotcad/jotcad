@@ -1,8 +1,4 @@
-import {
-  Op,
-  predicateValueHandler,
-  run,
-} from './op.js';
+import { Op, predicateValueHandler, run } from './op.js';
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +17,7 @@ export const a = Op.registerOp({
   spec: [null, [], 'any'],
   code: (id, assets, input) => {
     return 'hello from a';
-  }
+  },
 });
 
 export const b = Op.registerOp({
@@ -30,7 +26,7 @@ export const b = Op.registerOp({
   code: (id, assets, input, arg) => {
     console.log(`QQ/b.input=`, input);
     return arg + ' hello from b';
-  }
+  },
 });
 
 export const c = Op.registerOp({
@@ -39,13 +35,16 @@ export const c = Op.registerOp({
   code: (id, assets, input) => {
     console.log(`QQ/c.input=`, input);
     return `${input} and hello from c`;
-  }
+  },
 });
 
 describe('op', () => {
   it('should return "hello from a" for a()', async () => {
     const graph = await run({}, () => a());
-    assert.deepEqual(graph[' 9a51f0f043f94f31cf0c02d91a93b89d0fd4b73f'], 'hello from a');
+    assert.deepEqual(
+      graph[' 9a51f0f043f94f31cf0c02d91a93b89d0fd4b73f'],
+      'hello from a'
+    );
   });
 
   it('should have b() receive a() as input', async () => {
@@ -64,8 +63,20 @@ describe('op', () => {
     const cOutputSymbol = ' d59f1f6b44affaf9247cd992fd53b548f0748c9b';
     const bOutputSymbol = ' b5ed1ae52e99e78adcb3834d7c7dfd4a78bb0fa5';
 
-    assert.deepEqual(graph[aOutputSymbol], 'hello from a', 'a() output should be "hello from a"');
-    assert.deepEqual(graph[cOutputSymbol], 'hello from a and hello from c', 'c() output should be "hello from a and hello from c"');
-    assert.deepEqual(graph[bOutputSymbol], 'hello from a and hello from c hello from b', 'b() output should be "hello from a and hello from c hello from b"');
+    assert.deepEqual(
+      graph[aOutputSymbol],
+      'hello from a',
+      'a() output should be "hello from a"'
+    );
+    assert.deepEqual(
+      graph[cOutputSymbol],
+      'hello from a and hello from c',
+      'c() output should be "hello from a and hello from c"'
+    );
+    assert.deepEqual(
+      graph[bOutputSymbol],
+      'hello from a and hello from c hello from b',
+      'b() output should be "hello from a and hello from c hello from b"'
+    );
   });
 });

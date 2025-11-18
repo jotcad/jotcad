@@ -9,5 +9,5 @@ export const cut = registerOp({
   code: (id, assets, input, tools) => {
     console.log(`QQ/cut: input=${input}`);
     return op(assets, input, tools);
-  }
+  },
 });

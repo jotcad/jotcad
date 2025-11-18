@@ -20,5 +20,5 @@ export const extrude3 = registerOp({
   code: (id, assets, input, top = makeShape(), bottom = makeShape()) => {
     console.log(`QQ/extrude3: input=${input}`);
     return op3(assets, input, top, bottom);
-  }
+  },
 });

@@ -45,28 +45,33 @@ describe('fill', () => {
   });
 
   it('should fill the perimeter of a hollow ring', async () => {
-    await withTestAssets('should fill the perimeter of a hollow ring', async (assets) => {
-      const outline = [
-        Arc2(assets, [-20, 20], [-20, 20]),
-        Arc2(assets, [-10, 10], [-10, 10]),
-      ];
-      const outlineImage = await renderPng(
-        assets,
-        makeShape({ shapes: outline }),
-        {
+    await withTestAssets(
+      'should fill the perimeter of a hollow ring',
+      async (assets) => {
+        const outline = [
+          Arc2(assets, [-20, 20], [-20, 20]),
+          Arc2(assets, [-10, 10], [-10, 10]),
+        ];
+        const outlineImage = await renderPng(
+          assets,
+          makeShape({ shapes: outline }),
+          {
+            view: { position: [0, 0, 100] },
+            width: 512,
+            height: 512,
+          }
+        );
+        assert.ok(
+          await testPng(assets, 'fill.test.ring_outline.png', outlineImage)
+        );
+        const ring = fill2(assets, outline, true);
+        const image = await renderPng(assets, ring, {
           view: { position: [0, 0, 100] },
           width: 512,
           height: 512,
-        }
-      );
-      assert.ok(await testPng(assets, 'fill.test.ring_outline.png', outlineImage));
-      const ring = fill2(assets, outline, true);
-      const image = await renderPng(assets, ring, {
-        view: { position: [0, 0, 100] },
-        width: 512,
-        height: 512,
-      });
-      assert.ok(await testPng(assets, 'fill.test.ring.png', image));
-    });
+        });
+        assert.ok(await testPng(assets, 'fill.test.ring.png', image));
+      }
+    );
   });
 });

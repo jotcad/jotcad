@@ -36,6 +36,7 @@ export { nth } from './nth.js';
 export { mask } from './mask.js';
 export { png } from './png.js';
 export { readFile } from './fs.js';
+export { registerOp } from './op.js';
 export { revert } from './revert.js';
 export { rx } from './rx.js';
 export { ry } from './ry.js';

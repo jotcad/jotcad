@@ -7,9 +7,10 @@ import { registerOp } from './op.js';
 export const z = registerOp({
   name: 'z',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (id, assets, input, offsets) => makeShape({
+  code: (id, assets, input, offsets) =>
+    makeShape({
       shapes: offsets.map((offset) => input.move(0, 0, offset)),
-    })
+    }),
 });
 
 export const Z = registerOp({
