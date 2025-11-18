@@ -1,3 +1,6 @@
+import './numberSpec.js';
+import './optionsSpec.js';
+import './shapeSpec.js';
 import { simplify as op } from '@jotcad/geometry';
 import { registerOp } from './op.js';
 

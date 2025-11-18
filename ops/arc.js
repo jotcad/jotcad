@@ -1,3 +1,7 @@
+import './intervalSpec.js';
+import './optionsSpec.js';
+import './numberSpec.js';
+import './shapeSpec.js';
 import { Arc2 as op2 } from '@jotcad/geometry';
 import { registerOp } from './op.js';
 

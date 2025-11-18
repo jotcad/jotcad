@@ -1,3 +1,5 @@
+import './shapeSpec.js';
+import './shapesSpec.js';
 import { makeShape } from '@jotcad/geometry';
 import { registerOp } from './op.js';
 

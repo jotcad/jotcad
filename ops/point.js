@@ -1,4 +1,5 @@
 import './vectorSpec.js';
+import './shapeSpec.js';
 
 import { Point as op } from '@jotcad/geometry';
 import { registerOp } from './op.js';

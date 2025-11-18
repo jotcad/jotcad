@@ -1,3 +1,4 @@
+import './shapeSpec.js';
 import { makeShape } from '@jotcad/geometry';
 import { nth } from './nth.js';
 import { extrude2 as op2 } from '@jotcad/geometry';

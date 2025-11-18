@@ -1,3 +1,4 @@
+import './shapeSpec.js';
 import { registerOp } from './op.js';
 
 export const mask = registerOp({

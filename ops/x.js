@@ -1,3 +1,5 @@
+import './shapeSpec.js';
+import './numbersSpec.js';
 import { makeGroup } from '@jotcad/geometry';
 import { registerOp } from './op.js';
 

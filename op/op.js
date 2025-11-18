@@ -85,6 +85,11 @@ export class Op {
   }
 
   static registerOp({ name, spec, args, code }) {
+    const [inputSpec, argSpecs, outputSpec] = spec;
+    Op.checkSpec(inputSpec);
+    Op.checkSpec(argSpecs);
+    Op.checkSpec(outputSpec);
+
     const { [name]: method } = {
       [name]: function (...argList) {
         const input = this;
@@ -93,10 +98,21 @@ export class Op {
         if (args) {
           op.args = args(input, ...op.args);
         }
-        for (const arg of op.args) {
+        const setCaller = (arg, op) => {
           if (arg instanceof Op) {
             arg.caller = op;
+          } else if (arg instanceof Array) {
+            for (const element of arg) {
+              setCaller(element, op);
+            }
+          } else if (arg instanceof Object) {
+            for (const key of Object.keys(arg)) {
+              setCaller(arg[key], op);
+            }
           }
+        };
+        for (const arg of op.args) {
+          setCaller(arg, op);
         }
         emitOp(op);
         return op;
@@ -111,6 +127,33 @@ export class Op {
   static registerSpecHandler(code) {
     Op.specHandlers.push(code);
     return code;
+  }
+
+  static hasSpecHandler(spec) {
+    for (const specHandler of Op.specHandlers) {
+      if (specHandler(spec)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static checkSpec(spec) {
+    if (spec === null) {
+      return;
+    }
+    if (Op.hasSpecHandler(spec)) {
+      return;
+    }
+    if (spec instanceof Array) {
+      // It might be an array of specs, so check each one.
+      for (const subSpec of spec) {
+        Op.checkSpec(subSpec);
+      }
+    } else {
+      // We don't have a handler for this spec, and it's not an array of specs.
+      throw new Error(`No spec handler for type: ${spec}`);
+    }
   }
 
   static resolveInput(op) {

@@ -10,6 +10,7 @@
     "depcheck": "depcheck --ignores '@jsxcad/eslint*,eslint*,@babel/*'",
     "lint": "eslint *.js",
     "lintfix": "eslint --fix *.js",
+    "lintfix_one": "eslint --fix",
     "rollup": "rollup -c rollup_main.js",
     "test": "node --test",
     "tests": "node --test *.test.js"

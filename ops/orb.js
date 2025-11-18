@@ -1,4 +1,6 @@
-import { Orb as op } from '../geometry/orb.js';
+import './intervalSpec.js';
+import './optionsSpec.js';
+import { Orb as op } from '@jotcad/geometry';
 import { registerOp } from './op.js';
 
 export const Orb = registerOp({

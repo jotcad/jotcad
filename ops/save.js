@@ -1,3 +1,5 @@
+import './shapeSpec.js';
+import './stringSpec.js';
 import { registerOp } from './op.js';
 import { writeFile } from './fs.js';
 

@@ -97,3 +97,5 @@ export class Shape {
 export const makeShape = (args) => new Shape(args);
 
 export const makeGroup = (shapes) => makeShape({ shapes });
+
+export const isShape = (value) => value instanceof Shape;

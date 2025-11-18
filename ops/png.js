@@ -1,3 +1,7 @@
+import './stringSpec.js';
+import './vectorSpec.js';
+import './optionsSpec.js';
+import './shapeSpec.js';
 import { registerOp } from './op.js';
 import { renderPng } from '@jotcad/geometry';
 import { writeFile } from './fs.js';
