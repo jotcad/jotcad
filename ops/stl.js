@@ -1,3 +1,7 @@
+import './stringSpec.js';
+import './optionsSpec.js';
+import './shapeSpec.js';
+
 import { fromStl, toStl } from '@jotcad/geometry';
 import { readFile, writeFile } from './fs.js';
 

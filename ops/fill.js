@@ -1,3 +1,5 @@
+import './shapeSpec.js';
+import './shapesSpec.js';
 import { fill2 as op2 } from '@jotcad/geometry';
 import { fill3 as op3 } from '@jotcad/geometry';
 import { registerOp } from './op.js';

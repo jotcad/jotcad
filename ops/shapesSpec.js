@@ -1,4 +1,5 @@
 import { Op, specEquals } from '@jotcad/op';
+import { isShape } from '@jotcad/geometry';
 
 Op.registerSpecHandler(
   (spec) =>
@@ -7,7 +8,10 @@ Op.registerSpecHandler(
       const results = [];
       while (args.length >= 1) {
         const arg = args.shift();
-        if (arg instanceof Op && specEquals(arg.getOutputType(), 'shape')) {
+        if (isShape(arg)) {
+          results.push(arg);
+          continue;
+        } else if (arg instanceof Op && specEquals(arg.getOutputType(), 'shape')) {
           results.push(arg);
           continue;
         } else if (arg === undefined) {

@@ -1,3 +1,4 @@
+import './shapeSpec.js';
 import { makeAbsolute } from '@jotcad/geometry';
 import { registerOp } from './op.js';
 

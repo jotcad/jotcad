@@ -1,3 +1,6 @@
+import './shapeSpec.js';
+import './stringSpec.js';
+
 import { getShapesByTag, makeGroup } from '@jotcad/geometry';
 
 import { registerOp } from './op.js';
