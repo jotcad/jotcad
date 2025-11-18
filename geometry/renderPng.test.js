@@ -8,16 +8,15 @@ const __dirname = dirname(__filename);
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
-import { getTestDir } from './test_util.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('renderPng', () =>
   it('should render a triangle', async () => {
-    await withAssets(getTestDir('should render a triangle'), async (assets) => {
+    await withTestAssets('should render a triangle', async (assets) => {
       const id = cgal.Link(
         assets,
         [
@@ -37,6 +36,6 @@ describe('renderPng', () =>
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'renderPng.test.triangle.png'), image));
+      assert.ok(await testPng(assets, 'renderPng.test.triangle.png', image));
     });
   }));

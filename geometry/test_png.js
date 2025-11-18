@@ -1,12 +1,16 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path'; // Import the path module
+import path, { dirname } from 'node:path'; // Import dirname
+import { fileURLToPath } from 'url'; // Import fileURLToPath
 
 import pixelmatch from 'pixelmatch';
 import pngjs from 'pngjs';
 
-const isFilePresent = async (path) => {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const isFilePresent = async (filePath) => {
   try {
-    await access(path);
+    await access(filePath);
     return true;
   } catch (error) {
     return false;
@@ -14,19 +18,20 @@ const isFilePresent = async (path) => {
 };
 
 export const testPng = async (
-  expectedPngPath,
+  assets, // assets object
+  expectedPngFilename, // Now just the filename (e.g., 'arc.test.full.png')
   observedPng,
   threshold = 1000
 ) => {
-  const dir = path.dirname(expectedPngPath);
-  const filename = path.basename(expectedPngPath);
-    const observedPngPath = path.join(dir, `observed.${filename}`);
-    console.log(`[testPng] observedPngPath: ${observedPngPath}`);
-    console.log(`[testPng] observedPng is defined: ${observedPng !== undefined && observedPng !== null}`);
+  const expectedPngPath = path.join(__dirname, expectedPngFilename); // Construct full path internally
+  const observedPngPath = path.join(assets.basePath, `observed.${expectedPngFilename}`); // Observed PNG goes into assets.basePath
   
-    if (observedPng) {
-      await writeFile(observedPngPath, Buffer.from(observedPng));
-    }
+  console.log(`[testPng] observedPngPath: ${observedPngPath}`);
+  console.log(`[testPng] observedPng is defined: ${observedPng !== undefined && observedPng !== null}`);
+
+  if (observedPng) {
+    await writeFile(observedPngPath, Buffer.from(observedPng));
+  }
   const observedPngImage = pngjs.PNG.sync.read(await readFile(observedPngPath));
   const { width, height } = observedPngImage;
   let numFailedPixels = 0;
@@ -44,7 +49,7 @@ export const testPng = async (
       {
         threshold: 0.01,
         alpha: 0.2,
-        diffMask: process.env.FORCE_COLOR === '0',
+        diffMask: process.env.FORCE_COLOR === '0' ? false : true,
         diffColor:
           process.env.FORCE_COLOR === '0' ? [255, 255, 255] : [255, 0, 0],
       }

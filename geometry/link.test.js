@@ -8,15 +8,14 @@ const __dirname = dirname(__filename);
 import { Link } from './link.js';
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
-import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('link', () => {
   it('should produce an open linkage of points', async () => {
-    await withAssets(getTestDir('should produce an open linkage of points'), async (assets) => {
+    await withTestAssets('should produce an open linkage of points', async (assets) => {
       const shape = Link(
         assets,
         [
@@ -36,12 +35,12 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'link.test.open.png'), image));
+      assert.ok(await testPng(assets, 'link.test.open.png', image));
     });
   });
 
   it('should produce a closed linkage of points', async () => {
-    await withAssets(getTestDir('should produce a closed linkage of points'), async (assets) => {
+    await withTestAssets('should produce a closed linkage of points', async (assets) => {
       const shape = Link(
         assets,
         [
@@ -61,12 +60,12 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'link.test.closed.png'), image));
+      assert.ok(await testPng(assets, 'link.test.closed.png', image));
     });
   });
 
   it('should produce a reversed linkage of points', async () => {
-    await withAssets(getTestDir('should produce a reversed linkage of points'), async (assets) => {
+    await withTestAssets('should produce a reversed linkage of points', async (assets) => {
       const shape = Link(
         assets,
         [
@@ -86,7 +85,7 @@ describe('link', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'link.test.reverse.png'), image));
+      assert.ok(await testPng(assets, 'link.test.reverse.png', image));
     });
   });
 });
