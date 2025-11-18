@@ -13,8 +13,7 @@ import { describe, it } from 'node:test';
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
-import { getTestDir } from './test_util.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 
 describe('transform', () => {
   it('should simplify rotations', () => {
@@ -69,7 +68,7 @@ describe('transform', () => {
   });
 
   it('should translate a point', async () => {
-    await withAssets(getTestDir('should translate a point'), async (assets) => {
+    await withTestAssets('should translate a point', async (assets) => {
       const transformedPoint = Point(assets, 1, 2, 3).move(3, 2, 1);
       const id = cgal.MakeAbsolute(assets, transformedPoint);
       assert.strictEqual('V 1\nv 4 4 4 4 4 4\np 0\n', assets.getText(id));
@@ -77,7 +76,7 @@ describe('transform', () => {
   });
 
   it('should rotate points', async () => {
-    await withAssets(getTestDir('should rotate points'), async (assets) => {
+    await withTestAssets('should rotate points', async (assets) => {
       assert.strictEqual(
         'V 1\nv 0 -1 0 0 -1 0\np 0\n',
         assets.getText(

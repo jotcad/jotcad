@@ -8,14 +8,13 @@ const __dirname = dirname(__filename);
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
 import { cut } from './cut.js';
-import { getTestDir } from './test_util.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 
 describe('cut', (t) =>
   it('should cut the corner out of a box', async () => {
-    await withAssets(getTestDir('should cut the corner out of a box'), async (assets) => {
+    await withTestAssets('should cut the corner out of a box', async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 2]);
       const cutBox = cut(assets, box, [tool]);
@@ -24,13 +23,13 @@ describe('cut', (t) =>
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'cut.test.corner.png'), image));
+      assert.ok(await testPng(assets, 'cut.test.corner.png', image));
     });
   }));
 
 describe('masked cut', (t) =>
   it('should cut the corner out of a box', async () => {
-    await withAssets(getTestDir('should cut the corner out of a box (masked)'), async (assets) => {
+    await withTestAssets('should cut the corner out of a box (masked)', async (assets) => {
       const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
       const tool = await Box3(assets, [1, 2], [1, 2], [1, 2]);
       const mask = await Box3(assets, [0, 2], [1, 2], [1, 2]);
@@ -41,6 +40,6 @@ describe('masked cut', (t) =>
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'cut.test.masked_cut.png'), image));
+      assert.ok(await testPng(assets, 'cut.test.masked_cut.png', image));
     });
   }));

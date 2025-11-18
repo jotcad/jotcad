@@ -12,11 +12,11 @@ import { fileURLToPath } from 'url';
 import { makeAbsolute } from './makeAbsolute.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 
 describe('arc', () => {
   it('should build a full arc', async () => {
-    await withAssets(getTestDir('should build a full arc'), async (assets) => {
+    await withTestAssets('should build a full arc', async (assets) => {
       const full = await Arc2(assets, [-10, 10], [-10, 10], {
         start: 0,
         end: 1,
@@ -27,12 +27,12 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('should build a full arc', 'arc.test.full.png', image));
+      assert.ok(await testPng(assets, 'arc.test.full.png', image));
     });
   });
 
   it('should build an arc with the specified give', async () => {
-    await withAssets(getTestDir('should build an arc with the specified give'), async (assets) => {
+    await withTestAssets('should build an arc with the specified give', async (assets) => {
       const full = await Arc2(assets, [-10, 10], [-10, 10], { give: 1 });
       const absoluteFull = makeAbsolute(assets, full);
       const image = await renderPng(assets, full, {
@@ -40,12 +40,12 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('should build an arc with the specified give', 'arc.test.give.png', image));
+      assert.ok(await testPng(assets, 'arc.test.give.png', image));
     });
   });
 
   it('should build a half-arc', async () => {
-    await withAssets(getTestDir('should build a half-arc'), async (assets) => {
+    await withTestAssets('should build a half-arc', async (assets) => {
       const half = await Arc2(assets, [-10, 10], [-10, 10], {
         start: 0,
         end: '1/2',
@@ -55,12 +55,12 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('should build a half-arc', 'arc.test.half.png', image));
+      assert.ok(await testPng(assets, 'arc.test.half.png', image));
     });
   });
 
   it('should build a quarter arc', async () => {
-    await withAssets(getTestDir('should build a quarter arc'), async (assets) => {
+    await withTestAssets('should build a quarter arc', async (assets) => {
       const half = await Arc2(assets, [-10, 10], [-10, 10], {
         start: 0,
         end: '1/4',
@@ -70,12 +70,12 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('should build a quarter arc', 'arc.test.quarter.png', image));
+      assert.ok(await testPng(assets, 'arc.test.quarter.png', image));
     });
   });
 
   it('should build a half square arc', async () => {
-    await withAssets(getTestDir('should build a half square arc'), async (assets) => {
+    await withTestAssets('should build a half square arc', async (assets) => {
       const half = await Arc2(assets, [-1, 1], [-1, 1], {
         sides: 4,
         start: 0,
@@ -86,12 +86,12 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('should build a half square arc', 'arc.test.half_square.png', image));
+      assert.ok(await testPng(assets, 'arc.test.half_square.png', image));
     });
   });
 
   it('should build a quarter square arc', async () => {
-    await withAssets(getTestDir('should build a quarter square arc'), async (assets) => {
+    await withTestAssets('should build a quarter square arc', async (assets) => {
       const quarter = await Arc2(assets, [-1, 1], [-1, 1], {
         sides: 4,
         start: 0,
@@ -102,12 +102,12 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('should build a quarter square arc', 'arc.test.quarter_square.png', image));
+      assert.ok(await testPng(assets, 'arc.test.quarter_square.png', image));
     });
   });
 
   it('should build a half square arc with the flats rotated', async () => {
-    await withAssets(getTestDir('should build a half square arc with the flats rotated'), async (assets) => {
+    await withTestAssets('should build a half square arc with the flats rotated', async (assets) => {
       const quarter = await Arc2(assets, [-1, 1], [-1, 1], {
         sides: 4,
         start: 0,
@@ -119,7 +119,7 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng('should build a half square arc with the flats rotated', 'arc.test.half_square_spin.png', image));
+      assert.ok(await testPng(assets, 'arc.test.half_square_spin.png', image));
     });
   });
 });

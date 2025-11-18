@@ -2,13 +2,12 @@ import { describe, it } from 'node:test';
 
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
-import { getTestDir } from './test_util.js';
 import { makeAbsolute } from './makeAbsolute.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 
 describe('makeAbsolute', () =>
   it('should make a box absolute', async () => {
-    await withAssets(getTestDir('should make a box absolute'), async (assets) => {
+    await withTestAssets('should make a box absolute', async (assets) => {
       const box = Box3(assets, [1, 3], [1, 3], [1, 3]);
       const absoluteBox = makeAbsolute(assets, box);
       assert.strictEqual(

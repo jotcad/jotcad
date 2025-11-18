@@ -11,15 +11,14 @@ import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
 import { extrude2 } from './extrude.js';
 import { fill2 } from './fill.js';
-import { getTestDir } from './test_util.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 
 describe('extrude', () => {
   it('should extrude a triangle', async () => {
-    await withAssets(getTestDir('should extrude a triangle'), async (assets) => {
+    await withTestAssets('should extrude a triangle', async (assets) => {
       const triangle = makeShape({
         geometry: cgal.Link(
           assets,
@@ -44,12 +43,12 @@ describe('extrude', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'extrude.test.triangle.png'), image));
+      assert.ok(await testPng(assets, 'extrude.test.triangle.png', image));
     });
   });
 
   it('should extrude a triangle while shrinking the top', async () => {
-    await withAssets(getTestDir('should extrude a triangle while shrinking the top'), async (assets) => {
+    await withTestAssets('should extrude a triangle while shrinking the top', async (assets) => {
       const triangle = makeShape({
         geometry: cgal.Link(
           assets,
@@ -74,7 +73,7 @@ describe('extrude', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'extrude.test.shrink.png'), image));
+      assert.ok(await testPng(assets, 'extrude.test.shrink.png', image));
     });
   });
 });

@@ -10,15 +10,14 @@ import { Point } from './point.js';
 import assert from 'node:assert/strict';
 import { cgal } from './getCgal.js';
 import { fill2 } from './fill.js';
-import { getTestDir } from './test_util.js';
 import { makeShape } from './shape.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
-import { withAssets } from './assets.js';
+import { withTestAssets } from './test_session_util.js';
 
 describe('fill', () => {
   it('should fill a triangle', async () => {
-    await withAssets(getTestDir('should fill a triangle'), async (assets) => {
+    await withTestAssets('should fill a triangle', async (assets) => {
       const box = makeShape({
         geometry: cgal.Link(
           assets,
@@ -41,12 +40,12 @@ describe('fill', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'fill.test.triangle.png'), image));
+      assert.ok(await testPng(assets, 'fill.test.triangle.png', image));
     });
   });
 
   it('should fill the perimeter of a hollow ring', async () => {
-    await withAssets(getTestDir('should fill the perimeter of a hollow ring'), async (assets) => {
+    await withTestAssets('should fill the perimeter of a hollow ring', async (assets) => {
       const outline = [
         Arc2(assets, [-20, 20], [-20, 20]),
         Arc2(assets, [-10, 10], [-10, 10]),
@@ -60,14 +59,14 @@ describe('fill', () => {
           height: 512,
         }
       );
-      assert.ok(await testPng(path.join(__dirname, 'fill.test.ring_outline.png'), outlineImage));
+      assert.ok(await testPng(assets, 'fill.test.ring_outline.png', outlineImage));
       const ring = fill2(assets, outline, true);
       const image = await renderPng(assets, ring, {
         view: { position: [0, 0, 100] },
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(path.join(__dirname, 'fill.test.ring.png'), image));
+      assert.ok(await testPng(assets, 'fill.test.ring.png', image));
     });
   });
 });
