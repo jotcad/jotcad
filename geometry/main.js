@@ -26,3 +26,5 @@ export { test } from './test.js';
 export { testPng } from './test_png.js';
 export { toStl } from './stl.js';
 export { withAssets } from './assets.js';
+export { fromJot } from './jot.js';
+export { toJot } from './jot.js';

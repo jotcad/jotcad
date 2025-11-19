@@ -28,6 +28,7 @@ const whitelist = {
     'Arc2',
     'Box2',
     'Box3',
+    'Jot',
     'Orb',
     'Point',
     'Z',
@@ -43,6 +44,7 @@ const whitelist = {
     'fill3',
     'get',
     'join',
+    'jot',
     'nth',
     'mask',
     'png',
@@ -143,6 +145,8 @@ const getContentType = (filePath) => {
     case '.jpg':
     case '.jpeg':
       return 'image/jpeg';
+    case '.jot':
+      return 'application/x-jot';
     default:
       return 'application/octet-stream';
   }
