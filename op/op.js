@@ -2,7 +2,6 @@ import { computeHash } from './hash.js';
 
 export let graph;
 export let ops;
-console.log('ops declared (initial):', ops);
 export let nextId;
 
 export const symbolPrefix = '\uE000 ';
@@ -14,7 +13,6 @@ export const makeSymbol = (string) => symbolPrefix + string;
 export const beginOps = (graphToUse = {}) => {
   graph = graphToUse;
   ops = [];
-  console.log('ops assigned in beginOps:', ops);
   nextId = 0;
   return ops;
 };
@@ -23,15 +21,12 @@ export const endOps = () => {
   const result = { graph, ops };
   graph = undefined;
   ops = undefined;
-  console.log('ops assigned in endOps:', ops);
   nextId = undefined;
   return result;
 };
 
 export const emitOp = (op) => {
-  console.log('ops in emitOp (before push):', ops);
   ops.push(op);
-  console.log('ops in emitOp (after push):', ops);
   return op;
 };
 
@@ -161,30 +156,25 @@ export class Op {
   }
 
   static resolveInput(op) {
-    console.log(`QQ/resolveInput: op=${op.name}`);
     const { caller } = op;
     if (!caller) {
       // This is not an argument.
       // The input is already resolved.
-      console.log(`QQ/resolveInput: no caller`);
       return;
     }
     const { input } = caller;
     if (!input) {
       // The caller has no input.
       // No input to resolve.
-      console.log(`QQ/resolveInput: no input`);
       return;
     }
     // The caller has input to delegate;
     for (;;) {
       // Walk back to the head of this op chain.
       if (op.inputResolved) {
-        console.log(`QQ/resolveInput: head`);
         break;
       }
       if (!op.input) {
-        console.log(`QQ/resolveInput: linked`);
         // This is the head.
         // Set the input to the caller's input.
         op.input = input;
@@ -196,15 +186,8 @@ export class Op {
   }
 
   static resolveNode(value) {
-    console.log(`QQ/resolveNode: value=${value}`);
     if (value instanceof Op) {
-      console.log(`QQ/resolveNode: Op name=${value.name}`);
       if (value.node) {
-        console.log(
-          `QQ/resolveNode: value.node.output=${JSON.stringify(
-            value.node.output
-          )}`
-        );
         return value.node.output;
       }
       const node = {
@@ -214,20 +197,16 @@ export class Op {
       };
       node.output = makeSymbol(computeHash(node));
       value.node = node;
-      console.log(`QQ/resolveNode: node=${JSON.stringify(node)}`);
       return node.output;
     } else if (value instanceof Array) {
-      console.log(`QQ/resolveNode: Array`);
       return value.map((op) => Op.resolveNode(op));
     } else if (value instanceof Object) {
-      console.log(`QQ/resolveNode: Object`);
       const resolved = {};
       for (const key of Object.keys(value)) {
         resolved[key] = Op.resolveNode(value[key]);
       }
       return resolved;
     } else {
-      console.log(`QQ/resolveNode: other`);
       return value;
     }
   }
@@ -357,19 +336,10 @@ export const resolve = async (context, ops, graph) => {
       await isReady;
       const { args, input, name, output } = node;
       let evaluatedInput;
-      console.log(`QQ/resolve: input for ${name}:`, input);
       if (isSymbol(input)) {
         evaluatedInput = await graph[input];
-        console.log(
-          `QQ/resolve: evaluatedInput for ${name} (from symbol):`,
-          evaluatedInput
-        );
       } else {
         evaluatedInput = input;
-        console.log(
-          `QQ/resolve: evaluatedInput for ${name} (direct):`,
-          evaluatedInput
-        );
       }
       const evaluateArg = async (arg) => {
         if (isSymbol(arg)) {
@@ -396,10 +366,6 @@ export const resolve = async (context, ops, graph) => {
       };
       const evaluatedArgs = await evaluateArg(node.args);
       try {
-        console.log(`QQ/resolve: Before Op.code[${name}] call. ops:`, ops);
-        console.log(
-          `QQ/op: op=${name} evaluatedInput=${JSON.stringify(evaluatedInput)}`
-        );
         const result = Op.code[name](
           output,
           context,

@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import nodeFS from 'node:fs';
 import path from 'node:path';
+import { rm } from 'node:fs/promises';
 const require = createRequire(import.meta.url);
 
 // import { nativeNode } from './native.node.cjs';
@@ -14,4 +15,5 @@ export const FS = {
     nodeFS.writeFileSync(filePath, data, options);
   },
   mkdir: (path) => nodeFS.mkdirSync(path, { recursive: true }),
+  rmdir: async (path) => await rm(path, { recursive: true, force: true }),
 };

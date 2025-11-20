@@ -147,7 +147,7 @@ const getContentType = (filePath) => {
     case '.jpeg':
       return 'image/jpeg';
     case '.jot':
-      return 'application/x-jot';
+      return 'text/plain';
     default:
       return 'application/octet-stream';
   }

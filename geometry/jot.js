@@ -6,12 +6,7 @@ import { cgal } from './getCgal.js';
 import { makeAbsolute } from './makeAbsolute.js';
 import { makeShape } from './shape.js';
 
-export const fromJot = async (assets, id) => {
-  const assetText = await assets.getText(id);
-  if (!assetText) {
-    throw new Error(`Jot asset with ID ${id} not found.`);
-  }
-
+export const fromJot = async (assets, assetText) => {
   const { vertices, segments, triangles, faces } =
     DecodeInexactGeometryText(assetText);
 
@@ -102,5 +97,5 @@ export const toJot = async (assets, shape) => {
     faces: allFaces,
   });
 
-  return assets.textId(assetText); // Store the aggregated asset text and return its ID
+  return assetText; // Return the serialization
 };

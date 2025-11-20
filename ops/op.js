@@ -6,16 +6,7 @@ export const registerOp = ({ name, effect = false, spec, args, code }) => {
     const result = assets.getResult(id);
     if (result && effect === false) {
       const { value } = result;
-      const walk = (shape) => {
-        Object.setPrototypeOf(shape, Shape.prototype);
-        if (shape.shapes) {
-          for (const element of shape.shapes) {
-            walk(element);
-          }
-        }
-      };
-      walk(value);
-      return value;
+      return Shape.fromPlain(value);
     } else {
       // TODO: Figure out side-effect emission.
       const value = await code(id, assets, ...args);
