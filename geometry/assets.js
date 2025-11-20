@@ -65,7 +65,8 @@ export const withAssets = async (basePath, op) => {
   try {
     await FS.rmdir(basePath);
   } catch (e) {
-    if (e.code !== 'ENOENT') { // Ignore "file not found" errors
+    if (e.code !== 'ENOENT') {
+      // Ignore "file not found" errors
       throw e;
     }
   }

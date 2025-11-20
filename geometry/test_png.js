@@ -25,10 +25,6 @@ export const testPng = async (
 ) => {
   const expectedPngPath = path.join(__dirname, expectedPngFilename); // Construct full path internally
   const observedPngPath = path.join(assets.basePath, `observed.${expectedPngFilename}`); // Observed PNG goes into assets.basePath
-  
-  console.log(`[testPng] observedPngPath: ${observedPngPath}`);
-  console.log(`[testPng] observedPng is defined: ${observedPng !== undefined && observedPng !== null}`);
-
   if (observedPng) {
     await writeFile(observedPngPath, Buffer.from(observedPng));
   }

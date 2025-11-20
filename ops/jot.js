@@ -1,6 +1,7 @@
 import { fromJot, toJot } from '@jotcad/geometry';
-import { registerOp } from './op.js';
 import { readFile, writeFile } from './fs.js';
+
+import { registerOp } from './op.js';
 
 export const Jot = registerOp({
   name: 'Jot',
