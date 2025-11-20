@@ -10,6 +10,7 @@ import * as fs from './fsNode.js';
 import { cgal, testPng, withAssets } from '@jotcad/geometry';
 import { describe, it } from 'node:test';
 
+import { Arc2 } from './arc.js';
 import { Box2 } from './box.js';
 import { Orb } from './orb.js';
 import assert from 'node:assert/strict';
@@ -17,6 +18,7 @@ import { color } from './color.js';
 import { cut } from './cut.js';
 import { extrude2 } from './extrude.js';
 import { fill2 } from './fill.js';
+import { jot } from './jot.js';
 import { png } from './png.js';
 import { readFile } from './fs.js';
 import { run } from '@jotcad/op';
@@ -72,6 +74,16 @@ describe('ops', () => {
       await withAssets('ops_test_failing_op', async (assets) => {
         const graph = await run(assets, () => Orb(10).cut(z(1)));
         assert.ok(graph);
+      });
+    }));
+
+  it("Arc2(10).jot('out.jot')", async () =>
+    withFs(fs, async () => {
+      await withAssets('ops_test_arc2_jot', async (assets) => {
+        const graph = await run(assets, () => Arc2(10).jot('out.jot'));
+        assert.ok(graph);
+        const content = await fs.readFile('out.jot', { encoding: 'utf8' });
+        assert.ok(content.length > 0);
       });
     }));
 });

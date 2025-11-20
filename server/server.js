@@ -80,6 +80,7 @@ const whitelist = {
     'fill3',
     'get',
     'join',
+    'jot',
     'nth',
     'mask',
     'png',
