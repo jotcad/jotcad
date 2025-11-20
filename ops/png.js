@@ -24,7 +24,6 @@ export const png = registerOp({
       doOutlineEdges: edge,
     });
     const data = Buffer.from(image);
-    console.log(`QQ/png: path=${path}`);
     await writeFile(path, data, { id });
     return input;
   },

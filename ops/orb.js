@@ -21,7 +21,6 @@ export const Orb = registerOp({
     'shape',
   ],
   code: (id, assets, input, x = 1, y = x, z = x, options = {}) => {
-    console.log(`QQ/Orb`);
     const { zag } = options; // Extract zag
     return op(assets, x, y, z, zag); // Pass x, y, z, zag
   },

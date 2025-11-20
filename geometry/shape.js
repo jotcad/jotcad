@@ -92,6 +92,16 @@ export class Shape {
     walk(this);
     return results;
   }
+
+  static fromPlain(plain) {
+    if (!plain) return plain;
+    const shape = new Shape();
+    Object.assign(shape, plain);
+    if (shape.shapes) {
+      shape.shapes = shape.shapes.map((s) => Shape.fromPlain(s));
+    }
+    return shape;
+  }
 }
 
 export const makeShape = (args) => new Shape(args);

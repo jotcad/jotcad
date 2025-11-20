@@ -12,7 +12,6 @@ class Assets {
  public:
   Assets(Napi::Object napi) : napi_(napi), undefined_(napi.Env().Undefined()) {
     base_path_ = napi.Get("basePath").As<Napi::String>().Utf8Value();
-    std::cerr << "[C++ Assets] constructor: base_path_ = " << base_path_ << std::endl; // Log basePath
   }
 
   Napi::Object Space(const std::string& key) {
@@ -33,7 +32,6 @@ class Assets {
     auto key = Napi::String::New(napi_.Env(), id);
     Space("text").Set(key, Napi::Boolean::New(napi_.Env(), true));
     std::string path = base_path_ + "/text/" + id;
-    std::cerr << "[C++ Assets] TextId: base_path_ = " << base_path_ << ", path = " << path << std::endl; // Log basePath and path
     std::ofstream out(path);
     out << text;
     out.close();
@@ -47,7 +45,6 @@ class Assets {
     Napi::Object space = Space("text");
     std::string path =
         base_path_ + "/text/" + id.As<Napi::String>().Utf8Value();
-    std::cerr << "[C++ Assets] GetTextStream: base_path_ = " << base_path_ << ", path = " << path << std::endl; // Log basePath and path
     std::ifstream in(path);
     return std::move(in);
   }

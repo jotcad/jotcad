@@ -24,7 +24,6 @@ export const b = Op.registerOp({
   name: 'b',
   spec: ['any', ['any'], 'any'], // 'any' for the argument and output
   code: (id, assets, input, arg) => {
-    console.log(`QQ/b.input=`, input);
     return arg + ' hello from b';
   },
 });
@@ -33,7 +32,6 @@ export const c = Op.registerOp({
   name: 'c',
   spec: ['any', [], 'any'], // 'any' for the input and output
   code: (id, assets, input) => {
-    console.log(`QQ/c.input=`, input);
     return `${input} and hello from c`;
   },
 });
@@ -52,7 +50,6 @@ describe('op', () => {
     // We expect b's input to be 'hello from a', and its output to be 123 (the arg).
     // The ID for a() is ' 9a51f0f043f94f31cf0c02d91a93b89d0fd4b73f'
     // The ID for a().b(123) is ' e343a4cb2f0cbb9dc62ae641863cbfea6b80ef3a'
-    // We will check the log for QQ/b.input to verify.
     const bOutput = graph[' e343a4cb2f0cbb9dc62ae641863cbfea6b80ef3a'];
     assert.deepEqual(bOutput, '123 hello from b');
   });

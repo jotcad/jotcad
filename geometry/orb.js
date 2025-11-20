@@ -11,8 +11,6 @@ const DEFAULT_ORB_ZAG = 1;
 const scaleVector = (s, v) => v.map((c) => s * c);
 
 export const Orb = (assets, x = 1, y = x, z = x, zag = DEFAULT_ORB_ZAG) => {
-  console.log(`QQ/geometry/Orb`);
-
   const [c1, c2] = buildCorners(x, y, z);
   const scale = scaleVector(0.5, computeScale(c1, c2));
   const middle = computeMiddle(c1, c2);

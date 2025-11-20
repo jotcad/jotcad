@@ -1,17 +1,23 @@
 import { fromJot, toJot } from '@jotcad/geometry';
+import { readFile, writeFile } from './fs.js';
+
 import { registerOp } from './op.js';
 
 export const Jot = registerOp({
   name: 'Jot',
-  spec: [['string'], 'shape'],
-  code: async (id, assets) => fromJot(assets, id),
+  spec: [null, ['string'], 'shape'],
+  code: async (opSymbol, assets, path) => {
+    const serialization = await readFile(path);
+    return fromJot(assets, serialization);
+  },
 });
 
 export const jot = registerOp({
   name: 'jot',
   spec: ['shape', ['string'], 'shape'],
-  code: async (input, id, assets) => {
-    await toJot(assets, input);
-    return input;
+  code: async (opSymbol, assets, inputShape, path) => {
+    const serialization = await toJot(assets, inputShape);
+    await writeFile(path, serialization);
+    return inputShape;
   },
 });
