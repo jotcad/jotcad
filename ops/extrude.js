@@ -18,5 +18,5 @@ export const extrude3 = registerOp({
   spec: ['shape', ['shape', 'shape'], 'shape'],
   args: (input, top, bottom) => [top?.nth(0), bottom?.nth(0)],
   code: (id, assets, input, top = makeShape(), bottom = makeShape()) =>
-    op3(assets, input, top, bottom)
+    op3(assets, input, top, bottom),
 });
