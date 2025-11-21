@@ -88,18 +88,6 @@ describe('jot', () => {
         ); // Pass filename
         assert.ok(serializedJot, 'toJot should return a serialized string');
 
-        // WARNING: The TextId generation (hashing of geometry text) by the native CGAL addon
-        // appears to be non-deterministic across runs or environments.
-        // This means the 'expectedSerializedJot' below will likely need to be updated
-        // each time the test is run, or if the environment changes.
-        // For a reliable test, the underlying non-determinism in TextId generation
-        // needs to be addressed in the CGAL addon.
-        //
-        // To make this test pass, you need to:
-        // 1. Run this test once.
-        // 2. Log the value of 'serializedJot' (e.log., console.log(serializedJot)).
-        // 3. Copy the logged output.
-        // 4. Replace 'PLACEHOLDER_SERIALIZED_TEXT_HERE' below with the copied output.
         const expectedSerializedJot = `
 =79 files/test_main.jot
 {"geometry":"1d8aebd535dfec8755be1d3ab89208d675cab49b971262ec81b082988b06acdc"}
