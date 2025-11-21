@@ -134,11 +134,7 @@ t 1 0 8
         );
 
         // 4. Deserialize the string using fromJot
-        const roundTrippedShape = await fromJot(
-          assets,
-          serializedJot,
-          'files/test_main.jot'
-        ); // Pass filename
+        const roundTrippedShape = await fromJot(assets, serializedJot); // Pass filename
 
         // 5. Verify the round-trip
         // The originalShape and roundTrippedShape are now full Shape objects.

@@ -16,11 +16,7 @@ function serializeTextFileEntry(fileName, fileContent) {
   return `\n=${fileContentLengthStr} ${fileName}\n${fileContent}`;
 }
 
-export const fromJot = async (
-  assets,
-  assetText,
-  mainShapeFilename = 'files/main.jot'
-) => {
+export const fromJot = async (assets, assetText) => {
   const deserializedAssets = new Map();
   let offset = 0;
 
@@ -71,6 +67,28 @@ export const fromJot = async (
     }
   }
 
+  let mainJotJson = null;
+  let mainShapeFilename = null;
+
+  // Find the main Shape object JSON string (the one starting with 'files/')
+  for (const [fileName, fileContent] of deserializedAssets.entries()) {
+    if (fileName.startsWith('files/')) {
+      if (mainJotJson !== null) {
+        throw new Error(
+          'Multiple main Shape files found in JOT serialization.'
+        );
+      }
+      mainJotJson = fileContent;
+      mainShapeFilename = fileName;
+    }
+  }
+
+  if (!mainJotJson) {
+    throw new Error(
+      'No main Shape file found in JOT serialization (expected a file starting with "files/").'
+    );
+  }
+
   // Re-register all assets (except the main Shape's filename) with the assets system
   for (const [fileName, fileContent] of deserializedAssets.entries()) {
     // If the filename indicates it's a geometry asset (e.g., starts with 'assets/text/')
@@ -79,14 +97,6 @@ export const fromJot = async (
       const geometryId = fileName.substring('assets/text/'.length);
       assets.textId(fileContent); // Re-register the content with its TextId
     }
-  }
-
-  // Now, get the main Shape object JSON string from the deserialized assets
-  const mainJotJson = deserializedAssets.get(mainShapeFilename);
-  if (!mainJotJson) {
-    throw new Error(
-      `Main JOT Shape data with filename '${mainShapeFilename}' not found in serialized data.`
-    );
   }
 
   const plainShape = JSON.parse(mainJotJson);
