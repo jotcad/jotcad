@@ -7,11 +7,11 @@ import { registerOp } from './op.js';
 export const Box2 = registerOp({
   name: 'Box2',
   spec: [null, ['interval', 'interval'], 'shape'],
-  code: (id, assets, input, x, y = x) => op2(assets, x, y),
+  code: (id, context, input, x, y = x) => op2(context.assets, x, y),
 });
 
 export const Box3 = registerOp({
   name: 'Box3',
   spec: [null, ['interval', 'interval', 'interval'], 'shape'],
-  code: (id, assets, input, x, y = x, z = y) => op3(assets, x, y, z),
+  code: (id, context, input, x, y = x, z = y) => op3(context.assets, x, y, z),
 });

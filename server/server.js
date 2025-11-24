@@ -153,14 +153,54 @@ const getContentType = (filePath) => {
   }
 };
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'http://127.0.0.1:8080',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+const log = (message) => {
+  console.log(`Jot: ${message}`);
+};
+
+const sendResponse = (res, statusCode, headers, body) => {
+  log(`Sending response: ${statusCode}`);
+  res.writeHead(statusCode, { ...corsHeaders, ...headers });
+  res.end(body);
+};
+
+const sendStream = (
+  res,
+  statusCode,
+  headers,
+  stream,
+  filePath,
+  contentType,
+  contentLength
+) => {
+  log(
+    `Sending file: ${filePath}, Content-Type: ${contentType}, Content-Length: ${contentLength}`
+  );
+  res.writeHead(statusCode, { ...corsHeaders, ...headers });
+  stream.pipe(res);
+};
+
+const handleOptions = (req, res) => {
+  sendResponse(res, 200, {});
+};
+
 const handleGet = async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const [op, sessionId, ...rest] = url.pathname.split('/').slice(1);
 
     if (!sessionId) {
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
-      res.end('Session ID is required.');
+      sendResponse(
+        res,
+        400,
+        { 'Content-Type': 'text/plain' },
+        'Session ID is required.'
+      );
       return;
     }
 
@@ -198,25 +238,34 @@ const handleGet = async (req, res) => {
         const contentType = getContentType(downloadPath);
         const readStream = createReadStream(downloadPath);
 
-        res.writeHead(200, {
-          'Content-Type': contentType,
-          'Content-Length': stats.size,
-        });
-
-        readStream.pipe(res);
+        sendStream(
+          res,
+          200,
+          {
+            'Content-Type': contentType,
+            'Content-Length': stats.size,
+          },
+          readStream,
+          downloadPath,
+          contentType,
+          stats.size
+        );
 
         readStream.on('error', (streamErr) => {
           console.error('Stream Error:', streamErr);
           if (!res.headersSent) {
-            res.writeHead(500, { 'Content-Type': 'text/plain' });
-            res.end('Server error.');
+            sendResponse(
+              res,
+              500,
+              { 'Content-Type': 'text/plain' },
+              `Stream error: ${streamErr.message}`
+            );
           } else {
             res.end();
           }
         });
       } else {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('ok');
+        sendResponse(res, 200, { 'Content-Type': 'text/plain' }, 'ok');
       }
     } else if (op === 'get') {
       const [downloadFile] = rest;
@@ -225,30 +274,43 @@ const handleGet = async (req, res) => {
       const contentType = getContentType(downloadPath);
       const readStream = createReadStream(downloadPath);
 
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Content-Length': stats.size,
-      });
-
-      readStream.pipe(res);
+      sendStream(
+        res,
+        200,
+        {
+          'Content-Type': contentType,
+          'Content-Length': stats.size,
+        },
+        readStream,
+        downloadPath,
+        contentType,
+        stats.size
+      );
 
       readStream.on('error', (streamErr) => {
         console.error('Stream Error:', streamErr);
         if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end('Server error.');
+          sendResponse(
+            res,
+            500,
+            { 'Content-Type': 'text/plain' },
+            `Stream error: ${streamErr.message}`
+          );
         } else {
           res.end();
         }
       });
     } else {
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
-      res.end('Invalid operation. Use "run" or "get".');
+      sendResponse(
+        res,
+        400,
+        { 'Content-Type': 'text/plain' },
+        'Invalid operation. Use "run" or "get".'
+      );
     }
   } catch (e) {
     console.log(`QQ/error: ${e}`);
-    res.writeHead(500, { 'Content-Type': 'text/plain' });
-    res.end('' + e);
+    sendResponse(res, 500, { 'Content-Type': 'text/plain' }, '' + e);
   }
 };
 
@@ -258,14 +320,22 @@ const handlePost = async (req, res) => {
     const [op, sessionId, downloadFile] = url.pathname.split('/').slice(1);
 
     if (op !== 'run') {
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
-      res.end('Invalid operation. Use "run".');
+      sendResponse(
+        res,
+        400,
+        { 'Content-Type': 'text/plain' },
+        'Invalid operation. Use "run".'
+      );
       return;
     }
 
     if (!sessionId) {
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
-      res.end('Session ID is required.');
+      sendResponse(
+        res,
+        400,
+        { 'Content-Type': 'text/plain' },
+        'Session ID is required.'
+      );
       return;
     }
 
@@ -300,30 +370,38 @@ const handlePost = async (req, res) => {
       const contentType = getContentType(downloadPath);
       const readStream = createReadStream(downloadPath);
 
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Content-Length': stats.size,
-      });
-
-      readStream.pipe(res);
+      sendStream(
+        res,
+        200,
+        {
+          'Content-Type': contentType,
+          'Content-Length': stats.size,
+        },
+        readStream,
+        downloadPath,
+        contentType,
+        stats.size
+      );
 
       readStream.on('error', (streamErr) => {
         console.error('Stream Error:', streamErr);
         if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end('Server error.');
+          sendResponse(
+            res,
+            500,
+            { 'Content-Type': 'text/plain' },
+            `Stream error: ${streamErr.message}`
+          );
         } else {
           res.end();
         }
       });
     } else {
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('ok');
+      sendResponse(res, 200, { 'Content-Type': 'text/plain' }, 'ok');
     }
   } catch (e) {
     console.error(`Error handling POST request: ${e}`);
-    res.writeHead(500, { 'Content-Type': 'text/plain' });
-    res.end('' + e);
+    sendResponse(res, 500, { 'Content-Type': 'text/plain' }, '' + e);
   }
 };
 
@@ -336,13 +414,21 @@ const server = http.createServer((req, res) => {
       handleGet(req, res);
       break;
     }
+    case 'OPTIONS': {
+      handleOptions(req, res);
+      break;
+    }
     case 'POST': {
       handlePost(req, res);
       break;
     }
     default: {
-      res.writeHead(405, { 'Content-Type': 'text/plain' });
-      res.end('Method Not Allowed');
+      sendResponse(
+        res,
+        405,
+        { 'Content-Type': 'text/plain' },
+        'Method Not Allowed'
+      );
     }
   }
 });

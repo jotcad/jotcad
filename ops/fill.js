@@ -7,11 +7,12 @@ import { registerOp } from './op.js';
 export const fill2 = registerOp({
   name: 'fill2',
   spec: ['shape', ['shapes'], 'shape'],
-  code: (id, assets, input, shapes) => op2(assets, [input, ...shapes], true),
+  code: (id, session, input, shapes) =>
+    op2(session.assets, [input, ...shapes], true),
 });
 
 export const fill3 = registerOp({
   name: 'fill3',
   spec: ['shape', [], 'shape'],
-  code: (id, assets, input) => op3(assets, input),
+  code: (id, session, input) => op3(session.assets, input),
 });

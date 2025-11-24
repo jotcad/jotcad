@@ -23,8 +23,8 @@ export const testPng = async (
   observedPng,
   threshold = 1000
 ) => {
-  const expectedPngPath = path.join(__dirname, expectedPngFilename); // Construct full path internally
-  const observedPngPath = path.join(assets.basePath, `observed.${expectedPngFilename}`); // Observed PNG goes into assets.basePath
+  const expectedPngPath = assets.pathTo(expectedPngFilename); // Construct full path internally
+  const observedPngPath = assets.pathTo(`observed.${expectedPngFilename}`); // Observed PNG goes into assets.basePath
   if (observedPng) {
     await writeFile(observedPngPath, Buffer.from(observedPng));
   }

@@ -6,6 +6,10 @@ import { registerOp } from './op.js';
 export const rz = registerOp({
   name: 'rz',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (id, assets, input, turns) =>
-    makeShape({ shapes: turns.map((turn) => input.rotateZ(turn)) }),
+  code: (
+    id,
+    session,
+    input,
+    turns // Changed assets to session
+  ) => makeShape({ shapes: turns.map((turn) => input.rotateZ(turn)) }),
 });

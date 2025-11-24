@@ -8,5 +8,5 @@ import { registerOp } from './op.js';
 export const get = registerOp({
   name: 'get',
   spec: ['shape', ['string', 'string'], 'shape'],
-  code: (id, assets, input, name, value) => getShapesByTag(input, name, value),
+  code: (id, session, input, name, value) => getShapesByTag(input, name, value),
 });

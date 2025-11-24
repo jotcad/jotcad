@@ -20,8 +20,9 @@ export const Orb = registerOp({
     ],
     'shape',
   ],
-  code: (id, assets, input, x = 1, y = x, z = x, options = {}) => {
+  code: (id, session, input, x = 1, y = x, z = x, options = {}) => {
+    // Changed assets to session
     const { zag } = options; // Extract zag
-    return op(assets, x, y, z, zag); // Pass x, y, z, zag
+    return op(session.assets, x, y, z, zag); // Pass x, y, z, zag
   },
 });

@@ -6,5 +6,5 @@ import { registerOp } from './op.js';
 export const cut = registerOp({
   name: 'cut',
   spec: ['shape', ['shapes'], 'shape'],
-  code: (id, assets, input, tools) => op(assets, input, tools),
+  code: (id, session, input, tools) => op(session.assets, input, tools),
 });

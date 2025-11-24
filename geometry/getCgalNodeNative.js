@@ -16,4 +16,5 @@ export const FS = {
   },
   mkdir: (path) => nodeFS.mkdirSync(path, { recursive: true }),
   rmdir: async (path) => await rm(path, { recursive: true, force: true }),
+  joinPaths: (...args) => path.join(...args),
 };

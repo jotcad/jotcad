@@ -5,5 +5,5 @@ import { registerOp } from './op.js';
 export const revert = registerOp({
   name: 'revert',
   spec: ['shape', [], 'shape'],
-  code: (id, assets, input) => input.revert(),
+  code: (id, session, input) => input.revert(),
 });

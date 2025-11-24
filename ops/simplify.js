@@ -9,9 +9,9 @@ export const simplify = registerOp({
   spec: [null, ['number', ['options', { faceCount: 'number' }]], 'shape'],
   code: (
     id,
-    assets,
+    session, // Changed assets to session
     input,
     implicitFaceCount = 10000,
     { faceCount = implicitFaceCount } = {}
-  ) => op(assets, input, { faceCount }),
+  ) => op(session.assets, input, { faceCount }), // Use session.assets
 });

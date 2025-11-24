@@ -25,7 +25,7 @@ export const Arc2 = registerOp({
     ],
     'shape',
   ],
-  code: (id, assets, input, x, y = x, options = {}) => {
-    return op2(assets, x, y, options);
+  code: (id, session, input, x, y = x, options = {}) => {
+    return op2(session.assets, x, y, options);
   },
 });
