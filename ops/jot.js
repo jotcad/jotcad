@@ -25,7 +25,7 @@ export const jot = registerOp({
       inputShape,
       `files/${sessionRelativePath}`
     );
-    await writeFile(session.filePath(sessionRelativePath), serialization); // Use session.filePath
+    await writeFile(sessionRelativePath, serialization); // Use session.filePath
     return inputShape;
   },
 });

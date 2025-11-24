@@ -15,6 +15,7 @@ export const png = registerOp({
     'shape',
   ],
   code: async (id, session, input, path, position, { edge = true } = {}) => {
+    console.log(`ops/png.js: Writing file to relative path: ${path}`);
     const width = 512;
     const height = 512;
     const image = await renderPng(session.assets, input, {
@@ -24,7 +25,7 @@ export const png = registerOp({
       doOutlineEdges: edge,
     });
     const data = Buffer.from(image);
-    await writeFile(session.filePath(path), data, { id });
+    await writeFile(path, data, { id });
     return input;
   },
 });

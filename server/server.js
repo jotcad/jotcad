@@ -221,19 +221,19 @@ const handleGet = async (req, res) => {
 
       const fs = {
         writeFile: async (file, data) => {
-          const path = joinPaths(session.filesPath, file);
+          const path = joinPaths(session.paths.files, file);
           await writeFile(path, data);
         },
       };
 
-      await withAssets(session.assetsPath, async (assets) => {
+      await withAssets(session.paths.assets, async (assets) => {
         await withFs(fs, async () => {
-          await run(assets, () => evaluator(bindings));
+          await run(session, () => evaluator(bindings));
         });
       });
 
       if (downloadFile) {
-        const downloadPath = joinPaths(session.filesPath, downloadFile);
+        const downloadPath = joinPaths(session.paths.files, downloadFile);
         const stats = await stat(downloadPath);
         const contentType = getContentType(downloadPath);
         const readStream = createReadStream(downloadPath);
@@ -269,7 +269,7 @@ const handleGet = async (req, res) => {
       }
     } else if (op === 'get') {
       const [downloadFile] = rest;
-      const downloadPath = joinPaths(session.filesPath, downloadFile);
+      const downloadPath = joinPaths(session.paths.files, downloadFile);
       const stats = await stat(downloadPath);
       const contentType = getContentType(downloadPath);
       const readStream = createReadStream(downloadPath);
@@ -309,7 +309,7 @@ const handleGet = async (req, res) => {
       );
     }
   } catch (e) {
-    console.log(`QQ/error: ${e}`);
+    console.error(`Error handling GET request: ${e}\n${e.stack}`);
     sendResponse(res, 500, { 'Content-Type': 'text/plain' }, '' + e);
   }
 };
@@ -353,19 +353,19 @@ const handlePost = async (req, res) => {
 
     const fs = {
       writeFile: async (file, data) => {
-        const path = joinPaths(session.filesPath, file);
+        const path = joinPaths(session.paths.files, file);
         await writeFile(path, data);
       },
     };
 
-    await withAssets(session.assetsPath, async (assets) => {
+    await withAssets(session.paths.assets, async (assets) => {
       await withFs(fs, async () => {
-        await run(assets, () => evaluator(bindings));
+        await run(session, () => evaluator(bindings));
       });
     });
 
     if (downloadFile) {
-      const downloadPath = joinPaths(session.filesPath, downloadFile);
+      const downloadPath = joinPaths(session.paths.files, downloadFile);
       const stats = await stat(downloadPath);
       const contentType = getContentType(downloadPath);
       const readStream = createReadStream(downloadPath);
@@ -400,7 +400,7 @@ const handlePost = async (req, res) => {
       sendResponse(res, 200, { 'Content-Type': 'text/plain' }, 'ok');
     }
   } catch (e) {
-    console.error(`Error handling POST request: ${e}`);
+    console.error(`Error handling POST request: ${e}\n${e.stack}`);
     sendResponse(res, 500, { 'Content-Type': 'text/plain' }, '' + e);
   }
 };
