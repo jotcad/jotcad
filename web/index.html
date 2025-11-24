@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JotCAD Web Viewer</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"
+    ></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+          "jotcad-viewer": "./jot_threejs_viewer.js",
+          "jotcad-main": "./main.js"
+        }
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js"></script>
+  </head>
+  <body>
+    <div
+      id="loadingIndicator"
+      style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 200;
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        display: none;
+      "
+    >
+      Loading...
+    </div>
+    <div style="position: absolute; top: 10px; left: 10px; z-index: 100">
+      Server Address:
+      <input
+        type="text"
+        id="serverAddress"
+        value="http://localhost:3000"
+        style="background-color: rgba(255, 255, 255, 0.8); width: 300px"
+      /><br />
+      Session ID:
+      <input
+        type="text"
+        id="sessionId"
+        value="defaultSession"
+        style="background-color: rgba(255, 255, 255, 0.8); width: 300px"
+      /><br />
+      Output Filename:
+      <input
+        type="text"
+        id="outputFilename"
+        value="out.jot"
+        style="background-color: rgba(255, 255, 255, 0.8); width: 300px"
+      /><br /><br />
+      <textarea
+        id="codeEditor"
+        rows="10"
+        cols="50"
+        style="background-color: rgba(255, 255, 255, 0.8)"
+      ></textarea
+      ><br />
+      <button id="renderButton">Render Code</button>
+    </div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
