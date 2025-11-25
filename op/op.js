@@ -389,11 +389,11 @@ const execute = async ({ assertIsReady, graph }) => {
   }
 };
 
-export const run = async (context, code, graphToUse) => {
+export const run = async (session, code, graphToUse) => {
   beginOps(graphToUse);
   await code();
   const { assertIsReady, graph: resolvedGraph } = await resolve(
-    context,
+    session, // Pass session here
     ops,
     graph
   );

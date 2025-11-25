@@ -6,5 +6,5 @@ import { registerOp } from './op.js';
 export const join = registerOp({
   name: 'join',
   spec: ['shape', ['shapes'], 'shape'],
-  code: (id, assets, input, tools) => op(assets, input, tools),
+  code: (id, session, input, tools) => op(session.assets, input, tools),
 });

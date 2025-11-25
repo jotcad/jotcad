@@ -7,7 +7,12 @@ import { registerOp } from './op.js';
 export const z = registerOp({
   name: 'z',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (id, assets, input, offsets) =>
+  code: (
+    id,
+    session,
+    input,
+    offsets // Changed assets to session
+  ) =>
     makeShape({
       shapes: offsets.map((offset) => input.move(0, 0, offset)),
     }),
@@ -16,10 +21,15 @@ export const z = registerOp({
 export const Z = registerOp({
   name: 'Z',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (id, assets, input, offsets) =>
+  code: (
+    id,
+    session,
+    input,
+    offsets // Changed assets to session
+  ) =>
     makeShape({
-      shapes: offsets.map((offset) =>
-        Point(assets, 0, 0, 0).move(0, 0, offset)
+      shapes: offsets.map(
+        (offset) => Point(session.assets, 0, 0, 0).move(0, 0, offset) // Use session.assets
       ),
     }),
 });

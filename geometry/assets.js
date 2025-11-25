@@ -1,7 +1,8 @@
 import { FS, cgal } from './getCgal.js';
-import { existsSync, mkdirSync } from 'node:fs';
 
-class Assets {
+// Removed: import { existsSync, mkdirSync } from 'node:fs';
+
+export class Assets {
   constructor(basePath) {
     this.basePath = basePath;
     this.tag = 'Assets';
@@ -9,6 +10,10 @@ class Assets {
     // Ensure subdirectories exist within the provided basePath
     FS.mkdir(`${basePath}/text`, { recursive: true });
     FS.mkdir(`${basePath}/result`, { recursive: true });
+  }
+
+  pathTo(filename) {
+    return FS.joinPaths(this.basePath, filename);
   }
 
   getText(id) {
@@ -43,7 +48,7 @@ class Assets {
     const id = cgal.ComputeTextHash(text);
     const path = `${this.basePath}/text/${id}`;
     if (this.basePath === undefined) {
-      throw Error('die');
+      throw Error('Current session does not have assets path.');
     }
     if (this.text[id]) {
       return id;
@@ -63,7 +68,7 @@ class Assets {
 export const withAssets = async (basePath, op) => {
   // Clear the basePath directory before starting the test
   try {
-    await FS.rmdir(basePath);
+    await FS.rmdir(basePath, { recursive: true });
   } catch (e) {
     if (e.code !== 'ENOENT') {
       // Ignore "file not found" errors

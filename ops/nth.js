@@ -6,7 +6,8 @@ import { registerOp } from './op.js';
 export const nth = registerOp({
   name: 'nth',
   spec: ['shape', ['numbers'], 'shape'],
-  code: (id, assets, input, indices) => {
+  code: (id, session, input, indices) => {
+    // Changed assets to session
     const shapes = input.nth(...indices);
     if (shapes.length == 1) {
       return shapes[0];

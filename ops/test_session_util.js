@@ -1,12 +1,40 @@
-import { access, readFile, writeFile } from 'node:fs/promises';
-import path, { dirname } from 'node:path'; // Import dirname
-import { fileURLToPath } from 'url'; // Import fileURLToPath
+import { access, mkdir, readFile, rmdir, writeFile } from 'node:fs/promises';
 
+import { Assets } from '../geometry/assets.js';
+import { FilesystemSession } from './filesystem_session.js';
+import { createHash } from 'node:crypto';
+import os from 'os';
+import path from 'node:path';
 import pixelmatch from 'pixelmatch';
 import pngjs from 'pngjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const TEST_SESSIONS_BASE_DIR = path.join(os.tmpdir(), 'jotcad_test_sessions');
+
+const getOrCreateTestSession = async (testName) => {
+  const sessionId = createHash('sha256').update(testName).digest('hex');
+  const sessionRootPath = path.join(TEST_SESSIONS_BASE_DIR, sessionId);
+
+  try {
+    await rmdir(sessionRootPath, { recursive: true });
+  } catch (e) {
+    if (e.code !== 'ENOENT') {
+      throw e;
+    }
+  }
+
+  await mkdir(sessionRootPath, { recursive: true });
+  await mkdir(path.join(sessionRootPath, 'assets'), { recursive: true });
+  await mkdir(path.join(sessionRootPath, 'files'), { recursive: true });
+
+  const assets = new Assets(path.join(sessionRootPath, 'assets'));
+  const session = new FilesystemSession(sessionId, sessionRootPath, assets);
+  return session;
+};
+
+export const withTestSession = async (testName, op) => {
+  const session = await getOrCreateTestSession(testName);
+  return await op(session);
+};
 
 const isFilePresent = async (filePath) => {
   try {
@@ -18,13 +46,14 @@ const isFilePresent = async (filePath) => {
 };
 
 export const testPng = async (
-  assets, // assets object
-  expectedPngFilename, // Now just the filename (e.g., 'arc.test.full.png')
+  session,
+  expectedPngFilename,
   observedPng,
   threshold = 1000
 ) => {
-  const expectedPngPath = assets.pathTo(expectedPngFilename); // Construct full path internally
-  const observedPngPath = assets.pathTo(`observed.${expectedPngFilename}`); // Observed PNG goes into assets.basePath
+  const expectedPngPath = session.assets.pathTo(expectedPngFilename);
+  const observedPngPath = session.filePath(`observed.${expectedPngFilename}`);
+
   if (observedPng) {
     await writeFile(observedPngPath, Buffer.from(observedPng));
   }
@@ -54,8 +83,6 @@ export const testPng = async (
   if (numFailedPixels < threshold) {
     if (observedPng) {
       await writeFile(expectedPngPath, Buffer.from(observedPng));
-    } else {
-      // TODO: copy the file.
     }
     return true;
   } else {

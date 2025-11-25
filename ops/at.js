@@ -9,7 +9,8 @@ export const at = registerOp({
   args: (input, shape, op) => {
     return [shape, shape.revert().$chain(op)];
   },
-  code: (id, assets, input, original, transformed) => {
+  code: (id, session, input, original, transformed) => {
+    // Changed assets to session
     const map = new Map();
     const walk = (original, transformed) => {
       if (original.geometry) {

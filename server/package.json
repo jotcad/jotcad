@@ -12,7 +12,8 @@
     "lintfix": "eslint --fix *.js",
     "rollup": "echo ok",
     "test": "node --test",
-    "tests": "node --test *.test.js"
+    "tests": "node --test *.test.js",
+    "start": "node server.js"
   },
   "contributors": [
     {

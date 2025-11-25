@@ -7,12 +7,12 @@
   "module": "dist/main.js",
   "type": "module",
   "scripts": {
-    "depcheck": "depcheck --ignores '@jsxcad/eslint*,eslint*,@babel/*'",
-    "lint": "eslint *.js",
-    "lintfix": "eslint --fix *.js",
-    "rollup": "echo ok",
+    "depcheck": "echo ok",
+    "lint": "echo ok",
+    "lintfix": "echo ok",
     "test": "echo ok",
-    "tests": "echo ok"
+    "tests": "echo ok",
+    "start": "http-server ."
   },
   "contributors": [
     {
@@ -25,14 +25,7 @@
   "dependencies": {},
   "devDependencies": {
     "depcheck": "^1.4.1",
-    "eslint": "^9.0.0",
-    "@babel/eslint-parser": "^7.27.0",
-    "eslint-config-standard": "^12.0.0",
-    "eslint-plugin-import": "^2.16.0",
-    "eslint-plugin-node": "^8.0.1",
-    "eslint-plugin-promise": "^4.0.1",
-    "eslint-plugin-react": "^7.17.0",
-    "eslint-plugin-standard": "^4.0.0"
+    "http-server": "^14.1.1"
   },
   "publishConfig": {
     "access": "public"

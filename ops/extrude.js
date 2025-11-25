@@ -9,14 +9,14 @@ export const extrude2 = registerOp({
   name: 'extrude2',
   spec: ['shape', ['shape', 'shape'], 'shape'],
   args: (input, top, bottom) => [top?.nth(0), bottom?.nth(0)],
-  code: (id, assets, input, top = makeShape(), bottom = makeShape()) =>
-    op2(assets, input, top, bottom),
+  code: (id, session, input, top = makeShape(), bottom = makeShape()) =>
+    op2(session.assets, input, top, bottom),
 });
 
 export const extrude3 = registerOp({
   name: 'extrude3',
   spec: ['shape', ['shape', 'shape'], 'shape'],
   args: (input, top, bottom) => [top?.nth(0), bottom?.nth(0)],
-  code: (id, assets, input, top = makeShape(), bottom = makeShape()) =>
-    op3(assets, input, top, bottom),
+  code: (id, session, input, top = makeShape(), bottom = makeShape()) =>
+    op3(session.assets, input, top, bottom),
 });

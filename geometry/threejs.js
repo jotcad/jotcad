@@ -350,12 +350,10 @@ export const buildMeshes = async ({
             walk(subShape);
           }
         } catch (e) {
-          console.log(JSON.stringify(shape));
           throw e;
         }
       }
     } catch (e) {
-      console.log(`QQ/shape: ${JSON.stringify(shape)}`);
       throw e;
     }
   };
@@ -506,7 +504,6 @@ export const staticDisplay = async ({
       doOutlineEdges,
     });
   } catch (e) {
-    console.log(e.stack);
     throw e;
   }
 

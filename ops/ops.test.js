@@ -7,7 +7,6 @@ import './vectorSpec.js';
 
 import * as fs from './fsNode.js';
 
-import { cgal, testPng, withAssets } from '@jotcad/geometry';
 import { describe, it } from 'node:test';
 
 import { Arc2 } from './arc.js';
@@ -23,56 +22,58 @@ import { png } from './png.js';
 import { readFile } from './fs.js';
 import { run } from '@jotcad/op';
 import { save } from './save.js';
+import { testPng } from '@jotcad/geometry';
 import { withFs } from './fs.js';
+import { withTestSession } from './test_session_util.js';
 import { z } from './z.js';
 
 describe('ops', () => {
   /*
   it('trivial', async () =>
     withFs(fs, async () => {
-      await withAssets('ops_test_simple_chain', async (assets) => {
-        const graph = await run(assets, () =>
+      await withTestSession('ops_test_simple_chain', async (session) => {
+        const graph = await run(session, () =>
           // This test is fundamentally flawed. It tries to use a 3D `z` op on a 2D `Box2`.
           Box2([0, 3], [0, 5])
             .cut(z(0))
             .png('observed.ops.test.trivial.png', [-20, -20, 40])
         );
-        assert.ok(await testPng('ops.test.trivial.png'));
+        assert.ok(await testPng(session.assets, 'ops.test.trivial.png'));
       });
     }));
   */
   /*
   it('should handle a simple chain', async () =>
     withFs(fs, async () => {
-      await withAssets('ops_test_simple_chain', async (assets) => {
-        const graph = await run(assets, () =>
+      await withTestSession('ops_test_simple_chain', async (session) => {
+        const graph = await run(session, () =>
           Box2([0, 3], [0, 5])
             .fill2()
             .extrude2(z(0), z(1))
             .color('blue')
             .png('observed.ops.test.simple.png', [-20, -20, 40])
         );
-        assert.ok(await testPng('ops.test.simple.png'));
+        assert.ok(await testPng(session.assets, 'ops.test.simple.png'));
       });
     }));
   */
   /*
   it('hemisphere', async () =>
     withFs(fs, async () => {
-      await withAssets('hemisphere', async (assets) => {
-        const graph = await run(assets, () =>
+      await withTestSession('hemisphere', async (session) => {
+        const graph = await run(session, () =>
           Orb(30)
             .cut(z(1))
             .png('observed.ops.test.hemisphere.png', [-20, -20, 40])
         );
-        assert.ok(await testPng('ops.test.hemisphere.png'));
+        assert.ok(await testPng(session.assets, 'ops.test.hemisphere.png'));
       });
     }));
   */
   it('Orb(11).cut(z(1))', async () =>
     withFs(fs, async () => {
-      await withAssets('ops_test_failing_op', async (assets) => {
-        const graph = await run(assets, () => Orb(12).cut(z(1)));
+      await withTestSession('ops_test_failing_op', async (session) => {
+        const graph = await run(session, () => Orb(12).cut(z(1)));
         assert.ok(graph);
       });
     }));
@@ -80,8 +81,8 @@ describe('ops', () => {
   /*
   it("Arc2(10).jot('out.jot')", async () =>
     withFs(fs, async () => {
-      await withAssets('ops_test_arc2_jot', async (assets) => {
-        const graph = await run(assets, () => Arc2(10).jot('out.jot'));
+      await withTestSession('ops_test_arc2_jot', async (session) => {
+        const graph = await run(session, () => Arc2(10).jot('out.jot'));
         assert.ok(graph);
         const content = await fs.readFile('out.jot', { encoding: 'utf8' });
         assert.ok(content.length > 0);

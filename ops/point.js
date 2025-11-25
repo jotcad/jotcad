@@ -7,5 +7,5 @@ import { registerOp } from './op.js';
 export const Point = registerOp({
   name: 'Point',
   spec: ['shape', ['vector3'], 'shape'],
-  code: (id, assets, input, vector = []) => op(assets, ...vector),
+  code: (id, session, input, vector = []) => op(session.assets, ...vector),
 });

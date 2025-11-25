@@ -1,0 +1,25 @@
+
+=79 files/main.json
+{"geometry":"1d8aebd535dfec8755be1d3ab89208d675cab49b971262ec81b082988b06acdc"}
+=348 assets/text/1d8aebd535dfec8755be1d3ab89208d675cab49b971262ec81b082988b06acdc
+V 8
+v 0 0 0
+v 1 0 0
+v 0 1 0
+v 1 1 0
+v 0 0 1
+v 1 0 1
+v 0 1 1
+v 1 1 1
+t 0 1 2
+t 1 3 2
+t 4 6 5
+t 5 6 7
+t 0 4 1
+t 1 4 5
+t 2 3 6
+t 3 7 6
+t 0 2 4
+t 2 6 4
+t 1 5 3
+t 3 5 7

@@ -5,5 +5,5 @@ import { registerOp } from './op.js';
 export const transform = registerOp({
   name: 'transform',
   spec: ['shape', ['shape'], 'shape'],
-  code: (id, assets, input, tf) => input.transform(tf.tf),
+  code: (id, session, input, tf) => input.transform(tf.tf), // Changed assets to session
 });
