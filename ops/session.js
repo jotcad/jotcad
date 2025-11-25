@@ -66,7 +66,8 @@ class Session {
    */
   resolvePath(relativePath) {
     if (relativePath.startsWith('files/')) {
-      return this.filePath(relativePath);
+      const unprefixedPath = relativePath.substring('files/'.length);
+      return this.filePath(unprefixedPath);
     }
     return this.assetsPath(relativePath);
   }
@@ -77,7 +78,7 @@ class Session {
    * @returns {string} The absolute path.
    */
   filePath(relativePath) {
-    return path.join(this.paths.files, relativePath.substring('files/'.length));
+    return path.join(this.paths.files, relativePath);
   }
 
   /**
@@ -87,6 +88,17 @@ class Session {
    */
   assetsPath(relativePath) {
     return path.join(this.paths.assets, relativePath);
+  }
+
+  /**
+   * Writes data to a file within the session's files directory.
+   * @abstract
+   * @param {string} relativePath - The relative path within the files directory.
+   * @param {Buffer | string} data - The data to write.
+   * @returns {Promise<void>}
+   */
+  async writeFile(relativePath, data) {
+    throw new Error('Not implemented');
   }
 }
 

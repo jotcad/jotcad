@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { mkdir, rmdir } from 'node:fs/promises';
 import os from 'os'; // Import os module for temporary directory
-import { FilesystemSession } from '../ops/FilesystemSession.js'; // Import the concrete FilesystemSession class
+import { FilesystemSession } from '../ops/filesystem_session.js'; // Import the concrete FilesystemSession class
 import { Assets } from './assets.js'; // Import Assets class
 
 const TEST_SESSIONS_BASE_DIR = path.join(os.tmpdir(), 'jotcad_test_sessions');

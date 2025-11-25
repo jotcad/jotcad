@@ -18,7 +18,6 @@ import { run } from '@jotcad/op';
 import { view } from './view.js';
 import vm from 'node:vm';
 import { withAssets } from '@jotcad/geometry';
-import { withFs } from '@jotcad/ops';
 
 const bindings = { ...api, note, view };
 
@@ -219,17 +218,8 @@ const handleGet = async (req, res) => {
       const script = new vm.Script(ecmascript);
       const evaluator = () => script.runInContext(context, { timeout: 5000 });
 
-      const fs = {
-        writeFile: async (file, data) => {
-          const path = joinPaths(session.paths.files, file);
-          await writeFile(path, data);
-        },
-      };
-
       await withAssets(session.paths.assets, async (assets) => {
-        await withFs(fs, async () => {
-          await run(session, () => evaluator(bindings));
-        });
+        await run(session, () => evaluator(bindings));
       });
 
       if (downloadFile) {
@@ -351,17 +341,8 @@ const handlePost = async (req, res) => {
     const script = new vm.Script(ecmascript);
     const evaluator = () => script.runInContext(context, { timeout: 5000 });
 
-    const fs = {
-      writeFile: async (file, data) => {
-        const path = joinPaths(session.paths.files, file);
-        await writeFile(path, data);
-      },
-    };
-
     await withAssets(session.paths.assets, async (assets) => {
-      await withFs(fs, async () => {
-        await run(session, () => evaluator(bindings));
-      });
+      await run(session, () => evaluator(bindings));
     });
 
     if (downloadFile) {

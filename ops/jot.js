@@ -1,6 +1,5 @@
 import { fromJot, toJot } from '@jotcad/geometry';
-import { readFile, writeFile } from './fs.js';
-import path from 'node:path'; // Import the path module
+import { readFile } from './fs.js';
 
 import { registerOp } from './op.js';
 
@@ -18,14 +17,12 @@ export const jot = registerOp({
   name: 'jot',
   spec: ['shape', ['string'], 'shape'],
   code: async (opSymbol, session, inputShape, sessionRelativePath) => {
-    // Changed assets to session
-    // Renamed 'path' to 'sessionRelativePath'
     const serialization = await toJot(
-      session.assets, // Use session.assets
+      session.assets,
       inputShape,
       `files/${sessionRelativePath}`
     );
-    await writeFile(sessionRelativePath, serialization); // Use session.filePath
+    await session.writeFile(sessionRelativePath, serialization); // MODIFIED
     return inputShape;
   },
 });

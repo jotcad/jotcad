@@ -1,5 +1,5 @@
 import { Assets } from '../geometry/assets.js';
-import { FilesystemSession } from '../ops/FilesystemSession.js';
+import { FilesystemSession } from '../ops/filesystem_session.js';
 import path from 'node:path';
 
 // Keep getSession, cleanup, and startCleanup as direct delegates

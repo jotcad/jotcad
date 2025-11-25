@@ -1,4 +1,5 @@
 import {
+  writeFile as fsWriteFile,
   mkdir,
   readdir,
   rename,
@@ -7,7 +8,7 @@ import {
   stat,
   unlink,
 } from 'node:fs/promises';
-import { Session } from './Session.js';
+import { Session } from './session.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
@@ -52,6 +53,13 @@ class FilesystemSession extends Session {
 
   static getSession(sessionId) {
     return activeSessions.get(sessionId);
+  }
+
+  async writeFile(relativePath, data) {
+    const absolutePath = this.filePath(relativePath);
+    // Ensure the directory exists before writing.
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    return fsWriteFile(absolutePath, data);
   }
 
   // --- Cleanup logic adapted from server/session.js ---
