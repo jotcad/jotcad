@@ -1,6 +1,5 @@
-// web/jot_threejs_viewer.js
-
 import { DecodeInexactGeometryText } from './jot_parser.js';
+import earcut from './earcut.js'; // NEW IMPORT
 
 // --- Copied and adapted from geometry/threejs.js ---
 import * as THREE from 'three'; // Import THREE explicitly
@@ -227,6 +226,7 @@ const buildEdges = (geometry) => {
 
 // --- Main rendering function ---
 export const renderJotToThreejsScene = async (jotText, scene) => {
+  console.log('Received JOT text for rendering:', jotText);
   const geometryCache = new Map(); // Map TextId to THREE.BufferGeometry
   let mainShapeJson = null;
 
@@ -291,6 +291,15 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
       const { vertices, segments, triangles, faces } =
         DecodeInexactGeometryText(fileContent);
 
+      // ADD LOGGING HERE
+      console.log(`Processing geometryId: ${geometryId}`);
+      if (vertices.length > 0) {
+        console.log('First 5 Vertices:', vertices.slice(0, 5));
+      }
+      if (triangles.length > 0) {
+        console.log('First 5 Triangles:', triangles.slice(0, 5));
+      }
+
       // Convert raw geometry to Three.js BufferGeometry
       const bufferGeometry = new BufferGeometry();
       const positions = [];
@@ -300,7 +309,7 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
       if (segments.length > 0) {
         const positions = [];
         for (const vertex of vertices) {
-          positions.push(vertex[0], vertex[1], vertex[2]);
+          positions.push(vertex[3], vertex[4], vertex[5]);
         }
         bufferGeometry.setAttribute(
           'position',
@@ -315,6 +324,7 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
       }
       // Handle faces (polygons with holes)
       else if (faces.length > 0) {
+        const normals = []; // FIX: Declare normals array here
         for (const [face, ...holes] of faces) {
           // Collect all vertices for the face (outer loop + holes)
           const faceVertices = [];
@@ -339,7 +349,7 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
 
           // Add outer loop vertices
           for (const point of outerLoopPoints) {
-            flatVertices2D.push(point[0], point[1]);
+            flatVertices2D.push(point[3], point[4]);
           }
 
           // Add hole loop vertices and record their start indices
@@ -373,18 +383,67 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
 
           for (const index of triangulationIndices) {
             const p = allFacePoints[index];
-            positions.push(p[0], p[1], p[2]);
+            positions.push(p[3], p[4], p[5]);
             normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
           }
         }
+        bufferGeometry.setAttribute(
+          'position',
+          new Float32BufferAttribute(positions, 3)
+        );
+        bufferGeometry.setAttribute(
+          'normal',
+          new Float32BufferAttribute(normals, 3) // Add normals attribute
+        );
       }
       // Handle triangles
       else if (triangles.length > 0) {
         const positions = [];
-        const normals = [];
         for (const vertex of vertices) {
-          positions.push(vertex[0], vertex[1], vertex[2]);
-          normals.push(vertex[3], vertex[4], vertex[5]);
+          positions.push(vertex[3], vertex[4], vertex[5]);
+        }
+
+        const normals = new Array(positions.length).fill(0); // Initialize normals array with zeros
+
+        for (const triangle of triangles) {
+          const v0Idx = triangle[0];
+          const v1Idx = triangle[1];
+          const v2Idx = triangle[2];
+
+          const p0 = new THREE.Vector3(
+            positions[v0Idx * 3],
+            positions[v0Idx * 3 + 1],
+            positions[v0Idx * 3 + 2]
+          );
+          const p1 = new THREE.Vector3(
+            positions[v1Idx * 3],
+            positions[v1Idx * 3 + 1],
+            positions[v1Idx * 3 + 2]
+          );
+          const p2 = new THREE.Vector3(
+            positions[v2Idx * 3],
+            positions[v2Idx * 3 + 1],
+            positions[v2Idx * 3 + 2]
+          );
+
+          const edge1 = new THREE.Vector3().subVectors(p1, p0);
+          const edge2 = new THREE.Vector3().subVectors(p2, p0);
+
+          const faceNormal = new THREE.Vector3()
+            .crossVectors(edge1, edge2)
+            .normalize();
+
+          normals[v0Idx * 3] = faceNormal.x;
+          normals[v0Idx * 3 + 1] = faceNormal.y;
+          normals[v0Idx * 3 + 2] = faceNormal.z;
+
+          normals[v1Idx * 3] = faceNormal.x;
+          normals[v1Idx * 3 + 1] = faceNormal.y;
+          normals[v1Idx * 3 + 2] = faceNormal.z;
+
+          normals[v2Idx * 3] = faceNormal.x;
+          normals[v2Idx * 3 + 1] = faceNormal.y;
+          normals[v2Idx * 3 + 2] = faceNormal.z;
         }
         bufferGeometry.setAttribute(
           'position',
@@ -436,8 +495,8 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
         }
         currentObject.add(mesh);
         // Add edges if desired (buildEdges function)
-        // const edges = buildEdges(bufferGeometry);
-        // currentObject.add(edges);
+        const edges = buildEdges(bufferGeometry);
+        currentObject.add(edges);
       } else {
         console.warn(`Geometry with ID ${geometryId} not found in cache.`);
       }
