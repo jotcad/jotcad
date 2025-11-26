@@ -59,7 +59,7 @@ async function init() {
   outputFilenameInput.value =
     localStorage.getItem('jotcad-outputFilename') || 'out.jot';
 
-  const defaultCode = `Box3(10).jot('${outputFilenameInput.value}')`;
+  const defaultCode = `Box3(10)`;
   codeEditor.value = defaultCode;
 
   // Function to clear the scene
@@ -118,10 +118,14 @@ async function init() {
 
   // Event listener for the render button
   renderButton.addEventListener('click', async () => {
-    const code = codeEditor.value;
+    let code = codeEditor.value.trim(); // Trim whitespace
     const serverAddress = serverAddressInput.value;
     const sessionId = sessionIdInput.value;
     const outputFilename = outputFilenameInput.value;
+
+    // Make the .jot() call implicit (unconditionally append)
+    code = `${code}.jot('${outputFilename}')`;
+
     console.log('Sending code to server for rendering...');
     loadingCount++;
     loadingIndicator.style.display = 'block';
