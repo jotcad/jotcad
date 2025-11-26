@@ -1,8 +1,6 @@
-// web/jot_threejs_viewer.js
-
 import { DecodeInexactGeometryText } from './jot_parser.js';
+import earcut from './earcut.js';
 
-// --- Copied and adapted from geometry/threejs.js ---
 import * as THREE from 'three'; // Import THREE explicitly
 
 const {
@@ -293,14 +291,13 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
 
       // Convert raw geometry to Three.js BufferGeometry
       const bufferGeometry = new BufferGeometry();
-      const positions = [];
-      const indices = [];
+      let geometryType = 'mesh';
 
       // Handle segments (lines)
       if (segments.length > 0) {
         const positions = [];
         for (const vertex of vertices) {
-          positions.push(vertex[0], vertex[1], vertex[2]);
+          positions.push(vertex[3], vertex[4], vertex[5]);
         }
         bufferGeometry.setAttribute(
           'position',
@@ -312,79 +309,56 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
           indices.push(source, target);
         }
         bufferGeometry.setIndex(indices);
+        geometryType = 'lines';
       }
       // Handle faces (polygons with holes)
       else if (faces.length > 0) {
+        const positions = [];
+        const normals = [];
         for (const [face, ...holes] of faces) {
-          // Collect all vertices for the face (outer loop + holes)
-          const faceVertices = [];
-          const faceVertexMap = new Map(); // Map original vertex index to local faceVertices index
-
-          const addVertexToFace = (vIdx) => {
-            if (!faceVertexMap.has(vIdx)) {
-              faceVertexMap.set(vIdx, vertices[vIdx]); // Store the actual 3D point
-            }
-            return faceVertexMap.get(vIdx);
-          };
-
           const outerLoopPoints = face.map((vIdx) => vertices[vIdx]);
           const holeLoopPoints = holes.map((hole) =>
             hole.map((vIdx) => vertices[vIdx])
           );
 
-          // Triangulate the 2D projection of the face
-          // earcut expects a flat array of [x, y, x, y, ...]
           const flatVertices2D = [];
           const holeIndices = [];
 
-          // Add outer loop vertices
           for (const point of outerLoopPoints) {
-            flatVertices2D.push(point[0], point[1]);
+            flatVertices2D.push(point[3], point[4]);
           }
 
-          // Add hole loop vertices and record their start indices
           for (const hole of holeLoopPoints) {
             holeIndices.push(flatVertices2D.length / 2);
             for (const point of hole) {
-              flatVertices2D.push(point[0], point[1]);
+              flatVertices2D.push(point[3], point[4]);
             }
           }
 
           const triangulationIndices = earcut(flatVertices2D, holeIndices, 2);
 
-          // Now map the 2D triangulation back to 3D vertices and compute normals
-          // We need to reconstruct the original 3D vertices based on the flattened 2D array
           const allFacePoints = [...outerLoopPoints];
           for (const hole of holeLoopPoints) {
             allFacePoints.push(...hole);
           }
 
-          // Compute normals for the face (assuming planar)
           let faceNormal = new Vector3();
           if (allFacePoints.length >= 3) {
-            const v0 = new Vector3(...allFacePoints[0]);
-            const v1 = new Vector3(...allFacePoints[1]);
-            const v2 = new Vector3(...allFacePoints[2]);
-            const cb = new Vector3().subVectors(v2, v1);
-            const ab = new Vector3().subVectors(v0, v1);
-            cb.cross(ab).normalize();
-            faceNormal = cb;
+            const v0 = new Vector3(...allFacePoints[0].slice(3, 6));
+            const v1 = new THREE.Vector3(...allFacePoints[1].slice(3, 6));
+            const v2 = new THREE.Vector3(...allFacePoints[2].slice(3, 6));
+            const cb = new THREE.Vector3().subVectors(v2, v1);
+            const ab = new THREE.Vector3().subVectors(v0, v1);
+            const faceNormal = new THREE.Vector3()
+              .crossVectors(cb, ab)
+              .normalize();
           }
 
           for (const index of triangulationIndices) {
             const p = allFacePoints[index];
-            positions.push(p[0], p[1], p[2]);
+            positions.push(p[3], p[4], p[5]);
             normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
           }
-        }
-      }
-      // Handle triangles
-      else if (triangles.length > 0) {
-        const positions = [];
-        const normals = [];
-        for (const vertex of vertices) {
-          positions.push(vertex[0], vertex[1], vertex[2]);
-          normals.push(vertex[3], vertex[4], vertex[5]);
         }
         bufferGeometry.setAttribute(
           'position',
@@ -394,15 +368,66 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
           'normal',
           new Float32BufferAttribute(normals, 3)
         );
-
-        const indices = [];
-        for (const triangle of triangles) {
-          indices.push(...triangle);
+      }
+      // Handle triangles
+      else if (triangles.length > 0) {
+        const uniquePositions = [];
+        for (const vertex of vertices) {
+          uniquePositions.push(vertex[3], vertex[4], vertex[5]);
         }
-        bufferGeometry.setIndex(indices);
+
+        const positions = [];
+        const normals = [];
+
+        for (const triangle of triangles) {
+          const v0Idx = triangle[0];
+          const v1Idx = triangle[1];
+          const v2Idx = triangle[2];
+
+          const p0 = new THREE.Vector3(
+            uniquePositions[v0Idx * 3],
+            uniquePositions[v0Idx * 3 + 1],
+            uniquePositions[v0Idx * 3 + 2]
+          );
+          const p1 = new THREE.Vector3(
+            uniquePositions[v1Idx * 3],
+            uniquePositions[v1Idx * 3 + 1],
+            uniquePositions[v1Idx * 3 + 2]
+          );
+          const p2 = new THREE.Vector3(
+            uniquePositions[v2Idx * 3],
+            uniquePositions[v2Idx * 3 + 1],
+            uniquePositions[v2Idx * 3 + 2]
+          );
+
+          const edge1 = new THREE.Vector3().subVectors(p1, p0);
+          const edge2 = new THREE.Vector3().subVectors(p2, p0);
+
+          const faceNormal = new THREE.Vector3()
+            .crossVectors(edge1, edge2)
+            .normalize();
+
+          positions.push(p0.x, p0.y, p0.z);
+          normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
+
+          positions.push(p1.x, p1.y, p1.z);
+          normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
+
+          positions.push(p2.x, p2.y, p2.z);
+          normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
+        }
+
+        bufferGeometry.setAttribute(
+          'position',
+          new Float32BufferAttribute(positions, 3)
+        );
+        bufferGeometry.setAttribute(
+          'normal',
+          new Float32BufferAttribute(normals, 3)
+        );
       }
 
-      geometryCache.set(geometryId, bufferGeometry);
+      geometryCache.set(geometryId, { bufferGeometry, type: geometryType });
     }
   }
 
@@ -423,23 +448,24 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
 
     if (shape.geometry) {
       const geometryId = shape.geometry;
-      const bufferGeometry = geometryCache.get(geometryId);
-      if (bufferGeometry) {
-        const material = buildMeshMaterial(shape); // Use buildMeshMaterial/buildLineMaterial
-        let mesh;
-        if (bufferGeometry.index && bufferGeometry.index.count > 0) {
-          mesh = new Mesh(bufferGeometry, material);
-        } else {
-          // If no indices, assume it's lines or non-indexed triangles
-          // This needs more robust handling based on geometry type
-          mesh = new LineSegments(bufferGeometry, buildLineMaterial(shape));
+      const cachedGeometry = geometryCache.get(geometryId);
+      if (cachedGeometry) {
+        const { bufferGeometry, type } = cachedGeometry;
+        const material = buildMeshMaterial(shape);
+
+        let object;
+        if (type === 'mesh') {
+          object = new Mesh(bufferGeometry, material);
+        } else if (type === 'lines') {
+          object = new LineSegments(bufferGeometry, buildLineMaterial(shape));
         }
-        currentObject.add(mesh);
-        // Add edges if desired (buildEdges function)
-        // const edges = buildEdges(bufferGeometry);
-        // currentObject.add(edges);
+        currentObject.add(object);
+        if (type === 'mesh') {
+          const edges = buildEdges(bufferGeometry);
+          currentObject.add(edges);
+        }
       } else {
-        console.warn(`Geometry with ID ${geometryId} not found in cache.`);
+        // console.warn(`Geometry with ID ${geometryId} not found in cache.`); // Removed for cleanup
       }
     }
 
