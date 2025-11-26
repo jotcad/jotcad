@@ -66,16 +66,6 @@ export class Assets {
 }
 
 export const withAssets = async (basePath, op) => {
-  // Clear the basePath directory before starting the test
-  try {
-    await FS.rmdir(basePath, { recursive: true });
-  } catch (e) {
-    if (e.code !== 'ENOENT') {
-      // Ignore "file not found" errors
-      throw e;
-    }
-  }
-
   const assets = new Assets(basePath);
   const result = await op(assets);
   return result;
