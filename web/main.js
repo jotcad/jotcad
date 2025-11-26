@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { renderJotToThreejsScene } from 'jotcad-viewer';
 
+// Manually managed release number for version confirmation
+const RELEASE_NUMBER = 1;
+
 async function init() {
   // 1. Scene setup
   const scene = new THREE.Scene();
@@ -44,9 +47,18 @@ async function init() {
   const sessionIdInput = document.getElementById('sessionId');
   const outputFilenameInput = document.getElementById('outputFilename');
   const loadingIndicator = document.getElementById('loadingIndicator');
+  const releaseNumberSpan = document.getElementById('releaseNumber');
   let loadingCount = 0;
 
-  // Default JotCAD code
+  // Display the release number
+  releaseNumberSpan.textContent = `Release: ${RELEASE_NUMBER}`;
+
+  serverAddressInput.value =
+    localStorage.getItem('jotcad-serverAddress') || 'http://localhost:8080';
+  sessionIdInput.value = localStorage.getItem('jotcad-sessionId') || '';
+  outputFilenameInput.value =
+    localStorage.getItem('jotcad-outputFilename') || 'out.jot';
+
   const defaultCode = `Box3(10).jot('${outputFilenameInput.value}')`;
   codeEditor.value = defaultCode;
 
@@ -63,7 +75,6 @@ async function init() {
       }
       scene.remove(object);
     }
-    // Re-add lights and camera
     scene.add(ambientLight);
     scene.add(directionalLight);
     scene.add(camera);
@@ -161,16 +172,25 @@ async function init() {
   // 8. Animation loop
   function animate() {
     requestAnimationFrame(animate);
-    controls.update(); // only required if controls.enableDamping is set to true
+    controls.update();
     renderer.render(scene, camera);
   }
   animate();
 
-  // Handle window resize
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  serverAddressInput.addEventListener('input', (event) => {
+    localStorage.setItem('jotcad-serverAddress', event.target.value);
+  });
+  sessionIdInput.addEventListener('input', (event) => {
+    localStorage.setItem('jotcad-sessionId', event.target.value);
+  });
+  outputFilenameInput.addEventListener('input', (event) => {
+    localStorage.setItem('jotcad-outputFilename', event.target.value);
   });
 }
 
