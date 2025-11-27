@@ -10,7 +10,7 @@
     "prettier": "prettier --write .",
     "cli": "node cli/cli.js",
     "rollup": "npm run rollup --workspaces --if-present",
-    "tests": "node --test '*/*.test.js'",
+    "tests": "xvfb-run node --test '*/*.test.js'",
     "lintfix_one": "npx eslint --fix $1"
   },
   "contributors": [],
