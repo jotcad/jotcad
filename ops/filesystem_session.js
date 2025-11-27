@@ -80,7 +80,6 @@ class FilesystemSession extends Session {
     // Function to delete files within a directory and then the directory itself (non-recursive)
     const deleteFilesAndDirectory = async (dirPath, type) => {
       try {
-        // Use rm with recursive: true to ensure the directory and its contents are fully removed
         await rm(dirPath, { recursive: true, force: true });
         return true; // Indicate success
       } catch (err) {
@@ -139,9 +138,6 @@ class FilesystemSession extends Session {
             sessionPath,
             sessionId
           );
-          // Remove from activeSessions map if it was there
-          // This requires mapping dirName (hash) back to original sessionId, which is not straightforward.
-          // For now, rely on filesystem cleanup.
         } else {
         }
       }

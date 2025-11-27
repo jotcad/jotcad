@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 
 import assert from 'node:assert/strict';
 import { withTestAssets } from './test_session_util.js';
+import { FS } from './getCgal.js';
+import path from 'node:path';
 
 describe('assets', () =>
   it('should create an asset textId', async () => {
@@ -13,5 +15,20 @@ describe('assets', () =>
       );
       const value = assets.getText(id);
       assert.strictEqual('hello world', value);
+
+      // --- Explicit disk verification ---
+      const expectedAssetPath = path.join(assets.basePath, 'text', id);
+
+      // Verify file exists on disk
+      const stats = FS.stat(expectedAssetPath); // FS.stat is synchronous
+      assert.ok(stats.isFile(), 'Asset file should exist on disk');
+
+      // Verify file content on disk
+      const fileContent = FS.readFile(expectedAssetPath, { encoding: 'utf8' });
+      assert.strictEqual(
+        fileContent,
+        'hello world',
+        'File content on disk should match original'
+      );
     });
   }));
