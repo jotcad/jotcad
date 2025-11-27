@@ -22,12 +22,15 @@ import { withAssets } from '@jotcad/geometry';
 const bindings = { ...api, note, view };
 
 const whitelist = {
+  // All available ops.
   functions: [
     'And',
     'Arc2',
     'Box2',
     'Box3',
     'Jot',
+    'Link',
+    'Loop',
     'Orb',
     'Point',
     'Z',
@@ -44,6 +47,8 @@ const whitelist = {
     'get',
     'join',
     'jot',
+    'link',
+    'loop',
     'nth',
     'mask',
     'png',
@@ -60,13 +65,8 @@ const whitelist = {
     'y',
     'z',
   ],
+  // Ops that can be called as methods on shapes.
   methods: [
-    'And',
-    'Arc2',
-    'Box2',
-    'Orb',
-    'Point',
-    'Z',
     'absolute',
     'and',
     'at',
@@ -80,6 +80,8 @@ const whitelist = {
     'get',
     'join',
     'jot',
+    'link',
+    'loop',
     'nth',
     'mask',
     'png',
