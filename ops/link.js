@@ -1,8 +1,9 @@
-import { Link as geometryLink } from '../geometry/link.js';
-import { registerOp } from './op.js';
 import './optionsSpec.js';
 import './shapeSpec.js';
 import './shapesSpec.js';
+
+import { Link as geometryLink } from '../geometry/link.js';
+import { registerOp } from './op.js';
 
 export const Link = registerOp({
   name: 'Link',
