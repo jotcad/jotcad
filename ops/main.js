@@ -55,3 +55,46 @@ export { y } from './y.js';
 export { z } from './z.js';
 
 export { withFs } from './fs.js';
+
+export const constructors = [
+  'And',
+  'Arc2',
+  'Box2',
+  'Box3',
+  'Jot',
+  'Orb',
+  'Point',
+  'Stl',
+  'Z',
+];
+
+export const operators = [
+  'absolute',
+  'and',
+  'at',
+  'color',
+  'clip',
+  'cut',
+  'extrude2',
+  'extrude3',
+  'fill2',
+  'fill3',
+  'get',
+  'join',
+  'jot',
+  'mask',
+  'nth',
+  'png',
+  'revert',
+  'rx',
+  'ry',
+  'rz',
+  'set',
+  'simplify',
+  'stl',
+  'test',
+  'transform',
+  'x',
+  'y',
+  'z',
+];
