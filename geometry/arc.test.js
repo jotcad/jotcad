@@ -1,14 +1,12 @@
 import './transform.js';
 
 import assert from 'node:assert/strict';
-import path, { dirname } from 'path';
 
 import { beforeEach, describe, it } from 'node:test';
 import { writeFile } from 'node:fs/promises';
 
 import { Arc2 } from './arc.js';
 import { cgal } from './getCgal.js';
-import { fileURLToPath } from 'url';
 import { makeAbsolute } from './makeAbsolute.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
@@ -27,7 +25,9 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'arc.test.full.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/arc.test.full.png`, image)
+      );
     });
   });
 
@@ -42,7 +42,9 @@ describe('arc', () => {
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'arc.test.give.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/arc.test.give.png`, image)
+        );
       }
     );
   });
@@ -58,7 +60,9 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'arc.test.half.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/arc.test.half.png`, image)
+      );
     });
   });
 
@@ -73,7 +77,9 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'arc.test.quarter.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/arc.test.quarter.png`, image)
+      );
     });
   });
 
@@ -89,7 +95,9 @@ describe('arc', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'arc.test.half_square.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/arc.test.half_square.png`, image)
+      );
     });
   });
 
@@ -107,7 +115,12 @@ describe('arc', () => {
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'arc.test.quarter_square.png', image));
+        assert.ok(
+          await testPng(
+            `${import.meta.dirname}/arc.test.quarter_square.png`,
+            image
+          )
+        );
       }
     );
   });
@@ -128,7 +141,10 @@ describe('arc', () => {
           height: 512,
         });
         assert.ok(
-          await testPng(assets, 'arc.test.half_square_spin.png', image)
+          await testPng(
+            `${import.meta.dirname}/arc.test.half_square_spin.png`,
+            image
+          )
         );
       }
     );

@@ -1,9 +1,4 @@
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
-import path, { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import { Box3 } from './box.js';
 import assert from 'node:assert/strict';
@@ -18,14 +13,16 @@ describe('cut', (t) =>
       'should cut the corner out of a box',
       async (assets) => {
         const box = await Box3(assets, [0, 2], [0, 2], [0, 2]);
-        const tool = await Box3(assets, [1, 2], [1, 2], [1, 2]);
+        const tool = await Box3(assets, [1, 2], [1, 2], [1, 4]);
         const cutBox = cut(assets, box, [tool]);
         const image = await renderPng(assets, cutBox, {
           view: { position: [15, 15, 15] },
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'cut.test.corner.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/cut.test.corner.png`, image)
+        );
       }
     );
   }));
@@ -45,7 +42,9 @@ describe('masked cut', (t) =>
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'cut.test.masked_cut.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/cut.test.masked_cut.png`, image)
+        );
       }
     );
   }));

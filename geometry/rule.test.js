@@ -6,6 +6,8 @@ import { rule } from './rule.js'; // The function we are testing
 import { renderPng } from './renderPng.js'; // Import renderPng
 import { testPng } from './test_png.js'; // Import testPng
 
+const __dirname = import.meta.dirname; // Modern ES Module __dirname
+
 describe('rule', () => {
   it('should generate a ruled surface between two simple polygonal chains', async () => {
     await withTestAssets('rule a simple surface', async (assets) => {
@@ -46,7 +48,7 @@ describe('rule', () => {
 
       // Compare the generated PNG with a reference image
       assert.ok(
-        await testPng(assets, 'rule.test.png', image),
+        await testPng(`${import.meta.dirname}/rule.test.png`, image),
         'Generated image does not match reference'
       );
     });

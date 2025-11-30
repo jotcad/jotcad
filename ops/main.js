@@ -16,10 +16,13 @@ export { Arc2 } from './arc.js';
 export { Box2 } from './box.js';
 export { Box3 } from './box.js';
 export { Jot } from './jot.js';
+export { Link } from './link.js';
+export { Loop, loop } from './loop.js';
 export { Orb } from './orb.js';
 export { Point } from './point.js';
 export { Stl } from './stl.js';
 export { Z } from './z.js';
+export { Rule, rule } from './rule.js';
 
 export { absolute } from './absolute.js';
 export { and } from './and.js';
@@ -34,6 +37,7 @@ export { fill3 } from './fill.js';
 export { get } from './get.js';
 export { join } from './join.js';
 export { jot } from './jot.js';
+export { link } from './link.js';
 export { nth } from './nth.js';
 export { mask } from './mask.js';
 export { png } from './png.js';
@@ -65,6 +69,7 @@ export const constructors = [
   'Orb',
   'Point',
   'Stl',
+  'Rule',
   'Z',
 ];
 
@@ -92,6 +97,7 @@ export const operators = [
   'set',
   'simplify',
   'stl',
+  'rule',
   'test',
   'transform',
   'x',

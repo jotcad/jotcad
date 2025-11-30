@@ -1,9 +1,4 @@
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
-import path, { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import { Arc2 } from './arc.js';
 import { Point } from './point.js';
@@ -43,7 +38,9 @@ describe('extrude', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'extrude.test.triangle.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/extrude.test.triangle.png`, image)
+      );
     });
   });
 
@@ -75,7 +72,9 @@ describe('extrude', () => {
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'extrude.test.shrink.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/extrude.test.shrink.png`, image)
+        );
       }
     );
   });

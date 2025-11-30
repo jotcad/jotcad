@@ -68,8 +68,9 @@ follow these steps:
       new `.cc` files to compile directly.
     - However, if your C++ implementation uses headers from a new
       subdirectory (e.g., `geometry/rs/`), add the corresponding include
-      path (e.g., `-I./rs`) to the `g++` or `em++` commands in
-      `geometry/build_native_node.sh` and `geometry/build_wasm_node.sh`.
+      path (e.g., `-I./rs`) to the `g++` command in
+      `geometry/build_native_node.sh`. You should run `build_native_node.sh` from the `geometry/` directory.
+      The `build_wasm_node.sh` script is used for WebAssembly compilation and is generally not required for Node.js based testing.
 
 5.  **Add tests:**
 
@@ -103,3 +104,24 @@ follow these steps:
   be ignored among PNGs, as other PNGs are typically reference images for
   tests.
 - **Commit Messages:** Use clear, concise, and descriptive commit messages.
+
+## Further Testing and Debugging
+
+### Golden Image Testing
+
+The testing strategy for visual operations relies on "golden image" testing. A reference PNG image (the "golden" image) is stored in the repository. When a test is run, it generates a new image, which is then compared pixel-by-pixel to the golden image.
+
+If the generated image is different, the test will fail. The generated image is saved as `observed.*.png`. If the change is expected, the golden image can be updated by copying the `observed.*.png` file over the original golden image file.
+
+It's also important to test the serialized geometry using `testJot`. This ensures that the underlying geometry data is correct, not just the visual representation.
+
+### Build Process
+
+After making any changes to the C++ code in the `geometry/` directory, you must rebuild the native addons by running `./build_native_node.sh` from the `geometry/` directory.
+
+### Debugging C++
+
+Debugging C++ code from Node.js can be challenging. Here are some tips:
+
+- **Logging:** Use `std::cout` or `std::cerr` to print debug messages from your C++ code. These will be printed to the console when you run the tests.
+- **Advanced Debugging:** For more complex issues, it's possible to attach a C++ debugger (like GDB or LLDB) to the Node.js process. This allows you to set breakpoints and inspect variables in your C++ code. This is an advanced technique and requires a properly configured development environment.

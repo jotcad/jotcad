@@ -20,7 +20,7 @@ export const z = registerOp({
 
 export const Z = registerOp({
   name: 'Z',
-  spec: ['shape', ['numbers'], 'shape'],
+  spec: [null, ['numbers'], 'shape'],
   code: (
     id,
     session,

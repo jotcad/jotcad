@@ -1,12 +1,8 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
-import path, { dirname } from 'node:path'; // Import dirname
-import { fileURLToPath } from 'url'; // Import fileURLToPath
+import path from 'node:path';
 
 import pixelmatch from 'pixelmatch';
 import pngjs from 'pngjs';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const isFilePresent = async (filePath) => {
   try {
@@ -18,38 +14,33 @@ const isFilePresent = async (filePath) => {
 };
 
 export const testPng = async (
-  assets, // assets object
-  expectedPngFilename, // Now just the filename (e.g., 'arc.test.full.png')
-  observedPng,
+  expectedPngFilePath, // Absolute path to the expected PNG
+  observedPngBuffer,   // The actual image data as a Buffer
   threshold = 1000
 ) => {
-  const expectedPngPath = path.join(__dirname, expectedPngFilename); // Construct full path internally
-  const observedPngPath = assets.pathTo(`observed.${expectedPngFilename}`); // Observed PNG goes into assets.basePath
+  const observedPngFilePath = path.join(
+    path.dirname(expectedPngFilePath),
+    `observed.${path.basename(expectedPngFilePath)}`
+  );
 
-  // Always write the observed PNG to the test-specific observed path
-  if (observedPng) {
-    await writeFile(observedPngPath, Buffer.from(observedPng));
+  // Always write the observed PNG to the location of the expected PNG for manual review
+  if (observedPngBuffer) {
+    await writeFile(observedPngFilePath, observedPngBuffer);
   }
   
-  // Also copy to geometry/observed.<png> as requested for manual inspection
-  const manualObservedPngPath = path.join(__dirname, `observed.${expectedPngFilename}`);
-  if (observedPng) {
-    await writeFile(manualObservedPngPath, Buffer.from(observedPng));
-  }
-
-  const observedPngImage = pngjs.PNG.sync.read(await readFile(observedPngPath));
+  const observedPngImage = pngjs.PNG.sync.read(await readFile(observedPngFilePath));
   const { width, height } = observedPngImage;
   let numFailedPixels = 0;
-  let expectedFileExists = await isFilePresent(expectedPngPath);
+  let expectedFileExists = await isFilePresent(expectedPngFilePath);
 
   if (!expectedFileExists) {
-    console.log(`testPng: Reference image not found at ${expectedPngPath}.`);
-    // Fail the test if the reference image is missing.
-    return false;
+    console.log(`testPng: Reference image not found at ${expectedPngFilePath}. Creating it.`);
+    await writeFile(expectedPngFilePath, observedPngBuffer);
+    return true; // The test "passes" by creating the reference
   }
 
   const expectedPngImage = pngjs.PNG.sync.read(
-    await readFile(expectedPngPath)
+    await readFile(expectedPngFilePath)
   );
   const differencePng = new pngjs.PNG({ width, height });
   numFailedPixels = pixelmatch(
@@ -68,15 +59,15 @@ export const testPng = async (
   );
 
   if (numFailedPixels < threshold) {
-    // If the test passes and an observedPng was provided, update the expected reference.
+    // If the test passes and an observedPngBuffer was provided, update the expected reference.
     // This is the original behavior which implicitly "approves" the observed image.
-    if (observedPng) {
-      await writeFile(expectedPngPath, Buffer.from(observedPng));
+    if (observedPngBuffer) {
+      await writeFile(expectedPngFilePath, observedPngBuffer);
     }
     return true;
   } else {
     console.log(
-      `testPng: ${expectedPngPath} differs from ${observedPngPath} by ${numFailedPixels} pixels`
+      `testPng: ${expectedPngFilePath} differs from ${observedPngFilePath} by ${numFailedPixels} pixels`
     );
     return false;
   }

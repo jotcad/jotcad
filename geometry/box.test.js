@@ -1,10 +1,5 @@
 import { Box2, Box3 } from './box.js';
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
-import path, { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import assert from 'node:assert/strict';
 import { renderPng } from './renderPng.js';
@@ -21,7 +16,9 @@ describe('box', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'box.test.Box3.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/box.test.Box3.png`, image)
+      );
     });
   });
 
@@ -33,7 +30,9 @@ describe('box', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'box.test.Box2.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/box.test.Box2.png`, image)
+      );
     });
   });
 });

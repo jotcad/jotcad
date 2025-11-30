@@ -5,6 +5,7 @@ import {
   getOrCreateSession,
   startCleanup,
 } from './session.js'; // Added cleanupSessions
+import { constructors, operators } from '../ops/main.js';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 
 import { URL } from 'url';
@@ -14,7 +15,6 @@ import hash from 'string-hash';
 import http from 'http';
 import { note } from './note.js';
 import path from 'path';
-import { constructors, operators } from '../ops/main.js';
 import { run } from '@jotcad/op';
 import { view } from './view.js';
 import vm from 'node:vm';

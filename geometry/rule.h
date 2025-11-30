@@ -1,5 +1,4 @@
-#ifndef EXPERIMENTAL_USERS_SBRIAN_GEOMETRY_RULE_H_
-#define EXPERIMENTAL_USERS_SBRIAN_GEOMETRY_RULE_H_
+#pragma once
 
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
@@ -42,6 +41,29 @@ inline PolygonalChain ConvertEKPointsToIKPolygonalChain(const std::vector<CGAL::
   return chain;
 }
 
+void GetPolylines(Assets& assets, Shape& shape, std::vector<PolygonalChain>& polylines) {
+  if (shape.napi_.Has("geometry")) {
+    Napi::Value id_val = shape.napi_.Get("geometry");
+    if (id_val.IsString()) {
+      std::string id_str = id_val.As<Napi::String>().Utf8Value();
+      Geometry geom = assets.GetGeometry(id_val).Transform(shape.GetTf());
+      if (!geom.vertices_.empty()) {
+        polylines.push_back(internal::ConvertEKPointsToIKPolygonalChain(geom.vertices_));
+      }
+    }
+  }
+  if (shape.napi_.Has("shapes") && shape.napi_.Get("shapes").IsArray()) {
+    Napi::Array shapes_array = shape.napi_.Get("shapes").As<Napi::Array>();
+    for (uint32_t i = 0; i < shapes_array.Length(); ++i) {
+      Napi::Value element = shapes_array.Get(i);
+      if (element.IsObject()) {
+        Shape sub_shape(element.As<Napi::Object>());
+        GetPolylines(assets, sub_shape, polylines);
+      }
+    }
+  }
+}
+
 } // namespace internal
 
 
@@ -50,35 +72,68 @@ inline GeometryId Rule(
     Shape& from_shape,
     Shape& to_shape,
     std::optional<unsigned int> seed,
-    uint32_t stopping_rule_max_iterations,
+    uint32_t stopping_rule_max_iterations, // This is still passed from JS, but will be used in a different way for StoppingRule
     uint32_t stopping_rule_iters_without_improvement) {
 
-  // 1. Retrieve Geometry objects from Assets and apply their transformations
-  Geometry from_geom = assets.GetGeometry(from_shape.GeometryId()).Transform(from_shape.GetTf());
-  Geometry to_geom = assets.GetGeometry(to_shape.GeometryId()).Transform(to_shape.GetTf());
+  std::vector<PolygonalChain> from_polylines;
+  internal::GetPolylines(assets, from_shape, from_polylines);
 
-  // 2. Convert EK points from Geometry objects to IK PolygonalChains
-  PolygonalChain p_in = internal::ConvertEKPointsToIKPolygonalChain(from_geom.vertices_);
-  PolygonalChain q_in = internal::ConvertEKPointsToIKPolygonalChain(to_geom.vertices_);
+  std::vector<PolygonalChain> to_polylines;
+  internal::GetPolylines(assets, to_shape, to_polylines);
 
-  // 3. Prepare parameters for RuleLoopsSA
+  if (from_polylines.empty() || to_polylines.empty()) {
+    Napi::TypeError::New(assets.Env(), "Could not extract polylines from shapes for ruling.").ThrowAsJavaScriptException();
+  }
+
+  PolygonalChain p_in = from_polylines[0];
+  PolygonalChain q_in = to_polylines[0];
+
+  // Ensure the polylines are closed.
+  if (!p_in.empty() && p_in.front() != p_in.back()) {
+    p_in.push_back(p_in.front());
+  }
+  if (!q_in.empty() && q_in.front() != q_in.back()) {
+    q_in.push_back(q_in.front());
+  }
+
+  // Cleaned up Logging: Just print input polylines
+  std::cout << "DEBUG: Rule - Input p_in (" << p_in.size() << " points):" << std::endl;
+  for (const auto& pt : p_in) {
+    std::cout << "  (" << pt.x() << ", " << pt.y() << ", " << pt.z() << ")" << std::endl;
+  }
+  std::cout << "DEBUG: Rule - Input q_in (" << q_in.size() << " points):" << std::endl;
+  for (const auto& pt : q_in) {
+    std::cout << "  (" << pt.x() << ", " << pt.y() << ", " << pt.z() << ")" << std::endl;
+  }
+
+  // LOG: Stopping rule parameters
+  std::cout << "DEBUG: Rule - StoppingRule parameters: max_iterations=" << stopping_rule_max_iterations
+            << ", iters_without_improvement=" << stopping_rule_iters_without_improvement << std::endl;
+
+  // 3. Prepare parameters for AlignLoopsSA
   using TriangulationStrategy = LinearSearchSlg<MinArea>;
-  using StoppingRule = ConvergenceStoppingRule;
+  using StoppingRule = ConvergenceStoppingRule; // Changed from MaxIterationsStoppingRule
 
   typename SeamSearchSA<TriangulationStrategy, StoppingRule>::Options options;
   options.seed = seed;
-  options.stopping_rule = StoppingRule(stopping_rule_max_iterations, stopping_rule_iters_without_improvement);
+  options.stopping_rule = StoppingRule(stopping_rule_max_iterations, stopping_rule_iters_without_improvement); // Use the parameters for ConvergenceStoppingRule
 
   Mesh mesh_result;
-  PolygonalChain p_aligned, q_aligned;
-  SolutionStats stats; // Still needed for RuleLoopsSA call, but not stored.
+  SolutionStats stats;
 
-  // 4. Call RuleLoopsSA
-  SolutionStats::Status rule_status = RuleLoopsSA<TriangulationStrategy, StoppingRule>(
-      p_in, q_in, options, &mesh_result, &p_aligned, &q_aligned, &stats);
-
-  // Set the status in stats object explicitly as RuleLoopsSA returns it separately
-  stats.status = rule_status;
+  // 4. Call AlignLoopsSA
+  std::pair<PolygonalChain, PolygonalChain> aligned_polylines = AlignLoopsSA<TriangulationStrategy, StoppingRule>(
+      p_in, q_in, options, &mesh_result, &stats); // Pass mesh_result by pointer to be filled
+  
+  // LOG: mesh_result and SolutionStats after AlignLoopsSA
+  std::cout << "DEBUG: Rule - mesh_result after AlignLoopsSA: Vertices=" << mesh_result.number_of_vertices()
+            << ", Edges=" << mesh_result.number_of_edges() << ", Faces=" << mesh_result.number_of_faces() << std::endl;
+  std::cout << "DEBUG: Rule - SolutionStats after AlignLoopsSA:" << std::endl;
+  std::cout << "  Status: " << stats.status << std::endl; // Removed status_to_string()
+  std::cout << "  Cost: " << stats.cost << std::endl;
+  std::cout << "  Shift: " << stats.shift << std::endl;
+  std::cout << "  Is Reversed: " << (stats.is_reversed ? "true" : "false") << std::endl;
+  std::cout << "  Decision Log: " << stats.decision_log << std::endl;
 
   // Determine correct face orientation based on volume for a closed mesh.
   // Create a temporary mesh to close holes and compute volume without modifying mesh_result initially.
@@ -95,6 +150,9 @@ inline GeometryId Rule(
       CGAL::Polygon_mesh_processing::triangulate_hole(
           temp_mesh, h, std::back_inserter(patch_facets));
   }
+  // LOG: temp_mesh after hole filling
+  std::cout << "DEBUG: Rule - temp_mesh after hole filling: Vertices=" << temp_mesh.number_of_vertices()
+            << ", Edges=" << temp_mesh.number_of_edges() << ", Faces=" << temp_mesh.number_of_faces() << std::endl;
 
 
   // After filling holes, compute the volume.
@@ -116,11 +174,7 @@ inline GeometryId Rule(
   geom_result.DecodeSurfaceMesh<IK>(mesh_result);
   GeometryId mesh_id = assets.TextId(geom_result);
   
-  // Do NOT store p_aligned, q_aligned, or stats in Assets, as per user's instruction.
-
   return mesh_id;
 }
 
 } // namespace geometry
-
-#endif // EXPERIMENTAL_USERS_SBRIAN_GEOMETRY_RULE_H_
