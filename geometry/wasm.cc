@@ -40,6 +40,8 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "transform.h"
 #include "triangulate.h"
 #include "orb.h"
+#include "rule.h"
+#include "rule.h"
 
 namespace jot_cgal {
 
@@ -204,6 +206,39 @@ static Napi::Value MakeOrbBinding(const Napi::CallbackInfo& info) {
   return MakeOrb(assets, angular_bound, radius_bound, distance_bound);
 }
 
+static Napi::Value RuleBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 4);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape from_shape(info[1].As<Napi::Object>());
+  Shape to_shape(info[2].As<Napi::Object>());
+  Napi::Object js_options = info[3].As<Napi::Object>();
+  
+  std::optional<unsigned int> seed;
+  if (js_options.Has("seed")) {
+    seed = js_options.Get("seed").As<Napi::Number>().Uint32Value();
+  }
+
+  uint32_t stopping_rule_max_iterations = 200; // Default value
+  if (js_options.Has("stoppingRuleMaxIterations")) {
+    stopping_rule_max_iterations = js_options.Get("stoppingRuleMaxIterations").As<Napi::Number>().Uint32Value();
+  }
+
+  uint32_t stopping_rule_iters_without_improvement = 10000; // Default value
+  if (js_options.Has("stoppingRuleItersWithoutImprovement")) {
+    stopping_rule_iters_without_improvement = js_options.Get("stoppingRuleItersWithoutImprovement").As<Napi::Number>().Uint32Value();
+  }
+
+  GeometryId mesh_id = geometry::Rule(
+      assets,
+      from_shape,
+      to_shape,
+      seed,
+      stopping_rule_max_iterations,
+      stopping_rule_iters_without_improvement);
+
+  return mesh_id;
+}
+
 Napi::String World(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 0);
   Napi::Env env = info.Env();
@@ -247,6 +282,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, TriangulateBinding));
   exports.Set(Napi::String::New(env, "MakeOrb"),
               Napi::Function::New(env, MakeOrbBinding));
+  exports.Set(Napi::String::New(env, "Rule"),
+              Napi::Function::New(env, RuleBinding));
 
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));
   exports.Set(Napi::String::New(env, "ComputeTextHash"),

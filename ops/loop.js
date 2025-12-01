@@ -13,12 +13,7 @@ export const Loop = registerOp({
 
 export const loop = registerOp({
   name: 'loop',
-  spec: [
-    'shape',
-    ['shapes'],
-    ['options', { reverse: 'boolean' }],
-    'shape',
-  ],
+  spec: ['shape', ['shapes'], ['options', { reverse: 'boolean' }], 'shape'],
   code: (id, context, input, shapes, { reverse = false } = {}) =>
     geometryLink(context.assets, [input, ...shapes], true, reverse),
 });

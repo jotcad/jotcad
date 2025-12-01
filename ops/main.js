@@ -22,6 +22,7 @@ export { Orb } from './orb.js';
 export { Point } from './point.js';
 export { Stl } from './stl.js';
 export { Z } from './z.js';
+export { Rule, rule } from './rule.js';
 
 export { absolute } from './absolute.js';
 export { and } from './and.js';
@@ -58,3 +59,48 @@ export { y } from './y.js';
 export { z } from './z.js';
 
 export { withFs } from './fs.js';
+
+export const constructors = [
+  'And',
+  'Arc2',
+  'Box2',
+  'Box3',
+  'Jot',
+  'Orb',
+  'Point',
+  'Stl',
+  'Rule',
+  'Z',
+];
+
+export const operators = [
+  'absolute',
+  'and',
+  'at',
+  'color',
+  'clip',
+  'cut',
+  'extrude2',
+  'extrude3',
+  'fill2',
+  'fill3',
+  'get',
+  'join',
+  'jot',
+  'mask',
+  'nth',
+  'png',
+  'revert',
+  'rx',
+  'ry',
+  'rz',
+  'set',
+  'simplify',
+  'stl',
+  'rule',
+  'test',
+  'transform',
+  'x',
+  'y',
+  'z',
+];

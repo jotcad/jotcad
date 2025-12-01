@@ -18,6 +18,7 @@ export { makeAbsolute } from './makeAbsolute.js';
 export { makeGroup } from './shape.js';
 export { makeShape } from './shape.js';
 export { isShape } from './shape.js';
+export { rule } from './rule.js';
 export { renderPng } from './renderPng.js';
 export { setTag } from './tag.js';
 export { simplify } from './simplify.js';

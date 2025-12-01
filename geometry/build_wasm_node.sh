@@ -12,6 +12,7 @@ em++ -O3 \
      -I. \
      -I./boost \
      -I./glm -I./glm/glm -I./wasm/include \
+     -I./rs \
      -L../node_modules/emnapi/lib/wasm32-emscripten \
      --js-library=../node_modules/emnapi/dist/library_napi.js \
      -sEXPORTED_FUNCTIONS="['_malloc','_free','_napi_register_wasm_v1','_node_api_module_get_api_version_v1', 'FS']" \

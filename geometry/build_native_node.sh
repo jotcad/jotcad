@@ -9,6 +9,7 @@ g++ -O3 \
     -I. \
     -I./boost \
     -I./native/include \
+    -I./rs \
     -fexceptions \
     -fPIC \
     wasm.cc \

@@ -9,7 +9,7 @@ export const png = registerOp({
   name: 'png',
   effect: true,
   spec: [
-    null,
+    'shape',
     ['string', 'vector3', ['options', { edge: 'boolean' }]],
     'shape',
   ],

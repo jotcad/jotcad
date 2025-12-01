@@ -60,7 +60,7 @@ async function init() {
     localStorage.getItem('jotcad-outputFilename') || 'out.jot';
 
   const defaultCode = `Box3(10)`;
-  codeEditor.value = defaultCode;
+  codeEditor.value = localStorage.getItem('jotcad-codeEditor') || defaultCode;
 
   // Function to clear the scene
   function clearScene() {
@@ -169,8 +169,11 @@ async function init() {
   codeEditor.addEventListener('keydown', (e) => {
     if (e.shiftKey && e.key === 'Enter') {
       e.preventDefault();
-      renderButton.click();
     }
+  });
+
+  codeEditor.addEventListener('input', (event) => {
+    localStorage.setItem('jotcad-codeEditor', event.target.value);
   });
 
   // 8. Animation loop

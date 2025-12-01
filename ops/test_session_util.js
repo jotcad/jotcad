@@ -3,10 +3,10 @@ import { access, mkdir, readFile, rmdir, writeFile } from 'node:fs/promises';
 import { Assets } from '../geometry/assets.js';
 import { FilesystemSession } from './filesystem_session.js';
 import { createHash } from 'node:crypto';
+import { testJot as geometryTestJot } from '../geometry/test_jot.js';
+import { testPng as geometryTestPng } from '../geometry/test_png.js';
 import os from 'os';
 import path from 'node:path';
-import pixelmatch from 'pixelmatch';
-import pngjs from 'pngjs';
 
 const TEST_SESSIONS_BASE_DIR = path.join(os.tmpdir(), 'jotcad_test_sessions');
 
@@ -36,59 +36,64 @@ export const withTestSession = async (testName, op) => {
   return await op(session);
 };
 
-const isFilePresent = async (filePath) => {
-  try {
-    await access(filePath);
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
-
 export const testPng = async (
   session,
-  expectedPngFilename,
-  observedPng,
+  expectedPngFilename, // This is relative to the ops/ directory
+  observedPngSessionFilename, // This is the filename of the observed PNG in the session's assets
   threshold = 1000
 ) => {
-  const expectedPngPath = session.assets.pathTo(expectedPngFilename);
-  const observedPngPath = session.filePath(`observed.${expectedPngFilename}`);
+  // Construct the absolute path to the expected PNG file, as it lives in the source directory.
+  const absoluteExpectedPngPath = `${
+    import.meta.dirname
+  }/${expectedPngFilename}`;
 
-  if (observedPng) {
-    await writeFile(observedPngPath, Buffer.from(observedPng));
-  }
-  const observedPngImage = pngjs.PNG.sync.read(await readFile(observedPngPath));
-  const { width, height } = observedPngImage;
-  let numFailedPixels = 0;
-  if (await isFilePresent(expectedPngPath)) {
-    const expectedPngImage = pngjs.PNG.sync.read(
-      await readFile(expectedPngPath)
-    );
-    const differencePng = new pngjs.PNG({ width, height });
-    numFailedPixels = pixelmatch(
-      expectedPngImage.data,
-      observedPngImage.data,
-      differencePng.data,
-      width,
-      height,
-      {
-        threshold: 0.01,
-        alpha: 0.2,
-        diffMask: process.env.FORCE_COLOR === '0' ? false : true,
-        diffColor:
-          process.env.FORCE_COLOR === '0' ? [255, 255, 255] : [255, 0, 0],
-      }
-    );
-  }
-  if (numFailedPixels < threshold) {
-    if (observedPng) {
-      await writeFile(expectedPngPath, Buffer.from(observedPng));
-    }
-    return true;
-  } else {
-    console.log(
-      `testPng: ${expectedPngPath} differs from ${observedPngPath} by ${numFailedPixels} pixels`
-    );
-    return false;
-  }
+  // Read the observed PNG buffer from the session's files directory (CRITICAL FIX).
+  const observedPngBuffer = await readFile(
+    session.filePath(observedPngSessionFilename)
+  );
+
+  // Explicitly copy the observed PNG to the source directory for manual review.
+  const manualReviewPathInSource = `${
+    import.meta.dirname
+  }/observed.${expectedPngFilename}`;
+  await writeFile(manualReviewPathInSource, observedPngBuffer);
+
+  const result = await geometryTestPng(
+    absoluteExpectedPngPath,
+    observedPngBuffer,
+    threshold
+  );
+
+  return result;
+};
+
+export const testJot = async (
+  session,
+  expectedJotFilename, // This is relative to the ops/ directory
+  observedJotSessionFilename, // This is the filename of the observed JOT in the session's assets
+  threshold = 0 // For text comparison, usually 0
+) => {
+  // Construct the absolute path to the expected JOT file, as it lives in the source directory.
+  const absoluteExpectedJotPath = `${
+    import.meta.dirname
+  }/${expectedJotFilename}`;
+
+  // Read the observed JOT buffer from the session's files directory.
+  const observedJotBuffer = await readFile(
+    session.filePath(observedJotSessionFilename)
+  );
+
+  // Explicitly copy the observed JOT to the source directory for manual review.
+  const manualReviewPathInSource = `${
+    import.meta.dirname
+  }/observed.${expectedJotFilename}`;
+  await writeFile(manualReviewPathInSource, observedJotBuffer);
+
+  const result = await geometryTestJot(
+    absoluteExpectedJotPath,
+    observedJotBuffer,
+    threshold
+  );
+
+  return result;
 };

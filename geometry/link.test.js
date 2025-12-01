@@ -1,9 +1,4 @@
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
-import path, { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import { Link } from './link.js';
 import { Point } from './point.js';
@@ -37,7 +32,9 @@ describe('link', () => {
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'link.test.open.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/link.test.open.png`, image)
+        );
       }
     );
   });
@@ -65,7 +62,9 @@ describe('link', () => {
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'link.test.closed.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/link.test.closed.png`, image)
+        );
       }
     );
   });
@@ -93,7 +92,9 @@ describe('link', () => {
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'link.test.reverse.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/link.test.reverse.png`, image)
+        );
       }
     );
   });

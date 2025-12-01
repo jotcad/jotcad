@@ -14,12 +14,7 @@ export const Link = registerOp({
 
 export const link = registerOp({
   name: 'link',
-  spec: [
-    'shape',
-    ['shapes'],
-    ['options', { reverse: 'boolean' }],
-    'shape',
-  ],
+  spec: ['shape', ['shapes'], ['options', { reverse: 'boolean' }], 'shape'],
   code: (id, context, input, shapes, { reverse = false } = {}) =>
     geometryLink(context.assets, [input, ...shapes], false, reverse),
 });

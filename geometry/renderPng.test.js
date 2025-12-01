@@ -1,9 +1,4 @@
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
-import path, { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import { Point } from './point.js';
 import assert from 'node:assert/strict';
@@ -36,6 +31,11 @@ describe('renderPng', () =>
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'renderPng.test.triangle.png', image));
+      assert.ok(
+        await testPng(
+          `${import.meta.dirname}/renderPng.test.triangle.png`,
+          image
+        )
+      );
     });
   }));

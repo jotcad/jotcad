@@ -1,9 +1,4 @@
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
-import path, { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import { Orb } from './orb.js';
 import assert from 'node:assert/strict';
@@ -20,7 +15,7 @@ describe('Orb', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'orb.test.png', image)); // Reference image name
+      assert.ok(await testPng(`${import.meta.dirname}/orb.test.png`, image)); // Reference image name
     });
   });
 });

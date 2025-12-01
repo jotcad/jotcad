@@ -1,9 +1,4 @@
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'url';
-import path, { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import { Arc2 } from './arc.js';
 import { Point } from './point.js';
@@ -40,7 +35,9 @@ describe('fill', () => {
         width: 512,
         height: 512,
       });
-      assert.ok(await testPng(assets, 'fill.test.triangle.png', image));
+      assert.ok(
+        await testPng(`${import.meta.dirname}/fill.test.triangle.png`, image)
+      );
     });
   });
 
@@ -62,7 +59,10 @@ describe('fill', () => {
           }
         );
         assert.ok(
-          await testPng(assets, 'fill.test.ring_outline.png', outlineImage)
+          await testPng(
+            `${import.meta.dirname}/fill.test.ring_outline.png`,
+            outlineImage
+          )
         );
         const ring = fill2(assets, outline, true);
         const image = await renderPng(assets, ring, {
@@ -70,7 +70,9 @@ describe('fill', () => {
           width: 512,
           height: 512,
         });
-        assert.ok(await testPng(assets, 'fill.test.ring.png', image));
+        assert.ok(
+          await testPng(`${import.meta.dirname}/fill.test.ring.png`, image)
+        );
       }
     );
   });
