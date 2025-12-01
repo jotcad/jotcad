@@ -1,9 +1,6 @@
-<<<<<<< HEAD
 #include <cassert>
 #include <cmath>
 
-=======
->>>>>>> main
 #include "ruled_surfaces_base.h"
 #include "ruled_surfaces_objective_min_area.h"
 #include "ruled_surfaces_sa_stopping_rules.h"
@@ -12,11 +9,6 @@
 #include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_strategy_slg_helpers.h"
 #include "ruled_surfaces_test_utils.h"
-<<<<<<< HEAD
-=======
-#include <cassert>
-#include <cmath>
->>>>>>> main
 
 namespace geometry {
 namespace test {
@@ -103,23 +95,13 @@ f 2 3 6 8 10 11
 
 // Verified
 void IdeallyRotatedCrescents3() {
-<<<<<<< HEAD
   auto [p, q] = geometry::test::CreateIdeallyRotatedClosedCrescents3Geometry();
-=======
-  auto [p, q] =
-      geometry::test::CreateIdeallyRotatedClosedCrescents3Geometry();
->>>>>>> main
 
   geometry::SolutionStats stats;
   geometry::Mesh result;
   geometry::BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
-<<<<<<< HEAD
   geometry::LinearSearchSlg<geometry::MinArea> search(geometry::MinArea(),
                                                       {.max_total_paths = 1});
-=======
-  geometry::LinearSearchSlg<geometry::MinArea> search(
-      geometry::MinArea(), {.max_total_paths = 1});
->>>>>>> main
   search.generate(p, q, visitor);
   assert(!result.is_empty());
   assert(geometry::SolutionStats::OK == stats.status);

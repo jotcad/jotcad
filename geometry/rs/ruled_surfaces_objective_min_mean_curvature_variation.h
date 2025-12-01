@@ -1,12 +1,7 @@
 #pragma once
 
-<<<<<<< HEAD
 #include "ruled_surfaces_base.h"
 #include "ruled_surfaces_objective_helpers.h"
-=======
-#include "ruled_surfaces_objective_helpers.h"
-#include "ruled_surfaces_base.h"
->>>>>>> main
 
 namespace ruled_surfaces {
 namespace internal {
@@ -57,8 +52,4 @@ inline double MinMeanCurvatureVariation::calculate_cost(
   return total_cost;
 }
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
->>>>>>> main

@@ -1,6 +1,5 @@
 #pragma once
 
-<<<<<<< HEAD
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Point_3.h>
 #include <CGAL/Surface_mesh.h>
@@ -10,17 +9,6 @@
 #include <array>
 #include <vector>
 
-=======
-#include <array>
-#include <vector>
-
-#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-#include <CGAL/Point_3.h>
-#include <CGAL/Triangle_3.h>
-#include <CGAL/Vector_3.h>
-#include <CGAL/Surface_mesh.h>
-
->>>>>>> main
 namespace ruled_surfaces {
 
 constexpr double kEpsilon = 1e-9;
@@ -33,10 +21,4 @@ using PolygonalChain = std::vector<PointCgal>;
 using Mesh = CGAL::Surface_mesh<PointCgal>;
 using PolygonSoup = std::vector<std::array<PointCgal, 3>>;
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
-
-
->>>>>>> main

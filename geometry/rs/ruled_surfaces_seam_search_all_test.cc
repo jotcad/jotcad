@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 #include <cassert>
 #include <iostream>
 
@@ -8,17 +7,6 @@
 #include "ruled_surfaces_strategy_seam_search_all.h"
 #include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_test_utils.h"
-=======
-#include "ruled_surfaces_strategy_seam_search_all.h"
-
-#include "ruled_surfaces_objective_min_area.h"
-#include "ruled_surfaces_sa_stopping_rules.h"
-#include "ruled_surfaces_strategy_seam_search_sa.h"
-#include "ruled_surfaces_strategy_linear_slg.h"
-#include "ruled_surfaces_test_utils.h"
-#include <cassert>
-#include <iostream>
->>>>>>> main
 
 namespace geometry {
 namespace test {

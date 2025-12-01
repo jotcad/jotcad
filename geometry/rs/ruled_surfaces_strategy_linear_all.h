@@ -14,10 +14,7 @@ class LinearAllSearch {
   SolutionStats::Status generate(const PolygonalChain& p,
                                  const PolygonalChain& q,
                                  RuledSurfaceVisitor& visitor);
-<<<<<<< HEAD
 
-=======
->>>>>>> main
  private:
   Objective objective_;
 };
@@ -38,8 +35,4 @@ SolutionStats::Status LinearAllSearch<Objective>::generate(
   return SolutionStats::OK;
 }
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
->>>>>>> main

@@ -18,14 +18,8 @@ struct MinArea : public Objective {
 };
 
 inline double MinArea::get_dihedral_cost(const PointCgal& p1,
-<<<<<<< HEAD
                                          const PointCgal& p2, const PointCgal&,
                                          const PointCgal& p4) const {
-=======
-                                          const PointCgal& p2,
-                                          const PointCgal&,
-                                          const PointCgal& p4) const {
->>>>>>> main
   return internal::triangle_area(p1, p2, p4);
 }
 
@@ -41,8 +35,4 @@ inline double MinArea::calculate_cost(const Mesh& mesh) const {
   return total_cost;
 }
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
->>>>>>> main

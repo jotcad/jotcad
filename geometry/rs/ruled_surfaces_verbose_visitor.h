@@ -9,12 +9,7 @@
 #include "ruled_surfaces_test_utils.h"
 #include "visitor.h"
 
-<<<<<<< HEAD
-=======
-
->>>>>>> main
 namespace ruled_surfaces {
-
 class SeamSearchVerboseVisitor : public RuledSurfaceVisitor {
  public:
   explicit SeamSearchVerboseVisitor(std::ostream* out = &std::cout)
@@ -84,12 +79,8 @@ class SeamSearchVerboseVisitor : public RuledSurfaceVisitor {
     }
 
     if (accepted) {
-<<<<<<< HEAD
       *out_ << " | new_cost: " << std::fixed << std::setprecision(4)
             << new_cost;
-=======
-      *out_ << " | new_cost: " << std::fixed << std::setprecision(4) << new_cost;
->>>>>>> main
     }
 
     if (accepted && new_cost < best_cost_) {
@@ -198,9 +189,4 @@ class TriangulationVerboseVisitor : public RuledSurfaceVisitor {
   bool dump_first_invalid_ = false;
 };
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
-
->>>>>>> main

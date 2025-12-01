@@ -56,7 +56,8 @@ class Assets {
       Napi::TypeError::New(Env(), "Invalid GeometryId")
           .ThrowAsJavaScriptException();
 =======
-      Napi::TypeError::New(Env(), "Invalid GeometryId").ThrowAsJavaScriptException();
+      Napi::TypeError::New(Env(), "Invalid GeometryId")
+          .ThrowAsJavaScriptException();
 >>>>>>> main
     }
     Napi::Object space = Space("geometry");

@@ -41,12 +41,6 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
-<<<<<<< HEAD
-=======
-#include "orb.h"
-#include "rule.h"
-#include "rule.h"
->>>>>>> main
 
 namespace jot_cgal {
 
@@ -217,17 +211,11 @@ static Napi::Value RuleBinding(const Napi::CallbackInfo& info) {
   Shape from_shape(info[1].As<Napi::Object>());
   Shape to_shape(info[2].As<Napi::Object>());
   Napi::Object js_options = info[3].As<Napi::Object>();
-<<<<<<< HEAD
-
-=======
-  
->>>>>>> main
   std::optional<unsigned int> seed;
   if (js_options.Has("seed")) {
     seed = js_options.Get("seed").As<Napi::Number>().Uint32Value();
   }
 
-<<<<<<< HEAD
   uint32_t stopping_rule_max_iterations = 200;  // Default value
   if (js_options.Has("stoppingRuleMaxIterations")) {
     stopping_rule_max_iterations = js_options.Get("stoppingRuleMaxIterations")
@@ -246,26 +234,6 @@ static Napi::Value RuleBinding(const Napi::CallbackInfo& info) {
   GeometryId mesh_id = geometry::Rule(assets, from_shape, to_shape, seed,
                                       stopping_rule_max_iterations,
                                       stopping_rule_iters_without_improvement);
-=======
-  uint32_t stopping_rule_max_iterations = 200; // Default value
-  if (js_options.Has("stoppingRuleMaxIterations")) {
-    stopping_rule_max_iterations = js_options.Get("stoppingRuleMaxIterations").As<Napi::Number>().Uint32Value();
-  }
-
-  uint32_t stopping_rule_iters_without_improvement = 10000; // Default value
-  if (js_options.Has("stoppingRuleItersWithoutImprovement")) {
-    stopping_rule_iters_without_improvement = js_options.Get("stoppingRuleItersWithoutImprovement").As<Napi::Number>().Uint32Value();
-  }
-
-  GeometryId mesh_id = geometry::Rule(
-      assets,
-      from_shape,
-      to_shape,
-      seed,
-      stopping_rule_max_iterations,
-      stopping_rule_iters_without_improvement);
->>>>>>> main
-
   return mesh_id;
 }
 

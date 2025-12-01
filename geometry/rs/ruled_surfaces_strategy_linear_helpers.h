@@ -100,31 +100,18 @@ inline std::optional<std::pair<PointCgal, PointCgal>> get_segment(
 }
 
 inline bool is_connected(const AdjacencyList& graph, NodeIndex start_node,
-<<<<<<< HEAD
                          NodeIndex end_node) {
-=======
-                           NodeIndex end_node) {
->>>>>>> main
   if (start_node >= graph.size() || end_node >= graph.size()) return false;
   std::vector<bool> visited(graph.size(), false);
   std::queue<NodeIndex> q;
   q.push(start_node);
   visited[start_node] = true;
-<<<<<<< HEAD
   while (!q.empty()) {
     NodeIndex u = q.front();
     q.pop();
     if (u == end_node) return true;
     for (const auto& edge : graph[u]) {
       if (!visited[edge.to]) {
-=======
-  while(!q.empty()) {
-    NodeIndex u = q.front();
-    q.pop();
-    if(u == end_node) return true;
-    for(const auto& edge : graph[u]) {
-      if(!visited[edge.to]) {
->>>>>>> main
         visited[edge.to] = true;
         q.push(edge.to);
       }
@@ -182,8 +169,4 @@ inline PathInfo dijkstra(const AdjacencyList& graph, NodeIndex start_node,
 }
 
 }  // namespace internal
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
->>>>>>> main

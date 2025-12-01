@@ -8,22 +8,12 @@
 
 namespace ruled_surfaces {
 
-<<<<<<< HEAD
 namespace internal {}  // namespace internal
 
 // Implements a simulated annealing search strategy for finding an
 // optimal triangulation for a ruled surface between two *open* polygonal
 // chains, `p_open` and `q_open`, which are assumed to be pre-aligned segments
 // of closed curves that have been cut at an appropriate seam.
-=======
-namespace internal {
-}  // namespace internal
-
-// Implements a simulated annealing search strategy for finding an
-// optimal triangulation for a ruled surface between two *open* polygonal chains,
-// `p_open` and `q_open`, which are assumed to be pre-aligned segments of
-// closed curves that have been cut at an appropriate seam.
->>>>>>> main
 //
 // The algorithm only explores triangulation moves to find a triangulation
 // that avoids error accumulation, and then stitches the ends together to
@@ -50,17 +40,11 @@ class StitchingSA {
                 RuledSurfaceVisitor& visitor);
 
  private:
-<<<<<<< HEAD
   std::optional<std::pair<Mesh, double>> run_sa(const PolygonalChain& p_open,
                                                 const PolygonalChain& q_open,
                                                 RuledSurfaceVisitor& visitor,
                                                 std::mt19937& gen,
                                                 SolutionStats& stats);
-=======
-  std::optional<std::pair<Mesh, double>> run_sa(
-      const PolygonalChain& p_open, const PolygonalChain& q_open,
-      RuledSurfaceVisitor& visitor, std::mt19937& gen, SolutionStats& stats);
->>>>>>> main
   Objective objective_;
   Options options_;
 };
@@ -83,11 +67,7 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
 
   Mesh current_open_mesh =
       internal::moves_to_mesh(p_open, q_open, current_moves);
-<<<<<<< HEAD
   if (current_open_mesh.is_empty()) return std::nullopt;
-=======
-  if(current_open_mesh.is_empty()) return std::nullopt;
->>>>>>> main
   auto current_stitched = internal::stitch_and_calculate_cost(
       current_open_mesh, p_open, q_open, objective_);
   if (!current_stitched) {
@@ -113,11 +93,7 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
                                           iters_without_improvement)) {
       break;
     }
-<<<<<<< HEAD
 
-=======
-    
->>>>>>> main
     visitor.OnSearchStep(false, temp, 0.0);
 
     std::vector<bool> next_moves = current_moves;
@@ -137,12 +113,7 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
 
     if (next_moves.empty()) continue;
 
-<<<<<<< HEAD
     Mesh next_open_mesh = internal::moves_to_mesh(p_open, q_open, next_moves);
-=======
-    Mesh next_open_mesh =
-        internal::moves_to_mesh(p_open, q_open, next_moves);
->>>>>>> main
     if (next_open_mesh.is_empty()) {
       continue;
     }
@@ -163,12 +134,8 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
     Mesh& next_mesh = next_stitched->first;
     double next_cost = next_stitched->second;
 
-<<<<<<< HEAD
     if (visitor.OnValidMesh(next_mesh, next_cost, 0) ==
         RuledSurfaceVisitor::kStop) {
-=======
-    if (visitor.OnValidMesh(next_mesh, next_cost, 0) == RuledSurfaceVisitor::kStop) {
->>>>>>> main
       return std::nullopt;
     }
 
@@ -181,14 +148,8 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
     }
 
     double delta_cost = next_cost - current_cost;
-<<<<<<< HEAD
     bool accepted = delta_cost < 0 ||
                     (temp > 0 && prob_dist(gen) < std::exp(-delta_cost / temp));
-=======
-    bool accepted =
-        delta_cost < 0 ||
-        (temp > 0 && prob_dist(gen) < std::exp(-delta_cost / temp));
->>>>>>> main
     visitor.OnAcceptance(accepted, next_cost, current_cost, false);
 
     if (accepted) {
@@ -237,18 +198,9 @@ void StitchingSA<Objective, StoppingRule>::generate(
   } else if (result2) {
     visitor.OnValidMesh(result2->first, result2->second, 0);
   }
-<<<<<<< HEAD
 
-=======
-  
->>>>>>> main
   stats.shift = 0;
   visitor.OnFinish(stats);
 }
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
-
->>>>>>> main

@@ -77,14 +77,8 @@ class YenPathGeneratorDlg {
       NodeIndex spurNode = pk_1.steps[i].first;
       double rootPathCost = 0;
       for (size_t j = 1; j <= i; ++j) {
-<<<<<<< HEAD
         rootPathCost += get_edge_weight(
             pk_1.steps[j - 1].first, pk_1.steps[j].first, pk_1.steps[j].second);
-=======
-        rootPathCost +=
-            get_edge_weight(pk_1.steps[j - 1].first, pk_1.steps[j].first,
-                            pk_1.steps[j].second);
->>>>>>> main
       }
 
       AdjacencyList mutable_graph = graph_;
@@ -143,9 +137,4 @@ class YenPathGeneratorDlg {
   bool depleted_ = false;
 };
 }  // namespace internal
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
-
->>>>>>> main

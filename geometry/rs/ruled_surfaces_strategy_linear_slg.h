@@ -110,12 +110,7 @@ void LinearSearchSlg<Objective>::generate(const PolygonalChain& p,
     state->q_chain = current_q;
     state->is_reversed = is_rev;
     state->gen = std::make_unique<internal::YenPathGenerator<Objective>>(
-<<<<<<< HEAD
         state->p_chain, state->q_chain, objective_, nullptr);
-=======
-        state->p_chain, state->q_chain, objective_,
-        nullptr);
->>>>>>> main
     state->current_path = state->gen->next();
     if (!state->depleted()) {
       generators.push_back(std::move(state));
@@ -185,8 +180,4 @@ void LinearSearchSlg<Objective>::generate(const PolygonalChain& p,
   }
   visitor.OnFinish(final_stats);
 }
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
->>>>>>> main

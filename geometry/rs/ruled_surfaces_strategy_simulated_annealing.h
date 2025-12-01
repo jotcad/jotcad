@@ -66,12 +66,8 @@ inline Mesh moves_to_mesh(const PolygonalChain& p, const PolygonalChain& q,
       const auto& p1 = p[ci];
       const auto& p2 = q[cj];
       const auto& p3 = p[ci + 1];
-<<<<<<< HEAD
       if (p1 == p2 || p2 == p3 || p1 == p3 ||
           internal::is_degenerate(p1, p2, p3)) {
-=======
-      if (p1 == p2 || p2 == p3 || p1 == p3 || internal::is_degenerate(p1, p2, p3)) {
->>>>>>> main
         return {};
       }
       soup.push_back({p1, p2, p3});
@@ -81,12 +77,8 @@ inline Mesh moves_to_mesh(const PolygonalChain& p, const PolygonalChain& q,
       const auto& p1 = p[ci];
       const auto& p2 = q[cj];
       const auto& p3 = q[cj + 1];
-<<<<<<< HEAD
       if (p1 == p2 || p2 == p3 || p1 == p3 ||
           internal::is_degenerate(p1, p2, p3)) {
-=======
-      if (p1 == p2 || p2 == p3 || p1 == p3 || internal::is_degenerate(p1, p2, p3)) {
->>>>>>> main
         return {};
       }
       soup.push_back({p1, p2, p3});
@@ -113,11 +105,7 @@ inline std::vector<bool> get_random_initial_moves(const PolygonalChain& p,
   if (m == 1 && n == 1) return {};
 
   std::vector<bool> moves(m + n - 2);
-<<<<<<< HEAD
   for (size_t i = 0; i < m - 1; ++i) moves[i] = true;           // p-moves
-=======
-  for (size_t i = 0; i < m - 1; ++i) moves[i] = true;    // p-moves
->>>>>>> main
   for (size_t i = m - 1; i < m + n - 2; ++i) moves[i] = false;  // q-moves
 
   for (int i = 0; i < max_tries; ++i) {
@@ -241,12 +229,7 @@ void LinearSearchSA<Objective, StoppingRule>::generate(
 
     double delta_cost = new_cost - current_cost;
     const bool accepted =
-<<<<<<< HEAD
         delta_cost < 0 || (temp > 0 && dis(gen) < std::exp(-delta_cost / temp));
-=======
-        delta_cost < 0 ||
-        (temp > 0 && dis(gen) < std::exp(-delta_cost / temp));
->>>>>>> main
     visitor.OnAcceptance(accepted, new_cost, current_cost,
                          /*was_seam_move=*/false);
     if (accepted) {
@@ -262,10 +245,4 @@ void LinearSearchSA<Objective, StoppingRule>::generate(
   visitor.OnFinish(stats);
 }
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
-
-
->>>>>>> main

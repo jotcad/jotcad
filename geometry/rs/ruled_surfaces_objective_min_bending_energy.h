@@ -33,8 +33,4 @@ inline double MinBendingEnergy::calculate_cost(const Mesh& mesh) const {
   return total_cost;
 }
 
-<<<<<<< HEAD
 }  // namespace ruled_surfaces
-=======
-} // namespace ruled_surfaces
->>>>>>> main
