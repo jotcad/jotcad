@@ -98,7 +98,8 @@ class Geometry {
   bool EncodeFaceSurfaceMesh(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
     const typename K::Plane_3 plane(0, 0, 1, 0);
     std::vector<CGAL::Polygon_with_holes_2<K>> pwhs;
-    std::map<typename K::Point_3, typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>
+    std::map<typename K::Point_3,
+             typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>
         vertex_map;
     CGAL::Polygon_triangulation_decomposition_2<K> triangulator;
     for (const auto& [face, holes] : faces_) {
@@ -123,7 +124,9 @@ class Geometry {
         if (facet.orientation() != CGAL::Sign::POSITIVE) {
           facet.reverse_orientation();
         }
-        std::vector<typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index> vertices;
+        std::vector<
+            typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>
+            vertices;
         for (const auto& point : facet) {
           vertices.push_back(
               EnsureVertex<K>(mesh, vertex_map, plane.to_3d(point)));

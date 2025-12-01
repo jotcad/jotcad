@@ -1,24 +1,23 @@
 #pragma once
 
-#include <cassert>
-#include <cstdint>
-#include <type_traits>
-#include <utility>
-#include <vector>
-#include <numeric> // Added for std::iota
-#include <algorithm> // Added for std::next_permutation
-
-#include "ruled_surfaces_base.h"
-#include <optional>
-
-#include "ruled_surfaces_sa_stopping_rules.h"
-#include "ruled_surfaces_strategy_seam_search_sa.h"
-#include "ruled_surfaces_multi_surface.h"
-#include "visitor.h"
 #include <CGAL/Bbox_3.h>
 #include <CGAL/Polygon_mesh_processing/bbox.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 
+#include <algorithm>  // Added for std::next_permutation
+#include <cassert>
+#include <cstdint>
+#include <numeric>  // Added for std::iota
+#include <optional>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+#include "ruled_surfaces_base.h"
+#include "ruled_surfaces_multi_surface.h"
+#include "ruled_surfaces_sa_stopping_rules.h"
+#include "ruled_surfaces_strategy_seam_search_sa.h"
+#include "visitor.h"
 
 namespace ruled_surfaces {
 
@@ -27,9 +26,9 @@ struct is_seam_search_sa : std::false_type {};
 template <typename TS, typename SR>
 struct is_seam_search_sa<SeamSearchSA<TS, SR>> : std::true_type {};
 
-// This class implements a join strategy based on solving the linear assignment
-// problem for minimum cost, where the cost of pairing two chains is determined
-// by the provided SeamStrategy.
+// This class implements a join strategy based on solving the linear
+// assignment problem for minimum cost, where the cost of pairing two chains
+// is determined by the provided SeamStrategy.
 template <typename SeamStrategy>
 class NaiveJoinStrategy {
  public:
@@ -62,64 +61,6 @@ SolutionStats::Status NaiveJoinStrategy<SeamStrategy>::generate(
     for (int j = 0; j < num_q; ++j) {
       SolutionStats pair_stats;
       Mesh pair_result;
-      // BestTriangulationSearchSolutionVisitor visitor(&pair_result, &pair_stats);
-      // Removed BestTriangulationSearchSolutionVisitor as it's not defined
-      // and causes compilation issues.
-      // This part needs to be re-evaluated for how pair_result and pair_stats are populated.
-
-      // For now, we'll assume a dummy assignment or that pair_result is populated
-      // by SeamStrategy::generate and pair_stats is populated from there.
-      // The direct call to seam_strategy.generate populates these.
-      // However, if SeamStrategy::generate does not directly take Mesh* and SolutionStats*
-      // then this code needs to be adjusted.
-
-      // Re-examine original BestTriangulationSearchSolutionVisitor logic
-      // from ruled_surfaces_strategy_linear_all.h and ruled_surfaces_sa_stopping_rules.h
-      // BestTriangulationSearchSolutionVisitor is defined in ruled_surfaces_strategy_all_helpers.h
-
-      // For now, let's revert to a simpler approach for populating meshes and arc_costs
-      // that does not rely on BestTriangulationSearchSolutionVisitor if it's not present.
-
-      // Re-adding the original approach for populating meshes and arc_costs,
-      // assuming BestTriangulationSearchSolutionVisitor will be defined elsewhere
-      // or that the compilation context makes it available.
-
-      // This part is causing a lot of issues. Let's simplify and make it compile first.
-
-      // Removed BestTriangulationSearchSolutionVisitor for now.
-      // This section needs a careful re-evaluation of how it integrates.
-
-      // Temporarily use a direct call that matches the expected output of SeamStrategy.
-      // This will require that the SeamStrategy returns the mesh and stats directly,
-      // or that the caller handles their extraction from a visitor.
-
-      // Looking at SeamSearchSA::generate, it takes a RuledSurfaceVisitor&.
-      // And AlignPolylinesVisitor takes a Mesh* and SolutionStats*.
-
-      // Let's assume BestTriangulationSearchSolutionVisitor is indeed defined elsewhere
-      // and it functions as a RuledSurfaceVisitor.
-
-      // Since BestTriangulationSearchSolutionVisitor is in ruled_surfaces_strategy_all_helpers.h
-      // We need to include that.
-
-      // #include "ruled_surfaces_strategy_all_helpers.h" // Add this include if needed.
-
-      // For the sake of getting the file to compile, let's simplify the inner loop temporarily
-      // or provide a dummy visitor if BestTriangulationSearchSolutionVisitor is complex.
-      //
-      // However, the original structure implies BestTriangulationSearchSolutionVisitor is
-      // intended. Let's add the include and hope it's well-formed.
-
-      // BestTriangulationSearchSolutionVisitor is declared in ruled_surfaces_strategy_all_helpers.h
-      // but defined in ruled_surfaces_strategy_linear_all.h. This cross-dependency is typical.
-
-      // Let's include ruled_surfaces_strategy_all_helpers.h
-      // and re-include the BestTriangulationSearchSolutionVisitor.
-
-      // Added temporary include for completeness.
-      // #include "ruled_surfaces_strategy_all_helpers.h" // For BestTriangulationSearchSolutionVisitor
-
-      // Assuming BestTriangulationSearchSolutionVisitor is defined and correctly works.
       BestTriangulationSearchSolutionVisitor visitor(&pair_result, &pair_stats);
       if constexpr (is_seam_search_sa<SeamStrategy>::value) {
         using TriangulationStrategy =
@@ -145,49 +86,49 @@ SolutionStats::Status NaiveJoinStrategy<SeamStrategy>::generate(
     }
   }
 
-      std::vector<int> p_indices(num_p);
-      std::iota(p_indices.begin(), p_indices.end(), 0);
-      std::vector<int> q_indices(num_q);
-      std::iota(q_indices.begin(), q_indices.end(), 0);
-  
-      double min_cost = std::numeric_limits<double>::infinity();
-      std::vector<std::pair<int, int>> best_pairs;
-  
-      do {
-        double current_cost = 0;
-        std::vector<std::pair<int, int>> current_pairs;
-        bool possible = true;
-        for (int i = 0; i < num_p; ++i) {
-          if (arc_costs[p_indices[i]][q_indices[i]]) {
-            current_cost += *arc_costs[p_indices[i]][q_indices[i]];
-            current_pairs.push_back({p_indices[i], q_indices[i]});
-          } else {
-            possible = false;
-            break;
-          }
-        }
-  
-        if (possible && current_cost < min_cost) {
-          min_cost = current_cost;
-          best_pairs = current_pairs;
-        }
-      } while (std::next_permutation(q_indices.begin(), q_indices.end()));
-  
-      if (best_pairs.empty()) {
-        return SolutionStats::NO_SOLUTION_FOUND;
+  std::vector<int> p_indices(num_p);
+  std::iota(p_indices.begin(), p_indices.end(), 0);
+  std::vector<int> q_indices(num_q);
+  std::iota(q_indices.begin(), q_indices.end(), 0);
+
+  double min_cost = std::numeric_limits<double>::infinity();
+  std::vector<std::pair<int, int>> best_pairs;
+
+  do {
+    double current_cost = 0;
+    std::vector<std::pair<int, int>> current_pairs;
+    bool possible = true;
+    for (int i = 0; i < num_p; ++i) {
+      if (arc_costs[p_indices[i]][q_indices[i]]) {
+        current_cost += *arc_costs[p_indices[i]][q_indices[i]];
+        current_pairs.push_back({p_indices[i], q_indices[i]});
+      } else {
+        possible = false;
+        break;
       }
-  
-      std::vector<Mesh> result_meshes;
-      for (const auto& p : best_pairs) {
-        result_meshes.push_back(meshes[p.first][p.second]);
-      }
-  
-      if (stats) {
-        stats->total_cost = min_cost / 1e6;
-        stats->pairings = best_pairs;
-      }
-      result->clear();
-      for (const auto& mesh : result_meshes) (*result) += mesh;
-      return SolutionStats::OK;
     }
-} // namespace ruled_surfaces
+
+    if (possible && current_cost < min_cost) {
+      min_cost = current_cost;
+      best_pairs = current_pairs;
+    }
+  } while (std::next_permutation(q_indices.begin(), q_indices.end()));
+
+  if (best_pairs.empty()) {
+    return SolutionStats::NO_SOLUTION_FOUND;
+  }
+
+  std::vector<Mesh> result_meshes;
+  for (const auto& p : best_pairs) {
+    result_meshes.push_back(meshes[p.first][p.second]);
+  }
+
+  if (stats) {
+    stats->total_cost = min_cost / 1e6;
+    stats->pairings = best_pairs;
+  }
+  result->clear();
+  for (const auto& mesh : result_meshes) (*result) += mesh;
+  return SolutionStats::OK;
+}
+}  // namespace ruled_surfaces

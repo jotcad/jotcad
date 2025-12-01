@@ -1,5 +1,7 @@
 #pragma once
 
+#include <CGAL/determinant.h>
+
 #include <cassert>
 #include <cmath>
 #include <functional>
@@ -7,7 +9,6 @@
 #include "ruled_surfaces_base.h"
 #include "ruled_surfaces_strategy_linear_helpers.h"
 #include "visitor.h"
-#include <CGAL/determinant.h>
 
 namespace ruled_surfaces {
 namespace internal {
@@ -37,7 +38,7 @@ inline void triangulate_exhaustive(const PolygonalChain& p,
       // by rejecting paths that take the Q-move in that situation.
       if (!is_p_succeed && ci + 1 < m && cj + 1 < n &&
           std::abs(CGAL::determinant(q[cj] - p[ci], p[ci + 1] - p[ci],
-                                   q[cj + 1] - p[ci])) < 1e-7) {
+                                     q[cj + 1] - p[ci])) < 1e-7) {
         rejected = true;
         break;
       }
@@ -72,7 +73,8 @@ inline void triangulate_exhaustive(const PolygonalChain& p,
 
     Mesh current_mesh = soup_to_mesh(soup);
     assert(!is_degenerate_mesh(current_mesh));
-    if (visitor.OnPermutation(current_mesh) == RuledSurfaceVisitor::kStop) return;
+    if (visitor.OnPermutation(current_mesh) == RuledSurfaceVisitor::kStop)
+      return;
     if (has_self_intersections(current_mesh)) continue;
 
     double current_cost = objective.calculate_cost(current_mesh);
@@ -83,5 +85,4 @@ inline void triangulate_exhaustive(const PolygonalChain& p,
 }
 
 }  // namespace internal
-} // namespace ruled_surfaces
-
+}  // namespace ruled_surfaces

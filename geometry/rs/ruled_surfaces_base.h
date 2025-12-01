@@ -1,5 +1,15 @@
 #pragma once
 
+#include <CGAL/AABB_face_graph_triangle_primitive.h>
+#include <CGAL/AABB_traits.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/Polygon_mesh_processing/manifoldness.h>
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/orientation.h>
+#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/self_intersections.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -19,15 +29,6 @@
 #include "objective.h"
 #include "solution_stats.h"
 #include "types.h"
-#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
-#include <CGAL/Polygon_mesh_processing/orientation.h>
-#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
-#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
-#include <CGAL/Polygon_mesh_processing/self_intersections.h>
-#include <CGAL/AABB_face_graph_triangle_primitive.h>
-#include <CGAL/Polygon_mesh_processing/manifoldness.h>
-#include <CGAL/AABB_traits.h>
-#include <CGAL/AABB_tree.h>
 
 namespace ruled_surfaces {
 
@@ -183,5 +184,4 @@ std::optional<std::pair<Mesh, double>> stitch_and_calculate_cost(
   return std::make_pair(stitched_mesh, closed_cost);
 }
 }  // namespace internal
-
-} // namespace ruled_surfaces
+}  // namespace ruled_surfaces

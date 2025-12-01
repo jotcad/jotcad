@@ -16,10 +16,9 @@ inline std::pair<int, int> dlg_get_ij(int node_idx, int n) {
 }
 inline int dlg_get_layer(int node_idx) { return node_idx % 2; }
 
-AdjacencyList build_graph_dlg(
-    const PolygonalChain& p, const PolygonalChain& q,
-    const Objective& objective,
-    std::optional<bool> preceding_is_p_assumption);
+AdjacencyList build_graph_dlg(const PolygonalChain& p, const PolygonalChain& q,
+                              const Objective& objective,
+                              std::optional<bool> preceding_is_p_assumption);
 
 PolygonSoup reconstruct_triangulation_dlg(
     const PolygonalChain& p, const PolygonalChain& q,
@@ -81,10 +80,9 @@ inline std::vector<std::pair<PointCgal, PointCgal>> reconstruct_rulings_dlg(
   return rulings;
 }
 
-AdjacencyList build_graph_dlg(
-    const PolygonalChain& p, const PolygonalChain& q,
-    const Objective& objective,
-    std::optional<bool> preceding_is_p_assumption) {
+AdjacencyList build_graph_dlg(const PolygonalChain& p, const PolygonalChain& q,
+                              const Objective& objective,
+                              std::optional<bool> preceding_is_p_assumption) {
   int m = p.size();
   int n = q.size();
   AdjacencyList graph(2 * m * n + 2);
@@ -118,10 +116,10 @@ AdjacencyList build_graph_dlg(
       if (i + 1 < m) {
         NodeIndex v = dlg_node_idx(i + 1, j, 0, n);
         double cost0 = (i > 0) ? objective.get_dihedral_cost(p[i], q[j],
-                                                          p[i - 1], p[i + 1])
+                                                             p[i - 1], p[i + 1])
                                : 0;
         double cost1 = (j > 0) ? objective.get_dihedral_cost(p[i], q[j],
-                                                          q[j - 1], p[i + 1])
+                                                             q[j - 1], p[i + 1])
                                : 0;
         graph[u0].push_back({v, cost0, true});
         graph[u1].push_back({v, cost1, true});
@@ -129,10 +127,10 @@ AdjacencyList build_graph_dlg(
       if (j + 1 < n) {
         NodeIndex v = dlg_node_idx(i, j + 1, 1, n);
         double cost0 = (i > 0) ? objective.get_dihedral_cost(p[i], q[j],
-                                                          p[i - 1], q[j + 1])
+                                                             p[i - 1], q[j + 1])
                                : 0;
         double cost1 = (j > 0) ? objective.get_dihedral_cost(p[i], q[j],
-                                                          q[j - 1], q[j + 1])
+                                                             q[j - 1], q[j + 1])
                                : 0;
         graph[u0].push_back({v, cost0, false});
         graph[u1].push_back({v, cost1, false});
@@ -147,5 +145,5 @@ AdjacencyList build_graph_dlg(
   return graph;
 }
 
-}
-}
+}  // namespace internal
+}  // namespace ruled_surfaces

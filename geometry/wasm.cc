@@ -34,14 +34,13 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "join.h"
 #include "link.h"
 #include "make_absolute.h"
+#include "orb.h"
+#include "rule.h"
 #include "simplify.h"
 #include "surface_mesh.h"
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
-#include "orb.h"
-#include "rule.h"
-#include "rule.h"
 
 namespace jot_cgal {
 
@@ -212,30 +211,29 @@ static Napi::Value RuleBinding(const Napi::CallbackInfo& info) {
   Shape from_shape(info[1].As<Napi::Object>());
   Shape to_shape(info[2].As<Napi::Object>());
   Napi::Object js_options = info[3].As<Napi::Object>();
-  
   std::optional<unsigned int> seed;
   if (js_options.Has("seed")) {
     seed = js_options.Get("seed").As<Napi::Number>().Uint32Value();
   }
 
-  uint32_t stopping_rule_max_iterations = 200; // Default value
+  uint32_t stopping_rule_max_iterations = 200;  // Default value
   if (js_options.Has("stoppingRuleMaxIterations")) {
-    stopping_rule_max_iterations = js_options.Get("stoppingRuleMaxIterations").As<Napi::Number>().Uint32Value();
+    stopping_rule_max_iterations = js_options.Get("stoppingRuleMaxIterations")
+                                       .As<Napi::Number>()
+                                       .Uint32Value();
   }
 
-  uint32_t stopping_rule_iters_without_improvement = 10000; // Default value
+  uint32_t stopping_rule_iters_without_improvement = 10000;  // Default value
   if (js_options.Has("stoppingRuleItersWithoutImprovement")) {
-    stopping_rule_iters_without_improvement = js_options.Get("stoppingRuleItersWithoutImprovement").As<Napi::Number>().Uint32Value();
+    stopping_rule_iters_without_improvement =
+        js_options.Get("stoppingRuleItersWithoutImprovement")
+            .As<Napi::Number>()
+            .Uint32Value();
   }
 
-  GeometryId mesh_id = geometry::Rule(
-      assets,
-      from_shape,
-      to_shape,
-      seed,
-      stopping_rule_max_iterations,
-      stopping_rule_iters_without_improvement);
-
+  GeometryId mesh_id = geometry::Rule(assets, from_shape, to_shape, seed,
+                                      stopping_rule_max_iterations,
+                                      stopping_rule_iters_without_improvement);
   return mesh_id;
 }
 
@@ -244,8 +242,6 @@ Napi::String World(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   return Napi::String::New(env, "world");
 }
-
-
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   GeometryWrapper::Init(env, exports);

@@ -15,13 +15,15 @@
 
 // TODO: Figure out if we really need to store faces.
 
-static GeometryId Extrude2(Assets& assets, Shape& shape, Shape& top, Shape& bottom) {
+static GeometryId Extrude2(Assets& assets, Shape& shape, Shape& top,
+                           Shape& bottom) {
   Geometry target =
       assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
   CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh;
   target.EncodeFaceSurfaceMesh<EK>(mesh);
   CGAL::Surface_mesh<CGAL::Point_3<EK>> extruded_mesh;
-  if (!ExtrudeSurfaceMesh<EK>(mesh, top.GetTf(), bottom.GetTf(), extruded_mesh)) {
+  if (!ExtrudeSurfaceMesh<EK>(mesh, top.GetTf(), bottom.GetTf(),
+                              extruded_mesh)) {
     return assets.UndefinedId();
   }
   Geometry output;
@@ -29,13 +31,15 @@ static GeometryId Extrude2(Assets& assets, Shape& shape, Shape& top, Shape& bott
   return assets.TextId(output.Transform(shape.GetTf().inverse()));
 }
 
-static GeometryId Extrude3(Assets& assets, Shape& shape, Shape& top, Shape& bottom) {
+static GeometryId Extrude3(Assets& assets, Shape& shape, Shape& top,
+                           Shape& bottom) {
   Geometry target =
       assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
   CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh;
   target.EncodeSurfaceMesh<EK>(mesh);
   CGAL::Surface_mesh<CGAL::Point_3<EK>> extruded_mesh;
-  if (!ExtrudeSurfaceMesh<EK>(mesh, top.GetTf(), bottom.GetTf(), extruded_mesh)) {
+  if (!ExtrudeSurfaceMesh<EK>(mesh, top.GetTf(), bottom.GetTf(),
+                              extruded_mesh)) {
     return assets.UndefinedId();
   }
   Geometry output;

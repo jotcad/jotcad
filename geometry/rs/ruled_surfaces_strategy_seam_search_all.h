@@ -10,9 +10,9 @@
 
 namespace ruled_surfaces {
 
-// A search strategy that iterates through all possible seam alignments ("shifts")
-// between two loops, and for each alignment, invokes a triangulation strategy
-// to find and report solutions to a visitor.
+// A search strategy that iterates through all possible seam alignments
+// ("shifts") between two loops, and for each alignment, invokes a triangulation
+// strategy to find and report solutions to a visitor.
 //
 // The provided triangulation strategy should be designed to work on *open*
 // polygonal chains, corresponding to loops that have been cut at a seam.
@@ -71,4 +71,4 @@ class SeamSearchAll {
   TriangulationStrategy strategy_;
 };
 
-} // namespace ruled_surfaces
+}  // namespace ruled_surfaces

@@ -1,14 +1,15 @@
+#include <cassert>
+#include <iostream>
+
 #include "ruled_surfaces_objective_min_area.h"
 #include "ruled_surfaces_strategy_linear_all.h"
 #include "ruled_surfaces_test_utils.h"
-#include <cassert>
-#include <iostream>
 
 namespace geometry {
 namespace test {
 
-using ::geometry::test::CreateUnitSquareGeometry;
 using ::geometry::test::CreateRotatedCrescentsGeometry;
+using ::geometry::test::CreateUnitSquareGeometry;
 using ::geometry::test::GetMeshAsObjString;
 using ::geometry::test::IsSelfIntersecting;
 
@@ -31,8 +32,7 @@ void MinAreaOnUnitSquare() {
   Mesh result;
   BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
   LinearAllSearch<MinArea> search((MinArea()));
-  assert(SolutionStats::OK ==
-            search.generate(p, q, visitor));
+  assert(SolutionStats::OK == search.generate(p, q, visitor));
   visitor.OnFinish(SolutionStats{});
   assert(!result.is_empty());
   assert(result.number_of_faces() == 2);
@@ -68,14 +68,14 @@ void MinAreaOnRotatedOpenCrescents() {
   Mesh result;
   BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
   LinearAllSearch<MinArea> search((MinArea()));
-  assert(SolutionStats::OK ==
-            search.generate(p, q, visitor));
+  assert(SolutionStats::OK == search.generate(p, q, visitor));
   visitor.OnFinish(SolutionStats{});
 
   assert(!result.is_empty());
   assert(result.is_valid());
   assert(!IsSelfIntersecting(result));
-  assert(GetMeshAsObjString(result, {p, q}) == kExpectedObjMinAreaOnRotatedOpenCrescents);
+  assert(GetMeshAsObjString(result, {p, q}) ==
+         kExpectedObjMinAreaOnRotatedOpenCrescents);
   assert(visitor.best_solutions().size() == 10);
 }
 
@@ -113,8 +113,7 @@ f 2 3 6 8 10 12
 
 // Verified
 void IdeallyRotatedCrescents3() {
-  auto [p, q] =
-      geometry::test::CreateIdeallyRotatedClosedCrescents3Geometry();
+  auto [p, q] = geometry::test::CreateIdeallyRotatedClosedCrescents3Geometry();
 
   geometry::SolutionStats stats;
   geometry::Mesh result;

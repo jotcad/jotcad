@@ -1,14 +1,14 @@
 #include "ruled_surfaces_join_strategy_naive.h"
 
 #include <algorithm>
-#include <random>
 #include <cassert>
 #include <iostream>
+#include <random>
 
 #include "ruled_surfaces_objective_min_area.h"
 #include "ruled_surfaces_sa_stopping_rules.h"
-#include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_strategy_linear_slg.h"
+#include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_test_utils.h"
 
 namespace geometry {
@@ -20,11 +20,10 @@ void NaiveJoinStrategyWithMultipleLoops() {
   auto [p_chains, q_chains] = test::generate_multiple_loops(5, 20, 1.0, 0);
   Mesh mesh;
   MultiSurfaceStats stats;
-  assert((NaiveJoinStrategy<SeamSearchSA<LinearSearchSlg<MinArea>,
-                                           ConvergenceStoppingRule>>::
-                 generate(
-                p_chains, q_chains, MinArea(), 1000, &stats, &mesh)) ==
-            SolutionStats::OK);
+  assert((NaiveJoinStrategy<
+             SeamSearchSA<LinearSearchSlg<MinArea>, ConvergenceStoppingRule>>::
+              generate(p_chains, q_chains, MinArea(), 1000, &stats, &mesh)) ==
+         SolutionStats::OK);
   assert(stats.pairings.size() == 5);
   assert(!mesh.is_empty());
   std::cout << "OBJ String for NaiveJoinStrategyWithMultipleLoops:\n"
@@ -417,21 +416,23 @@ f 190 154 153
 // Verified
 void NaiveJoinStrategyWithNestedLoops() {
   std::cout << "Starting NaiveJoinStrategyWithNestedLoops..." << std::endl;
-  PolygonalChain p0 = test::generate_irregular_loop(
-      40, 2.0, {0.1}, {5}, {0}, 0.0, {0.05}, {3}, {0});
-  PolygonalChain q0 = test::generate_irregular_loop(
-      40, 2.0, {0.1}, {5}, {0}, 1.0, {0.05}, {3}, {0});
-  PolygonalChain p1 = test::generate_irregular_loop(
-      30, 1.0, {0.1}, {4}, {0.2}, 0.0, {0.05}, {2}, {0.5});
-  PolygonalChain q1 = test::generate_irregular_loop(
-      30, 1.0, {0.1}, {4}, {0.2}, 1.0, {0.05}, {2}, {0.5});
+  PolygonalChain p0 = test::generate_irregular_loop(40, 2.0, {0.1}, {5}, {0},
+                                                    0.0, {0.05}, {3}, {0});
+  PolygonalChain q0 = test::generate_irregular_loop(40, 2.0, {0.1}, {5}, {0},
+                                                    1.0, {0.05}, {3}, {0});
+  PolygonalChain p1 = test::generate_irregular_loop(30, 1.0, {0.1}, {4}, {0.2},
+                                                    0.0, {0.05}, {2}, {0.5});
+  PolygonalChain q1 = test::generate_irregular_loop(30, 1.0, {0.1}, {4}, {0.2},
+                                                    1.0, {0.05}, {2}, {0.5});
   PolygonalChain p2_base = test::generate_irregular_loop(
       20, 1.0, {0.1}, {3}, {0.4}, 0.0, {0.05}, {4}, {0.3});
   PolygonalChain q2_base = test::generate_irregular_loop(
       20, 1.0, {0.1}, {3}, {0.4}, 1.0, {0.05}, {4}, {0.3});
   PolygonalChain p2, q2;
-  for (const auto& p : p2_base) p2.push_back(PointCgal(p.x() + 5, p.y(), p.z()));
-  for (const auto& p : q2_base) q2.push_back(PointCgal(p.x() + 5, p.y(), p.z()));
+  for (const auto& p : p2_base)
+    p2.push_back(PointCgal(p.x() + 5, p.y(), p.z()));
+  for (const auto& p : q2_base)
+    q2.push_back(PointCgal(p.x() + 5, p.y(), p.z()));
 
   std::vector<PolygonalChain> p_chains = {p0, p1, p2};
   std::vector<PolygonalChain> q_chains = {q0, q1, q2};
@@ -441,11 +442,10 @@ void NaiveJoinStrategyWithNestedLoops() {
 
   Mesh mesh;
   MultiSurfaceStats stats;
-  assert((NaiveJoinStrategy<SeamSearchSA<LinearSearchSlg<MinArea>,
-                                           ConvergenceStoppingRule>>::
-                 generate(
-                p_chains, q_chains, MinArea(), 1000, &stats, &mesh)) ==
-            SolutionStats::OK);
+  assert((NaiveJoinStrategy<
+             SeamSearchSA<LinearSearchSlg<MinArea>, ConvergenceStoppingRule>>::
+              generate(p_chains, q_chains, MinArea(), 1000, &stats, &mesh)) ==
+         SolutionStats::OK);
   assert(stats.pairings.size() == 3);
   assert(!mesh.is_empty());
   std::cout << "OBJ String for NaiveJoinStrategyWithNestedLoops:\n"

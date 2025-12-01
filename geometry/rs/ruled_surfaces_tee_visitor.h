@@ -41,8 +41,4 @@ class RuledSurfaceTeeVisitor : public RuledSurfaceVisitor {
   RuledSurfaceVisitor& v2_;
 };
 
-
-
-} // namespace ruled_surfaces
-
-
+}  // namespace ruled_surfaces

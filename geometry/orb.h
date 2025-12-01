@@ -1,17 +1,18 @@
 #pragma once
 
-// TODO: This interface needs to be redefined to use Assets rather than Geometry *.
-// The Assets object should be passed to allow for proper asset management (e.g., caching).
+// TODO: This interface needs to be redefined to use Assets rather than Geometry
+// *. The Assets object should be passed to allow for proper asset management
+// (e.g., caching).
 
+#include <CGAL/Complex_2_in_triangulation_3.h>  // Added
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/IO/facets_in_complex_2_to_triangle_mesh.h>
 #include <CGAL/Implicit_surface_3.h>
 #include <CGAL/Mesh_criteria_3.h>
 #include <CGAL/Surface_mesh.h>
-#include <CGAL/Surface_mesh_default_triangulation_3.h> // Added
-#include <CGAL/Complex_2_in_triangulation_3.h>        // Added
+#include <CGAL/Surface_mesh_default_triangulation_3.h>  // Added
 
-#include "assets.h" // Include Assets.h
+#include "assets.h"  // Include Assets.h
 #include "geometry.h"
 
 template <typename FT, typename Point>
@@ -45,7 +46,7 @@ static GeometryId MakeOrb(Assets& assets, double angular_bound,
   CGAL::Surface_mesh<IK::Point_3> epick_mesh;
   CGAL::facets_in_complex_2_to_triangle_mesh(c2t3, epick_mesh);
 
-  Geometry geometry; // Create a local Geometry object
+  Geometry geometry;  // Create a local Geometry object
   geometry.DecodeSurfaceMesh<IK>(epick_mesh);
-  return assets.TextId(geometry); // Return GeometryId via assets
+  return assets.TextId(geometry);  // Return GeometryId via assets
 }

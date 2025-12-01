@@ -10,4 +10,4 @@ struct MultiSurfaceStats {
   double total_cost = 0.0;
 };
 
-} // namespace ruled_surfaces
+}  // namespace ruled_surfaces

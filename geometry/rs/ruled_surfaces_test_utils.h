@@ -1,5 +1,10 @@
 #pragma once
 
+#include <CGAL/Aff_transformation_3.h>
+#include <CGAL/Polygon_mesh_processing/manifoldness.h>
+#include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
+#include <CGAL/Surface_mesh.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -19,11 +24,6 @@
 #include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_strategy_slg_helpers.h"
 
-#include <CGAL/Aff_transformation_3.h>
-#include <CGAL/Polygon_mesh_processing/manifoldness.h>
-#include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
-#include <CGAL/Surface_mesh.h>
-
 namespace ruled_surfaces {
 
 /**
@@ -40,7 +40,8 @@ namespace ruled_surfaces {
  *   ObjectiveTx<MinObj, 0.0, 1.0> tx; -> cost = 0.0 + value * 1.0 = value
  * - To convert a maximization objective 'MaxObj' (score in [0, 1])
  *   to a minimization objective with non-negative costs for Dijkstra:
- *   ObjectiveTx<MaxObj, 1.0, -1.0> tx; -> cost = 1.0 + value * (-1.0) = 1.0 - value
+ *   ObjectiveTx<MaxObj, 1.0, -1.0> tx; -> cost = 1.0 + value * (-1.0) = 1.0 -
+ * value
  *
  * @tparam Objective The objective type to wrap (e.g., MinArea, MaxConvexity).
  * @tparam base The additive constant in the transformation.
@@ -73,8 +74,7 @@ inline std::string GetMeshAsObjString(
   int next_vertex_idx = 1;
 
   std::vector<std::pair<PointCgal, PointCgal>> local_rulings;
-  if (polylines.size() == 2 && !polylines[0].empty() &&
-      !polylines[1].empty()) {
+  if (polylines.size() == 2 && !polylines[0].empty() && !polylines[1].empty()) {
     local_rulings.push_back({polylines[0].front(), polylines[1].front()});
   }
 
@@ -145,15 +145,17 @@ inline std::pair<PolygonalChain, PolygonalChain> CreateUnitSquareGeometry() {
 }
 
 inline std::pair<PolygonalChain, PolygonalChain> CreateUnitCubeSidesGeometry() {
-  PolygonalChain p = {PointCgal(0, 0, 0), PointCgal(1, 0, 0), PointCgal(1, 1, 0),
-                      PointCgal(0, 1, 0), PointCgal(0, 0, 0)};
-  PolygonalChain q = {PointCgal(0, 0, 1), PointCgal(1, 0, 1), PointCgal(1, 1, 1),
-                      PointCgal(0, 1, 1), PointCgal(0, 0, 1)};
+  PolygonalChain p = {PointCgal(0, 0, 0), PointCgal(1, 0, 0),
+                      PointCgal(1, 1, 0), PointCgal(0, 1, 0),
+                      PointCgal(0, 0, 0)};
+  PolygonalChain q = {PointCgal(0, 0, 1), PointCgal(1, 0, 1),
+                      PointCgal(1, 1, 1), PointCgal(0, 1, 1),
+                      PointCgal(0, 0, 1)};
   return {p, q};
 }
 
-inline std::pair<PolygonalChain, PolygonalChain>
-CreateRotatedCrescentsGeometry(int num_segments) {
+inline std::pair<PolygonalChain, PolygonalChain> CreateRotatedCrescentsGeometry(
+    int num_segments) {
   const int num_points = num_segments + 1;
   const double radius = 1.0;
   const double pi = std::acos(-1.0);
@@ -181,9 +183,8 @@ CreateRotatedClosedCrescentsGeometry(int num_arc_segments) {
   const double outer_angle_step = (angle_end - angle_start) / num_arc_segments;
   const double inner_radius = std::sqrt(0.8125);
   const double inner_cx = -0.75;
-  const double inner_angle =
-      atan2(outer_radius * sin(angle_end),
-            outer_radius * cos(angle_end) - inner_cx);
+  const double inner_angle = atan2(outer_radius * sin(angle_end),
+                                   outer_radius * cos(angle_end) - inner_cx);
   const double inner_angle_step = (2 * inner_angle) / num_arc_segments;
 
   PolygonalChain p_pts, q_pts;
@@ -227,9 +228,9 @@ CreateIdeallyRotatedClosedCrescents3Geometry() {
 
 // Creates two congruent, closed star-shaped polygons. One polygon is rotated
 // relative to the other and displaced along the z-axis. This configuration is
-// useful for testing ruled surface algorithms because the resulting surface can
-// have complex self-intersections and regions of both positive and negative
-// curvature, challenging the algorithm's robustness.
+// useful for testing ruled surface algorithms because the resulting surface
+// can have complex self-intersections and regions of both positive and
+// negative curvature, challenging the algorithm's robustness.
 inline std::pair<PolygonalChain, PolygonalChain> CreateTwistedStarsGeometry(
     int n_points, int n_lobes, double amplitude) {
   PolygonalChain p, q;
@@ -257,21 +258,18 @@ inline std::pair<PolygonalChain, PolygonalChain> CreateWavyRingsGeometry(
     double angle = i * step;
     p.push_back(PointCgal(radius * cos(angle), radius * sin(angle), 0));
     q.push_back(PointCgal(radius * cos(angle), radius * sin(angle),
-                        1.0 + amplitude * sin(frequency * angle)));
+                          1.0 + amplitude * sin(frequency * angle)));
   }
   p.push_back(p.front());
   q.push_back(q.front());
   return {p, q};
 }
 
-inline PolygonalChain generate_irregular_loop(int num_points, double r0,
-                                             const std::vector<double>& r_a,
-                                             const std::vector<double>& r_f,
-                                             const std::vector<double>& r_p,
-                                             double z0,
-                                             const std::vector<double>& z_a,
-                                             const std::vector<double>& z_f,
-                                             const std::vector<double>& z_p) {
+inline PolygonalChain generate_irregular_loop(
+    int num_points, double r0, const std::vector<double>& r_a,
+    const std::vector<double>& r_f, const std::vector<double>& r_p, double z0,
+    const std::vector<double>& z_a, const std::vector<double>& z_f,
+    const std::vector<double>& z_p) {
   PolygonalChain chain;
   chain.reserve(num_points);
   const double pi = std::acos(-1.0);
@@ -308,11 +306,9 @@ generate_complex_asymmetric_loops(int p_points, int q_points,
 inline std::pair<PolygonalChain, PolygonalChain>
 CreateHighlyIrregularLoopsGeometry() {
   PolygonalChain p = generate_irregular_loop(
-      50, 1.0, {0.2, 0.1}, {7.0, 13.0}, {0.0, 0.5}, 0.0,
-      {0.1}, {5.0}, {0.0});
+      50, 1.0, {0.2, 0.1}, {7.0, 13.0}, {0.0, 0.5}, 0.0, {0.1}, {5.0}, {0.0});
   PolygonalChain q = generate_irregular_loop(
-      60, 1.0, {0.25, 0.15}, {5.0, 11.0}, {0.2, 0.7}, 0.8,
-      {0.1}, {7.0}, {0.0});
+      60, 1.0, {0.25, 0.15}, {5.0, 11.0}, {0.2, 0.7}, 0.8, {0.1}, {7.0}, {0.0});
   return {p, q};
 }
 
@@ -332,14 +328,14 @@ generate_multiple_loops(int num_loops, int num_points_per_loop,
     double angle_step = 2.0 * pi / (num_points_per_loop - 1);
     for (int j = 0; j < num_points_per_loop - 1; ++j) {
       double angle = j * angle_step;
-      p_loop.push_back(PointCgal(
-          offset_x + loop_radius * std::cos(angle) + coord_dist(rng),
-          loop_radius * std::sin(angle) + coord_dist(rng),
-          0.0 + coord_dist(rng)));
-      q_loop.push_back(PointCgal(
-          offset_x + loop_radius * std::cos(angle) + coord_dist(rng),
-          loop_radius * std::sin(angle) + coord_dist(rng),
-          1.0 + coord_dist(rng)));
+      p_loop.push_back(
+          PointCgal(offset_x + loop_radius * std::cos(angle) + coord_dist(rng),
+                    loop_radius * std::sin(angle) + coord_dist(rng),
+                    0.0 + coord_dist(rng)));
+      q_loop.push_back(
+          PointCgal(offset_x + loop_radius * std::cos(angle) + coord_dist(rng),
+                    loop_radius * std::sin(angle) + coord_dist(rng),
+                    1.0 + coord_dist(rng)));
     }
     p_loop.push_back(p_loop.front());
     q_loop.push_back(q_loop.front());
@@ -353,5 +349,4 @@ generate_multiple_loops(int num_loops, int num_points_per_loop,
 }
 
 }  // namespace test
-} // namespace ruled_surfaces
-
+}  // namespace ruled_surfaces

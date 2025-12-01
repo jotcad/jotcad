@@ -1,11 +1,12 @@
+#include <cassert>
+#include <iostream>
+
 #include "ruled_surfaces_join_strategy_naive.h"
 #include "ruled_surfaces_objective_min_area.h"
 #include "ruled_surfaces_sa_stopping_rules.h"
 #include "ruled_surfaces_strategy_linear_slg.h"
 #include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_test_utils.h"
-#include <cassert>
-#include <iostream>
 
 namespace geometry {
 namespace test {
@@ -18,10 +19,10 @@ void RuleComplexAsymmetricLoops() {
   PolygonalChain p_result, q_result;
   SolutionStats stats;
   assert((RuleLoopsSA<LinearSearchSlg<MinArea>, ConvergenceStoppingRule>(
-                p, q,
-                {.seed = 0, .stopping_rule = ConvergenceStoppingRule(200, 10000)},
-                &mesh, &p_result, &q_result, &stats)) ==
-            SolutionStats::PATH_LIMIT_EXCEEDED);
+             p, q,
+             {.seed = 0, .stopping_rule = ConvergenceStoppingRule(200, 10000)},
+             &mesh, &p_result, &q_result, &stats)) ==
+         SolutionStats::PATH_LIMIT_EXCEEDED);
   std::cout << "OBJ String for Ruled Complex Asymmetric Loops:\n"
             << test::GetMeshAsObjString(mesh, {p_result, q_result})
             << std::endl;
@@ -126,10 +127,10 @@ void RuleRotatedClosedCrescents3Geometry() {
   PolygonalChain p_result, q_result;
   SolutionStats stats;
   assert((RuleLoopsSA<LinearSearchSlg<MinArea>, ConvergenceStoppingRule>(
-                p, q,
-                {.seed = 0, .stopping_rule = ConvergenceStoppingRule(200, 10000)},
-                &mesh, &p_result, &q_result, &stats)) ==
-            SolutionStats::PATH_LIMIT_EXCEEDED);
+             p, q,
+             {.seed = 0, .stopping_rule = ConvergenceStoppingRule(200, 10000)},
+             &mesh, &p_result, &q_result, &stats)) ==
+         SolutionStats::PATH_LIMIT_EXCEEDED);
   std::cout << "OBJ String for Rotated Closed Crescents 3 Geometry:\n"
             << test::GetMeshAsObjString(mesh, {p_result, q_result})
             << std::endl;
@@ -177,7 +178,7 @@ void RuleHighlyIrregularLoops() {
       p, q, {.seed = 0, .stopping_rule = ConvergenceStoppingRule(200, 10000)},
       &mesh, &p_result, &q_result, &stats);
   assert(status == SolutionStats::PATH_LIMIT_EXCEEDED ||
-              status == SolutionStats::NO_SOLUTION_FOUND);
+         status == SolutionStats::NO_SOLUTION_FOUND);
   std::cout << "OBJ String for Highly Irregular Loops:\n"
             << test::GetMeshAsObjString(mesh, {p_result, q_result})
             << std::endl;

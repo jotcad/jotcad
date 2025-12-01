@@ -26,14 +26,14 @@ uint32_t memory_free() {
 
 uint32_t memory_exhaust() {
   struct chunk {
-    struct chunk *next;
+    struct chunk* next;
   };
-  struct chunk *head = NULL;
+  struct chunk* head = NULL;
   size_t total = 0;
   size_t increment = 1024 * 1024 * 100;
   for (;;) {
     total += increment;
-    struct chunk *c = (struct chunk *)malloc(increment);
+    struct chunk* c = (struct chunk*)malloc(increment);
     if (!c) {
       std::cout << "QQ/memory_exhaust: exhausted" << std::endl;
       while (head) {
