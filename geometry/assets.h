@@ -52,13 +52,8 @@ class Assets {
 
   Geometry& GetGeometry(const GeometryId& id) {
     if (!id.IsString()) {
-<<<<<<< HEAD
       Napi::TypeError::New(Env(), "Invalid GeometryId")
           .ThrowAsJavaScriptException();
-=======
-      Napi::TypeError::New(Env(), "Invalid GeometryId")
-          .ThrowAsJavaScriptException();
->>>>>>> main
     }
     Napi::Object space = Space("geometry");
     Napi::Object wrapped_geometry = space.Get(id).As<Napi::Object>();

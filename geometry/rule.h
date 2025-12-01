@@ -77,18 +77,6 @@ inline GeometryId Rule(
                                             // will be used in a different way
                                             // for StoppingRule
     uint32_t stopping_rule_iters_without_improvement) {
-=======
-}  // namespace internal
-
-inline GeometryId Rule(
-    Assets& assets, Shape& from_shape, Shape& to_shape,
-    std::optional<unsigned int> seed,
-    uint32_t stopping_rule_max_iterations,  // This is still passed from JS, but
-                                            // will be used in a different way
-                                            // for StoppingRule
-    uint32_t stopping_rule_iters_without_improvement) {
-
->>>>>>> main
   std::vector<PolygonalChain> from_polylines;
   internal::GetPolylines(assets, from_shape, from_polylines);
 
@@ -212,10 +200,3 @@ inline GeometryId Rule(
 }
 
 }  // namespace geometry
-=======
-
-return mesh_id;
-}
-
-}  // namespace geometry
->>>>>>> main
