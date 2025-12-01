@@ -84,8 +84,12 @@ struct TargetCostStoppingRule {
 // This rule is generally preferred over MaxIterationsStoppingRule as it
 // terminates early if the solution converges.
 struct ConvergenceStoppingRule {
+<<<<<<< HEAD
   ConvergenceStoppingRule()
       : convergence_iterations_(100), max_iterations_(1000) {}
+=======
+  ConvergenceStoppingRule() : convergence_iterations_(100), max_iterations_(1000) {}
+>>>>>>> main
   ConvergenceStoppingRule(int convergence_iters, int max_iters,
                           StoppingRuleStats* stats = nullptr)
       : convergence_iterations_(convergence_iters),
@@ -123,4 +127,8 @@ struct ConvergenceStoppingRule {
   StoppingRuleStats* stats_ = nullptr;
 };
 
+<<<<<<< HEAD
 }  // namespace ruled_surfaces
+=======
+} // namespace ruled_surfaces
+>>>>>>> main

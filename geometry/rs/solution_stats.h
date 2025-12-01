@@ -22,4 +22,9 @@ struct SolutionStats {
   std::string decision_log;
 };
 
+<<<<<<< HEAD
 }  // namespace ruled_surfaces
+=======
+} // namespace ruled_surfaces
+
+>>>>>>> main

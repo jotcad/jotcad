@@ -139,4 +139,8 @@ void LinearSearchDlg<Objective>::generate(const PolygonalChain& p,
   visitor.OnFinish(final_stats);
 }
 
+<<<<<<< HEAD
 }  // namespace ruled_surfaces
+=======
+} // namespace ruled_surfaces
+>>>>>>> main

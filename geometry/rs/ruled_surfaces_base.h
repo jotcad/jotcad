@@ -1,5 +1,6 @@
 #pragma once
 
+<<<<<<< HEAD
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
 #include <CGAL/AABB_traits.h>
 #include <CGAL/AABB_tree.h>
@@ -10,6 +11,8 @@
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/self_intersections.h>
 
+=======
+>>>>>>> main
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -29,6 +32,18 @@
 #include "objective.h"
 #include "solution_stats.h"
 #include "types.h"
+<<<<<<< HEAD
+=======
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/orientation.h>
+#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/self_intersections.h>
+#include <CGAL/AABB_face_graph_triangle_primitive.h>
+#include <CGAL/Polygon_mesh_processing/manifoldness.h>
+#include <CGAL/AABB_traits.h>
+#include <CGAL/AABB_tree.h>
+>>>>>>> main
 
 namespace ruled_surfaces {
 
@@ -185,4 +200,8 @@ std::optional<std::pair<Mesh, double>> stitch_and_calculate_cost(
 }
 }  // namespace internal
 
+<<<<<<< HEAD
 }  // namespace ruled_surfaces
+=======
+} // namespace ruled_surfaces
+>>>>>>> main

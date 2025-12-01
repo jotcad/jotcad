@@ -1,5 +1,6 @@
 #pragma once
 
+<<<<<<< HEAD
 #include <CGAL/Cartesian_converter.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Polygon_mesh_processing/measure.h>  // For volume
@@ -14,18 +15,42 @@
 #include <sstream>
 #include <string>
 #include <vector>
+=======
+#include <CGAL/Surface_mesh.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Cartesian_converter.h>
+#include <CGAL/Polygon_mesh_processing/repair.h>    // For manifold_hole_filling
+#include <CGAL/Polygon_mesh_processing/measure.h>   // For volume
+#include <CGAL/Polygon_mesh_processing/orientation.h> // For reverse_face_orientations
+#include <boost/circular_buffer.hpp>         // Required by extract_boundary_cycles
+#include <boost/variant.hpp>                 // Required by extract_boundary_cycles
+#include <string>
+#include <vector>
+#include <optional>
+#include <sstream>
+#include <iostream>
+>>>>>>> main
 
 #include "assets.h"
 #include "geometry.h"
 
 // Ruled surface algorithm headers
+<<<<<<< HEAD
 #include "rs/objective.h"  // Added for Objective type
+=======
+#include "rs/objective.h" // Added for Objective type
+#include "rs/solution_stats.h"
+#include "rs/types.h" // For PolygonalChain, Mesh etc.
+>>>>>>> main
 #include "rs/ruled_surfaces_objective_min_area.h"
 #include "rs/ruled_surfaces_sa_stopping_rules.h"
 #include "rs/ruled_surfaces_strategy_linear_slg.h"
 #include "rs/ruled_surfaces_strategy_seam_search_sa.h"
+<<<<<<< HEAD
 #include "rs/solution_stats.h"
 #include "rs/types.h"  // For PolygonalChain, Mesh etc.
+=======
+>>>>>>> main
 
 namespace geometry {
 // Bring types from ruled_surfaces into scope for convenience
@@ -33,8 +58,12 @@ using namespace ruled_surfaces;
 
 namespace internal {
 
+<<<<<<< HEAD
 inline PolygonalChain ConvertEKPointsToIKPolygonalChain(
     const std::vector<CGAL::Point_3<EK>>& ek_points) {
+=======
+inline PolygonalChain ConvertEKPointsToIKPolygonalChain(const std::vector<CGAL::Point_3<EK>>& ek_points) {
+>>>>>>> main
   PolygonalChain chain;
   CGAL::Cartesian_converter<EK, IK> convert_ek_to_ik;
   for (const auto& ek_point : ek_points) {
@@ -43,16 +72,24 @@ inline PolygonalChain ConvertEKPointsToIKPolygonalChain(
   return chain;
 }
 
+<<<<<<< HEAD
 void GetPolylines(Assets& assets, Shape& shape,
                   std::vector<PolygonalChain>& polylines) {
+=======
+void GetPolylines(Assets& assets, Shape& shape, std::vector<PolygonalChain>& polylines) {
+>>>>>>> main
   if (shape.napi_.Has("geometry")) {
     Napi::Value id_val = shape.napi_.Get("geometry");
     if (id_val.IsString()) {
       std::string id_str = id_val.As<Napi::String>().Utf8Value();
       Geometry geom = assets.GetGeometry(id_val).Transform(shape.GetTf());
       if (!geom.vertices_.empty()) {
+<<<<<<< HEAD
         polylines.push_back(
             internal::ConvertEKPointsToIKPolygonalChain(geom.vertices_));
+=======
+        polylines.push_back(internal::ConvertEKPointsToIKPolygonalChain(geom.vertices_));
+>>>>>>> main
       }
     }
   }
@@ -68,6 +105,7 @@ void GetPolylines(Assets& assets, Shape& shape,
   }
 }
 
+<<<<<<< HEAD
 }  // namespace internal
 
 inline GeometryId Rule(
@@ -77,6 +115,19 @@ inline GeometryId Rule(
                                             // will be used in a different way
                                             // for StoppingRule
     uint32_t stopping_rule_iters_without_improvement) {
+=======
+} // namespace internal
+
+
+inline GeometryId Rule(
+    Assets& assets,
+    Shape& from_shape,
+    Shape& to_shape,
+    std::optional<unsigned int> seed,
+    uint32_t stopping_rule_max_iterations, // This is still passed from JS, but will be used in a different way for StoppingRule
+    uint32_t stopping_rule_iters_without_improvement) {
+
+>>>>>>> main
   std::vector<PolygonalChain> from_polylines;
   internal::GetPolylines(assets, from_shape, from_polylines);
 
@@ -84,9 +135,13 @@ inline GeometryId Rule(
   internal::GetPolylines(assets, to_shape, to_polylines);
 
   if (from_polylines.empty() || to_polylines.empty()) {
+<<<<<<< HEAD
     Napi::TypeError::New(assets.Env(),
                          "Could not extract polylines from shapes for ruling.")
         .ThrowAsJavaScriptException();
+=======
+    Napi::TypeError::New(assets.Env(), "Could not extract polylines from shapes for ruling.").ThrowAsJavaScriptException();
+>>>>>>> main
   }
 
   PolygonalChain p_in = from_polylines[0];
@@ -101,6 +156,7 @@ inline GeometryId Rule(
   }
 
   // Cleaned up Logging: Just print input polylines
+<<<<<<< HEAD
   std::cout << "DEBUG: Rule - Input p_in (" << p_in.size()
             << " points):" << std::endl;
   for (const auto& pt : p_in) {
@@ -130,11 +186,34 @@ inline GeometryId Rule(
       stopping_rule_max_iterations,
       stopping_rule_iters_without_improvement);  // Use the parameters for
                                                  // ConvergenceStoppingRule
+=======
+  std::cout << "DEBUG: Rule - Input p_in (" << p_in.size() << " points):" << std::endl;
+  for (const auto& pt : p_in) {
+    std::cout << "  (" << pt.x() << ", " << pt.y() << ", " << pt.z() << ")" << std::endl;
+  }
+  std::cout << "DEBUG: Rule - Input q_in (" << q_in.size() << " points):" << std::endl;
+  for (const auto& pt : q_in) {
+    std::cout << "  (" << pt.x() << ", " << pt.y() << ", " << pt.z() << ")" << std::endl;
+  }
+
+  // LOG: Stopping rule parameters
+  std::cout << "DEBUG: Rule - StoppingRule parameters: max_iterations=" << stopping_rule_max_iterations
+            << ", iters_without_improvement=" << stopping_rule_iters_without_improvement << std::endl;
+
+  // 3. Prepare parameters for AlignLoopsSA
+  using TriangulationStrategy = LinearSearchSlg<MinArea>;
+  using StoppingRule = ConvergenceStoppingRule; // Changed from MaxIterationsStoppingRule
+
+  typename SeamSearchSA<TriangulationStrategy, StoppingRule>::Options options;
+  options.seed = seed;
+  options.stopping_rule = StoppingRule(stopping_rule_max_iterations, stopping_rule_iters_without_improvement); // Use the parameters for ConvergenceStoppingRule
+>>>>>>> main
 
   Mesh mesh_result;
   SolutionStats stats;
 
   // 4. Call AlignLoopsSA
+<<<<<<< HEAD
   std::pair<PolygonalChain, PolygonalChain> aligned_polylines =
       AlignLoopsSA<TriangulationStrategy, StoppingRule>(
           p_in, q_in, options, &mesh_result,
@@ -157,11 +236,29 @@ inline GeometryId Rule(
   // Determine correct face orientation based on volume for a closed mesh.
   // Create a temporary mesh to close holes and compute volume without modifying
   // mesh_result initially.
+=======
+  std::pair<PolygonalChain, PolygonalChain> aligned_polylines = AlignLoopsSA<TriangulationStrategy, StoppingRule>(
+      p_in, q_in, options, &mesh_result, &stats); // Pass mesh_result by pointer to be filled
+  
+  // LOG: mesh_result and SolutionStats after AlignLoopsSA
+  std::cout << "DEBUG: Rule - mesh_result after AlignLoopsSA: Vertices=" << mesh_result.number_of_vertices()
+            << ", Edges=" << mesh_result.number_of_edges() << ", Faces=" << mesh_result.number_of_faces() << std::endl;
+  std::cout << "DEBUG: Rule - SolutionStats after AlignLoopsSA:" << std::endl;
+  std::cout << "  Status: " << stats.status << std::endl; // Removed status_to_string()
+  std::cout << "  Cost: " << stats.cost << std::endl;
+  std::cout << "  Shift: " << stats.shift << std::endl;
+  std::cout << "  Is Reversed: " << (stats.is_reversed ? "true" : "false") << std::endl;
+  std::cout << "  Decision Log: " << stats.decision_log << std::endl;
+
+  // Determine correct face orientation based on volume for a closed mesh.
+  // Create a temporary mesh to close holes and compute volume without modifying mesh_result initially.
+>>>>>>> main
   Mesh temp_mesh = mesh_result;
 
   // Attempt to close holes for volume computation.
   // Extract all boundary cycles.
   std::vector<Mesh::Halfedge_index> border_cycles;
+<<<<<<< HEAD
   CGAL::Polygon_mesh_processing::extract_boundary_cycles(
       temp_mesh, std::back_inserter(border_cycles));
 
@@ -176,6 +273,20 @@ inline GeometryId Rule(
             << temp_mesh.number_of_vertices()
             << ", Edges=" << temp_mesh.number_of_edges()
             << ", Faces=" << temp_mesh.number_of_faces() << std::endl;
+=======
+  CGAL::Polygon_mesh_processing::extract_boundary_cycles(temp_mesh, std::back_inserter(border_cycles));
+
+  // Fill holes for each boundary cycle.
+  for (const auto& h : border_cycles) {
+      std::vector<Mesh::Face_index>  patch_facets;
+      CGAL::Polygon_mesh_processing::triangulate_hole(
+          temp_mesh, h, std::back_inserter(patch_facets));
+  }
+  // LOG: temp_mesh after hole filling
+  std::cout << "DEBUG: Rule - temp_mesh after hole filling: Vertices=" << temp_mesh.number_of_vertices()
+            << ", Edges=" << temp_mesh.number_of_edges() << ", Faces=" << temp_mesh.number_of_faces() << std::endl;
+
+>>>>>>> main
 
   // After filling holes, compute the volume.
   // Volume can be negative if normals point inward.
@@ -184,6 +295,7 @@ inline GeometryId Rule(
   // If volume is negative, it indicates normals are pointing inwards.
   // We want outward pointing normals, so reverse if volume is negative.
   if (volume < 0) {
+<<<<<<< HEAD
     CGAL::Polygon_mesh_processing::reverse_face_orientations(mesh_result);
     std::cout << "Reversed face orientations due to negative volume."
               << std::endl;
@@ -192,12 +304,29 @@ inline GeometryId Rule(
               << std::endl;
   }
 
+=======
+      CGAL::Polygon_mesh_processing::reverse_face_orientations(mesh_result);
+      std::cout << "Reversed face orientations due to negative volume." << std::endl;
+  } else {
+      std::cout << "Face orientations are outward (positive volume)." << std::endl;
+  }
+
+
+>>>>>>> main
   // 5. Convert mesh_result to Geometry and store in Assets
   Geometry geom_result;
   geom_result.DecodeSurfaceMesh<IK>(mesh_result);
   GeometryId mesh_id = assets.TextId(geom_result);
+<<<<<<< HEAD
 
   return mesh_id;
 }
 
 }  // namespace geometry
+=======
+  
+  return mesh_id;
+}
+
+} // namespace geometry
+>>>>>>> main

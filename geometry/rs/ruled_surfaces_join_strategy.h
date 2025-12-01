@@ -19,4 +19,8 @@ class JoinStrategy {
       int max_paths_per_pair, MultiSurfaceStats* stats, Mesh* result) = = 0;
 };
 
+<<<<<<< HEAD
 }  // namespace ruled_surfaces
+=======
+} // namespace ruled_surfaces
+>>>>>>> main

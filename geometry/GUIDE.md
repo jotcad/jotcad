@@ -4,6 +4,7 @@ This guide outlines how to add new operations and features to JotCAD.
 
 ## Adding a New Operation
 
+<<<<<<< HEAD
 To add a new geometric operation (e.g., `Orb`, `Box`, `Clip`, `Rule`), follow
 these steps:
 
@@ -13,6 +14,18 @@ these steps:
       should generally reside in header files (e.g., `geometry/your_op_name.h`)
       as header-only functions. This means all function definitions must be
       `inline` or within a class/struct definition.
+=======
+To add a new geometric operation (e.g., `Orb`, `Box`, `Clip`, `Rule`),
+follow these steps:
+
+1.  **Define the C++ implementation (Header-Only):**
+
+    - All core C++ logic for geometric operations within the `geometry/`
+      module should generally reside in header files (e.g.,
+      `geometry/your_op_name.h`) as header-only functions. This means all
+      function definitions must be `inline` or within a class/struct
+      definition.
+>>>>>>> main
     - This often involves:
       - Retrieving input `Geometry` objects from `Assets` using `Shape`'s
         `GeometryId()` and applying transformations (`Shape::GetTf()`).
@@ -31,6 +44,7 @@ these steps:
 2.  **Expose the C++ function via Napi Binding (`geometry/wasm.cc`):**
 
     - Include your new C++ header (e.g., `#include "your_op_name.h"`).
+<<<<<<< HEAD
     - Create a static
       `Napi::Value YourOpNameBinding(const Napi::CallbackInfo& info)` function.
       - This function is responsible for:
@@ -44,6 +58,21 @@ these steps:
           `geometry::YourOpName(...)`).
         - Converting the C++ function's return value (e.g., `GeometryId`) back
           into a `Napi::Value` for JavaScript.
+=======
+    - Create a static `Napi::Value YourOpNameBinding(const Napi::CallbackInfo& info)`
+      function.
+      - This function is responsible for:
+        - Asserting the correct number of arguments (`AssertArgCount`).
+        - Parsing JavaScript inputs (e.g., `Assets` object, `Shape`
+          objects, `Napi::Object` for options) and converting them to
+          appropriate C++ types. Note that `Shape` objects will be
+          passed as `Shape&` (non-const reference) to allow internal
+          caching by `Shape::GeometryId()` and `Shape::GetTf()`.
+        - Calling your C++ implementation function (e.g.,
+          `geometry::YourOpName(...)`).
+        - Converting the C++ function's return value (e.g.,
+          `GeometryId`) back into a `Napi::Value` for JavaScript.
+>>>>>>> main
     - Register your binding in the `Init` function using
       `exports.Set(Napi::String::New(env, "YourOpName"),`
       `Napi::Function::New(env, YourOpNameBinding));`.
@@ -56,13 +85,19 @@ these steps:
       `export const yourOpName = (...) => ...`).
     - This function should call `cgal.YourOpName(...)` with the provided
       arguments.
+<<<<<<< HEAD
     - Typically, the `GeometryId` returned by `cgal.YourOpName` is then wrapped
       in a `Shape` object using `makeShape({ geometry: returnedGeometryId })`.
+=======
+    - Typically, the `GeometryId` returned by `cgal.YourOpName` is then
+      wrapped in a `Shape` object using `makeShape({ geometry: returnedGeometryId })`.
+>>>>>>> main
     - Export your new operation from `geometry/main.js` (e.g.,
       `export { yourOpName } from './your_op_name.js';`).
 
 4.  **Update build scripts (if necessary):**
 
+<<<<<<< HEAD
     - Since C++ implementations in `geometry/` are header-only, there are no new
       `.cc` files to compile directly.
     - However, if your C++ implementation uses headers from a new subdirectory
@@ -76,10 +111,25 @@ these steps:
 
     - Create a new test file (e.g., `geometry/your_op_name.test.js`) to verify
       the correctness of the geometric operation.
+=======
+    - Since C++ implementations in `geometry/` are header-only, there are no
+      new `.cc` files to compile directly.
+    - However, if your C++ implementation uses headers from a new
+      subdirectory (e.g., `geometry/rs/`), add the corresponding include
+      path (e.g., `-I./rs`) to the `g++` command in
+      `geometry/build_native_node.sh`. You should run `build_native_node.sh` from the `geometry/` directory.
+      The `build_wasm_node.sh` script is used for WebAssembly compilation and is generally not required for Node.js based testing.
+
+5.  **Add tests:**
+
+    - Create a new test file (e.g., `geometry/your_op_name.test.js`) to
+      verify the correctness of the geometric operation.
+>>>>>>> main
     - Use the `node:test` framework with `describe` and `it`.
     - Utilize `withTestAssets` for asset management and test isolation.
     - Create input `Shape` objects as needed (e.g., using `Point` or `Points`
       functions from `geometry/point.js`).
+<<<<<<< HEAD
     - Assert that the returned `Shape` object from your JavaScript wrapper has a
       valid `geometry` (i.e., its `GeometryId` is not null or undefined). For
       visual operations, `renderPng` and `testPng` can be used.
@@ -96,18 +146,43 @@ these steps:
     - If the operation is used by the server (e.g., called from `ops/`), add it
       to the `whitelist.functions` and `whitelist.methods` arrays to allow it to
       be executed in the sandboxed environment.
+=======
+    - Assert that the returned `Shape` object from your JavaScript wrapper has
+      a valid `geometry` (i.e., its `GeometryId` is not null or undefined).
+      For visual operations, `renderPng` and `testPng` can be used.
+
+6.  **Define the operation in `ops/` (if applicable):**
+
+    - If this is a high-level operation intended for the JotCAD runtime,
+      create a new JavaScript file (e.g., `ops/your_op_name.js`) that
+      defines the operation's `spec` (schema for arguments) and `code` (how
+      to execute the operation).
+    - Use `registerOp` to make the operation available to the JotCAD runtime.
+
+7.  **Update `server/server.js` (if applicable):**
+    - If the operation is used by the server (e.g., called from `ops/`), add
+      it to the `whitelist.functions` and `whitelist.methods` arrays to
+      allow it to be executed in the sandboxed environment.
+>>>>>>> main
 
 ## Git Management
 
 - **`.gitignore`:** Ensure that build artifacts, downloaded dependencies, and
+<<<<<<< HEAD
   temporary files are properly ignored. Only `observed.*.png` files should be
   ignored among PNGs, as other PNGs are typically reference images for tests.
+=======
+  temporary files are properly ignored. Only `observed.*.png` files should
+  be ignored among PNGs, as other PNGs are typically reference images for
+  tests.
+>>>>>>> main
 - **Commit Messages:** Use clear, concise, and descriptive commit messages.
 
 ## Further Testing and Debugging
 
 ### Golden Image Testing
 
+<<<<<<< HEAD
 The testing strategy for visual operations relies on "golden image" testing. A
 reference PNG image (the "golden" image) is stored in the repository. When a
 test is run, it generates a new image, which is then compared pixel-by-pixel to
@@ -127,14 +202,30 @@ representation.
 After making any changes to the C++ code in the `geometry/` directory, you must
 rebuild the native addons by running `./build_native_node.sh` from the
 `geometry/` directory.
+=======
+The testing strategy for visual operations relies on "golden image" testing. A reference PNG image (the "golden" image) is stored in the repository. When a test is run, it generates a new image, which is then compared pixel-by-pixel to the golden image.
+
+If the generated image is different, the test will fail. The generated image is saved as `observed.*.png`. If the change is expected, the golden image can be updated by copying the `observed.*.png` file over the original golden image file.
+
+It's also important to test the serialized geometry using `testJot`. This ensures that the underlying geometry data is correct, not just the visual representation.
+
+### Build Process
+
+After making any changes to the C++ code in the `geometry/` directory, you must rebuild the native addons by running `./build_native_node.sh` from the `geometry/` directory.
+>>>>>>> main
 
 ### Debugging C++
 
 Debugging C++ code from Node.js can be challenging. Here are some tips:
 
+<<<<<<< HEAD
 - **Logging:** Use `std::cout` or `std::cerr` to print debug messages from your
   C++ code. These will be printed to the console when you run the tests.
 - **Advanced Debugging:** For more complex issues, it's possible to attach a C++
   debugger (like GDB or LLDB) to the Node.js process. This allows you to set
   breakpoints and inspect variables in your C++ code. This is an advanced
   technique and requires a properly configured development environment.
+=======
+- **Logging:** Use `std::cout` or `std::cerr` to print debug messages from your C++ code. These will be printed to the console when you run the tests.
+- **Advanced Debugging:** For more complex issues, it's possible to attach a C++ debugger (like GDB or LLDB) to the Node.js process. This allows you to set breakpoints and inspect variables in your C++ code. This is an advanced technique and requires a properly configured development environment.
+>>>>>>> main

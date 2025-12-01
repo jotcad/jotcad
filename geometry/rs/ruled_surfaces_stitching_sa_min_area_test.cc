@@ -1,15 +1,26 @@
+<<<<<<< HEAD
 #include <cassert>
 #include <cmath>
 #include <iostream>
 
+=======
+>>>>>>> main
 #include "ruled_surfaces_objective_min_area.h"
 #include "ruled_surfaces_sa_stopping_rules.h"
 #include "ruled_surfaces_strategy_linear_helpers.h"
 #include "ruled_surfaces_strategy_linear_slg.h"
 #include "ruled_surfaces_strategy_stitching_sa.h"
 #include "ruled_surfaces_tee_visitor.h"
+<<<<<<< HEAD
 #include "ruled_surfaces_test_utils.h"
 #include "ruled_surfaces_verbose_visitor.h"
+=======
+#include "ruled_surfaces_verbose_visitor.h"
+#include "ruled_surfaces_test_utils.h"
+#include <iostream>
+#include <cassert>
+#include <cmath>
+>>>>>>> main
 
 namespace geometry {
 namespace test {
@@ -17,7 +28,11 @@ namespace test {
 using namespace ::geometry::test;
 
 const std::string kExpectedObjMinAreaOnUnitCube =
+<<<<<<< HEAD
     R"(
+=======
+R"(
+>>>>>>> main
 v 0.000000 0.000000 0.000000
 v 0.000000 0.000000 1.000000
 v 1.000000 0.000000 0.000000
@@ -41,7 +56,11 @@ l 2 4 5 7
 // Verified
 void MinAreaOnUnitCube() {
   auto [p, q] = CreateUnitCubeSidesGeometry();
+<<<<<<< HEAD
 
+=======
+  
+>>>>>>> main
   // Cut the seams to create open polylines.
   // The seam is between vertex 0 and vertex N-1.
   // For the unit cube, N=5 for each polyline.
@@ -52,7 +71,12 @@ void MinAreaOnUnitCube() {
   Mesh result;
   BestSeamSearchVisitor visitor(&result, &stats);
   StitchingSA<MinArea, MaxIterationsStoppingRule> search(
+<<<<<<< HEAD
       MinArea(), {.stopping_rule = MaxIterationsStoppingRule(2000), .seed = 0});
+=======
+      MinArea(),
+      {.stopping_rule = MaxIterationsStoppingRule(2000), .seed = 0});
+>>>>>>> main
   search.generate(p_open, q_open, visitor);
   assert(!result.is_empty());
   assert(SolutionStats::OK == stats.status);
@@ -70,7 +94,11 @@ void MinAreaOnUnitCube() {
 }
 
 const std::string kExpectedObjRotatedCrescents3 =
+<<<<<<< HEAD
     R"(
+=======
+R"(
+>>>>>>> main
 v -0.500000 -0.866025 0.000000
 v 0.500000 0.866025 1.000000
 v -0.766044 0.642788 1.000000
@@ -168,8 +196,13 @@ void RotatedCrescents5() {
   auto [p_closed, q_closed] = CreateRotatedClosedCrescentsGeometry(5);
 
   typename SeamSearchSA<LinearSearchSlg<MinArea>,
+<<<<<<< HEAD
                         MaxIterationsStoppingRule>::Options options = {
       .seed = 0, .stopping_rule = MaxIterationsStoppingRule(2000)};
+=======
+                        MaxIterationsStoppingRule>::Options
+      options = {.seed = 0, .stopping_rule = MaxIterationsStoppingRule(2000)};
+>>>>>>> main
   auto [p_aligned, q_aligned] =
       AlignLoopsSA<LinearSearchSlg<MinArea>, MaxIterationsStoppingRule>(
           p_closed, q_closed, options);
@@ -180,7 +213,12 @@ void RotatedCrescents5() {
   Mesh result;
   BestSeamSearchVisitor visitor(&result, &stats);
   StitchingSA<MinArea, MaxIterationsStoppingRule> search(
+<<<<<<< HEAD
       MinArea(), {.stopping_rule = MaxIterationsStoppingRule(2000), .seed = 0});
+=======
+      MinArea(),
+      {.stopping_rule = MaxIterationsStoppingRule(2000), .seed = 0});
+>>>>>>> main
   search.generate(p_open, q_open, visitor);
 
   assert(!result.is_empty());
@@ -190,18 +228,31 @@ void RotatedCrescents5() {
   assert(obj_string == kExpectedObjRotatedCrescents5);
 }
 
+<<<<<<< HEAD
 void AlignLoopsForMinArea() {
   auto [p_closed, q_closed] = CreateRotatedClosedCrescentsGeometry(5);
   typename SeamSearchSA<LinearSearchSlg<MinArea>,
                         MaxIterationsStoppingRule>::Options options = {
       .seed = 0, .stopping_rule = MaxIterationsStoppingRule(2000)};
+=======
+
+void AlignLoopsForMinArea() {
+  auto [p_closed, q_closed] = CreateRotatedClosedCrescentsGeometry(5);
+  typename SeamSearchSA<LinearSearchSlg<MinArea>,
+                        MaxIterationsStoppingRule>::Options
+      options = {.seed = 0, .stopping_rule = MaxIterationsStoppingRule(2000)};
+>>>>>>> main
   auto [p_open, q_open] =
       AlignLoopsSA<LinearSearchSlg<MinArea>, MaxIterationsStoppingRule>(
           p_closed, q_closed, options);
   assert(!p_open.empty());
   assert(!q_open.empty());
   assert(LinearSearchSlg<MinArea>::estimate_cost(p_open, q_open, MinArea()) <
+<<<<<<< HEAD
          std::numeric_limits<double>::infinity());
+=======
+            std::numeric_limits<double>::infinity());
+>>>>>>> main
 }
 
 }  // namespace test

@@ -19,4 +19,8 @@ inline double dihedral_angle_cosine(const PointCgal& p1, const PointCgal& p2,
 }
 
 }  // namespace internal
+<<<<<<< HEAD
 }  // namespace ruled_surfaces
+=======
+} // namespace ruled_surfaces
+>>>>>>> main

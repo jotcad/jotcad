@@ -38,8 +38,12 @@ types like `'string'`, `'number'`, `'boolean'`, or complex types like
 
 ### The `code` Function
 
+<<<<<<< HEAD
 The `code` function implements the logic of your op. It receives the following
 arguments:
+=======
+The `code` function implements the logic of your op. It receives the following arguments:
+>>>>>>> main
 
 - `id`: The ID of the op.
 - `context`: The session context, which contains `assets`.
@@ -88,6 +92,7 @@ export const link = registerOp({
 
 - The `spec` starts with `'shape'`, indicating it's an operation on a shape.
 - It takes an input shape, an array of shapes, and an options object.
+<<<<<<< HEAD
 - The `code` function combines the input shape with the other shapes and calls
   `geometryLink` with `close=false`.
 
@@ -106,3 +111,14 @@ To make a new operation available to the server and its web interface, you need
 to export it from `ops/main.js` within the `constructors` or `operators`
 objects, depending on whether it's a constructor or an operation. This ensures
 the operation is properly exposed and accessible within the JotCAD ecosystem.
+=======
+- The `code` function combines the input shape with the other shapes and calls `geometryLink` with `close=false`.
+
+## Relationship with `geometry/`
+
+Operations defined in `ops/` typically serve as high-level, user-facing commands. They often act as lightweight wrappers that orchestrate calls to the more complex, performance-sensitive geometric operations implemented in C++ within the `geometry/` module. This separation of concerns allows for efficient core geometric processing while providing a flexible and user-friendly JavaScript interface.
+
+## Server Integration
+
+To make a new operation available to the server and its web interface, you need to export it from `ops/main.js` within the `constructors` or `operators` objects, depending on whether it's a constructor or an operation. This ensures the operation is properly exposed and accessible within the JotCAD ecosystem.
+>>>>>>> main
