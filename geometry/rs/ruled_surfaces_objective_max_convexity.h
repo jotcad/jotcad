@@ -37,4 +37,4 @@ struct MaxConvexity : public Objective {
     return internal::concavity_cost(p1, p2, p3, p4);
   }
 };
-} // namespace ruled_surfaces
+}  // namespace ruled_surfaces

@@ -39,7 +39,7 @@ class AlignPolylinesVisitor : public RuledSurfaceVisitor {
         mesh_(mesh),
         stats_(stats) {}
   VisitControl OnValidPolylines(const PolygonalChain& p_aligned,
-                                    const PolygonalChain& q_aligned) override {
+                                const PolygonalChain& q_aligned) override {
     p_aligned_ = p_aligned;
     q_aligned_ = q_aligned;
     return kContinue;
@@ -167,7 +167,7 @@ class SeamSearchSA {
     int i = 0;
     for (;; ++i) {
       if (options_.stopping_rule.ShouldStop(i, best_cost,
-                                           iters_without_improvement)) {
+                                            iters_without_improvement)) {
         break;
       }
 
@@ -284,8 +284,7 @@ SolutionStats::Status RuleLoopsSA(
   Mesh mesh_temp;
   internal::AlignPolylinesVisitor visitor(p_result ? *p_result : p_temp,
                                           q_result ? *q_result : q_temp,
-                                          result ? result : &mesh_temp,
-                                          stats);
+                                          result ? result : &mesh_temp, stats);
   SeamSearchSA<TriangulationStrategy, StoppingRule> search(strategy, options);
   search.generate(p_closed, q_closed, visitor);
 
@@ -295,5 +294,4 @@ SolutionStats::Status RuleLoopsSA(
   return visitor.status_;
 }
 
-} // namespace ruled_surfaces
-
+}  // namespace ruled_surfaces

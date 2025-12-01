@@ -10,7 +10,6 @@ inline std::pair<int, int> slg_index_to_node(NodeIndex index, int n) {
   return {index / n, index % n};
 }
 
-
 PolygonSoup reconstruct_triangulation_slg(
     const PolygonalChain& p, const PolygonalChain& q,
     const std::vector<std::pair<NodeIndex, bool>>& path);
@@ -96,10 +95,7 @@ class YenPathGenerator {
   YenPathGenerator(const PolygonalChain& p, const PolygonalChain& q,
                    const Objective& objective,
                    std::string* decision_log = nullptr)
-      : p_(p),
-        q_(q),
-        is_connected_(false),
-        objective_(objective) {
+      : p_(p), q_(q), is_connected_(false), objective_(objective) {
     graph_ = build_graph_slg(p_, q_, objective_);
     if (decision_log) {
       *decision_log += format_graph(graph_);
@@ -218,5 +214,5 @@ class YenPathGenerator {
   Objective objective_;
 };
 
-}
-}
+}  // namespace internal
+}  // namespace ruled_surfaces

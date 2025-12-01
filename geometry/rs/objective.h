@@ -15,4 +15,4 @@ struct Objective {
   }
 };
 
-} // namespace ruled_surfaces
+}  // namespace ruled_surfaces

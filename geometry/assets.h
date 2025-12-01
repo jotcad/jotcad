@@ -1,7 +1,8 @@
 #pragma once
 
 #include <CGAL/Surface_mesh.h>
-#include <iostream> // Include iostream for logging
+
+#include <iostream>  // Include iostream for logging
 
 #include "geometry.h"
 #include "surface_mesh.h"
@@ -51,7 +52,8 @@ class Assets {
 
   Geometry& GetGeometry(const GeometryId& id) {
     if (!id.IsString()) {
-      Napi::TypeError::New(Env(), "Invalid GeometryId").ThrowAsJavaScriptException();
+      Napi::TypeError::New(Env(), "Invalid GeometryId")
+          .ThrowAsJavaScriptException();
     }
     Napi::Object space = Space("geometry");
     Napi::Object wrapped_geometry = space.Get(id).As<Napi::Object>();

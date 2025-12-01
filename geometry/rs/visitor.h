@@ -23,7 +23,9 @@ class RuledSurfaceVisitor {
                                         const PolygonalChain& q) {
     return kContinue;
   }
-  virtual VisitControl OnMesh(const Mesh& mesh, double cost) { return kContinue; }
+  virtual VisitControl OnMesh(const Mesh& mesh, double cost) {
+    return kContinue;
+  }
   virtual VisitControl OnPermutation(const Mesh& mesh) { return kContinue; }
   virtual VisitControl OnValidMesh(const Mesh& mesh, double cost) {
     return kContinue;
@@ -231,8 +233,9 @@ class BestTriangulationSearchSolutionVisitor : public RuledSurfaceVisitor {
 
   void OnFinish(const SolutionStats& final_strategy_stats) override {
     if (stats_ != nullptr) {
-      stats_->status = best_solutions_.empty() ? SolutionStats::NO_SOLUTION_FOUND
-                                               : SolutionStats::OK;
+      stats_->status = best_solutions_.empty()
+                           ? SolutionStats::NO_SOLUTION_FOUND
+                           : SolutionStats::OK;
       stats_->cost = best_cost_;
       stats_->paths_evaluated = final_strategy_stats.paths_evaluated;
     }
@@ -256,5 +259,4 @@ class BestTriangulationSearchSolutionVisitor : public RuledSurfaceVisitor {
   std::vector<Solution> best_solutions_;
 };
 
-} // namespace ruled_surfaces
-
+}  // namespace ruled_surfaces

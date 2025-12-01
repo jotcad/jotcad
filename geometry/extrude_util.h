@@ -22,16 +22,16 @@ struct Project {
 };
 
 template <typename K>
-static bool ExtrudeSurfaceMesh(CGAL::Surface_mesh<typename K::Point_3>& mesh,
-                               const Tf& top,
-                               const Tf& bottom,
-                               CGAL::Surface_mesh<typename K::Point_3>& extruded_mesh) {
+static bool ExtrudeSurfaceMesh(
+    CGAL::Surface_mesh<typename K::Point_3>& mesh, const Tf& top,
+    const Tf& bottom, CGAL::Surface_mesh<typename K::Point_3>& extruded_mesh) {
   typedef typename boost::property_map<CGAL::Surface_mesh<typename K::Point_3>,
                                        CGAL::vertex_point_t>::type VPMap;
   if (!CGAL::is_closed(mesh) && !CGAL::is_empty(mesh)) {
     // No protection against self-intersection.
     Project<VPMap> top_projection(get(CGAL::vertex_point, extruded_mesh), top);
-    Project<VPMap> bottom_projection(get(CGAL::vertex_point, extruded_mesh), bottom);
+    Project<VPMap> bottom_projection(get(CGAL::vertex_point, extruded_mesh),
+                                     bottom);
     CGAL::Polygon_mesh_processing::extrude_mesh(
         mesh, extruded_mesh, bottom_projection, top_projection);
     CGAL::Polygon_mesh_processing::triangulate_faces(extruded_mesh);

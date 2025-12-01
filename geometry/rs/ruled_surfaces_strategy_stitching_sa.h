@@ -8,13 +8,12 @@
 
 namespace ruled_surfaces {
 
-namespace internal {
-}  // namespace internal
+namespace internal {}  // namespace internal
 
 // Implements a simulated annealing search strategy for finding an
-// optimal triangulation for a ruled surface between two *open* polygonal chains,
-// `p_open` and `q_open`, which are assumed to be pre-aligned segments of
-// closed curves that have been cut at an appropriate seam.
+// optimal triangulation for a ruled surface between two *open* polygonal
+// chains, `p_open` and `q_open`, which are assumed to be pre-aligned segments
+// of closed curves that have been cut at an appropriate seam.
 //
 // The algorithm only explores triangulation moves to find a triangulation
 // that avoids error accumulation, and then stitches the ends together to
@@ -41,9 +40,11 @@ class StitchingSA {
                 RuledSurfaceVisitor& visitor);
 
  private:
-  std::optional<std::pair<Mesh, double>> run_sa(
-      const PolygonalChain& p_open, const PolygonalChain& q_open,
-      RuledSurfaceVisitor& visitor, std::mt19937& gen, SolutionStats& stats);
+  std::optional<std::pair<Mesh, double>> run_sa(const PolygonalChain& p_open,
+                                                const PolygonalChain& q_open,
+                                                RuledSurfaceVisitor& visitor,
+                                                std::mt19937& gen,
+                                                SolutionStats& stats);
   Objective objective_;
   Options options_;
 };
@@ -66,7 +67,7 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
 
   Mesh current_open_mesh =
       internal::moves_to_mesh(p_open, q_open, current_moves);
-  if(current_open_mesh.is_empty()) return std::nullopt;
+  if (current_open_mesh.is_empty()) return std::nullopt;
   auto current_stitched = internal::stitch_and_calculate_cost(
       current_open_mesh, p_open, q_open, objective_);
   if (!current_stitched) {
@@ -92,7 +93,7 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
                                           iters_without_improvement)) {
       break;
     }
-    
+
     visitor.OnSearchStep(false, temp, 0.0);
 
     std::vector<bool> next_moves = current_moves;
@@ -112,8 +113,7 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
 
     if (next_moves.empty()) continue;
 
-    Mesh next_open_mesh =
-        internal::moves_to_mesh(p_open, q_open, next_moves);
+    Mesh next_open_mesh = internal::moves_to_mesh(p_open, q_open, next_moves);
     if (next_open_mesh.is_empty()) {
       continue;
     }
@@ -134,7 +134,8 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
     Mesh& next_mesh = next_stitched->first;
     double next_cost = next_stitched->second;
 
-    if (visitor.OnValidMesh(next_mesh, next_cost, 0) == RuledSurfaceVisitor::kStop) {
+    if (visitor.OnValidMesh(next_mesh, next_cost, 0) ==
+        RuledSurfaceVisitor::kStop) {
       return std::nullopt;
     }
 
@@ -147,9 +148,8 @@ StitchingSA<Objective, StoppingRule>::run_sa(const PolygonalChain& p_open,
     }
 
     double delta_cost = next_cost - current_cost;
-    bool accepted =
-        delta_cost < 0 ||
-        (temp > 0 && prob_dist(gen) < std::exp(-delta_cost / temp));
+    bool accepted = delta_cost < 0 ||
+                    (temp > 0 && prob_dist(gen) < std::exp(-delta_cost / temp));
     visitor.OnAcceptance(accepted, next_cost, current_cost, false);
 
     if (accepted) {
@@ -198,10 +198,9 @@ void StitchingSA<Objective, StoppingRule>::generate(
   } else if (result2) {
     visitor.OnValidMesh(result2->first, result2->second, 0);
   }
-  
+
   stats.shift = 0;
   visitor.OnFinish(stats);
 }
 
-} // namespace ruled_surfaces
-
+}  // namespace ruled_surfaces

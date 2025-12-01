@@ -1,13 +1,13 @@
 #pragma once
 
-#include <array>
-#include <vector>
-
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Point_3.h>
+#include <CGAL/Surface_mesh.h>
 #include <CGAL/Triangle_3.h>
 #include <CGAL/Vector_3.h>
-#include <CGAL/Surface_mesh.h>
+
+#include <array>
+#include <vector>
 
 namespace ruled_surfaces {
 
@@ -21,6 +21,4 @@ using PolygonalChain = std::vector<PointCgal>;
 using Mesh = CGAL::Surface_mesh<PointCgal>;
 using PolygonSoup = std::vector<std::array<PointCgal, 3>>;
 
-} // namespace ruled_surfaces
-
-
+}  // namespace ruled_surfaces

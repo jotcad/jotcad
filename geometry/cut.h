@@ -19,15 +19,15 @@ static GeometryId Cut(Assets& assets, Shape& shape,
     if (tool_shape.GetMask(mask_shape)) {
       walk(mask_shape);
     } else if (tool_shape.HasGeometryId()) {
-      Geometry tool =
-          assets.GetGeometry(tool_shape.GeometryId()).Transform(tool_shape.GetTf());
+      Geometry tool = assets.GetGeometry(tool_shape.GeometryId())
+                          .Transform(tool_shape.GetTf());
       CGAL::Surface_mesh<CGAL::Point_3<EK>> tool_mesh;
       tool.EncodeSurfaceMesh<EK>(tool_mesh);
-      bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
+      bool success =
+          CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
               target_mesh, tool_mesh, target_mesh,
               CGAL::parameters::throw_on_self_intersection(true),
-              CGAL::parameters::all_default(),
-              CGAL::parameters::all_default());
+              CGAL::parameters::all_default(), CGAL::parameters::all_default());
       if (!success) {
         Napi::Env env = assets.Env();
         Napi::Error::New(env, "Cut: non-manifold").ThrowAsJavaScriptException();

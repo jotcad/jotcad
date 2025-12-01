@@ -4,8 +4,10 @@ This document explains how to add new operations (ops) to Jot.
 
 There are two types of ops:
 
-- **Constructors**: These create new shapes from scratch. Examples include `Box`, `Link`, and `Loop`.
-- **Operations**: These modify existing shapes. Examples include `cut`, `link`, and `loop`.
+- **Constructors**: These create new shapes from scratch. Examples include
+  `Box`, `Link`, and `Loop`.
+- **Operations**: These modify existing shapes. Examples include `cut`, `link`,
+  and `loop`.
 
 ## Defining a New Op
 
@@ -23,20 +25,26 @@ The configuration object has the following properties:
 
 ### The `spec` Array
 
-The `spec` array defines the signature of your op. The last element of the array is the return type.
+The `spec` array defines the signature of your op. The last element of the array
+is the return type.
 
 - For a **constructor**, the first element of the spec should be `null`.
-- For an **operation**, the first element of the spec should be the type of the input shape (e.g., `'shape'`).
+- For an **operation**, the first element of the spec should be the type of the
+  input shape (e.g., `'shape'`).
 
-The elements in between are the arguments to your op. These can be primitive types like `'string'`, `'number'`, `'boolean'`, or complex types like `['shapes']` (an array of shapes) or `['options', { optionName: 'type' }]`.
+The elements in between are the arguments to your op. These can be primitive
+types like `'string'`, `'number'`, `'boolean'`, or complex types like
+`['shapes']` (an array of shapes) or `['options', { optionName: 'type' }]`.
 
 ### The `code` Function
 
-The `code` function implements the logic of your op. It receives the following arguments:
+The `code` function implements the logic of your op. It receives the following
+arguments:
 
 - `id`: The ID of the op.
 - `context`: The session context, which contains `assets`.
-- `input`: The input shape (for operations). For constructors, this will be `null`.
+- `input`: The input shape (for operations). For constructors, this will be
+  `null`.
 - ... The rest of the arguments defined in your `spec`.
 
 ### Adding the Op to `ops/main.js`
@@ -80,12 +88,21 @@ export const link = registerOp({
 
 - The `spec` starts with `'shape'`, indicating it's an operation on a shape.
 - It takes an input shape, an array of shapes, and an options object.
-- The `code` function combines the input shape with the other shapes and calls `geometryLink` with `close=false`.
+- The `code` function combines the input shape with the other shapes and calls
+  `geometryLink` with `close=false`.
 
 ## Relationship with `geometry/`
 
-Operations defined in `ops/` typically serve as high-level, user-facing commands. They often act as lightweight wrappers that orchestrate calls to the more complex, performance-sensitive geometric operations implemented in C++ within the `geometry/` module. This separation of concerns allows for efficient core geometric processing while providing a flexible and user-friendly JavaScript interface.
+Operations defined in `ops/` typically serve as high-level, user-facing
+commands. They often act as lightweight wrappers that orchestrate calls to the
+more complex, performance-sensitive geometric operations implemented in C++
+within the `geometry/` module. This separation of concerns allows for efficient
+core geometric processing while providing a flexible and user-friendly
+JavaScript interface.
 
 ## Server Integration
 
-To make a new operation available to the server and its web interface, you need to export it from `ops/main.js` within the `constructors` or `operators` objects, depending on whether it's a constructor or an operation. This ensures the operation is properly exposed and accessible within the JotCAD ecosystem.
+To make a new operation available to the server and its web interface, you need
+to export it from `ops/main.js` within the `constructors` or `operators`
+objects, depending on whether it's a constructor or an operation. This ensures
+the operation is properly exposed and accessible within the JotCAD ecosystem.

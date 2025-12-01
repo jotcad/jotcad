@@ -1,3 +1,6 @@
+clang-format --style=google -i *.h *.cc
+clang-format --style=google -i rs/*.h rs/*.cc
+
 g++ -O3 \
     -DCGAL_DISABLE_GMP=1 \
     -DBUILDING_NODE_EXTENSION \
