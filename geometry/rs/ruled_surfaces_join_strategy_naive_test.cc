@@ -11,7 +11,7 @@
 #include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_test_utils.h"
 
-namespace geometry {
+namespace ruled_surfaces {
 namespace test {
 
 // Verified
@@ -29,6 +29,7 @@ void NaiveJoinStrategyWithMultipleLoops() {
   std::cout << "OBJ String for NaiveJoinStrategyWithMultipleLoops:\n"
             << test::GetMeshAsObjString(mesh) << std::endl;
   assert(test::GetMeshAsObjString(mesh) == R"(
+
 v 1.035795 0.034427 0.009284
 v 0.988438 0.012356 1.034725
 v 0.943815 0.355916 0.997767
@@ -328,9 +329,9 @@ f 107 106 108
 f 107 108 109
 f 109 108 110
 f 109 110 111
-f 109 111 112
-f 112 111 113
-f 113 111 114
+f 111 110 112
+f 111 112 113
+f 113 112 114
 f 113 114 77
 f 77 114 78
 f 115 116 117
@@ -451,6 +452,7 @@ void NaiveJoinStrategyWithNestedLoops() {
   std::cout << "OBJ String for NaiveJoinStrategyWithNestedLoops:\n"
             << test::GetMeshAsObjString(mesh) << std::endl;
   assert(test::GetMeshAsObjString(mesh) == R"(
+
 v 2.000000 0.000000 0.000000
 v 2.000000 0.000000 1.000000
 v 2.045287 0.332391 1.023236
@@ -804,12 +806,12 @@ f 174 138 137
 }
 
 }  // namespace test
-}  // namespace geometry
+}  // namespace ruled_surfaces
 
 int main(int argc, char** argv) {
   std::cout << "Starting test execution..." << std::endl;
-  geometry::test::NaiveJoinStrategyWithMultipleLoops();
-  geometry::test::NaiveJoinStrategyWithNestedLoops();
+  ruled_surfaces::test::NaiveJoinStrategyWithMultipleLoops();
+  ruled_surfaces::test::NaiveJoinStrategyWithNestedLoops();
   std::cout << "Finished test execution." << std::endl;
   return 0;
 }
