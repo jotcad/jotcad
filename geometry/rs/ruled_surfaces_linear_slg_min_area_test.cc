@@ -10,11 +10,14 @@
 #include "ruled_surfaces_strategy_slg_helpers.h"
 #include "ruled_surfaces_test_utils.h"
 
-namespace geometry {
+namespace ruled_surfaces {
 namespace test {
 
-using ::geometry::test::CreateRotatedOpenCrescentsGeometry;
-using ::geometry::test::CreateTwistedStarsGeometry;
+using ruled_surfaces::BestTriangulationSearchSolutionVisitor;
+using ruled_surfaces::LinearSearchSlg;
+using ruled_surfaces::Mesh;
+using ruled_surfaces::MinArea;
+using ruled_surfaces::SolutionStats;
 
 const std::string kExpectedObjMinAreaOnOpenCrescents = R"(
 v -0.500000 -0.866025 0.000000
@@ -57,7 +60,7 @@ void MinAreaOnOpenCrescents() {
   assert(SolutionStats::OK == stats.status);
 
   const std::string obj_string =
-      ::geometry::test::GetMeshAsObjString(result, {p, q});
+      ruled_surfaces::test::GetMeshAsObjString(result, {p, q});
   assert(kExpectedObjMinAreaOnOpenCrescents == obj_string);
 }
 
@@ -95,27 +98,27 @@ f 2 3 6 8 10 11
 
 // Verified
 void IdeallyRotatedCrescents3() {
-  auto [p, q] = geometry::test::CreateIdeallyRotatedClosedCrescents3Geometry();
+  auto [p, q] = CreateIdeallyRotatedClosedCrescents3Geometry();
 
-  geometry::SolutionStats stats;
-  geometry::Mesh result;
-  geometry::BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
-  geometry::LinearSearchSlg<geometry::MinArea> search(geometry::MinArea(),
+  SolutionStats stats;
+  Mesh result;
+  BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
+  LinearSearchSlg<MinArea> search(MinArea(),
                                                       {.max_total_paths = 1});
   search.generate(p, q, visitor);
   assert(!result.is_empty());
-  assert(geometry::SolutionStats::OK == stats.status);
+  assert(SolutionStats::OK == stats.status);
 
   const std::string obj_string =
-      ::geometry::test::GetMeshAsObjString(result, {p, q});
+      ruled_surfaces::test::GetMeshAsObjString(result, {p, q});
   assert(obj_string == kExpectedObjIdeallyRotatedCrescents3);
 }
 
 }  // namespace test
-}  // namespace geometry
+}  // namespace ruled_surfaces
 
 int main(int argc, char** argv) {
-  geometry::test::MinAreaOnOpenCrescents();
-  geometry::test::IdeallyRotatedCrescents3();
+  ruled_surfaces::test::MinAreaOnOpenCrescents();
+  ruled_surfaces::test::IdeallyRotatedCrescents3();
   return 0;
 }

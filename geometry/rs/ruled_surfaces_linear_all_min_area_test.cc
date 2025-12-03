@@ -5,13 +5,10 @@
 #include "ruled_surfaces_strategy_linear_all.h"
 #include "ruled_surfaces_test_utils.h"
 
-namespace geometry {
+namespace ruled_surfaces {
 namespace test {
 
-using ::geometry::test::CreateRotatedCrescentsGeometry;
-using ::geometry::test::CreateUnitSquareGeometry;
-using ::geometry::test::GetMeshAsObjString;
-using ::geometry::test::IsSelfIntersecting;
+using namespace ruled_surfaces;
 
 const std::string kExpectedObjMinAreaOnUnitSquare = R"(
 v 0.000000 0.000000 0.000000
@@ -113,27 +110,27 @@ f 2 3 6 8 10 12
 
 // Verified
 void IdeallyRotatedCrescents3() {
-  auto [p, q] = geometry::test::CreateIdeallyRotatedClosedCrescents3Geometry();
+  auto [p, q] = CreateIdeallyRotatedClosedCrescents3Geometry();
 
-  geometry::SolutionStats stats;
-  geometry::Mesh result;
-  geometry::BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
-  geometry::LinearAllSearch<geometry::MinArea> search((geometry::MinArea()));
+  SolutionStats stats;
+  Mesh result;
+  BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
+  LinearAllSearch<MinArea> search((MinArea()));
   search.generate(p, q, visitor);
   assert(!result.is_empty());
-  assert(geometry::SolutionStats::OK == stats.status);
+  assert(SolutionStats::OK == stats.status);
 
   const std::string obj_string =
-      ::geometry::test::GetMeshAsObjString(result, {p, q});
+      GetMeshAsObjString(result, {p, q});
   assert(obj_string == kExpectedObjIdeallyRotatedCrescents3);
 }
 
 }  // namespace test
-}  // namespace geometry
+}  // namespace ruled_surfaces
 
 int main(int argc, char** argv) {
-  geometry::test::MinAreaOnUnitSquare();
-  geometry::test::MinAreaOnRotatedOpenCrescents();
-  geometry::test::IdeallyRotatedCrescents3();
+  ruled_surfaces::test::MinAreaOnUnitSquare();
+  ruled_surfaces::test::MinAreaOnRotatedOpenCrescents();
+  ruled_surfaces::test::IdeallyRotatedCrescents3();
   return 0;
 }
