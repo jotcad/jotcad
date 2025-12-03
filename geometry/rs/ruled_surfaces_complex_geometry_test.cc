@@ -8,11 +8,13 @@
 #include "ruled_surfaces_strategy_seam_search_sa.h"
 #include "ruled_surfaces_test_utils.h"
 
-namespace geometry {
+namespace ruled_surfaces {
 namespace test {
 
+using namespace ruled_surfaces;
+
 void RuleComplexAsymmetricLoops() {
-  auto [p, q] = test::generate_complex_asymmetric_loops(20, 25);
+  auto [p, q] = generate_complex_asymmetric_loops(20, 25);
   assert(p.front() == p.back());
   assert(q.front() == q.back());
   Mesh mesh;
@@ -24,9 +26,8 @@ void RuleComplexAsymmetricLoops() {
              &mesh, &p_result, &q_result, &stats)) ==
          SolutionStats::PATH_LIMIT_EXCEEDED);
   std::cout << "OBJ String for Ruled Complex Asymmetric Loops:\n"
-            << test::GetMeshAsObjString(mesh, {p_result, q_result})
-            << std::endl;
-  assert(test::GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
+            << GetMeshAsObjString(mesh, {p_result, q_result}) << std::endl;
+  assert(GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
 v 1.050000 0.000000 0.000000
 v 1.160000 0.000000 0.500000
 v 1.021093 0.350542 0.061421
@@ -122,7 +123,7 @@ f 2 4 5 7 9 10 12 14 16 18 20 21 23 25 27 29 30 32 34 35 37 39 41 43
 }
 
 void RuleRotatedClosedCrescents3Geometry() {
-  auto [p, q] = test::CreateIdeallyRotatedClosedCrescents3Geometry();
+  auto [p, q] = CreateIdeallyRotatedClosedCrescents3Geometry();
   Mesh mesh;
   PolygonalChain p_result, q_result;
   SolutionStats stats;
@@ -132,9 +133,8 @@ void RuleRotatedClosedCrescents3Geometry() {
              &mesh, &p_result, &q_result, &stats)) ==
          SolutionStats::PATH_LIMIT_EXCEEDED);
   std::cout << "OBJ String for Rotated Closed Crescents 3 Geometry:\n"
-            << test::GetMeshAsObjString(mesh, {p_result, q_result})
-            << std::endl;
-  assert(test::GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
+            << GetMeshAsObjString(mesh, {p_result, q_result}) << std::endl;
+  assert(GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
 v -0.500000 0.866025 0.000000
 v 0.500000 0.866025 1.000000
 v -0.766044 0.642788 1.000000
@@ -168,7 +168,7 @@ f 2 3 6 8 10 11
 }
 
 void RuleHighlyIrregularLoops() {
-  auto [p, q] = test::CreateHighlyIrregularLoopsGeometry();
+  auto [p, q] = CreateHighlyIrregularLoopsGeometry();
   assert(p.front() == p.back());
   assert(q.front() == q.back());
   Mesh mesh;
@@ -180,9 +180,8 @@ void RuleHighlyIrregularLoops() {
   assert(status == SolutionStats::PATH_LIMIT_EXCEEDED ||
          status == SolutionStats::NO_SOLUTION_FOUND);
   std::cout << "OBJ String for Highly Irregular Loops:\n"
-            << test::GetMeshAsObjString(mesh, {p_result, q_result})
-            << std::endl;
-  assert(test::GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
+            << GetMeshAsObjString(mesh, {p_result, q_result}) << std::endl;
+  assert(GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
 v 1.047943 0.000000 0.000000
 v 1.146300 0.000000 0.800000
 v 1.228942 0.158455 0.059811
@@ -408,11 +407,11 @@ f 2 5 6 7 8 9 11 13 21 22 23 24 25 26 27 29 32 33 34 35 36 37 38 45 47 49 50 51 
 }
 
 }  // namespace test
-}  // namespace geometry
+}  // namespace ruled_surfaces
 
 int main(int argc, char** argv) {
-  geometry::test::RuleComplexAsymmetricLoops();
-  geometry::test::RuleRotatedClosedCrescents3Geometry();
-  geometry::test::RuleHighlyIrregularLoops();
+  ruled_surfaces::test::RuleComplexAsymmetricLoops();
+  ruled_surfaces::test::RuleRotatedClosedCrescents3Geometry();
+  ruled_surfaces::test::RuleHighlyIrregularLoops();
   return 0;
 }

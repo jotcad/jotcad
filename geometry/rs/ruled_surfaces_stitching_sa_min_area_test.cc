@@ -11,10 +11,10 @@
 #include "ruled_surfaces_test_utils.h"
 #include "ruled_surfaces_verbose_visitor.h"
 
-namespace geometry {
+namespace ruled_surfaces {
 namespace test {
 
-using namespace ::geometry::test;
+using namespace ruled_surfaces;
 
 const std::string kExpectedObjMinAreaOnUnitCube =
     R"(
@@ -65,7 +65,7 @@ void MinAreaOnUnitCube() {
   assert(std::abs(area - 4.0) < 1e-9);
 
   const std::string obj_string =
-      ::geometry::test::GetMeshAsObjString(result, {p_open, q_open});
+      ::ruled_surfaces::test::GetMeshAsObjString(result, {p_open, q_open});
   assert(obj_string == kExpectedObjMinAreaOnUnitCube);
 }
 
@@ -114,7 +114,7 @@ void RotatedCrescents3() {
   assert(!result.is_empty());
   assert(SolutionStats::OK == stats.status);
   const std::string obj_string =
-      ::geometry::test::GetMeshAsObjString(result, {p, q});
+      ::ruled_surfaces::test::GetMeshAsObjString(result, {p, q});
   assert(obj_string == kExpectedObjRotatedCrescents3);
 }
 
@@ -186,7 +186,7 @@ void RotatedCrescents5() {
   assert(!result.is_empty());
 
   const std::string obj_string =
-      ::geometry::test::GetMeshAsObjString(result, {p_open, q_open});
+      ::ruled_surfaces::test::GetMeshAsObjString(result, {p_open, q_open});
   assert(obj_string == kExpectedObjRotatedCrescents5);
 }
 
@@ -205,12 +205,12 @@ void AlignLoopsForMinArea() {
 }
 
 }  // namespace test
-}  // namespace geometry
+}  // namespace ruled_surfaces
 
 int main(int argc, char** argv) {
-  geometry::test::MinAreaOnUnitCube();
-  geometry::test::RotatedCrescents3();
-  geometry::test::RotatedCrescents5();
-  geometry::test::AlignLoopsForMinArea();
+  ruled_surfaces::test::MinAreaOnUnitCube();
+  ruled_surfaces::test::RotatedCrescents3();
+  ruled_surfaces::test::RotatedCrescents5();
+  ruled_surfaces::test::AlignLoopsForMinArea();
   return 0;
 }
