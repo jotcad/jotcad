@@ -19,8 +19,11 @@ void RotatedCrescents3MinArea() {
   ruled_surfaces::SolutionStats stats;
   ruled_surfaces::BestTriangulationSearchSolutionVisitor visitor(&mesh, &stats);
 
-  ruled_surfaces::LinearSearchSlg<ruled_surfaces::MinArea> slg(ruled_surfaces::MinArea(), {.max_total_paths = 1});
-  ruled_surfaces::SeamSearchAll<ruled_surfaces::LinearSearchSlg<ruled_surfaces::MinArea>> search(slg);
+  ruled_surfaces::LinearSearchSlg<ruled_surfaces::MinArea> slg(
+      ruled_surfaces::MinArea(), {.max_total_paths = 1});
+  ruled_surfaces::SeamSearchAll<
+      ruled_surfaces::LinearSearchSlg<ruled_surfaces::MinArea>>
+      search(slg);
 
   search.generate(p, q, visitor);
 

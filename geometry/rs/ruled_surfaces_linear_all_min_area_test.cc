@@ -120,8 +120,7 @@ void IdeallyRotatedCrescents3() {
   assert(!result.is_empty());
   assert(SolutionStats::OK == stats.status);
 
-  const std::string obj_string =
-      GetMeshAsObjString(result, {p, q});
+  const std::string obj_string = GetMeshAsObjString(result, {p, q});
   assert(obj_string == kExpectedObjIdeallyRotatedCrescents3);
 }
 

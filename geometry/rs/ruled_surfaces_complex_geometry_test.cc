@@ -26,8 +26,7 @@ void RuleComplexAsymmetricLoops() {
              &mesh, &p_result, &q_result, &stats)) ==
          SolutionStats::PATH_LIMIT_EXCEEDED);
   std::cout << "OBJ String for Ruled Complex Asymmetric Loops:\n"
-            << GetMeshAsObjString(mesh, {p_result, q_result})
-            << std::endl;
+            << GetMeshAsObjString(mesh, {p_result, q_result}) << std::endl;
   assert(GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
 v 1.050000 0.000000 0.000000
 v 1.160000 0.000000 0.500000
@@ -134,8 +133,7 @@ void RuleRotatedClosedCrescents3Geometry() {
              &mesh, &p_result, &q_result, &stats)) ==
          SolutionStats::PATH_LIMIT_EXCEEDED);
   std::cout << "OBJ String for Rotated Closed Crescents 3 Geometry:\n"
-            << GetMeshAsObjString(mesh, {p_result, q_result})
-            << std::endl;
+            << GetMeshAsObjString(mesh, {p_result, q_result}) << std::endl;
   assert(GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
 v -0.500000 0.866025 0.000000
 v 0.500000 0.866025 1.000000
@@ -182,8 +180,7 @@ void RuleHighlyIrregularLoops() {
   assert(status == SolutionStats::PATH_LIMIT_EXCEEDED ||
          status == SolutionStats::NO_SOLUTION_FOUND);
   std::cout << "OBJ String for Highly Irregular Loops:\n"
-            << GetMeshAsObjString(mesh, {p_result, q_result})
-            << std::endl;
+            << GetMeshAsObjString(mesh, {p_result, q_result}) << std::endl;
   assert(GetMeshAsObjString(mesh, {p_result, q_result}) == R"OBJ(
 v 1.047943 0.000000 0.000000
 v 1.146300 0.000000 0.800000

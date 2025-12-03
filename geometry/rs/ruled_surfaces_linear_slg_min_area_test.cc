@@ -103,8 +103,7 @@ void IdeallyRotatedCrescents3() {
   SolutionStats stats;
   Mesh result;
   BestTriangulationSearchSolutionVisitor visitor(&result, &stats);
-  LinearSearchSlg<MinArea> search(MinArea(),
-                                                      {.max_total_paths = 1});
+  LinearSearchSlg<MinArea> search(MinArea(), {.max_total_paths = 1});
   search.generate(p, q, visitor);
   assert(!result.is_empty());
   assert(SolutionStats::OK == stats.status);
