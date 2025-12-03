@@ -12,19 +12,19 @@ these steps:
     - All core C++ logic for geometric operations within the `geometry/` module
       should generally reside in header files (e.g., `geometry/your_op_name.h`)
       as header-only functions. This means all function definitions must be
-      `inline` or within a class/struct definition.
+      `inline` or within a class/struct definition. Such functions typically
+      take `Assets& assets` and `Shape& shape` (and other arguments) as input.
     - This often involves:
       - Retrieving input `Geometry` objects from `Assets` using `Shape`'s
-        `GeometryId()` and applying transformations (`Shape::GetTf()`).
+        `GeometryId()` and applying transformations (`Shape::GetTf()`), so that the geometry is in world coordinates.
       - Converting between `CGAL::Point_3<EK>` (used in `Geometry`) and
         `CGAL::Point_3<IK>` (used in `Mesh` and `PolygonalChain`). Use
         `CGAL::Cartesian_converter` for this.
       - Calling the relevant CGAL algorithms or custom C++ logic.
-      - Converting resulting `Mesh` or `PolygonalChain` data back into
-        `Geometry` objects. The `Geometry` class often has methods like
-        `DecodeSurfaceMesh<K>(CGAL::Surface_mesh<...>)` for this.
       - Storing output `Geometry` objects (or other data like statistics,
-        serialized to JSON) in `Assets` using `assets.TextId(Geometry)`.
+        serialized to JSON) in `Assets` using `assets.TextId(Geometry)`. The
+        output `Geometry` should usually be transformed back into the original
+        coordinate system of the input `Shape` by applying `shape.GetTf().inverse()`.
     - The main C++ function should typically return a `GeometryId` for the
       primary output shape.
 
