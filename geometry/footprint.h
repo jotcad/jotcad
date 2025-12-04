@@ -71,6 +71,9 @@ static GeometryId footprint(Assets& assets, Shape& shape) {
       poly.push_back(p0);
       poly.push_back(p1);
       poly.push_back(p2);
+      if (poly.is_clockwise_oriented()) {
+        poly.reverse_orientation();
+      }
       cgal_polygons.push_back(poly);
     }
   }
