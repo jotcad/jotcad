@@ -16,7 +16,8 @@ these steps:
       take `Assets& assets` and `Shape& shape` (and other arguments) as input.
     - This often involves:
       - Retrieving input `Geometry` objects from `Assets` using `Shape`'s
-        `GeometryId()` and applying transformations (`Shape::GetTf()`), so that the geometry is in world coordinates.
+        `GeometryId()` and applying transformations (`Shape::GetTf()`), so that
+        the geometry is in world coordinates.
       - Converting between `CGAL::Point_3<EK>` (used in `Geometry`) and
         `CGAL::Point_3<IK>` (used in `Mesh` and `PolygonalChain`). Use
         `CGAL::Cartesian_converter` for this.
@@ -24,7 +25,8 @@ these steps:
       - Storing output `Geometry` objects (or other data like statistics,
         serialized to JSON) in `Assets` using `assets.TextId(Geometry)`. The
         output `Geometry` should usually be transformed back into the original
-        coordinate system of the input `Shape` by applying `shape.GetTf().inverse()`.
+        coordinate system of the input `Shape` by applying
+        `shape.GetTf().inverse()`.
     - The main C++ function should typically return a `GeometryId` for the
       primary output shape.
 
