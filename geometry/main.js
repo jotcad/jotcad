@@ -13,6 +13,7 @@ export { fill2 } from './fill.js';
 export { fill3 } from './fill.js';
 export { fromStl } from './stl.js';
 export { getShapesByTag } from './tag.js';
+export { grow } from './grow.js';
 export { join } from './join.js';
 export { makeAbsolute } from './makeAbsolute.js';
 export { makeGroup } from './shape.js';

@@ -31,6 +31,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "fill.h"
 #include "ft.h"
 #include "geometry.h"
+#include "grow.h"
 #include "join.h"
 #include "link.h"
 #include "make_absolute.h"
@@ -121,6 +122,18 @@ static Napi::Value Fill3Binding(const Napi::CallbackInfo& info) {
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   return Fill3(assets, shape);
+}
+
+static Napi::Value GrowBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Napi::Array jsTools(info[2].As<Napi::Array>());
+  std::vector<Shape> tools;
+  for (uint32_t nth = 0; nth < jsTools.Length(); nth++) {
+    tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
+  }
+  return Grow(assets, shape, tools);
 }
 
 static Napi::Value JoinBinding(const Napi::CallbackInfo& info) {
@@ -268,6 +281,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, Fill2Binding));
   exports.Set(Napi::String::New(env, "Fill3"),
               Napi::Function::New(env, Fill3Binding));
+  exports.Set(Napi::String::New(env, "Grow"),
+              Napi::Function::New(env, GrowBinding));
   exports.Set(Napi::String::New(env, "Join"),
               Napi::Function::New(env, JoinBinding));
   exports.Set(Napi::String::New(env, "Link"),
