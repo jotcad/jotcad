@@ -12,19 +12,21 @@ these steps:
     - All core C++ logic for geometric operations within the `geometry/` module
       should generally reside in header files (e.g., `geometry/your_op_name.h`)
       as header-only functions. This means all function definitions must be
-      `inline` or within a class/struct definition.
+      `inline` or within a class/struct definition. Such functions typically
+      take `Assets& assets` and `Shape& shape` (and other arguments) as input.
     - This often involves:
       - Retrieving input `Geometry` objects from `Assets` using `Shape`'s
-        `GeometryId()` and applying transformations (`Shape::GetTf()`).
+        `GeometryId()` and applying transformations (`Shape::GetTf()`), so that
+        the geometry is in world coordinates.
       - Converting between `CGAL::Point_3<EK>` (used in `Geometry`) and
         `CGAL::Point_3<IK>` (used in `Mesh` and `PolygonalChain`). Use
         `CGAL::Cartesian_converter` for this.
       - Calling the relevant CGAL algorithms or custom C++ logic.
-      - Converting resulting `Mesh` or `PolygonalChain` data back into
-        `Geometry` objects. The `Geometry` class often has methods like
-        `DecodeSurfaceMesh<K>(CGAL::Surface_mesh<...>)` for this.
       - Storing output `Geometry` objects (or other data like statistics,
-        serialized to JSON) in `Assets` using `assets.TextId(Geometry)`.
+        serialized to JSON) in `Assets` using `assets.TextId(Geometry)`. The
+        output `Geometry` should usually be transformed back into the original
+        coordinate system of the input `Shape` by applying
+        `shape.GetTf().inverse()`.
     - The main C++ function should typically return a `GeometryId` for the
       primary output shape.
 
@@ -138,3 +140,71 @@ Debugging C++ code from Node.js can be challenging. Here are some tips:
   debugger (like GDB or LLDB) to the Node.js process. This allows you to set
   breakpoints and inspect variables in your C++ code. This is an advanced
   technique and requires a properly configured development environment.
+
+## Troubleshooting and Best Practices
+
+This section covers common issues and guidelines discovered during development.
+
+### Rebuilding Native Code is Required
+
+After making any changes to C++ files (`.h` or `.cc`) in the `geometry/` directory, you **must** rebuild the native Node.js addon before running tests. Failure to do so will result in your changes not being applied.
+
+Run the following command from the `geometry/` directory:
+```bash
+./build_native_node.sh
+```
+After the native addon is rebuilt, you can run the full test suite from the root directory with `./build.sh`.
+
+### Correctly Testing Shape Geometry
+
+The `makeShape` function creates a `Shape` object. The geometry identifier (the hash string) is stored on the `.geometry` property of this object. When writing assertions, ensure you are checking the correct property.
+
+**Incorrect:**
+```javascript
+assert.ok(myShape.geometryId);
+```
+
+**Correct:**
+```javascript
+assert.ok(myShape.geometry);
+```
+
+### Using `testPng` for Visual Testing
+
+The `testPng` helper requires the buffer of the rendered image to be passed as its second argument. The `renderPng` function conveniently returns this buffer. Always capture the return value from `renderPng` and pass it to `testPng`.
+
+```javascript
+// Correct usage
+const buffer = await renderPng(myShape, outputPath);
+await testPng(outputPath, buffer);
+```
+
+### Handling CGAL Polygon Orientation Errors
+
+If you encounter a CGAL error like `The polygon has a wrong orientation`, it means that a 2D boolean operation (often a union inside a function like `footprint`) received polygons with inconsistent orientations.
+
+This can be fixed by ensuring all 2D polygons are normalized to a consistent orientation (e.g., counter-clockwise) before being passed to a union operation. In the C++ code, you can fix this by checking and reversing the orientation of polygons.
+
+```cpp
+// Example from footprint.h
+Polygon_2 poly;
+poly.push_back(p0);
+poly.push_back(p1);
+poly.push_back(p2);
+// Normalize orientation before adding to the list for union
+if (poly.is_clockwise_oriented()) {
+  poly.reverse_orientation();
+}
+cgal_polygons.push_back(poly);
+```
+
+### API Design for Geometry Functions
+
+JavaScript functions that wrap C++ geometry operations (like `cut.js` or `footprint.js`) should be designed to accept the `assets` object as an explicit argument. Avoid using `withAssets` inside these lower-level geometry wrappers. This makes the functions synchronous (if the underlying C++ call is synchronous), easier to test, and more composable.
+
+**Good Pattern (`cut.js`):**
+```javascript
+export const cut = (assets, shape, tools) => {
+  // ... call cgal.Cut(assets, shape, tools)
+};
+```

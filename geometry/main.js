@@ -29,3 +29,4 @@ export { toStl } from './stl.js';
 export { withAssets } from './assets.js';
 export { fromJot } from './jot.js';
 export { toJot } from './jot.js';
+export { footprint } from './footprint.js';

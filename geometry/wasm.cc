@@ -41,6 +41,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
+#include "footprint.h"
 
 namespace jot_cgal {
 
@@ -194,6 +195,13 @@ static Napi::Value TriangulateBinding(const Napi::CallbackInfo& info) {
   return Triangulate(assets, id);
 }
 
+static Napi::Value FootprintBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 2);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  return geometry::footprint(assets, shape);
+}
+
 static Napi::Value MakeOrbBinding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 4);
   Assets assets(info[0].As<Napi::Object>());
@@ -276,6 +284,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, TextIdBinding));
   exports.Set(Napi::String::New(env, "Triangulate"),
               Napi::Function::New(env, TriangulateBinding));
+  exports.Set(Napi::String::New(env, "footprint"),
+              Napi::Function::New(env, FootprintBinding));
   exports.Set(Napi::String::New(env, "MakeOrb"),
               Napi::Function::New(env, MakeOrbBinding));
   exports.Set(Napi::String::New(env, "Rule"),
