@@ -148,9 +148,8 @@ class Geometry {
         break;
       }
       if (!ss) {
-        std::cout << "Decode error: fail=" << ss.fail() << " bad=" << ss.bad()
-                  << std::endl;
-        break;
+        throw std::runtime_error(
+            "Decode error: stream failed while reading key");
       }
       switch (key) {
         case 'V': {

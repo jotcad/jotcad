@@ -147,31 +147,42 @@ This section covers common issues and guidelines discovered during development.
 
 ### Rebuilding Native Code is Required
 
-After making any changes to C++ files (`.h` or `.cc`) in the `geometry/` directory, you **must** rebuild the native Node.js addon before running tests. Failure to do so will result in your changes not being applied.
+After making any changes to C++ files (`.h` or `.cc`) in the `geometry/`
+directory, you **must** rebuild the native Node.js addon before running tests.
+Failure to do so will result in your changes not being applied.
 
 Run the following command from the `geometry/` directory:
+
 ```bash
 ./build_native_node.sh
 ```
-After the native addon is rebuilt, you can run the full test suite from the root directory with `./build.sh`.
+
+After the native addon is rebuilt, you can run the full test suite from the root
+directory with `./build.sh`.
 
 ### Correctly Testing Shape Geometry
 
-The `makeShape` function creates a `Shape` object. The geometry identifier (the hash string) is stored on the `.geometry` property of this object. When writing assertions, ensure you are checking the correct property.
+The `makeShape` function creates a `Shape` object. The geometry identifier (the
+hash string) is stored on the `.geometry` property of this object. When writing
+assertions, ensure you are checking the correct property.
 
 **Incorrect:**
+
 ```javascript
 assert.ok(myShape.geometryId);
 ```
 
 **Correct:**
+
 ```javascript
 assert.ok(myShape.geometry);
 ```
 
 ### Using `testPng` for Visual Testing
 
-The `testPng` helper requires the buffer of the rendered image to be passed as its second argument. The `renderPng` function conveniently returns this buffer. Always capture the return value from `renderPng` and pass it to `testPng`.
+The `testPng` helper requires the buffer of the rendered image to be passed as
+its second argument. The `renderPng` function conveniently returns this buffer.
+Always capture the return value from `renderPng` and pass it to `testPng`.
 
 ```javascript
 // Correct usage
@@ -181,9 +192,14 @@ await testPng(outputPath, buffer);
 
 ### Handling CGAL Polygon Orientation Errors
 
-If you encounter a CGAL error like `The polygon has a wrong orientation`, it means that a 2D boolean operation (often a union inside a function like `footprint`) received polygons with inconsistent orientations.
+If you encounter a CGAL error like `The polygon has a wrong orientation`, it
+means that a 2D boolean operation (often a union inside a function like
+`footprint`) received polygons with inconsistent orientations.
 
-This can be fixed by ensuring all 2D polygons are normalized to a consistent orientation (e.g., counter-clockwise) before being passed to a union operation. In the C++ code, you can fix this by checking and reversing the orientation of polygons.
+This can be fixed by ensuring all 2D polygons are normalized to a consistent
+orientation (e.g., counter-clockwise) before being passed to a union operation.
+In the C++ code, you can fix this by checking and reversing the orientation of
+polygons.
 
 ```cpp
 // Example from footprint.h
@@ -200,9 +216,14 @@ cgal_polygons.push_back(poly);
 
 ### API Design for Geometry Functions
 
-JavaScript functions that wrap C++ geometry operations (like `cut.js` or `footprint.js`) should be designed to accept the `assets` object as an explicit argument. Avoid using `withAssets` inside these lower-level geometry wrappers. This makes the functions synchronous (if the underlying C++ call is synchronous), easier to test, and more composable.
+JavaScript functions that wrap C++ geometry operations (like `cut.js` or
+`footprint.js`) should be designed to accept the `assets` object as an explicit
+argument. Avoid using `withAssets` inside these lower-level geometry wrappers.
+This makes the functions synchronous (if the underlying C++ call is
+synchronous), easier to test, and more composable.
 
 **Good Pattern (`cut.js`):**
+
 ```javascript
 export const cut = (assets, shape, tools) => {
   // ... call cgal.Cut(assets, shape, tools)

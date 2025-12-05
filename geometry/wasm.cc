@@ -29,6 +29,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "cut.h"
 #include "extrude.h"
 #include "fill.h"
+#include "footprint.h"
 #include "ft.h"
 #include "geometry.h"
 #include "grow.h"
@@ -42,7 +43,6 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
-#include "footprint.h"
 
 namespace jot_cgal {
 

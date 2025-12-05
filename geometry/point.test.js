@@ -9,7 +9,7 @@ describe('point', () => {
     await withTestAssets('should create a point', async (assets) => {
       assert.deepEqual(
         assets.getText(Point(assets, 1, 0, 0).geometry),
-        'v 1 0 0 1 0 0\np 0'
+        'v 1 0 0 1 0 0\np 0\n'
       );
     });
   });
@@ -26,5 +26,13 @@ describe('point', () => {
         'v 1 0 0 1 0 0\nv 2 0 0 2 0 0\np 0 1'
       )
     );
+  });
+
+  it('should round trip a point', async () => {
+    await withTestAssets('should round trip a point', async (assets) => {
+      const point = Point(assets, 10, 20, 30);
+      const textRepresentation = assets.getText(point.geometry);
+      assert.deepEqual(textRepresentation, 'v 10 20 30 10 20 30\np 0\n');
+    });
   });
 });

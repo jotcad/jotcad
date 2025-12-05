@@ -2,21 +2,25 @@
 
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Nef_polyhedron_3.h>
+#include <CGAL/Polygon_2.h>
 #include <CGAL/Polygon_mesh_processing/compute_normal.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/transform.h>
 #include <CGAL/Polygon_triangulation_decomposition_2.h>
+#include <CGAL/Polyhedron_3.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/boost/graph/generators.h>
 #include <CGAL/connect_holes.h>
+#include <CGAL/convex_decomposition_3.h>
 #include <CGAL/convex_hull_3.h>
 #include <CGAL/mark_domain_in_triangulation.h>
 #include <CGAL/partition_2.h>
 #include <CGAL/simplest_rational_in_interval.h>
-#include <CGAL/Nef_polyhedron_3.h>
-#include <CGAL/convex_decomposition_3.h>
-#include <CGAL/Polyhedron_3.h>
-#include <CGAL/Polygon_2.h>
+
+#include <iostream>
+#include <sstream>  // Added for mesh streaming
+#include <vector>
 
 #include "assets.h"
 #include "geometry.h"
@@ -61,12 +65,16 @@ static void to_points(const typename K::Point_3& point,
 }
 
 template <class K>
-static CGAL::Aff_transformation_3<K> translate_to(const typename K::Point_3& p) {
+static CGAL::Aff_transformation_3<K> translate_to(
+    const typename K::Point_3& p) {
   return CGAL::Aff_transformation_3<K>(CGAL::TRANSLATION, p - CGAL::ORIGIN);
 }
 
 static GeometryId Grow(Assets& assets, Shape& shape,
-                      std::vector<Shape>& tool_shapes) {
+                       std::vector<Shape>& tool_shapes) {
+  std::cerr << "Grow: Start. Shape GeometryId: "
+            << shape.GeometryId().Utf8Value().c_str()
+            << ", Tool Shapes Count: " << tool_shapes.size() << std::endl;
   try {
     typedef CGAL::Polygon_2<EK> Polygon_2;
     typedef std::list<Polygon_2> Polygon_list;
@@ -74,32 +82,71 @@ static GeometryId Grow(Assets& assets, Shape& shape,
     std::vector<Polygon_2> hole_polygons;
 
     std::vector<EK::Point_3> tool_points;
+
     for (Shape& tool_shape : tool_shapes) {
-      Geometry tool_geometry =
-          assets.GetGeometry(tool_shape.GeometryId())
-              .Transform(tool_shape.GetTf());
-      for (const auto& vertex : tool_geometry.vertices_) {
-        tool_points.push_back(vertex);
+      if (tool_shape.GeometryId().IsEmpty() ==
+          false) {  // Check if tool_shape has geometry
+        std::cerr << "Grow: Processing tool shape with GeometryId: "
+                  << tool_shape.GeometryId().Utf8Value().c_str() << std::endl;
+        Geometry tool_geometry = assets.GetGeometry(tool_shape.GeometryId())
+                                     .Transform(tool_shape.GetTf());
+        std::cerr << "Grow: tool_geometry vertices count: "
+                  << tool_geometry.vertices_.size() << std::endl;
+        // Stream tool mesh in OBJ format
+        CGAL::Surface_mesh<EK::Point_3> tool_mesh;
+        tool_geometry.EncodeSurfaceMesh<EK>(tool_mesh);
+        std::stringstream ss;
+        ss << tool_mesh;
+        std::cerr << "Grow: Tool mesh (OBJ format): " << ss.str() << std::endl;
+
+        for (const auto& vertex : tool_geometry.vertices_) {
+          tool_points.push_back(vertex);
+        }
       }
     }
+    std::cerr << "Grow: Total tool_points collected: " << tool_points.size()
+              << std::endl;
 
     Geometry geometry =
         assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
+    std::string text;
+    geometry.Encode(text);
+    std::cerr << "Grow: Shape text: " << text << std::endl;
+    std::cerr << "Grow: Input geometry vertices count: "
+              << geometry.vertices_.size() << std::endl;
+    std::cerr << "Grow: Input geometry points count: "
+              << geometry.points_.size() << std::endl;
+    std::cerr << "Grow: Input geometry segments count: "
+              << geometry.segments_.size() << std::endl;
+    std::cerr << "Grow: Input geometry triangles count: "
+              << geometry.triangles_.size() << std::endl;
+    std::cerr << "Grow: Input geometry faces count: " << geometry.faces_.size()
+              << std::endl;
     CGAL::Surface_mesh<EK::Point_3> final_mesh;
 
     auto add_hull = [&](const std::vector<EK::Point_3>& points) {
+      std::cerr << "Grow/add_hull: Input points count: " << points.size()
+                << std::endl;
       CGAL::Surface_mesh<EK::Point_3> hull;
       CGAL::convex_hull_3(points.begin(), points.end(), hull);
+      std::cerr << "Grow/add_hull: Hull vertices after convex_hull_3: "
+                << hull.number_of_vertices() << std::endl;
       if (final_mesh.is_empty()) {
         final_mesh = hull;
       } else {
+        std::cerr << "Grow/add_hull: final_mesh vertices before union: "
+                  << final_mesh.number_of_vertices() << std::endl;
         CGAL::Polygon_mesh_processing::corefine_and_compute_union(
             final_mesh, hull, final_mesh,
             CGAL::parameters::throw_on_self_intersection(true));
+        std::cerr << "Grow/add_hull: final_mesh vertices after union: "
+                  << final_mesh.number_of_vertices() << std::endl;
       }
     };
 
     if (!geometry.triangles_.empty()) {
+      std::cerr << "Grow: Processing triangles. Count: "
+                << geometry.triangles_.size() << std::endl;
       CGAL::Surface_mesh<EK::Point_3> mesh;
       geometry.EncodeSurfaceMesh<EK>(mesh);
       typedef CGAL::Nef_polyhedron_3<EK> Nef;
@@ -115,11 +162,13 @@ static GeometryId Grow(Assets& assets, Shape& shape,
       auto ci = nef.volumes_begin();
       if (ci == nef.volumes_end()) {
         // The mesh was empty.
+        std::cerr << "Grow: Nef mesh was empty." << std::endl;
       } else {
         EK::Point_3 zero(0, 0, 0);
 
         if (++ci == nef.volumes_end()) {
           // The mesh is already completely convex.
+          std::cerr << "Grow: Nef mesh is convex." << std::endl;
           std::vector<EK::Point_3> points;
           for (const auto& vertex : mesh.vertices()) {
             const auto& offset = mesh.point(vertex) - zero;
@@ -130,6 +179,8 @@ static GeometryId Grow(Assets& assets, Shape& shape,
           add_hull(points);
         } else {
           // Split out the convex parts.
+          std::cerr << "Grow: Splitting Nef mesh into convex parts."
+                    << std::endl;
           for (; ci != nef.volumes_end(); ++ci) {
             CGAL::Polyhedron_3<EK> shell;
             nef.convert_inner_shell_to_polyhedron(ci->shells_begin(), shell);
@@ -144,7 +195,10 @@ static GeometryId Grow(Assets& assets, Shape& shape,
           }
         }
       }
-    } else if (!geometry.points_.empty()) {
+    }
+    if (!geometry.points_.empty()) {  // Changed from else if to if
+      std::cerr << "Grow: Processing " << geometry.points_.size() << " points."
+                << std::endl;
       CGAL::Surface_mesh<EK::Point_3> tool;
       CGAL::convex_hull_3(tool_points.begin(), tool_points.end(), tool);
       for (const auto& point_index : geometry.points_) {
@@ -155,7 +209,10 @@ static GeometryId Grow(Assets& assets, Shape& shape,
         to_points<EK>(a_tool, points);
         add_hull(points);
       }
-    } else if (!geometry.segments_.empty()) {
+    }
+    if (!geometry.segments_.empty()) {  // Changed from else if to if
+      std::cerr << "Grow: Processing segments. Count: "
+                << geometry.segments_.size() << std::endl;
       EK::Point_3 zero(0, 0, 0);
       for (const auto& segment : geometry.segments_) {
         const EK::Vector_3 source_offset =
@@ -169,12 +226,18 @@ static GeometryId Grow(Assets& assets, Shape& shape,
         }
         add_hull(points);
       }
-    } else if (!geometry.faces_.empty()) {
+    }
+    if (!geometry.faces_.empty()) {  // Changed from else if to if
+      std::cerr << "Grow: Processing faces. Count: " << geometry.faces_.size()
+                << std::endl;
       EK::Point_3 zero(0, 0, 0);
       const auto plane = EK::Plane_3(0, 0, 1, 0);
       for (const auto& face_data : geometry.faces_) {
         const auto& face_points = face_data.first;
         const auto& holes = face_data.second;
+        std::cerr << "Grow: Face with " << face_points.size()
+                  << " outer boundary points and " << holes.size() << " holes."
+                  << std::endl;
         Polygon_2 outer;
         for (const auto& point_index : face_points) {
           outer.push_back(plane.to_2d(geometry.vertices_[point_index]));
@@ -192,31 +255,31 @@ static GeometryId Grow(Assets& assets, Shape& shape,
                                            hole_polygons.end());
 
         if (pwh.holes_begin() == pwh.holes_end()) {
-              // We can use optimal partitioning if there are no holes.
-              typedef CGAL::Partition_traits_2<EK> Traits;
-	      typedef Traits::Polygon_2 Polygon_2;
-              typedef std::list<Polygon_2> Polygon_list;
-              Polygon_list partition_polys;
-              // We invest more here to minimize unions below.
-              CGAL::optimal_convex_partition_2(
-                  pwh.outer_boundary().vertices_begin(),
-                  pwh.outer_boundary().vertices_end(),
-                  std::back_inserter(partition_polys));
-              for (const auto& polygon : partition_polys) {
-                std::vector<EK::Point_3> points;
-                for (const auto& point_2 : polygon) {
-                  const auto point = plane.to_3d(point_2);
-                  const auto offset = point - zero;
-                  for (const auto& tool_point : tool_points) {
-                    points.push_back(tool_point + offset);
-                  }
-                }
-                add_hull(points);
+          // We can use optimal partitioning if there are no holes.
+          typedef CGAL::Partition_traits_2<EK> Traits;
+          typedef Traits::Polygon_2 Polygon_2;
+          typedef std::list<Polygon_2> Polygon_list;
+          Polygon_list partition_polys;
+          // We invest more here to minimize unions below.
+          CGAL::optimal_convex_partition_2(
+              pwh.outer_boundary().vertices_begin(),
+              pwh.outer_boundary().vertices_end(),
+              std::back_inserter(partition_polys));
+          for (const auto& polygon : partition_polys) {
+            std::vector<EK::Point_3> points;
+            for (const auto& point_2 : polygon) {
+              const auto point = plane.to_3d(point_2);
+              const auto offset = point - zero;
+              for (const auto& tool_point : tool_points) {
+                points.push_back(tool_point + offset);
               }
+            }
+            add_hull(points);
+          }
         } else {
           typedef CGAL::Exact_predicates_tag Itag;
-          typedef CGAL::Constrained_Delaunay_triangulation_2<
-              EK, CGAL::Default, Itag>
+          typedef CGAL::Constrained_Delaunay_triangulation_2<EK, CGAL::Default,
+                                                             Itag>
               CDT;
           CDT cdt;
           cdt.insert_constraint(pwh.outer_boundary().vertices_begin(),
@@ -251,9 +314,14 @@ static GeometryId Grow(Assets& assets, Shape& shape,
     }
 
     Geometry output;
+    std::cerr << "Grow: About to decode surface mesh with "
+              << final_mesh.number_of_vertices() << " vertices." << std::endl;
     output.DecodeSurfaceMesh<EK>(final_mesh);
+    std::cerr << "Grow: Successfully decoded surface mesh with "
+              << output.vertices_.size() << " vertices." << std::endl;
     return assets.TextId(output.Transform(shape.GetTf().inverse()));
   } catch (const std::exception& e) {
+    std::cerr << "Grow: Error - " << e.what() << std::endl;
     Napi::Error::New(assets.Env(), e.what()).ThrowAsJavaScriptException();
   }
   return assets.UndefinedId();
