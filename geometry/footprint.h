@@ -6,7 +6,7 @@
 #include <CGAL/Polygon_set_2.h>
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh.h>
-#include <CGAL/Triangle_2.h>  // Added this include
+#include <CGAL/Triangle_2.h>
 
 #include "assets.h"
 #include "geometry.h"

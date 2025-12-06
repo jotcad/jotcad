@@ -43,6 +43,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
+#include "footprint.h"
 
 namespace jot_cgal {
 
