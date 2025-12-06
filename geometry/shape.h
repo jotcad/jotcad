@@ -14,15 +14,27 @@ class Shape {
   Napi::Object ToNapi() const { return napi_; }
 
   Napi::String GeometryId() {
-    if (!id_) {
-      id_ = napi_.Get("geometry").As<Napi::String>();
+    if (!id_) {  // Only retrieve if not already cached
+      Napi::Value geometryValue = napi_.Get("geometry");
+      if (geometryValue.IsUndefined()) {
+        Napi::Error::New(napi_.Env(),
+                         "Shape.GeometryId(): 'geometry' property is "
+                         "undefined. Expected a GeometryId string.")
+            .ThrowAsJavaScriptException();
+        // Fallback to an empty Napi::String for compilation, though exception
+        // should halt execution.
+        id_ = Napi::String::New(napi_.Env(), "");
+      } else {
+        // Let Napi's As<Napi::String>() throw if it's not a string.
+        id_ = geometryValue.As<Napi::String>();
+      }
     }
     return *id_;
   }
 
   bool HasGeometryId() {
-    Napi::String id = GeometryId();
-    return id != napi_.Env().Undefined();
+    // Simply check if the 'geometry' property exists and is not undefined.
+    return napi_.Get("geometry") != napi_.Env().Undefined();
   }
 
   bool GetMask(Shape& mask) {

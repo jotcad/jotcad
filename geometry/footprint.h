@@ -6,7 +6,7 @@
 #include <CGAL/Polygon_set_2.h>
 #include <CGAL/Polygon_with_holes_2.h>
 #include <CGAL/Surface_mesh.h>
-#include <CGAL/Triangle_2.h> // Added this include
+#include <CGAL/Triangle_2.h>
 
 #include "assets.h"
 #include "geometry.h"
@@ -20,9 +20,9 @@ typedef EK_2D::Point_2 Point_2;
 typedef CGAL::Polygon_2<EK_2D> Polygon_2;
 typedef CGAL::Polygon_with_holes_2<EK_2D> Polygon_with_holes_2;
 
-
 static GeometryId footprint(Assets& assets, Shape& shape) {
-  Geometry input_geometry = assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
+  Geometry input_geometry =
+      assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
   Geometry output_geometry;
 
   if (input_geometry.vertices_.empty() || input_geometry.triangles_.empty()) {
@@ -43,7 +43,8 @@ static GeometryId footprint(Assets& assets, Shape& shape) {
     auto it = projected_point_to_index_map.find(p2);
     if (it == projected_point_to_index_map.end()) {
       size_t new_index = output_geometry.vertices_.size();
-      output_geometry.vertices_.push_back(CGAL::Point_3<EK>(p3.x(), p3.y(), 0)); // Store as 3D point with z=0
+      output_geometry.vertices_.push_back(
+          CGAL::Point_3<EK>(p3.x(), p3.y(), 0));  // Store as 3D point with z=0
       projected_points.push_back(p2);
       projected_point_to_index_map[p2] = new_index;
       original_to_projected_index_map[i] = new_index;
@@ -59,10 +60,13 @@ static GeometryId footprint(Assets& assets, Shape& shape) {
     if (triangle_indices.size() != 3) continue;
 
     // Get the projected 2D points using the new indices
-    Point_2 p0 = projected_points[original_to_projected_index_map[triangle_indices[0]]];
-    Point_2 p1 = projected_points[original_to_projected_index_map[triangle_indices[1]]];
-    Point_2 p2 = projected_points[original_to_projected_index_map[triangle_indices[2]]];
-    
+    Point_2 p0 =
+        projected_points[original_to_projected_index_map[triangle_indices[0]]];
+    Point_2 p1 =
+        projected_points[original_to_projected_index_map[triangle_indices[1]]];
+    Point_2 p2 =
+        projected_points[original_to_projected_index_map[triangle_indices[2]]];
+
     // Only add non-degenerate triangles
     EK_2D kernel;
     CGAL::Triangle_2<EK_2D> cgal_triangle(p0, p1, p2);
@@ -105,19 +109,22 @@ static GeometryId footprint(Assets& assets, Shape& shape) {
       if (it != projected_point_to_index_map.end()) {
         outer_face_indices.push_back(it->second);
       } else {
-        // This should theoretically not happen if projected_point_to_index_map is correctly built
-        // and p2 comes from the set of projected_points.
-        // If it does, it indicates a bug or floating point issue.
-        // For robustness, add the point if not found.
+        // This should theoretically not happen if projected_point_to_index_map
+        // is correctly built and p2 comes from the set of projected_points. If
+        // it does, it indicates a bug or floating point issue. For robustness,
+        // add the point if not found.
         size_t new_index = output_geometry.vertices_.size();
-        output_geometry.vertices_.push_back(CGAL::Point_3<EK>(p2.x(), p2.y(), 0));
-        projected_point_to_index_map[p2] = new_index; // Update map with new point
+        output_geometry.vertices_.push_back(
+            CGAL::Point_3<EK>(p2.x(), p2.y(), 0));
+        projected_point_to_index_map[p2] =
+            new_index;  // Update map with new point
         outer_face_indices.push_back(new_index);
       }
     }
 
     // Add hole boundary vertices
-    for (auto hole_it = pwh.holes_begin(); hole_it != pwh.holes_end(); ++hole_it) {
+    for (auto hole_it = pwh.holes_begin(); hole_it != pwh.holes_end();
+         ++hole_it) {
       std::vector<size_t> current_hole_indices;
       for (const auto& p2 : *hole_it) {
         auto it = projected_point_to_index_map.find(p2);
@@ -125,8 +132,10 @@ static GeometryId footprint(Assets& assets, Shape& shape) {
           current_hole_indices.push_back(it->second);
         } else {
           size_t new_index = output_geometry.vertices_.size();
-          output_geometry.vertices_.push_back(CGAL::Point_3<EK>(p2.x(), p2.y(), 0));
-          projected_point_to_index_map[p2] = new_index; // Update map with new point
+          output_geometry.vertices_.push_back(
+              CGAL::Point_3<EK>(p2.x(), p2.y(), 0));
+          projected_point_to_index_map[p2] =
+              new_index;  // Update map with new point
           current_hole_indices.push_back(new_index);
         }
       }
@@ -138,4 +147,4 @@ static GeometryId footprint(Assets& assets, Shape& shape) {
   return assets.TextId(output_geometry.Transform(shape.GetTf().inverse()));
 }
 
-} // namespace geometry
+}  // namespace geometry

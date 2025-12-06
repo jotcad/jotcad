@@ -1,0 +1,22 @@
+
+=79 files/observed.rule.Box2_z.jot
+{"geometry":"9b49189f64f87f8adf0d8dee89714f4a117426551b000a04a1d480aae21dfc96"}
+=200 assets/text/9b49189f64f87f8adf0d8dee89714f4a117426551b000a04a1d480aae21dfc96
+V 8
+v -5 -5 0 -5 -5 0
+v -5 -5 4 -5 -5 4
+v 5 -5 4 5 -5 4
+v 5 -5 0 5 -5 0
+v 5 5 4 5 5 4
+v 5 5 0 5 5 0
+v -5 5 4 -5 5 4
+v -5 5 0 -5 5 0
+T 8
+t 0 2 1
+t 0 3 2
+t 3 4 2
+t 3 5 4
+t 5 6 4
+t 5 7 6
+t 7 1 6
+t 7 0 1

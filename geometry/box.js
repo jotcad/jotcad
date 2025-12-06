@@ -42,7 +42,7 @@ v 0 1 0 0 1 0
 s 0 1 1 2 2 3 3 0
 `;
 
-export const Box2 = async (assets, [x0, x1], [y0, y1]) =>
+export const Box2 = (assets, [x0, x1], [y0, y1]) =>
   makeShape({ geometry: assets.textId(unitBox2Text) })
     .scale(x1 - x0, y1 - y0)
     .move(x0, y0);
