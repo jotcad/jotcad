@@ -76,6 +76,48 @@ class Geometry {
   }
 
   template <typename K>
+  void DecodePolygonsWithHoles(
+      const std::vector<CGAL::Polygon_with_holes_2<K>>& pwhs) {
+    Clear();
+    std::map<typename K::Point_2, size_t> point_to_index_map;
+
+    for (const auto& pwh : pwhs) {
+      std::vector<size_t> outer_face_indices;
+      std::vector<std::vector<size_t>> hole_indices_list;
+
+      for (const auto& p2 : pwh.outer_boundary()) {
+        auto it = point_to_index_map.find(p2);
+        if (it != point_to_index_map.end()) {
+          outer_face_indices.push_back(it->second);
+        } else {
+          size_t new_index = vertices_.size();
+          vertices_.push_back(CGAL::Point_3<EK>(p2.x(), p2.y(), 0));
+          point_to_index_map[p2] = new_index;
+          outer_face_indices.push_back(new_index);
+        }
+      }
+
+      for (auto hole_it = pwh.holes_begin(); hole_it != pwh.holes_end();
+           ++hole_it) {
+        std::vector<size_t> current_hole_indices;
+        for (const auto& p2 : *hole_it) {
+          auto it = point_to_index_map.find(p2);
+          if (it != point_to_index_map.end()) {
+            current_hole_indices.push_back(it->second);
+          } else {
+            size_t new_index = vertices_.size();
+            vertices_.push_back(CGAL::Point_3<EK>(p2.x(), p2.y(), 0));
+            point_to_index_map[p2] = new_index;
+            current_hole_indices.push_back(new_index);
+          }
+        }
+        hole_indices_list.push_back(current_hole_indices);
+      }
+      faces_.emplace_back(outer_face_indices, hole_indices_list);
+    }
+  }
+
+  template <typename K>
   void EncodeSurfaceMesh(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
     typedef typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index
         Vertex_index;

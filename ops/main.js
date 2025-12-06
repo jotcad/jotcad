@@ -10,6 +10,8 @@ import './stringSpec.js';
 import './vectorSpec.js';
 
 import { Op } from '@jotcad/op';
+import { footprint } from './footprint.js';
+import { grow } from './grow.js';
 
 export { And } from './and.js';
 export { Arc2 } from './arc.js';
@@ -57,6 +59,8 @@ export { writeFile } from './fs.js';
 export { x } from './x.js';
 export { y } from './y.js';
 export { z } from './z.js';
+export { footprint } from './footprint.js';
+export { grow } from './grow.js';
 
 export { withFs } from './fs.js';
 
@@ -103,4 +107,6 @@ export const operators = [
   'x',
   'y',
   'z',
+  'footprint',
+  'grow',
 ];
