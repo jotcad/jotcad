@@ -12,11 +12,14 @@ import { describe, it } from 'node:test';
 import { Arc2 } from './arc.js';
 import { Box2 } from './box.js';
 import { Orb } from './orb.js';
+import { and } from './and.js';
 import assert from 'node:assert/strict';
 import { color } from './color.js';
 import { cut } from './cut.js';
 import { extrude2 } from './extrude.js';
 import { fill2 } from './fill.js';
+import { footprint } from './footprint.js';
+import { grow } from './grow.js';
 import { jot } from './jot.js';
 import { png } from './png.js';
 import { readFile } from './fs.js';
@@ -74,6 +77,19 @@ describe('ops', () => {
     withFs(fs, async () => {
       await withTestSession('ops_test_failing_op', async (session) => {
         const graph = await run(session, () => Orb(12).cut(z(1)));
+        assert.ok(graph);
+      });
+    }));
+
+  it('Orb(10).z(10).and(footprint())', async () =>
+    withFs(fs, async () => {
+      await withTestSession('ops_test_orb_footprint', async (session) => {
+        const graph = await run(session, () =>
+          Orb(10)
+            .z(10)
+            .and(footprint())
+            .png('observed.ops.test.orb_footprint.png', [-20, -20, 40])
+        );
         assert.ok(graph);
       });
     }));
