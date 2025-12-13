@@ -188,8 +188,26 @@ static Napi::Value TestBinding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
-  bool si = info[2].As<Napi::Boolean>().Value();
-  return Napi::Boolean::New(info.Env(), Test(assets, shape, si));
+  Napi::Object jsOptions = info[2].As<Napi::Object>();
+
+  bool checkBoundAVolume = false;
+  if (jsOptions.Has("doesBoundAVolume")) {
+    checkBoundAVolume =
+        jsOptions.Get("doesBoundAVolume").As<Napi::Boolean>().Value();
+  }
+  bool checkNotSelfIntersect = false;
+  if (jsOptions.Has("doesNotSelfIntersect")) {
+    checkNotSelfIntersect =
+        jsOptions.Get("doesNotSelfIntersect").As<Napi::Boolean>().Value();
+  }
+  bool checkIsClosed = false;
+  if (jsOptions.Has("isClosed")) {
+    checkIsClosed = jsOptions.Get("isClosed").As<Napi::Boolean>().Value();
+  }
+
+  return Napi::Boolean::New(
+      info.Env(), Test(assets, shape, checkBoundAVolume, checkNotSelfIntersect,
+                       checkIsClosed));
 }
 
 static Napi::Value TextIdBinding(const Napi::CallbackInfo& info) {

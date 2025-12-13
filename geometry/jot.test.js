@@ -90,8 +90,8 @@ describe('jot', () => {
 
         const expectedSerializedJot = `
 =79 files/test_main.jot
-{"geometry":"1d8aebd535dfec8755be1d3ab89208d675cab49b971262ec81b082988b06acdc"}
-=348 assets/text/1d8aebd535dfec8755be1d3ab89208d675cab49b971262ec81b082988b06acdc
+{"geometry":"208b5ebd0478d86f322d0278644982fc440dc9567809d818bb93612ced14d392"}
+=348 assets/text/208b5ebd0478d86f322d0278644982fc440dc9567809d818bb93612ced14d392
 V 12
 v 1 1 0 1 1 0
 v 1 1 1 1 1 1
@@ -106,14 +106,10 @@ v 1 2 1 1 2 1
 v 0 2 0 0 2 0
 v 0 2 1 0 2 1
 T 20
-t 8 10 11
-t 9 8 11
 t 1 6 5
 t 1 9 11
 t 1 11 2
 t 1 2 6
-t 1 5 4
-t 0 1 4
 t 0 4 7
 t 8 0 10
 t 10 0 3
@@ -122,8 +118,12 @@ t 2 7 6
 t 3 7 2
 t 2 11 10
 t 10 3 2
+t 1 5 4
+t 0 1 4
 t 4 6 7
 t 4 5 6
+t 8 10 11
+t 9 8 11
 t 1 8 9
 t 1 0 8
 `;

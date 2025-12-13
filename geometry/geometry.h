@@ -11,6 +11,8 @@
 #include <CGAL/Simple_cartesian.h>
 #include <CGAL/Surface_mesh.h>
 
+#include <cassert>
+
 #include "hash.h"
 #include "repair_util.h"
 
@@ -130,7 +132,28 @@ class Geometry {
           mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[1]),
                         Vertex_index(triangle[2]));
       if (fid == mesh.null_face()) {
-        std::cout << "EncodeSurfaceMesh: failed to add face" << std::endl;
+        std::cout << "EncodeSurfaceMesh: failed to add original face ("
+                  << triangle[0] << ", " << triangle[1] << ", " << triangle[2]
+                  << ")" << std::endl;
+        // Try adding the reverse face
+        fid =
+            mesh.add_face(Vertex_index(triangle[0]), Vertex_index(triangle[2]),
+                          Vertex_index(triangle[1]));
+        if (fid == mesh.null_face()) {
+          std::cout << "EncodeSurfaceMesh: failed to add reverse face ("
+                    << triangle[0] << ", " << triangle[2] << ", " << triangle[1]
+                    << ")" << std::endl;
+          assert(false &&
+                 "EncodeSurfaceMesh: Both original and reverse face additions "
+                 "failed.");  // Both failed, this needs fixing upstream.
+        } else {
+          std::cout << "EncodeSurfaceMesh: successfully added reverse face, "
+                       "original orientation was wrong."
+                    << std::endl;
+          assert(
+              false &&
+              "EncodeSurfaceMesh: Original face had incorrect orientation.");  // Original orientation was wrong, this needs fixing upstream.
+        }
       }
     }
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
@@ -411,7 +434,8 @@ class Geometry {
     CGAL::Polygon_mesh_processing::polygon_soup_to_polygon_mesh(
         vertices_, triangles_, mesh);
     repair_degeneracies<EK>(mesh);
-    repair_self_touches<EK>(mesh);
+    // We need to figure out how to detect self-touches after they've been made.
+    // repair_self_touches<EK>(mesh);
     size_t self_intersection_count = number_of_self_intersections(mesh);
     if (self_intersection_count > 0) {
       std::cout << "Geometry/Repair: number_of_self_intersections="
@@ -462,7 +486,8 @@ class GeometryWrapper : public Napi::ObjectWrap<GeometryWrapper> {
         env, "Geometry",
         {InstanceMethod("AddTriangle", &GeometryWrapper::AddTriangle),
          InstanceMethod("AddVertexInexact", &GeometryWrapper::AddVertexInexact),
-         InstanceMethod("Repair", &GeometryWrapper::Repair),
+         InstanceMethod("Repair", &GeometryWrapper::Repair),  // ADDED this line
+
          InstanceMethod("ReserveVertices", &GeometryWrapper::ReserveVertices),
          InstanceMethod("ReserveTriangles",
                         &GeometryWrapper::ReserveTriangles)});
