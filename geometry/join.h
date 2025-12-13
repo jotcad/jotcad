@@ -17,12 +17,9 @@ namespace PMP = CGAL::Polygon_mesh_processing;
 
 static GeometryId Join(Assets& assets, Shape& shape,
                        std::vector<Shape>& shapes) {
-  std::cerr << "DEBUG: Join entered." << std::endl;
-
   CGAL::Surface_mesh<CGAL::Point_3<EK>> target_mesh;
-  std::cerr << "DEBUG: Join: Starting loop for remaining shapes." << std::endl;
+
   for (size_t i = 0; i < shapes.size(); ++i) {
-    std::cerr << "DEBUG: Join: Processing shape element " << i << std::endl;
     shapes[i].Walk([&](Shape& sub_shape) {
       if (!sub_shape.HasGeometryId()) {
         return true;
@@ -32,11 +29,7 @@ static GeometryId Join(Assets& assets, Shape& shape,
       CGAL::Surface_mesh<CGAL::Point_3<EK>> source_mesh;
       tool.EncodeSurfaceMesh<EK>(source_mesh);
 
-      std::cerr << "DEBUG: Join: Calling robust_union for shape element " << i
-                << std::endl;
       if (!robust_union<EK>(target_mesh, source_mesh)) {
-        std::cerr << "ERROR: Join: RobustUnion failed for shape element " << i
-                  << std::endl;
         Napi::Error::New(assets.Env(),
                          "Join: RobustUnion failed to produce a valid result.")
             .ThrowAsJavaScriptException();
@@ -44,9 +37,6 @@ static GeometryId Join(Assets& assets, Shape& shape,
       return true;
     });
   }
-  std::cerr
-      << "DEBUG: Join: Loop for remaining shapes finished. Preparing output."
-      << std::endl;
 
   std::string manifold_report = "";
   if (!CGAL::is_closed(target_mesh)) {
