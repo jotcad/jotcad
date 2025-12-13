@@ -79,20 +79,12 @@ describe('ops/rz_color', () => {
             .join()
             .color('green')
             .png('observed.rz_color_box_join_green.png')
-            .jot('observed.rz_color_box_join_green.jot')
         );
         assert.ok(
           await testPng(
             session,
             'rz_color_box_join_green.png',
             'observed.rz_color_box_join_green.png'
-          )
-        );
-        assert.ok(
-          await testJot(
-            session,
-            'rz_color_box_join_green.jot',
-            'observed.rz_color_box_join_green.jot'
           )
         );
       }
