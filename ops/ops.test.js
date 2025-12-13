@@ -8,6 +8,7 @@ import './vectorSpec.js';
 import * as fs from './fsNode.js';
 
 import { describe, it } from 'node:test';
+import { testJot, testPng, withTestSession } from './test_session_util.js';
 
 import { Arc2 } from './arc.js';
 import { Box2 } from './box.js';
@@ -24,10 +25,10 @@ import { jot } from './jot.js';
 import { png } from './png.js';
 import { readFile } from './fs.js';
 import { run } from '@jotcad/op';
+import { rz } from './rz.js';
 import { save } from './save.js';
-import { testPng } from '@jotcad/geometry';
 import { withFs } from './fs.js';
-import { withTestSession } from './test_session_util.js';
+import { x } from './x.js';
 import { z } from './z.js';
 
 describe('ops', () => {

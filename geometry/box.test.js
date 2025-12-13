@@ -2,6 +2,7 @@ import { Box2, Box3 } from './box.js';
 import { describe, it } from 'node:test';
 
 import assert from 'node:assert/strict';
+import { cgal } from './getCgal.js';
 import { renderPng } from './renderPng.js';
 import { testPng } from './test_png.js';
 import { withTestAssets } from './test_session_util.js';
@@ -34,5 +35,22 @@ describe('box', () => {
         await testPng(`${import.meta.dirname}/box.test.Box2.png`, image)
       );
     });
+  });
+
+  it('should produce a well-structured 3d box', async () => {
+    await withTestAssets(
+      'should produce a well-structured 3d box',
+      async (assets) => {
+        const box = await Box3(assets, [-1, 1], [-1, 1], [-1, 1]);
+        assert.ok(
+          cgal.Test(assets, box, {
+            doesBoundAVolume: true,
+            doesNotSelfIntersect: true,
+            isClosed: true,
+          }),
+          'Box3 should be a closed, non-self-intersecting volume'
+        );
+      }
+    );
   });
 });

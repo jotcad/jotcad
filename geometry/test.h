@@ -1,29 +1,37 @@
 #pragma once
 
-#include <CGAL/Polygon_mesh_processing/corefinement.h>
-#include <CGAL/Polygon_mesh_processing/remesh_planar_patches.h>
-
 #include "assets.h"
 #include "geometry.h"
-#include "repair_util.h"
 #include "shape.h"
 
-static bool Test(Assets& assets, Shape& shape, bool si) {
-  Geometry target =
-      assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
-  CGAL::Surface_mesh<CGAL::Point_3<EK>> mesh;
-  target.EncodeSurfaceMesh<EK>(mesh);
-
-  bool failed = false;
-
-  if (si) {
-    size_t count = number_of_self_intersections(mesh);
-    if (count > 0) {
-      failed = true;
-      std::cout << "Test/si: mesh=" << mesh << std::endl;
+static bool Test(Assets& assets, Shape& shape, bool checkBoundAVolume,
+                 bool checkNotSelfIntersect, bool checkIsClosed) {
+  CGAL::Surface_mesh<EK::Point_3> mesh;
+  shape.Walk([&](Shape& sub_shape) {
+    if (!sub_shape.HasGeometryId()) {
+      return true;
     }
-    std::cout << "Test/si: count=" << count << std::endl;
+    Geometry initial_tool =
+        assets.GetGeometry(sub_shape.GeometryId()).Transform(sub_shape.GetTf());
+    initial_tool.EncodeSurfaceMesh<EK>(mesh);
+    return false;
+  });
+
+  if (checkBoundAVolume) {
+    if (!PMP::does_bound_a_volume(mesh)) {
+      return false;
+    }
+  }
+  if (checkNotSelfIntersect) {
+    if (PMP::does_self_intersect(mesh)) {
+      return false;
+    }
+  }
+  if (checkIsClosed) {
+    if (!CGAL::is_closed(mesh)) {
+      return false;
+    }
   }
 
-  return failed;
+  return true;
 }

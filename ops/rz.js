@@ -11,5 +11,8 @@ export const rz = registerOp({
     session,
     input,
     turns // Changed assets to session
-  ) => makeShape({ shapes: turns.map((turn) => input.rotateZ(turn)) }),
+  ) => {
+    const rotatedShapes = turns.map((turn) => input.rotateZ(turn));
+    return makeShape({ shapes: rotatedShapes });
+  },
 });

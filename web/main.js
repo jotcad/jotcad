@@ -150,6 +150,7 @@ async function init() {
 
       const jotText = await response.text();
       console.log('Received JOT data from server.');
+      console.log(jotText); // Log the actual JOT text
       await renderJotString(jotText);
     } catch (error) {
       console.error('Failed to send code or receive JOT data:', error);
