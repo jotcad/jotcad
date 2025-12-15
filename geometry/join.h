@@ -15,8 +15,8 @@ namespace PMP = CGAL::Polygon_mesh_processing;
 
 #include "robust_boolean.h"
 
-static GeometryId Join(Assets& assets, Shape& shape,
-                       std::vector<Shape>& shapes) {
+static GeometryId Join(Assets& assets, Shape& shape, std::vector<Shape>& shapes,
+                       double envelope_size = 0.01) {
   CGAL::Surface_mesh<CGAL::Point_3<EK>> target_mesh;
 
   for (size_t i = 0; i < shapes.size(); ++i) {
@@ -29,7 +29,7 @@ static GeometryId Join(Assets& assets, Shape& shape,
       CGAL::Surface_mesh<CGAL::Point_3<EK>> source_mesh;
       tool.EncodeSurfaceMesh<EK>(source_mesh);
 
-      if (!robust_union<EK>(target_mesh, source_mesh)) {
+      if (!robust_union<EK>(target_mesh, source_mesh, envelope_size)) {
         Napi::Error::New(assets.Env(),
                          "Join: RobustUnion failed to produce a valid result.")
             .ThrowAsJavaScriptException();

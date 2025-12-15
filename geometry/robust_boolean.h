@@ -16,7 +16,8 @@
 
 template <typename K>
 static bool robust_union(CGAL::Surface_mesh<typename K::Point_3>& target_mesh,
-                         CGAL::Surface_mesh<typename K::Point_3>& source_mesh) {
+                         CGAL::Surface_mesh<typename K::Point_3>& source_mesh,
+                         double envelope_size) {
   if (target_mesh.is_empty()) {
     if (source_mesh.is_empty()) {
       return true;  // Union of two empty meshes is empty
@@ -130,7 +131,7 @@ static bool robust_union(CGAL::Surface_mesh<typename K::Point_3>& target_mesh,
       if (polyline.size() == 1) {
         const auto& p = polyline[0];
         CGAL::Surface_mesh<typename K::Point_3> single_point_envelope;
-        make_point_envelope<K>(p, 0.01, single_point_envelope);
+        make_point_envelope<K>(p, envelope_size, single_point_envelope);
 
         if (!PMP::corefine_and_compute_difference(
                 source_mesh, single_point_envelope, source_mesh,
@@ -145,7 +146,8 @@ static bool robust_union(CGAL::Surface_mesh<typename K::Point_3>& target_mesh,
           const auto& p1 = polyline[i];
           const auto& p2 = polyline[i + 1];
           CGAL::Surface_mesh<typename K::Point_3> single_prism_mesh;
-          make_segment_envelope<K>(p1, p2, 0.01, 0.01, single_prism_mesh);
+          make_segment_envelope<K>(p1, p2, envelope_size, envelope_size,
+                                   single_prism_mesh);
 
           if (!PMP::corefine_and_compute_difference(
                   source_mesh, single_prism_mesh, source_mesh,

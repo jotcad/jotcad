@@ -46,7 +46,7 @@ describe('jot', () => {
         // 1. Create a more complex original shape (two joined Box3s)
         const box1 = Box3(assets, [0, 1], [0, 1], [0, 1]);
         const box2 = Box3(assets, [0.5, 1.5], [0.5, 1.5], [0.5, 1.5]);
-        const originalShape = join(assets, box1, [box2]);
+        const originalShape = join(assets, box1, [box2], 0.01);
 
         // 2. Convert the original shape to jot format
         const jotId = await toJot(assets, originalShape);
@@ -78,7 +78,7 @@ describe('jot', () => {
         const boxC = Box3(assets, [0, 1], [1, 2], [0, 1]);
 
         // 2. Combine them into a single shape that references multiple underlying geometries
-        const originalShape = join(assets, boxA, [boxB, boxC]);
+        const originalShape = join(assets, boxA, [boxB, boxC], 0.01);
 
         // 3. Serialize the combined shape using toJot
         const serializedJot = await toJot(
