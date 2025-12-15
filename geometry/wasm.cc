@@ -137,7 +137,7 @@ static Napi::Value GrowBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value JoinBinding(const Napi::CallbackInfo& info) {
-  AssertArgCount(info, 3);
+  AssertArgCount(info, 4);  // Now expects 4 arguments
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   Napi::Array jsTools(info[2].As<Napi::Array>());
@@ -145,7 +145,9 @@ static Napi::Value JoinBinding(const Napi::CallbackInfo& info) {
   for (uint32_t nth = 0; nth < jsTools.Length(); nth++) {
     tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
   }
-  return Join(assets, shape, tools);
+  double envelope_size =
+      info[3].As<Napi::Number>().DoubleValue();      // Extract envelope_size
+  return Join(assets, shape, tools, envelope_size);  // Pass envelope_size
 }
 
 static Napi::Value LinkBinding(const Napi::CallbackInfo& info) {
