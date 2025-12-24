@@ -4,10 +4,12 @@
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Line_3.h>
 #include <CGAL/Plane_3.h>
+#include <CGAL/Polygon_mesh_processing/autorefinement.h>
 #include <CGAL/Polygon_mesh_processing/bbox.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/manifoldness.h>
 #include <CGAL/Polygon_mesh_processing/merge_border_vertices.h>
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
 #include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
 #include <CGAL/Polygon_mesh_processing/repair_self_intersections.h>
@@ -18,10 +20,15 @@
 #include <CGAL/Triangle_3.h>
 #include <CGAL/intersections.h>
 
+#include <array>
+#include <iostream>  // Added for logging
+#include <set>
 #include <variant>
 
 #include "self_touch_util.h"
 #include "unit_util.h"
+
+namespace PMP = CGAL::Polygon_mesh_processing;
 
 template <typename K>
 static bool number_of_holes(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
