@@ -14,6 +14,7 @@
 #include <cassert>
 
 #include "hash.h"
+#include "repair_soup_util.h"
 #include "repair_util.h"
 
 template <typename K>
@@ -424,6 +425,9 @@ class Geometry {
   void Repair() {
     CGAL::Polygon_mesh_processing::repair_polygon_soup(vertices_, triangles_);
     CGAL::Polygon_mesh_processing::orient_polygon_soup(vertices_, triangles_);
+
+    repair_soup<EK>(vertices_, triangles_);
+
     bool is_mesh =
         CGAL::Polygon_mesh_processing::is_polygon_soup_a_polygon_mesh(
             triangles_);
