@@ -70,28 +70,13 @@ void GetPolylines(Assets& assets, Shape& shape,
 
 }  // namespace internal
 
-inline GeometryId Rule(
-    Assets& assets, Shape& from_shape, Shape& to_shape,
-    std::optional<unsigned int> seed,
-    uint32_t stopping_rule_max_iterations,  // This is still passed from JS, but
-                                            // will be used in a different way
-                                            // for StoppingRule
+// Internal helper function to create a ruled surface mesh between two polylines
+inline Mesh CreateRuledSurfaceMesh(
+    PolygonalChain& p_in,
+    PolygonalChain&
+        q_in,  // Pass by ref, non-const because we might close them (push_back)
+    std::optional<unsigned int> seed, uint32_t stopping_rule_max_iterations,
     uint32_t stopping_rule_iters_without_improvement) {
-  std::vector<PolygonalChain> from_polylines;
-  internal::GetPolylines(assets, from_shape, from_polylines);
-
-  std::vector<PolygonalChain> to_polylines;
-  internal::GetPolylines(assets, to_shape, to_polylines);
-
-  if (from_polylines.empty() || to_polylines.empty()) {
-    Napi::TypeError::New(assets.Env(),
-                         "Could not extract polylines from shapes for ruling.")
-        .ThrowAsJavaScriptException();
-  }
-
-  PolygonalChain p_in = from_polylines[0];
-  PolygonalChain q_in = to_polylines[0];
-
   // Ensure the polylines are closed.
   if (!p_in.empty() && p_in.front() != p_in.back()) {
     p_in.push_back(p_in.front());
@@ -127,9 +112,9 @@ inline GeometryId Rule(
   typename SeamSearchSA<TriangulationStrategy, StoppingRule>::Options options;
   options.seed = seed;
   options.stopping_rule = StoppingRule(
-      stopping_rule_max_iterations,
-      stopping_rule_iters_without_improvement);  // Use the parameters for
-                                                 // ConvergenceStoppingRule
+      stopping_rule_iters_without_improvement,  // maps to convergence_iters
+      stopping_rule_max_iterations);            // maps to max_iters
+                                                // ConvergenceStoppingRule
   Mesh mesh_result;
   SolutionStats stats;
 
@@ -191,12 +176,102 @@ inline GeometryId Rule(
               << std::endl;
   }
 
-  // 5. Convert mesh_result to Geometry and store in Assets
+  return mesh_result;
+}
+
+// Helper to merge source mesh into target mesh
+inline void MergeMesh(Mesh& target, const Mesh& source) {
+  // Map vertices from source to target
+  std::map<Mesh::Vertex_index, Mesh::Vertex_index> v_map;
+  for (auto v : source.vertices()) {
+    v_map[v] = target.add_vertex(source.point(v));
+  }
+  // Add faces
+  for (auto f : source.faces()) {
+    std::vector<Mesh::Vertex_index> face_verts;
+    auto h = source.halfedge(f);
+    for (auto v : source.vertices_around_face(h)) {
+      face_verts.push_back(v_map[v]);
+    }
+    target.add_face(face_verts);
+  }
+}
+
+// Single rule (for two shapes) wrapper
+inline GeometryId Rule(Assets& assets, Shape& from_shape, Shape& to_shape,
+                       std::optional<unsigned int> seed,
+                       uint32_t stopping_rule_max_iterations,
+                       uint32_t stopping_rule_iters_without_improvement) {
+  std::vector<PolygonalChain> from_polylines;
+  internal::GetPolylines(assets, from_shape, from_polylines);
+
+  std::vector<PolygonalChain> to_polylines;
+  internal::GetPolylines(assets, to_shape, to_polylines);
+
+  if (from_polylines.empty() || to_polylines.empty()) {
+    Napi::TypeError::New(assets.Env(),
+                         "Could not extract polylines from shapes for ruling.")
+        .ThrowAsJavaScriptException();
+  }
+
+  // Use the first polyline from each shape
+  PolygonalChain p_in = from_polylines[0];
+  PolygonalChain q_in = to_polylines[0];
+
+  Mesh mesh_result =
+      CreateRuledSurfaceMesh(p_in, q_in, seed, stopping_rule_max_iterations,
+                             stopping_rule_iters_without_improvement);
+
   Geometry geom_result;
   geom_result.DecodeSurfaceMesh<IK>(mesh_result);
-  GeometryId mesh_id = assets.TextId(geom_result);
+  return assets.TextId(geom_result);
+}
 
-  return mesh_id;
+// Overloaded Rule function for multiple shapes
+inline GeometryId Rule(Assets& assets, std::vector<Shape>& shapes,
+                       std::optional<unsigned int> seed,
+                       uint32_t stopping_rule_max_iterations,
+                       uint32_t stopping_rule_iters_without_improvement) {
+  if (shapes.size() < 2) {
+    Napi::TypeError::New(assets.Env(), "Rule requires at least two shapes.")
+        .ThrowAsJavaScriptException();
+  }
+
+  // 1. Extract all polylines once
+  std::vector<PolygonalChain> all_polylines;
+  all_polylines.reserve(shapes.size());
+
+  for (size_t i = 0; i < shapes.size(); ++i) {
+    std::vector<PolygonalChain> current_polylines;
+    internal::GetPolylines(assets, shapes[i], current_polylines);
+
+    if (current_polylines.empty()) {
+      Napi::TypeError::New(
+          assets.Env(),
+          "Could not extract polylines from one of the shapes for ruling.")
+          .ThrowAsJavaScriptException();
+    }
+    // We take the first polyline from each shape, similar to the original logic
+    all_polylines.push_back(std::move(current_polylines[0]));
+  }
+
+  Mesh accumulated_mesh;
+
+  // 2. Iterate through pairs of polylines
+  for (size_t i = 0; i < all_polylines.size() - 1; ++i) {
+    // Note: CreateRuledSurfaceMesh might modify the polylines (closing them),
+    // which is fine/desirable for the next iteration where all_polylines[i+1]
+    // becomes p_in.
+    Mesh pair_mesh = CreateRuledSurfaceMesh(
+        all_polylines[i], all_polylines[i + 1], seed,
+        stopping_rule_max_iterations, stopping_rule_iters_without_improvement);
+
+    MergeMesh(accumulated_mesh, pair_mesh);
+  }
+
+  Geometry geom_result;
+  geom_result.DecodeSurfaceMesh<IK>(accumulated_mesh);
+  return assets.TextId(geom_result);
 }
 
 }  // namespace geometry

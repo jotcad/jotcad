@@ -116,16 +116,22 @@ export const decodeTf = (tf) => {
         return makeRotateZMatrix(Math.PI * 2 * tau);
       }
       case 's': {
-        const x = parseFloat(pieces.shift());
-        const y = parseFloat(pieces.shift());
-        const z = parseFloat(pieces.shift());
+        pieces.shift(); // Discards precise_x
+        pieces.shift(); // Discards precise_y
+        pieces.shift(); // Discards precise_z
+        const x = parseFloat(pieces.shift()); // Uses approx_x
+        const y = parseFloat(pieces.shift()); // Uses approx_y
+        const z = parseFloat(pieces.shift()); // Uses approx_z
         const sm = makeScaleMatrix(x, y, z);
         return sm;
       }
       case 't': {
-        const x = parseFloat(pieces.shift());
-        const y = parseFloat(pieces.shift());
-        const z = parseFloat(pieces.shift());
+        pieces.shift(); // Discards precise_x
+        pieces.shift(); // Discards precise_y
+        pieces.shift(); // Discards precise_z
+        const x = parseFloat(pieces.shift()); // Uses approx_x
+        const y = parseFloat(pieces.shift()); // Uses approx_y
+        const z = parseFloat(pieces.shift()); // Uses approx_z
         const tm = makeTranslateMatrix(x, y, z);
         return tm;
       }
@@ -162,7 +168,7 @@ export const decodeTf = (tf) => {
       return b.clone().invert();
     } else {
       const a = decodeTf(tf[0]);
-      return a.clone().multiply(b);
+      return a.clone().multiply(b); // Reverted to original
     }
   } else {
     throw Error(`Undecoded tf: ${tf}`);
@@ -305,8 +311,12 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
         );
 
         const indices = [];
-        for (const [source, target] of segments) {
-          indices.push(source, target);
+        // Iterate through each polyline/segment group
+        for (const segmentGroup of segments) {
+          // Iterate through the vertex indices in the current group, taking them in pairs
+          for (let i = 0; i < segmentGroup.length - 1; i += 2) {
+            indices.push(segmentGroup[i], segmentGroup[i + 1]);
+          }
         }
         bufferGeometry.setIndex(indices);
         geometryType = 'lines';

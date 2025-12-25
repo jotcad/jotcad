@@ -37,10 +37,7 @@ Op.registerSpecHandler(
           // TODO: Handle deferred normalization.
           result = arg;
           break;
-        } else if (
-          isIntervalLike(arg) ||
-          (arg instanceof Op && arg.getOutputType() === 'interval')
-        ) {
+        } else if (isIntervalLike(arg)) {
           result = normalizeInterval(arg);
           break;
         }

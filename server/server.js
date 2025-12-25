@@ -33,6 +33,8 @@ const whitelist = {
     'Identifier',
     'Literal',
     'MemberExpression',
+    'ArrayExpression',
+    'ObjectExpression',
   ],
   operators: ['+', '-', '*', '/', '='],
 };
