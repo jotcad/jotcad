@@ -43,6 +43,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
+#include "wrap.h"  // Added for Wrap3 function
 
 namespace jot_cgal {
 
@@ -247,11 +248,17 @@ static Napi::Value MakeOrbBinding(const Napi::CallbackInfo& info) {
 }
 
 static Napi::Value RuleBinding(const Napi::CallbackInfo& info) {
-  AssertArgCount(info, 4);
+  AssertArgCount(info, 3);  // Now expects assets, shapes_array, options
   Assets assets(info[0].As<Napi::Object>());
-  Shape from_shape(info[1].As<Napi::Object>());
-  Shape to_shape(info[2].As<Napi::Object>());
-  Napi::Object js_options = info[3].As<Napi::Object>();
+  Napi::Array js_shapes(info[1].As<Napi::Array>());  // Extract array of shapes
+  Napi::Object js_options = info[2].As<Napi::Object>();
+
+  std::vector<Shape> shapes;
+  shapes.reserve(js_shapes.Length());
+  for (uint32_t nth = 0; nth < js_shapes.Length(); nth++) {
+    shapes.emplace_back(js_shapes.Get(nth).As<Napi::Object>());
+  }
+
   std::optional<unsigned int> seed;
   if (js_options.Has("seed")) {
     seed = js_options.Get("seed").As<Napi::Number>().Uint32Value();
@@ -272,10 +279,23 @@ static Napi::Value RuleBinding(const Napi::CallbackInfo& info) {
             .Uint32Value();
   }
 
-  GeometryId mesh_id = geometry::Rule(assets, from_shape, to_shape, seed,
-                                      stopping_rule_max_iterations,
-                                      stopping_rule_iters_without_improvement);
+  // Call the overloaded C++ Rule function
+  GeometryId mesh_id =
+      geometry::Rule(assets, shapes, seed, stopping_rule_max_iterations,
+                     stopping_rule_iters_without_improvement);
   return mesh_id;
+}
+
+static Napi::Value Wrap3Binding(const Napi::CallbackInfo& info) {
+  AssertArgCount(
+      info, 4);  // Expect exactly 4 arguments: assets, shape, alpha, offset
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+
+  double alpha = info[2].As<Napi::Number>().DoubleValue();
+  double offset = info[3].As<Napi::Number>().DoubleValue();
+
+  return Wrap3(assets, shape, alpha, offset);
 }
 
 Napi::String World(const Napi::CallbackInfo& info) {
@@ -325,6 +345,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, MakeOrbBinding));
   exports.Set(Napi::String::New(env, "Rule"),
               Napi::Function::New(env, RuleBinding));
+  exports.Set(Napi::String::New(env, "Wrap3"),  // Register Wrap3
+              Napi::Function::New(env, Wrap3Binding));
 
   exports.Set(Napi::String::New(env, "World"), Napi::Function::New(env, World));
   exports.Set(Napi::String::New(env, "ComputeTextHash"),

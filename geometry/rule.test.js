@@ -31,7 +31,7 @@ describe('rule', () => {
       ]);
 
       // Call the rule operation
-      const ruled_surface = rule(assets, from_shape, to_shape);
+      const ruled_surface = rule(assets, [from_shape, to_shape]);
 
       // Assert that a GeometryId is returned (indicating a mesh was generated)
       assert.ok(

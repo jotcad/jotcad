@@ -25,6 +25,7 @@ export { Point } from './point.js';
 export { Stl } from './stl.js';
 export { Z } from './z.js';
 export { Rule, rule } from './rule.js';
+export { wrap3 } from './wrap.js'; // MODIFIED: Export wrap3 from ops/wrap.js
 
 export { absolute } from './absolute.js';
 export { and } from './and.js';
@@ -50,6 +51,7 @@ export { rx } from './rx.js';
 export { ry } from './ry.js';
 export { rz } from './rz.js';
 export { save } from './save.js';
+export { scale } from './scale.js';
 export { set } from './set.js';
 export { simplify } from './simplify.js';
 export { stl } from './stl.js';
@@ -91,6 +93,7 @@ export const operators = [
   'get',
   'join',
   'jot',
+  'link',
   'mask',
   'nth',
   'png',
@@ -98,6 +101,7 @@ export const operators = [
   'rx',
   'ry',
   'rz',
+  'scale',
   'set',
   'simplify',
   'stl',
@@ -109,4 +113,5 @@ export const operators = [
   'z',
   'footprint',
   'grow',
+  'wrap3', // MODIFIED: 'wrap' to 'wrap3' in operators
 ];

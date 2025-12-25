@@ -25,23 +25,27 @@ static GeometryId Fill2(Assets& assets, std::vector<Shape>& shapes,
   CGAL::Plane_3<EK> plane(0, 0, 1, 0);
 
   for (Shape& shape : shapes) {
-    const auto id = shape.GeometryId();
-    Tf tf = shape.GetTf();
-    Geometry geometry =
-        assets.GetGeometry(shape.GeometryId()).Transform(shape.GetTf());
-    for (const auto& [source, target] : geometry.segments_) {
-      CGAL::Segment_3<EK> s3(geometry.vertices_[source],
-                             geometry.vertices_[target]);
-      if (s3.source() == s3.target()) {
-        continue;
+    shape.Walk([&](Shape& sub_shape) {
+      if (!sub_shape.HasGeometryId()) {
+        return true;
       }
-      CGAL::Segment_2<EK> s2(plane.to_2d(s3.source()),
-                             plane.to_2d(s3.target()));
-      if (s2.source() == s2.target()) {
-        continue;
+      Geometry geometry = assets.GetGeometry(sub_shape.GeometryId())
+                              .Transform(sub_shape.GetTf());
+      for (const auto& [source, target] : geometry.segments_) {
+        CGAL::Segment_3<EK> s3(geometry.vertices_[source],
+                               geometry.vertices_[target]);
+        if (s3.source() == s3.target()) {
+          return true;
+        }
+        CGAL::Segment_2<EK> s2(plane.to_2d(s3.source()),
+                               plane.to_2d(s3.target()));
+        if (s2.source() == s2.target()) {
+          return true;
+        }
+        insert(arrangement, s2);
       }
-      insert(arrangement, s2);
-    }
+      return true;
+    });
   }
 
   // Convert the arrangements to polygons.

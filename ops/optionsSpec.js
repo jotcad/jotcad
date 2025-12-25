@@ -3,6 +3,8 @@ import { Op, specEquals } from '@jotcad/op';
 import { isArray } from './arraySpec.js';
 import { registerOp } from './op.js';
 
+export const isObject = (value) => value !== null && typeof value === 'object';
+
 const isKeysConforming = (schema, options) => {
   for (const key of Object.keys(options)) {
     if (!schema.hasOwnProperty(key)) {
@@ -25,7 +27,7 @@ Op.registerSpecHandler(
           // TODO: Handle post-validation.
           result = arg;
           break;
-        } else if (arg instanceof Object && isKeysConforming(schema, arg)) {
+        } else if (isObject(arg) && isKeysConforming(schema, arg)) {
           const resolved = {};
           for (const key of Object.keys(arg)) {
             const [value] = Op.destructure(

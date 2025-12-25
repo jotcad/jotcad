@@ -5,21 +5,24 @@ import * as THREE from 'three';
 
 describe('decodeTf', () => {
   it('should correctly decode a translate command', () => {
-    const tf = 't 1 2 3';
+    // Add approximate values to match decodeTf's expectation
+    const tf = 't 1 2 3 1 2 3';
     const matrix = decodeTf(tf);
     const expected = new THREE.Matrix4().makeTranslation(1, 2, 3);
     assert.deepStrictEqual(matrix.elements, expected.elements);
   });
 
   it('should correctly decode a scale command', () => {
-    const tf = 's 2 3 4';
+    // Add approximate values to match decodeTf's expectation
+    const tf = 's 2 3 4 2 3 4';
     const matrix = decodeTf(tf);
     const expected = new THREE.Matrix4().makeScale(2, 3, 4);
     assert.deepStrictEqual(matrix.elements, expected.elements);
   });
 
   it('should correctly decode a sequence of commands', () => {
-    const tf = ['t 1 2 3', 's 2 3 4'];
+    // Add approximate values to match decodeTf's expectation
+    const tf = ['t 1 2 3 1 2 3', 's 2 3 4 2 3 4'];
     const matrix = decodeTf(tf);
     const t = new THREE.Matrix4().makeTranslation(1, 2, 3);
     const s = new THREE.Matrix4().makeScale(2, 3, 4);
