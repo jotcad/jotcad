@@ -8,6 +8,7 @@
 
 #include "assets.h"
 #include "geometry.h"
+#include "random_util.h"
 #include "shape.h"
 
 // Define the kernel type for alpha_wrap_3 (EPICK)
@@ -21,7 +22,7 @@ typedef CGAL::Exact_predicates_exact_constructions_kernel EK_Kernel;
 typedef EK_Kernel::Point_3 EK_Point;
 
 static GeometryId Wrap3(Assets& assets, Shape& shape, double alpha = 1.0,
-                        double offset = 0.0) {
+                        double offset = 1.0) {
   // Collect all geometry from the shape and its sub-shapes
   Geometry combined_geometry;
 
@@ -33,18 +34,24 @@ static GeometryId Wrap3(Assets& assets, Shape& shape, double alpha = 1.0,
     Geometry geom =
         assets.GetGeometry(sub_shape.GeometryId()).Transform(sub_shape.GetTf());
 
-    // Append vertices and update triangle indices
-    size_t current_vertex_offset = combined_geometry.vertices_.size();
+    // Create a mapping from old vertex indices (in geom.vertices_) to new
+    // vertex indices (in combined_geometry.vertices_)
+    std::vector<size_t> vertex_index_map;
+    vertex_index_map.reserve(geom.vertices_.size());
     for (const auto& v_cgal : geom.vertices_) {
-      combined_geometry.AddVertex(v_cgal);
+      vertex_index_map.push_back(combined_geometry.AddVertex(
+          v_cgal, true));  // Add vertex and get its new/merged index
     }
+
+    // Append triangles with remapped indices
     for (const auto& triangle : geom.triangles_) {
-      std::vector<size_t> translated_triangle;
-      translated_triangle.reserve(triangle.size());
-      for (size_t index : triangle) {
-        translated_triangle.push_back(index + current_vertex_offset);
+      std::vector<size_t> remapped_triangle;
+      remapped_triangle.reserve(triangle.size());
+      for (size_t old_index : triangle) {
+        remapped_triangle.push_back(
+            vertex_index_map[old_index]);  // Use the remapped index
       }
-      combined_geometry.triangles_.push_back(translated_triangle);
+      combined_geometry.triangles_.push_back(remapped_triangle);
     }
     // Note: alpha_wrap_3 operates on points and faces (triangles), segments are
     // not directly used here.
@@ -70,6 +77,7 @@ static GeometryId Wrap3(Assets& assets, Shape& shape, double alpha = 1.0,
   OutputMesh alpha_wrapped_mesh;
 
   // Call CGAL::alpha_wrap_3
+  make_deterministic();
   CGAL::alpha_wrap_3(input_points,
                      combined_geometry.triangles_,  // This is the FaceRange
                      alpha, offset, alpha_wrapped_mesh

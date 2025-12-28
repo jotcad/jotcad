@@ -91,6 +91,15 @@ class Session {
   }
 
   /**
+   * Lists the files within the session's files directory.
+   * @abstract
+   * @returns {Promise<string[]>} A list of relative paths to the files.
+   */
+  async listFiles() {
+    throw new Error('Not implemented');
+  }
+
+  /**
    * Writes data to a file within the session's files directory.
    * @abstract
    * @param {string} relativePath - The relative path within the files directory.

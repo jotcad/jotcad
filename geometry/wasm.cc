@@ -26,7 +26,9 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 
 #include "arc_slice.h"
 #include "clip.h"
+#include "close.h"
 #include "cut.h"
+#include "cut_open.h"
 #include "extrude.h"
 #include "fill.h"
 #include "footprint.h"
@@ -58,6 +60,13 @@ static Napi::Value ArcSlice2Binding(const Napi::CallbackInfo& info) {
   return ArcSlice2(assets, shape, start, end);
 }
 
+static Napi::Value Close3Binding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 2);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  return geometry::Close3(assets, shape);
+}
+
 static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 1);
   Napi::String text = info[0].As<Napi::String>();
@@ -86,6 +95,18 @@ static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
     tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
   }
   return Cut(assets, shape, tools);
+}
+
+static Napi::Value CutOpenBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Napi::Array jsTools(info[2].As<Napi::Array>());
+  std::vector<Shape> tools;
+  for (uint32_t nth = 0; nth < jsTools.Length(); nth++) {
+    tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
+  }
+  return CutOpen(assets, shape, tools);
 }
 
 static Napi::Value Extrude2Binding(const Napi::CallbackInfo& info) {
@@ -264,14 +285,14 @@ static Napi::Value RuleBinding(const Napi::CallbackInfo& info) {
     seed = js_options.Get("seed").As<Napi::Number>().Uint32Value();
   }
 
-  uint32_t stopping_rule_max_iterations = 200;  // Default value
+  uint32_t stopping_rule_max_iterations = 20;  // Default value
   if (js_options.Has("stoppingRuleMaxIterations")) {
     stopping_rule_max_iterations = js_options.Get("stoppingRuleMaxIterations")
                                        .As<Napi::Number>()
                                        .Uint32Value();
   }
 
-  uint32_t stopping_rule_iters_without_improvement = 10000;  // Default value
+  uint32_t stopping_rule_iters_without_improvement = 10;  // Default value
   if (js_options.Has("stoppingRuleItersWithoutImprovement")) {
     stopping_rule_iters_without_improvement =
         js_options.Get("stoppingRuleItersWithoutImprovement")
@@ -311,8 +332,12 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, ArcSlice2Binding));
   exports.Set(Napi::String::New(env, "Clip"),
               Napi::Function::New(env, ClipBinding));
+  exports.Set(Napi::String::New(env, "Close3"),
+              Napi::Function::New(env, Close3Binding));
   exports.Set(Napi::String::New(env, "Cut"),
               Napi::Function::New(env, CutBinding));
+  exports.Set(Napi::String::New(env, "CutOpen"),
+              Napi::Function::New(env, CutOpenBinding));
   exports.Set(Napi::String::New(env, "Extrude2"),
               Napi::Function::New(env, Extrude2Binding));
   exports.Set(Napi::String::New(env, "Extrude3"),

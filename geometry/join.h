@@ -19,13 +19,9 @@ static GeometryId Join(Assets& assets, Shape& shape, std::vector<Shape>& shapes,
                        double envelope_size = 0.01) {
   CGAL::Surface_mesh<CGAL::Point_3<EK>> target_mesh;
 
-  for (size_t i = 0; i < shapes.size(); ++i) {
-    shapes[i].Walk([&](Shape& sub_shape) {
-      if (!sub_shape.HasGeometryId()) {
-        return true;
-      }
-      Geometry tool = assets.GetGeometry(sub_shape.GeometryId())
-                          .Transform(sub_shape.GetTf());
+  std::function<void(Shape&)> join_walk = [&](Shape& s) {
+    if (!s.GetBooleanTag("isGap") && s.HasGeometryId()) {
+      Geometry tool = assets.GetGeometry(s.GeometryId()).Transform(s.GetTf());
       CGAL::Surface_mesh<CGAL::Point_3<EK>> source_mesh;
       tool.EncodeSurfaceMesh<EK>(source_mesh);
 
@@ -34,8 +30,19 @@ static GeometryId Join(Assets& assets, Shape& shape, std::vector<Shape>& shapes,
                          "Join: RobustUnion failed to produce a valid result.")
             .ThrowAsJavaScriptException();
       }
+    }
+    s.ForShapes([&](Shape& child) {
+      join_walk(child);
       return true;
     });
+  };
+
+  // Include the base shape in the join.
+  join_walk(shape);
+
+  // Include all additional tool shapes.
+  for (size_t i = 0; i < shapes.size(); ++i) {
+    join_walk(shapes[i]);
   }
 
   std::string manifold_report = "";
@@ -46,9 +53,6 @@ static GeometryId Join(Assets& assets, Shape& shape, std::vector<Shape>& shapes,
           true)) {  // Checks if the mesh is valid and manifold
     manifold_report += "Mesh is not valid or not manifold. ";
   }
-  // TODO: Add more specific checks if needed, e.g., for vertex/edge
-  // manifoldness PMP::is_vertex_manifold(target_mesh)
-  // PMP::is_edge_manifold(target_mesh)
 
   if (!manifold_report.empty()) {
     std::cout << "Join: Throwing JavaScript exception: Non-manifold geometry "
