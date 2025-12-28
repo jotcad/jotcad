@@ -1,5 +1,6 @@
 import { DecodeInexactGeometryText } from './jot_parser.js';
 import earcut from './earcut.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
 import * as THREE from 'three'; // Import THREE explicitly
 
@@ -201,11 +202,36 @@ const triangulateFaceWithHoles = (points, face, holes) => {
 
 const buildMeshMaterial = (shape) => {
   const { color } = shape.tags || {};
-  if (color === undefined) {
-    return new MeshNormalMaterial();
-  } else {
-    return new MeshStandardMaterial({ color });
-  }
+  const material =
+    color === undefined
+      ? new MeshNormalMaterial({ side: THREE.DoubleSide })
+      : new MeshStandardMaterial({ color, side: THREE.DoubleSide });
+
+  material.onBeforeCompile = (shader) => {
+    // Inject at the very end of the fragment shader to ensure we override everything.
+    const lastBraceIndex = shader.fragmentShader.lastIndexOf('}');
+    if (lastBraceIndex !== -1) {
+      shader.fragmentShader =
+        shader.fragmentShader.substring(0, lastBraceIndex) +
+        `
+        if (!gl_FrontFacing) {
+            // Screen-space stripes with a large 80px period for clear visibility.
+            float pattern = mod(gl_FragCoord.x + gl_FragCoord.y, 80.0);
+            if (pattern < 40.0) {
+                // Keep the frontface color as is for this part of the stripe
+            } else {
+                // Dim the color significantly for the other part of the stripe
+                gl_FragColor.rgb *= 0.1;
+                // Add a subtle reddish tint to the dark stripes to keep it "unnatural"
+                gl_FragColor.rgb += vec3(0.1, 0.0, 0.0);
+            }
+        }
+      }
+      `;
+    }
+  };
+
+  return material;
 };
 
 const buildLineMaterial = (shape) => {
@@ -217,8 +243,8 @@ const buildLineMaterial = (shape) => {
   }
 };
 
-const buildEdges = (geometry) => {
-  const edges = new EdgesGeometry(geometry);
+const buildEdges = (geometry, thresholdAngle = 1) => {
+  const edges = new EdgesGeometry(geometry, thresholdAngle);
   const lines = new LineSegments(
     edges,
     new LineBasicMaterial({
@@ -230,7 +256,11 @@ const buildEdges = (geometry) => {
 };
 
 // --- Main rendering function ---
-export const renderJotToThreejsScene = async (jotText, scene) => {
+export const renderJotToThreejsScene = async (
+  jotText,
+  scene,
+  { edgeThresholdAngle = 1 } = {}
+) => {
   const geometryCache = new Map(); // Map TextId to THREE.BufferGeometry
   let mainShapeJson = null;
 
@@ -437,7 +467,11 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
         );
       }
 
-      geometryCache.set(geometryId, { bufferGeometry, type: geometryType });
+      const mergedGeometry = BufferGeometryUtils.mergeVertices(bufferGeometry);
+      geometryCache.set(geometryId, {
+        bufferGeometry: mergedGeometry,
+        type: geometryType,
+      });
     }
   }
 
@@ -471,7 +505,7 @@ export const renderJotToThreejsScene = async (jotText, scene) => {
         }
         currentObject.add(object);
         if (type === 'mesh') {
-          const edges = buildEdges(bufferGeometry);
+          const edges = buildEdges(bufferGeometry, edgeThresholdAngle);
           currentObject.add(edges);
         }
       } else {

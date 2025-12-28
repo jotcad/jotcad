@@ -150,7 +150,9 @@ const handleGet = async (req, res) => {
       const evaluator = () => script.runInContext(context, { timeout: 5000 });
 
       await withAssets(session.paths.assets, async (assets) => {
-        await run(session, () => evaluator(bindings));
+        await api.withFs({ readFile, writeFile }, async () => {
+          await run(session, () => evaluator(bindings));
+        });
       });
 
       if (downloadFile) {
@@ -188,6 +190,14 @@ const handleGet = async (req, res) => {
       } else {
         sendResponse(res, 200, { 'Content-Type': 'text/plain' }, 'ok');
       }
+    } else if (op === 'list') {
+      const files = await session.listFiles();
+      sendResponse(
+        res,
+        200,
+        { 'Content-Type': 'application/json' },
+        JSON.stringify(files)
+      );
     } else if (op === 'get') {
       const [downloadFile] = rest;
       const downloadPath = joinPaths(session.paths.files, downloadFile);
@@ -273,7 +283,9 @@ const handlePost = async (req, res) => {
     const evaluator = () => script.runInContext(context, { timeout: 5000 });
 
     await withAssets(session.paths.assets, async (assets) => {
-      await run(session, () => evaluator(bindings));
+      await api.withFs({ readFile, writeFile }, async () => {
+        await run(session, () => evaluator(bindings));
+      });
     });
 
     if (downloadFile) {

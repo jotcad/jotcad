@@ -13,7 +13,7 @@
     "lintfix_one": "eslint --fix",
     "rollup": "rollup -c rollup_main.js",
     "test": "node --test",
-    "tests": "node --test *.test.js"
+    "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test *.test.js"
   },
   "contributors": [
     {

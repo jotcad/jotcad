@@ -55,6 +55,17 @@ class FilesystemSession extends Session {
     return activeSessions.get(sessionId);
   }
 
+  async listFiles() {
+    try {
+      return await readdir(this.paths.files);
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        return [];
+      }
+      throw e;
+    }
+  }
+
   async writeFile(relativePath, data) {
     const absolutePath = this.filePath(relativePath);
     // Ensure the directory exists before writing.

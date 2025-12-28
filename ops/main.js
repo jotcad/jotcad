@@ -24,6 +24,7 @@ export { Orb } from './orb.js';
 export { Point } from './point.js';
 export { Stl } from './stl.js';
 export { Z } from './z.js';
+export { Disjoint } from './disjoint.js';
 export { Rule, rule } from './rule.js';
 export { wrap3 } from './wrap.js'; // MODIFIED: Export wrap3 from ops/wrap.js
 
@@ -32,15 +33,20 @@ export { and } from './and.js';
 export { at } from './at.js';
 export { color } from './color.js';
 export { clip } from './clip.js';
+export { close3 } from './close.js';
 export { cut } from './cut.js';
+export { cutOpen } from './cutOpen.js';
+export { disjoint } from './disjoint.js';
 export { extrude2 } from './extrude.js';
 export { extrude3 } from './extrude.js';
 export { fill2 } from './fill.js';
 export { fill3 } from './fill.js';
+export { gap } from './gap.js';
 export { get } from './get.js';
 export { join } from './join.js';
 export { jot } from './jot.js';
 export { link } from './link.js';
+export { material } from './material.js';
 export { nth } from './nth.js';
 export { mask } from './mask.js';
 export { png } from './png.js';
@@ -71,6 +77,7 @@ export const constructors = [
   'Arc2',
   'Box2',
   'Box3',
+  'Disjoint',
   'Jot',
   'Orb',
   'Point',
@@ -85,15 +92,20 @@ export const operators = [
   'at',
   'color',
   'clip',
+  'close3',
   'cut',
+  'cutOpen',
+  'disjoint',
   'extrude2',
   'extrude3',
   'fill2',
   'fill3',
+  'gap',
   'get',
   'join',
   'jot',
   'link',
+  'material',
   'mask',
   'nth',
   'png',
