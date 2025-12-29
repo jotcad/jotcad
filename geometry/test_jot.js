@@ -29,7 +29,9 @@ export const testJot = async (
   let expectedFileExists = await isFilePresent(expectedJotFilePath);
 
   if (!expectedFileExists) {
-    console.log(`testJot: Reference file not found at ${expectedJotFilePath}. Creating it.`);
+    console.log(
+      `testJot: Reference file not found at ${expectedJotFilePath}. Creating it from observed ${observedJotFilePath}.`
+    );
     await writeFile(expectedJotFilePath, observedJotBuffer);
     return true; // The test "passes" by creating the reference
   }
@@ -37,7 +39,8 @@ export const testJot = async (
   const expectedJotBuffer = await readFile(expectedJotFilePath);
 
   // Compare contents directly
-  const areEqual = expectedJotBuffer.toString('utf8') === observedJotBuffer.toString('utf8');
+  const areEqual =
+    expectedJotBuffer.toString('utf8') === observedJotBuffer.toString('utf8');
 
   if (areEqual) {
     // If the test passes and an observedJotBuffer was provided, update the expected reference.
@@ -47,9 +50,8 @@ export const testJot = async (
     }
     return true;
   } else {
-    console.log(
-      `testJot: ${expectedJotFilePath} differs from ${observedJotFilePath}`
-    );
-    return false;
+    const message = `testJot: ${expectedJotFilePath} differs from observed ${observedJotFilePath}`;
+    console.log(message);
+    throw new Error(message);
   }
 };

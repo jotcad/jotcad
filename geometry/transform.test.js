@@ -63,7 +63,7 @@ describe('transform', () => {
     // These produce a complex matrix.
     assert.strictEqual(
       cgal.SimplifyTransform(compose(makeRotateX(0.5), makeRotateY(0.25))),
-      'm 0 0 -1 0 -1 0 -1 0 0 0 0 0 0 -0 -1 0 -1 -0 -1 -0 -0 0 -0 -0'
+      'm 0 0 1 0 -1 0 1 0 0 0 0 0 -0 -0 1 0 -1 -0 1 -0 -0 0 -0 -0'
     );
   });
 
@@ -78,7 +78,7 @@ describe('transform', () => {
   it('should rotate points', async () => {
     await withTestAssets('should rotate points', async (assets) => {
       assert.strictEqual(
-        'V 1\nv 0 -1 0 0 -1 0\np 0\n',
+        'V 1\nv 0 1 0 0 1 0\np 0\n',
         assets.getText(
           cgal.MakeAbsolute(assets, Point(assets, 1, 0, 0).rotateZ(1 / 4))
         )
@@ -90,7 +90,7 @@ describe('transform', () => {
         )
       );
       assert.strictEqual(
-        'V 1\nv -451/901 -780/901 0 -0.500555 -0.865705 0\np 0\n',
+        'V 1\nv -451/901 780/901 0 -0.500555 0.865705 0\np 0\n',
         assets.getText(
           cgal.MakeAbsolute(assets, Point(assets, 1, 0, 0).rotateZ(1 / 3))
         )

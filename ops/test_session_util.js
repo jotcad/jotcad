@@ -64,6 +64,12 @@ export const testPng = async (
     threshold
   );
 
+  if (!result) {
+    throw new Error(
+      `testPng: ${expectedPngFilename} differs from observed ${observedPngSessionFilename}`
+    );
+  }
+
   return result;
 };
 
@@ -94,6 +100,12 @@ export const testJot = async (
     observedJotBuffer,
     threshold
   );
+
+  if (!result) {
+    throw new Error(
+      `testJot: ${expectedJotFilename} differs from observed ${observedJotSessionFilename}`
+    );
+  }
 
   return result;
 };
