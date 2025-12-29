@@ -32,7 +32,7 @@ template <typename Kernel>
 static Tf ComputeYTurnTf(const typename Kernel::FT& tau) {
   typename Kernel::RT sin_alpha, cos_alpha, w;
   ComputeTurn<Kernel>(tau, sin_alpha, cos_alpha, w);
-  return Tf(cos_alpha, 0, -sin_alpha, 0, 0, w, 0, 0, sin_alpha, 0, cos_alpha, 0,
+  return Tf(cos_alpha, 0, sin_alpha, 0, 0, w, 0, 0, -sin_alpha, 0, cos_alpha, 0,
             w);
 }
 
@@ -40,7 +40,7 @@ template <typename Kernel>
 static Tf ComputeZTurnTf(const typename Kernel::FT& tau) {
   typename Kernel::RT sin_alpha, cos_alpha, w;
   ComputeTurn<Kernel>(tau, sin_alpha, cos_alpha, w);
-  return Tf(cos_alpha, sin_alpha, 0, 0, -sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0,
+  return Tf(cos_alpha, -sin_alpha, 0, 0, sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0,
             w);
 }
 

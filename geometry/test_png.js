@@ -34,7 +34,9 @@ export const testPng = async (
   let expectedFileExists = await isFilePresent(expectedPngFilePath);
 
   if (!expectedFileExists) {
-    console.log(`testPng: Reference image not found at ${expectedPngFilePath}. Creating it.`);
+    console.log(
+      `testPng: Reference image not found at ${expectedPngFilePath}. Creating it from observed ${observedPngFilePath}.`
+    );
     await writeFile(expectedPngFilePath, observedPngBuffer);
     return true; // The test "passes" by creating the reference
   }
@@ -66,9 +68,8 @@ export const testPng = async (
     }
     return true;
   } else {
-    console.log(
-      `testPng: ${expectedPngFilePath} differs from ${observedPngFilePath} by ${numFailedPixels} pixels`
-    );
-    return false;
+    const message = `testPng: ${expectedPngFilePath} differs from observed ${observedPngFilePath} by ${numFailedPixels} pixels`;
+    console.log(message);
+    throw new Error(message);
   }
 };
