@@ -1,5 +1,6 @@
 export const DecodeInexactGeometryText = (text) => {
   const vertices = [];
+  const points = [];
   const segments = [];
   const triangles = [];
   const faces = [];
@@ -60,6 +61,7 @@ export const DecodeInexactGeometryText = (text) => {
   }
   return {
     vertices,
+    points,
     segments,
     triangles,
     faces,
@@ -70,6 +72,7 @@ const round = (value, give) => Math.round(value / give) * give;
 
 export const EncodeInexactGeometryText = ({
   vertices = [],
+  points = [],
   segments = [],
   triangles = [],
   faces = [],
@@ -79,6 +82,9 @@ export const EncodeInexactGeometryText = ({
     lines.push(
       `v ${vertex[0]} ${vertex[1]} ${vertex[2]} ${vertex[0]} ${vertex[1]} ${vertex[2]}\n`
     );
+  }
+  if (points.length > 0) {
+    lines.push(`p ${points.join(' ')}\n`);
   }
   if (segments.length > 0) {
     const pieces = [];

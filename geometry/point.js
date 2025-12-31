@@ -1,9 +1,11 @@
 import { makeShape } from './shape.js';
 
-export const Point = (assets, x = 0, y = 0, z = 0, ix = x, iy = y, iz = z) =>
-  makeShape({
-    geometry: assets.textId(`v ${x} ${y} ${z} ${ix} ${iy} ${iz}\np 0\n`),
+export const Point = (assets, x = 0, y = 0, z = 0, ix = x, iy = y, iz = z) => {
+  const text = `v ${x} ${y} ${z} ${ix} ${iy} ${iz}\np 0\n`;
+  return makeShape({
+    geometry: assets.textId(text),
   });
+};
 
 export const Points = (assets, points) =>
   makeShape({
