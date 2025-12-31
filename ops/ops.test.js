@@ -12,6 +12,7 @@ import { testJot, testPng, withTestSession } from './test_session_util.js';
 
 import { Arc2 } from './arc.js';
 import { Box2 } from './box.js';
+import { Box3 } from './box.js';
 import { Orb } from './orb.js';
 import { and } from './and.js';
 import assert from 'node:assert/strict';
@@ -90,6 +91,19 @@ describe('ops', () => {
             .z(10)
             .and(footprint())
             .png('observed.ops.test.orb_footprint.png', [-20, -20, 40])
+        );
+        assert.ok(graph);
+      });
+    }));
+
+  it('Box3([10]).and(z(10)).z(5)', async () =>
+    withFs(fs, async () => {
+      await withTestSession('ops_test_box3_and_z', async (session) => {
+        const graph = await run(session, () =>
+          Box3(10)
+            .and(z(10))
+            .z(5)
+            .png('observed.ops.test.box3_and_z.png', [40, 40, 40])
         );
         assert.ok(graph);
       });

@@ -26,6 +26,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 
 #include "arc_slice.h"
 #include "clip.h"
+#include "clip_open.h"
 #include "close.h"
 #include "cut.h"
 #include "cut_open.h"
@@ -35,6 +36,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "ft.h"
 #include "geometry.h"
 #include "grow.h"
+#include "hull.h"
 #include "join.h"
 #include "link.h"
 #include "make_absolute.h"
@@ -83,6 +85,18 @@ static Napi::Value ClipBinding(const Napi::CallbackInfo& info) {
     tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
   }
   return Clip(assets, shape, tools);
+}
+
+static Napi::Value ClipOpenBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Napi::Array jsTools(info[2].As<Napi::Array>());
+  std::vector<Shape> tools;
+  for (uint32_t nth = 0; nth < jsTools.Length(); nth++) {
+    tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
+  }
+  return ClipOpen(assets, shape, tools);
 }
 
 static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
@@ -156,6 +170,17 @@ static Napi::Value GrowBinding(const Napi::CallbackInfo& info) {
     tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
   }
   return Grow(assets, shape, tools);
+}
+
+static Napi::Value HullBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 2);
+  Assets assets(info[0].As<Napi::Object>());
+  Napi::Array jsShapes(info[1].As<Napi::Array>());
+  std::vector<Shape> shapes;
+  for (uint32_t nth = 0; nth < jsShapes.Length(); nth++) {
+    shapes.emplace_back(jsShapes.Get(nth).As<Napi::Object>());
+  }
+  return geometry::Hull(assets, shapes);
 }
 
 static Napi::Value JoinBinding(const Napi::CallbackInfo& info) {
@@ -332,6 +357,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, ArcSlice2Binding));
   exports.Set(Napi::String::New(env, "Clip"),
               Napi::Function::New(env, ClipBinding));
+  exports.Set(Napi::String::New(env, "ClipOpen"),
+              Napi::Function::New(env, ClipOpenBinding));
   exports.Set(Napi::String::New(env, "Close3"),
               Napi::Function::New(env, Close3Binding));
   exports.Set(Napi::String::New(env, "Cut"),
@@ -348,6 +375,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, Fill3Binding));
   exports.Set(Napi::String::New(env, "Grow"),
               Napi::Function::New(env, GrowBinding));
+  exports.Set(Napi::String::New(env, "Hull"),
+              Napi::Function::New(env, HullBinding));
   exports.Set(Napi::String::New(env, "Join"),
               Napi::Function::New(env, JoinBinding));
   exports.Set(Napi::String::New(env, "Link"),

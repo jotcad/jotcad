@@ -1,92 +1,20 @@
 import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { renderJotToThreejsScene } from 'jotcad-viewer';
+import { GithubStorage } from './githubStorage.js';
 
-// Manually managed release number for version confirmation
 const RELEASE_NUMBER = 1;
 
+// Set Z-up as default for all Three.js objects
+THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+
 async function init() {
-  // 1. Scene setup
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xcccccc);
+  const githubStorage = new GithubStorage();
 
-  // 2. Camera setup
-  const aspect = window.innerWidth / window.innerHeight;
-  const frustumSize = 20;
-  let camera = new THREE.OrthographicCamera(
-    (-frustumSize * aspect) / 2,
-    (frustumSize * aspect) / 2,
-    frustumSize / 2,
-    -frustumSize / 2,
-    0.1,
-    1000
-  );
-  camera.position.set(0, 0, 20);
-
-  // 3. Renderer setup
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
-
-  // 4. Controls setup
-  let controls = new TrackballControls(camera, renderer.domElement);
-  controls.rotateSpeed = 1.0;
-  controls.zoomSpeed = 1.2;
-  controls.panSpeed = 0.8;
-  controls.staticMoving = true;
-
-  // 5. Orientation Guide (Secondary Scene)
+  // 1. DOM References
+  const viewportComponent = document.getElementById('viewport');
+  const viewportContainer = viewportComponent.container;
   const orientationContainer = document.getElementById('orientationGuide');
-  const axesScene = new THREE.Scene();
-  const axesCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
-  axesCamera.position.set(0, 0, 3);
-  axesCamera.lookAt(0, 0, 0);
-  const axesRenderer = new THREE.WebGLRenderer({ alpha: true });
-  axesRenderer.setSize(100, 100);
-  orientationContainer.appendChild(axesRenderer.domElement);
-
-  const axesHelper = new THREE.AxesHelper(1);
-  axesScene.add(axesHelper);
-
-  // Add labels to axesScene
-  function makeTextSprite(message, color) {
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.width = 64;
-    canvas.height = 64;
-    context.font = 'bold 48px Arial';
-    context.fillStyle = color;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(message, 32, 32);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(spriteMaterial);
-    sprite.scale.set(0.5, 0.5, 1);
-    return sprite;
-  }
-
-  const xLabel = makeTextSprite('X', 'red');
-  xLabel.position.set(1.2, 0, 0);
-  axesScene.add(xLabel);
-
-  const yLabel = makeTextSprite('Y', 'green');
-  yLabel.position.set(0, 1.2, 0);
-  axesScene.add(yLabel);
-
-  const zLabel = makeTextSprite('Z', 'blue');
-  zLabel.position.set(0, 0, 1.2);
-  axesScene.add(zLabel);
-
-  // 6. Lighting
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-  scene.add(ambientLight);
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-  directionalLight.position.set(0, 1, 1);
-  scene.add(directionalLight);
-
-  // Get references to UI elements
   const codeEditor = document.getElementById('codeEditor');
   const renderButton = document.getElementById('renderButton');
   const serverAddressInput = document.getElementById('serverAddress');
@@ -106,189 +34,480 @@ async function init() {
   const loadingIndicator = document.getElementById('loadingIndicator');
   const releaseNumberSpan = document.getElementById('releaseNumber');
   const fileList = document.getElementById('fileList');
-  let loadingCount = 0;
+  const showWorkbenchInput = document.getElementById('showWorkbench');
+
+  const githubTokenInput = document.getElementById('githubToken');
+  const githubRepoInput = document.getElementById('githubRepo');
+  const githubPathInput = document.getElementById('githubPath');
+  const githubLoadButton = document.getElementById('githubLoadButton');
+  const githubSaveButton = document.getElementById('githubSaveButton');
+  const githubTokenHelp = document.getElementById('githubTokenHelp');
+  const helpWindow = document.getElementById('helpWindow');
+  const toast = document.getElementById('toast');
+
+  const showToast = (msg) => toast && toast.show(msg);
+
+  // 2. Scene setup
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xcccccc);
+
+  const furnitureGroup = new THREE.Group();
+  scene.add(furnitureGroup);
+
+  const createFurniture = () => {
+    furnitureGroup.clear();
+    const isVisible = localStorage.getItem('jotcad-showWorkbench') === 'true';
+    if (isVisible) {
+      const geometry = new THREE.BoxGeometry(200, 200, 20);
+      geometry.translate(100, 100, -10); // Center at Z=-10 so top is Z=0
+      const material = new THREE.MeshStandardMaterial({
+        color: 0x888888,
+        transparent: true,
+        opacity: 0.3,
+      });
+      const workbench = new THREE.Mesh(geometry, material);
+      furnitureGroup.add(workbench);
+
+      // Add a grid on top of the workbench (Z=0)
+      const grid = new THREE.GridHelper(200, 20, 0x444444, 0xaaaaaa);
+      grid.rotation.x = Math.PI / 2;
+      grid.position.set(100, 100, 0.05); // Just above Z=0 surface
+      furnitureGroup.add(grid);
+
+      // Add Ruler Markings and Labels
+      const addRuler = (axis) => {
+        for (let i = 0; i <= 200; i += 10) {
+          // Tick mark
+          const tickGeom = new THREE.BoxGeometry(
+            axis === 'x' ? 1 : 2,
+            axis === 'x' ? 2 : 1,
+            0.1
+          );
+          const tick = new THREE.Mesh(
+            tickGeom,
+            new THREE.MeshBasicMaterial({ color: 0x000000 })
+          );
+          if (axis === 'x') tick.position.set(i, -2, 0.1);
+          else tick.position.set(-2, i, 0.1);
+          furnitureGroup.add(tick);
+
+          // Number Label
+          if (i % 20 === 0) {
+            const label = makeTextSprite(i.toString(), 'black');
+            label.scale.set(4, 4, 1);
+            if (axis === 'x') label.position.set(i, -8, 0.1);
+            else label.position.set(-8, i, 0.1);
+            furnitureGroup.add(label);
+          }
+        }
+        // Axis Title
+        const title = makeTextSprite(axis.toUpperCase(), 'black');
+        title.scale.set(8, 8, 1);
+        if (axis === 'x') title.position.set(215, 0, 0.1);
+        else title.position.set(0, 215, 0.1);
+        furnitureGroup.add(title);
+      };
+
+      addRuler('x');
+      addRuler('y');
+    }
+    if (showWorkbenchInput) {
+      showWorkbenchInput.style.background = isVisible
+        ? 'rgba(0, 255, 0, 0.2)'
+        : 'rgba(255, 255, 255, 0.6)';
+    }
+  };
+
+  showWorkbenchInput.addEventListener('click', () => {
+    const isVisible = localStorage.getItem('jotcad-showWorkbench') === 'true';
+    const nextState = !isVisible;
+    localStorage.setItem('jotcad-showWorkbench', nextState);
+    createFurniture();
+  });
+
+  const aspect =
+    viewportContainer.clientWidth / (viewportContainer.clientHeight || 1);
+  const frustumSize = 20;
+  let camera = new THREE.OrthographicCamera(
+    (-frustumSize * aspect) / 2,
+    (frustumSize * aspect) / 2,
+    frustumSize / 2,
+    -frustumSize / 2,
+    0.1, // Near plane small to avoid cutoff
+    1000000
+  );
+  camera.position.set(-200, -200, 200); // Looking from -X, -Y, +Z
+  camera.up.set(0, 0, 1);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(
+    viewportContainer.clientWidth,
+    viewportContainer.clientHeight
+  );
+  viewportContainer.appendChild(renderer.domElement);
+
+  let controls = new TrackballControls(camera, renderer.domElement);
+  controls.rotateSpeed = 1.0;
+  controls.zoomSpeed = 1.2;
+  controls.panSpeed = 0.8;
+  controls.staticMoving = true;
+
+  // Orientation Guide
+  const axesScene = new THREE.Scene();
+  const axesCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
+  axesCamera.position.set(-2, -2, 2);
+  axesCamera.up.set(0, 0, 1);
+  axesCamera.lookAt(0, 0, 0);
+  const axesRenderer = new THREE.WebGLRenderer({ alpha: true });
+  axesRenderer.setSize(100, 100);
+  orientationContainer.appendChild(axesRenderer.domElement);
+  const axesHelper = new THREE.AxesHelper(1);
+  axesScene.add(axesHelper);
+
+  const makeTextSprite = (message, color) => {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 64;
+    canvas.height = 64;
+    context.font = 'bold 48px Arial';
+    context.fillStyle = color;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(message, 32, 32);
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(0.5, 0.5, 1);
+    return sprite;
+  };
+
+  const xLabel = makeTextSprite('X', 'red');
+  xLabel.position.set(1.2, 0, 0);
+  axesScene.add(xLabel);
+
+  const yLabel = makeTextSprite('Y', 'green');
+  yLabel.position.set(0, 1.2, 0);
+  axesScene.add(yLabel);
+
+  const zLabel = makeTextSprite('Z', 'blue');
+  zLabel.position.set(0, 0, 1.2);
+  axesScene.add(zLabel);
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+  dirLight.position.set(0, 1, 1);
+  scene.add(dirLight);
+
+  // 3. Resizing
+  const updateRendererSize = () => {
+    const width = viewportContainer.clientWidth;
+    const height = viewportContainer.clientHeight;
+    if (width > 0 && height > 0) {
+      renderer.setSize(width, height);
+      const aspect = width / height;
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.aspect = aspect;
+      } else {
+        const frustumHeight = camera.top - camera.bottom;
+        camera.left = (-frustumHeight * aspect) / 2;
+        camera.right = (frustumHeight * aspect) / 2;
+      }
+      camera.updateProjectionMatrix();
+    }
+  };
+
+  const resizeObserver = new ResizeObserver(() => updateRendererSize());
+  resizeObserver.observe(viewportContainer);
+  window.addEventListener('resize', updateRendererSize);
+
+  // 4. Logic & Events
+  if (githubTokenHelp && helpWindow) {
+    githubTokenHelp.addEventListener('click', () => {
+      helpWindow.toggleMinimized();
+    });
+  }
+
+  projectionTypeSelect.addEventListener('change', () => {
+    const type = projectionTypeSelect.value;
+    const oldCam = camera;
+    const oldTarget = controls.target.clone();
+    const aspect =
+      viewportContainer.clientWidth / (viewportContainer.clientHeight || 1);
+    const distance = oldCam.position.distanceTo(oldTarget);
+
+    if (type === 'perspective') {
+      const fov = parseFloat(fovInput.value);
+      camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 1000000);
+    } else {
+      const fovRad = THREE.MathUtils.degToRad(
+        oldCam.fov || parseFloat(fovInput.value)
+      );
+      const frustumHeight = 2 * distance * Math.tan(fovRad / 2);
+
+      camera = new THREE.OrthographicCamera(
+        (-frustumHeight * aspect) / 2,
+        (frustumHeight * aspect) / 2,
+        frustumHeight / 2,
+        -frustumHeight / 2,
+        0.1,
+        1000000
+      );
+    }
+
+    camera.position.copy(oldCam.position);
+    camera.quaternion.copy(oldCam.quaternion);
+    camera.up.set(0, 0, 1);
+    camera.updateProjectionMatrix();
+
+    controls.object = camera;
+    controls.target.copy(oldTarget);
+    controls.update();
+
+    updateRendererSize();
+  });
+
+  githubLoadButton.addEventListener('click', async () => {
+    const token = githubTokenInput.value;
+    const repo = githubRepoInput.value;
+    const fullPath = githubPathInput.value;
+    const lastSlash = fullPath.lastIndexOf('/');
+    const path = lastSlash !== -1 ? fullPath.substring(0, lastSlash) : '';
+    const filename =
+      lastSlash !== -1 ? fullPath.substring(lastSlash + 1) : fullPath;
+
+    try {
+      loadingIndicator.style.display = 'block';
+      githubStorage.path = path;
+      const content = await githubStorage.fetchFile(
+        token,
+        repo,
+        path,
+        filename
+      );
+      if (content) {
+        codeEditor.value = content;
+        localStorage.setItem('jotcad-codeEditor', content);
+        showToast('Pulled from GitHub');
+      } else {
+        showToast('File not found');
+      }
+    } catch (e) {
+      showToast('Pull failed: ' + e.message);
+    } finally {
+      loadingIndicator.style.display = 'none';
+    }
+  });
+
+  githubSaveButton.addEventListener('click', async () => {
+    const token = githubTokenInput.value;
+    const repo = githubRepoInput.value;
+    const fullPath = githubPathInput.value;
+    const lastSlash = fullPath.lastIndexOf('/');
+    const path = lastSlash !== -1 ? fullPath.substring(0, lastSlash) : '';
+    const filename =
+      lastSlash !== -1 ? fullPath.substring(lastSlash + 1) : fullPath;
+
+    try {
+      loadingIndicator.style.display = 'block';
+      await githubStorage.saveFile(
+        token,
+        repo,
+        path,
+        filename,
+        codeEditor.value
+      );
+      showToast('Committed to GitHub');
+    } catch (e) {
+      showToast('Commit failed: ' + e.message);
+    } finally {
+      loadingIndicator.style.display = 'none';
+    }
+  });
+
+  const clearScene = () => {
+    while (scene.children.length > 0) {
+      const obj = scene.children[0];
+      if (obj === furnitureGroup) {
+        scene.remove(obj);
+        continue;
+      }
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material)
+        Array.isArray(obj.material)
+          ? obj.material.forEach((m) => m.dispose())
+          : obj.material.dispose();
+      scene.remove(obj);
+    }
+    scene.add(furnitureGroup);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    scene.add(dirLight);
+    scene.add(camera);
+  };
+
   let currentJotText = '';
+  const renderJotString = async (text) => {
+    currentJotText = text;
+    clearScene();
+    try {
+      await renderJotToThreejsScene(text, scene, {
+        edgeThresholdAngle: parseFloat(edgeThresholdInput.value),
+      });
+      const box = new THREE.Box3().setFromObject(scene);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxSize = Math.max(size.x, size.y, size.z);
+      const distance = maxSize * 2 || 20;
+      const direction = new THREE.Vector3()
+        .subVectors(camera.position, controls.target)
+        .normalize();
+      camera.position.copy(center).add(direction.multiplyScalar(distance));
+      controls.target.copy(center);
+      controls.update();
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
-  // Display the release number
-  releaseNumberSpan.textContent = `Release: ${RELEASE_NUMBER}`;
+  renderButton.addEventListener('click', async () => {
+    loadingIndicator.style.display = 'block';
+    try {
+      const code = `${codeEditor.value.trim()}.jot('${
+        outputFilenameInput.value
+      }')`;
+      const res = await fetch(
+        `${serverAddressInput.value}/run/${sessionIdInput.value}/${outputFilenameInput.value}`,
+        {
+          method: 'POST',
+          body: code,
+        }
+      );
+      if (res.ok) await renderJotString(await res.text());
+    } finally {
+      loadingIndicator.style.display = 'none';
+    }
+  });
 
+  // Init from storage
   serverAddressInput.value =
     localStorage.getItem('jotcad-serverAddress') || 'http://localhost:3000';
   sessionIdInput.value =
     localStorage.getItem('jotcad-sessionId') || 'defaultSession';
   outputFilenameInput.value =
     localStorage.getItem('jotcad-outputFilename') || 'out.jot';
+  codeEditor.value = localStorage.getItem('jotcad-codeEditor') || 'Box3(10)';
+  githubTokenInput.value = localStorage.getItem('jotcad-githubToken') || '';
+  githubRepoInput.value = localStorage.getItem('jotcad-githubRepo') || '';
+  githubPathInput.value =
+    localStorage.getItem('jotcad-githubPath') || 'designs/cup.js';
+  createFurniture();
+  releaseNumberSpan.textContent = `Release: ${RELEASE_NUMBER}`;
 
-  const defaultCode = `Box3(10)`;
-  codeEditor.value = localStorage.getItem('jotcad-codeEditor') || defaultCode;
+  const savedProjectionType =
+    localStorage.getItem('jotcad-projectionType') || 'orthographic';
+  projectionTypeSelect.value = savedProjectionType;
+  // Trigger projection change logic but handle the initial state where oldCam orientation might be default
+  const initProjection = () => {
+    const type = projectionTypeSelect.value;
+    const aspect =
+      viewportContainer.clientWidth / (viewportContainer.clientHeight || 1);
 
-  // Function to update the file list
-  async function updateFileList() {
-    const serverAddress = serverAddressInput.value;
-    const sessionId = sessionIdInput.value;
-    try {
-      const response = await fetch(`${serverAddress}/list/${sessionId}`);
-      if (response.ok) {
-        const files = await response.json();
-        fileList.innerHTML = '';
-        files.forEach((file) => {
-          const li = document.createElement('li');
-          const a = document.createElement('a');
-          a.href = `${serverAddress}/get/${sessionId}/${file}`;
-          a.textContent = file;
-          a.download = file;
-          a.style.color = 'blue';
-          a.style.textDecoration = 'underline';
-          a.style.cursor = 'pointer';
-          li.appendChild(a);
-          fileList.appendChild(li);
-        });
-      }
-    } catch (error) {
-      console.error('Failed to fetch file list:', error);
-    }
-  }
+    if (type === 'perspective') {
+      const fov = parseFloat(fovInput.value);
+      camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 1000000);
+    } else {
+      const distance = 350; // Use a fixed distance for initial ortho height calculation
+      const fovRad = THREE.MathUtils.degToRad(parseFloat(fovInput.value));
+      const frustumHeight = 2 * distance * Math.tan(fovRad / 2);
 
-  // Function to clear the scene
-  function clearScene() {
-    while (scene.children.length > 0) {
-      const object = scene.children[0];
-      if (
-        object instanceof THREE.Mesh ||
-        object instanceof THREE.LineSegments ||
-        object instanceof THREE.Group ||
-        object instanceof THREE.Object3D
-      ) {
-        if (object.geometry) object.geometry.dispose();
-        if (object.material) {
-          if (Array.isArray(object.material)) {
-            object.material.forEach((m) => m.dispose());
-          } else {
-            object.material.dispose();
-          }
-        }
-      }
-      scene.remove(object);
-    }
-    scene.add(ambientLight);
-    scene.add(directionalLight);
-    scene.add(camera);
-  }
-
-  // Function to render a JOT string
-  async function renderJotString(jotText) {
-    currentJotText = jotText;
-    clearScene(); // Clear previous model
-    try {
-      const edgeThresholdAngle = parseFloat(edgeThresholdInput.value);
-      await renderJotToThreejsScene(jotText, scene, { edgeThresholdAngle });
-      console.log('JOT data rendered to scene.');
-
-      // Frame the whole shape
-      const box = new THREE.Box3().setFromObject(scene);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const maxSize = Math.max(size.x, size.y, size.z);
-
-      if (camera instanceof THREE.PerspectiveCamera) {
-        const fitHeightDistance =
-          maxSize / (2 * Math.tan((Math.PI * camera.fov) / 360));
-        const fitWidthDistance = fitHeightDistance / camera.aspect;
-        const distance = 2.0 * Math.max(fitHeightDistance, fitWidthDistance);
-
-        const direction = new THREE.Vector3()
-          .subVectors(camera.position, controls.target)
-          .normalize();
-
-        camera.position
-          .copy(center)
-          .add(direction.clone().multiplyScalar(distance));
-      } else if (camera instanceof THREE.OrthographicCamera) {
-        const aspect = window.innerWidth / window.innerHeight;
-        const margin = 1.2;
-        if (size.x / aspect > size.y) {
-          camera.top = (margin * size.x) / aspect / 2;
-          camera.bottom = (-margin * size.x) / aspect / 2;
-          camera.left = (-margin * size.x) / 2;
-          camera.right = (margin * size.x) / 2;
-        } else {
-          camera.top = (margin * size.y) / 2;
-          camera.bottom = (-margin * size.y) / 2;
-          camera.left = (-margin * size.y * aspect) / 2;
-          camera.right = (margin * size.y * aspect) / 2;
-        }
-        camera.updateProjectionMatrix();
-        const distance = maxSize * 2;
-        const direction = new THREE.Vector3()
-          .subVectors(camera.position, controls.target)
-          .normalize();
-        camera.position
-          .copy(center)
-          .add(direction.clone().multiplyScalar(distance));
-      }
-
-      controls.target.copy(center);
-      controls.update();
-    } catch (error) {
-      console.error('Failed to render JOT data:', error, 'JOT text:', jotText);
-      // Fallback: add a dummy cube if JOT fails
-      const geometry = new THREE.BoxGeometry(1, 1, 1);
-      const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-      const cube = new THREE.Mesh(geometry, material);
-      scene.add(cube);
-    }
-  }
-
-  // Event listener for the render button
-  renderButton.addEventListener('click', async () => {
-    let code = codeEditor.value.trim(); // Trim whitespace
-    const serverAddress = serverAddressInput.value;
-    const sessionId = sessionIdInput.value;
-    const outputFilename = outputFilenameInput.value;
-
-    // Make the .jot() call implicit (unconditionally append)
-    code = `${code}.jot('${outputFilename}')`;
-
-    console.log('Sending code to server for rendering...');
-    loadingCount++;
-    loadingIndicator.style.display = 'block';
-    try {
-      const response = await fetch(
-        `${serverAddress}/run/${sessionId}/${outputFilename}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain',
-          },
-          body: code,
-        }
+      camera = new THREE.OrthographicCamera(
+        (-frustumHeight * aspect) / 2,
+        (frustumHeight * aspect) / 2,
+        frustumHeight / 2,
+        -frustumHeight / 2,
+        0.1,
+        1000000
       );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `HTTP error! status: ${response.status}, message: ${errorText}`
-        );
-      }
-
-      const jotText = await response.text();
-      console.log('Received JOT data from server.');
-      console.log(jotText); // Log the actual JOT text
-      await renderJotString(jotText);
-      await updateFileList();
-    } catch (error) {
-      console.error('Failed to send code or receive JOT data:', error);
-      clearScene();
-      const geometry = new THREE.BoxGeometry(1, 1, 1);
-      const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-      const errorCube = new THREE.Mesh(geometry, material);
-      scene.add(errorCube);
-    } finally {
-      loadingCount--;
-      if (loadingCount === 0) {
-        loadingIndicator.style.display = 'none';
-      }
     }
+    camera.position.set(-200, -200, 200);
+    camera.up.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    controls.object = camera;
+    controls.update();
+  };
+  initProjection();
+
+  const animate = () => {
+    requestAnimationFrame(animate);
+
+    controls.update();
+
+    const dir = new THREE.Vector3()
+
+      .subVectors(camera.position, controls.target)
+
+      .normalize();
+
+    axesCamera.position.copy(dir).multiplyScalar(3);
+
+    axesCamera.up.copy(camera.up);
+
+    axesCamera.lookAt(0, 0, 0);
+
+    renderer.render(scene, camera);
+
+    axesRenderer.render(axesScene, axesCamera);
+  };
+  animate();
+
+  // Settings syncing
+  const syncInputs = [
+    rotateSpeedInput,
+    zoomSpeedInput,
+    panSpeedInput,
+    fovInput,
+    edgeThresholdInput,
+  ];
+  syncInputs.forEach((el) => {
+    if (!el) return;
+    const savedVal = localStorage.getItem('jotcad-' + el.id);
+    if (savedVal !== null) {
+      el.value = savedVal;
+      const display = document.getElementById(el.id + 'Value');
+      if (display) display.textContent = parseFloat(savedVal).toFixed(1);
+    }
+
+    el.addEventListener('input', () => {
+      const val = parseFloat(el.value);
+      const display = document.getElementById(el.id + 'Value');
+      if (display) display.textContent = val.toFixed(1);
+      localStorage.setItem('jotcad-' + el.id, val);
+      if (el.id === 'rotateSpeed') controls.rotateSpeed = val;
+      if (el.id === 'zoomSpeed') controls.zoomSpeed = val;
+      if (el.id === 'panSpeed') controls.panSpeed = val;
+      if (el.id === 'fov' && camera instanceof THREE.PerspectiveCamera) {
+        camera.fov = val;
+        camera.updateProjectionMatrix();
+      }
+      if (el.id === 'edgeThreshold' && currentJotText)
+        renderJotString(currentJotText);
+    });
+  });
+
+  [
+    serverAddressInput,
+    sessionIdInput,
+    outputFilenameInput,
+    codeEditor,
+    githubTokenInput,
+    githubRepoInput,
+    githubPathInput,
+  ].forEach((el) => {
+    el.addEventListener('input', () => {
+      localStorage.setItem('jotcad-' + el.id, el.value);
+    });
   });
 
   codeEditor.addEventListener('keydown', (e) => {
@@ -296,181 +515,7 @@ async function init() {
       e.preventDefault();
       renderButton.click();
     }
-    if (e.shiftKey && e.key === 'Enter') {
-      e.preventDefault();
-    }
   });
-
-  codeEditor.addEventListener('input', (event) => {
-    localStorage.setItem('jotcad-codeEditor', event.target.value);
-  });
-
-  // 8. Animation loop
-  function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-
-    // Sync orientation guide camera
-    // We want the axesCamera to look at (0,0,0) from the same relative direction
-    // as the main camera looks at its target.
-    const dir = new THREE.Vector3()
-      .subVectors(camera.position, controls.target)
-      .normalize();
-    axesCamera.position.copy(dir).multiplyScalar(3);
-    axesCamera.lookAt(0, 0, 0);
-
-    renderer.render(scene, camera);
-    axesRenderer.render(axesScene, axesCamera);
-  }
-  animate();
-
-  window.addEventListener('resize', () => {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const aspect = width / height;
-
-    if (camera instanceof THREE.PerspectiveCamera) {
-      camera.aspect = aspect;
-    } else if (camera instanceof THREE.OrthographicCamera) {
-      const frustumSize = camera.top - camera.bottom;
-      camera.left = (-frustumSize * aspect) / 2;
-      camera.right = (frustumSize * aspect) / 2;
-    }
-
-    camera.updateProjectionMatrix();
-    renderer.setSize(width, height);
-    controls.handleResize();
-  });
-
-  serverAddressInput.addEventListener('input', (event) => {
-    localStorage.setItem('jotcad-serverAddress', event.target.value);
-  });
-  sessionIdInput.addEventListener('input', (event) => {
-    localStorage.setItem('jotcad-sessionId', event.target.value);
-  });
-  outputFilenameInput.addEventListener('input', (event) => {
-    localStorage.setItem('jotcad-outputFilename', event.target.value);
-  });
-
-  rotateSpeedInput.addEventListener('input', (event) => {
-    const speed = parseFloat(event.target.value);
-    controls.rotateSpeed = speed;
-    rotateSpeedValue.textContent = speed.toFixed(1);
-    localStorage.setItem('jotcad-rotateSpeed', speed);
-  });
-
-  zoomSpeedInput.addEventListener('input', (event) => {
-    const speed = parseFloat(event.target.value);
-    controls.zoomSpeed = speed;
-    zoomSpeedValue.textContent = speed.toFixed(1);
-    localStorage.setItem('jotcad-zoomSpeed', speed);
-  });
-
-  panSpeedInput.addEventListener('input', (event) => {
-    const speed = parseFloat(event.target.value);
-    controls.panSpeed = speed;
-    panSpeedValue.textContent = speed.toFixed(1);
-    localStorage.setItem('jotcad-panSpeed', speed);
-  });
-
-  fovInput.addEventListener('input', (event) => {
-    const value = parseFloat(event.target.value);
-    fovValue.textContent = value;
-    localStorage.setItem('jotcad-fov', value);
-    if (camera instanceof THREE.PerspectiveCamera) {
-      camera.fov = value;
-      camera.updateProjectionMatrix();
-    }
-  });
-
-  edgeThresholdInput.addEventListener('input', (event) => {
-    const value = event.target.value;
-    edgeThresholdValue.textContent = value;
-    localStorage.setItem('jotcad-edgeThreshold', value);
-    if (currentJotText) {
-      renderJotString(currentJotText);
-    }
-  });
-
-  projectionTypeSelect.addEventListener('change', (event) => {
-    const type = event.target.value;
-    localStorage.setItem('jotcad-projectionType', type);
-
-    const oldCamera = camera;
-    const aspect = window.innerWidth / window.innerHeight;
-
-    if (type === 'perspective') {
-      const fov = parseFloat(fovInput.value);
-      camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 1000);
-    } else {
-      const frustumSize = 20;
-      camera = new THREE.OrthographicCamera(
-        (-frustumSize * aspect) / 2,
-        (frustumSize * aspect) / 2,
-        frustumSize / 2,
-        -frustumSize / 2,
-        0.1,
-        1000
-      );
-    }
-
-    camera.position.copy(oldCamera.position);
-    camera.quaternion.copy(oldCamera.quaternion);
-    camera.updateProjectionMatrix();
-
-    controls.dispose();
-    controls = new TrackballControls(camera, renderer.domElement);
-    controls.rotateSpeed = parseFloat(rotateSpeedInput.value);
-    controls.zoomSpeed = parseFloat(zoomSpeedInput.value);
-    controls.panSpeed = parseFloat(panSpeedInput.value);
-    controls.staticMoving = true;
-
-    if (currentJotText) {
-      renderJotString(currentJotText);
-    }
-  });
-
-  // Initialize from localStorage
-  const savedRotateSpeed = localStorage.getItem('jotcad-rotateSpeed');
-  if (savedRotateSpeed) {
-    const speed = parseFloat(savedRotateSpeed);
-    controls.rotateSpeed = speed;
-    rotateSpeedInput.value = speed;
-    rotateSpeedValue.textContent = speed.toFixed(1);
-  }
-
-  const savedZoomSpeed = localStorage.getItem('jotcad-zoomSpeed');
-  if (savedZoomSpeed) {
-    const speed = parseFloat(savedZoomSpeed);
-    controls.zoomSpeed = speed;
-    zoomSpeedInput.value = speed;
-    zoomSpeedValue.textContent = speed.toFixed(1);
-  }
-
-  const savedPanSpeed = localStorage.getItem('jotcad-panSpeed');
-  if (savedPanSpeed) {
-    const speed = parseFloat(savedPanSpeed);
-    controls.panSpeed = speed;
-    panSpeedInput.value = speed;
-    panSpeedValue.textContent = speed.toFixed(1);
-  }
-
-  const savedFov = localStorage.getItem('jotcad-fov');
-  if (savedFov) {
-    fovInput.value = savedFov;
-    fovValue.textContent = savedFov;
-  }
-
-  const savedEdgeThreshold = localStorage.getItem('jotcad-edgeThreshold');
-  if (savedEdgeThreshold) {
-    edgeThresholdInput.value = savedEdgeThreshold;
-    edgeThresholdValue.textContent = savedEdgeThreshold;
-  }
-
-  const savedProjectionType =
-    localStorage.getItem('jotcad-projectionType') || 'orthographic';
-  projectionTypeSelect.value = savedProjectionType;
-  projectionTypeSelect.dispatchEvent(new Event('change'));
 }
 
 init();

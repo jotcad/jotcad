@@ -481,14 +481,9 @@ export const renderJotToThreejsScene = async (
     );
   }
 
-  // Recursively build Three.js objects
-  const walkShape = (shape, parentObject) => {
-    const currentObject = new Object3D(); // Use a Group or Object3D for transformations
-    parentObject.add(currentObject);
-
-    if (shape.tf) {
-      currentObject.applyMatrix4(decodeTf(shape.tf));
-    }
+  // Recursively build Three.js objects using absolute transformations
+  const walkShape = (shape) => {
+    const matrix = decodeTf(shape.tf);
 
     if (shape.geometry) {
       const geometryId = shape.geometry;
@@ -497,30 +492,33 @@ export const renderJotToThreejsScene = async (
         const { bufferGeometry, type } = cachedGeometry;
         const material = buildMeshMaterial(shape);
 
-        let object;
         if (type === 'mesh') {
-          object = new Mesh(bufferGeometry, material);
-        } else if (type === 'lines') {
-          object = new LineSegments(bufferGeometry, buildLineMaterial(shape));
-        }
-        currentObject.add(object);
-        if (type === 'mesh') {
+          const mesh = new Mesh(bufferGeometry, material);
+          mesh.applyMatrix4(matrix);
+          scene.add(mesh);
+
           const edges = buildEdges(bufferGeometry, edgeThresholdAngle);
-          currentObject.add(edges);
+          edges.applyMatrix4(matrix);
+          scene.add(edges);
+        } else if (type === 'lines') {
+          const lines = new LineSegments(
+            bufferGeometry,
+            buildLineMaterial(shape)
+          );
+          lines.applyMatrix4(matrix);
+          scene.add(lines);
         }
-      } else {
-        // console.warn(`Geometry with ID ${geometryId} not found in cache.`); // Removed for cleanup
       }
     }
 
     if (shape.shapes) {
       for (const subShape of shape.shapes) {
-        walkShape(subShape, currentObject);
+        walkShape(subShape);
       }
     }
   };
 
-  walkShape(mainShapeJson, scene);
+  walkShape(mainShapeJson);
 
   return scene;
 };

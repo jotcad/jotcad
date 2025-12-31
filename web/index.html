@@ -3,14 +3,92 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>JotCAD Web Viewer</title>
+    <title>JotCAD Workbench</title>
     <style>
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
+        padding: 0;
         overflow: hidden;
+        font-family: sans-serif;
+        height: 100vh;
+        width: 100vw;
+        background: #333;
       }
-      canvas {
-        display: block;
+
+      /* UI Styles for inner window content */
+      .input-group {
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .input-group label {
+        font-size: 11px;
+        white-space: nowrap;
+        color: #444;
+        width: 80px;
+        flex-shrink: 0;
+      }
+      .input-group input,
+      .input-group select {
+        flex: 1;
+        padding: 2px 4px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        background: rgba(255, 255, 255, 0.5);
+        border-radius: 4px;
+        min-width: 0;
+      }
+
+      #codeEditor {
+        width: 100%;
+        flex: 1;
+        font-family: 'Fira Code', monospace;
+        font-size: 13px;
+        padding: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        resize: none;
+        outline: none;
+      }
+
+      button {
+        padding: 4px 12px;
+        cursor: pointer;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.6);
+        font-size: 12px;
+      }
+      button:hover {
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      #loadingIndicator {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 20px;
+        border-radius: 8px;
+        z-index: 2000;
+        display: none;
+        pointer-events: none;
+      }
+
+      #orientationGuide {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        width: 100px;
+        height: 100px;
+        z-index: 10;
+        pointer-events: none;
       }
     </style>
     <script
@@ -22,106 +100,91 @@
         "imports": {
           "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
           "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-          "jotcad-viewer": "./jot_threejs_viewer.js",
-          "jotcad-main": "./main.js"
+          "jotcad-viewer": "./jot_threejs_viewer.js"
         }
       }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js"></script>
+    <script type="module" src="./components.js"></script>
   </head>
   <body>
-    <div
-      id="loadingIndicator"
-      style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 200;
-        background-color: rgba(0, 0, 0, 0.5);
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        display: none;
-      "
+    <jot-dock></jot-dock>
+
+    <!-- Background Viewport -->
+    <jot-viewport id="viewport"></jot-viewport>
+    <div id="orientationGuide"></div>
+
+    <!-- Floating Glass Windows -->
+    <jot-window
+      title="Config"
+      x="20px"
+      y="50px"
+      width="320px"
+      id="configWindow"
     >
-      Loading...
-    </div>
-    <div style="position: absolute; top: 10px; left: 10px; z-index: 100">
+      <div
+        id="githubControls"
+        style="
+          background: rgba(64, 128, 255, 0.1);
+          padding: 10px;
+          border-radius: 6px;
+          margin-bottom: 10px;
+        "
+      >
+        <strong>GitHub Storage</strong>
+        <div class="input-group">
+          <label
+            >Token
+            <span
+              id="githubTokenHelp"
+              style="cursor: help; opacity: 0.6; margin-left: 4px"
+              >ⓘ</span
+            ></label
+          >
+          <input type="password" id="githubToken" />
+        </div>
+        <div class="input-group">
+          <label>Repo</label>
+          <input type="text" id="githubRepo" placeholder="user/repo" />
+        </div>
+      </div>
+
+      <strong>System</strong>
+      <div class="input-group">
+        <label>Server</label>
+        <input type="text" id="serverAddress" value="http://localhost:3000" />
+      </div>
       <span
         id="releaseNumber"
-        style="font-weight: bold; margin-bottom: 10px; display: block"
+        style="font-size: 10px; color: #666; margin-top: 10px"
       ></span>
-      Server Address:
-      <input
-        type="text"
-        id="serverAddress"
-        value="http://localhost:3000"
-        style="background-color: rgba(255, 255, 255, 0.8); width: 300px"
-      /><br />
-      Session ID:
-      <input
-        type="text"
-        id="sessionId"
-        value="defaultSession"
-        style="background-color: rgba(255, 255, 255, 0.8); width: 300px"
-      /><br />
-      Output Filename:
-      <input
-        type="text"
-        id="outputFilename"
-        value="out.jot"
-        style="background-color: rgba(255, 255, 255, 0.8); width: 300px"
-      /><br /><br />
-      <textarea
-        id="codeEditor"
-        rows="10"
-        cols="50"
-        style="background-color: rgba(255, 255, 255, 0.8)"
-      ></textarea
-      ><br />
-      <button id="renderButton">Render Code</button><br /><br />
-      <div id="fileListContainer" style="margin-top: 10px">
-        <strong>Available Files:</strong>
-        <ul
-          id="fileList"
-          style="list-style: none; padding: 0; margin-top: 5px"
-        ></ul>
+    </jot-window>
+
+    <jot-window title="View" x="20px" y="450px" width="280px" id="viewWindow">
+      <div class="input-group">
+        <label>Projection</label>
+        <select id="projectionType">
+          <option value="orthographic">Orthographic</option>
+          <option value="perspective">Perspective</option>
+        </select>
       </div>
-    </div>
-    <div
-      style="
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        z-index: 100;
-        text-align: right;
-        background-color: rgba(255, 255, 255, 0.5);
-        padding: 10px;
-        border-radius: 5px;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-      "
-    >
-      <div id="orientationGuide" style="width: 100px; height: 100px"></div>
-      <div>
-        Rotation Speed:
+      <div class="input-group">
+        <label>FOV: <span id="fovValue">45</span></label>
+        <input type="range" id="fov" min="1" max="120" value="45" />
+      </div>
+      <div class="input-group">
+        <label>Rotate: <span id="rotateSpeedValue">1.0</span></label>
         <input
           type="range"
           id="rotateSpeed"
           min="0.1"
-          max="10"
+          max="5"
           step="0.1"
           value="1.0"
-          style="width: 100px; vertical-align: middle"
         />
-        <span id="rotateSpeedValue" style="width: 25px; display: inline-block"
-          >1.0</span
-        >
       </div>
-      <div>
-        Zoom Speed:
+      <div class="input-group">
+        <label>Zoom: <span id="zoomSpeedValue">1.2</span></label>
         <input
           type="range"
           id="zoomSpeed"
@@ -129,14 +192,10 @@
           max="5"
           step="0.1"
           value="1.2"
-          style="width: 100px; vertical-align: middle"
         />
-        <span id="zoomSpeedValue" style="width: 25px; display: inline-block"
-          >1.2</span
-        >
       </div>
-      <div>
-        Pan Speed:
+      <div class="input-group">
+        <label>Pan: <span id="panSpeedValue">0.8</span></label>
         <input
           type="range"
           id="panSpeed"
@@ -144,51 +203,108 @@
           max="5"
           step="0.1"
           value="0.8"
-          style="width: 100px; vertical-align: middle"
         />
-        <span id="panSpeedValue" style="width: 25px; display: inline-block"
-          >0.8</span
+      </div>
+      <div class="input-group">
+        <label>Edge: <span id="edgeThresholdValue">1</span>°</label>
+        <input type="range" id="edgeThreshold" min="0" max="90" value="1" />
+      </div>
+      <hr style="opacity: 0.1; width: 100%; margin: 8px 0" />
+      <div style="font-size: 11px; color: #444; margin-bottom: 5px">
+        <strong>Furniture</strong>
+      </div>
+      <div style="display: flex; gap: 5px">
+        <button
+          id="showWorkbench"
+          style="flex: 1; border: 1px solid rgba(0, 0, 0, 0.2)"
         >
+          Toggle Workbench
+        </button>
       </div>
-      <div>
-        Edge Threshold:
-        <input
-          type="range"
-          id="edgeThreshold"
-          min="0"
-          max="90"
-          step="1"
-          value="1"
-          style="width: 100px; vertical-align: middle"
-        />
-        <span id="edgeThresholdValue" style="width: 25px; display: inline-block"
-          >1</span
-        >
+    </jot-window>
+
+    <jot-window
+      title="Editor"
+      x="360px"
+      y="50px"
+      width="600px"
+      id="editorWindow"
+      style="height: 500px"
+    >
+      <div
+        style="
+          margin-bottom: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+        "
+      >
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div class="input-group" style="margin-bottom: 0; flex: 1">
+            <label style="width: auto">Path</label>
+            <input
+              type="text"
+              id="githubPath"
+              value="designs/cup.js"
+              placeholder="folder/file.js"
+            />
+          </div>
+          <button id="githubLoadButton" title="Pull from GitHub">Pull</button>
+          <button id="githubSaveButton" title="Commit to GitHub">Commit</button>
+          <button
+            id="renderButton"
+            style="
+              background: rgba(0, 255, 0, 0.2);
+              height: 24px;
+              padding: 0 10px;
+            "
+          >
+            ▶ Render
+          </button>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div class="input-group" style="margin-bottom: 0; flex: 1">
+            <label style="width: auto">Session</label>
+            <input type="text" id="sessionId" value="default" />
+          </div>
+          <div class="input-group" style="margin-bottom: 0; flex: 1">
+            <label style="width: auto">Output</label>
+            <input type="text" id="outputFilename" value="out.jot" />
+          </div>
+        </div>
       </div>
-      <div>
-        FOV:
-        <input
-          type="range"
-          id="fov"
-          min="1"
-          max="120"
-          step="1"
-          value="45"
-          style="width: 100px; vertical-align: middle"
-        />
-        <span id="fovValue" style="width: 25px; display: inline-block">45</span>
+      <textarea id="codeEditor" spellcheck="false"></textarea>
+    </jot-window>
+
+    <jot-window
+      title="Help"
+      x="1000px"
+      y="50px"
+      width="300px"
+      id="helpWindow"
+      minimized
+    >
+      <div style="font-size: 13px; line-height: 1.4">
+        <strong>How to get a GitHub Token:</strong><br /><br />
+        1. Go to <em>GitHub Settings</em> > <em>Developer settings</em> >
+        <em>Personal access tokens</em> >
+        <em>Fine-grained tokens</em>.<br /><br />
+        2. Click <strong>Generate new token</strong>.<br /><br />
+        3. Give it a name and select your designs repository.<br /><br />
+        4. Under <strong>Repository permissions</strong>, find
+        <strong>Contents</strong> and set it to
+        <strong>Read and write</strong>.<br /><br />
+        5. Click <strong>Generate token</strong> and copy the value into the
+        Config window.
       </div>
-      <div>
-        Projection:
-        <select
-          id="projectionType"
-          style="background-color: rgba(255, 255, 255, 0.8)"
-        >
-          <option value="orthographic">Orthographic</option>
-          <option value="perspective">Perspective</option>
-        </select>
-      </div>
-    </div>
+    </jot-window>
+
+    <jot-dock></jot-dock>
+
+    <jot-toast id="toast"></jot-toast>
+
+    <div id="loadingIndicator">Working...</div>
+
     <script type="module" src="./main.js"></script>
   </body>
 </html>
