@@ -501,6 +501,34 @@ async function init() {
     }
   };
 
+  const refreshFileList = async () => {
+    if (!fileList || !sessionIdInput.value) return;
+    try {
+      const res = await fetch(
+        `${serverAddressInput.value}/list/${sessionIdInput.value}`
+      );
+      if (res.ok) {
+        const files = await res.json();
+        fileList.innerHTML = '';
+        files.forEach((file) => {
+          const btn = document.createElement('button');
+          btn.textContent = file;
+          btn.style.fontSize = '10px';
+          btn.style.padding = '2px 6px';
+          btn.onclick = () => {
+            window.open(
+              `${serverAddressInput.value}/get/${sessionIdInput.value}/${file}`,
+              '_blank'
+            );
+          };
+          fileList.appendChild(btn);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to list files:', e);
+    }
+  };
+
   renderButton.addEventListener('click', async () => {
     loadingIndicator.style.display = 'block';
     try {
@@ -520,6 +548,7 @@ async function init() {
         console.log('Received response from Jot server. Rendering...');
         await renderJotString(jotResponse);
         console.log('JotCAD model rendered successfully.');
+        await refreshFileList();
       } else {
         const errorText = await res.text();
         console.error(`Error from Jot server: ${res.status} - ${errorText}`);
@@ -651,6 +680,7 @@ async function init() {
   ].forEach((el) => {
     el.addEventListener('input', () => {
       localStorage.setItem('jotcad-' + el.id, el.value);
+      if (el.id === 'sessionId') refreshFileList();
     });
   });
 
@@ -660,6 +690,8 @@ async function init() {
       renderButton.click();
     }
   });
+
+  await refreshFileList();
 }
 
 init();
