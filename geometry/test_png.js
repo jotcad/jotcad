@@ -34,11 +34,9 @@ export const testPng = async (
   let expectedFileExists = await isFilePresent(expectedPngFilePath);
 
   if (!expectedFileExists) {
-    console.log(
-      `testPng: Reference image not found at ${expectedPngFilePath}. Creating it from observed ${observedPngFilePath}.`
-    );
-    await writeFile(expectedPngFilePath, observedPngBuffer);
-    return true; // The test "passes" by creating the reference
+    const message = `testPng: Reference image not found at ${expectedPngFilePath}. Expected file must exist.`;
+    console.error(message);
+    throw new Error(message);
   }
 
   const expectedPngImage = pngjs.PNG.sync.read(
@@ -61,11 +59,6 @@ export const testPng = async (
   );
 
   if (numFailedPixels < threshold) {
-    // If the test passes and an observedPngBuffer was provided, update the expected reference.
-    // This is the original behavior which implicitly "approves" the observed image.
-    if (observedPngBuffer) {
-      await writeFile(expectedPngFilePath, observedPngBuffer);
-    }
     return true;
   } else {
     const message = `testPng: ${expectedPngFilePath} differs from observed ${observedPngFilePath} by ${numFailedPixels} pixels`;

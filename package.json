@@ -11,7 +11,8 @@
     "cli": "node cli/cli.js",
     "rollup": "npm run rollup --workspaces --if-present",
     "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test '*/*.test.js'",
-    "lintfix_one": "npx eslint --fix $1"
+    "lintfix_one": "npx eslint --fix $1",
+    "debug": "http-server . -p 9090"
   },
   "contributors": [],
   "keywords": [],
@@ -26,6 +27,7 @@
     "eslint-plugin-promise": "^4.0.1",
     "eslint-plugin-react": "^7.17.0",
     "eslint-plugin-standard": "^4.0.0",
+    "http-server": "^14.1.1",
     "prettier": "^2.3.1"
   },
   "publishConfig": {

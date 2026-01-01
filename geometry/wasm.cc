@@ -99,7 +99,7 @@ static Napi::Value ClipOpenBinding(const Napi::CallbackInfo& info) {
   return ClipOpen(assets, shape, tools);
 }
 
-static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
+static Napi::Value Cut2Binding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
@@ -108,7 +108,19 @@ static Napi::Value CutBinding(const Napi::CallbackInfo& info) {
   for (uint32_t nth = 0; nth < jsTools.Length(); nth++) {
     tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
   }
-  return Cut(assets, shape, tools);
+  return Cut2(assets, shape, tools);
+}
+
+static Napi::Value Cut3Binding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Napi::Array jsTools(info[2].As<Napi::Array>());
+  std::vector<Shape> tools;
+  for (uint32_t nth = 0; nth < jsTools.Length(); nth++) {
+    tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
+  }
+  return Cut3(assets, shape, tools);
 }
 
 static Napi::Value CutOpenBinding(const Napi::CallbackInfo& info) {
@@ -361,8 +373,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, ClipOpenBinding));
   exports.Set(Napi::String::New(env, "Close3"),
               Napi::Function::New(env, Close3Binding));
-  exports.Set(Napi::String::New(env, "Cut"),
-              Napi::Function::New(env, CutBinding));
+  exports.Set(Napi::String::New(env, "Cut2"),
+              Napi::Function::New(env, Cut2Binding));
+  exports.Set(Napi::String::New(env, "Cut3"),
+              Napi::Function::New(env, Cut3Binding));
   exports.Set(Napi::String::New(env, "CutOpen"),
               Napi::Function::New(env, CutOpenBinding));
   exports.Set(Napi::String::New(env, "Extrude2"),

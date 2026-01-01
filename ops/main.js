@@ -35,7 +35,8 @@ export { color } from './color.js';
 export { clip } from './clip.js';
 export { clipOpen } from './clipOpen.js';
 export { close3 } from './close.js';
-export { cut } from './cut.js';
+export { cut2 } from './cut.js';
+export { cut3 } from './cut.js';
 export { cutOpen } from './cutOpen.js';
 export { disjoint } from './disjoint.js';
 export { extrude2 } from './extrude.js';
@@ -100,7 +101,8 @@ export const operators = [
   'clip',
   'clipOpen',
   'close3',
-  'cut',
+  'cut2',
+  'cut3',
   'cutOpen',
   'disjoint',
   'extrude2',

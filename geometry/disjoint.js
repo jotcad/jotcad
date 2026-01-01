@@ -1,4 +1,4 @@
-import { cut } from './cut.js';
+import { cut3 } from './cut.js';
 import { makeGroup } from './shape.js';
 
 export const disjoint = (assets, shapes) => {
@@ -6,7 +6,7 @@ export const disjoint = (assets, shapes) => {
   for (let i = 0; i < shapes.length; i++) {
     const tools = shapes.slice(i + 1);
     if (tools.length > 0) {
-      results.push(cut(assets, shapes[i], tools));
+      results.push(cut3(assets, shapes[i], tools));
     } else {
       results.push(shapes[i]);
     }

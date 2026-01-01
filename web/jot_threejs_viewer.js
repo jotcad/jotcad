@@ -361,17 +361,44 @@ export const renderJotToThreejsScene = async (
             hole.map((vIdx) => vertices[vIdx])
           );
 
+          // Calculate normal first to determine projection plane
+          const faceNormal = new Vector3();
+          if (outerLoopPoints.length >= 3) {
+            const v0 = new Vector3(...outerLoopPoints[0].slice(3, 6));
+            const v1 = new Vector3(...outerLoopPoints[1].slice(3, 6));
+            const v2 = new Vector3(...outerLoopPoints[2].slice(3, 6));
+            const cb = new Vector3().subVectors(v2, v1);
+            const ab = new Vector3().subVectors(v0, v1);
+            faceNormal.crossVectors(cb, ab).normalize();
+          }
+
+          // Choose projection axes based on normal
+          const nx = Math.abs(faceNormal.x);
+          const ny = Math.abs(faceNormal.y);
+          const nz = Math.abs(faceNormal.z);
+
+          let u = 3,
+            v = 4; // Default to XY (Z is normal)
+          if (nx >= ny && nx >= nz) {
+            u = 4;
+            v = 5;
+          } // YZ (X is normal)
+          else if (ny >= nx && ny >= nz) {
+            u = 3;
+            v = 5;
+          } // XZ (Y is normal)
+
           const flatVertices2D = [];
           const holeIndices = [];
 
           for (const point of outerLoopPoints) {
-            flatVertices2D.push(point[3], point[4]);
+            flatVertices2D.push(point[u], point[v]);
           }
 
           for (const hole of holeLoopPoints) {
             holeIndices.push(flatVertices2D.length / 2);
             for (const point of hole) {
-              flatVertices2D.push(point[3], point[4]);
+              flatVertices2D.push(point[u], point[v]);
             }
           }
 
@@ -380,18 +407,6 @@ export const renderJotToThreejsScene = async (
           const allFacePoints = [...outerLoopPoints];
           for (const hole of holeLoopPoints) {
             allFacePoints.push(...hole);
-          }
-
-          let faceNormal = new Vector3();
-          if (allFacePoints.length >= 3) {
-            const v0 = new Vector3(...allFacePoints[0].slice(3, 6));
-            const v1 = new THREE.Vector3(...allFacePoints[1].slice(3, 6));
-            const v2 = new THREE.Vector3(...allFacePoints[2].slice(3, 6));
-            const cb = new THREE.Vector3().subVectors(v2, v1);
-            const ab = new THREE.Vector3().subVectors(v0, v1);
-            const faceNormal = new THREE.Vector3()
-              .crossVectors(cb, ab)
-              .normalize();
           }
 
           for (const index of triangulationIndices) {
