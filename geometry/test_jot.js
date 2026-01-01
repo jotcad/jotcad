@@ -29,11 +29,9 @@ export const testJot = async (
   let expectedFileExists = await isFilePresent(expectedJotFilePath);
 
   if (!expectedFileExists) {
-    console.log(
-      `testJot: Reference file not found at ${expectedJotFilePath}. Creating it from observed ${observedJotFilePath}.`
-    );
-    await writeFile(expectedJotFilePath, observedJotBuffer);
-    return true; // The test "passes" by creating the reference
+    const message = `testJot: Reference file not found at ${expectedJotFilePath}. Expected file must exist.`;
+    console.error(message);
+    throw new Error(message);
   }
 
   const expectedJotBuffer = await readFile(expectedJotFilePath);
@@ -43,11 +41,6 @@ export const testJot = async (
     expectedJotBuffer.toString('utf8') === observedJotBuffer.toString('utf8');
 
   if (areEqual) {
-    // If the test passes and an observedJotBuffer was provided, update the expected reference.
-    // This is the original behavior which implicitly "approves" the observed image.
-    if (observedJotBuffer) {
-      await writeFile(expectedJotFilePath, observedJotBuffer);
-    }
     return true;
   } else {
     const message = `testJot: ${expectedJotFilePath} differs from observed ${observedJotFilePath}`;

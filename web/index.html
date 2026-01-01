@@ -5,40 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JotCAD Workbench</title>
     <style>
+      :root {
+        --ui-scale: 1;
+      }
       * {
         box-sizing: border-box;
+      }
+      #uiScaleToggle {
+        position: fixed;
+        top: calc(8px * var(--ui-scale, 1));
+        right: calc(10px * var(--ui-scale, 1));
+        z-index: 2100;
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 0 calc(4px * var(--ui-scale, 1));
+        min-width: calc(24px * var(--ui-scale, 1));
+        height: calc(24px * var(--ui-scale, 1));
+        border-radius: calc(4px * var(--ui-scale, 1));
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: calc(14px * var(--ui-scale, 1));
+        user-select: none;
+      }
+      #uiScaleToggle:hover {
+        background: rgba(255, 255, 255, 0.4);
+      }
+      jot-window {
+        touch-action: none !important;
+        -webkit-user-drag: none !important;
       }
       body {
         margin: 0;
         padding: 0;
         overflow: hidden;
         font-family: sans-serif;
-        height: 100vh;
-        width: 100vw;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
         background: #333;
+        touch-action: none;
       }
 
       /* UI Styles for inner window content */
       .input-group {
-        margin-bottom: 8px;
+        margin-bottom: calc(8px * var(--ui-scale, 1));
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: calc(8px * var(--ui-scale, 1));
       }
       .input-group label {
-        font-size: 11px;
+        font-size: calc(11px * var(--ui-scale, 1));
         white-space: nowrap;
         color: #444;
-        width: 80px;
+        width: calc(80px * var(--ui-scale, 1));
         flex-shrink: 0;
       }
       .input-group input,
       .input-group select {
         flex: 1;
-        padding: 2px 4px;
+        padding: calc(2px * var(--ui-scale, 1)) calc(4px * var(--ui-scale, 1));
+        font-size: calc(11px * var(--ui-scale, 1));
         border: 1px solid rgba(0, 0, 0, 0.1);
         background: rgba(255, 255, 255, 0.5);
-        border-radius: 4px;
+        border-radius: calc(4px * var(--ui-scale, 1));
         min-width: 0;
       }
 
@@ -46,22 +80,22 @@
         width: 100%;
         flex: 1;
         font-family: 'Fira Code', monospace;
-        font-size: 13px;
-        padding: 10px;
+        font-size: calc(13px * var(--ui-scale, 1));
+        padding: calc(10px * var(--ui-scale, 1));
         border: 1px solid rgba(0, 0, 0, 0.1);
         background: rgba(255, 255, 255, 0.3);
-        border-radius: 4px;
+        border-radius: calc(4px * var(--ui-scale, 1));
         resize: none;
         outline: none;
       }
 
       button {
-        padding: 4px 12px;
+        padding: calc(4px * var(--ui-scale, 1)) calc(12px * var(--ui-scale, 1));
         cursor: pointer;
         border: 1px solid rgba(0, 0, 0, 0.1);
-        border-radius: 4px;
+        border-radius: calc(4px * var(--ui-scale, 1));
         background: rgba(255, 255, 255, 0.6);
-        font-size: 12px;
+        font-size: calc(12px * var(--ui-scale, 1));
       }
       button:hover {
         background: rgba(255, 255, 255, 0.9);
@@ -74,8 +108,8 @@
         transform: translate(-50%, -50%);
         background: rgba(0, 0, 0, 0.7);
         color: white;
-        padding: 20px;
-        border-radius: 8px;
+        padding: calc(20px * var(--ui-scale, 1));
+        border-radius: calc(8px * var(--ui-scale, 1));
         z-index: 2000;
         display: none;
         pointer-events: none;
@@ -83,12 +117,52 @@
 
       #orientationGuide {
         position: fixed;
-        top: 10px;
-        right: 10px;
-        width: 100px;
-        height: 100px;
+        top: calc(10px * var(--ui-scale, 1));
+        right: calc(10px * var(--ui-scale, 1));
+        width: calc(100px * var(--ui-scale, 1));
+        height: calc(100px * var(--ui-scale, 1));
         z-index: 10;
+
         pointer-events: none;
+      }
+
+      /* Utility Classes for Scaled UI */
+      .u-panel {
+        background: rgba(64, 128, 255, 0.1);
+        padding: calc(10px * var(--ui-scale, 1));
+        border-radius: calc(6px * var(--ui-scale, 1));
+        margin-bottom: calc(10px * var(--ui-scale, 1));
+      }
+      .u-row {
+        display: flex;
+        gap: calc(10px * var(--ui-scale, 1));
+        align-items: center;
+      }
+      .u-col {
+        display: flex;
+        flex-direction: column;
+        gap: calc(5px * var(--ui-scale, 1));
+      }
+      .u-label-sm {
+        font-size: calc(10px * var(--ui-scale, 1));
+        color: #666;
+        margin-top: calc(10px * var(--ui-scale, 1));
+        display: inline-block;
+      }
+      .u-header-sm {
+        font-size: calc(11px * var(--ui-scale, 1));
+        color: #444;
+        margin-bottom: calc(5px * var(--ui-scale, 1));
+      }
+      .u-btn-success {
+        background: rgba(0, 255, 0, 0.2);
+        height: calc(24px * var(--ui-scale, 1));
+        padding: 0 calc(10px * var(--ui-scale, 1));
+      }
+      .u-hr {
+        opacity: 0.1;
+        width: 100%;
+        margin: calc(8px * var(--ui-scale, 1)) 0;
       }
     </style>
     <script
@@ -108,6 +182,7 @@
     <script type="module" src="./components.js"></script>
   </head>
   <body>
+    <button id="uiScaleToggle" title="Toggle UI Scale">Aa</button>
     <jot-dock></jot-dock>
 
     <!-- Background Viewport -->
@@ -122,15 +197,7 @@
       width="320px"
       id="configWindow"
     >
-      <div
-        id="githubControls"
-        style="
-          background: rgba(64, 128, 255, 0.1);
-          padding: 10px;
-          border-radius: 6px;
-          margin-bottom: 10px;
-        "
-      >
+      <div id="githubControls" class="u-panel">
         <strong>GitHub Storage</strong>
         <div class="input-group">
           <label
@@ -154,10 +221,7 @@
         <label>Server</label>
         <input type="text" id="serverAddress" value="http://localhost:3000" />
       </div>
-      <span
-        id="releaseNumber"
-        style="font-size: 10px; color: #666; margin-top: 10px"
-      ></span>
+      <span id="releaseNumber" class="u-label-sm"></span>
     </jot-window>
 
     <jot-window title="View" x="20px" y="450px" width="280px" id="viewWindow">
@@ -209,8 +273,8 @@
         <label>Edge: <span id="edgeThresholdValue">1</span>°</label>
         <input type="range" id="edgeThreshold" min="0" max="90" value="1" />
       </div>
-      <hr style="opacity: 0.1; width: 100%; margin: 8px 0" />
-      <div style="font-size: 11px; color: #444; margin-bottom: 5px">
+      <hr class="u-hr" />
+      <div class="u-header-sm">
         <strong>Furniture</strong>
       </div>
       <div style="display: flex; gap: 5px">
@@ -231,15 +295,8 @@
       id="editorWindow"
       style="height: 500px"
     >
-      <div
-        style="
-          margin-bottom: 8px;
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        "
-      >
-        <div style="display: flex; gap: 10px; align-items: center">
+      <div class="u-col" style="margin-bottom: calc(8px * var(--ui-scale, 1))">
+        <div class="u-row">
           <div class="input-group" style="margin-bottom: 0; flex: 1">
             <label style="width: auto">Path</label>
             <input
@@ -251,18 +308,9 @@
           </div>
           <button id="githubLoadButton" title="Pull from GitHub">Pull</button>
           <button id="githubSaveButton" title="Commit to GitHub">Commit</button>
-          <button
-            id="renderButton"
-            style="
-              background: rgba(0, 255, 0, 0.2);
-              height: 24px;
-              padding: 0 10px;
-            "
-          >
-            ▶ Render
-          </button>
+          <button id="renderButton" class="u-btn-success">▶ Render</button>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center">
+        <div class="u-row">
           <div class="input-group" style="margin-bottom: 0; flex: 1">
             <label style="width: auto">Session</label>
             <input type="text" id="sessionId" value="default" />
@@ -274,6 +322,9 @@
         </div>
       </div>
       <textarea id="codeEditor" spellcheck="false"></textarea>
+      <hr class="u-hr" />
+      <div class="u-header-sm"><strong>Files</strong></div>
+      <div id="fileList" class="u-row" style="flex-wrap: wrap; margin-top: 5px;"></div>
     </jot-window>
 
     <jot-window
@@ -297,6 +348,27 @@
         5. Click <strong>Generate token</strong> and copy the value into the
         Config window.
       </div>
+    </jot-window>
+
+    <jot-window
+      title="Console"
+      x="1000px"
+      y="300px"
+      width="300px"
+      id="consoleWindow"
+    >
+      <pre
+        id="consoleOutput"
+        style="
+          font-family: 'Fira Code', monospace;
+          font-size: calc(12px * var(--ui-scale, 1));
+          white-space: pre-wrap;
+          word-break: break-all;
+          height: 100%;
+          margin: 0;
+          overflow-y: auto;
+        "
+      ></pre>
     </jot-window>
 
     <jot-dock></jot-dock>

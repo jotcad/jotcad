@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Box3 } from './box.js';
 import { join } from './join.js';
-import { cut } from './cut.js';
+import { cut3 } from './cut.js';
 import { clip } from './clip.js';
 import { setTag } from './tag.js';
 import { withTestAssets } from './test_session_util.js';
@@ -40,7 +40,7 @@ describe('gap', () => {
         'isGap',
         true
       );
-      const result = cut(assets, box, [gapTool]);
+      const result = cut3(assets, box, [gapTool]);
 
       const image = await renderPng(assets, result, {
         view: { position: [15, 15, 15] },

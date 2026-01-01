@@ -9,6 +9,7 @@ class JotWindow extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._onResize = () => this.ensureVisibility();
+    this.state = { x: 10, y: 50, width: 300, height: 'auto', minimized: false };
   }
 
   static get observedAttributes() {
@@ -29,28 +30,41 @@ class JotWindow extends HTMLElement {
     const savedStateStr = localStorage.getItem(storageKey);
     const savedState = savedStateStr ? JSON.parse(savedStateStr) : null;
 
-    const x = savedState?.left || this.getAttribute('x') || '10px';
-    const y = savedState?.top || this.getAttribute('y') || '50px';
-    const width = savedState?.width || this.getAttribute('width') || '300px';
-    const height = savedState?.height || this.getAttribute('height') || 'auto';
+    const parseDim = (val, def) => {
+      if (val === undefined || val === null) return def;
+      const n = parseFloat(val);
+      return isNaN(n) ? def : n;
+    };
+
+    let x = parseDim(savedState?.left, parseDim(this.getAttribute('x'), 10));
+    let y = parseDim(savedState?.top, parseDim(this.getAttribute('y'), 50));
+    let width = parseDim(
+      savedState?.width,
+      parseDim(this.getAttribute('width'), 300)
+    );
+    let height = savedState?.height || this.getAttribute('height') || 'auto';
+    if (height !== 'auto') height = parseDim(height, 'auto');
+
     const minimized =
       savedState?.minimized !== undefined
         ? savedState.minimized
         : this.hasAttribute('minimized');
 
-    this.style.left = x;
-    this.style.top = y;
-    this.style.width = width;
-    this.style.height = height;
+    // Sensible defaults for small screens if no saved state
+    if (!savedState && window.innerWidth < 768) {
+      if (width > window.innerWidth - 20) {
+        width = window.innerWidth - 40;
+        x = 20;
+      }
+    }
+
+    this.state = { x, y, width, height, minimized };
+
     if (minimized) {
       this.setAttribute('minimized', '');
     } else {
       this.removeAttribute('minimized');
     }
-
-    // Ensure visible on init and resize
-    this.ensureVisibility();
-    window.addEventListener('resize', this._onResize);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -61,41 +75,49 @@ class JotWindow extends HTMLElement {
           flex-direction: column;
           background: rgba(255, 255, 255, 0.4);
           border: 1px solid rgba(255, 255, 255, 0.3);
-          border-radius: 8px;
+          border-radius: calc(8px * var(--ui-scale, 1));
           box-shadow: 0 4px 15px rgba(0,0,0,0.1);
           overflow: hidden;
           font-family: sans-serif;
-          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s, scale 0.3s;
-          transform-origin: top center;
+          transition: opacity 0.2s;
+          transform-origin: top left;
+          touch-action: none;
+          font-size: calc(13px * var(--ui-scale, 1));
         }
         :host([minimized]) {
           opacity: 0;
-          scale: 0.5;
           pointer-events: none;
-          transform: translateY(-20px);
+          transform: translateY(calc(-20px * var(--ui-scale, 1))) scale(0.5);
         }
         .title-bar {
           background: rgba(0, 0, 0, 0.05);
-          padding: 8px 12px;
+          padding: 0.6em 0.9em;
           cursor: move;
           font-weight: bold;
-          font-size: 13px;
+          font-size: 1em;
           display: flex;
           justify-content: space-between;
           border-bottom: 1px solid rgba(0,0,0,0.05);
           user-select: none;
+          touch-action: none;
+          transition: background-color 0.2s ease;
+          position: relative;
+        }
+        .title-bar.drag-ready {
+          background: rgba(64, 128, 255, 0.3);
         }
         .content {
-          padding: 12px;
+          padding: 0.9em;
           flex: 1;
           overflow-y: auto;
           max-height: 80vh;
           display: flex;
           flex-direction: column;
         }
-        .controls { display: flex; gap: 8px; }
-        .btn { cursor: pointer; opacity: 0.6; font-size: 16px; line-height: 1; }
+        .controls { display: flex; gap: 0.6em; z-index: 103; position: relative; }
+        .btn { cursor: pointer; opacity: 0.6; font-size: 1.2em; line-height: 1; }
         .btn:hover { opacity: 1; }
+        .resizer { touch-action: none; position: absolute; z-index: 101; width: 16px; height: 16px; }
       </style>
       <div class="title-bar" id="handle">
         <span>${title}</span>
@@ -107,11 +129,15 @@ class JotWindow extends HTMLElement {
         <slot></slot>
       </div>
       <!-- Resize Anchors -->
-      <div class="resizer tl" style="position: absolute; top: 0; left: 0; width: 10px; height: 10px; cursor: nw-resize; z-index: 101;"></div>
-      <div class="resizer tr" style="position: absolute; top: 0; right: 0; width: 10px; height: 10px; cursor: ne-resize; z-index: 101;"></div>
-      <div class="resizer bl" style="position: absolute; bottom: 0; left: 0; width: 10px; height: 10px; cursor: sw-resize; z-index: 101;"></div>
-      <div class="resizer br" style="position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; cursor: se-resize; z-index: 101; background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.1) 50%);"></div>
+      <div class="resizer tl" style="top: 0; left: 0; cursor: nw-resize;"></div>
+      <div class="resizer tr" style="top: 0; right: 0; cursor: ne-resize;"></div>
+      <div class="resizer bl" style="bottom: 0; left: 0; cursor: sw-resize;"></div>
+      <div class="resizer br" style="bottom: 0; right: 0; cursor: se-resize; background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.1) 50%);"></div>
     `;
+
+    this.renderStyles();
+    this.ensureVisibility();
+    window.addEventListener('resize', this._onResize);
 
     this.setupDragging();
     this.setupMultiResizing();
@@ -121,7 +147,6 @@ class JotWindow extends HTMLElement {
       this.toggleMinimized();
     };
 
-    // Register with dock if it exists
     window.dispatchEvent(
       new CustomEvent('jot-window-registered', { detail: this })
     );
@@ -131,44 +156,72 @@ class JotWindow extends HTMLElement {
     window.removeEventListener('resize', this._onResize);
   }
 
+  renderStyles() {
+    const s = 'var(--ui-scale, 1)';
+    this.style.left = `calc(${this.state.x}px * ${s})`;
+    this.style.top = `calc(${this.state.y}px * ${s})`;
+    this.style.width = `calc(${this.state.width}px * ${s})`;
+    if (this.state.height === 'auto') {
+      this.style.height = 'auto';
+    } else {
+      this.style.height = `calc(${this.state.height}px * ${s})`;
+    }
+  }
+
   saveState() {
     const title = this.getAttribute('title') || 'Window';
     const state = {
-      left: this.style.left,
-      top: this.style.top,
-      width: this.style.width,
-      height: this.style.height,
+      left: this.state.x + 'px',
+      top: this.state.y + 'px',
+      width: this.state.width + 'px',
+      height: this.state.height === 'auto' ? 'auto' : this.state.height + 'px',
       minimized: this.hasAttribute('minimized'),
     };
     localStorage.setItem(`jotcad-window-${title}`, JSON.stringify(state));
   }
 
   ensureVisibility() {
-    // Wait for DOM to settle
     requestAnimationFrame(() => {
+      const uiScaleVar = getComputedStyle(document.documentElement)
+        .getPropertyValue('--ui-scale')
+        .trim();
+      const scale = uiScaleVar ? parseFloat(uiScaleVar) : 1.0;
+
+      let { x, y, width } = this.state;
       const rect = this.getBoundingClientRect();
-      const titleBarHeight = 35;
-      const minVisible = 50;
+      const visualW = rect.width;
 
-      let top = parseFloat(this.style.top);
-      let left = parseFloat(this.style.left);
+      const titleBarHeight = 35 * scale;
+      const minVisible = 50 * scale;
+      const dockHeight = 40 * scale;
 
-      // Handle cases where style properties might not be set or are invalid
-      if (isNaN(top)) top = rect.top;
-      if (isNaN(left)) left = rect.left;
+      // We work in visual coordinates for constraints
+      let visualX = x * scale;
+      let visualY = y * scale;
 
-      // 1. Constrain Top (must be below dock at 40px)
-      if (top < 40) top = 40;
-      if (top > window.innerHeight - titleBarHeight)
-        top = window.innerHeight - titleBarHeight;
+      // 1. Constrain Top
+      if (visualY < dockHeight) visualY = dockHeight;
+      if (visualY > window.innerHeight - titleBarHeight)
+        visualY = window.innerHeight - titleBarHeight;
 
-      // 2. Constrain Left/Right (keep at least minVisible px of the title bar on screen)
-      if (left + rect.width < minVisible) left = minVisible - rect.width;
-      if (left > window.innerWidth - minVisible)
-        left = window.innerWidth - minVisible;
+      // 2. Constrain Left/Right
+      if (visualX + visualW < minVisible) visualX = minVisible - visualW;
+      if (visualX > window.innerWidth - minVisible)
+        visualX = window.innerWidth - minVisible;
 
-      this.style.top = `${top}px`;
-      this.style.left = `${left}px`;
+      // 3. Constrain Width
+      if (visualW > window.innerWidth) {
+        // If window is too wide, we adjust unscaled width
+        this.state.width = (window.innerWidth - 20) / scale;
+        if (visualX + window.innerWidth - 20 > window.innerWidth) {
+          visualX = 10;
+        }
+      }
+
+      this.state.x = visualX / scale;
+      this.state.y = visualY / scale;
+
+      this.renderStyles();
     });
   }
 
@@ -184,67 +237,172 @@ class JotWindow extends HTMLElement {
   setupDragging() {
     const handle = this.shadowRoot.getElementById('handle');
     let isDragging = false;
+    let isDragReady = false;
     let startX, startY, initialLeft, initialTop;
+    let activePointerId = null;
+    let longPressTimer = null;
+    let currentScale = 1;
 
-    const onMouseDown = (e) => {
-      if (e.target.classList.contains('btn')) return;
+    handle.onselectstart = () => false;
+    handle.ondragstart = (e) => e.preventDefault();
+
+    handle.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      return false;
+    });
+
+    const onPointerDown = (e) => {
+      e.preventDefault();
+
+      const path = e.composedPath();
+      const isClickOnHandle = path.includes(handle);
+      if (!isClickOnHandle || e.target.classList.contains('btn')) {
+        return;
+      }
+
+      e.stopPropagation();
+
       isDragging = true;
+      activePointerId = e.pointerId;
+
+      const uiScaleVar = getComputedStyle(document.documentElement)
+        .getPropertyValue('--ui-scale')
+        .trim();
+      currentScale = (uiScaleVar ? parseFloat(uiScaleVar) : 1.0) || 1.0;
+
       startX = e.clientX;
       startY = e.clientY;
-      const rect = this.getBoundingClientRect();
-      initialLeft = rect.left;
-      initialTop = rect.top;
-      this.style.zIndex = 1000;
-      document.body.style.userSelect = 'none';
+      initialLeft = this.state.x;
+      initialTop = this.state.y;
 
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+      handle.setPointerCapture(activePointerId);
+      handle.addEventListener('pointermove', onPointerMove);
+      handle.addEventListener('pointerup', onPointerUp);
+      handle.addEventListener('pointercancel', onPointerUp);
+
+      const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
+
+      if (isTouch) {
+        isDragReady = false;
+        longPressTimer = setTimeout(() => {
+          isDragReady = true;
+          handle.classList.add('drag-ready');
+          this.style.zIndex = 1000;
+          document.body.style.userSelect = 'none';
+        }, 600);
+      } else {
+        isDragReady = true;
+        this.style.zIndex = 1000;
+        document.body.style.userSelect = 'none';
+      }
     };
 
-    const onMouseMove = (e) => {
-      if (!isDragging) return;
+    const onPointerMove = (e) => {
+      if (!isDragging || e.pointerId !== activePointerId) return;
+
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
 
-      let newTop = initialLeft !== undefined ? initialTop + dy : e.clientY;
+      if (!isDragReady) {
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+          clearTimeout(longPressTimer);
+          isDragging = false;
+          handle.releasePointerCapture(activePointerId);
+          handle.removeEventListener('pointermove', onPointerMove);
+          handle.removeEventListener('pointerup', onPointerUp);
+          handle.removeEventListener('pointercancel', onPointerUp);
+        }
+        return;
+      }
+
+      let newTop = initialTop + dy / currentScale;
       if (newTop < 40) newTop = 40;
 
-      this.style.left = `${initialLeft + dx}px`;
-      this.style.top = `${newTop}px`;
+      this.state.x = initialLeft + dx / currentScale;
+      this.state.y = newTop;
+      this.renderStyles();
+
+      e.preventDefault();
+      e.stopPropagation();
     };
 
-    const onMouseUp = () => {
-      if (isDragging) this.saveState();
+    const onPointerUp = (e) => {
+      if (e.pointerId !== activePointerId) return;
+
+      if (longPressTimer) clearTimeout(longPressTimer);
+      handle.classList.remove('drag-ready');
+
+      try {
+        handle.releasePointerCapture(activePointerId);
+      } catch (err) {}
+
+      handle.removeEventListener('pointermove', onPointerMove);
+      handle.removeEventListener('pointerup', onPointerUp);
+      handle.removeEventListener('pointercancel', onPointerUp);
+
+      if (isDragging && isDragReady) this.saveState();
+
       isDragging = false;
+      isDragReady = false;
+      activePointerId = null;
       document.body.style.userSelect = 'auto';
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
     };
 
-    handle.addEventListener('mousedown', onMouseDown);
+    handle.addEventListener('pointerdown', onPointerDown);
   }
 
   setupMultiResizing() {
     const resizers = this.shadowRoot.querySelectorAll('.resizer');
     let activeResizer = null;
-    let startX, startY, initialRect;
+    let activePointerId = null;
+    let startX, startY, initialW, initialH, initialX, initialY;
+    let currentScale = 1;
 
-    const onMouseDown = (e) => {
+    resizers.forEach((r) => {
+      r.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        return false;
+      });
+      r.onselectstart = () => false;
+      r.ondragstart = (e) => e.preventDefault();
+    });
+
+    const onPointerDown = (e) => {
+      e.preventDefault();
       e.stopPropagation();
       activeResizer = e.target;
+      activePointerId = e.pointerId;
       startX = e.clientX;
       startY = e.clientY;
-      initialRect = this.getBoundingClientRect();
+
+      const uiScaleVar = getComputedStyle(document.documentElement)
+        .getPropertyValue('--ui-scale')
+        .trim();
+      currentScale = (uiScaleVar ? parseFloat(uiScaleVar) : 1.0) || 1.0;
+
+      initialW = this.state.width;
+      initialH =
+        this.state.height === 'auto'
+          ? this.getBoundingClientRect().height / currentScale
+          : this.state.height;
+      initialX = this.state.x;
+      initialY = this.state.y;
+
       document.body.style.userSelect = 'none';
 
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+      activeResizer.setPointerCapture(activePointerId);
+      activeResizer.addEventListener('pointermove', onPointerMove);
+      activeResizer.addEventListener('pointerup', onPointerUp);
+      activeResizer.addEventListener('pointercancel', onPointerUp);
     };
 
-    const onMouseMove = (e) => {
-      if (!activeResizer) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+    const onPointerMove = (e) => {
+      if (!activeResizer || e.pointerId !== activePointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const dx = (e.clientX - startX) / currentScale;
+      const dy = (e.clientY - startY) / currentScale;
 
       const isTop =
         activeResizer.classList.contains('tl') ||
@@ -259,31 +417,41 @@ class JotWindow extends HTMLElement {
         activeResizer.classList.contains('bl') ||
         activeResizer.classList.contains('br');
 
-      if (isRight) this.style.width = `${initialRect.width + dx}px`;
-      if (isBottom) this.style.height = `${initialRect.height + dy}px`;
+      if (isRight) this.state.width = initialW + dx;
+      if (isBottom) this.state.height = initialH + dy;
 
       if (isLeft) {
-        this.style.width = `${initialRect.width - dx}px`;
-        this.style.left = `${initialRect.left + dx}px`;
+        this.state.width = initialW - dx;
+        this.state.x = initialX + dx;
       }
       if (isTop) {
-        let newTop = initialRect.top + dy;
+        let newTop = initialY + dy;
         if (newTop < 40) newTop = 40;
-        const actualDy = newTop - initialRect.top;
-        this.style.height = `${initialRect.height - actualDy}px`;
-        this.style.top = `${newTop}px`;
+        // Correct height for clamped top
+        const actualDy = newTop - initialY;
+        this.state.height = initialH - actualDy;
+        this.state.y = newTop;
       }
+      this.renderStyles();
     };
 
-    const onMouseUp = () => {
+    const onPointerUp = (e) => {
+      if (e.pointerId !== activePointerId) return;
+
+      activeResizer.releasePointerCapture(activePointerId);
+      activeResizer.removeEventListener('pointermove', onPointerMove);
+      activeResizer.removeEventListener('pointerup', onPointerUp);
+      activeResizer.removeEventListener('pointercancel', onPointerUp);
+
       if (activeResizer) this.saveState();
       activeResizer = null;
+      activePointerId = null;
       document.body.style.userSelect = 'auto';
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
     };
 
-    resizers.forEach((r) => r.addEventListener('mousedown', onMouseDown));
+    resizers.forEach((r) => {
+      r.addEventListener('pointerdown', onPointerDown);
+    });
   }
 }
 
@@ -304,23 +472,25 @@ class JotDock extends HTMLElement {
         :host {
           position: fixed;
           top: 0; left: 0; right: 0;
-          height: 40px;
+          height: calc(40px * var(--ui-scale, 1));
           background: rgba(0, 0, 0, 0.2);
           display: flex;
           align-items: center;
-          padding: 0 10px;
-          gap: 10px;
+          padding: 0 calc(10px * var(--ui-scale, 1));
+          gap: calc(10px * var(--ui-scale, 1));
           z-index: 2000;
           border-bottom: 1px solid rgba(255,255,255,0.1);
           color: white;
           font-family: sans-serif;
-          font-size: 13px;
+          font-size: calc(13px * var(--ui-scale, 1));
+          transform-origin: top left;
+          width: 100%;
         }
         .brand { font-weight: bold; margin-right: 10px; opacity: 0.8; }
         #items { display: flex; gap: 8px; }
         .dock-item {
           background: rgba(255, 255, 255, 0.3);
-          padding: 4px 12px;
+          padding: 0.3em 0.9em;
           border-radius: 4px;
           cursor: pointer;
           white-space: nowrap;
@@ -347,7 +517,6 @@ class JotDock extends HTMLElement {
       this.updateWindowState(e.detail);
     });
 
-    // Catch any windows already in DOM
     document
       .querySelectorAll('jot-window')
       .forEach((win) => this.registerWindow(win));
@@ -387,7 +556,13 @@ class JotViewport extends HTMLElement {
   connectedCallback() {
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #ccc; z-index: 0; }
+        :host { 
+          display: block; 
+          position: fixed; 
+          top: 0; left: 0; right: 0; bottom: 0; 
+          background: #ccc; 
+          z-index: 0; 
+        }
         #container { width: 100%; height: 100%; }
       </style>
       <div id="container"></div>
@@ -416,15 +591,15 @@ class JotToast extends HTMLElement {
       <style>
         .toast {
           position: fixed;
-          bottom: 60px;
+          bottom: calc(60px * var(--ui-scale, 1));
           left: 50%;
           transform: translateX(-50%);
           background: rgba(0, 0, 0, 0.7);
           color: white;
-          padding: 8px 20px;
-          border-radius: 20px;
+          padding: calc(8px * var(--ui-scale, 1)) calc(20px * var(--ui-scale, 1));
+          border-radius: calc(20px * var(--ui-scale, 1));
           font-family: sans-serif;
-          font-size: 13px;
+          font-size: calc(13px * var(--ui-scale, 1));
           z-index: 3000;
           opacity: 0;
           transition: opacity 0.3s, transform 0.3s;
@@ -432,7 +607,7 @@ class JotToast extends HTMLElement {
         }
         .toast.visible {
           opacity: 1;
-          transform: translateX(-50%) translateY(-10px);
+          transform: translateX(-50%) translateY(calc(-10px * var(--ui-scale, 1)));
         }
       </style>
       <div id="container"></div>
@@ -440,7 +615,6 @@ class JotToast extends HTMLElement {
     const container = this.shadowRoot.getElementById('container');
     container.appendChild(toast);
 
-    // Trigger animation
     requestAnimationFrame(() => toast.classList.add('visible'));
 
     setTimeout(() => {

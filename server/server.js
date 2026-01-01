@@ -84,7 +84,8 @@ const getContentType = (filePath) => {
 };
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': 'http://127.0.0.1:8080',
+  // 'Access-Control-Allow-Origin': 'http://127.0.0.1:8080',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
@@ -329,7 +330,8 @@ const handlePost = async (req, res) => {
   }
 };
 
-const hostname = process.env.HOSTNAME || '127.0.0.1';
+// const hostname = process.env.HOSTNAME || '127.0.0.1';
+const hostname = process.env.HOSTNAME || '0.0.0.0';
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 const server = http.createServer((req, res) => {

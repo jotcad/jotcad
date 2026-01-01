@@ -126,22 +126,22 @@ export const decodeTf = (tf) => {
         return makeRotateZMatrix(Math.PI * 2 * tau);
       }
       case 's': {
-        pieces.shift();
-        pieces.shift();
-        pieces.shift();
-        const x = parseFloat(pieces.shift());
-        const y = parseFloat(pieces.shift());
-        const z = parseFloat(pieces.shift());
+        pieces.shift(); // Discards precise_x
+        pieces.shift(); // Discards precise_y
+        pieces.shift(); // Discards precise_z
+        const x = parseFloat(pieces.shift()); // Uses approx_x
+        const y = parseFloat(pieces.shift()); // Uses approx_y
+        const z = parseFloat(pieces.shift()); // Uses approx_z
         const sm = makeScaleMatrix(x, y, z);
         return sm;
       }
       case 't': {
-        pieces.shift();
-        pieces.shift();
-        pieces.shift();
-        const x = parseFloat(pieces.shift());
-        const y = parseFloat(pieces.shift());
-        const z = parseFloat(pieces.shift());
+        pieces.shift(); // Discards precise_x
+        pieces.shift(); // Discards precise_y
+        pieces.shift(); // Discards precise_z
+        const x = parseFloat(pieces.shift()); // Uses approx_x
+        const y = parseFloat(pieces.shift()); // Uses approx_y
+        const z = parseFloat(pieces.shift()); // Uses approx_z
         const tm = makeTranslateMatrix(x, y, z);
         return tm;
       }
@@ -185,30 +185,12 @@ export const decodeTf = (tf) => {
   }
 };
 
-const triangulateFaceWithHoles = (points, face, holes) => {
-  const vertices = [];
-  const holeIndices = [];
-  for (const vertex of face) {
-    const point = points[vertex];
-    vertices.push(point[0], point[1]);
-  }
-  for (const hole of holes) {
-    holeIndices.push(vertices.length / 2);
-    for (const vertex of hole) {
-      const point = points[vertex];
-      vertices.push(point[0], point[1]);
-    }
-  }
-  const triangles = earcut(vertices, holeIndices);
-  return triangles;
-};
-
 const buildMeshMaterial = (shape) => {
   const { color } = shape.tags || {};
   if (color === undefined) {
-    return new MeshNormalMaterial();
+    return new MeshNormalMaterial({ side: 2 }); // DoubleSide = 2
   } else {
-    return new MeshStandardMaterial({ color });
+    return new MeshStandardMaterial({ color, side: 2 }); // DoubleSide = 2
   }
 };
 
@@ -265,34 +247,78 @@ export const buildMeshes = async ({
         }
         if (faces.length > 0) {
           for (const [face, ...holes] of faces) {
-            const triangulationIndices = triangulateFaceWithHoles(
-              vertices,
-              face,
-              holes
+            const outerLoopPoints = face.map((vIdx) => vertices[vIdx]);
+            const holeLoopPoints = holes.map((hole) =>
+              hole.map((vIdx) => vertices[vIdx])
             );
-            const geometry = new BufferGeometry();
-            const verticesArray = [];
-            for (const vertex of face) {
-              verticesArray.push(...vertices[vertex]);
+
+            // Calculate normal first to determine projection plane
+            const faceNormal = new Vector3();
+            if (outerLoopPoints.length >= 3) {
+              const v0 = new Vector3(...outerLoopPoints[0]);
+              const v1 = new Vector3(...outerLoopPoints[1]);
+              const v2 = new Vector3(...outerLoopPoints[2]);
+              const cb = new Vector3().subVectors(v2, v1);
+              const ab = new Vector3().subVectors(v0, v1);
+              faceNormal.crossVectors(cb, ab).normalize();
             }
-            for (const hole of holes) {
-              for (const vertex of hole) {
-                verticesArray.push(...vertices[vertex]);
+
+            // Choose projection axes based on normal
+            const nx = Math.abs(faceNormal.x);
+            const ny = Math.abs(faceNormal.y);
+            const nz = Math.abs(faceNormal.z);
+
+            let u = 0,
+              v = 1; // Default to XY (Z is normal)
+            if (nx >= ny && nx >= nz) {
+              u = 1;
+              v = 2;
+            } // YZ (X is normal)
+            else if (ny >= nx && ny >= nz) {
+              u = 0;
+              v = 2;
+            } // XZ (Y is normal)
+
+            const flatVertices2D = [];
+            const holeIndices = [];
+
+            for (const point of outerLoopPoints) {
+              flatVertices2D.push(point[u], point[v]);
+            }
+
+            for (const hole of holeLoopPoints) {
+              holeIndices.push(flatVertices2D.length / 2);
+              for (const point of hole) {
+                flatVertices2D.push(point[u], point[v]);
               }
             }
+
+            const triangulationIndices = earcut(flatVertices2D, holeIndices);
+
+            const allFacePoints = [...outerLoopPoints];
+            for (const hole of holeLoopPoints) {
+              allFacePoints.push(...hole);
+            }
+
+            const geometry = new BufferGeometry();
+            const positions = [];
+            const normals = [];
+
+            for (const p of allFacePoints) {
+              positions.push(p[0], p[1], p[2]);
+              normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
+            }
+
             geometry.setAttribute(
               'position',
-              new Float32BufferAttribute(verticesArray, 3)
+              new Float32BufferAttribute(positions, 3)
             );
-            const adjustedIndices = [];
-            for (let i = 0; i < triangulationIndices.length; i += 3) {
-              adjustedIndices.push(
-                triangulationIndices[i],
-                triangulationIndices[i + 1],
-                triangulationIndices[i + 2]
-              );
-            }
-            geometry.setIndex(adjustedIndices);
+            geometry.setAttribute(
+              'normal',
+              new Float32BufferAttribute(normals, 3)
+            );
+            geometry.setIndex(triangulationIndices);
+
             const material = buildMeshMaterial(shape);
             const mesh = new Mesh(geometry, material);
             mesh.applyMatrix4(matrix);

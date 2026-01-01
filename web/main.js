@@ -44,8 +44,129 @@ async function init() {
   const githubTokenHelp = document.getElementById('githubTokenHelp');
   const helpWindow = document.getElementById('helpWindow');
   const toast = document.getElementById('toast');
+  const uiScaleToggle = document.getElementById('uiScaleToggle');
 
   const showToast = (msg) => toast && toast.show(msg);
+
+  // UI Scale Logic
+  const uiScales = [1.0, 0.8, 0.6, 0.5, 0.4, 0.25, 0.2, 1.25, 1.5];
+  let currentScaleIndex = 0;
+
+  const setScale = (scale) => {
+    document.documentElement.style.setProperty('--ui-scale', scale);
+    localStorage.setItem('jotcad-uiScale', scale);
+    if (uiScaleToggle) uiScaleToggle.textContent = scale + 'x';
+  };
+
+  if (uiScaleToggle) {
+    uiScaleToggle.textContent = uiScales[currentScaleIndex] + 'x';
+    const savedScale = parseFloat(localStorage.getItem('jotcad-uiScale'));
+    if (!isNaN(savedScale)) {
+      // Find closest index or just use it
+      const foundIndex = uiScales.indexOf(savedScale);
+      if (foundIndex !== -1) {
+        currentScaleIndex = foundIndex;
+      } else {
+        // If saved scale isn't in our list, just append it or set custom
+        setScale(savedScale);
+      }
+      setScale(savedScale);
+    }
+
+    uiScaleToggle.addEventListener('click', () => {
+      currentScaleIndex = (currentScaleIndex + 1) % uiScales.length;
+      const newScale = uiScales[currentScaleIndex];
+      setScale(newScale);
+      showToast(`UI Scale: ${newScale}x`);
+    });
+  }
+
+  // Console Redirection
+  const consoleOutput = document.getElementById('consoleOutput');
+  const originalConsole = {
+    log: console.log,
+    error: console.error,
+    warn: console.warn,
+  };
+
+  const redirectConsole = (type) => {
+    return (...args) => {
+      originalConsole[type](...args);
+      const message = args
+        .map((arg) => {
+          if (typeof arg === 'object' && arg !== null) {
+            try {
+              return JSON.stringify(arg, null, 2);
+            } catch (e) {
+              return '[Unserializable Object]';
+            }
+          }
+          return String(arg);
+        })
+        .join(' ');
+
+      const line = document.createElement('div');
+      line.textContent = message;
+      line.style.color =
+        type === 'error' ? 'red' : type === 'warn' ? 'orange' : 'inherit';
+      line.style.borderBottom = '1px solid rgba(0,0,0,0.1)';
+      line.style.padding =
+        'calc(2px * var(--ui-scale, 1)) calc(4px * var(--ui-scale, 1))';
+      consoleOutput.appendChild(line);
+      consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    };
+  };
+
+  console.log = redirectConsole('log');
+  console.error = redirectConsole('error');
+  console.warn = redirectConsole('warn');
+
+  console.log('JotCAD Workbench initialized. Console redirection active.');
+
+  // Global Event Logger for Debugging
+  const eventsToLog = [
+    'pointerdown',
+    'pointermove',
+    'pointerup',
+    'pointercancel',
+    'gotpointercapture',
+    'lostpointercapture',
+    'touchstart',
+    'touchmove',
+    'touchend',
+    'touchcancel',
+    'mousedown',
+    'mousemove',
+    'mouseup',
+  ];
+
+  eventsToLog.forEach((evtName) => {
+    window.addEventListener(
+      evtName,
+      (e) => {
+        // Avoid flooding with move events unless we are looking for something specific,
+        // but log them for now as requested.
+        const targetStr = e.target
+          ? `${e.target.tagName}${e.target.id ? '#' + e.target.id : ''}${
+              e.target.className ? '.' + e.target.className : ''
+            }`
+          : 'unknown';
+        const coords = e.touches
+          ? `T:${e.touches.length}`
+          : `P:${e.clientX},${e.clientY}`;
+
+        // Use warn for visibility, and maybe skip move events if they are too noisy
+        if (!evtName.includes('move')) {
+          console.warn(
+            `[EVENT] ${evtName} | Target: ${targetStr} | Coords: ${coords} | pointerId: ${
+              e.pointerId || 'N/A'
+            }`
+          );
+        }
+      },
+      { capture: true, passive: true }
+    );
+  });
 
   // 2. Scene setup
   const scene = new THREE.Scene();
@@ -141,6 +262,7 @@ async function init() {
   camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(
     viewportContainer.clientWidth,
     viewportContainer.clientHeight
@@ -160,6 +282,7 @@ async function init() {
   axesCamera.up.set(0, 0, 1);
   axesCamera.lookAt(0, 0, 0);
   const axesRenderer = new THREE.WebGLRenderer({ alpha: true });
+  axesRenderer.setPixelRatio(window.devicePixelRatio);
   axesRenderer.setSize(100, 100);
   orientationContainer.appendChild(axesRenderer.domElement);
   const axesHelper = new THREE.AxesHelper(1);
@@ -205,6 +328,7 @@ async function init() {
     const width = viewportContainer.clientWidth;
     const height = viewportContainer.clientHeight;
     if (width > 0 && height > 0) {
+      renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(width, height);
       const aspect = width / height;
       if (camera instanceof THREE.PerspectiveCamera) {
@@ -220,7 +344,13 @@ async function init() {
 
   const resizeObserver = new ResizeObserver(() => updateRendererSize());
   resizeObserver.observe(viewportContainer);
+  resizeObserver.observe(document.body);
   window.addEventListener('resize', updateRendererSize);
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateRendererSize);
+    window.visualViewport.addEventListener('scroll', updateRendererSize);
+  }
 
   // 4. Logic & Events
   if (githubTokenHelp && helpWindow) {
@@ -348,6 +478,7 @@ async function init() {
 
   let currentJotText = '';
   const renderJotString = async (text) => {
+    console.log('JOT Content Received:', text);
     currentJotText = text;
     clearScene();
     try {
@@ -370,12 +501,41 @@ async function init() {
     }
   };
 
+  const refreshFileList = async () => {
+    if (!fileList || !sessionIdInput.value) return;
+    try {
+      const res = await fetch(
+        `${serverAddressInput.value}/list/${sessionIdInput.value}`
+      );
+      if (res.ok) {
+        const files = await res.json();
+        fileList.innerHTML = '';
+        files.forEach((file) => {
+          const btn = document.createElement('button');
+          btn.textContent = file;
+          btn.style.fontSize = '10px';
+          btn.style.padding = '2px 6px';
+          btn.onclick = () => {
+            window.open(
+              `${serverAddressInput.value}/get/${sessionIdInput.value}/${file}`,
+              '_blank'
+            );
+          };
+          fileList.appendChild(btn);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to list files:', e);
+    }
+  };
+
   renderButton.addEventListener('click', async () => {
     loadingIndicator.style.display = 'block';
     try {
       const code = `${codeEditor.value.trim()}.jot('${
         outputFilenameInput.value
       }')`;
+      console.log(`Sending code to Jot server: ${serverAddressInput.value}`);
       const res = await fetch(
         `${serverAddressInput.value}/run/${sessionIdInput.value}/${outputFilenameInput.value}`,
         {
@@ -383,7 +543,20 @@ async function init() {
           body: code,
         }
       );
-      if (res.ok) await renderJotString(await res.text());
+      if (res.ok) {
+        const jotResponse = await res.text();
+        console.log('Received response from Jot server. Rendering...');
+        await renderJotString(jotResponse);
+        console.log('JotCAD model rendered successfully.');
+        await refreshFileList();
+      } else {
+        const errorText = await res.text();
+        console.error(`Error from Jot server: ${res.status} - ${errorText}`);
+        showToast(`Server error: ${res.status}`);
+      }
+    } catch (e) {
+      console.error('Failed to communicate with Jot server or render:', e);
+      showToast('Render failed: ' + e.message);
     } finally {
       loadingIndicator.style.display = 'none';
     }
@@ -507,6 +680,7 @@ async function init() {
   ].forEach((el) => {
     el.addEventListener('input', () => {
       localStorage.setItem('jotcad-' + el.id, el.value);
+      if (el.id === 'sessionId') refreshFileList();
     });
   });
 
@@ -516,6 +690,8 @@ async function init() {
       renderButton.click();
     }
   });
+
+  await refreshFileList();
 }
 
 init();

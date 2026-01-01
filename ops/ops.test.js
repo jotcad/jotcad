@@ -17,7 +17,7 @@ import { Orb } from './orb.js';
 import { and } from './and.js';
 import assert from 'node:assert/strict';
 import { color } from './color.js';
-import { cut } from './cut.js';
+import { cut3 } from './cut.js';
 import { extrude2 } from './extrude.js';
 import { fill2 } from './fill.js';
 import { footprint } from './footprint.js';
@@ -40,7 +40,7 @@ describe('ops', () => {
         const graph = await run(session, () =>
           // This test is fundamentally flawed. It tries to use a 3D `z` op on a 2D `Box2`.
           Box2([0, 3], [0, 5])
-            .cut(z(0))
+            .cut3(z(0))
             .png('observed.ops.test.trivial.png', [-20, -20, 40])
         );
         assert.ok(await testPng(session.assets, 'ops.test.trivial.png'));
@@ -68,17 +68,17 @@ describe('ops', () => {
       await withTestSession('hemisphere', async (session) => {
         const graph = await run(session, () =>
           Orb(30)
-            .cut(z(1))
+            .cut3(z(1))
             .png('observed.ops.test.hemisphere.png', [-20, -20, 40])
         );
         assert.ok(await testPng(session.assets, 'ops.test.hemisphere.png'));
       });
     }));
   */
-  it('Orb(11).cut(z(1))', async () =>
+  it('Orb(11).cut3(z(1))', async () =>
     withFs(fs, async () => {
       await withTestSession('ops_test_failing_op', async (session) => {
-        const graph = await run(session, () => Orb(12).cut(z(1)));
+        const graph = await run(session, () => Orb(12).cut3(z(1)));
         assert.ok(graph);
       });
     }));
