@@ -336,7 +336,6 @@ export const renderJotToThreejsScene = async (
           );
 
           // Calculate normal first to determine projection plane
-<<<<<<< HEAD
           const faceNormal = new Vector3(0, 0, 1); // Default Z-up
           if (outerLoopPoints.length >= 3) {
             const v0 = new Vector3(...outerLoopPoints[0].slice(3, 6));
@@ -353,16 +352,6 @@ export const renderJotToThreejsScene = async (
                 break;
               }
             }
-=======
-          const faceNormal = new Vector3();
-          if (outerLoopPoints.length >= 3) {
-            const v0 = new Vector3(...outerLoopPoints[0].slice(3, 6));
-            const v1 = new Vector3(...outerLoopPoints[1].slice(3, 6));
-            const v2 = new Vector3(...outerLoopPoints[2].slice(3, 6));
-            const cb = new Vector3().subVectors(v2, v1);
-            const ab = new Vector3().subVectors(v0, v1);
-            faceNormal.crossVectors(cb, ab).normalize();
->>>>>>> main
           }
 
           // Choose projection axes based on normal
