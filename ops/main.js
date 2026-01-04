@@ -86,6 +86,8 @@ export const constructors = [
   'Disjoint',
   'Hull',
   'Jot',
+  'Link',
+  'Loop',
   'Orb',
   'Point',
   'Stl',

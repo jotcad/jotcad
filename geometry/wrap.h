@@ -34,32 +34,51 @@ static GeometryId Wrap3(Assets& assets, Shape& shape, double alpha = 1.0,
     Geometry geom =
         assets.GetGeometry(sub_shape.GeometryId()).Transform(sub_shape.GetTf());
 
-    // Create a mapping from old vertex indices (in geom.vertices_) to new
-    // vertex indices (in combined_geometry.vertices_)
-    std::vector<size_t> vertex_index_map;
-    vertex_index_map.reserve(geom.vertices_.size());
-    for (const auto& v_cgal : geom.vertices_) {
-      vertex_index_map.push_back(combined_geometry.AddVertex(
-          v_cgal, true));  // Add vertex and get its new/merged index
+    // Use a temporary mesh to get triangulated faces and existing triangles
+    CGAL::Surface_mesh<EK_Point> temp_mesh;
+    geom.EncodeSurfaceMesh<EK_Kernel>(temp_mesh);
+
+    // Create a mapping from temp_mesh vertex indices to combined_geometry
+    // merged vertex indices
+    std::map<CGAL::Surface_mesh<EK_Point>::Vertex_index, size_t> v_map;
+    for (auto v : temp_mesh.vertices()) {
+      v_map[v] = combined_geometry.AddVertex(temp_mesh.point(v), true);
     }
 
-    // Append triangles with remapped indices
-    for (const auto& triangle : geom.triangles_) {
-      std::vector<size_t> remapped_triangle;
-      remapped_triangle.reserve(triangle.size());
-      for (size_t old_index : triangle) {
-        remapped_triangle.push_back(
-            vertex_index_map[old_index]);  // Use the remapped index
+    // Add all faces from temp_mesh as triangles to combined_geometry
+    for (auto f : temp_mesh.faces()) {
+      std::vector<size_t> tri;
+      for (auto v : temp_mesh.vertices_around_face(temp_mesh.halfedge(f))) {
+        tri.push_back(v_map[v]);
       }
-      combined_geometry.triangles_.push_back(remapped_triangle);
+      combined_geometry.triangles_.push_back(tri);
     }
-    // Note: alpha_wrap_3 operates on points and faces (triangles), segments are
-    // not directly used here.
+
+    // Add segments as non-degenerate triangles [s, t, t + iota]
+    for (const auto& [source, target] : geom.segments_) {
+      size_t s_idx = combined_geometry.AddVertex(geom.vertices_[source], true);
+      size_t t_idx = combined_geometry.AddVertex(geom.vertices_[target], true);
+      const auto& t_pt = geom.vertices_[target];
+      size_t ti_idx = combined_geometry.AddVertex(
+          EK_Point(t_pt.x() + 1e-9, t_pt.y() + 1e-9, t_pt.z() + 1e-9), true);
+      combined_geometry.triangles_.push_back({s_idx, t_idx, ti_idx});
+    }
+
+    // Add points as non-degenerate triangles [p, p + iota1, p + iota2]
+    for (const auto& point_idx : geom.points_) {
+      const auto& p_pt = geom.vertices_[point_idx];
+      size_t p_idx = combined_geometry.AddVertex(p_pt, true);
+      size_t pi1_idx = combined_geometry.AddVertex(
+          EK_Point(p_pt.x() + 1e-9, p_pt.y(), p_pt.z()), true);
+      size_t pi2_idx = combined_geometry.AddVertex(
+          EK_Point(p_pt.x(), p_pt.y() + 1e-9, p_pt.z()), true);
+      combined_geometry.triangles_.push_back({p_idx, pi1_idx, pi2_idx});
+    }
+
     return true;
   });
 
-  if (combined_geometry.vertices_.empty() ||
-      combined_geometry.triangles_.empty()) {
+  if (combined_geometry.vertices_.empty()) {
     // If there's no geometry, return an empty ID
     return assets.UndefinedId();
   }
@@ -71,21 +90,17 @@ static GeometryId Wrap3(Assets& assets, Shape& shape, double alpha = 1.0,
   for (const auto& v_ek : combined_geometry.vertices_) {
     input_points.push_back(ek_to_ik_converter(v_ek));
   }
-  // The combined_geometry.triangles_ already is in the correct format for
-  // FaceRange (std::vector<std::vector<size_t>>)
 
   OutputMesh alpha_wrapped_mesh;
-
-  // Call CGAL::alpha_wrap_3
   make_deterministic();
-  CGAL::alpha_wrap_3(input_points,
-                     combined_geometry.triangles_,  // This is the FaceRange
-                     alpha, offset, alpha_wrapped_mesh
-                     // No named parameters for now, can add if needed
-  );
 
-  // Convert the output Surface_mesh back to Geometry, converting points back to
-  // EK_Kernel
+  if (combined_geometry.triangles_.empty()) {
+    CGAL::alpha_wrap_3(input_points, alpha, offset, alpha_wrapped_mesh);
+
+  } else {
+    CGAL::alpha_wrap_3(input_points, combined_geometry.triangles_, alpha,
+                       offset, alpha_wrapped_mesh);
+  }
   CGAL::Cartesian_converter<IK_Kernel, EK_Kernel> ik_to_ek_converter;
   Geometry wrapped_geometry;
   wrapped_geometry.vertices_.reserve(alpha_wrapped_mesh.number_of_vertices());

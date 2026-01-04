@@ -179,6 +179,8 @@
       }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js"></script>
+    <script src="https://unpkg.com/prettier@2.8.8/standalone.js"></script>
+    <script src="https://unpkg.com/prettier@2.8.8/parser-babel.js"></script>
     <script type="module" src="./components.js"></script>
   </head>
   <body>
@@ -324,13 +326,34 @@
       <textarea id="codeEditor" spellcheck="false"></textarea>
       <hr class="u-hr" />
       <div class="u-header-sm"><strong>Files</strong></div>
-      <div id="fileList" class="u-row" style="flex-wrap: wrap; margin-top: 5px;"></div>
+      <div
+        id="fileList"
+        class="u-row"
+        style="flex-wrap: wrap; margin-top: 5px"
+      ></div>
+    </jot-window>
+
+    <jot-window
+      title="Designs"
+      x="1000px"
+      y="50px"
+      width="300px"
+      id="designsWindow"
+    >
+      <button
+        id="fetchDesignsButton"
+        class="u-btn-success"
+        style="width: 100%; margin-bottom: 10px"
+      >
+        Fetch Designs
+      </button>
+      <div id="githubFileList" class="u-col"></div>
     </jot-window>
 
     <jot-window
       title="Help"
       x="1000px"
-      y="50px"
+      y="550px"
       width="300px"
       id="helpWindow"
       minimized

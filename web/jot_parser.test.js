@@ -73,8 +73,8 @@ v 1 1 0 1 1 0
 v 0 1 0 0 1 0
 v 0.25 0.25 0 0.25 0.25 0
 v 0.75 0.25 0 0.75 0.25 0
-F 1
-f 0 1 2 3 (4 5)
+f 0 1 2 3
+h 4 5
 `;
     const { vertices, faces } = DecodeInexactGeometryText(jotData);
     assert.strictEqual(

@@ -78,4 +78,40 @@ describe('extrude', () => {
       }
     );
   });
+
+  it('should extrude a square segment into quads', async () => {
+    await withTestAssets('should extrude a square segment', async (assets) => {
+      const square = makeShape({
+        geometry: cgal.Link(
+          assets,
+          [
+            await Point(assets, -1, -1, 0),
+            await Point(assets, 1, -1, 0),
+            await Point(assets, 1, 1, 0),
+            await Point(assets, -1, 1, 0),
+          ],
+          true,
+          false
+        ),
+      });
+      // This square is just segments. extrude2 should turn it into 4 side faces.
+      const extrudedSquare = extrude2(
+        assets,
+        square,
+        (await Point(assets, 0, 0, 0)).move(0, 0, 1),
+        (await Point(assets, 0, 0, 0)).move(0, 0, -1)
+      );
+      const image = await renderPng(assets, extrudedSquare, {
+        view: { position: [5, 5, 5] },
+        width: 512,
+        height: 512,
+      });
+      assert.ok(
+        await testPng(
+          `${import.meta.dirname}/extrude.test.square_segments.png`,
+          image
+        )
+      );
+    });
+  });
 });
