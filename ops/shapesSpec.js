@@ -8,6 +8,10 @@ Op.registerSpecHandler(
       const results = [];
       while (args.length >= 1) {
         const arg = args.shift();
+        console.log(
+          'shapesSpec: checking arg=',
+          arg ? arg.name || typeof arg : 'null'
+        );
         if (isShape(arg)) {
           results.push(arg);
           continue;
@@ -17,8 +21,11 @@ Op.registerSpecHandler(
         ) {
           results.push(arg);
           continue;
-        } else if (arg === undefined) {
-          break;
+        } else if (arg instanceof Op) {
+          console.log(
+            'shapesSpec: arg is Op but outputType is',
+            arg.getOutputType()
+          );
         }
         rest.push(arg);
       }

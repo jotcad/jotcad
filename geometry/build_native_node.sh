@@ -3,6 +3,7 @@ clang-format --style=google -i rs/*.h rs/*.cc
 
 g++ -O3 \
     -DCGAL_DISABLE_GMP=1 \
+    -DCGAL_EIGEN3_ENABLED=1 \
     -DBUILDING_NODE_EXTENSION \
     -DIGNORE_NO_ATOMICS=1 \
     -DOCCT_NO_PLUGINS \

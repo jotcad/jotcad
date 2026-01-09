@@ -26,6 +26,8 @@ export { Orb } from './orb.js';
 export { Point } from './point.js';
 export { Rule } from './rule.js';
 export { Stl } from './stl.js';
+export { X } from './x.js';
+export { Y } from './y.js';
 export { Z } from './z.js';
 
 export { absolute } from './absolute.js';
@@ -65,6 +67,7 @@ export { save } from './save.js';
 export { scale } from './scale.js';
 export { set } from './set.js';
 export { simplify } from './simplify.js';
+export { smooth } from './smooth.js';
 export { stl } from './stl.js';
 export { test } from './test.js';
 export { transform } from './transform.js';
@@ -92,6 +95,8 @@ export const constructors = [
   'Point',
   'Stl',
   'Rule',
+  'X',
+  'Y',
   'Z',
 ];
 
@@ -129,6 +134,7 @@ export const operators = [
   'scale',
   'set',
   'simplify',
+  'smooth',
   'stl',
   'test',
   'transform',

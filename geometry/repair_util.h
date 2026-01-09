@@ -1,5 +1,6 @@
 #pragma once
 
+#include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Line_3.h>
@@ -19,6 +20,7 @@
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Triangle_3.h>
 #include <CGAL/intersections.h>
+#include <CGAL/mark_domain_in_triangulation.h>
 
 #include <array>
 #include <iostream>  // Added for logging
@@ -29,6 +31,59 @@
 #include "unit_util.h"
 
 namespace PMP = CGAL::Polygon_mesh_processing;
+
+template <typename K>
+static void triangulate_planar_holes(
+    CGAL::Surface_mesh<typename K::Point_3>& mesh,
+    const std::vector<
+        typename CGAL::Surface_mesh<typename K::Point_3>::Halfedge_index>&
+        holes,
+    const typename K::Plane_3& plane) {
+  typedef CGAL::Surface_mesh<typename K::Point_3> Surface_mesh;
+  typedef typename Surface_mesh::Vertex_index Vertex_index;
+  typedef CGAL::Constrained_Delaunay_triangulation_2<K, CGAL::Default,
+                                                     CGAL::Exact_predicates_tag>
+      CDT;
+
+  CDT cdt;
+  std::map<typename CDT::Vertex_handle, Vertex_index> vmap;
+
+  for (auto h : holes) {
+    auto curr = h;
+    auto start_vh = cdt.insert(plane.to_2d(mesh.point(mesh.source(curr))));
+    vmap[start_vh] = mesh.source(curr);
+    auto prev_vh = start_vh;
+    curr = mesh.next(curr);
+    while (curr != h) {
+      auto curr_vh = cdt.insert(plane.to_2d(mesh.point(mesh.source(curr))));
+      vmap[curr_vh] = mesh.source(curr);
+      cdt.insert_constraint(prev_vh, curr_vh);
+      prev_vh = curr_vh;
+      curr = mesh.next(curr);
+    }
+    cdt.insert_constraint(prev_vh, start_vh);
+  }
+
+  std::unordered_map<typename CDT::Face_handle, bool> in_domain_map;
+  boost::associative_property_map<
+      std::unordered_map<typename CDT::Face_handle, bool>>
+      in_domain(in_domain_map);
+  CGAL::mark_domain_in_triangulation(cdt, in_domain);
+
+  for (auto f : cdt.finite_face_handles()) {
+    if (get(in_domain, f)) {
+      std::vector<Vertex_index> face_verts;
+      face_verts.push_back(vmap[f->vertex(0)]);
+      face_verts.push_back(vmap[f->vertex(1)]);
+      face_verts.push_back(vmap[f->vertex(2)]);
+
+      if (mesh.add_face(face_verts) == Surface_mesh::null_face()) {
+        std::reverse(face_verts.begin(), face_verts.end());
+        mesh.add_face(face_verts);
+      }
+    }
+  }
+}
 
 template <typename K>
 static bool number_of_holes(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
@@ -290,25 +345,117 @@ static void repair_zero_volume(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
 
 template <typename K>
 static bool repair_close_holes(CGAL::Surface_mesh<typename K::Point_3>& mesh) {
-  std::vector<typename CGAL::Surface_mesh<typename K::Point_3>::halfedge_index>
-      border_cycles;
+  typedef CGAL::Surface_mesh<typename K::Point_3> Surface_mesh;
+  typedef typename Surface_mesh::Halfedge_index Halfedge_index;
+  typedef typename Surface_mesh::Vertex_index Vertex_index;
+  typedef typename Surface_mesh::Face_index Face_index;
+  typedef typename K::Point_3 Point_3;
+  typedef typename K::Plane_3 Plane_3;
+  typedef typename K::Vector_3 Vector_3;
+
+  std::vector<Halfedge_index> border_cycles;
   CGAL::Polygon_mesh_processing::extract_boundary_cycles(
       mesh, std::back_inserter(border_cycles));
-  size_t remaining_hole_count = 0;
-  for (const typename CGAL::Surface_mesh<typename K::Point_3>::halfedge_index
-           hole : border_cycles) {
-    std::vector<typename CGAL::Surface_mesh<typename K::Point_3>::face_index>
-        patch_facets;
-    auto it = CGAL::Polygon_mesh_processing::triangulate_hole(
-        mesh, hole,
-        CGAL::parameters::face_output_iterator(
-            std::back_inserter(patch_facets)));
-    if (patch_facets.empty()) {
-      // The hole was not repaired.
-      remaining_hole_count++;
+
+  if (border_cycles.empty()) return true;
+
+  std::cout << "repair_close_holes: found " << border_cycles.size()
+            << " cycles." << std::endl;
+
+  // Group cycles by plane
+  std::vector<std::vector<Halfedge_index>> groups;
+  std::vector<Plane_3> planes;
+
+  for (auto h : border_cycles) {
+    // Estimate plane for this cycle
+    std::vector<Point_3> points;
+    auto curr = h;
+    do {
+      points.push_back(mesh.point(mesh.source(curr)));
+      curr = mesh.next(curr);
+    } while (curr != h);
+
+    if (points.size() < 3) continue;
+
+    Plane_3 plane;
+    bool planar = false;
+    // Simple planar check: use first 3 non-collinear points
+    for (size_t i = 0; i < points.size() - 2; ++i) {
+      if (!CGAL::collinear(points[i], points[i + 1], points[i + 2])) {
+        plane = Plane_3(points[i], points[i + 1], points[i + 2]);
+        planar = true;
+        break;
+      }
+    }
+
+    if (planar) {
+      // Check if all points are on this plane
+      for (const auto& p : points) {
+        if (CGAL::squared_distance(plane, p) > 1e-9) {
+          planar = false;
+          break;
+        }
+      }
+    }
+
+    bool added = false;
+    if (planar) {
+      // Normalize plane normal
+      Vector_3 n = plane.orthogonal_vector();
+      double len = std::sqrt(CGAL::to_double(n.squared_length()));
+      if (len > 0) n = n / len;
+      // Re-construct normalized plane to get consistent 'd'
+      plane = Plane_3(plane.point(), n);
+
+      for (size_t i = 0; i < planes.size(); ++i) {
+        // Check if planes are nearly identical
+        // Normalize the existing plane normal for comparison
+        Vector_3 ni = planes[i].orthogonal_vector();
+        double leni = std::sqrt(CGAL::to_double(ni.squared_length()));
+        if (leni > 0) ni = ni / leni;
+
+        double dot = CGAL::to_double(ni * n);
+        double dist_d = std::abs(CGAL::to_double(planes[i].d() - plane.d()));
+
+        if (std::abs(dot) > 0.999 && dist_d < 1e-7) {
+          groups[i].push_back(h);
+          added = true;
+          break;
+        }
+      }
+    }
+
+    if (!added) {
+      groups.push_back({h});
+      if (planar) {
+        planes.push_back(plane);
+      } else {
+        // Placeholder plane for non-planar (won't be used for grouping)
+        planes.push_back(Plane_3(0, 0, 1, 0));
+      }
     }
   }
-  return remaining_hole_count;
+
+  std::cout << "repair_close_holes: " << groups.size() << " groups found."
+            << std::endl;
+  size_t remaining_holes = 0;
+  for (size_t i = 0; i < groups.size(); ++i) {
+    const auto& group = groups[i];
+    std::cout << "Group " << i << ": " << group.size() << " cycles."
+              << std::endl;
+    if (group.size() == 1) {
+      // Single hole: standard triangulation
+      std::vector<Face_index> patch;
+      CGAL::Polygon_mesh_processing::triangulate_hole(
+          mesh, group[0],
+          CGAL::parameters::face_output_iterator(std::back_inserter(patch)));
+      if (patch.empty()) remaining_holes++;
+    } else {
+      std::cout << "triangulating planar group..." << std::endl;
+      triangulate_planar_holes<K>(mesh, group, planes[i]);
+    }
+  }
+  return remaining_holes == 0;
 }
 
 template <typename K>

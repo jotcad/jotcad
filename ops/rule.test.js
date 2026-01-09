@@ -1,28 +1,49 @@
 import { describe, it } from 'node:test';
 import { testJot, testPng, withTestSession } from './test_session_util.js';
-
-import { Box2 } from './box.js';
+import { Arc2 } from './arc.js';
+import { Rule } from './rule.js';
 import assert from 'node:assert/strict';
+import { close3 } from './close.js';
 import { jot } from './jot.js';
 import { png } from './png.js';
-import { rule } from './rule.js';
 import { run } from '@jotcad/op';
 import { z } from './z.js';
 
-describe('ops/rule', () => {
-  it('Box2(10).rule(z(4)) should generate the correct image', async () => {
-    await withTestSession('ops_rule_box2_z_test', async (session) => {
+describe('rule orientation', () => {
+  it('should produce a consistently oriented mesh for a complex stack', async () => {
+    await withTestSession('ops_test_rule_orientation', async (session) => {
       await run(session, () =>
-        Box2(10)
-          .rule(z(4))
-          .png('observed.rule.Box2_z.png')
-          .jot('observed.rule.Box2_z.jot')
+        Rule(
+          Arc2(50),
+          Arc2(48).z(1),
+          Arc2(46).z(0.5),
+          Arc2(17).z(0.5),
+          Arc2(15).z(1.5),
+          Arc2(10.5).z(1.5),
+          Arc2(10.5).z(-1.5),
+          Arc2(15).z(-1.5),
+          Arc2(17).z(-0.5),
+          Arc2(46).z(-0.5),
+          Arc2(48).z(-1),
+          Arc2(50)
+        )
+          .close3()
+          .jot('observed.ops.test.rule_oriented.jot')
+          .png('observed.ops.test.rule_oriented.png', [200, 200, 200])
       );
       assert.ok(
-        await testPng(session, 'rule.Box2_z.png', 'observed.rule.Box2_z.png')
+        await testJot(
+          session,
+          'ops.test.rule_oriented.jot',
+          'observed.ops.test.rule_oriented.jot'
+        )
       );
       assert.ok(
-        await testJot(session, 'rule.Box2_z.jot', 'observed.rule.Box2_z.jot')
+        await testPng(
+          session,
+          'ops.test.rule_oriented.png',
+          'observed.ops.test.rule_oriented.png'
+        )
       );
     });
   });

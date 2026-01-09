@@ -85,25 +85,6 @@ inline Mesh CreateRuledSurfaceMesh(
     q_in.push_back(q_in.front());
   }
 
-  // Cleaned up Logging: Just print input polylines
-  std::cout << "DEBUG: Rule - Input p_in (" << p_in.size()
-            << " points):" << std::endl;
-  for (const auto& pt : p_in) {
-    std::cout << "  (" << pt.x() << ", " << pt.y() << ", " << pt.z() << ")"
-              << std::endl;
-  }
-  std::cout << "DEBUG: Rule - Input q_in (" << q_in.size()
-            << " points):" << std::endl;
-  for (const auto& pt : q_in) {
-    std::cout << "  (" << pt.x() << ", " << pt.y() << ", " << pt.z() << ")"
-              << std::endl;
-  }
-
-  // LOG: Stopping rule parameters
-  std::cout << "DEBUG: Rule - StoppingRule parameters: max_iterations="
-            << stopping_rule_max_iterations << ", iters_without_improvement="
-            << stopping_rule_iters_without_improvement << std::endl;
-
   // 3. Prepare parameters for AlignLoopsSA
   using TriangulationStrategy = LinearSearchSlg<MinArea>;
   using StoppingRule =
@@ -124,67 +105,25 @@ inline Mesh CreateRuledSurfaceMesh(
           p_in, q_in, options, &mesh_result,
           &stats);  // Pass mesh_result by pointer to be filled
 
-  // LOG: mesh_result and SolutionStats after AlignLoopsSA
-  std::cout << "DEBUG: Rule - mesh_result after AlignLoopsSA: Vertices="
-            << mesh_result.number_of_vertices()
-            << ", Edges=" << mesh_result.number_of_edges()
-            << ", Faces=" << mesh_result.number_of_faces() << std::endl;
-  std::cout << "DEBUG: Rule - SolutionStats after AlignLoopsSA:" << std::endl;
-  std::cout << "  Status: " << stats.status
-            << std::endl;  // Removed status_to_string()
-  std::cout << "  Cost: " << stats.cost << std::endl;
-  std::cout << "  Shift: " << stats.shift << std::endl;
-  std::cout << "  Is Reversed: " << (stats.is_reversed ? "true" : "false")
-            << std::endl;
-  std::cout << "  Decision Log: " << stats.decision_log << std::endl;
-
-  // Determine correct face orientation based on volume for a closed mesh.
-  // Create a temporary mesh to close holes and compute volume without modifying
-  // mesh_result initially.
-  Mesh temp_mesh = mesh_result;
-
-  // Attempt to close holes for volume computation.
-  // Extract all boundary cycles.
-  std::vector<Mesh::Halfedge_index> border_cycles;
-  CGAL::Polygon_mesh_processing::extract_boundary_cycles(
-      temp_mesh, std::back_inserter(border_cycles));
-
-  // Fill holes for each boundary cycle.
-  for (const auto& h : border_cycles) {
-    std::vector<Mesh::Face_index> patch_facets;
-    CGAL::Polygon_mesh_processing::triangulate_hole(
-        temp_mesh, h, std::back_inserter(patch_facets));
-  }
-  // LOG: temp_mesh after hole filling
-  std::cout << "DEBUG: Rule - temp_mesh after hole filling: Vertices="
-            << temp_mesh.number_of_vertices()
-            << ", Edges=" << temp_mesh.number_of_edges()
-            << ", Faces=" << temp_mesh.number_of_faces() << std::endl;
-
-  // After filling holes, compute the volume.
-  // Volume can be negative if normals point inward.
-  double volume = CGAL::Polygon_mesh_processing::volume(temp_mesh);
-
-  // If volume is negative, it indicates normals are pointing inwards.
-  // We want outward pointing normals, so reverse if volume is negative.
-  if (volume < 0) {
-    CGAL::Polygon_mesh_processing::reverse_face_orientations(mesh_result);
-    std::cout << "Reversed face orientations due to negative volume."
-              << std::endl;
-  } else {
-    std::cout << "Face orientations are outward (positive volume)."
-              << std::endl;
-  }
-
   return mesh_result;
 }
 
-// Helper to merge source mesh into target mesh
-inline void MergeMesh(Mesh& target, const Mesh& source) {
+// Helper to merge source mesh into target mesh with stitching and orientation
+// check
+inline void MergeMesh(Mesh& target, const Mesh& source,
+                      std::map<IK::Point_3, Mesh::Vertex_index>& vertex_map) {
   // Map vertices from source to target
   std::map<Mesh::Vertex_index, Mesh::Vertex_index> v_map;
   for (auto v : source.vertices()) {
-    v_map[v] = target.add_vertex(source.point(v));
+    const auto& p = source.point(v);
+    auto it = vertex_map.find(p);
+    if (it == vertex_map.end()) {
+      auto new_v = target.add_vertex(p);
+      vertex_map[p] = new_v;
+      v_map[v] = new_v;
+    } else {
+      v_map[v] = it->second;
+    }
   }
   // Add faces
   for (auto f : source.faces()) {
@@ -193,7 +132,10 @@ inline void MergeMesh(Mesh& target, const Mesh& source) {
     for (auto v : source.vertices_around_face(h)) {
       face_verts.push_back(v_map[v]);
     }
-    target.add_face(face_verts);
+    if (target.add_face(face_verts) == Mesh::null_face()) {
+      std::reverse(face_verts.begin(), face_verts.end());
+      target.add_face(face_verts);
+    }
   }
 }
 
@@ -256,17 +198,32 @@ inline GeometryId Rule(Assets& assets, std::vector<Shape>& shapes,
   }
 
   Mesh accumulated_mesh;
+  std::map<IK::Point_3, Mesh::Vertex_index> vertex_map;
 
   // 2. Iterate through pairs of polylines
   for (size_t i = 0; i < all_polylines.size() - 1; ++i) {
-    // Note: CreateRuledSurfaceMesh might modify the polylines (closing them),
-    // which is fine/desirable for the next iteration where all_polylines[i+1]
-    // becomes p_in.
     Mesh pair_mesh = CreateRuledSurfaceMesh(
         all_polylines[i], all_polylines[i + 1], seed,
         stopping_rule_max_iterations, stopping_rule_iters_without_improvement);
 
-    MergeMesh(accumulated_mesh, pair_mesh);
+    MergeMesh(accumulated_mesh, pair_mesh, vertex_map);
+  }
+
+  // Final orientation fix: ensure it points outward if closed.
+  if (!accumulated_mesh.is_empty()) {
+    Mesh temp_mesh = accumulated_mesh;
+    std::vector<Mesh::Halfedge_index> border_cycles;
+    CGAL::Polygon_mesh_processing::extract_boundary_cycles(
+        temp_mesh, std::back_inserter(border_cycles));
+    for (const auto& h : border_cycles) {
+      std::vector<Mesh::Face_index> patch_facets;
+      CGAL::Polygon_mesh_processing::triangulate_hole(
+          temp_mesh, h, std::back_inserter(patch_facets));
+    }
+    if (CGAL::Polygon_mesh_processing::volume(temp_mesh) < 0) {
+      CGAL::Polygon_mesh_processing::reverse_face_orientations(
+          accumulated_mesh);
+    }
   }
 
   Geometry geom_result;

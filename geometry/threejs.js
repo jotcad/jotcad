@@ -13,6 +13,7 @@ import {
   LineSegments,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshNormalMaterial,
   MeshStandardMaterial,
   Object3D,
@@ -223,6 +224,7 @@ export const buildMeshes = async ({
   definitions,
   pageSize = [],
   doOutlineEdges = true,
+  doWireframe = false,
 }) => {
   const walk = async (shape) => {
     try {
@@ -323,6 +325,20 @@ export const buildMeshes = async ({
             const mesh = new Mesh(geometry, material);
             mesh.applyMatrix4(matrix);
             scene.add(mesh);
+
+            if (doWireframe) {
+              const wireframeMaterial = new MeshBasicMaterial({
+                color: 0x000000,
+                wireframe: true,
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1,
+              });
+              const wireframeMesh = new Mesh(geometry, wireframeMaterial);
+              wireframeMesh.applyMatrix4(matrix);
+              scene.add(wireframeMesh);
+            }
+
             if (doOutlineEdges) {
               const edges = buildEdges(geometry);
               edges.applyMatrix4(matrix);
@@ -362,6 +378,20 @@ export const buildMeshes = async ({
           const mesh = new Mesh(bufferGeometry, material);
           mesh.applyMatrix4(matrix);
           scene.add(mesh);
+
+          if (doWireframe) {
+            const wireframeMaterial = new MeshBasicMaterial({
+              color: 0x000000,
+              wireframe: true,
+              polygonOffset: true,
+              polygonOffsetFactor: 1,
+              polygonOffsetUnits: 1,
+            });
+            const wireframeMesh = new Mesh(bufferGeometry, wireframeMaterial);
+            wireframeMesh.applyMatrix4(matrix);
+            scene.add(wireframeMesh);
+          }
+
           if (doOutlineEdges) {
             const edges = buildEdges(bufferGeometry);
             edges.applyMatrix4(matrix);
@@ -480,6 +510,7 @@ export const staticDisplay = async ({
   width,
   height,
   doOutlineEdges = true,
+  doWireframe = false,
 } = {}) => {
   if (!canvas) {
     canvas = new OffscreenCanvas(width, height);
@@ -528,6 +559,7 @@ export const staticDisplay = async ({
       definitions,
       pageSize,
       doOutlineEdges,
+      doWireframe,
     });
   } catch (e) {
     throw e;
