@@ -2,6 +2,7 @@
 
 export const DecodeInexactGeometryText = (text) => {
   const vertices = [];
+  const points = [];
   const segments = [];
   const triangles = [];
   const faces = [];
@@ -12,58 +13,45 @@ export const DecodeInexactGeometryText = (text) => {
     if (trimmedLine.length === 0) {
       continue;
     }
-    const parts = trimmedLine.split(' ');
+    const parts = trimmedLine.split(/\s+/);
     const command = parts.shift();
 
     switch (command) {
       case 'v':
         vertices.push(parts.map(parseFloat));
         break;
-      case 's':
-        segments.push(parts.map((s) => parseInt(s, 10)));
+      case 'p':
+        points.push(...parts.map((s) => parseInt(s, 10)));
         break;
+      case 's': {
+        const indices = parts.map((s) => parseInt(s, 10));
+        // segments are stored as arrays of pairs or a single array of indices?
+        // geometry.h Encode says: ss << " " << s << " " << t;
+        // So it's a flat list of indices representing pairs.
+        for (let i = 0; i < indices.length; i += 2) {
+          segments.push([indices[i], indices[i + 1]]);
+        }
+        break;
+      }
       case 't':
         triangles.push(parts.map((s) => parseInt(s, 10)));
         break;
       case 'f': {
-        const faceAndHoles = [];
-        let remaining = parts.join(' ');
-        while (remaining.length > 0) {
-          const match = remaining.match(/^\s*\(([^)]*)\)\s*|^\s*([0-9]+)\s*/);
-          if (match) {
-            const [full, hole, point] = match;
-            if (hole !== undefined) {
-              faceAndHoles.push(
-                hole
-                  .trim()
-                  .split(/\s+/)
-                  .map((s) => parseInt(s, 10))
-              );
-            } else if (point !== undefined) {
-              faceAndHoles.push(parseInt(point, 10));
-            }
-            remaining = remaining.substring(full.length);
-          } else {
-            break;
-          }
+        const face = parts.map((s) => parseInt(s, 10));
+        faces.push([face]);
+        break;
+      }
+      case 'h': {
+        const hole = parts.map((s) => parseInt(s, 10));
+        if (faces.length > 0) {
+          faces[faces.length - 1].push(hole);
         }
-        const face = [];
-        const holes = [];
-        let current = face;
-        for (const item of faceAndHoles) {
-          if (Array.isArray(item)) {
-            holes.push(item);
-          } else {
-            current.push(item);
-          }
-        }
-        faces.push([face, ...holes]);
         break;
       }
       default:
-        // Ignore other commands like 'V' (version) for now
+        // Ignore other commands
         break;
     }
   }
-  return { vertices, segments, triangles, faces };
+  return { vertices, points, segments, triangles, faces };
 };

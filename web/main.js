@@ -2,14 +2,23 @@ import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { renderJotToThreejsScene } from 'jotcad-viewer';
 import { GithubStorage } from './githubStorage.js';
+import { DesignStorage } from './designStorage.js';
 
 const RELEASE_NUMBER = 1;
+
+const EDIT_ICON = `
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px; flex-shrink: 0;">
+  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+</svg>`;
 
 // Set Z-up as default for all Three.js objects
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 
 async function init() {
   const githubStorage = new GithubStorage();
+  const designStorage = new DesignStorage();
+  await designStorage.init();
 
   // 1. DOM References
   const viewportComponent = document.getElementById('viewport');
@@ -41,12 +50,167 @@ async function init() {
   const githubPathInput = document.getElementById('githubPath');
   const githubLoadButton = document.getElementById('githubLoadButton');
   const githubSaveButton = document.getElementById('githubSaveButton');
+  const fetchDesignsButton = document.getElementById('fetchDesignsButton');
+  const githubFileList = document.getElementById('githubFileList');
   const githubTokenHelp = document.getElementById('githubTokenHelp');
   const helpWindow = document.getElementById('helpWindow');
+  const editorWindow = document.getElementById('editorWindow');
   const toast = document.getElementById('toast');
   const uiScaleToggle = document.getElementById('uiScaleToggle');
 
   const showToast = (msg) => toast && toast.show(msg);
+  const showAlert = (msg) => window.alert(msg);
+
+  const readEditor = () => codeEditor.value;
+  const writeEditor = async (content, updateMirror = true) => {
+    codeEditor.value = content;
+    localStorage.setItem('jotcad-codeEditor', content);
+    if (updateMirror) {
+      const fullPath = githubPathInput.value.trim();
+      await designStorage.saveLocal(fullPath, content);
+      await updateUnpushedIndicator();
+    }
+  };
+
+  const prettifyCode = async () => {
+    if (
+      typeof prettier === 'undefined' ||
+      typeof prettierPlugins === 'undefined'
+    ) {
+      console.warn('Prettier not loaded yet');
+      return;
+    }
+    try {
+      const content = readEditor();
+      const formatted = prettier.format(content, {
+        parser: 'babel',
+        plugins: prettierPlugins,
+        singleQuote: true,
+        trailingComma: 'es5',
+        semi: false,
+        printWidth: 40,
+      });
+      if (formatted !== content) {
+        await writeEditor(formatted);
+      }
+    } catch (e) {
+      console.warn('Prettify failed:', e);
+    }
+  };
+
+  const reportError = (prefix, e) => {
+    let message = e.message;
+    if (e.status === 401) {
+      message =
+        'GitHub Token is invalid or has expired. Please check your settings.';
+    } else if (e.status === 404) {
+      message = 'GitHub Repository or Path not found.';
+    } else if (e.status === 403) {
+      message = 'GitHub API rate limit exceeded or access forbidden.';
+    }
+    console.error(`${prefix}:`, e);
+    showAlert(`${prefix}: ${message}`);
+  };
+
+  const fetchGithubDesigns = async () => {
+    console.log('fetchGithubDesigns: Starting...');
+    if (!githubFileList) {
+      console.error('fetchGithubDesigns: githubFileList element not found');
+      return;
+    }
+    const token = githubTokenInput.value.trim();
+    const repo = githubRepoInput.value.trim();
+    const fullPath = githubPathInput.value.trim();
+    const lastSlash = fullPath.lastIndexOf('/');
+    const path = lastSlash !== -1 ? fullPath.substring(0, lastSlash) : '';
+
+    console.log('fetchGithubDesigns: Params', { repo, path });
+
+    if (!token || !repo) {
+      showAlert('GitHub Token and Repo required in Config window.');
+      return;
+    }
+
+    try {
+      loadingIndicator.style.display = 'block';
+      console.log('fetchGithubDesigns: Calling listFiles...');
+      const remoteFiles = await githubStorage.listFiles(token, repo, path);
+
+      // Get all local designs from indexedDB
+      const allLocalDesigns = await designStorage.getAllDesigns();
+      // Filter for those matching current repo path prefix if applicable,
+      // but for now let's just use the current path logic.
+      const localPathsInCurrentDir = allLocalDesigns
+        .filter((d) => {
+          const dPath =
+            d.fullPath.lastIndexOf('/') !== -1
+              ? d.fullPath.substring(0, d.fullPath.lastIndexOf('/'))
+              : '';
+          return dPath === path;
+        })
+        .map((d) => d.fullPath.substring(d.fullPath.lastIndexOf('/') + 1));
+
+      // Merge unique filenames
+      const allFilenames = Array.from(
+        new Set([...remoteFiles, ...localPathsInCurrentDir])
+      );
+      allFilenames.sort();
+
+      githubFileList.innerHTML = '';
+      for (const file of allFilenames) {
+        const fullFilePath = path ? `${path}/${file}` : file;
+        const hasChanges = await designStorage.hasUnpushedChanges(fullFilePath);
+
+        const btn = document.createElement('button');
+        btn.innerHTML =
+          (hasChanges ? EDIT_ICON : '') + `<span>${fullFilePath}</span>`;
+        btn.style.textAlign = 'left';
+        btn.style.fontSize = '11px';
+        btn.style.display = 'flex';
+        btn.style.alignItems = 'center';
+        if (hasChanges) btn.style.color = '#ffaa00';
+
+        btn.onclick = async () => {
+          githubPathInput.value = fullFilePath;
+          localStorage.setItem('jotcad-githubPath', fullFilePath);
+          await loadDesign(fullFilePath);
+        };
+        githubFileList.appendChild(btn);
+      }
+      showToast(`Fetched ${allFilenames.length} designs`);
+    } catch (e) {
+      reportError('Fetch Designs failed', e);
+    } finally {
+      loadingIndicator.style.display = 'none';
+    }
+  };
+
+  const updateUnpushedIndicator = async () => {
+    const fullPath = githubPathInput.value;
+    const hasChanges = await designStorage.hasUnpushedChanges(fullPath);
+    if (githubSaveButton) {
+      githubSaveButton.style.border = hasChanges ? '2px solid #ffaa00' : '';
+      githubSaveButton.style.boxShadow = hasChanges ? '0 0 5px #ffaa00' : '';
+    }
+  };
+
+  const loadDesign = async (fullPath) => {
+    if (!fullPath) return;
+    const design = await designStorage.getDesign(fullPath);
+    if (design && design.local !== undefined) {
+      await writeEditor(design.local, false);
+    } else {
+      // If we don't have a local mirror, trigger a pull from GitHub
+      githubLoadButton.click();
+    }
+
+    // Ensure the editor window is visible when loading a design
+    if (editorWindow && editorWindow.hasAttribute('minimized')) {
+      editorWindow.removeAttribute('minimized');
+    }
+
+    await updateUnpushedIndicator();
+  };
 
   // UI Scale Logic
   const uiScales = [1.0, 0.8, 0.6, 0.5, 0.4, 0.25, 0.2, 1.25, 1.5];
@@ -175,6 +339,9 @@ async function init() {
   const furnitureGroup = new THREE.Group();
   scene.add(furnitureGroup);
 
+  const modelGroup = new THREE.Group();
+  scene.add(modelGroup);
+
   const createFurniture = () => {
     furnitureGroup.clear();
     const isVisible = localStorage.getItem('jotcad-showWorkbench') === 'true';
@@ -275,6 +442,76 @@ async function init() {
   controls.panSpeed = 0.8;
   controls.staticMoving = true;
 
+  // Dual Panning Mode Logic
+  let isFocusPanning = false;
+  const focusPanStart = new THREE.Vector2();
+  const initialTarget = new THREE.Vector3();
+
+  const onPointerDown = (e) => {
+    // Mode 2: Shift + Right Click (or Shift + Left Click if preferred, but user said "pan")
+    // button 2 is Right Click
+    if (e.shiftKey && (e.button === 2 || e.button === 0)) {
+      isFocusPanning = true;
+      focusPanStart.set(e.clientX, e.clientY);
+      initialTarget.copy(controls.target);
+      controls.enabled = false;
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const onPointerMove = (e) => {
+    if (!isFocusPanning) return;
+
+    const dx = e.clientX - focusPanStart.x;
+    const dy = e.clientY - focusPanStart.y;
+
+    // Project screen-space movement into world-space movement for the target
+    const v = new THREE.Vector3();
+    const cameraDir = new THREE.Vector3();
+    camera.getWorldDirection(cameraDir);
+    const up = camera.up.clone();
+    const right = new THREE.Vector3().crossVectors(cameraDir, up).normalize();
+    up.crossVectors(right, cameraDir).normalize();
+
+    const distance = camera.position.distanceTo(controls.target);
+
+    // Approximate scaling factor for screen to world
+    let factor;
+    if (camera instanceof THREE.PerspectiveCamera) {
+      factor =
+        (2.0 * Math.tan((camera.fov * Math.PI) / 360.0) * distance) /
+        renderer.domElement.clientHeight;
+    } else {
+      const frustumHeight = camera.top - camera.bottom;
+      factor = frustumHeight / renderer.domElement.clientHeight;
+    }
+
+    const worldDx = -dx * factor;
+    const worldDy = dy * factor;
+
+    controls.target
+      .copy(initialTarget)
+      .addScaledVector(right, worldDx)
+      .addScaledVector(up, worldDy);
+    controls.update();
+  };
+
+  const onPointerUp = () => {
+    isFocusPanning = false;
+    controls.enabled = true;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+  };
+
+  renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  // Prevent context menu when shift-right-clicking
+  renderer.domElement.addEventListener('contextmenu', (e) => {
+    if (e.shiftKey) e.preventDefault();
+  });
+
   // Orientation Guide
   const axesScene = new THREE.Scene();
   const axesCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
@@ -359,6 +596,10 @@ async function init() {
     });
   }
 
+  if (fetchDesignsButton) {
+    fetchDesignsButton.addEventListener('click', fetchGithubDesigns);
+  }
+
   projectionTypeSelect.addEventListener('change', () => {
     const type = projectionTypeSelect.value;
     const oldCam = camera;
@@ -417,23 +658,24 @@ async function init() {
         filename
       );
       if (content) {
-        codeEditor.value = content;
-        localStorage.setItem('jotcad-codeEditor', content);
+        await writeEditor(content, false);
+        await designStorage.saveSnapshot(fullPath, content);
+        await updateUnpushedIndicator();
         showToast('Pulled from GitHub');
       } else {
         showToast('File not found');
       }
     } catch (e) {
-      showToast('Pull failed: ' + e.message);
+      reportError('Pull failed', e);
     } finally {
       loadingIndicator.style.display = 'none';
     }
   });
 
   githubSaveButton.addEventListener('click', async () => {
-    const token = githubTokenInput.value;
-    const repo = githubRepoInput.value;
-    const fullPath = githubPathInput.value;
+    const token = githubTokenInput.value.trim();
+    const repo = githubRepoInput.value.trim();
+    const fullPath = githubPathInput.value.trim();
     const lastSlash = fullPath.lastIndexOf('/');
     const path = lastSlash !== -1 ? fullPath.substring(0, lastSlash) : '';
     const filename =
@@ -441,39 +683,36 @@ async function init() {
 
     try {
       loadingIndicator.style.display = 'block';
-      await githubStorage.saveFile(
-        token,
-        repo,
-        path,
-        filename,
-        codeEditor.value
-      );
+      await prettifyCode();
+      const content = readEditor();
+      await githubStorage.saveFile(token, repo, path, filename, content);
+      await designStorage.saveSnapshot(fullPath, content);
+      await updateUnpushedIndicator();
       showToast('Committed to GitHub');
     } catch (e) {
-      showToast('Commit failed: ' + e.message);
+      reportError('Commit failed', e);
     } finally {
       loadingIndicator.style.display = 'none';
     }
   });
 
+  codeEditor.addEventListener('input', async () => {
+    const fullPath = githubPathInput.value.trim();
+    const content = readEditor();
+    await designStorage.saveLocal(fullPath, content);
+    await updateUnpushedIndicator();
+  });
+
   const clearScene = () => {
-    while (scene.children.length > 0) {
-      const obj = scene.children[0];
-      if (obj === furnitureGroup) {
-        scene.remove(obj);
-        continue;
-      }
+    while (modelGroup.children.length > 0) {
+      const obj = modelGroup.children[0];
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material)
         Array.isArray(obj.material)
           ? obj.material.forEach((m) => m.dispose())
           : obj.material.dispose();
-      scene.remove(obj);
+      modelGroup.remove(obj);
     }
-    scene.add(furnitureGroup);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    scene.add(dirLight);
-    scene.add(camera);
   };
 
   let currentJotText = '';
@@ -482,17 +721,21 @@ async function init() {
     currentJotText = text;
     clearScene();
     try {
-      await renderJotToThreejsScene(text, scene, {
+      await renderJotToThreejsScene(text, modelGroup, {
         edgeThresholdAngle: parseFloat(edgeThresholdInput.value),
       });
-      const box = new THREE.Box3().setFromObject(scene);
+      const box = new THREE.Box3().setFromObject(modelGroup);
+      if (box.isEmpty()) return;
+
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       const maxSize = Math.max(size.x, size.y, size.z);
       const distance = maxSize * 2 || 20;
+
       const direction = new THREE.Vector3()
         .subVectors(camera.position, controls.target)
         .normalize();
+
       camera.position.copy(center).add(direction.multiplyScalar(distance));
       controls.target.copy(center);
       controls.update();
@@ -532,9 +775,8 @@ async function init() {
   renderButton.addEventListener('click', async () => {
     loadingIndicator.style.display = 'block';
     try {
-      const code = `${codeEditor.value.trim()}.jot('${
-        outputFilenameInput.value
-      }')`;
+      await prettifyCode();
+      const code = `${readEditor().trim()}.jot('${outputFilenameInput.value}')`;
       console.log(`Sending code to Jot server: ${serverAddressInput.value}`);
       const res = await fetch(
         `${serverAddressInput.value}/run/${sessionIdInput.value}/${outputFilenameInput.value}`,
@@ -676,7 +918,6 @@ async function init() {
     codeEditor,
     githubTokenInput,
     githubRepoInput,
-    githubPathInput,
   ].forEach((el) => {
     el.addEventListener('input', () => {
       localStorage.setItem('jotcad-' + el.id, el.value);
@@ -684,14 +925,22 @@ async function init() {
     });
   });
 
+  githubPathInput.addEventListener('change', () => {
+    const fullPath = githubPathInput.value.trim();
+    localStorage.setItem('jotcad-githubPath', fullPath);
+    loadDesign(fullPath);
+  });
+
   codeEditor.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 'Enter') {
+    if (e.shiftKey && e.key === 'Enter') {
       e.preventDefault();
       renderButton.click();
     }
   });
 
   await refreshFileList();
+  await loadDesign(githubPathInput.value.trim());
+  await fetchGithubDesigns();
 }
 
 init();

@@ -6,16 +6,19 @@ export class GithubStorage {
 
   async fetchFile(token, repo, path, filename) {
     if (!token || !repo) return null;
+    const trimmedToken = token.trim();
     const url = `https://api.github.com/repos/${repo}/contents/${path}/${filename}`;
     const response = await fetch(url, {
       headers: {
-        Authorization: `token ${token}`,
+        Authorization: `token ${trimmedToken}`,
         Accept: 'application/vnd.github.v3.raw',
       },
     });
     if (!response.ok) {
       if (response.status === 404) return null;
-      throw new Error(`Failed to fetch file: ${response.statusText}`);
+      const error = new Error(`Failed to fetch file: ${response.statusText}`);
+      error.status = response.status;
+      throw error;
     }
     return await response.text();
   }
@@ -29,6 +32,7 @@ export class GithubStorage {
     commitMessage = 'Update design'
   ) {
     if (!token || !repo) throw new Error('GitHub credentials not set');
+    const trimmedToken = token.trim();
 
     const baseUrl = `https://api.github.com/repos/${repo}/contents/${path}/${filename}`;
 
@@ -36,12 +40,18 @@ export class GithubStorage {
     let sha = null;
     const getRes = await fetch(baseUrl, {
       headers: {
-        Authorization: `token ${token}`,
+        Authorization: `token ${trimmedToken}`,
       },
     });
     if (getRes.ok) {
       const data = await getRes.json();
       sha = data.sha;
+    } else if (getRes.status !== 404) {
+      const error = new Error(
+        `Failed to check existing file: ${getRes.statusText}`
+      );
+      error.status = getRes.status;
+      throw error;
     }
 
     // 2. Push the update
@@ -51,7 +61,7 @@ export class GithubStorage {
     const putRes = await fetch(baseUrl, {
       method: 'PUT',
       headers: {
-        Authorization: `token ${token}`,
+        Authorization: `token ${trimmedToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -62,24 +72,69 @@ export class GithubStorage {
     });
 
     if (!putRes.ok) {
-      const err = await putRes.json();
-      throw new Error(`Failed to save to GitHub: ${err.message}`);
+      const errData = await putRes.json();
+      const error = new Error(
+        `Failed to save to GitHub: ${errData.message || putRes.statusText}`
+      );
+      error.status = putRes.status;
+      throw error;
     }
     return await putRes.json();
   }
 
   async listFiles(token, repo, path) {
-    if (!token || !repo) return [];
+    if (!token || !repo) {
+      console.warn('listFiles: Missing token or repo', {
+        token: !!token,
+        repo,
+      });
+      return [];
+    }
+    const trimmedToken = token.trim();
     const url = `https://api.github.com/repos/${repo}/contents/${path}`;
+    console.log(`listFiles: Fetching from GitHub: ${url}`);
+
     const response = await fetch(url, {
       headers: {
-        Authorization: `token ${token}`,
+        Authorization: `token ${trimmedToken}`,
       },
     });
-    if (!response.ok) return [];
+
+    if (!response.ok) {
+      let details = '';
+      let message = response.statusText;
+      try {
+        const errData = await response.json();
+        details = JSON.stringify(errData);
+        if (errData.message) message = errData.message;
+      } catch (e) {
+        details = await response.text();
+      }
+      const error = new Error(
+        `GitHub API error: ${response.status} ${message}`
+      );
+      error.status = response.status;
+      error.details = details;
+      throw error;
+    }
+
     const items = await response.json();
+    console.log(`listFiles: Received ${items.length} items from GitHub`);
+    console.log(
+      'listFiles: Raw items:',
+      items.map((i) => `${i.name} (${i.type})`).join(', ')
+    );
+
     return items
-      .filter((item) => item.type === 'file' && item.name.endsWith('.js'))
+      .filter((item) => {
+        const isEligible =
+          item.type === 'file' &&
+          (item.name.endsWith('.js') || item.name.endsWith('.jot'));
+        if (isEligible) {
+          console.log(`listFiles: Found eligible file: ${item.name}`);
+        }
+        return isEligible;
+      })
       .map((item) => item.name);
   }
 }

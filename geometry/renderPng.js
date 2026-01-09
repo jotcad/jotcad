@@ -45,6 +45,7 @@ export const renderPng = async (
     width,
     height,
     doOutlineEdges = true,
+    doWireframe = false,
   } = {}
 ) => {
   let context;
@@ -78,6 +79,7 @@ export const renderPng = async (
     width,
     height,
     doOutlineEdges,
+    doWireframe,
   });
   const { pixels } = extractPixels(renderer.getContext());
   return encode({ width, height, data: pixels, channels: 4 });

@@ -3,7 +3,12 @@ import { withTestAssets } from './test_session_util.js';
 import { renderPng } from './renderPng.js'; // Corrected import
 import { testPng } from './test_png.js'; // Corrected import
 
+import { Arc2 } from './arc.js';
 import { Box3 } from './box.js'; // Assuming Box3 can be used as input
+import { cgal } from './getCgal.js';
+import { fill2 } from './fill.js';
+import { makeShape } from './shape.js';
+import { Point } from './point.js';
 import { Wrap3 } from './wrap.js';
 import assert from 'node:assert/strict';
 
@@ -40,5 +45,69 @@ describe('Wrap3', () => {
     });
   });
 
-  // Add more test cases for different scenarios if needed
+  it('should create a 3D alpha wrap around a filled disk', async () => {
+    await withTestAssets('wrap3_disk_test', async (assets) => {
+      // Create a filled disk (which uses faces_)
+      const disk = fill2(assets, [Arc2(assets, [-10, 10], [-10, 10])], true);
+
+      // Apply Wrap3
+      const alpha = 0.5;
+      const offset = 0.5;
+      const wrappedShape = await Wrap3(assets, disk, alpha, offset);
+
+      // Render the wrapped shape
+      const imageBuffer = await renderPng(assets, wrappedShape, {
+        view: { position: [20, 20, 60] },
+        width: 512,
+        height: 512,
+      });
+
+      assert.ok(
+        await testPng(
+          `${import.meta.dirname}/geometry.wrap.test.disk.png`,
+          imageBuffer
+        ),
+        'Generated PNG for Wrap3 around a disk should match the reference.'
+      );
+    });
+  });
+
+  it('should create a 3D alpha wrap around a square outline (segments)', async () => {
+    await withTestAssets('wrap3_segments_test', async (assets) => {
+      // Create a square outline (segments)
+      const square = makeShape({
+        geometry: cgal.Link(
+          assets,
+          [
+            await Point(assets, -10, -10, 0),
+            await Point(assets, 10, -10, 0),
+            await Point(assets, 10, 10, 0),
+            await Point(assets, -10, 10, 0),
+          ],
+          true,
+          false
+        ),
+      });
+
+      // Apply Wrap3
+      const alpha = 5.0;
+      const offset = 2.0;
+      const wrappedShape = await Wrap3(assets, square, alpha, offset);
+
+      // Render the wrapped shape
+      const imageBuffer = await renderPng(assets, wrappedShape, {
+        view: { position: [20, 20, 20] },
+        width: 512,
+        height: 512,
+      });
+
+      assert.ok(
+        await testPng(
+          `${import.meta.dirname}/geometry.wrap.test.segments.png`,
+          imageBuffer
+        ),
+        'Generated PNG for Wrap3 around segments should match the reference.'
+      );
+    });
+  });
 });

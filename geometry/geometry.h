@@ -125,6 +125,10 @@ class Geometry {
     typedef typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index
         Vertex_index;
     CGAL::Cartesian_converter<EK, K> to_K;
+    std::map<typename K::Point_3,
+             typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>
+        vertex_map;
+
     for (const auto& vertex : vertices_) {
       auto vid = mesh.add_vertex(to_K(vertex));
     }
@@ -157,6 +161,67 @@ class Geometry {
         }
       }
     }
+
+    // Triangulate faces_ at any orientation and add to mesh
+    CGAL::Polygon_triangulation_decomposition_2<K> triangulator;
+    for (const auto& [face, holes] : faces_) {
+      if (face.size() < 3) continue;
+
+      const auto p0 = to_K(vertices_[face[0]]);
+      typename K::Vector_3 normal(0, 0, 0);
+      bool normal_found = false;
+      for (size_t i = 1; i < face.size() - 1; ++i) {
+        normal = CGAL::cross_product(to_K(vertices_[face[i]]) - p0,
+                                     to_K(vertices_[face[i + 1]]) - p0);
+        if (normal.squared_length() > 0) {
+          normal_found = true;
+          break;
+        }
+      }
+      if (!normal_found) continue;
+      typename K::Plane_3 plane(p0, normal);
+
+      CGAL::Polygon_2<K> pwh_boundary;
+      for (const auto& point_idx : face) {
+        pwh_boundary.push_back(plane.to_2d(to_K(vertices_[point_idx])));
+      }
+      if (pwh_boundary.orientation() != CGAL::Sign::POSITIVE) {
+        pwh_boundary.reverse_orientation();
+      }
+
+      std::vector<CGAL::Polygon_2<K>> pwh_holes;
+      for (const auto& hole : holes) {
+        CGAL::Polygon_2<K> polygon;
+        for (const auto& point_idx : hole) {
+          polygon.push_back(plane.to_2d(to_K(vertices_[point_idx])));
+        }
+        if (polygon.orientation() != CGAL::Sign::NEGATIVE) {
+          polygon.reverse_orientation();
+        }
+        pwh_holes.push_back(std::move(polygon));
+      }
+
+      CGAL::Polygon_with_holes_2<K> pwh(pwh_boundary, pwh_holes.begin(),
+                                        pwh_holes.end());
+
+      std::vector<CGAL::Polygon_2<K>> facets;
+      triangulator(pwh, std::back_inserter(facets));
+      for (auto& facet : facets) {
+        std::vector<
+            typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>
+            mesh_vertices;
+        for (const auto& point : facet) {
+          mesh_vertices.push_back(
+              EnsureVertex<K>(mesh, vertex_map, plane.to_3d(point)));
+        }
+        if (mesh.add_face(mesh_vertices) ==
+            CGAL::Surface_mesh<typename K::Point_3>::null_face()) {
+          std::reverse(mesh_vertices.begin(), mesh_vertices.end());
+          mesh.add_face(mesh_vertices);
+        }
+      }
+    }
+
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
   }
 
@@ -168,16 +233,17 @@ class Geometry {
              typename CGAL::Surface_mesh<typename K::Point_3>::Vertex_index>
         vertex_map;
     CGAL::Polygon_triangulation_decomposition_2<K> triangulator;
+    CGAL::Cartesian_converter<EK, K> to_K;
     for (const auto& [face, holes] : faces_) {
       CGAL::Polygon_2<K> pwh_boundary;
       std::vector<CGAL::Polygon_2<K>> pwh_holes;
       for (const auto& point : face) {
-        pwh_boundary.push_back(plane.to_2d(vertices_[point]));
+        pwh_boundary.push_back(plane.to_2d(to_K(vertices_[point])));
       }
       for (const auto& hole : holes) {
         CGAL::Polygon_2<K> polygon;
         for (const auto& point : hole) {
-          polygon.push_back(plane.to_2d(vertices_[point]));
+          polygon.push_back(plane.to_2d(to_K(vertices_[point])));
         }
         pwh_holes.push_back(std::move(polygon));
       }
@@ -198,7 +264,7 @@ class Geometry {
               EnsureVertex<K>(mesh, vertex_map, plane.to_3d(point)));
         }
         if (mesh.add_face(vertices) ==
-            CGAL::Surface_mesh<CGAL::Point_3<K>>::null_face()) {
+            CGAL::Surface_mesh<typename K::Point_3>::null_face()) {
           return false;
         }
       }

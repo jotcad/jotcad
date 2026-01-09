@@ -42,7 +42,9 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "make_absolute.h"
 #include "orb.h"
 #include "rule.h"
+#include "shell.h"
 #include "simplify.h"
+#include "smooth.h"
 #include "surface_mesh.h"
 #include "test.h"
 #include "transform.h"
@@ -230,6 +232,22 @@ static GeometryId MakeAbsoluteBinding(const Napi::CallbackInfo& info) {
   return result;
 }
 
+static Napi::Value ShellBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 9);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  double inner_offset = info[2].As<Napi::Number>().DoubleValue();
+  double outer_offset = info[3].As<Napi::Number>().DoubleValue();
+  bool protect = info[4].As<Napi::Boolean>().Value();
+  double angle = info[5].As<Napi::Number>().DoubleValue();
+  double sizing = info[6].As<Napi::Number>().DoubleValue();
+  double approx = info[7].As<Napi::Number>().DoubleValue();
+  double edge_size = info[8].As<Napi::Number>().DoubleValue();
+
+  return geometry::Shell(assets, shape, inner_offset, outer_offset, protect,
+                         angle, sizing, approx, edge_size);
+}
+
 static Napi::Value SimplifyBinding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
@@ -243,6 +261,28 @@ static Napi::Value SimplifyTransformBinding(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Tf tf = DecodeTf(info[0].As<Napi::Value>());
   return EncodeTf(tf, env);
+}
+
+static Napi::Value SmoothBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 9);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  Napi::Array jsPolylines(info[2].As<Napi::Array>());
+  double radius = info[3].As<Napi::Number>().DoubleValue();
+  double angle_threshold = info[4].As<Napi::Number>().DoubleValue();
+  double resolution = info[5].As<Napi::Number>().DoubleValue();
+  bool skip_fairing = info[6].As<Napi::Boolean>().Value();
+  bool skip_refine = info[7].As<Napi::Boolean>().Value();
+  int fairing_continuity = info[8].As<Napi::Number>().Int32Value();
+
+  std::vector<Shape> polylines;
+  for (uint32_t nth = 0; nth < jsPolylines.Length(); nth++) {
+    polylines.emplace_back(jsPolylines.Get(nth).As<Napi::Object>());
+  }
+
+  return geometry::Smooth(assets, shape, polylines, radius, angle_threshold,
+                          resolution, skip_fairing, skip_refine,
+                          fairing_continuity);
 }
 
 static Napi::Value TestBinding(const Napi::CallbackInfo& info) {
@@ -401,6 +441,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, SimplifyBinding));
   exports.Set(Napi::String::New(env, "SimplifyTransform"),
               Napi::Function::New(env, SimplifyTransformBinding));
+  exports.Set(Napi::String::New(env, "Shell"),
+              Napi::Function::New(env, ShellBinding));
+  exports.Set(Napi::String::New(env, "Smooth"),
+              Napi::Function::New(env, SmoothBinding));
   exports.Set(Napi::String::New(env, "Test"),
               Napi::Function::New(env, TestBinding));
   exports.Set(Napi::String::New(env, "TextId"),

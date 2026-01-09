@@ -10,10 +10,21 @@ export const png = registerOp({
   effect: true,
   spec: [
     'shape',
-    ['string', 'vector3', ['options', { edge: 'boolean' }]],
+    [
+      'string',
+      'vector3',
+      ['options', { edge: 'boolean', wireframe: 'boolean' }],
+    ],
     'shape',
   ],
-  code: async (id, session, input, path, position, { edge = true } = {}) => {
+  code: async (
+    id,
+    session,
+    input,
+    path,
+    position,
+    { edge = true, wireframe = false } = {}
+  ) => {
     const width = 512;
     const height = 512;
     const image = await renderPng(session.assets, input, {
@@ -21,6 +32,7 @@ export const png = registerOp({
       width,
       height,
       doOutlineEdges: edge,
+      doWireframe: wireframe,
     });
     const data = Buffer.from(image);
     await session.writeFile(path, data, { id });

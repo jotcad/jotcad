@@ -23,7 +23,7 @@ Op.registerSpecHandler(
       const schema = spec[1];
       while (args.length >= 1) {
         const arg = args.shift();
-        if (arg instanceof Op && specEquals(Op.getOutputType(), spec)) {
+        if (arg instanceof Op && specEquals(arg.getOutputType(), spec)) {
           // TODO: Handle post-validation.
           result = arg;
           break;

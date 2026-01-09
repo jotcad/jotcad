@@ -22,36 +22,39 @@ static GeometryId Clip(Assets& assets, Shape& shape,
         EK::Plane_3 plane(
             tool_sub_shape.GetTf().transform(EK::Point_3(0, 0, 0)),
             tool_sub_shape.GetTf().transform(EK::Vector_3(0, 0, 1)));
+        bool is_closed = CGAL::is_closed(target_mesh);
         // Clipping keeps the negative side.
         CGAL::Polygon_mesh_processing::clip(
             target_mesh, plane,
-            CGAL::parameters::clip_volume(false).use_compact_clipper(true));
+            CGAL::parameters::clip_volume(is_closed).use_compact_clipper(true));
 
-        // Now identify boundary cycles that are on the plane and close them.
-        std::vector<typename CGAL::Surface_mesh<EK::Point_3>::Halfedge_index>
-            border_cycles;
-        CGAL::Polygon_mesh_processing::extract_boundary_cycles(
-            target_mesh, std::back_inserter(border_cycles));
+        if (!is_closed) {
+          // Now identify boundary cycles that are on the plane and close them.
+          std::vector<typename CGAL::Surface_mesh<EK::Point_3>::Halfedge_index>
+              border_cycles;
+          CGAL::Polygon_mesh_processing::extract_boundary_cycles(
+              target_mesh, std::back_inserter(border_cycles));
 
-        for (auto h : border_cycles) {
-          bool all_on_plane = true;
-          for (auto v : target_mesh.vertices_around_face(h)) {
-            if (plane.has_on(target_mesh.point(v))) {
-              continue;
+          for (auto h : border_cycles) {
+            bool all_on_plane = true;
+            for (auto v : target_mesh.vertices_around_face(h)) {
+              if (plane.has_on(target_mesh.point(v))) {
+                continue;
+              }
+              if (CGAL::squared_distance(plane, target_mesh.point(v)) > 0) {
+                all_on_plane = false;
+                break;
+              }
             }
-            if (CGAL::squared_distance(plane, target_mesh.point(v)) > 0) {
-              all_on_plane = false;
-              break;
-            }
-          }
 
-          if (all_on_plane) {
-            std::vector<typename CGAL::Surface_mesh<EK::Point_3>::Face_index>
-                patch_facets;
-            CGAL::Polygon_mesh_processing::triangulate_hole(
-                target_mesh, h,
-                CGAL::parameters::face_output_iterator(
-                    std::back_inserter(patch_facets)));
+            if (all_on_plane) {
+              std::vector<typename CGAL::Surface_mesh<EK::Point_3>::Face_index>
+                  patch_facets;
+              CGAL::Polygon_mesh_processing::triangulate_hole(
+                  target_mesh, h,
+                  CGAL::parameters::face_output_iterator(
+                      std::back_inserter(patch_facets)));
+            }
           }
         }
         return true;
