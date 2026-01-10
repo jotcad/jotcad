@@ -33,6 +33,7 @@ export { Z } from './z.js';
 export { absolute } from './absolute.js';
 export { and } from './and.js';
 export { at } from './at.js';
+export { clean } from './clean.js';
 export { color } from './color.js';
 export { clip } from './clip.js';
 export { clipOpen } from './clipOpen.js';
@@ -41,6 +42,7 @@ export { cut2 } from './cut.js';
 export { cut3 } from './cut.js';
 export { cutOpen } from './cutOpen.js';
 export { disjoint } from './disjoint.js';
+export { edges } from './edges.js';
 export { extrude2 } from './extrude.js';
 export { extrude3 } from './extrude.js';
 export { fill2 } from './fill.js';
@@ -104,6 +106,7 @@ export const operators = [
   'absolute',
   'and',
   'at',
+  'clean',
   'color',
   'clip',
   'clipOpen',
@@ -112,6 +115,7 @@ export const operators = [
   'cut3',
   'cutOpen',
   'disjoint',
+  'edges',
   'extrude2',
   'extrude3',
   'fill2',

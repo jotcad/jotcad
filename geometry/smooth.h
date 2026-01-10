@@ -171,7 +171,8 @@ static GeometryId Smooth(Assets& assets, Shape& shape,
   }
 
   // Calculate target edge length for remeshing based on radius and threshold.
-  double L_min = radius * (angle_threshold * M_PI / 180.0);
+  // angle_threshold is in tau (0..1).
+  double L_min = radius * (angle_threshold * 2.0 * M_PI);
   if (L_min <= 0) L_min = radius * 0.1;
 
   // Adjust L_min based on resolution (higher resolution = smaller L_min).

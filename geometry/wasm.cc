@@ -25,11 +25,13 @@ typedef CGAL::Simple_cartesian<double> CK;
 typedef CGAL::Aff_transformation_3<EK> Tf;
 
 #include "arc_slice.h"
+#include "clean.h"
 #include "clip.h"
 #include "clip_open.h"
 #include "close.h"
 #include "cut.h"
 #include "cut_open.h"
+#include "edges.h"
 #include "extrude.h"
 #include "fill.h"
 #include "footprint.h"
@@ -101,6 +103,15 @@ static Napi::Value ClipOpenBinding(const Napi::CallbackInfo& info) {
   return ClipOpen(assets, shape, tools);
 }
 
+static Napi::Value CleanBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  double angle_threshold = info[2].As<Napi::Number>().DoubleValue();
+
+  return geometry::Clean(assets, shape, angle_threshold);
+}
+
 static Napi::Value Cut2Binding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
@@ -135,6 +146,15 @@ static Napi::Value CutOpenBinding(const Napi::CallbackInfo& info) {
     tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
   }
   return CutOpen(assets, shape, tools);
+}
+
+static Napi::Value ExtractEdgesBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  double angle_threshold = info[2].As<Napi::Number>().DoubleValue();
+
+  return geometry::ExtractEdges(assets, shape, angle_threshold);
 }
 
 static Napi::Value Extrude2Binding(const Napi::CallbackInfo& info) {
@@ -411,6 +431,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, ClipBinding));
   exports.Set(Napi::String::New(env, "ClipOpen"),
               Napi::Function::New(env, ClipOpenBinding));
+  exports.Set(Napi::String::New(env, "Clean"),
+              Napi::Function::New(env, CleanBinding));
+  exports.Set(Napi::String::New(env, "ExtractEdges"),
+              Napi::Function::New(env, ExtractEdgesBinding));
   exports.Set(Napi::String::New(env, "Close3"),
               Napi::Function::New(env, Close3Binding));
   exports.Set(Napi::String::New(env, "Cut2"),
