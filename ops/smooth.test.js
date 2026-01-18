@@ -17,7 +17,7 @@ describe('smooth op', () => {
         Box3([30])
           .smooth(Link(Point(0, 0, -1), Point(0, 0, 31)), {
             radius: 10,
-            angleThreshold: 15,
+            angleThreshold: 15 / 360,
             resolution: 4,
             skipFairing: false,
             skipRefine: false,

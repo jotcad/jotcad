@@ -29,7 +29,7 @@ geometry/glm/
 geometry/cgal/
 
 # Ignore test output images
-observed.*.png
+# observed.*.png
 
 # Ignore temporary files
 *.swp

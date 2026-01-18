@@ -66,6 +66,22 @@ class Shape {
     return value.IsBoolean() && value.As<Napi::Boolean>().Value();
   }
 
+  void SetTag(const std::string& name, Napi::Value value) {
+    Napi::Value tagsValue = napi_.Get("tags");
+    Napi::Object tags;
+    if (tagsValue.IsObject()) {
+      tags = tagsValue.As<Napi::Object>();
+    } else {
+      tags = Napi::Object::New(napi_.Env());
+      napi_.Set("tags", tags);
+    }
+    tags.Set(name, value);
+  }
+
+  void SetBooleanTag(const std::string& name, bool value) {
+    SetTag(name, Napi::Boolean::New(napi_.Env(), value));
+  }
+
   CGAL::Aff_transformation_3<EK> GetTf() {
     if (!tf_) {
       tf_ = DecodeTf(napi_.Get("tf"));
