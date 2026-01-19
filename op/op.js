@@ -200,6 +200,8 @@ export class Op {
       return node.output;
     } else if (value instanceof Array) {
       return value.map((op) => Op.resolveNode(op));
+    } else if (typeof value === 'function') {
+      return value;
     } else if (value instanceof Object) {
       const resolved = {};
       for (const key of Object.keys(value)) {
@@ -354,6 +356,8 @@ export const resolve = async (context, ops, graph) => {
             evaluated.push(await evaluateArg(element));
           }
           return evaluated;
+        } else if (typeof arg === 'function') {
+          return arg;
         } else if (arg instanceof Object) {
           const evaluated = {};
           for (const key of Object.keys(arg)) {

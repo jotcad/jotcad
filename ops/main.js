@@ -17,6 +17,7 @@ export { And } from './and.js';
 export { Arc2 } from './arc.js';
 export { Box2 } from './box.js';
 export { Box3 } from './box.js';
+export { Curve } from './curve.js';
 export { Disjoint } from './disjoint.js';
 export { Hull } from './hull.js';
 export { Jot } from './jot.js';
@@ -26,6 +27,7 @@ export { Orb } from './orb.js';
 export { Point } from './point.js';
 export { Rule } from './rule.js';
 export { Stl } from './stl.js';
+export { Sweep } from './sweep.js';
 export { X } from './x.js';
 export { Y } from './y.js';
 export { Z } from './z.js';
@@ -33,14 +35,17 @@ export { Z } from './z.js';
 export { absolute } from './absolute.js';
 export { and } from './and.js';
 export { at } from './at.js';
+export { clean } from './clean.js';
 export { color } from './color.js';
 export { clip } from './clip.js';
 export { clipOpen } from './clipOpen.js';
 export { close3 } from './close.js';
+export { curve } from './curve.js';
 export { cut2 } from './cut.js';
 export { cut3 } from './cut.js';
 export { cutOpen } from './cutOpen.js';
 export { disjoint } from './disjoint.js';
+export { edges } from './edges.js';
 export { extrude2 } from './extrude.js';
 export { extrude3 } from './extrude.js';
 export { fill2 } from './fill.js';
@@ -66,9 +71,11 @@ export { rz } from './rz.js';
 export { save } from './save.js';
 export { scale } from './scale.js';
 export { set } from './set.js';
+export { shell } from './shell.js';
 export { simplify } from './simplify.js';
 export { smooth } from './smooth.js';
 export { stl } from './stl.js';
+export { sweep } from './sweep.js';
 export { test } from './test.js';
 export { transform } from './transform.js';
 export { writeFile } from './fs.js';
@@ -86,6 +93,7 @@ export const constructors = [
   'Arc2',
   'Box2',
   'Box3',
+  'Curve',
   'Disjoint',
   'Hull',
   'Jot',
@@ -94,6 +102,7 @@ export const constructors = [
   'Orb',
   'Point',
   'Stl',
+  'Sweep',
   'Rule',
   'X',
   'Y',
@@ -104,14 +113,17 @@ export const operators = [
   'absolute',
   'and',
   'at',
+  'clean',
   'color',
   'clip',
   'clipOpen',
   'close3',
+  'curve',
   'cut2',
   'cut3',
   'cutOpen',
   'disjoint',
+  'edges',
   'extrude2',
   'extrude3',
   'fill2',
@@ -133,9 +145,11 @@ export const operators = [
   'rz',
   'scale',
   'set',
+  'shell',
   'simplify',
   'smooth',
   'stl',
+  'sweep',
   'test',
   'transform',
   'x',

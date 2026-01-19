@@ -25,11 +25,14 @@ typedef CGAL::Simple_cartesian<double> CK;
 typedef CGAL::Aff_transformation_3<EK> Tf;
 
 #include "arc_slice.h"
+#include "clean.h"
 #include "clip.h"
 #include "clip_open.h"
 #include "close.h"
+#include "curve.h"
 #include "cut.h"
 #include "cut_open.h"
+#include "edges.h"
 #include "extrude.h"
 #include "fill.h"
 #include "footprint.h"
@@ -46,6 +49,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "simplify.h"
 #include "smooth.h"
 #include "surface_mesh.h"
+#include "sweep.h"
 #include "test.h"
 #include "transform.h"
 #include "triangulate.h"
@@ -69,6 +73,25 @@ static Napi::Value Close3Binding(const Napi::CallbackInfo& info) {
   Assets assets(info[0].As<Napi::Object>());
   Shape shape(info[1].As<Napi::Object>());
   return geometry::Close3(assets, shape);
+}
+
+static Napi::Value CurveBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 4);
+  Assets assets(info[0].As<Napi::Object>());
+  Napi::Array jsPoints(info[1].As<Napi::Array>());
+  bool closed = info[2].As<Napi::Boolean>().Value();
+  double resolution = info[3].As<Napi::Number>().DoubleValue();
+
+  std::vector<Shape> points;
+  for (uint32_t nth = 0; nth < jsPoints.Length(); nth++) {
+    points.emplace_back(jsPoints.Get(nth).As<Napi::Object>());
+  }
+  try {
+    return geometry::Curve<EK>(assets, points, closed, resolution);
+  } catch (const std::exception& e) {
+    Napi::Error::New(info.Env(), e.what()).ThrowAsJavaScriptException();
+    return info.Env().Undefined();
+  }
 }
 
 static Napi::Value ComputeTextHashBinding(const Napi::CallbackInfo& info) {
@@ -101,6 +124,26 @@ static Napi::Value ClipOpenBinding(const Napi::CallbackInfo& info) {
   return ClipOpen(assets, shape, tools);
 }
 
+static Napi::Value CleanBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 7);
+
+  Assets assets(info[0].As<Napi::Object>());
+
+  Shape shape(info[1].As<Napi::Object>());
+
+  double angle_threshold = info[2].As<Napi::Number>().DoubleValue();
+
+  bool use_angle_constrained = info[3].As<Napi::Boolean>().Value();
+
+  bool regularize = info[4].As<Napi::Boolean>().Value();
+
+  bool collapse = info[5].As<Napi::Boolean>().Value();
+
+  double plane_distance_threshold = info[6].As<Napi::Number>().DoubleValue();
+
+  return geometry::Clean(assets, shape, angle_threshold, use_angle_constrained,
+                         regularize, collapse, plane_distance_threshold);
+}
 static Napi::Value Cut2Binding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
@@ -135,6 +178,15 @@ static Napi::Value CutOpenBinding(const Napi::CallbackInfo& info) {
     tools.emplace_back(jsTools.Get(nth).As<Napi::Object>());
   }
   return CutOpen(assets, shape, tools);
+}
+
+static Napi::Value ExtractEdgesBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 3);
+  Assets assets(info[0].As<Napi::Object>());
+  Shape shape(info[1].As<Napi::Object>());
+  double angle_threshold = info[2].As<Napi::Number>().DoubleValue();
+
+  return geometry::ExtractEdges(assets, shape, angle_threshold);
 }
 
 static Napi::Value Extrude2Binding(const Napi::CallbackInfo& info) {
@@ -285,6 +337,58 @@ static Napi::Value SmoothBinding(const Napi::CallbackInfo& info) {
                           fairing_continuity);
 }
 
+static Napi::Value SweepBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 10);
+
+  Assets assets(info[0].As<Napi::Object>());
+  Shape target(info[1].As<Napi::Object>());
+  Napi::Array jsProfile(info[2].As<Napi::Array>());
+  Shape path(info[3].As<Napi::Object>());
+
+  bool closed_path = info[4].As<Napi::Boolean>().Value();
+  bool closed_profile = info[5].As<Napi::Boolean>().Value();
+
+  int strategy = info[6].As<Napi::Number>().Int32Value();
+  bool solid = info[7].As<Napi::Boolean>().Value();
+  double iota = info[8].As<Napi::Number>().DoubleValue();
+  double min_turn_radius = info[9].As<Napi::Number>().DoubleValue();
+
+  std::vector<Shape> profile;
+  for (uint32_t nth = 0; nth < jsProfile.Length(); nth++) {
+    profile.emplace_back(jsProfile.Get(nth).As<Napi::Object>());
+  }
+
+  try {
+    std::vector<std::string> error_tokens;
+
+    GeometryId id = geometry::Sweep<EK>(assets, profile, path, closed_path,
+
+                                        closed_profile, strategy, solid, iota,
+                                        min_turn_radius, &error_tokens);
+
+    target.napi_.Set("geometry", id);
+
+    if (!error_tokens.empty()) {
+      Napi::Array js_errors = Napi::Array::New(info.Env(), error_tokens.size());
+
+      for (size_t i = 0; i < error_tokens.size(); ++i) {
+        js_errors.Set(i, Napi::String::New(info.Env(), error_tokens[i]));
+      }
+
+      target.SetTag("invalid", js_errors);
+
+      std::cout << "wasm.cc: Added 'invalid' tag with " << error_tokens.size()
+                << " tokens." << std::endl;
+    }
+
+    return target.napi_;
+
+  } catch (const std::exception& e) {
+    Napi::Error::New(info.Env(), e.what()).ThrowAsJavaScriptException();
+    return info.Env().Undefined();
+  }
+}
+
 static Napi::Value TestBinding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
@@ -411,6 +515,12 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, ClipBinding));
   exports.Set(Napi::String::New(env, "ClipOpen"),
               Napi::Function::New(env, ClipOpenBinding));
+  exports.Set(Napi::String::New(env, "Clean"),
+              Napi::Function::New(env, CleanBinding));
+  exports.Set(Napi::String::New(env, "Curve"),
+              Napi::Function::New(env, CurveBinding));
+  exports.Set(Napi::String::New(env, "ExtractEdges"),
+              Napi::Function::New(env, ExtractEdgesBinding));
   exports.Set(Napi::String::New(env, "Close3"),
               Napi::Function::New(env, Close3Binding));
   exports.Set(Napi::String::New(env, "Cut2"),
@@ -445,6 +555,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, ShellBinding));
   exports.Set(Napi::String::New(env, "Smooth"),
               Napi::Function::New(env, SmoothBinding));
+  exports.Set(Napi::String::New(env, "Sweep"),
+              Napi::Function::New(env, SweepBinding));
   exports.Set(Napi::String::New(env, "Test"),
               Napi::Function::New(env, TestBinding));
   exports.Set(Napi::String::New(env, "TextId"),
