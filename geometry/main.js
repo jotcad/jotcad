@@ -28,6 +28,7 @@ export { makeGroup } from './shape.js';
 export { makeShape } from './shape.js';
 export { isShape } from './shape.js';
 export { rule } from './rule.js';
+export { relief } from './relief.js';
 export { shell } from './shell.js';
 export { sweep } from './sweep.js';
 export { renderPng } from './renderPng.js';
