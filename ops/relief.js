@@ -55,5 +55,8 @@ export const relief = registerOp({
     'shape',
   ],
   code: (id, context, input, points, options = {}, flags = {}) =>
-    geometryRelief(context.assets, [input, ...points], { ...options, ...flags }),
+    geometryRelief(context.assets, [input, ...points], {
+      ...options,
+      ...flags,
+    }),
 });

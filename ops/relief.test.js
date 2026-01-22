@@ -1,11 +1,11 @@
 import { describe, it } from 'node:test';
-import { run } from '@jotcad/op';
-import assert from 'node:assert/strict';
 import { testPng, withTestSession } from './test_session_util.js';
+import { Orb } from './orb.js';
 import { Point } from './point.js';
 import { Relief } from './relief.js';
-import { Orb } from './orb.js';
+import assert from 'node:assert/strict';
 import { png } from './png.js';
+import { run } from '@jotcad/op';
 import { z } from './z.js';
 
 describe('relief op coverage', () => {
@@ -19,10 +19,20 @@ describe('relief op coverage', () => {
             points.push(Point(x, y, z));
           }
         }
-        return Relief(points, { rows: 20, cols: 20, mapping: 'planar', subdivisions: 4 })
-          .png('observed.relief_planar.png', [40, 40, 40], { wireframe: true });
+        return Relief(points, {
+          rows: 20,
+          cols: 20,
+          mapping: 'planar',
+          subdivisions: 4,
+        }).png('observed.relief_planar.png', [40, 40, 40], { wireframe: true });
       });
-      assert.ok(await testPng(session, 'relief_planar.png', 'observed.relief_planar.png'));
+      assert.ok(
+        await testPng(
+          session,
+          'relief_planar.png',
+          'observed.relief_planar.png'
+        )
+      );
     });
   });
 
@@ -40,16 +50,23 @@ describe('relief op coverage', () => {
             points.push(Point(x, y, z));
           }
         }
-        return Relief(points, { 
-          rows: 20, 
-          cols: 20, 
-          mapping: 'spherical', 
+        return Relief(points, {
+          rows: 20,
+          cols: 20,
+          mapping: 'spherical',
           subdivisions: 4,
-          closedU: true 
-        })
-          .png('observed.relief_spherical.png', [0, 0, 40], { wireframe: true });
+          closedU: true,
+        }).png('observed.relief_spherical.png', [0, 0, 40], {
+          wireframe: true,
+        });
       });
-      assert.ok(await testPng(session, 'relief_spherical.png', 'observed.relief_spherical.png'));
+      assert.ok(
+        await testPng(
+          session,
+          'relief_spherical.png',
+          'observed.relief_spherical.png'
+        )
+      );
     });
   });
 
@@ -66,17 +83,25 @@ describe('relief op coverage', () => {
             points.push(Point(x, y, z));
           }
         }
-        return Relief(points, { 
-          rows: 20, 
-          cols: 20, 
-          mapping: 'cylindrical', 
+        return Relief(points, {
+          rows: 20,
+          cols: 20,
+          mapping: 'cylindrical',
           subdivisions: 4,
-          closedU: true 
+          closedU: true,
         })
-	  .z(-5)
-          .png('observed.relief_cylindrical.png', [5, 0, 25], { wireframe: true });
+          .z(-5)
+          .png('observed.relief_cylindrical.png', [5, 0, 25], {
+            wireframe: true,
+          });
       });
-      assert.ok(await testPng(session, 'relief_cylindrical.png', 'observed.relief_cylindrical.png'));
+      assert.ok(
+        await testPng(
+          session,
+          'relief_cylindrical.png',
+          'observed.relief_cylindrical.png'
+        )
+      );
     });
   });
 
@@ -90,16 +115,23 @@ describe('relief op coverage', () => {
             points.push(Point(x, y, z));
           }
         }
-        return Relief(points, { 
-          rows: 20, 
-          cols: 20, 
-          mapping: 'planar', 
+        return Relief(points, {
+          rows: 20,
+          cols: 20,
+          mapping: 'planar',
           subdivisions: 4,
-          targetEdgeLength: 1.0 
-        })
-          .png('observed.relief_isotropic.png', [40, 40, 40], { wireframe: true });
+          targetEdgeLength: 1.0,
+        }).png('observed.relief_isotropic.png', [40, 40, 40], {
+          wireframe: true,
+        });
       });
-      assert.ok(await testPng(session, 'relief_isotropic.png', 'observed.relief_isotropic.png'));
+      assert.ok(
+        await testPng(
+          session,
+          'relief_isotropic.png',
+          'observed.relief_isotropic.png'
+        )
+      );
     });
   });
 
@@ -117,17 +149,24 @@ describe('relief op coverage', () => {
             points.push(Point(x, y, z));
           }
         }
-        return Relief(points, { 
-          rows: 20, 
-          cols: 20, 
-          mapping: 'spherical', 
+        return Relief(points, {
+          rows: 20,
+          cols: 20,
+          mapping: 'spherical',
           subdivisions: 4,
           closedU: true,
-          targetEdgeLength: 1.0 
-        })
-          .png('observed.relief_isotropic_spherical.png', [30, 30, 30], { wireframe: true });
+          targetEdgeLength: 1.0,
+        }).png('observed.relief_isotropic_spherical.png', [30, 30, 30], {
+          wireframe: true,
+        });
       });
-      assert.ok(await testPng(session, 'relief_isotropic_spherical.png', 'observed.relief_isotropic_spherical.png'));
+      assert.ok(
+        await testPng(
+          session,
+          'relief_isotropic_spherical.png',
+          'observed.relief_isotropic_spherical.png'
+        )
+      );
     });
   });
 });
