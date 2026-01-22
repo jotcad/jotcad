@@ -44,6 +44,7 @@ typedef CGAL::Aff_transformation_3<EK> Tf;
 #include "link.h"
 #include "make_absolute.h"
 #include "orb.h"
+#include "relief.h"
 #include "rule.h"
 #include "shell.h"
 #include "simplify.h"
@@ -389,6 +390,50 @@ static Napi::Value SweepBinding(const Napi::CallbackInfo& info) {
   }
 }
 
+static Napi::Value ReliefBinding(const Napi::CallbackInfo& info) {
+  AssertArgCount(info, 10);
+
+  Assets assets(info[0].As<Napi::Object>());
+
+  Napi::Array jsPoints(info[1].As<Napi::Array>());
+
+  int rows = info[2].As<Napi::Number>().Int32Value();
+
+  int cols = info[3].As<Napi::Number>().Int32Value();
+  std::string mapping = info[4].As<Napi::String>().Utf8Value();
+  double subdivisions = info[5].As<Napi::Number>().DoubleValue();
+  bool closed_u = info[6].As<Napi::Boolean>().Value();
+  bool closed_v = info[7].As<Napi::Boolean>().Value();
+  double target_edge_length = info[8].As<Napi::Number>().DoubleValue();
+  Shape target(info[9].As<Napi::Object>());
+
+  std::vector<Shape> points;
+  for (uint32_t nth = 0; nth < jsPoints.Length(); nth++) {
+    points.emplace_back(jsPoints.Get(nth).As<Napi::Object>());
+  }
+
+  try {
+    std::vector<std::string> error_tokens;
+    GeometryId id = geometry::Relief<EK>(assets, points, rows, cols, mapping,
+                                         subdivisions, closed_u, closed_v,
+                                         target_edge_length, &error_tokens);
+    target.napi_.Set("geometry", id);
+
+    if (!error_tokens.empty()) {
+      Napi::Array js_errors = Napi::Array::New(info.Env(), error_tokens.size());
+      for (size_t i = 0; i < error_tokens.size(); ++i) {
+        js_errors.Set(i, Napi::String::New(info.Env(), error_tokens[i]));
+      }
+      target.SetTag("invalid", js_errors);
+    }
+
+    return target.napi_;
+  } catch (const std::exception& e) {
+    Napi::Error::New(info.Env(), e.what()).ThrowAsJavaScriptException();
+    return info.Env().Undefined();
+  }
+}
+
 static Napi::Value TestBinding(const Napi::CallbackInfo& info) {
   AssertArgCount(info, 3);
   Assets assets(info[0].As<Napi::Object>());
@@ -557,6 +602,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
               Napi::Function::New(env, SmoothBinding));
   exports.Set(Napi::String::New(env, "Sweep"),
               Napi::Function::New(env, SweepBinding));
+  exports.Set(Napi::String::New(env, "Relief"),
+              Napi::Function::New(env, ReliefBinding));
   exports.Set(Napi::String::New(env, "Test"),
               Napi::Function::New(env, TestBinding));
   exports.Set(Napi::String::New(env, "TextId"),

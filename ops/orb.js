@@ -1,5 +1,6 @@
 import './intervalSpec.js';
 import './optionsSpec.js';
+import './shapeSpec.js';
 import { Orb as op } from '@jotcad/geometry';
 import { registerOp } from './op.js';
 

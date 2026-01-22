@@ -25,6 +25,7 @@ export { Link } from './link.js';
 export { Loop } from './loop.js';
 export { Orb } from './orb.js';
 export { Point } from './point.js';
+export { Relief } from './relief.js';
 export { Rule } from './rule.js';
 export { Stl } from './stl.js';
 export { Sweep } from './sweep.js';
@@ -63,6 +64,7 @@ export { mask } from './mask.js';
 export { png } from './png.js';
 export { readFile } from './fs.js';
 export { registerOp } from './op.js';
+export { relief } from './relief.js';
 export { revert } from './revert.js';
 export { rule } from './rule.js';
 export { rx } from './rx.js';
@@ -101,6 +103,7 @@ export const constructors = [
   'Loop',
   'Orb',
   'Point',
+  'Relief',
   'Stl',
   'Sweep',
   'Rule',
@@ -139,6 +142,7 @@ export const operators = [
   'nth',
   'png',
   'revert',
+  'relief',
   'rule',
   'rx',
   'ry',

@@ -1,4 +1,5 @@
 import './stringSpec.js';
+import './booleanSpec.js';
 import './vectorSpec.js';
 import './optionsSpec.js';
 import './shapeSpec.js';
