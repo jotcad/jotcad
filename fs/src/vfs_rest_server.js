@@ -25,10 +25,10 @@ export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
         res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
         // Handle both Node and Browser stream piping
         if (stream.pipe) {
-            stream.pipe(res);
+          stream.pipe(res);
         } else {
-            for await (const chunk of stream) res.write(chunk);
-            res.end();
+          for await (const chunk of stream) res.write(chunk);
+          res.end();
         }
         return;
       }
@@ -48,7 +48,7 @@ export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
+          Connection: 'keep-alive',
         });
 
         const onState = (event) => {
@@ -66,7 +66,7 @@ export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
           cid,
           path: info.path,
           parameters: info.parameters,
-          state: info.state
+          state: info.state,
         }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(states));
@@ -84,7 +84,6 @@ export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
         res.writeHead(201);
         return res.end();
       }
-
     } catch (err) {
       console.error('[VFS REST Error]', err);
       res.writeHead(500);

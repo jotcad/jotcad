@@ -20,19 +20,19 @@ test('VFS basic lifecycle', async (t) => {
 
   await t.test('write resolves pending reads', async () => {
     const readPromise = vfs.read('test/path');
-    
+
     const stream = Readable.from(['hello world']);
     await vfs.write('test/path', stream);
-    
+
     const resultStream = await readPromise;
     assert.ok(resultStream);
-    
+
     let content = '';
     for await (const chunk of resultStream) {
       content += chunk;
     }
     assert.strictEqual(content, 'hello world');
-    
+
     const status = await vfs.status('test/path');
     assert.strictEqual(status, 'AVAILABLE');
   });
@@ -40,7 +40,7 @@ test('VFS basic lifecycle', async (t) => {
   await t.test('isolation between VFS instances', async () => {
     const sessionA = new VFS();
     const sessionB = new VFS();
-    
+
     await sessionA.tickle('test');
     assert.strictEqual(await sessionA.status('test'), 'PENDING');
     assert.strictEqual(await sessionB.status('test'), 'MISSING');
@@ -53,13 +53,13 @@ test('VFS basic lifecycle', async (t) => {
 
     // Browser wants a box
     const readPromise = vfsBrowser.read('box');
-    
+
     // Node sees the pending request and fulfills it
     const statusOnNode = await vfsNode.status('box');
     assert.strictEqual(statusOnNode, 'PENDING');
-    
+
     await vfsNode.write('box', Readable.from(['box-data']));
-    
+
     // Browser should resolve the read
     const stream = await readPromise;
     let content = '';

@@ -29,16 +29,18 @@ export class MemSandbox {
     const data = this.fs.readFileSync(filename);
     return new ReadableStream({
       start(controller) {
-        controller.enqueue(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+        controller.enqueue(
+          new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+        );
         controller.close();
-      }
+      },
     });
   }
 
   async _toUint8Array(content) {
     if (content instanceof Uint8Array) return content;
     if (typeof content === 'string') return new TextEncoder().encode(content);
-    
+
     // Handle streams
     const reader = content.getReader ? content.getReader() : null;
     if (reader) {
@@ -57,12 +59,12 @@ export class MemSandbox {
       }
       return result;
     }
-    
+
     // Handle Node streams
     if (content.on) {
-        const chunks = [];
-        for await (const chunk of content) chunks.push(chunk);
-        return new Uint8Array(Buffer.concat(chunks).buffer);
+      const chunks = [];
+      for await (const chunk of content) chunks.push(chunk);
+      return new Uint8Array(Buffer.concat(chunks).buffer);
     }
 
     return new TextEncoder().encode(JSON.stringify(content));
@@ -85,17 +87,17 @@ export class DiskSandbox {
   async put(filename, content) {
     const fullPath = path.join(this.root, filename);
     await fsPromises.mkdir(path.dirname(fullPath), { recursive: true });
-    
+
     const out = fs.createWriteStream(fullPath);
     if (content.pipe) {
-        await pipeline(content, out);
+      await pipeline(content, out);
     } else if (content.getReader) {
-        // Convert web stream to node stream for pipeline
-        const nodeStream = fs.createReadStream(null, { fd: -1 }); // Placeholder?
-        // Actually simpler to just write the Uint8Array
-        await fsPromises.writeFile(fullPath, await this._toUint8Array(content));
+      // Convert web stream to node stream for pipeline
+      const nodeStream = fs.createReadStream(null, { fd: -1 }); // Placeholder?
+      // Actually simpler to just write the Uint8Array
+      await fsPromises.writeFile(fullPath, await this._toUint8Array(content));
     } else {
-        await fsPromises.writeFile(fullPath, await this._toUint8Array(content));
+      await fsPromises.writeFile(fullPath, await this._toUint8Array(content));
     }
   }
 
@@ -109,16 +111,16 @@ export class DiskSandbox {
     // Re-use logic from MemSandbox or keep it simple for disk
     if (typeof content === 'string') return content;
     if (content instanceof Uint8Array) return content;
-    
+
     const reader = content.getReader ? content.getReader() : null;
     if (reader) {
-        const chunks = [];
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-        }
-        return Buffer.concat(chunks);
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      return Buffer.concat(chunks);
     }
     return JSON.stringify(content);
   }

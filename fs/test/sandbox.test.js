@@ -6,22 +6,28 @@ import { Readable } from 'node:stream';
 test('Sandbox Marshalling', async (t) => {
   await t.test('MemSandbox: put and get', async () => {
     const sandbox = new MemSandbox();
-    
+
     // Marshall a string
     await sandbox.put('/in/test.txt', 'hello sandbox');
-    
+
     // Marshall a stream
     const stream = new ReadableStream({
       start(c) {
         c.enqueue(new TextEncoder().encode('streamed data'));
         c.close();
-      }
+      },
     });
     await sandbox.put('/in/stream.txt', stream);
 
     // Verify files in memfs
-    assert.strictEqual(sandbox.fs.readFileSync('/in/test.txt', 'utf8'), 'hello sandbox');
-    assert.strictEqual(sandbox.fs.readFileSync('/in/stream.txt', 'utf8'), 'streamed data');
+    assert.strictEqual(
+      sandbox.fs.readFileSync('/in/test.txt', 'utf8'),
+      'hello sandbox'
+    );
+    assert.strictEqual(
+      sandbox.fs.readFileSync('/in/stream.txt', 'utf8'),
+      'streamed data'
+    );
 
     // Unmarshall
     const outStream = await sandbox.get('/in/test.txt');
@@ -33,20 +39,20 @@ test('Sandbox Marshalling', async (t) => {
       outData += new TextDecoder().decode(value);
     }
     assert.strictEqual(outData, 'hello sandbox');
-    
+
     sandbox.close();
   });
 
   await t.test('DiskSandbox: put and get', async () => {
     const sandbox = new DiskSandbox();
-    
+
     await sandbox.put('input.txt', 'disk data');
-    
+
     // Check real disk
     const fs = await import('node:fs');
     const path = await import('node:path');
     assert.ok(fs.existsSync(path.join(sandbox.root, 'input.txt')));
-    
+
     // Unmarshall as Node stream
     const outStream = await sandbox.get('input.txt');
     let outData = '';

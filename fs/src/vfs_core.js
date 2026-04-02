@@ -11,11 +11,11 @@ class EventEmitter {
   }
   off(event, listener) {
     if (!this.listeners[event]) return;
-    this.listeners[event] = this.listeners[event].filter(l => l !== listener);
+    this.listeners[event] = this.listeners[event].filter((l) => l !== listener);
   }
   emit(event, ...args) {
     if (!this.listeners[event]) return;
-    this.listeners[event].forEach(l => l(...args));
+    this.listeners[event].forEach((l) => l(...args));
   }
   removeAllListeners() {
     this.listeners = {};
@@ -32,7 +32,7 @@ export const normalizeSelector = (pathOrSelector, parameters) => {
   if (pathOrSelector && typeof pathOrSelector === 'object') {
     return {
       path: pathOrSelector.path,
-      parameters: pathOrSelector.parameters || parameters || {}
+      parameters: pathOrSelector.parameters || parameters || {},
     };
   }
   throw new Error(`Invalid selector: ${pathOrSelector}`);
@@ -49,16 +49,22 @@ export class MemoryStorage {
   constructor() {
     this.results = new Map();
   }
-  async get(cid) { 
+  async get(cid) {
     const entry = this.results.get(cid);
     return entry ? entry.stream : null;
   }
-  async set(cid, stream, info) { 
+  async set(cid, stream, info) {
     this.results.set(cid, { info, stream });
   }
-  async has(cid) { return this.results.has(cid); }
-  async delete(cid) { this.results.delete(cid); }
-  async close() { this.results.clear(); }
+  async has(cid) {
+    return this.results.has(cid);
+  }
+  async delete(cid) {
+    this.results.delete(cid);
+  }
+  async close() {
+    this.results.clear();
+  }
 }
 
 /**
@@ -68,7 +74,7 @@ export class MemoryStorage {
 export class VFS {
   constructor(options = {}) {
     this.id = options.id || Math.random().toString(36).slice(2);
-    this.getCID = options.getCID; 
+    this.getCID = options.getCID;
     this.states = new Map(); // CID -> info
     this.storage = options.storage || new MemoryStorage();
     this.events = new EventEmitter();
@@ -94,7 +100,7 @@ export class VFS {
   connect(other) {
     this._checkClosed();
     this.peers.add(other);
-    
+
     // Sync current state to new peer
     for (const [cid, info] of this.states.entries()) {
       const event = {
@@ -102,7 +108,7 @@ export class VFS {
         path: info.path,
         parameters: info.parameters,
         state: info.state,
-        source: this.id
+        source: this.id,
       };
       if (typeof other.receive === 'function') {
         other.receive(event, this);
@@ -113,8 +119,8 @@ export class VFS {
 
     // Bidirectional coupling for local peers
     if (typeof other.receive === 'function' && !other.peers?.has(this)) {
-        if (other.connect) other.connect(this);
-        else other.peers?.add(this);
+      if (other.connect) other.connect(this);
+      else other.peers?.add(this);
     }
   }
 
@@ -151,24 +157,25 @@ export class VFS {
       info = { path, parameters: parameters || {} };
       this.states.set(cid, info);
     }
-    
+
     info.state = state;
     if (state === 'AVAILABLE') {
       const alreadyHas = await this.storage.has(cid);
       if (!alreadyHas) {
         if (data) {
-          const bytes = (data instanceof ArrayBuffer) ? new Uint8Array(data) : data;
+          const bytes =
+            data instanceof ArrayBuffer ? new Uint8Array(data) : data;
           const stream = new ReadableStream({
             start(controller) {
               controller.enqueue(bytes);
               controller.close();
-            }
+            },
           });
           await this.storage.set(cid, stream, info);
         }
       }
     }
-    
+
     this.events.emit('state', event);
 
     // Relay to other peers
@@ -198,7 +205,12 @@ export class VFS {
     if (!info) {
       info = { state: 'PENDING', path: s.path, parameters: s.parameters };
       this.states.set(cid, info);
-      this._emit({ cid, path: s.path, parameters: info.parameters, state: 'PENDING' });
+      this._emit({
+        cid,
+        path: s.path,
+        parameters: info.parameters,
+        state: 'PENDING',
+      });
     }
     return info.state;
   }
@@ -211,8 +223,8 @@ export class VFS {
 
     let info = this.states.get(cid);
     if (info.state === 'AVAILABLE') {
-        const stream = await this.storage.get(cid);
-        if (stream) return stream;
+      const stream = await this.storage.get(cid);
+      if (stream) return stream;
     }
 
     return new Promise((resolve, reject) => {
@@ -241,24 +253,40 @@ export class VFS {
     }
     const cid = await this.getCID(s);
     let info = this.states.get(cid);
-    if (!info || info.state === 'AVAILABLE' || info.state === 'PROVISIONING') return false;
+    if (!info || info.state === 'AVAILABLE' || info.state === 'PROVISIONING')
+      return false;
 
     info.state = 'PROVISIONING';
     const leaseId = setTimeout(() => {
       if (!this.closed && info.state === 'PROVISIONING') {
         info.state = 'PENDING';
-        this._emit({ cid, path: info.path, parameters: info.parameters, state: 'PENDING' });
+        this._emit({
+          cid,
+          path: info.path,
+          parameters: info.parameters,
+          state: 'PENDING',
+        });
       }
     }, d);
     info.activeLease = leaseId;
-    this._emit({ cid, path: info.path, parameters: info.parameters, state: 'PROVISIONING' });
+    this._emit({
+      cid,
+      path: info.path,
+      parameters: info.parameters,
+      state: 'PROVISIONING',
+    });
     return true;
   }
 
   async write(pathOrSelector, parameters, stream) {
     this._checkClosed();
     let s, str;
-    const isStream = parameters && (parameters.on || parameters instanceof ReadableStream || typeof parameters.getReader === 'function' || typeof parameters.pipe === 'function');
+    const isStream =
+      parameters &&
+      (parameters.on ||
+        parameters instanceof ReadableStream ||
+        typeof parameters.getReader === 'function' ||
+        typeof parameters.pipe === 'function');
     if (isStream) {
       s = normalizeSelector(pathOrSelector);
       str = parameters;
@@ -280,39 +308,49 @@ export class VFS {
 
     let relayedData = null;
     if (str instanceof ReadableStream || typeof str.getReader === 'function') {
-        const [s1, s2] = str.tee();
-        str = s1;
-        const reader = s2.getReader();
-        const chunks = [];
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-        }
-        const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-        relayedData = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-            relayedData.set(chunk, offset);
-            offset += chunk.length;
-        }
+      const [s1, s2] = str.tee();
+      str = s1;
+      const reader = s2.getReader();
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+      relayedData = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        relayedData.set(chunk, offset);
+        offset += chunk.length;
+      }
     } else if (str.on || typeof str.pipe === 'function') {
-        const chunks = [];
-        for await (const chunk of str) chunks.push(chunk);
-        const buffer = (typeof Buffer !== 'undefined') ? Buffer.concat(chunks) : new Uint8Array(0);
-        relayedData = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-        str = new ReadableStream({
-            start(c) { c.enqueue(relayedData); c.close(); }
-        });
+      const chunks = [];
+      for await (const chunk of str) chunks.push(chunk);
+      const buffer =
+        typeof Buffer !== 'undefined'
+          ? Buffer.concat(chunks)
+          : new Uint8Array(0);
+      relayedData = new Uint8Array(
+        buffer.buffer,
+        buffer.byteOffset,
+        buffer.byteLength
+      );
+      str = new ReadableStream({
+        start(c) {
+          c.enqueue(relayedData);
+          c.close();
+        },
+      });
     }
 
     await this.storage.set(cid, str, info);
-    this._emit({ 
-        cid, 
-        path: info.path, 
-        parameters: info.parameters, 
-        state: 'AVAILABLE', 
-        data: relayedData 
+    this._emit({
+      cid,
+      path: info.path,
+      parameters: info.parameters,
+      state: 'AVAILABLE',
+      data: relayedData,
     });
   }
 
@@ -326,20 +364,36 @@ export class VFS {
     const onState = (event) => {
       if (event.state === 'CLOSED') {
         queue.push(event);
-        if (resolveQueue) { resolveQueue(); resolveQueue = null; }
+        if (resolveQueue) {
+          resolveQueue();
+          resolveQueue = null;
+        }
         return;
       }
-      let pathMatch = s.path === '*' || (s.path.endsWith('*') ? event.path.startsWith(s.path.slice(0, -1)) : event.path === s.path);
+      let pathMatch =
+        s.path === '*' ||
+        (s.path.endsWith('*')
+          ? event.path.startsWith(s.path.slice(0, -1))
+          : event.path === s.path);
       if (pathMatch) {
         let paramsMatch = true;
         if (s.parameters && Object.keys(s.parameters).length > 0) {
           for (const [k, v] of Object.entries(s.parameters)) {
-            if (event.parameters[k] !== v) { paramsMatch = false; break; }
+            if (event.parameters[k] !== v) {
+              paramsMatch = false;
+              break;
+            }
           }
         }
-        if (paramsMatch && (states.length === 0 || states.includes(event.state))) {
+        if (
+          paramsMatch &&
+          (states.length === 0 || states.includes(event.state))
+        ) {
           queue.push(event);
-          if (resolveQueue) { resolveQueue(); resolveQueue = null; }
+          if (resolveQueue) {
+            resolveQueue();
+            resolveQueue = null;
+          }
         }
       }
     };
@@ -347,7 +401,8 @@ export class VFS {
     this.events.on('state', onState);
     try {
       while (!this.closed) {
-        if (queue.length === 0) await new Promise((resolve) => (resolveQueue = resolve));
+        if (queue.length === 0)
+          await new Promise((resolve) => (resolveQueue = resolve));
         while (queue.length > 0) {
           const ev = queue.shift();
           if (ev.state === 'CLOSED') return;

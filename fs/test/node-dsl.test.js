@@ -12,31 +12,35 @@ test('Node with In/Out DSL', async (t) => {
   const boxNode = new Node(vfs, {
     sockets: {
       config: In('config/box'),
-      mesh: Out('geometry/box')
+      mesh: Out('geometry/box'),
     },
     async execute({ config, mesh }) {
       // 1. Explicit .read()
       const configStream = await config.read();
       let data = '';
       for await (const chunk of configStream) data += chunk;
-      
+
       const { size } = JSON.parse(data);
-      
+
       // 2. Explicit .write()
       await mesh.write(Readable.from([`Box(${size})`]));
-    }
+    },
   });
 
   boxNode.start();
 
   await t.test('cascading dependency using In/Out DSL', async () => {
     // 1. Manually place the configuration data on the blackboard
-    await vfs.write('config/box', { id: 'b1' }, Readable.from([JSON.stringify({ size: 100 })]));
+    await vfs.write(
+      'config/box',
+      { id: 'b1' },
+      Readable.from([JSON.stringify({ size: 100 })])
+    );
 
-    // 2. Request the box mesh. 
+    // 2. Request the box mesh.
     // This triggers the Out socket 'mesh' on the boxNode.
     const stream = await vfs.read('geometry/box', { id: 'b1' });
-    
+
     let result = '';
     for await (const chunk of stream) result += chunk;
     assert.strictEqual(result, 'Box(100)');
@@ -47,19 +51,19 @@ test('Node with In/Out DSL', async (t) => {
     const node = new Node(vfs, {
       sockets: {
         trigger: Out('process/trigger'),
-        result: Out('process/result')
+        result: Out('process/result'),
       },
       async execute({ result }) {
         // Explicit .write()
         await result.write(Readable.from(['Success']), { status: 'final' });
-      }
+      },
     });
-    
+
     node.start();
-    
+
     // Trigger the process
     await vfs.tickle('process/trigger', { id: 'job1' });
-    
+
     // Read the reparameterized result
     const stream = await vfs.read('process/result', { status: 'final' });
     let content = '';

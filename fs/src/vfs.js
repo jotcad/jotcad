@@ -15,7 +15,7 @@ const normalizeSelector = (pathOrSelector, parameters) => {
   if (pathOrSelector && typeof pathOrSelector === 'object') {
     return {
       path: pathOrSelector.path,
-      parameters: pathOrSelector.parameters || parameters || {}
+      parameters: pathOrSelector.parameters || parameters || {},
     };
   }
   throw new Error(`Invalid selector: ${pathOrSelector}`);
@@ -26,7 +26,7 @@ const normalizeSelector = (pathOrSelector, parameters) => {
  */
 const getCID = (selector) => {
   const { path, parameters = {} } = selector;
-  if (!path) throw new Error("Selector must have a path");
+  if (!path) throw new Error('Selector must have a path');
   const hash = crypto.createHash('sha256');
   hash.update(path);
   const sortedParams = Object.keys(parameters)
@@ -50,16 +50,22 @@ export class MemoryStorage {
   constructor() {
     this.results = new Map();
   }
-  async get(cid) { 
+  async get(cid) {
     const entry = this.results.get(cid);
     return entry ? entry.stream : null;
   }
-  async set(cid, stream, info) { 
+  async set(cid, stream, info) {
     this.results.set(cid, { info, stream });
   }
-  async has(cid) { return this.results.has(cid); }
-  async delete(cid) { this.results.delete(cid); }
-  async close() { this.results.clear(); }
+  async has(cid) {
+    return this.results.has(cid);
+  }
+  async delete(cid) {
+    this.results.delete(cid);
+  }
+  async close() {
+    this.results.clear();
+  }
 }
 
 export class DiskStorage {
@@ -163,7 +169,12 @@ export class VFS {
     if (!info) {
       info = { state: 'PENDING', path: s.path, parameters: s.parameters };
       this.states.set(cid, info);
-      this._emit({ cid, path: s.path, parameters: info.parameters, state: 'PENDING' });
+      this._emit({
+        cid,
+        path: s.path,
+        parameters: info.parameters,
+        state: 'PENDING',
+      });
     }
     return info.state;
   }
@@ -203,17 +214,28 @@ export class VFS {
     }
     const cid = getCID(s);
     let info = this.states.get(cid);
-    if (!info || info.state === 'AVAILABLE' || info.state === 'PROVISIONING') return false;
+    if (!info || info.state === 'AVAILABLE' || info.state === 'PROVISIONING')
+      return false;
 
     info.state = 'PROVISIONING';
     const leaseId = setTimeout(() => {
       if (!this.closed && info.state === 'PROVISIONING') {
         info.state = 'PENDING';
-        this._emit({ cid, path: info.path, parameters: info.parameters, state: 'PENDING' });
+        this._emit({
+          cid,
+          path: info.path,
+          parameters: info.parameters,
+          state: 'PENDING',
+        });
       }
     }, d);
     info.activeLease = leaseId;
-    this._emit({ cid, path: info.path, parameters: info.parameters, state: 'PROVISIONING' });
+    this._emit({
+      cid,
+      path: info.path,
+      parameters: info.parameters,
+      state: 'PROVISIONING',
+    });
     return true;
   }
 
@@ -239,7 +261,13 @@ export class VFS {
     }
     info.state = 'AVAILABLE';
     await this.storage.set(cid, str, info);
-    this._emit({ cid, path: info.path, parameters: info.parameters, state: 'AVAILABLE', stream: str });
+    this._emit({
+      cid,
+      path: info.path,
+      parameters: info.parameters,
+      state: 'AVAILABLE',
+      stream: str,
+    });
   }
 
   async *watch(selector, options = {}) {
@@ -252,20 +280,36 @@ export class VFS {
     const onState = (event) => {
       if (event.state === 'CLOSED') {
         queue.push(event);
-        if (resolveQueue) { resolveQueue(); resolveQueue = null; }
+        if (resolveQueue) {
+          resolveQueue();
+          resolveQueue = null;
+        }
         return;
       }
-      let pathMatch = s.path === '*' || (s.path.endsWith('*') ? event.path.startsWith(s.path.slice(0, -1)) : event.path === s.path);
+      let pathMatch =
+        s.path === '*' ||
+        (s.path.endsWith('*')
+          ? event.path.startsWith(s.path.slice(0, -1))
+          : event.path === s.path);
       if (pathMatch) {
         let paramsMatch = true;
         if (s.parameters) {
           for (const [k, v] of Object.entries(s.parameters)) {
-            if (event.parameters[k] !== v) { paramsMatch = false; break; }
+            if (event.parameters[k] !== v) {
+              paramsMatch = false;
+              break;
+            }
           }
         }
-        if (paramsMatch && (states.length === 0 || states.includes(event.state))) {
+        if (
+          paramsMatch &&
+          (states.length === 0 || states.includes(event.state))
+        ) {
           queue.push(event);
-          if (resolveQueue) { resolveQueue(); resolveQueue = null; }
+          if (resolveQueue) {
+            resolveQueue();
+            resolveQueue = null;
+          }
         }
       }
     };
@@ -273,7 +317,8 @@ export class VFS {
     this.events.on('state', onState);
     try {
       while (!this.closed) {
-        if (queue.length === 0) await new Promise((resolve) => (resolveQueue = resolve));
+        if (queue.length === 0)
+          await new Promise((resolve) => (resolveQueue = resolve));
         while (queue.length > 0) {
           const ev = queue.shift();
           if (ev.state === 'CLOSED') return;

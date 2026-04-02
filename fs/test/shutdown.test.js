@@ -10,7 +10,7 @@ test('VFS Suicide Shutdown', async (t) => {
   await t.test('VFS.close() breaks watch loops', async () => {
     let watchBroken = false;
     const watcher = vfs.watch('test');
-    
+
     const watchPromise = (async () => {
       try {
         for await (const event of watcher) {
@@ -29,7 +29,7 @@ test('VFS Suicide Shutdown', async (t) => {
   await t.test('Sockets throw VFSClosedError after shutdown', async () => {
     const vfs2 = new VFS();
     vfs2.close();
-    
+
     try {
       await vfs2.read('test');
       assert.fail('Should have thrown');
@@ -53,14 +53,14 @@ test('VFS Suicide Shutdown', async (t) => {
         } finally {
           executionEnded = true;
         }
-      }
+      },
     });
 
     const nodePromise = node.start();
     await vfs3.tickle('trigger');
-    
+
     // Wait for agent to start executing
-    while (!executionStarted) await new Promise(r => setTimeout(r, 10));
+    while (!executionStarted) await new Promise((r) => setTimeout(r, 10));
 
     // Kill the VFS while the agent is blocked on the read
     vfs3.close();

@@ -7,7 +7,7 @@ import { VFS as CoreVFS } from './vfs_core.js';
 
 export const getCID = async (selector) => {
   const { path, parameters = {} } = selector;
-  if (!path) throw new Error("Selector must have a path");
+  if (!path) throw new Error('Selector must have a path');
   const hash = crypto.createHash('sha256');
   hash.update(path);
   const sortedParams = Object.keys(parameters)

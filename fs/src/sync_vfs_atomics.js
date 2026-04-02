@@ -13,7 +13,7 @@ export class SyncVFSAtomics extends SyncVFS {
     this.sab = sab;
     this.int32 = new Int32Array(sab);
     this.uint8 = new Uint8Array(sab);
-    
+
     // Memory Map:
     // [0]: Status (SYNC_VFS_STATUS)
     // [1]: Operation (SYNC_VFS_OP)
@@ -60,7 +60,10 @@ export class SyncVFSAtomics extends SyncVFS {
       const dataLen = this.int32[3];
       // Note: In a real implementation, we'd handle large files by streaming or multiple SAB round-trips.
       // For this abstraction, we copy from the shared buffer.
-      const resultData = this.uint8.slice(40 + encodedPayload.length, 40 + encodedPayload.length + dataLen);
+      const resultData = this.uint8.slice(
+        40 + encodedPayload.length,
+        40 + encodedPayload.length + dataLen
+      );
       return resultData;
     }
   }
@@ -89,7 +92,7 @@ export class SyncVFSServer {
 
   /**
    * Starts the server loop.
-   * In the browser, this must be called via setInterval or requestAnimationFrame 
+   * In the browser, this must be called via setInterval or requestAnimationFrame
    * since we can't use Atomics.wait on the main thread.
    * In Node, we can use a worker thread or a polling loop.
    */
@@ -98,7 +101,9 @@ export class SyncVFSServer {
 
     const op = this.int32[1];
     const payloadLen = this.int32[2];
-    const payload = new TextDecoder().decode(this.uint8.slice(40, 40 + payloadLen));
+    const payload = new TextDecoder().decode(
+      this.uint8.slice(40, 40 + payloadLen)
+    );
     const { path, parameters } = JSON.parse(payload);
 
     try {
@@ -113,7 +118,7 @@ export class SyncVFSServer {
           chunks.push(value);
           totalLen += value.length;
         }
-        
+
         const combined = new Uint8Array(totalLen);
         let offset = 0;
         for (const chunk of chunks) {
@@ -127,10 +132,16 @@ export class SyncVFSServer {
         Atomics.store(this.int32, 0, SYNC_VFS_STATUS.SUCCESS);
       } else if (op === SYNC_VFS_OP.WRITE) {
         const dataLen = this.int32[3];
-        const data = this.uint8.slice(40 + payloadLen, 40 + payloadLen + dataLen);
-        
+        const data = this.uint8.slice(
+          40 + payloadLen,
+          40 + payloadLen + dataLen
+        );
+
         const stream = new ReadableStream({
-          start(c) { c.enqueue(data); c.close(); }
+          start(c) {
+            c.enqueue(data);
+            c.close();
+          },
         });
         await this.vfs.write(path, parameters, stream);
         Atomics.store(this.int32, 0, SYNC_VFS_STATUS.SUCCESS);

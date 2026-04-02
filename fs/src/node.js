@@ -4,9 +4,21 @@ import { VFSClosedError } from './vfs_core.js';
 /**
  * Socket Helpers (DSL)
  */
-export const In = (path, parameters = {}) => ({ mode: 'read', path, parameters });
-export const Out = (path, parameters = {}) => ({ mode: 'write', path, parameters });
-export const Watch = (path, parameters = {}) => ({ mode: 'watch', path, parameters });
+export const In = (path, parameters = {}) => ({
+  mode: 'read',
+  path,
+  parameters,
+});
+export const Out = (path, parameters = {}) => ({
+  mode: 'write',
+  path,
+  parameters,
+});
+export const Watch = (path, parameters = {}) => ({
+  mode: 'watch',
+  path,
+  parameters,
+});
 
 /**
  * Composes a final selector.
@@ -18,8 +30,8 @@ const composeSelector = (definition, triggerParams, callParams) => {
     parameters: {
       ...definition.parameters,
       ...triggerParams,
-      ...callParams
-    }
+      ...callParams,
+    },
   };
 };
 
@@ -34,7 +46,9 @@ export class Node {
   }
 
   async start() {
-    const triggers = Object.entries(this.socketsDef).filter(([name, def]) => def.mode === 'write');
+    const triggers = Object.entries(this.socketsDef).filter(
+      ([name, def]) => def.mode === 'write'
+    );
 
     const promises = triggers.map(([outName, outDef]) => {
       return (async () => {
@@ -42,7 +56,11 @@ export class Node {
           const query = this.vfs.watch(outDef.path, { states: ['PENDING'] });
 
           for await (const req of query) {
-            const hasLease = await this.vfs.lease(req.path, req.parameters, 30000);
+            const hasLease = await this.vfs.lease(
+              req.path,
+              req.parameters,
+              30000
+            );
             if (!hasLease) continue;
 
             try {
@@ -53,11 +71,23 @@ export class Node {
                 sockets[name] = {};
                 if (def.mode === 'read') {
                   sockets[name].read = async (overrideParams = {}) => {
-                    return this.vfs.read(def.path, { ...def.parameters, ...req.parameters, ...overrideParams });
+                    return this.vfs.read(def.path, {
+                      ...def.parameters,
+                      ...req.parameters,
+                      ...overrideParams,
+                    });
                   };
                 } else if (def.mode === 'write') {
                   sockets[name].write = async (stream, overrideParams = {}) => {
-                    return this.vfs.write(def.path, { ...def.parameters, ...req.parameters, ...overrideParams }, stream);
+                    return this.vfs.write(
+                      def.path,
+                      {
+                        ...def.parameters,
+                        ...req.parameters,
+                        ...overrideParams,
+                      },
+                      stream
+                    );
                   };
                 } else if (def.mode === 'watch') {
                   sockets[name].watch = (options = {}) => {

@@ -5,8 +5,8 @@
 export class SyncVFS {
   /**
    * Synchronously reads a file. Blocks the calling thread.
-   * @param {string} path 
-   * @param {Object} parameters 
+   * @param {string} path
+   * @param {Object} parameters
    * @returns {Uint8Array}
    */
   read(path, parameters) {
@@ -15,9 +15,9 @@ export class SyncVFS {
 
   /**
    * Synchronously writes a file. Blocks the calling thread.
-   * @param {string} path 
-   * @param {Object} parameters 
-   * @param {Uint8Array} data 
+   * @param {string} path
+   * @param {Object} parameters
+   * @param {Uint8Array} data
    */
   write(path, parameters, data) {
     throw new Error('SyncVFS.write() not implemented');
@@ -32,11 +32,11 @@ export const SYNC_VFS_STATUS = {
   PENDING: 1,
   SUCCESS: 2,
   ERROR: 3,
-  CLOSED: 4
+  CLOSED: 4,
 };
 
 export const SYNC_VFS_OP = {
   READ: 1,
   WRITE: 2,
-  STATUS: 3
+  STATUS: 3,
 };

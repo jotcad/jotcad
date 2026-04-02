@@ -20,7 +20,7 @@ test('VFS DiskStorage and Sessions', async (t) => {
     // Verify files exist on disk (.meta and .data)
     const files = fs.readdirSync(root);
     assert.strictEqual(files.length, 2);
-    
+
     // Read it back
     const stream = await vfs.read('big-file');
     let result = '';
@@ -33,7 +33,7 @@ test('VFS DiskStorage and Sessions', async (t) => {
   await t.test('Session isolation via DiskStorage', async () => {
     const rootA = path.join(tmpDir, 'session-A');
     const rootB = path.join(tmpDir, 'session-B');
-    
+
     const vfsA = new VFS({ storage: new DiskStorage(rootA) });
     const vfsB = new VFS({ storage: new DiskStorage(rootB) });
 

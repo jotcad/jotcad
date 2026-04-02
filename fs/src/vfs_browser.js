@@ -2,19 +2,23 @@ import { VFS as CoreVFS } from './vfs_core.js';
 
 export const getCID = async (selector) => {
   const { path, parameters = {} } = selector;
-  if (!path) throw new Error("Selector must have a path");
-  
+  if (!path) throw new Error('Selector must have a path');
+
   const sortedParams = Object.keys(parameters)
     .sort()
     .reduce((acc, key) => {
       acc[key] = parameters[key];
       return acc;
     }, {});
-    
-  const msgUint8 = new TextEncoder().encode(path + JSON.stringify(sortedParams));
+
+  const msgUint8 = new TextEncoder().encode(
+    path + JSON.stringify(sortedParams)
+  );
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = hashArray
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
   return hashHex;
 };
 
@@ -52,9 +56,10 @@ export class IndexedDBStorage {
       request.onsuccess = async () => {
         const entry = request.result;
         if (!entry) return resolve(null);
-        
+
         // Reconstruct stream from stored Blob or Uint8Array
-        const blob = entry.data instanceof Blob ? entry.data : new Blob([entry.data]);
+        const blob =
+          entry.data instanceof Blob ? entry.data : new Blob([entry.data]);
         resolve(blob.stream());
       };
       request.onerror = () => reject(request.error);

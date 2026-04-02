@@ -29,14 +29,17 @@ export class RESTBridge {
     this.vfs.events.on('state', async (event) => {
       // Don't sync events that came from the remote server itself
       if (event.source === 'remote') return;
-      
+
       // Also don't sync if the source is already 'node' (prevent loops)
       if (event.source === 'node') return;
 
       if (event.state === 'PENDING') {
         await fetch(`${this.baseUrl}/tickle`, {
           method: 'POST',
-          body: JSON.stringify({ path: event.path, parameters: event.parameters })
+          body: JSON.stringify({
+            path: event.path,
+            parameters: event.parameters,
+          }),
         });
       } else if (event.state === 'AVAILABLE') {
         const stream = await this.vfs.storage.get(event.cid);
@@ -44,10 +47,13 @@ export class RESTBridge {
           await fetch(`${this.baseUrl}/res/${event.cid}`, {
             method: 'PUT',
             headers: {
-              'x-vfs-info': JSON.stringify({ path: event.path, parameters: event.parameters })
+              'x-vfs-info': JSON.stringify({
+                path: event.path,
+                parameters: event.parameters,
+              }),
             },
             body: stream,
-            duplex: 'half'
+            duplex: 'half',
           });
         }
       }
@@ -69,7 +75,7 @@ export class RESTBridge {
       // Try fetching from remote
       const resp = await fetch(`${this.baseUrl}/res/${cid}`);
       if (resp.ok) {
-        // We don't necessarily want to cache it locally here, 
+        // We don't necessarily want to cache it locally here,
         // vfs.read() will call this and we return the remote stream.
         return resp.body;
       }
