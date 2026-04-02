@@ -1,0 +1,17 @@
+{
+  "name": "@jotcad/fs",
+  "version": "0.0.1",
+  "description": "Distributed, idempotent, stream-based virtual filesystem",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.40.0",
+    "ws": "^8.20.0"
+  },
+  "dependencies": {
+    "memfs": "^4.57.1"
+  }
+}
