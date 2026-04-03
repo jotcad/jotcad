@@ -1,0 +1,12 @@
+{
+  "name": "@jotcad/geo",
+  "version": "0.0.1",
+  "description": "Distributed geometry agents for JotCAD",
+  "main": "src/dispatcher.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

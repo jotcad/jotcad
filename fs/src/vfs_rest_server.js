@@ -1,93 +1,174 @@
 import { normalizeSelector } from './vfs_core.js';
+import crypto from 'crypto';
 
 /**
- * Attaches VFS REST endpoints to an existing HTTP server.
- * @param {VFS} vfs The VFS instance to expose.
- * @param {http.Server} server The HTTP server.
- * @param {string} prefix URL prefix for the endpoints.
+ * Attaches the Full Symmetric VFS REST protocol to an existing HTTP server.
+ * Supports Virtual Mailboxes for Peers behind firewalls.
  */
 export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
+  const activePeers = new Map(); // PeerID -> { res, queue: [] }
+  const pendingCommands = new Map(); // CommandID -> { resolve, reject }
+
   server.on('request', async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (!url.pathname.startsWith(prefix)) return;
 
     const vfsPath = url.pathname.slice(prefix.length);
+    const peerId = req.headers['x-vfs-peer-id'] || url.searchParams.get('peerId') || 'default';
+
+    // Helper to parse JSON body
+    const getBody = async () => {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      return JSON.parse(body || '{}');
+    };
 
     try {
-      // 1. GET /res/:cid - Download artifact
-      if (req.method === 'GET' && vfsPath.startsWith('/res/')) {
-        const cid = vfsPath.slice(5);
-        const stream = await vfs.storage.get(cid);
-        if (!stream) {
-          res.writeHead(404);
-          return res.end();
-        }
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-        // Handle both Node and Browser stream piping
-        if (stream.pipe) {
-          stream.pipe(res);
-        } else {
-          for await (const chunk of stream) res.write(chunk);
-          res.end();
-        }
-        return;
-      }
-
-      // 2. POST /tickle - Express demand
-      if (req.method === 'POST' && vfsPath === '/tickle') {
-        let body = '';
-        for await (const chunk of req) body += chunk;
-        const { path, parameters } = JSON.parse(body);
-        const status = await vfs.tickle(path, parameters);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ status }));
-      }
-
-      // 3. GET /watch - Server-Sent Events for state changes
+      // 1. GET /watch - SSE stream with Command support
       if (req.method === 'GET' && vfsPath === '/watch') {
+        console.log(`[VFS Server] Peer connected to watch: ${peerId}`);
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
+          'Connection': 'keep-alive'
         });
 
         const onState = (event) => {
+          console.log(`[VFS Server] Pushing state to ${peerId}:`, event.path, event.state);
           res.write(`data: ${JSON.stringify(event)}\n\n`);
         };
-
         vfs.events.on('state', onState);
-        req.on('close', () => vfs.events.off('state', onState));
+
+        // Register peer for command delivery
+        activePeers.set(peerId, res);
+
+        req.on('close', () => {
+          vfs.events.off('state', onState);
+          activePeers.delete(peerId);
+        });
         return;
       }
 
-      // 5. GET /states - Synchronize current state
+      // 2. POST /peer/:targetId/read - Relay a read request to a private peer
+      if (req.method === 'POST' && vfsPath.startsWith('/peer/')) {
+        const parts = vfsPath.split('/');
+        const targetPeerId = parts[2];
+        const op = parts[3];
+
+        if (op === 'read') {
+          const { path, parameters } = await getBody();
+          const targetRes = activePeers.get(targetPeerId);
+          
+          if (!targetRes) {
+            res.writeHead(404);
+            return res.end('Peer not connected');
+          }
+
+          const commandId = crypto.randomUUID();
+          
+          targetRes.write(`data: ${JSON.stringify({
+            type: 'COMMAND',
+            id: commandId,
+            op: 'READ',
+            path,
+            parameters
+          })}\n\n`);
+
+          return new Promise((resolve, reject) => {
+            pendingCommands.set(commandId, { 
+                res, 
+                timeout: setTimeout(() => {
+                    pendingCommands.delete(commandId);
+                    res.writeHead(504);
+                    res.end('Peer timeout');
+                    resolve();
+                }, 30000)
+            });
+          });
+        }
+      }
+
+      // 3. POST /reply/:commandId - Private peer fulfills a relayed command
+      if (req.method === 'POST' && vfsPath.startsWith('/reply/')) {
+        const commandId = vfsPath.split('/')[2];
+        const cmd = pendingCommands.get(commandId);
+        
+        if (!cmd) {
+          res.writeHead(410);
+          return res.end('Command expired or invalid');
+        }
+
+        clearTimeout(cmd.timeout);
+        pendingCommands.delete(commandId);
+
+        cmd.res.writeHead(200, { 'Content-Type': req.headers['content-type'] });
+        req.pipe(cmd.res);
+        
+        res.writeHead(200);
+        return res.end();
+      }
+
+      // --- Standard Path-based Endpoints ---
+
+      if (req.method === 'POST' && vfsPath === '/tickle') {
+        const { path, parameters } = await getBody();
+        const state = await vfs.tickle(path, parameters);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ state }));
+      }
+
+      if (req.method === 'POST' && vfsPath === '/read') {
+        const { path, parameters } = await getBody();
+        const stream = await vfs.read(path, parameters);
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+        if (stream.pipe) return stream.pipe(res);
+        for await (const chunk of stream) res.write(chunk);
+        return res.end();
+      }
+
+      if (req.method === 'POST' && vfsPath === '/status') {
+        const { path, parameters } = await getBody();
+        const state = await vfs.status(path, parameters);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ state }));
+      }
+if (req.method === 'POST' && vfsPath === '/lease') {
+  const { path, parameters, duration } = await getBody();
+  const success = await vfs.lease(path, parameters, duration);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  return res.end(JSON.stringify({ success }));
+}
+
+// 5. POST /link - Create an alias
+if (req.method === 'POST' && vfsPath === '/link') {
+  const { source, target } = await getBody();
+  await vfs.link(source, target);
+  res.writeHead(200);
+  return res.end();
+}
+
+// 6. PUT /write - Upload result
+
+      if (req.method === 'PUT' && vfsPath === '/write') {
+        const info = JSON.parse(req.headers['x-vfs-info'] || '{}');
+        const deps = JSON.parse(req.headers['x-vfs-deps'] || '[]');
+        await vfs.write(info.path, info.parameters, req, { dependencies: deps });
+        res.writeHead(201);
+        return res.end();
+      }
+
       if (req.method === 'GET' && vfsPath === '/states') {
         const states = Array.from(vfs.states.entries()).map(([cid, info]) => ({
-          cid,
-          path: info.path,
-          parameters: info.parameters,
-          state: info.state,
+          cid, path: info.path, parameters: info.parameters, state: info.state
         }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(states));
       }
 
-      // 4. PUT /res/:cid - Upload result
-      if (req.method === 'PUT' && vfsPath.startsWith('/res/')) {
-        const cid = vfsPath.slice(5);
-        // In a real system, we'd look up the path/params for this CID from the Request Plane first.
-        // For now, let's assume we know what we're writing.
-        // This endpoint requires metadata to be complete.
-        // Let's simplify: client sends metadata in headers.
-        const info = JSON.parse(req.headers['x-vfs-info'] || '{}');
-        await vfs.write(info.path, info.parameters, req);
-        res.writeHead(201);
-        return res.end();
-      }
     } catch (err) {
       console.error('[VFS REST Error]', err);
       res.writeHead(500);
-      res.end(err.message);
+      res.end(JSON.stringify({ error: err.message }));
     }
   });
 }

@@ -28,39 +28,97 @@ Data is addressed by a base `path` and a structured `parameters` object.
 - **Partially Constrained (Regions):** Open parameters or glob paths. Used for
   observation (`watch`).
 
-### 4. Namespaces and Isolation
+## The Lifecycle States
 
-- **Strict Isolation:** Different sessions are independent and do not
-  cross-talk.
-- **Coupled Instances (Distributed):** A single session can span multiple
-  environments.
-- **RESTful Transport:** Node-to-Browser communication leverages standard HTTP.
-  - **Results (`/res/:cid`)**: Uses `GET` and `PUT` with binary streams. No JSON
-    serialization overhead.
-  - **Events (`/watch`)**: Uses **Server-Sent Events (SSE)** to push state
-    changes from the server to clients.
-- **Shared Storage:** Instances in the same browser origin share an
-  **IndexedDB** Result Plane.
+Any given (path, parameters) point exists in one of five states:
 
-### 6. Synchronous VFS (SyncVFS)
+1. **`MISSING`**: No request exists for this point.
+2. **`PENDING`**: A node has requested this point, but no processor holds an
+   active lease.
+3. **`PROVISIONING`**: A processor holds a time-limited lease and is actively
+   computing/streaming.
+4. **`LINKED`**: The point is an alias for another coordinate (Normalization).
+5. **`AVAILABLE`**: The computation is complete, and the artifact is ready in
+   the Result Plane.
 
-For high-performance computational agents (e.g., C++ or WASM) that require a
-synchronous, POSIX-like filesystem interface, the system provides a **SyncVFS**
-abstraction.
+## Architecture Layers
 
-- **Blocking I/O:** `SyncVFS.read()` and `SyncVFS.write()` block the calling
-  thread until the operation is complete. This allows C++ code to use standard
-  `std::ifstream` without becoming asynchronous.
-- **Environment Implementations:**
-  - **Browser/WASM:** Implemented using **Atomics + SharedArrayBuffer**. The
-    WASM module runs in a Web Worker and "faults" to the VFS thread, which uses
-    `Atomics.wait()` to pause the worker until data arrives.
-  - **Node.js:** Implemented using **Worker Threads** or **Synchronous REST
-    calls**, allowing for native-speed blocking I/O.
-- **Uniform API:** The C++ code interacts with a single "File Driver" that
-  serializes VFS selectors into URI-style paths (e.g., `vfs:/box?size=100`).
+The system is strictly divided into layers to ensure that computational logic
+remains agnostic of network and environment details.
 
-## Core Primitives
+### 1. The Agent Layer (Logic)
+
+Computational agents (Processors) interact only with the **Blackboard API**
+(e.g., via the `Node` socket abstraction or `SyncVFS`). They are completely
+unaware of whether data is local, remote, or being relayed through a mailbox.
+
+### 2. The VFS Layer (Orchestration)
+
+The core `VFS` class manages state transitions, leases, and local event
+propagation. It handles the mapping of human-readable coordinates to internal
+Content-IDs (CIDs) and maintains the idempotency of the Result Plane.
+
+### 3. The Transport Layer (Communication)
+
+Bridges and Servers handle the distribution of state and data across process and
+network boundaries.
+
+- **RESTful Symmetry:** Communication between coupled instances (e.g., Node and
+  Browser) leverages a symmetric REST + SSE protocol.
+- **Virtual Mailboxes:** Peers behind firewalls or in browsers maintain a
+  long-lived **Server-Sent Events (SSE)** connection to a publicly reachable
+  **Hub**. The Hub relays inbound requests to these private peers via their
+  virtual mailbox.
+- **Transparent Relaying:** When a Peer receives a command (like `READ`) via its
+  mailbox, the transport bridge automatically fulfills it from local storage,
+  sending the data back to the Hub without the Agent ever being involved.
+
+### 4. The Storage Layer (Persistence)
+
+Pluggable adapters offload data from RAM to persistent or shared storage.
+
+- **MemoryStorage:** Standard in-memory Map.
+- **DiskStorage:** Uses `.meta` (JSON) and `.data` (Binary) files for
+  introspectable persistence in Node.js.
+- **IndexedDBStorage:** Shared storage across Browser origins (Main Thread,
+  Workers, SW).
+
+### 5. Sandbox Marshalling
+
+To keep core computational logic (e.g., C++ or WASM) decoupled from the VFS,
+agents use **Temporary Sandboxes**.
+
+- **Private Workspace:** Each operation runs in its own private, ephemeral
+  filesystem (In-memory via `memfs` or on-disk via temporary directories).
+- **Marshalling (Global $\rightarrow$ Local):** The JS agent fetches required
+  artifacts from the VFS and writes them to the sandbox with local,
+  operation-specific filenames (e.g., `in/mesh.stl`).
+- **Execution:** The operation runs against the sandbox, reading from and
+  writing to local files.
+- **Un-marshalling (Local $\rightarrow$ Global):** The JS agent reads the
+  finalized results from the sandbox and calls `vfs.write()` to distribute them
+  back to the global Result Plane.
+- **Cleanup:** The sandbox is purged once the distribution is complete.
+
+### 6. ZFS (Filesystem Snapshots)
+
+To export a portion of the Blackboard for external consumption or archiving, the
+system uses the **ZFS** format.
+
+- **Archive Pattern:** ZFS uses the JOT entry framing
+  (`\n=<LENGTH> <FILENAME>\n<CONTENT>`).
+- **Coordinate Envelopes:** For every coordinate in the exported subgraph, ZFS
+  stores:
+  - `vfs/[cid].meta`: JSON containing the `path`, `parameters`, `state`, and
+    optional `target` (for links).
+  - `vfs/[cid].data`: The raw binary bytes (for `AVAILABLE` artifacts).
+- **Self-Contained Subgraph:** `vfs.snapshot(selector)` performs a recursive
+  crawl, following both explicit `LINKED` states and implicit `vfs:/` references
+  found within the data, ensuring the entire dependency tree is captured.
+
+## Core Primitives (Blackboard API)
+
+These are the only methods used by Agents.
 
 ### `tickle(selector)`
 
@@ -68,11 +126,17 @@ Manifests demand for a coordinate. Returns the current state immediately.
 
 ### `read(selector)`
 
-Blocks until the coordinate state reaches `AVAILABLE`. Returns a stream.
+Blocks until the coordinate state reaches `AVAILABLE`. Returns a stream. If the
+state is `LINKED`, it recursively resolves the target coordinate.
+
+### `link(source, target)`
+
+Marks the source coordinate as an alias for the target coordinate. Used for
+parameter normalization.
 
 ### `write(selector, stream)`
 
-Finalizes a computation. Relays metadata and data (small payloads) to peers.
+Finalizes a computation and places the result on the global Result Plane.
 
 ### `lease(selector, duration)`
 
@@ -88,25 +152,28 @@ space.
 ## Progress Report (April 2026)
 
 - [x] **Core VFS:** In-memory blackboard with state propagation.
-- [x] **Node Abstraction:** Socket DSL (`In`, `Out`, `Watch`) for agent-style
+- [x] **Node Abstraction:** Socket DSL (`In`, _Out_, `Watch`) for agent-style
       nodes.
 - [x] **Self-Describing Storage:** Enveloped artifacts (`.meta` + `.data`) for
       introspection.
 - [x] **Memory Offloading:** Disk-based storage for Node.js.
 - [x] **Shared Browser Storage:** IndexedDB-based storage shared across Browser,
       Worker, and Service Worker.
-- [x] **Cross-Environment Coordination:** Data relaying for crossing JSON-only
-      boundaries (postMessage, WebSocket).
+- [x] **Symmetric REST Transport:** Cross-environment coordination via REST,
+      SSE, and Virtual Mailboxes.
+- [x] **SyncVFS Bridge:** Atomics-based blocking I/O for synchronous WASM/C++
+      agents.
 - [x] **Multi-Environment Mesh:** Verified coordination across Node, Browser,
       Web Worker, and Service Worker.
 - [x] **Graceful Failure:** Suicide-pattern for agents when the VFS closes.
+- [x] **Parameter Normalization:** Support for `LINKED` state and recursive
+      alias resolution.
 
 ---
 
 ## Future Research
 
 > **Storage Decomposition:** Implement prefix-based sharding (e.g.,
-> `res/54/e660d4...`) for high-volume results. **True P2P Streaming:** Explore
-> WebRTC or binary WebSocket streams for large artifacts that shouldn't be
-> buffered. **Logical Clocks:** Use sequence numbers or vector clocks to ensure
-> consistent state resolution in complex meshes.
+> `res/54/e660d4...`) for high-volume results. **Logical Clocks:** Use sequence
+> numbers or vector clocks to ensure consistent state resolution in complex
+> meshes.
