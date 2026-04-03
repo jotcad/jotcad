@@ -36,6 +36,7 @@
   "workspaces": [
     "cli",
     "fs",
+    "geo",
     "geometry",
     "op",
     "ops",

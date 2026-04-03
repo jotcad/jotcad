@@ -51,10 +51,30 @@ export class MemoryStorage {
   }
   async get(cid) {
     const entry = this.results.get(cid);
-    return entry ? entry.stream : null;
+    if (!entry) return null;
+    return new ReadableStream({
+      start(c) {
+        c.enqueue(entry.data);
+        c.close();
+      },
+    });
   }
   async set(cid, stream, info) {
-    this.results.set(cid, { info, stream });
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+    const data = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      data.set(chunk, offset);
+      offset += chunk.length;
+    }
+    this.results.set(cid, { info, data });
   }
   async has(cid) {
     return this.results.has(cid);
@@ -109,6 +129,7 @@ export class VFS {
         parameters: info.parameters,
         state: info.state,
         source: this.id,
+        target: info.target,
       };
       if (typeof other.receive === 'function') {
         other.receive(event, this);
@@ -149,7 +170,7 @@ export class VFS {
    */
   async receive(event, from) {
     if (this.closed) return;
-    const { cid, state, path, parameters, source, data } = event;
+    const { cid, state, path, parameters, source, data, target } = event;
     if (source === this.id) return;
 
     let info = this.states.get(cid);
@@ -174,6 +195,8 @@ export class VFS {
           await this.storage.set(cid, stream, info);
         }
       }
+    } else if (state === 'LINKED') {
+      info.target = target;
     }
 
     this.events.emit('state', event);
@@ -227,17 +250,54 @@ export class VFS {
       if (stream) return stream;
     }
 
+    if (info.state === 'LINKED') {
+      return this.read(info.target);
+    }
+
     return new Promise((resolve, reject) => {
       const onState = (event) => {
         if (event.state === 'CLOSED') {
           this.events.off('state', onState);
           reject(new VFSClosedError());
-        } else if (event.cid === cid && event.state === 'AVAILABLE') {
-          this.events.off('state', onState);
-          this.storage.get(cid).then(resolve);
+        } else if (event.cid === cid) {
+          if (event.state === 'AVAILABLE') {
+            this.events.off('state', onState);
+            this.storage.get(cid).then(resolve);
+          } else if (event.state === 'LINKED') {
+            this.events.off('state', onState);
+            this.read(event.target).then(resolve).catch(reject);
+          }
         }
       };
       this.events.on('state', onState);
+    });
+  }
+
+  /**
+   * Links a source coordinate to a target coordinate.
+   * Used for parameter normalization.
+   */
+  async link(sourceSelector, targetSelector) {
+    this._checkClosed();
+    const src = normalizeSelector(sourceSelector);
+    const tgt = normalizeSelector(targetSelector);
+    const cid = await this.getCID(src);
+
+    let info = this.states.get(cid);
+    if (!info) {
+      info = { path: src.path, parameters: src.parameters };
+      this.states.set(cid, info);
+    }
+
+    info.state = 'LINKED';
+    info.target = tgt;
+
+    this._emit({
+      cid,
+      path: info.path,
+      parameters: info.parameters,
+      state: 'LINKED',
+      target: tgt,
     });
   }
 
@@ -412,5 +472,60 @@ export class VFS {
     } finally {
       this.events.off('state', onState);
     }
+  }
+
+  /**
+   * Serializes a set of coordinates into ZFS format.
+   * @param {Object|Object[]} selectors A single selector or an array of selectors to include.
+   */
+  async snapshot(selectors) {
+    const list = Array.isArray(selectors) ? selectors : [selectors];
+    const entries = [];
+
+    for (const sel of list) {
+      const s = normalizeSelector(sel);
+      const cid = await this.getCID(s);
+      const info = this.states.get(cid);
+      if (!info) continue;
+
+      // 1. Store Meta
+      const meta = JSON.stringify(
+        {
+          path: info.path,
+          parameters: info.parameters,
+          state: info.state,
+          target: info.target,
+        },
+        null,
+        2
+      );
+      entries.push({ 
+        filename: `vfs/${cid}.meta`, 
+        content: Buffer.from(meta),
+        info: info 
+      });
+
+      // 2. Store Data
+      if (info.state === 'AVAILABLE') {
+        const stream = await this.storage.get(cid);
+        if (stream) {
+          const chunks = [];
+          for await (const chunk of stream) chunks.push(chunk);
+          entries.push({ 
+            filename: `vfs/${cid}.data`, 
+            content: Buffer.concat(chunks),
+            info: info 
+          });
+        }
+      }
+    }
+
+    // 3. Serialize to JOT/ZFS framing
+    const buffers = [];
+    for (const entry of entries) {
+      buffers.push(Buffer.from(`\n=${entry.content.length} ${entry.filename}\n`));
+      buffers.push(entry.content);
+    }
+    return Buffer.concat(buffers);
   }
 }

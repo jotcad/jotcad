@@ -1,7 +1,6 @@
-import { normalizeSelector } from './vfs_core.js';
-
 /**
- * Connects a local VFS instance to a remote REST-based VFS server.
+ * Bridges a local VFS instance to a remote REST server.
+ * Handles targeted COMMAND events for symmetric peer behavior.
  */
 export class RESTBridge {
   constructor(vfs, baseUrl) {
@@ -11,82 +10,100 @@ export class RESTBridge {
   }
 
   async start() {
-    // 0. Synchronize existing state from remote
+    // 0. Initial Sync
     try {
       const resp = await fetch(`${this.baseUrl}/states`);
       if (resp.ok) {
         const states = await resp.json();
-        for (const s of states) {
-          // Add source: 'remote' to prevent immediate re-broadcast back to server
-          this.vfs.receive({ ...s, source: 'remote' });
-        }
+        for (const s of states) this.vfs.receive({ ...s, source: 'remote' });
       }
-    } catch (err) {
-      console.warn('[RESTBridge] Initial sync failed:', err.message);
-    }
+    } catch (err) { console.warn('[RESTBridge] Sync failed', err); }
 
-    // 1. Listen to Local Events and sync to Remote
+    // 1. Local -> Remote (Outbound)
     this.vfs.events.on('state', async (event) => {
-      // Don't sync events that came from the remote server itself
-      if (event.source === 'remote') return;
-
-      // Also don't sync if the source is already 'node' (prevent loops)
-      if (event.source === 'node') return;
+      if (event.source === 'remote' || event.source === 'node') return;
 
       if (event.state === 'PENDING') {
         await fetch(`${this.baseUrl}/tickle`, {
           method: 'POST',
-          body: JSON.stringify({
-            path: event.path,
-            parameters: event.parameters,
-          }),
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-vfs-peer-id': this.vfs.id
+          },
+          body: JSON.stringify({ path: event.path, parameters: event.parameters })
         });
       } else if (event.state === 'AVAILABLE') {
         const stream = await this.vfs.storage.get(event.cid);
         if (stream) {
-          await fetch(`${this.baseUrl}/res/${event.cid}`, {
+          await fetch(`${this.baseUrl}/write`, {
             method: 'PUT',
-            headers: {
-              'x-vfs-info': JSON.stringify({
-                path: event.path,
-                parameters: event.parameters,
-              }),
+            headers: { 
+                'x-vfs-info': JSON.stringify({ path: event.path, parameters: event.parameters }),
+                'x-vfs-peer-id': this.vfs.id
             },
             body: stream,
-            duplex: 'half',
+            duplex: 'half'
           });
         }
       }
     });
 
-    // 2. Listen to Remote Events (SSE) and sync to Local
-    this.eventSource = new EventSource(`${this.baseUrl}/watch`);
-    this.eventSource.onmessage = (e) => {
+    // 2. Remote -> Local (Inbound Commands via SSE)
+    this.eventSource = new EventSource(`${this.baseUrl}/watch`, {
+        // Pass our PeerID so the Hub knows which mailbox we are watching
+        headers: { 'x-vfs-peer-id': this.vfs.id } // Note: Standard EventSource doesn't support headers, we'd need a polyfill or use URL params
+    });
+    
+    // Polyfill-like behavior for PeerID identification via Query Param
+    if (this.eventSource.url) {
+        this.eventSource.close();
+        this.eventSource = new EventSource(`${this.baseUrl}/watch?peerId=${this.vfs.id}`);
+    }
+
+    this.eventSource.onmessage = async (e) => {
       const event = JSON.parse(e.data);
-      this.vfs.receive(event);
+      
+      // Handle Relayed Commands
+      if (event.type === 'COMMAND') {
+        if (event.op === 'READ') {
+          console.log(`[RESTBridge] Fulfilling relayed READ: ${event.path}`);
+          const stream = await this.vfs.read(event.path, event.parameters);
+          
+          // Reply back to the Hub
+          await fetch(`${this.baseUrl}/reply/${event.id}`, {
+            method: 'POST',
+            body: stream,
+            duplex: 'half'
+          });
+        }
+        return;
+      }
+
+      this.vfs.receive({ ...event, source: 'node' });
     };
 
-    // 3. Intercept storage.get to fetch from remote if missing
+    // 3. Transparent Fetch
     const originalGet = this.vfs.storage.get.bind(this.vfs.storage);
     this.vfs.storage.get = async (cid) => {
       const local = await originalGet(cid);
       if (local) return local;
 
-      // Try fetching from remote
-      const resp = await fetch(`${this.baseUrl}/res/${cid}`);
-      if (resp.ok) {
-        // We don't necessarily want to cache it locally here,
-        // vfs.read() will call this and we return the remote stream.
-        return resp.body;
-      }
-      return null;
+      const info = this.vfs.states.get(cid);
+      if (!info) return null;
+
+      const resp = await fetch(`${this.baseUrl}/read`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'x-vfs-peer-id': this.vfs.id
+        },
+        body: JSON.stringify({ path: info.path, parameters: info.parameters })
+      });
+      return resp.ok ? resp.body : null;
     };
   }
 
   stop() {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
+    this.eventSource?.close();
   }
 }
