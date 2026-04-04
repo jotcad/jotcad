@@ -1,45 +1,61 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { VFS } from '../src/vfs.js';
+import { VFS } from '../src/vfs_node.js';
 import { Readable } from 'stream';
 
 test('Agent-style Processors', async (t) => {
   const vfs = new VFS();
+  let closed = false;
 
   // Agent 1: Box Generator
   const startBoxProcessor = async () => {
-    for await (const req of vfs.watch('geometry/box', {
-      states: ['PENDING'],
-    })) {
-      const hasLease = await vfs.lease(req.path, req.parameters, 1000);
-      if (!hasLease) continue;
+    try {
+      for await (const req of vfs.watch('geometry/box', {
+        states: ['PENDING'],
+      })) {
+        if (closed) break;
+        const hasLease = await vfs.lease(req.path, req.parameters, 1000);
+        if (!hasLease) continue;
 
-      const { width, height, depth } = req.parameters;
-      const volume = width * height * depth;
-      const mesh = `Mesh(box, volume: ${volume})`;
+        const { width, height, depth } = req.parameters;
+        const volume = width * height * depth;
+        const mesh = `Mesh(box, volume: ${volume})`;
 
-      await vfs.write(req.path, req.parameters, Readable.from([mesh]));
+        await vfs.write(req.path, req.parameters, Readable.from([mesh]));
+      }
+    } catch (e) {
+      if (!closed) console.error(e);
     }
   };
 
   // Agent 2: Volume Calculator (Depends on Box)
   const startVolumeProcessor = async () => {
-    for await (const req of vfs.watch('analytics/volume', {
-      states: ['PENDING'],
-    })) {
-      const hasLease = await vfs.lease(req.path, req.parameters, 1000);
-      if (!hasLease) continue;
+    try {
+      for await (const req of vfs.watch('analytics/volume', {
+        states: ['PENDING'],
+      })) {
+        if (closed) break;
+        const hasLease = await vfs.lease(req.path, req.parameters, 1000);
+        if (!hasLease) continue;
 
-      const { sourcePath, sourceParams } = req.parameters;
+        const { sourcePath, sourceParams } = req.parameters;
 
-      // Cascading dependency: Read the mesh from the blackboard
-      const meshStream = await vfs.read(sourcePath, sourceParams);
+        // Cascading dependency: Read the mesh from the blackboard
+        const meshStream = await vfs.read(sourcePath, sourceParams);
 
-      let meshData = '';
-      for await (const chunk of meshStream) meshData += chunk;
+        let meshData = '';
+        const decoder = new TextDecoder();
+        for await (const chunk of meshStream) {
+            meshData += decoder.decode(chunk, { stream: true });
+        }
+        meshData += decoder.decode();
 
-      const volume = meshData.match(/volume: (\d+)/)[1];
-      await vfs.write(req.path, req.parameters, Readable.from([volume]));
+        const match = meshData.match(/volume: (\d+)/);
+        const volume = match ? match[1] : '0';
+        await vfs.write(req.path, req.parameters, Readable.from([volume]));
+      }
+    } catch (e) {
+      if (!closed) console.error(e);
     }
   };
 
@@ -56,7 +72,11 @@ test('Agent-style Processors', async (t) => {
     });
 
     let volumeResult = '';
-    for await (const chunk of volumeStream) volumeResult += chunk;
+    const decoder = new TextDecoder();
+    for await (const chunk of volumeStream) {
+        volumeResult += decoder.decode(chunk, { stream: true });
+    }
+    volumeResult += decoder.decode();
 
     assert.strictEqual(volumeResult, '100'); // 10 * 2 * 5
   });
@@ -66,11 +86,17 @@ test('Agent-style Processors', async (t) => {
 
     // Modify the box processor to track calls
     const originalWrite = vfs.write;
-    vfs.write = async (selector, stream) => {
-      if (typeof selector === 'object' && selector.path === 'geometry/box') {
+    vfs.write = async (pathOrSelector, parameters, stream) => {
+      let s;
+      if (typeof pathOrSelector === 'string') {
+        s = { path: pathOrSelector };
+      } else {
+        s = pathOrSelector;
+      }
+      if (s.path === 'geometry/box') {
         boxComputeCount++;
       }
-      return originalWrite.call(vfs, selector, stream);
+      return originalWrite.call(vfs, pathOrSelector, parameters, stream);
     };
 
     // Request the same volume again
@@ -81,5 +107,10 @@ test('Agent-style Processors', async (t) => {
 
     // Box shouldn't have been re-computed
     assert.strictEqual(boxComputeCount, 0);
+    
+    vfs.write = originalWrite;
   });
+
+  closed = true;
+  await vfs.close();
 });

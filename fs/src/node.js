@@ -43,6 +43,12 @@ export class Node {
     this.vfs = vfs;
     this.socketsDef = sockets;
     this.execute = execute;
+    this.abortController = new AbortController();
+  }
+
+  stop() {
+    console.log('[Node] Stopping agent...');
+    this.abortController.abort();
   }
 
   async start() {
@@ -53,9 +59,14 @@ export class Node {
     const promises = triggers.map(([outName, outDef]) => {
       return (async () => {
         try {
-          const query = this.vfs.watch(outDef.path, { states: ['PENDING'] });
+          const query = this.vfs.watch(outDef.path, {
+            states: ['PENDING'],
+            signal: this.abortController.signal,
+          });
 
           for await (const req of query) {
+            if (this.abortController.signal.aborted) break;
+
             const hasLease = await this.vfs.lease(
               req.path,
               req.parameters,
@@ -91,19 +102,27 @@ export class Node {
                   };
                 } else if (def.mode === 'watch') {
                   sockets[name].watch = (options = {}) => {
-                    return this.vfs.watch(def.path, options);
+                    return this.vfs.watch(def.path, {
+                      ...options,
+                      signal: this.abortController.signal,
+                    });
                   };
                 }
               }
 
               await this.execute(sockets);
             } catch (err) {
-              if (err instanceof VFSClosedError) break;
-              console.error(`Node execution error on ${req.path}:`, err);
+              if (
+                err instanceof VFSClosedError ||
+                this.abortController.signal.aborted
+              )
+                break;
+              throw err;
             }
           }
         } catch (err) {
-          if (err instanceof VFSClosedError) return;
+          if (err instanceof VFSClosedError || err.name === 'AbortError')
+            return;
           throw err;
         }
       })();

@@ -10,41 +10,52 @@ export class Dispatcher {
     this.hubUrl = hubUrl;
     this.binDir = binDir;
     this.agents = new Map(); // path prefix -> binary name
+    this.abortController = new AbortController();
   }
 
   register(pathPrefix, binaryName) {
     this.agents.set(pathPrefix, binaryName);
   }
 
+  stop() {
+    this.abortController.abort();
+  }
+
   async start() {
-    // Watch for ANY pending request in the 'shape/' space
-    const query = this.vfs.watch('shape/*', { states: ['PENDING'] });
-    
-    for await (const req of query) {
-      // Find the best matching agent
-      const binary = this._findAgent(req.path);
-      if (!binary) continue;
-
-      const binaryPath = path.join(this.binDir, binary);
-      
-      console.log(`[Dispatcher] Spawning ${binary} for ${req.path}`);
-      
-      // Spawn the single-task agent
-      const child = spawn(binaryPath, [
-        '--hub', this.hubUrl,
-        '--path', req.path,
-        '--params', JSON.stringify(req.parameters),
-        '--peer', `dispatcher-spawned-${Math.random().toString(36).slice(2)}`
-      ]);
-
-      child.stdout.on('data', (data) => console.log(`[${binary} stdout] ${data}`));
-      child.stderr.on('data', (data) => console.error(`[${binary} stderr] ${data}`));
-      
-      child.on('close', (code) => {
-        if (code !== 0) {
-          console.error(`[Dispatcher] Agent ${binary} exited with code ${code}`);
-        }
+    try {
+      const query = this.vfs.watch('shape/*', { 
+        states: ['PENDING'],
+        signal: this.abortController.signal
       });
+      
+      for await (const req of query) {
+        if (this.abortController.signal.aborted) break;
+
+        const binary = this._findAgent(req.path);
+        if (!binary) continue;
+
+        const binaryPath = path.join(this.binDir, binary);
+        console.log(`[Dispatcher] Spawning ${binary} for ${req.path}`);
+        
+        const child = spawn(binaryPath, [
+          '--hub', this.hubUrl,
+          '--path', req.path,
+          '--params', JSON.stringify(req.parameters),
+          '--peer', `dispatcher-spawned-${Math.random().toString(36).slice(2)}`
+        ]);
+
+        child.stdout.on('data', (data) => console.log(`[${binary} stdout] ${data}`));
+        child.stderr.on('data', (data) => console.error(`[${binary} stderr] ${data}`));
+        
+        child.on('close', (code) => {
+          if (code !== 0 && !this.abortController.signal.aborted) {
+            console.error(`[Dispatcher] Agent ${binary} exited with code ${code}`);
+          }
+        });
+      }
+    } catch (err) {
+      if (err.name === 'AbortError' || err.message.includes('closed')) return;
+      throw err;
     }
   }
 

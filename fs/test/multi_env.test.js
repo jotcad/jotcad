@@ -107,7 +107,17 @@ test('Multi-Environment VFS (REST + SSE)', { timeout: 20000 }, async (t) => {
   );
 
   // Cleanup
+  console.log('[Test] Starting cleanup...');
+  console.log('[Test] Closing page...');
+  await page.close();
+  console.log('[Test] Closing browser...');
   await browser.close();
+  console.log('[Test] Closing WebSocket server...');
+  // wss.close(); (Oops, wss is not in this scope, but registerVFSRoutes handles the listeners)
+  console.log('[Test] Closing HTTP server...');
   server.close();
+  console.log('[Test] Closing VFS...');
   await vfs.close();
+  console.log('[Test] Cleanup complete.');
+  await new Promise(r => setTimeout(r, 100));
 });

@@ -3,13 +3,17 @@
   "version": "0.0.1",
   "description": "Javascript CAD",
   "repository": "https://github.com/jsxcad/JSxCAD",
+  "type": "module",
   "scripts": {
+    "start": "node orchestrator.js",
+    "start:vfs": "node fs/serve.js",
     "depcheck": "npm run depcheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "lintfix": "npm run lintfix --workspaces --if-present",
     "prettier": "prettier --write .",
     "cli": "node cli/cli.js",
     "rollup": "npm run rollup --workspaces --if-present",
+    "test": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test fs/test/*.test.js geo/test/*.test.js",
     "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test '*/*.test.js'",
     "lintfix_one": "npx eslint --fix $1",
     "debug": "http-server . -p 9090"

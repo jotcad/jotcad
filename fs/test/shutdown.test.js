@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { VFS, VFSClosedError } from '../src/vfs.js';
+import { VFS, VFSClosedError } from '../src/vfs_node.js';
 import { Node, Out } from '../src/node.js';
 import { Readable } from 'stream';
 

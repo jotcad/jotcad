@@ -1,5 +1,5 @@
 import { VFS, IndexedDBStorage } from '/src/vfs_browser.js';
-import { RESTBridge } from '/src/vfs_rest_bridge.js';
+import { RESTBridge } from '/src/vfs_rest_bridge_browser.js';
 import { SyncVFSServer } from '/src/sync_vfs_atomics.js';
 
 async function run() {

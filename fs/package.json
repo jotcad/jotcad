@@ -12,6 +12,7 @@
     "ws": "^8.20.0"
   },
   "dependencies": {
+    "eventsource": "^4.1.0",
     "memfs": "^4.57.1"
   }
 }

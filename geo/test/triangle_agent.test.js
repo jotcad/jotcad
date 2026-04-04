@@ -120,6 +120,8 @@ f 0 1 2
     assert.strictEqual(actualText, expectedText);
   });
 
+  // Cleanup
+  dispatcher.stop();
   server.close();
   await vfs.close();
 });
