@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { VFS } from '../src/vfs.js';
+import { VFS } from '../src/vfs_node.js';
 import { Node, In, Out } from '../src/node.js';
 import { Readable } from 'stream';
 
@@ -15,12 +15,16 @@ test('Node with Parameter Composition', async (t) => {
     async execute({ input, output }) {
       // Composition test for read()
       // Base: { base: 1 }
-      // Trigger: { trigger: 2 }
+      // Trigger: { base: 100, trigger: 2 } (composed from tickle)
       // Call: { call: 3 }
-      // Result: { base: 1, trigger: 2, call: 3 }
+      // Result: { base: 100, trigger: 2, call: 3 }
       const readStream = await input.read({ call: 3 });
       let data = '';
-      for await (const chunk of readStream) data += chunk;
+      const decoder = new TextDecoder();
+      for await (const chunk of readStream) {
+        data += decoder.decode(chunk, { stream: true });
+      }
+      data += decoder.decode();
 
       // Composition test for write()
       await output.write(Readable.from([data]), { call: 300 });
@@ -31,9 +35,15 @@ test('Node with Parameter Composition', async (t) => {
 
   await t.test(
     'read and write sockets correctly compose parameters',
+    { timeout: 2000 },
     async () => {
       // 1. Manually place data at the expected composed address
-      const expectedReadParams = { base: 1, trigger: 2, call: 3 };
+      // Node.js currently merges: {...socketBase, ...trigger, ...call}
+      // input socket base: { base: 1 }
+      // trigger: { base: 100, trigger: 2 }
+      // call: { call: 3 }
+      // Result: { base: 100, trigger: 2, call: 3 }
+      const expectedReadParams = { base: 100, trigger: 2, call: 3 };
       await vfs.write(
         'test/in',
         expectedReadParams,
@@ -41,7 +51,8 @@ test('Node with Parameter Composition', async (t) => {
       );
 
       // 2. Trigger the node with some parameters
-      const triggerParams = { trigger: 2 };
+      // Node listens on { base: 100 }, so tickle must include it to match the watch
+      const triggerParams = { base: 100, trigger: 2 };
       await vfs.tickle('test/out', triggerParams);
 
       // 3. The node should have written to the expected composed address
@@ -49,8 +60,18 @@ test('Node with Parameter Composition', async (t) => {
       const resultStream = await vfs.read('test/out', expectedWriteParams);
 
       let result = '';
-      for await (const chunk of resultStream) result += chunk;
+      const decoder = new TextDecoder();
+      for await (const chunk of resultStream) {
+        result += decoder.decode(chunk, { stream: true });
+      }
+      result += decoder.decode();
       assert.strictEqual(result, 'composed-data');
     }
   );
+
+  console.log('[Test] Stopping composition node...');
+  node.stop();
+  console.log('[Test] Closing composition VFS...');
+  await vfs.close();
+  console.log('[Test] Composition VFS closed.');
 });

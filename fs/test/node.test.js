@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { VFS } from '../src/vfs.js';
-import { Node } from '../src/node.js';
+import { VFS } from '../src/vfs_node.js';
+import { Node, In, Out } from '../src/node.js';
 import { Readable } from 'stream';
 
 test('AgentNode abstraction', async (t) => {
@@ -11,20 +11,22 @@ test('AgentNode abstraction', async (t) => {
   // Inputs: config (from a separate blackboard location)
   // Outputs: mesh
   const boxNode = new Node(vfs, {
-    inputs: {
-      config: 'config/box',
-    },
-    outputs: {
-      mesh: 'geometry/box',
+    sockets: {
+      config: In('config/box'),
+      mesh: Out('geometry/box'),
     },
     async execute({ params, config, mesh }) {
       // 1. Await the parameters socket to get the triggering ID
       const { id } = await params();
 
       // 2. Await the input socket stream (automatically uses id from above)
-      const configStream = await config();
+      const configStream = await config.read();
       let data = '';
-      for await (const chunk of configStream) data += chunk;
+      const decoder = new TextDecoder();
+      for await (const chunk of configStream) {
+        data += decoder.decode(chunk, { stream: true });
+      }
+      data += decoder.decode();
 
       const { size } = JSON.parse(data);
 
@@ -36,8 +38,8 @@ test('AgentNode abstraction', async (t) => {
   // Agent Node 2: Reparameterization Demo
   // Triggered by a request to 'process/start', but writes to a specific result path
   const processNode = new Node(vfs, {
-    outputs: {
-      out: 'process/result',
+    sockets: {
+      out: Out('process/result'),
     },
     async execute({ out }) {
       // We can reparameterize the write independently of the triggering request
@@ -53,6 +55,7 @@ test('AgentNode abstraction', async (t) => {
 
   await t.test(
     'Node resolves inputs from other blackboard locations',
+    { timeout: 2000 },
     async () => {
       // 1. Manually place the configuration data
       await vfs.write(
@@ -65,12 +68,16 @@ test('AgentNode abstraction', async (t) => {
       const stream = await vfs.read('geometry/box', { id: 'b1' });
 
       let result = '';
-      for await (const chunk of stream) result += chunk;
+      const decoder = new TextDecoder();
+      for await (const chunk of stream) {
+        result += decoder.decode(chunk, { stream: true });
+      }
+      result += decoder.decode();
       assert.strictEqual(result, 'Box(50)');
     }
   );
 
-  await t.test('Node can reparameterize output writes', async () => {
+  await t.test('Node can reparameterize output writes', { timeout: 2000 }, async () => {
     // 1. Trigger the process
     await vfs.tickle('process/result', { id: 'p1' });
 
@@ -81,7 +88,15 @@ test('AgentNode abstraction', async (t) => {
     });
 
     let result = '';
-    for await (const chunk of stream) result += chunk;
+    const decoder = new TextDecoder();
+    for await (const chunk of stream) {
+      result += decoder.decode(chunk, { stream: true });
+    }
+    result += decoder.decode();
     assert.strictEqual(result, 'Completed');
   });
+
+  boxNode.stop();
+  processNode.stop();
+  await vfs.close();
 });

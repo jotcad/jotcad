@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { VFS, DiskStorage } from '../src/vfs.js';
+import { VFS, DiskStorage } from '../src/vfs_node.js';
 import { Readable } from 'stream';
 import fs from 'fs';
 import path from 'path';

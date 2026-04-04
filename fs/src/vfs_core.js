@@ -4,10 +4,14 @@
 class EventEmitter {
   constructor() {
     this.listeners = {};
+    this.maxListeners = 10;
   }
   on(event, listener) {
     if (!this.listeners[event]) this.listeners[event] = [];
     this.listeners[event].push(listener);
+    if (this.maxListeners > 0 && this.listeners[event].length > this.maxListeners) {
+        console.error(`MaxListenersExceededWarning: Possible EventEmitter memory leak detected. ${this.listeners[event].length} ${event} listeners added. Use setMaxListeners() to increase limit`);
+    }
   }
   off(event, listener) {
     if (!this.listeners[event]) return;
@@ -19,6 +23,9 @@ class EventEmitter {
   }
   removeAllListeners() {
     this.listeners = {};
+  }
+  setMaxListeners(n) {
+    this.maxListeners = n;
   }
 }
 
@@ -98,16 +105,19 @@ export class VFS {
     this.states = new Map(); // CID -> info
     this.storage = options.storage || new MemoryStorage();
     this.events = new EventEmitter();
+    this.events.setMaxListeners(100);
     this.peers = new Set();
     this.closed = false;
   }
 
   async close() {
     if (this.closed) return;
+    console.log(`[VFS ${this.id}] Closing...`);
     this.closed = true;
     this.events.emit('state', { state: 'CLOSED' });
     this.events.removeAllListeners();
     await this.storage.close();
+    console.log(`[VFS ${this.id}] Storage closed.`);
   }
 
   _checkClosed() {
@@ -148,9 +158,15 @@ export class VFS {
   /**
    * Internal emit for state changes.
    */
-  _emit(event) {
+  async _emit(event) {
     if (this.closed) return;
     if (!event.source) event.source = this.id;
+    
+    // Ensure CID is present in the event
+    if (!event.cid) {
+        event.cid = await this.getCID({ path: event.path, parameters: event.parameters });
+    }
+
     this.events.emit('state', event);
 
     // Propagate to peers
@@ -228,7 +244,8 @@ export class VFS {
     if (!info) {
       info = { state: 'PENDING', path: s.path, parameters: s.parameters };
       this.states.set(cid, info);
-      this._emit({
+      await this._emit(
+{
         cid,
         path: s.path,
         parameters: info.parameters,
@@ -242,9 +259,11 @@ export class VFS {
     this._checkClosed();
     const s = normalizeSelector(pathOrSelector, parameters);
     const cid = await this.getCID(s);
+    console.log(`[VFS ${this.id}] read(${s.path}, ${JSON.stringify(s.parameters)}) CID: ${cid}`);
     await this.tickle(s);
 
     let info = this.states.get(cid);
+    console.log(`[VFS ${this.id}] status for ${cid}: ${info.state}`);
     if (info.state === 'AVAILABLE') {
       const stream = await this.storage.get(cid);
       if (stream) return stream;
@@ -256,6 +275,9 @@ export class VFS {
 
     return new Promise((resolve, reject) => {
       const onState = (event) => {
+        if (event.cid === cid) {
+            console.log(`[VFS ${this.id}] Saw event for ${cid}: ${event.state}`);
+        }
         if (event.state === 'CLOSED') {
           this.events.off('state', onState);
           reject(new VFSClosedError());
@@ -292,7 +314,8 @@ export class VFS {
     info.state = 'LINKED';
     info.target = tgt;
 
-    this._emit({
+    await this._emit(
+{
       cid,
       path: info.path,
       parameters: info.parameters,
@@ -317,10 +340,10 @@ export class VFS {
       return false;
 
     info.state = 'PROVISIONING';
-    const leaseId = setTimeout(() => {
+    const leaseId = setTimeout(async () => {
       if (!this.closed && info.state === 'PROVISIONING') {
         info.state = 'PENDING';
-        this._emit({
+        await this._emit({
           cid,
           path: info.path,
           parameters: info.parameters,
@@ -329,7 +352,8 @@ export class VFS {
       }
     }, d);
     info.activeLease = leaseId;
-    this._emit({
+    await this._emit(
+{
       cid,
       path: info.path,
       parameters: info.parameters,
@@ -386,7 +410,9 @@ export class VFS {
       }
     } else if (str.on || typeof str.pipe === 'function') {
       const chunks = [];
-      for await (const chunk of str) chunks.push(chunk);
+      for await (const chunk of str) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
       const buffer =
         typeof Buffer !== 'undefined'
           ? Buffer.concat(chunks)
@@ -405,7 +431,8 @@ export class VFS {
     }
 
     await this.storage.set(cid, str, info);
-    this._emit({
+    await this._emit(
+{
       cid,
       path: info.path,
       parameters: info.parameters,
@@ -418,6 +445,7 @@ export class VFS {
     this._checkClosed();
     const s = normalizeSelector(selector);
     const states = options.states || [];
+    const signal = options.signal;
     const queue = [];
     let resolveQueue;
 
@@ -459,10 +487,20 @@ export class VFS {
     };
 
     this.events.on('state', onState);
+
+    const onAbort = () => {
+      if (resolveQueue) {
+        resolveQueue();
+        resolveQueue = null;
+      }
+    };
+    if (signal) signal.addEventListener('abort', onAbort);
+
     try {
-      while (!this.closed) {
+      while (!this.closed && (!signal || !signal.aborted)) {
         if (queue.length === 0)
           await new Promise((resolve) => (resolveQueue = resolve));
+        if (this.closed || (signal && signal.aborted)) break;
         while (queue.length > 0) {
           const ev = queue.shift();
           if (ev.state === 'CLOSED') return;
@@ -471,6 +509,7 @@ export class VFS {
       }
     } finally {
       this.events.off('state', onState);
+      if (signal) signal.removeEventListener('abort', onAbort);
     }
   }
 

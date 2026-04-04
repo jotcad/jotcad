@@ -61,6 +61,7 @@ test('C++ Box Agent Evaluator', { timeout: 15000 }, async (t) => {
   });
 
   // Cleanup
+  dispatcher.stop();
   server.close();
   await vfs.close();
 });

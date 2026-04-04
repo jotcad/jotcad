@@ -1,7 +1,8 @@
 import { createSignal, onMount, onCleanup, For, Show, createEffect } from 'solid-js';
 import interact from 'interactjs';
-import { blackboard } from '../lib/blackboard';
+import { blackboard, vfs } from '../lib/blackboard';
 import { initSharedRenderer, createScene, updateViewports } from '../lib/three_utils';
+import { ScriptNode } from './ScriptNode';
 import * as THREE from 'three';
 
 /**
@@ -159,6 +160,9 @@ export const Canvas = () => {
       </svg>
       
       <div class="absolute inset-0 z-10 overflow-hidden pointer-events-none">
+        <div class="pointer-events-auto">
+            <ScriptNode />
+        </div>
         <For each={Object.values(blackboard.graph())}>
             {(node) => (
             <div class="pointer-events-auto">

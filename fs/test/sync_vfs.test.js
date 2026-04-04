@@ -53,9 +53,13 @@ if (isMainThread) {
     );
 
     // Cleanup
+    console.log('[Test] Stopping SyncVFS server...');
     server.stop();
+    console.log('[Test] Terminating worker thread...');
     await worker.terminate();
+    console.log('[Test] Closing SyncVFS VFS...');
     await vfs.close();
+    console.log('[Test] SyncVFS cleanup complete.');
   });
 } else {
   // Worker Thread Logic

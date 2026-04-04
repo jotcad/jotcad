@@ -1,67 +1,40 @@
-import { createSignal, createResource } from 'solid-js';
+import { createSignal } from 'solid-js';
+import { VFS, IndexedDBStorage } from '../../../fs/src/vfs_browser.js';
+import { RESTBridge } from '../../../fs/src/vfs_rest_bridge_browser.js';
 
 /**
- * A reactive VFS client for the UI.
- * Connects to the Node.js VFS Hub and provides Solid.js signals for state.
+ * The Global VFS instance for the UI.
+ * Linked to the shared Origin IndexedDB and bridged to the Node.js Hub.
  */
-export class UIBlackboard {
-  constructor(baseUrl = '/vfs') {
-    this.baseUrl = baseUrl;
-    this.eventSource = null;
-    
-    // Reactive state: Map of CID -> State
-    const [graph, setGraph] = createSignal({});
-    this.graph = graph;
-    this.setGraph = setGraph;
-  }
+export const vfs = new VFS({ 
+    id: 'ui-main',
+    storage: new IndexedDBStorage()
+});
 
-  async start() {
-    // 1. Initial Sync
-    const resp = await fetch(`${this.baseUrl}/states`);
-    if (resp.ok) {
-      const states = await resp.json();
-      const newGraph = {};
-      for (const s of states) {
-        newGraph[s.cid] = s;
-      }
-      this.setGraph(newGraph);
+const bridge = new RESTBridge(vfs, `http://${window.location.hostname}:9090/vfs`);
+
+// Reactive graph state for Solid.js
+const [graph, setGraph] = createSignal({});
+
+export const blackboard = {
+    vfs,
+    graph,
+    async start() {
+        // Sync local graph with VFS state changes
+        vfs.events.on('state', (event) => {
+            setGraph(prev => ({
+                ...prev,
+                [event.cid]: { ...prev[event.cid], ...event }
+            }));
+        });
+
+        await bridge.start();
+    },
+    stop() {
+        bridge.stop();
+        vfs.close();
+    },
+    tickle(path, parameters = {}) {
+        return vfs.tickle(path, parameters);
     }
-
-    // 2. Listen for Live Updates (SSE)
-    this.eventSource = new EventSource(`${this.baseUrl}/watch?peerId=ui-${Math.random().toString(36).slice(2)}`);
-    this.eventSource.onmessage = (e) => {
-      const event = JSON.parse(e.data);
-      this.setGraph(prev => ({
-        ...prev,
-        [event.cid]: {
-          ...prev[event.cid],
-          ...event
-        }
-      }));
-    };
-  }
-
-  async read(path, parameters = {}) {
-    const resp = await fetch(`${this.baseUrl}/read`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, parameters })
-    });
-    return resp.ok ? resp.body : null;
-  }
-
-  async tickle(path, parameters = {}) {
-    await fetch(`${this.baseUrl}/tickle`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, parameters })
-    });
-  }
-
-  stop() {
-    this.eventSource?.close();
-  }
-}
-
-export const blackboard = new UIBlackboard(`http://${window.location.hostname}:9090/vfs`);
- black;
+};

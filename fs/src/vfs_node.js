@@ -5,6 +5,8 @@ import path from 'path';
 import { pipeline } from 'stream/promises';
 import { VFS as CoreVFS } from './vfs_core.js';
 
+export { VFSClosedError } from './vfs_core.js';
+
 export const getCID = async (selector) => {
   const { path, parameters = {} } = selector;
   if (!path) throw new Error('Selector must have a path');

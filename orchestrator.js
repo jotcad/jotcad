@@ -16,21 +16,39 @@ const components = [
     name: 'C++ Dispatcher',
     command: 'node',
     args: [
+      '--input-type=module',
       '-e',
       `
-import { VFS } from './fs/src/index.js';
+import { VFS, RESTBridge } from './fs/src/index.js';
 import { Dispatcher } from './geo/src/dispatcher.js';
+
+console.log('[Dispatcher] Initializing...');
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Dispatcher] Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[Dispatcher] Uncaught Exception:', err);
+    process.exit(1);
+});
+
 const vfs = new VFS({ id: 'dispatcher' });
+const bridge = new RESTBridge(vfs, 'http://localhost:9090/vfs');
+
 const d = new Dispatcher(vfs, { 
     hubUrl: 'http://localhost:9090/vfs', 
     binDir: './geo/bin' 
 });
+
 d.register('shape/box', 'box_agent');
 d.register('shape/triangle', 'triangle_agent');
-d.start().catch(err => {
-    console.error('[Dispatcher Error]', err);
-    process.exit(1);
-});
+
+console.log('[Dispatcher] Starting bridge and watch loop...');
+await bridge.start();
+await d.start();
+console.log('[Dispatcher] Watch loop exited?');
       `
     ],
     cwd: __dirname

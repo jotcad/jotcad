@@ -51,7 +51,9 @@ test('C++ Agent Integration', { timeout: 15000 }, async (t) => {
     });
 
     // Cleanup
-    cppAgent.kill();
+    console.log('[Test] Cleaning up C++ Agent test...');
+    cppAgent.kill('SIGKILL');
     server.close();
     await vfs.close();
+    console.log('[Test] C++ Agent test cleanup complete.');
 });

@@ -88,6 +88,7 @@ export class SyncVFSServer {
     this.int32 = new Int32Array(sab);
     this.uint8 = new Uint8Array(sab);
     this.active = false;
+    this.timeoutId = null;
   }
 
   /**
@@ -147,6 +148,7 @@ export class SyncVFSServer {
         Atomics.store(this.int32, 0, SYNC_VFS_STATUS.SUCCESS);
       }
     } catch (err) {
+      if (!this.active) return;
       console.error('[SyncVFSServer] Error:', err);
       Atomics.store(this.int32, 0, SYNC_VFS_STATUS.ERROR);
     } finally {
@@ -159,12 +161,21 @@ export class SyncVFSServer {
     const loop = async () => {
       if (!this.active) return;
       await this.poll();
-      setTimeout(loop, interval);
+      if (!this.active) return;
+      this.timeoutId = setTimeout(loop, interval);
     };
     loop();
   }
 
   stop() {
+    console.log('[SyncVFSServer] Stopping server loop...');
     this.active = false;
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
+    // Signal closed to worker
+    Atomics.store(this.int32, 0, SYNC_VFS_STATUS.CLOSED);
+    Atomics.notify(this.int32, 0);
   }
 }
