@@ -195,7 +195,21 @@ export class VFS {
       this.states.set(cid, info);
     }
 
-    info.state = state;
+    // Only update state if it's more concrete than current or if current is LISTENING
+    const statesPriority = {
+        'LISTENING': 0,
+        'PENDING': 1,
+        'LINKED': 1,
+        'PROVISIONING': 2,
+        'AVAILABLE': 3
+    };
+    const currentPriority = statesPriority[info.state] || 0;
+    const incomingPriority = statesPriority[state] || 0;
+
+    if (incomingPriority >= currentPriority || !info.state) {
+        info.state = state;
+    }
+    
     if (state === 'AVAILABLE') {
       const alreadyHas = await this.storage.has(cid);
       if (!alreadyHas) {
@@ -240,7 +254,10 @@ export class VFS {
     this._checkClosed();
     const s = normalizeSelector(pathOrSelector, parameters);
     const cid = await this.getCID(s);
+    console.log(`[VFS ${this.id}] tickle(${s.path}) CID: ${cid}`);
+
     let info = this.states.get(cid);
+
     if (!info) {
       info = { state: 'PENDING', path: s.path, parameters: s.parameters };
       this.states.set(cid, info);

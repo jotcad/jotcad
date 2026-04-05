@@ -10,15 +10,16 @@ export { VFSClosedError } from './vfs_core.js';
 export const getCID = async (selector) => {
   const { path, parameters = {} } = selector;
   if (!path) throw new Error('Selector must have a path');
-  const hash = crypto.createHash('sha256');
-  hash.update(path);
+  
   const sortedParams = Object.keys(parameters)
     .sort()
     .reduce((acc, key) => {
       acc[key] = parameters[key];
       return acc;
     }, {});
-  hash.update(JSON.stringify(sortedParams));
+    
+  const hash = crypto.createHash('sha256');
+  hash.update(path + JSON.stringify(sortedParams));
   return hash.digest('hex');
 };
 
@@ -56,5 +57,26 @@ export class DiskStorage {
 export class VFS extends CoreVFS {
   constructor(options = {}) {
     super({ getCID, ...options });
+  }
+
+  async init() {
+    if (this.storage instanceof DiskStorage) {
+      const files = await fsPromises.readdir(this.storage.root);
+      for (const file of files) {
+        if (file.endsWith('.meta')) {
+          const cid = file.slice(0, -5);
+          const metaContent = await fsPromises.readFile(
+            path.join(this.storage.root, file),
+            'utf-8'
+          );
+          try {
+            const info = JSON.parse(metaContent);
+            this.states.set(cid, { ...info, state: 'AVAILABLE' });
+          } catch (e) {
+            console.warn(`[VFS] Failed to parse meta for ${cid}`, e);
+          }
+        }
+      }
+    }
   }
 }

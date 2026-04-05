@@ -117,6 +117,13 @@ export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
         return res.end(JSON.stringify({ state }));
       }
 
+      if (req.method === 'POST' && vfsPath === '/state') {
+        const event = await getBody();
+        await vfs.receive({ ...event, source: 'node' });
+        res.writeHead(200);
+        return res.end();
+      }
+
       if (req.method === 'POST' && vfsPath === '/read') {
         const { path, parameters } = await getBody();
         const stream = await vfs.read(path, parameters);

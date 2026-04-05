@@ -14,7 +14,18 @@ coordinate space.
 - **Consumers** express demand for a coordinate.
 - **Producers** fulfill that demand by writing data to the coordinate.
 
-### 2. Dual Planes (Request & Result)
+### 2. Content Addressing (CID)
+
+Every artifact on the blackboard is addressed by a **Content-ID (CID)**. The CID is a SHA-256 hash of the concatenated **Path** and **Normalized Parameters**.
+
+**Formula:** `SHA256(path + JSON.stringify(sort_keys(parameters)))`
+
+**Implementation Rules:**
+1.  **Parameters:** Must be a flat JSON object. Keys must be sorted alphabetically before stringification.
+2.  **Stringification:** No spaces should be present in the JSON string (e.g., `{"a":1,"b":2}`).
+3.  **Concatenation:** The path is prepended directly to the JSON string.
+
+### 3. Dual Planes (Request & Result)
 
 - **The Request Plane (`/req/`)**: Manifests "Provisioning Requests" (Demand).
 - **The Result Plane (`/res/`)**: Stores immutable artifacts (Results).

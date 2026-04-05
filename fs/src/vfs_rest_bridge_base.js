@@ -24,17 +24,20 @@ export class RESTBridgeBase {
     // 1. Local -> Remote (Outbound)
     this.vfs.events.on('state', async (event) => {
       if (event.source === 'remote' || event.source === 'node') return;
+      if (!event.path) return; // Ignore lifecycle events like CLOSED
 
-      if (event.state === 'PENDING') {
-        await this.fetch(`${this.baseUrl}/tickle`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-vfs-peer-id': this.vfs.id
-          },
-          body: JSON.stringify({ path: event.path, parameters: event.parameters })
-        });
-      } else if (event.state === 'AVAILABLE') {
+      // Ensure we relay the state change to the hub
+      await this.fetch(`${this.baseUrl}/state`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-vfs-peer-id': this.vfs.id
+        },
+        body: JSON.stringify(event)
+      });
+
+      // Special handling for data upload if AVAILABLE
+      if (event.state === 'AVAILABLE') {
         const stream = await this.vfs.storage.get(event.cid);
         if (stream) {
           await this.fetch(`${this.baseUrl}/write`, {

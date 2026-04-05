@@ -1,4 +1,3 @@
-import { Readable } from 'stream';
 import { VFSClosedError } from './vfs_core.js';
 
 /**

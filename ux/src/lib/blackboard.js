@@ -21,7 +21,22 @@ export const blackboard = {
     graph,
     async start() {
         // Sync local graph with VFS state changes
-        vfs.events.on('state', (event) => {
+        vfs.events.on('state', async (event) => {
+            if (!event.path) return; // Ignore non-coordinate events (e.g. CLOSED)
+
+            const localCid = await vfs.getCID({ path: event.path, parameters: event.parameters });
+            if (localCid !== event.cid) {
+                console.error('CID MISMATCH DETECTED!', {
+                    path: event.path,
+                    params: event.parameters,
+                    hubCid: event.cid,
+                    browserCid: localCid
+                });
+                throw new Error(`CID Mismatch: Peer sent ${event.cid} but we calculated ${localCid} for ${event.path}`);
+            }
+
+            console.log(`[UX] Received state event: ${event.path} CID: ${event.cid} Source: ${event.source}`);
+            
             setGraph(prev => ({
                 ...prev,
                 [event.cid]: { ...prev[event.cid], ...event }
@@ -29,6 +44,33 @@ export const blackboard = {
         });
 
         await bridge.start();
+
+        // One-time initial pull of states after bridge is up
+        const resp = await fetch(`http://${window.location.hostname}:9090/vfs/states`);
+        if (resp.ok) {
+            const states = await resp.json();
+            console.log('[UX] Initial states from hub:', states);
+            
+            for (const s of states) {
+                if (!s.path) continue; // Skip malformed states (e.g. key: undefined)
+
+                const localCid = await vfs.getCID({ path: s.path, parameters: s.parameters });
+                if (localCid !== s.cid) {
+                    console.error('CID MISMATCH IN INITIAL SYNC!', {
+                        path: s.path,
+                        params: s.parameters,
+                        hubCid: s.cid,
+                        browserCid: localCid
+                    });
+                    throw new Error(`CID Mismatch in initial sync: Hub has ${s.cid} but browser expects ${localCid}`);
+                }
+
+                setGraph(prev => ({
+                    ...prev,
+                    [s.cid]: { ...prev[s.cid], ...s, source: 'remote' }
+                }));
+            }
+        }
     },
     stop() {
         bridge.stop();
@@ -38,3 +80,7 @@ export const blackboard = {
         return vfs.tickle(path, parameters);
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.blackboard = blackboard;
+}
