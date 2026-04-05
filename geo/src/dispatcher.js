@@ -10,11 +10,16 @@ export class Dispatcher {
     this.hubUrl = hubUrl;
     this.binDir = binDir;
     this.agents = new Map(); // path prefix -> binary name
+    this.schemas = new Map(); // path prefix -> JSON schema
     this.abortController = new AbortController();
   }
 
   register(pathPrefix, binaryName) {
     this.agents.set(pathPrefix, binaryName);
+  }
+
+  declareSchema(pathPrefix, schema) {
+    this.schemas.set(pathPrefix, schema);
   }
 
   stop() {
@@ -32,6 +37,11 @@ export class Dispatcher {
         state: 'LISTENING',
         source: `agent:${binary}`
       });
+    }
+
+    // Announce registered schemas
+    for (const [prefix, schema] of this.schemas.entries()) {
+      await this.vfs.declare(prefix, schema);
     }
 
     try {

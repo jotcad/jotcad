@@ -71,7 +71,9 @@ then the content.
 - **`\n` (Header-Content Splitter):** A newline separates the header line from
   the actual data.
 - **`<FILE_CONTENT>`:** The raw data. For `files/` entries, it's a JSON string.
-  For `assets/text/` entries, it's the raw text geometry data.
+  For `assets/text/` entries, it's the raw text geometry data. Geometry data
+  (faces `f`, triangles `t`, etc.) uses **1-based vertex indexing** consistent 
+  with the OBJ standard.
 
 #### 5. Interacting with JOT: `toJot` and `fromJot`
 
@@ -105,6 +107,22 @@ When `fromJot` processes this:
     `geometry:"abc...xyz"`.
 5.  Finally, it reconstructs the `Shape` object, linking it to the newly
     registered geometry asset.
+
+#### 7. VFS-Linked Geometry
+
+In addition to bundled assets, a `Shape` can reference geometry stored at a different VFS coordinate using a `vfs:/` URI. This is particularly useful for distributed workflows where a shape is defined on one peer but the raw geometry is computed by a specialized agent (like a C++ dispatcher) and stored elsewhere on the blackboard.
+
+**Format:** `vfs:/<path>?<parameters_as_query>`
+
+**Example:**
+```json
+{
+  "geometry": "vfs:/geo/mesh?a=50&b=50&c=50&type=triangle",
+  "tags": ["remote-linked"]
+}
+```
+
+When the VFS-aware renderer encounters such a URI, it performs a `vfs.readData()` call to resolve the geometry dynamically across the distributed blackboard.
 
 This explanatory documentation should provide a clearer understanding for
 someone looking to use or implement the JOT format.

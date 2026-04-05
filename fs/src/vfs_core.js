@@ -106,6 +106,7 @@ export class VFS {
     this.storage = options.storage || new MemoryStorage();
     this.events = new EventEmitter();
     this.events.setMaxListeners(100);
+    this.activeReads = new Map();
     this.peers = new Set();
     this.closed = false;
   }
@@ -201,7 +202,8 @@ export class VFS {
         'PENDING': 1,
         'LINKED': 1,
         'PROVISIONING': 2,
-        'AVAILABLE': 3
+        'AVAILABLE': 3,
+        'SCHEMA': 4
     };
     const currentPriority = statesPriority[info.state] || 0;
     const incomingPriority = statesPriority[state] || 0;
@@ -210,12 +212,31 @@ export class VFS {
         info.state = state;
     }
     
-    if (state === 'AVAILABLE') {
+    if (state === 'AVAILABLE' || state === 'SCHEMA') {
       const alreadyHas = await this.storage.has(cid);
       if (!alreadyHas) {
         if (data) {
-          const bytes =
-            data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+          // Handle various byte formats (raw Uint8Array, ArrayBuffer, or serialized Node Buffer object)
+          let bytes;
+          if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
+            bytes = data;
+          } else if (data && data.type === 'Buffer' && Array.isArray(data.data)) {
+            bytes = new Uint8Array(data.data);
+          } else if (data && typeof data === 'object') {
+            // Check for JSON-serialized Uint8Array format: {"0": 1, "1": 2, ...}
+            const keys = Object.keys(data);
+            if (keys.length > 0 && keys.every((k) => !isNaN(k))) {
+              bytes = new Uint8Array(Object.values(data));
+            } else {
+              // If it's a plain object but not a known byte format, stringify it
+              bytes = new TextEncoder().encode(JSON.stringify(data));
+            }
+          } else if (typeof data === 'string') {
+            bytes = new TextEncoder().encode(data);
+          } else {
+            bytes = data;
+          }
+
           const stream = new ReadableStream({
             start(controller) {
               controller.enqueue(bytes);
@@ -225,7 +246,8 @@ export class VFS {
           await this.storage.set(cid, stream, info);
         }
       }
-    } else if (state === 'LINKED') {
+    }
+ else if (state === 'LINKED') {
       info.target = target;
     }
 
@@ -290,26 +312,134 @@ export class VFS {
       return this.read(info.target);
     }
 
-    return new Promise((resolve, reject) => {
+    if (this.activeReads.has(cid)) {
+      return this.activeReads.get(cid);
+    }
+
+    const readPromise = new Promise((resolve, reject) => {
       const onState = (event) => {
-        if (event.cid === cid) {
-            console.log(`[VFS ${this.id}] Saw event for ${cid}: ${event.state}`);
-        }
         if (event.state === 'CLOSED') {
           this.events.off('state', onState);
+          this.activeReads.delete(cid);
           reject(new VFSClosedError());
         } else if (event.cid === cid) {
           if (event.state === 'AVAILABLE') {
             this.events.off('state', onState);
+            this.activeReads.delete(cid);
             this.storage.get(cid).then(resolve);
           } else if (event.state === 'LINKED') {
             this.events.off('state', onState);
+            this.activeReads.delete(cid);
             this.read(event.target).then(resolve).catch(reject);
           }
         }
       };
       this.events.on('state', onState);
     });
+
+    this.activeReads.set(cid, readPromise);
+    return readPromise;
+  }
+
+  /**
+   * Reads data and automatically deserializes it based on the path's schema.
+   */
+  async readData(pathOrSelector, parameters) {
+    const stream = await this.read(pathOrSelector, parameters);
+    const s = normalizeSelector(pathOrSelector, parameters);
+
+    // 1. Collect all bytes
+    const chunks = [];
+    const reader = stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+
+    let bytes;
+    if (typeof Buffer !== 'undefined') {
+      bytes = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+    } else {
+      let len = chunks.reduce((acc, c) => acc + c.length, 0);
+      bytes = new Uint8Array(len);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+    }
+
+    // 2. Check for schema hint
+    const schemaCid = await this.getCID({
+      path: s.path + '@schema',
+      parameters: {},
+    });
+    const schemaInfo = this.states.get(schemaCid);
+
+    if (schemaInfo && schemaInfo.state === 'SCHEMA') {
+      const schemaStream = await this.storage.get(schemaCid);
+      if (schemaStream) {
+        const schemaReader = schemaStream.getReader();
+        let schemaText = '';
+        while (true) {
+          const { done, value } = await schemaReader.read();
+          if (done) break;
+          schemaText += new TextDecoder().decode(value);
+        }
+        try {
+          if (schemaText.trim()) {
+            const schema = JSON.parse(schemaText);
+            if (schema.type === 'object' || schema.type === 'array' || schema.type === 'mesh') {
+              return JSON.parse(new TextDecoder().decode(bytes));
+            }
+          }
+        } catch (e) {
+          console.warn(`[VFS] Failed to parse schema for ${s.path}`, e);
+        }
+      }
+    }
+
+    // Default heuristics
+    const text = new TextDecoder().decode(bytes);
+    try {
+      // Try JSON first
+      if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+        return JSON.parse(text);
+      }
+    } catch (e) {}
+
+    // Fallback to string if it looks like text, else bytes
+    if (/[\x00-\x08\x0E-\x1F]/.test(text)) {
+      return bytes;
+    }
+    return text;
+  }
+
+  /**
+   * Writes data and automatically serializes it.
+   */
+  async writeData(pathOrSelector, parameters, data) {
+    let bytes;
+    if (data instanceof Uint8Array) {
+      bytes = data;
+    } else if (typeof data === 'string') {
+      bytes = new TextEncoder().encode(data);
+    } else if (data instanceof ArrayBuffer) {
+      bytes = new Uint8Array(data);
+    } else {
+      // Assume JSON for objects/arrays
+      bytes = new TextEncoder().encode(JSON.stringify(data, null, 2));
+    }
+
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+
+    return this.write(pathOrSelector, parameters, stream);
   }
 
   /**
@@ -379,6 +509,45 @@ export class VFS {
     return true;
   }
 
+  /**
+   * Declares a schema for a path.
+   * The schema is stored at a special sub-path and marked with SCHEMA state.
+   */
+  async declare(path, schema) {
+    this._checkClosed();
+    const schemaPath = `${path}@schema`;
+    const s = normalizeSelector(schemaPath, {});
+    const cid = await this.getCID(s);
+
+    let info = this.states.get(cid);
+    if (!info) {
+      info = { path: s.path, parameters: s.parameters };
+      this.states.set(cid, info);
+    }
+
+    info.state = 'SCHEMA';
+    const schemaText = JSON.stringify(schema, null, 2);
+    
+    // Store schema as data
+    const bytes = new TextEncoder().encode(schemaText);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    });
+    // Ensure data is in storage BEFORE we emit the state change
+    await this.storage.set(cid, stream, info);
+
+    await this._emit({
+      cid,
+      path: s.path,
+      parameters: s.parameters,
+      state: 'SCHEMA',
+      data: bytes
+    });
+  }
+
   async write(pathOrSelector, parameters, stream) {
     this._checkClosed();
     let s, str;
@@ -428,17 +597,21 @@ export class VFS {
     } else if (str.on || typeof str.pipe === 'function') {
       const chunks = [];
       for await (const chunk of str) {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        if (typeof chunk === 'string') {
+            chunks.push(new TextEncoder().encode(chunk));
+        } else {
+            chunks.push(chunk);
+        }
       }
-      const buffer =
-        typeof Buffer !== 'undefined'
-          ? Buffer.concat(chunks)
-          : new Uint8Array(0);
-      relayedData = new Uint8Array(
-        buffer.buffer,
-        buffer.byteOffset,
-        buffer.byteLength
-      );
+      
+      const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+      relayedData = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        relayedData.set(chunk, offset);
+        offset += chunk.length;
+      }
+
       str = new ReadableStream({
         start(c) {
           c.enqueue(relayedData);
