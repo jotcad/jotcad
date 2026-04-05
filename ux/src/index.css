@@ -1,6 +1,18 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-available: #4ade80;
+  --color-provisioning: #fbbf24;
+  --color-pending: #60a5fa;
+  --color-node: #22c55e; /* Vibrant Green for Path Nature */
+  --color-wire: #94a3b8;
+  --color-capability: #f97316;
+  --color-blackboard: #0f172a;
+}
+
+.hexagon {
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
 
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;

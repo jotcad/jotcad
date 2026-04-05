@@ -5,36 +5,53 @@ import { Node, In, Out, Watch } from '../../../fs/src/node';
 
 const DEFAULT_CODE = `
 // Define your agent here
+// Note: In, Out, and Watch are injected globally for your sockets.
+
 export const agent = {
   sockets: {
-    input: In('geometry/box'),
-    output: Out('ui/box/transformed')
+    // We listen for raw shapes
+    input: In('shape/box'),
+    // We output a "Tagged" version
+    output: Out('ui/box/tagged')
   },
+  
   async execute({ input, output, params }) {
-    console.log('[UI Agent] Received box demand!', params);
+    console.log('[TagAgent] Processing:', params);
     
-    // 1. Read input
+    // 1. Read the input JSON shape
     const stream = await input.read();
     const reader = stream.getReader();
-    let content = '';
+    let text = '';
     while(true) {
         const {done, value} = await reader.read();
         if (done) break;
-        content += new TextDecoder().decode(value);
+        text += new TextDecoder().decode(value);
     }
     
-    // 2. Process (e.g. wrap it)
-    const result = \`Wrapped(\${content})\`;
+    const shape = JSON.parse(text);
     
-    // 3. Write output
+    // 2. Modify: Add a UI tag and timestamp
+    const modified = {
+        ...shape,
+        tags: [...(shape.tags || []), 'ui-processed'],
+        metadata: {
+            ...shape.metadata,
+            processedAt: new Date().toISOString(),
+            originalParams: params
+        }
+    };
+    
+    // 3. Write the result back to the VFS
+    const outText = JSON.stringify(modified, null, 2);
     const outStream = new ReadableStream({
         start(c) {
-            c.enqueue(new TextEncoder().encode(result));
+            c.enqueue(new TextEncoder().encode(outText));
             c.close();
         }
     });
+    
     await output.write(outStream);
-    console.log('[UI Agent] Output written!');
+    console.log('[TagAgent] Successfully tagged box!');
   }
 };
 `;
@@ -63,6 +80,11 @@ export const ScriptNode = (props) => {
       setIsRunning(false);
     } else {
       try {
+        // Inject socket helpers into global scope so the script can use them
+        globalThis.In = In;
+        globalThis.Out = Out;
+        globalThis.Watch = Watch;
+
         // Evaluate the code
         // Note: For a real app, use a safer sandbox or a proper module loader.
         const blob = new Blob([code()], { type: 'application/javascript' });
@@ -73,9 +95,22 @@ export const ScriptNode = (props) => {
         if (!module.agent) throw new Error('Exported "agent" object not found.');
 
         // Instantiate and start the agent
-        activeAgent = new Node(vfs, module.agent);
+        const agentDef = module.agent;
+        activeAgent = new Node(vfs, agentDef);
         activeAgent.start();
         
+        // Announce sockets as LISTENING states
+        for (const [name, socket] of Object.entries(agentDef.sockets || {})) {
+            const cid = await vfs.getCID({ path: socket.path, parameters: {} });
+            await vfs.receive({
+                cid,
+                path: socket.path,
+                parameters: {},
+                state: 'LISTENING',
+                source: `ui-agent:${name}`
+            });
+        }
+
         setIsRunning(true);
       } catch (err) {
         console.error('[ScriptNode] Failed to start agent:', err);

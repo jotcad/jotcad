@@ -11,24 +11,33 @@ A high-performance reactive graph visualizer for the JotCAD Distributed Blackboa
 
 ## How to Run
 
-### 1. Start the VFS Hub
+### 1. Start the Full System
+The easiest way to start the Hub, Dispatcher, and UX simultaneously is from the root directory:
 ```bash
-npm run start:vfs
+npm start
 ```
 
-### 2. Start the Dispatcher (for C++ Agents)
-In a separate terminal:
+### 2. Manual Start (Individual Components)
+If you need to run components separately:
+
+#### Start the VFS Hub
 ```bash
-cd geo
-# Ensure agents are built first: ./build.sh
-node -e "import { VFS } from '../fs/src/index.js'; import { Dispatcher } from './src/dispatcher.js'; const vfs = new VFS({ id: 'dispatcher' }); const d = new Dispatcher(vfs, { hubUrl: 'http://localhost:9090/vfs', binDir: './bin' }); d.register('shape/box', 'box_agent'); d.register('shape/triangle', 'triangle_agent'); d.start();"
+node fs/serve.js
 ```
 
-### 3. Start the UX App
-In a third terminal:
+#### Start the Dispatcher (for C++ Agents)
+```bash
+# In the root or geo directory
+node orchestrator.js # (Or use the inline dispatcher script from orchestrator.js)
+```
+
+#### Start the UX App
 ```bash
 cd ux
-npm run dev
+npm run dev -- --port 3030
 ```
 
-Visit `http://localhost:3000` to interact with the blackboard. You can type coordinates like `shape/box` or `shape/triangle` and see the C++ agents fulfill them in real-time.
+Visit `http://localhost:3030` to interact with the blackboard. 
+
+## CID Validation
+The UX performs strict validation of Content-IDs (CIDs) received from the Hub. If a `CID Mismatch` error appears in the console, it indicates a hashing discrepancy between the Browser and the Hub.

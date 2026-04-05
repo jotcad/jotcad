@@ -22,6 +22,18 @@ export class Dispatcher {
   }
 
   async start() {
+    // Announce registered agents as LISTENING states
+    for (const [prefix, binary] of this.agents.entries()) {
+      const cid = await this.vfs.getCID({ path: prefix, parameters: {} });
+      await this.vfs.receive({
+        cid,
+        path: prefix,
+        parameters: {},
+        state: 'LISTENING',
+        source: `agent:${binary}`
+      });
+    }
+
     try {
       const query = this.vfs.watch('shape/*', { 
         states: ['PENDING'],

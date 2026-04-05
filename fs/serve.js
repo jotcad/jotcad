@@ -18,6 +18,8 @@ const vfs = new VFS({
     storage: new (await import('./src/index.js')).DiskStorage(storageDir)
 });
 
+await vfs.init();
+
 const server = http.createServer((req, res) => {
     // CORS Headers for the UX app
     res.setHeader('Access-Control-Allow-Origin', '*');
