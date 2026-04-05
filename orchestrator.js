@@ -66,6 +66,11 @@ d.declareSchema('shape/triangle', {
     }
 });
 
+d.declareSchema('geo/mesh', {
+    type: 'mesh',
+    format: 'obj'
+});
+
 console.log('[Dispatcher] Starting bridge and watch loop...');
 await bridge.start();
 await d.start();

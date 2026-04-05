@@ -12,12 +12,29 @@ const vfs = new VFS({
 });
 
 async function seed() {
-    console.log('Seeding VFS with an example box...');
-    const params = { width: 50, height: 50, depth: 50 };
-    const content = 'Mesh(box, size=50)';
+    console.log('Seeding VFS with an example triangle...');
+    const params = { side: 50, form: 'equilateral' };
     
-    await vfs.write('shape/box', params, Readable.from([content]));
-    console.log('Done. Created shape/box with params:', params);
+    // Real OBJ data for a triangle
+    const objData = [
+        'v 0 0 0',
+        'v 50 0 0',
+        'v 25 43.3 0',
+        'f 1 2 3'
+    ].join('\n');
+    
+    // Write to geo/mesh (where thumbnails are enabled)
+    await vfs.write('geo/mesh', { a: 50, b: 50, c: 50, type: 'triangle' }, Readable.from([objData]));
+    
+    // Write the Shape JSON that points to it
+    const shape = {
+        geometry: 'vfs:/geo/mesh',
+        parameters: { a: 50, b: 50, c: 50, type: 'triangle' },
+        tags: ['seeded']
+    };
+    await vfs.write('shape/triangle', params, Readable.from([JSON.stringify(shape)]));
+    
+    console.log('Done. Created geo/mesh and shape/triangle.');
     await vfs.close();
 }
 

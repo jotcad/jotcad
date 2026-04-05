@@ -9,53 +9,33 @@ const DEFAULT_CODE = `
 
 export const agent = {
   sockets: {
-    // We listen for raw shapes
-    input: In('shape/box'),
-    // We output a "Tagged" version
-    output: Out('ui/box/tagged')
+    // 1. Demand a specific triangle (50 units equilateral)
+    input: In('shape/triangle', { form: 'equilateral', side: 50 }),
+    
+    // 2. Output to a plain, easy-to-find result path
+    output: Out('ui/result/triangle')
   },
   
   async execute({ input, output, params }) {
-    console.log('[TagAgent] Processing:', params);
+    console.log('[TrianglePipeline] Waking up to fulfill result...');
     
-    // 1. Read the input JSON shape
-    const stream = await input.read();
-    const reader = stream.getReader();
-    let text = '';
-    while(true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        text += new TextDecoder().decode(value);
-    }
+    // This will trigger the C++ Triangle Agent automatically
+    const triangle = await input.readData();
+    console.log('[TrianglePipeline] Received C++ geometry:', triangle);
     
-    const shape = JSON.parse(text);
-    
-    // 2. Modify: Add a UI tag and timestamp
-    const modified = {
-        ...shape,
-        tags: [...(shape.tags || []), 'ui-processed'],
-        metadata: {
-            ...shape.metadata,
-            processedAt: new Date().toISOString(),
-            originalParams: params
-        }
-    };
-    
-    // 3. Write the result back to the VFS
-    const outText = JSON.stringify(modified, null, 2);
-    const outStream = new ReadableStream({
-        start(c) {
-            c.enqueue(new TextEncoder().encode(outText));
-            c.close();
-        }
+    // Pass the geometry through to our plain output path
+    await output.writeData({
+        ...triangle,
+        processedBy: 'Interactive JS Agent',
+        timestamp: new Date().toISOString()
     });
     
-    await output.write(outStream);
-    console.log('[TagAgent] Successfully tagged box!');
+    console.log('[TrianglePipeline] Published to ui/result/triangle');
   }
 };
 `;
 
+// Exported component
 export const ScriptNode = (props) => {
   let nodeRef;
   const [pos, setPos] = createSignal({ x: 400, y: 100 });

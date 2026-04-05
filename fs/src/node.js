@@ -87,6 +87,13 @@ export class Node {
                       ...overrideParams,
                     });
                   };
+                  sockets[name].readData = async (overrideParams = {}) => {
+                    return this.vfs.readData(def.path, {
+                      ...def.parameters,
+                      ...req.parameters,
+                      ...overrideParams,
+                    });
+                  };
                 } else if (def.mode === 'write') {
                   sockets[name].write = async (stream, overrideParams = {}) => {
                     return this.vfs.write(
@@ -97,6 +104,17 @@ export class Node {
                         ...overrideParams,
                       },
                       stream
+                    );
+                  };
+                  sockets[name].writeData = async (data, overrideParams = {}) => {
+                    return this.vfs.writeData(
+                      def.path,
+                      {
+                        ...def.parameters,
+                        ...req.parameters,
+                        ...overrideParams,
+                      },
+                      data
                     );
                   };
                 } else if (def.mode === 'watch') {

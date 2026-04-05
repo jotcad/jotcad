@@ -40,10 +40,17 @@ export const blackboard = {
             let data = event.data;
             if (event.state === 'SCHEMA' && data) {
                 try {
-                    const text = new TextDecoder().decode(data);
-                    data = JSON.parse(text);
+                    console.log(`[UX] Decoding schema for ${event.path}`, data);
+                    if (typeof data === 'string') {
+                        data = JSON.parse(data);
+                    } else {
+                        const bytes = data.data ? new Uint8Array(data.data) : new Uint8Array(data);
+                        const text = new TextDecoder().decode(bytes);
+                        console.log(`[UX] Schema text: "${text}"`);
+                        data = JSON.parse(text);
+                    }
                 } catch (e) {
-                    console.warn('[UX] Failed to decode schema data', e);
+                    console.warn('[UX] Failed to decode schema data', e, data);
                 }
             }
 

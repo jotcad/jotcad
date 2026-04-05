@@ -1,8 +1,8 @@
-import { createSignal, onMount, onCleanup, For, Show, createEffect, createMemo } from 'solid-js';
+import { createSignal, onMount, onCleanup, For, Show, createEffect, createMemo, untrack } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import interact from 'interactjs';
 import { blackboard, vfs } from '../lib/blackboard';
-import { initSharedRenderer, createScene, updateViewports } from '../lib/three_utils';
+import { initSharedRenderer, createScene, updateViewports, captureThumbnail, renderJotToScene } from '../lib/three_utils';
 import { ScriptNode } from './ScriptNode';
 import * as THREE from 'three';
 import { 
@@ -27,7 +27,17 @@ import {
  */
 const StatusBadge = (props) => {
     return (
-        <div class="absolute -top-1 -right-1 flex gap-0.5">
+        <div class="absolute -top-1 -right-1 flex gap-0.5 pointer-events-none">
+            <Show when={props.hasThumbnail}>
+                <div class="w-3.5 h-3.5 rounded-full bg-blue-600 border border-blackboard flex items-center justify-center shadow-lg" title="Thumbnail Ready">
+                    <CheckCircle2 size={8} class="text-white" />
+                </div>
+            </Show>
+            <Show when={props.isGenerating && !props.hasThumbnail}>
+                <div class="w-3.5 h-3.5 rounded-full bg-cyan-500 border border-blackboard flex items-center justify-center shadow-lg animate-pulse" title="Generating Thumbnail...">
+                    <Activity size={8} class="text-white" />
+                </div>
+            </Show>
             <Show when={props.states.includes('SCHEMA')}>
                 <div class="w-3.5 h-3.5 rounded-full bg-slate-500 border border-blackboard flex items-center justify-center shadow-lg" title="Schema Declared">
                     <FileJson size={8} class="text-white" />
@@ -54,6 +64,8 @@ const StatusBadge = (props) => {
 const PathNode = (props) => {
   let nodeRef;
   const [isExpanded, setIsExpanded] = createSignal(false);
+  const [thumbnail, setThumbnail] = createSignal(null);
+  const [isGenerating, setIsGenerating] = createSignal(false);
 
   onMount(() => {
     interact(nodeRef).draggable({
@@ -63,6 +75,41 @@ const PathNode = (props) => {
         },
       },
     });
+  });
+
+  // Auto-generate thumbnail if available and is a mesh/shape
+  createEffect(async () => {
+    const results = props.results;
+    const hasAvailable = results.find(r => r.state === 'AVAILABLE');
+    const schema = results.find(r => r.state === 'SCHEMA');
+    
+    // We only want this effect to depend on 'results'. 
+    // We 'untrack' our local status signals to avoid recursive loops.
+    const isBusy = untrack(isGenerating);
+    const hasThumb = untrack(thumbnail);
+
+    const isGeometry = props.path.includes('mesh') || props.path.includes('triangle') || props.path.includes('box') || (schema && schema.data?.type === 'mesh');
+
+    if (hasAvailable && !hasThumb && !isBusy && isGeometry) {
+        setIsGenerating(true);
+        try {
+            const rawData = await vfs.readData(hasAvailable.path, hasAvailable.parameters);
+            if (rawData) {
+                let img = null;
+                if (typeof rawData === 'string' && (rawData.startsWith('\n=') || rawData.includes('v '))) {
+                    img = await captureThumbnail(vfs, rawData);
+                } else if (typeof rawData === 'object' && (rawData.geometry || rawData.shapes)) {
+                    const jot = `\n=${JSON.stringify(rawData).length} files/main.json\n${JSON.stringify(rawData)}`;
+                    img = await captureThumbnail(vfs, jot);
+                }
+                if (img) setThumbnail(img);
+            }
+        } catch (e) {
+            console.warn('[Thumbnail] Failed to generate:', e);
+        } finally {
+            setIsGenerating(false);
+        }
+    }
   });
 
   const TypeIcon = () => {
@@ -92,8 +139,14 @@ const PathNode = (props) => {
     >
         <Show when={!isExpanded()}>
             <div class="relative flex flex-col items-center justify-center w-full h-full">
-                <StatusBadge states={currentStates()} />
-                <TypeIcon />
+                <StatusBadge 
+                    states={currentStates()} 
+                    hasThumbnail={!!thumbnail()} 
+                    isGenerating={isGenerating()} 
+                />
+                <Show when={thumbnail()} fallback={<TypeIcon />}>
+                    <img src={thumbnail()} class="w-full h-full object-cover rounded-full p-1" />
+                </Show>
                 <div class="absolute top-full mt-2 px-1.5 py-0.5 rounded text-[7px] font-black tracking-tighter whitespace-nowrap bg-black/80 backdrop-blur-sm border border-white/10 text-white shadow-xl">
                     {props.path}
                     <Show when={props.results.length > 0}>
@@ -106,12 +159,24 @@ const PathNode = (props) => {
         <Show when={isExpanded()}>
             <div class="flex flex-col gap-3 w-full">
                 <div class="flex items-center justify-between border-b border-white/10 pb-2">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 relative">
+                        <StatusBadge 
+                            states={currentStates()} 
+                            hasThumbnail={!!thumbnail()} 
+                            isGenerating={isGenerating()} 
+                        />
                         <Layers size={16} class="opacity-50 text-available" />
                         <span class="text-xs font-black tracking-widest truncate">{props.path}</span>
                     </div>
                     <button class="text-[10px] font-bold opacity-40 hover:opacity-100 hover:text-red-400 transition-colors" onClick={() => setIsExpanded(false)}>CLOSE</button>
                 </div>
+
+                <Show when={thumbnail()}>
+                    <div class="w-full h-48 bg-black/40 rounded-lg border border-white/5 overflow-hidden relative">
+                        <img src={thumbnail()} class="w-full h-full object-contain" />
+                        <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40">PREVIEW</div>
+                    </div>
+                </Show>
 
                 <Show when={schemaResult()}>
                     <div class="bg-slate-500/10 border border-slate-500/20 rounded-lg p-2 flex flex-col gap-1.5 mb-1">
