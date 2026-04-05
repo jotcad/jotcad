@@ -297,13 +297,20 @@ export class VFS {
   async read(pathOrSelector, parameters) {
     this._checkClosed();
     const s = normalizeSelector(pathOrSelector, parameters);
+    
+    // Check for active reads BEFORE awaiting the async CID calculation
+    // We use a temporary string key for the lock
+    const selectorKey = `${s.path}:${JSON.stringify(s.parameters)}`;
+    if (this.activeReads.has(selectorKey)) {
+      return this.activeReads.get(selectorKey);
+    }
+
     const cid = await this.getCID(s);
     console.log(`[VFS ${this.id}] read(${s.path}, ${JSON.stringify(s.parameters)}) CID: ${cid}`);
     await this.tickle(s);
 
     let info = this.states.get(cid);
-    console.log(`[VFS ${this.id}] status for ${cid}: ${info.state}`);
-    if (info.state === 'AVAILABLE') {
+    if (info.state === 'AVAILABLE' || info.state === 'SCHEMA') {
       const stream = await this.storage.get(cid);
       if (stream) return stream;
     }
@@ -312,6 +319,7 @@ export class VFS {
       return this.read(info.target);
     }
 
+    // Re-check activeReads with CID in case it was set while we were awaiting
     if (this.activeReads.has(cid)) {
       return this.activeReads.get(cid);
     }
@@ -321,15 +329,18 @@ export class VFS {
         if (event.state === 'CLOSED') {
           this.events.off('state', onState);
           this.activeReads.delete(cid);
+          this.activeReads.delete(selectorKey);
           reject(new VFSClosedError());
         } else if (event.cid === cid) {
-          if (event.state === 'AVAILABLE') {
+          if (event.state === 'AVAILABLE' || event.state === 'SCHEMA') {
             this.events.off('state', onState);
             this.activeReads.delete(cid);
+            this.activeReads.delete(selectorKey);
             this.storage.get(cid).then(resolve);
           } else if (event.state === 'LINKED') {
             this.events.off('state', onState);
             this.activeReads.delete(cid);
+            this.activeReads.delete(selectorKey);
             this.read(event.target).then(resolve).catch(reject);
           }
         }
@@ -338,6 +349,7 @@ export class VFS {
     });
 
     this.activeReads.set(cid, readPromise);
+    this.activeReads.set(selectorKey, readPromise);
     return readPromise;
   }
 
