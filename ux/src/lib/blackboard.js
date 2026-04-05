@@ -37,9 +37,19 @@ export const blackboard = {
 
             console.log(`[UX] Received state event: ${event.path} CID: ${event.cid} Source: ${event.source}`);
             
+            let data = event.data;
+            if (event.state === 'SCHEMA' && data) {
+                try {
+                    const text = new TextDecoder().decode(data);
+                    data = JSON.parse(text);
+                } catch (e) {
+                    console.warn('[UX] Failed to decode schema data', e);
+                }
+            }
+
             setGraph(prev => ({
                 ...prev,
-                [event.cid]: { ...prev[event.cid], ...event }
+                [event.cid]: { ...prev[event.cid], ...event, data }
             }));
         });
 
@@ -65,9 +75,22 @@ export const blackboard = {
                     throw new Error(`CID Mismatch in initial sync: Hub has ${s.cid} but browser expects ${localCid}`);
                 }
 
+                let data = s.data;
+                if (s.state === 'SCHEMA' && data) {
+                    try {
+                        // Data from fetch/json is usually base64 or array of numbers
+                        // But since we use JSON.stringify on Buffer in server, it might be {type: 'Buffer', data: [...]}
+                        const bytes = data.data ? new Uint8Array(data.data) : new Uint8Array(data);
+                        const text = new TextDecoder().decode(bytes);
+                        data = JSON.parse(text);
+                    } catch (e) {
+                        console.warn('[UX] Failed to decode initial schema data', e);
+                    }
+                }
+
                 setGraph(prev => ({
                     ...prev,
-                    [s.cid]: { ...prev[s.cid], ...s, source: 'remote' }
+                    [s.cid]: { ...prev[s.cid], ...s, data, source: 'remote' }
                 }));
             }
         }
@@ -78,6 +101,9 @@ export const blackboard = {
     },
     tickle(path, parameters = {}) {
         return vfs.tickle(path, parameters);
+    },
+    declare(path, schema) {
+        return vfs.declare(path, schema);
     }
 };
 

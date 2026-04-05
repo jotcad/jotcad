@@ -28,6 +28,11 @@ import {
 const StatusBadge = (props) => {
     return (
         <div class="absolute -top-1 -right-1 flex gap-0.5">
+            <Show when={props.states.includes('SCHEMA')}>
+                <div class="w-3.5 h-3.5 rounded-full bg-slate-500 border border-blackboard flex items-center justify-center shadow-lg" title="Schema Declared">
+                    <FileJson size={8} class="text-white" />
+                </div>
+            </Show>
             <Show when={props.states.includes('AVAILABLE')}>
                 <div class="w-3.5 h-3.5 rounded-full bg-white border border-node flex items-center justify-center shadow-lg">
                     <Check size={10} class="text-node stroke-[4]" />
@@ -70,6 +75,7 @@ const PathNode = (props) => {
   };
 
   const currentStates = () => props.results.map(r => r.state);
+  const schemaResult = createMemo(() => props.results.find(r => r.state === 'SCHEMA'));
 
   return (
     <div
@@ -106,6 +112,28 @@ const PathNode = (props) => {
                     </div>
                     <button class="text-[10px] font-bold opacity-40 hover:opacity-100 hover:text-red-400 transition-colors" onClick={() => setIsExpanded(false)}>CLOSE</button>
                 </div>
+
+                <Show when={schemaResult()}>
+                    <div class="bg-slate-500/10 border border-slate-500/20 rounded-lg p-2 flex flex-col gap-1.5 mb-1">
+                        <div class="flex items-center gap-1.5 text-slate-400">
+                            <FileJson size={12} />
+                            <span class="text-[9px] font-black tracking-widest uppercase">Schema Defined</span>
+                        </div>
+                        <div class="text-[8px] font-mono opacity-60 grid grid-cols-2 gap-x-2 gap-y-1">
+                            <For each={Object.entries(schemaResult().data || {})}>
+                                {([k, v]) => (
+                                    <>
+                                        <span class="text-white/40">{k}:</span>
+                                        <span class="truncate text-white/80">{JSON.stringify(v)}</span>
+                                    </>
+                                )}
+                            </For>
+                            <Show when={!schemaResult().data}>
+                                <div class="col-span-2 py-2 text-center opacity-30 italic">Loading schema properties...</div>
+                            </Show>
+                        </div>
+                    </div>
+                </Show>
 
                 <div class="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1 custom-scrollbar">
                     <For each={props.results}>
@@ -242,6 +270,9 @@ export const Canvas = () => {
         if (node.state === 'LISTENING') {
             agents.push(node);
             if (!paths[node.path]) paths[node.path] = [];
+        } else if (node.state === 'SCHEMA') {
+            if (!paths[node.path.replace(/@schema$/, '')]) paths[node.path.replace(/@schema$/, '')] = [];
+            paths[node.path.replace(/@schema$/, '')].push(node);
         } else {
             if (!paths[node.path]) paths[node.path] = [];
             paths[node.path].push(node);

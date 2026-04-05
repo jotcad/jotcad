@@ -201,7 +201,8 @@ export class VFS {
         'PENDING': 1,
         'LINKED': 1,
         'PROVISIONING': 2,
-        'AVAILABLE': 3
+        'AVAILABLE': 3,
+        'SCHEMA': 4
     };
     const currentPriority = statesPriority[info.state] || 0;
     const incomingPriority = statesPriority[state] || 0;
@@ -210,7 +211,7 @@ export class VFS {
         info.state = state;
     }
     
-    if (state === 'AVAILABLE') {
+    if (state === 'AVAILABLE' || state === 'SCHEMA') {
       const alreadyHas = await this.storage.has(cid);
       if (!alreadyHas) {
         if (data) {
@@ -377,6 +378,44 @@ export class VFS {
       state: 'PROVISIONING',
     });
     return true;
+  }
+
+  /**
+   * Declares a schema for a path.
+   * The schema is stored at a special sub-path and marked with SCHEMA state.
+   */
+  async declare(path, schema) {
+    this._checkClosed();
+    const schemaPath = `${path}@schema`;
+    const s = normalizeSelector(schemaPath, {});
+    const cid = await this.getCID(s);
+
+    let info = this.states.get(cid);
+    if (!info) {
+      info = { path: s.path, parameters: s.parameters };
+      this.states.set(cid, info);
+    }
+
+    info.state = 'SCHEMA';
+    const schemaText = JSON.stringify(schema, null, 2);
+    
+    // Store schema as data
+    const bytes = new TextEncoder().encode(schemaText);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    });
+    await this.storage.set(cid, stream, info);
+
+    await this._emit({
+      cid,
+      path: s.path,
+      parameters: s.parameters,
+      state: 'SCHEMA',
+      data: bytes
+    });
   }
 
   async write(pathOrSelector, parameters, stream) {

@@ -124,6 +124,13 @@ export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
         return res.end();
       }
 
+      if (req.method === 'POST' && vfsPath === '/declare') {
+        const { path, schema } = await getBody();
+        await vfs.declare(path, schema);
+        res.writeHead(200);
+        return res.end();
+      }
+
       if (req.method === 'POST' && vfsPath === '/read') {
         const { path, parameters } = await getBody();
         const stream = await vfs.read(path, parameters);
@@ -165,8 +172,19 @@ if (req.method === 'POST' && vfsPath === '/link') {
       }
 
       if (req.method === 'GET' && vfsPath === '/states') {
-        const states = Array.from(vfs.states.entries()).map(([cid, info]) => ({
-          cid, path: info.path, parameters: info.parameters, state: info.state
+        const states = await Promise.all(Array.from(vfs.states.entries()).map(async ([cid, info]) => {
+          let data = null;
+          if (info.state === 'SCHEMA') {
+            const stream = await vfs.storage.get(cid);
+            if (stream) {
+              const chunks = [];
+              for await (const chunk of stream) chunks.push(chunk);
+              data = Buffer.concat(chunks);
+            }
+          }
+          return {
+            cid, path: info.path, parameters: info.parameters, state: info.state, data
+          };
         }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(states));

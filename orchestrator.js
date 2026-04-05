@@ -45,6 +45,27 @@ const d = new Dispatcher(vfs, {
 d.register('shape/box', 'box_agent');
 d.register('shape/triangle', 'triangle_agent');
 
+d.declareSchema('shape/box', {
+    type: 'object',
+    properties: {
+        width: { type: 'number', default: 10 },
+        height: { type: 'number', default: 10 },
+        depth: { type: 'number', default: 10 }
+    }
+});
+
+d.declareSchema('shape/triangle', {
+    type: 'object',
+    properties: {
+        form: { type: 'string', enum: ['SSS', 'SAS', 'equilateral'], default: 'equilateral' },
+        side: { type: 'number', default: 10 },
+        a: { type: 'number' },
+        b: { type: 'number' },
+        c: { type: 'number' },
+        angle: { type: 'number' }
+    }
+});
+
 console.log('[Dispatcher] Starting bridge and watch loop...');
 await bridge.start();
 await d.start();

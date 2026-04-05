@@ -97,6 +97,17 @@ export class RESTBridgeBase {
     };
   }
 
+  async declare(path, schema) {
+    await this.fetch(`${this.baseUrl}/declare`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-vfs-peer-id': this.vfs.id
+      },
+      body: JSON.stringify({ path, schema })
+    });
+  }
+
   stop() {
     this.eventSource?.close();
   }
