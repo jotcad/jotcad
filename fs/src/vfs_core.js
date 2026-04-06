@@ -402,8 +402,11 @@ export class VFS {
         try {
           if (schemaText.trim()) {
             const schema = JSON.parse(schemaText);
-            if (schema.type === 'object' || schema.type === 'array' || schema.type === 'mesh') {
+            if (schema.type === 'object' || schema.type === 'array') {
               return JSON.parse(new TextDecoder().decode(bytes));
+            }
+            if (schema.type === 'mesh') {
+              return new TextDecoder().decode(bytes);
             }
           }
         } catch (e) {
