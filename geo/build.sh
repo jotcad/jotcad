@@ -3,27 +3,20 @@ mkdir -p bin
 
 # Common files
 VFS_CLIENT="../fs/cpp/src/vfs_client.cpp"
-GEO_CORE="src/geometry.cpp"
 
 # Include paths
-INCLUDES="-I./include -I../fs/cpp/include -I../fs/cpp/vendor"
+INCLUDES="-I. -I./impl -I../fs/cpp/include -I../fs/cpp/vendor -I../geometry/native/include -I../geometry/boost -I../geometry/native/include/CGAL/include"
 
-echo "[Geo] Building Box Agent..."
+# CGAL flags
+DEFS="-DCGAL_DISABLE_GMP=1"
+
+echo "[Geo] Building Ops (Hexagon, Box, Triangle, Offset, Outline)..."
 g++ -O3 -std=c++17 \
     $VFS_CLIENT \
-    $GEO_CORE \
-    src/box_agent.cpp \
+    ops.cc \
     $INCLUDES \
+    $DEFS \
     -lpthread \
-    -o bin/box_agent
-
-echo "[Geo] Building Triangle Agent..."
-g++ -O3 -std=c++17 \
-    $VFS_CLIENT \
-    $GEO_CORE \
-    src/triangle_agent.cpp \
-    $INCLUDES \
-    -lpthread \
-    -o bin/triangle_agent
+    -o bin/ops
 
 echo "[Geo] Build complete."

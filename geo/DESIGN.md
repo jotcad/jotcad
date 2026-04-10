@@ -41,20 +41,25 @@ A Shape is a lightweight JSON object that organizes and transforms geometry.
 - `shapes`: Array of child shapes (for groups/unions).
 - `mask`: Optional reference to a shape acting as a clipping mask.
 
-## Evaluator Pattern
+## Service Architecture
 
-Agents in this package follow the **Single-Task Evaluator** pattern:
-1. **Trigger:** A dispatcher hears a `PENDING` request for a coordinate (e.g., `shape/box?width=10`).
-2. **Instantiate:** The dispatcher spawns the relevant C++ agent process.
-3. **Execution:** The agent:
-   - Reads input dependencies from the Blackboard.
-   - Performs geometric computation (e.g., via CGAL or Manifold).
-   - Writes the resulting Geometry and Shape back to the Result Plane.
-4. **Dissolve:** The process exits, freeing all resources.
+Agents in this package follow the **Persistent Service** pattern, consolidated into a single `ops` binary:
+1. **Startup:** The `ops` binary starts and registers its supported operations (e.g., `shape/box`, `op/offset`) in an internal `Processor::registry()`.
+2. **Initialization:** The service iterates through its registered operations, declaring their JSON schemas, uploading Web Component UX definitions to the VFS, and announcing that it is `LISTENING` for requests on their respective paths.
+3. **Execution:** 
+   - A client requests a shape or operation coordinate (e.g., `shape/box?width=10`).
+   - The VFS Hub routes the `READ` command to the `ops` peer's virtual mailbox.
+   - The `ops` binary internally dispatches the request to the correct handler (e.g., `box_op`).
+   - The handler performs the geometric computation (using CGAL or raw math).
+   - The handler writes the resulting raw Geometry (`.jot`) back to the VFS and returns the resulting Shape JSON to fulfill the `READ` request.
+4. **Chaining:** Operations like `op/offset` natively support chaining by reading source geometries via VFS URIs (e.g., `vfs:/shape/hexagon`), which automatically triggers cascading evaluations through the VFS Hub.
 
 ## Implementation Roadmap
 
-- [ ] **Geometry Parser (C++):** A reusable utility to read/write the `.jot` text format.
-- [ ] **Box Agent:** The first functional evaluator producing box primitives.
+- [x] **Geometry Parser (C++):** Reusable utility to read/write the `.jot` text format.
+- [x] **Comprehensive Ops Service:** A single, persistent C++ binary handling multiple operations.
+- [x] **Primitive Agents:** Functional evaluators producing `box`, `triangle`, and `hexagon` shapes.
+- [x] **Operator Agents:** Transformation agents for `offset` and `outline`.
+- [x] **Autonomous Reification:** Operations self-register, declare schemas, and seed UX components.
 - [ ] **Boolean Agent:** A heavy-lifting agent for Union, Intersection, and Difference.
 - [ ] **Resolution Agent:** Converts "Lazy Shapes" (with transforms) into "Absolute Geometry" (baked vertices).

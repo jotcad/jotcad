@@ -61,9 +61,24 @@ public:
     virtual std::string status(const std::string& path, const json& parameters = json::object()) = 0;
 
     /**
+     * Manually set the state of a coordinate.
+     */
+    virtual void write_state(const std::string& path, const json& parameters, const std::string& state, const std::string& source = "") = 0;
+
+    /**
+     * Declare a JSON schema for a path.
+     */
+    virtual void declare(const std::string& path, const json& schema) = 0;
+
+    /**
      * Manifest demand for a coordinate.
      */
     virtual std::string tickle(const std::string& path, const json& parameters = json::object()) = 0;
+
+    /**
+     * Calculate the Content-ID for a path and parameters.
+     */
+    virtual std::string get_cid(const std::string& path, const json& parameters = json::object()) = 0;
 
     // --- Observation API ---
 

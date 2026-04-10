@@ -244,8 +244,9 @@ export async function captureThumbnail(vfs, data, width = 256, height = 256) {
   const d = Math.max(s.x, s.y, s.z) || 1;
 
   const cam = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
-  // Position camera at a nice isometric-ish angle
-  cam.position.set(c.x + d * 1.5, c.y + d * 1.5, c.z + d * 1.5); 
+  // Match the interactive view: look from 0,0,1 relative to the center
+  cam.position.set(c.x, c.y, c.z + d * 2); 
+  cam.up.set(0, 1, 0);
   cam.lookAt(c);
 
   // Add lights to the temporary scene

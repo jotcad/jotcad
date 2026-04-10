@@ -1,13 +1,90 @@
-import { normalizeSelector } from './vfs_core.js';
+import { normalizeSelector, isMatch } from './vfs_core.js';
 import crypto from 'crypto';
+import { PassThrough } from 'stream';
 
 /**
  * Attaches the Full Symmetric VFS REST protocol to an existing HTTP server.
- * Supports Virtual Mailboxes for Peers behind firewalls.
  */
 export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
-  const activePeers = new Map(); // PeerID -> { res, queue: [] }
-  const pendingCommands = new Map(); // CommandID -> { resolve, reject }
+  const activePeers = new Map(); // PeerID -> { res }
+  const pendingCommands = new Map(); // CommandID -> { res, timeout, selector }
+  const activeSelectors = []; // Array of { selector, commandId }
+  const unfulfilledDemands = []; // Array of { selector }
+
+  const routeDemand = async (path, parameters, commandId = null) => {
+    const selector = normalizeSelector(path, parameters);
+    
+    // Deduplication: If this exact selector is already being routed, don't double-send
+    if (!commandId && activeSelectors.some(s => isMatch(s.selector, selector))) {
+        return true;
+    }
+
+    console.log(`[VFS Server] Routing demand for: ${path} (cmd: ${commandId || 'new'})`);
+    let routed = false;
+    
+    // Find a peer that is LISTENING for this PATH specifically
+    for (const info of vfs.states.values()) {
+      if (info.path === path && info.state === 'LISTENING' && info.sources) {
+        for (const rawSource of info.sources) {
+            const peerId = rawSource.startsWith('peer:') ? rawSource.slice(5) : rawSource;
+            const targetRes = activePeers.get(peerId);
+            
+            if (targetRes) {
+              const cid = commandId || crypto.randomUUID();
+              console.log(`[VFS Server] Delivering COMMAND:READ to peer ${peerId} (id: ${cid})`);
+              
+              if (!commandId) {
+                  activeSelectors.push({ selector, commandId: cid });
+                  // Create a placeholder command so we can track the reply even if no one is /reading yet
+                  pendingCommands.set(cid, { res: null, selector, timeout: setTimeout(() => {
+                      pendingCommands.delete(cid);
+                      const idx = activeSelectors.findIndex(s => s.commandId === cid);
+                      if (idx !== -1) activeSelectors.splice(idx, 1);
+                  }, 60000)});
+              }
+
+              targetRes.write(`data: ${JSON.stringify({
+                type: 'COMMAND',
+                id: cid,
+                op: 'READ',
+                path,
+                parameters
+              })}\n\n`);
+              routed = true;
+              const idx = unfulfilledDemands.findIndex(d => isMatch(d.selector, selector));
+              if (idx !== -1) unfulfilledDemands.splice(idx, 1);
+            }
+        }
+        if (routed) break; 
+      }
+    }
+
+    if (!routed && !commandId) {
+        if (!unfulfilledDemands.some(d => isMatch(d.selector, selector))) {
+            unfulfilledDemands.push({ selector });
+        }
+    }
+    return routed;
+  };
+
+  const reprocessDemands = async () => {
+    if (unfulfilledDemands.length === 0) return;
+    console.log(`[VFS Server] Reprocessing ${unfulfilledDemands.length} unfulfilled demands...`);
+    const demands = [...unfulfilledDemands];
+    for (const d of demands) {
+        await routeDemand(d.selector.path, d.selector.parameters);
+    }
+  };
+
+  vfs.events.on('state', async (event) => {
+    try {
+        if (event.state === 'PENDING' && event.source !== 'node') {
+            await routeDemand(event.path, event.parameters);
+        } else if (event.state === 'LISTENING') {
+            await reprocessDemands();
+        }
+    } catch (err) { console.error('[VFS Server] State listener error:', err); }
+  });
 
   server.on('request', async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -16,175 +93,139 @@ export function registerVFSRoutes(vfs, server, prefix = '/vfs') {
     const vfsPath = url.pathname.slice(prefix.length);
     const peerId = req.headers['x-vfs-peer-id'] || url.searchParams.get('peerId') || 'default';
 
-    // Helper to parse JSON body
     const getBody = async () => {
       let body = '';
       for await (const chunk of req) body += chunk;
-      return JSON.parse(body || '{}');
+      try { return JSON.parse(body || '{}'); } catch (e) { return {}; }
     };
 
     try {
-      // 1. GET /watch - SSE stream with Command support
       if (req.method === 'GET' && vfsPath === '/watch') {
-        console.log(`[VFS Server] Peer connected to watch: ${peerId}`);
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        });
-
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
         const onState = (event) => {
-          console.log(`[VFS Server] Pushing state to ${peerId}:`, event.path, event.state);
-          res.write(`data: ${JSON.stringify(event)}\n\n`);
+          if (event.source === peerId || event.source === `peer:${peerId}`) return;
+          const { cid, ...cleanEvent } = event;
+          res.write(`data: ${JSON.stringify(cleanEvent)}\n\n`);
         };
         vfs.events.on('state', onState);
-
-        // Register peer for command delivery
         activePeers.set(peerId, res);
-
-        req.on('close', () => {
-          vfs.events.off('state', onState);
-          activePeers.delete(peerId);
-        });
+        await reprocessDemands();
+        req.on('close', () => { vfs.events.off('state', onState); activePeers.delete(peerId); });
         return;
       }
 
-      // 2. POST /peer/:targetId/read - Relay a read request to a private peer
-      if (req.method === 'POST' && vfsPath.startsWith('/peer/')) {
-        const parts = vfsPath.split('/');
-        const targetPeerId = parts[2];
-        const op = parts[3];
-
-        if (op === 'read') {
-          const { path, parameters } = await getBody();
-          const targetRes = activePeers.get(targetPeerId);
-          
-          if (!targetRes) {
-            res.writeHead(404);
-            return res.end('Peer not connected');
-          }
-
-          const commandId = crypto.randomUUID();
-          
-          targetRes.write(`data: ${JSON.stringify({
-            type: 'COMMAND',
-            id: commandId,
-            op: 'READ',
-            path,
-            parameters
-          })}\n\n`);
-
-          return new Promise((resolve, reject) => {
-            pendingCommands.set(commandId, { 
-                res, 
-                timeout: setTimeout(() => {
-                    pendingCommands.delete(commandId);
-                    res.writeHead(504);
-                    res.end('Peer timeout');
-                    resolve();
-                }, 30000)
-            });
-          });
-        }
-      }
-
-      // 3. POST /reply/:commandId - Private peer fulfills a relayed command
       if (req.method === 'POST' && vfsPath.startsWith('/reply/')) {
         const commandId = vfsPath.split('/')[2];
         const cmd = pendingCommands.get(commandId);
         
         if (!cmd) {
+          console.warn(`[VFS Server] Received reply for unknown/expired command: ${commandId}`);
           res.writeHead(410);
           return res.end('Command expired or invalid');
         }
 
+        console.log(`[VFS Server] Fulfilling read for ${cmd.selector.path} (cmd: ${commandId})`);
         clearTimeout(cmd.timeout);
         pendingCommands.delete(commandId);
-
-        cmd.res.writeHead(200, { 'Content-Type': req.headers['content-type'] });
-        req.pipe(cmd.res);
         
+        const idx = activeSelectors.findIndex(s => s.commandId === commandId);
+        if (idx !== -1) activeSelectors.splice(idx, 1);
+
+        const p1 = new PassThrough();
+        const p2 = new PassThrough();
+        req.pipe(p1);
+        req.pipe(p2);
+
+        vfs.write(cmd.selector.path, cmd.selector.parameters, p1).catch(err => {
+            console.error(`[VFS Server] Failed to save mailbox reply for ${cmd.selector.path}:`, err);
+        });
+
+        if (cmd.res) {
+            cmd.res.writeHead(200, { 'Content-Type': req.headers['content-type'] || 'application/octet-stream' });
+            p2.pipe(cmd.res);
+        } else {
+            p2.on('data', () => {});
+        }
         res.writeHead(200);
         return res.end();
-      }
-
-      // --- Standard Path-based Endpoints ---
-
-      if (req.method === 'POST' && vfsPath === '/tickle') {
-        const { path, parameters } = await getBody();
-        const state = await vfs.tickle(path, parameters);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ state }));
       }
 
       if (req.method === 'POST' && vfsPath === '/state') {
         const event = await getBody();
-        await vfs.receive({ ...event, source: 'node' });
-        res.writeHead(200);
-        return res.end();
-      }
-
-      if (req.method === 'POST' && vfsPath === '/declare') {
-        const { path, schema } = await getBody();
-        await vfs.declare(path, schema);
+        await vfs.receive({ source: peerId, ...event });
         res.writeHead(200);
         return res.end();
       }
 
       if (req.method === 'POST' && vfsPath === '/read') {
         const { path, parameters } = await getBody();
-        const stream = await vfs.read(path, parameters);
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-        if (stream.pipe) return stream.pipe(res);
-        for await (const chunk of stream) res.write(chunk);
-        return res.end();
+        const selector = normalizeSelector(path, parameters);
+        const state = await vfs.status(selector.path, selector.parameters);
+        
+        if (state === 'AVAILABLE' || state === 'SCHEMA') {
+            const stream = await vfs.read(selector.path, selector.parameters);
+            res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+            if (stream.pipe) return stream.pipe(res);
+            for await (const chunk of stream) res.write(chunk);
+            return res.end();
+        }
+
+        let commandId;
+        const existing = activeSelectors.find(s => isMatch(s.selector, selector));
+        if (existing) {
+            commandId = existing.commandId;
+            const cmd = pendingCommands.get(commandId);
+            if (cmd && !cmd.res) {
+                cmd.res = res; 
+                return;
+            }
+        }
+
+        commandId = crypto.randomUUID();
+        pendingCommands.set(commandId, { 
+            res, 
+            selector,
+            timeout: setTimeout(() => {
+                pendingCommands.delete(commandId);
+                const idx = activeSelectors.findIndex(s => s.commandId === commandId);
+                if (idx !== -1) activeSelectors.splice(idx, 1);
+                if (!res.writableEnded) { res.writeHead(504); res.end('VFS Read Timeout'); }
+            }, 60000)
+        });
+        activeSelectors.push({ selector, commandId });
+
+        await routeDemand(path, parameters, commandId);
+        return;
       }
 
-      if (req.method === 'POST' && vfsPath === '/status') {
-        const { path, parameters } = await getBody();
-        const state = await vfs.status(path, parameters);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ state }));
-      }
-if (req.method === 'POST' && vfsPath === '/lease') {
-  const { path, parameters, duration } = await getBody();
-  const success = await vfs.lease(path, parameters, duration);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  return res.end(JSON.stringify({ success }));
-}
-
-// 5. POST /link - Create an alias
-if (req.method === 'POST' && vfsPath === '/link') {
-  const { source, target } = await getBody();
-  await vfs.link(source, target);
-  res.writeHead(200);
-  return res.end();
-}
-
-// 6. PUT /write - Upload result
+      const body = (req.method === 'POST') ? await getBody() : null;
+      if (vfsPath === '/cid') return res.end(JSON.stringify({ cid: await vfs.getCID(body) }));
+      if (vfsPath === '/status') return res.end(JSON.stringify({ state: await vfs.status(body.path, body.parameters) }));
+      if (vfsPath === '/tickle') return res.end(JSON.stringify({ state: await vfs.tickle(body.path, body.parameters) }));
+      if (vfsPath === '/declare') { await vfs.declare(body.path, body.schema); return res.end(JSON.stringify({ success: true })); }
+      if (vfsPath === '/link') { await vfs.link(body.source, body.target); return res.end(JSON.stringify({ success: true })); }
+      if (vfsPath === '/lease') return res.end(JSON.stringify({ success: await vfs.lease(body.path, body.parameters, body.duration) }));
 
       if (req.method === 'PUT' && vfsPath === '/write') {
         const info = JSON.parse(req.headers['x-vfs-info'] || '{}');
-        const deps = JSON.parse(req.headers['x-vfs-deps'] || '[]');
-        await vfs.write(info.path, info.parameters, req, { dependencies: deps });
+        await vfs.write(info.path, info.parameters, req);
         res.writeHead(201);
         return res.end();
       }
 
       if (req.method === 'GET' && vfsPath === '/states') {
-        const states = await Promise.all(Array.from(vfs.states.entries()).map(async ([cid, info]) => {
+        const states = await Promise.all(Array.from(vfs.states.values()).map(async (info) => {
           let data = null;
           if (info.state === 'SCHEMA') {
+            const cid = await vfs.getCID(info);
             const stream = await vfs.storage.get(cid);
             if (stream) {
               const chunks = [];
               for await (const chunk of stream) chunks.push(chunk);
-              data = Buffer.concat(chunks);
+              data = Buffer.concat(chunks).toString('utf-8');
             }
           }
-          return {
-            cid, path: info.path, parameters: info.parameters, state: info.state, data
-          };
+          return { path: info.path, parameters: info.parameters, state: info.state, sources: info.sources, data };
         }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(states));
@@ -192,8 +233,7 @@ if (req.method === 'POST' && vfsPath === '/link') {
 
     } catch (err) {
       console.error('[VFS REST Error]', err);
-      res.writeHead(500);
-      res.end(JSON.stringify({ error: err.message }));
+      if (!res.writableEnded) { res.writeHead(500); res.end(err.message); }
     }
   });
 }

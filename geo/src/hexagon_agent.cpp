@@ -10,43 +10,38 @@ int main(int argc, char** argv) {
         std::cout << "[HexagonAgent] Computing hexagon for " << path << " " << params.dump() << std::endl;
 
         double radius = params.value("radius", 10.0);
-        double k = params.value("kerf", 0.0);
         std::string variant = params.value("variant", "full");
         
         Geometry geo;
         double s3 = std::sqrt(3.0);
 
         if (variant == "middle") {
-            // Rectangular middle section (cut off at top and bottom corners)
-            // Original corners: (R/2, R*s3/2), (-R/2, R*s3/2), (-R/2, -R*s3/2), (R/2, -R*s3/2)
-            // Offset by k:
-            geo.vertices.push_back({ (radius/2.0) + k,  (radius * s3 / 2.0) + k, 0.0 });
-            geo.vertices.push_back({-(radius/2.0) - k,  (radius * s3 / 2.0) + k, 0.0 });
-            geo.vertices.push_back({-(radius/2.0) - k, -(radius * s3 / 2.0) - k, 0.0 });
-            geo.vertices.push_back({ (radius/2.0) + k, -(radius * s3 / 2.0) - k, 0.0 });
+            // Rectangular middle section
+            geo.vertices.push_back({  radius/2.0,  radius * s3 / 2.0, 0.0 });
+            geo.vertices.push_back({ -radius/2.0,  radius * s3 / 2.0, 0.0 });
+            geo.vertices.push_back({ -radius/2.0, -radius * s3 / 2.0, 0.0 });
+            geo.vertices.push_back({  radius/2.0, -radius * s3 / 2.0, 0.0 });
         } else if (variant == "cap") {
             // Triangular top cap
-            geo.vertices.push_back({ radius + k*s3, 0.0, 0.0 }); // Tip
-            geo.vertices.push_back({ (radius/2.0) - k, (radius * s3 / 2.0) + k, 0.0 }); // Upper base
-            geo.vertices.push_back({ (radius/2.0) - k, -(radius * s3 / 2.0) - k, 0.0 }); // Lower base
+            geo.vertices.push_back({ radius, 0.0, 0.0 });
+            geo.vertices.push_back({ radius/2.0,  radius * s3 / 2.0, 0.0 });
+            geo.vertices.push_back({ radius/2.0, -radius * s3 / 2.0, 0.0 });
         } else if (variant == "sector") {
-            // One of the six equilateral triangular sectors
-            // Vertices move away from centroid by 2*k
-            geo.vertices.push_back({ -k * s3, -k, 0.0 });
-            geo.vertices.push_back({ radius + k * s3, -k, 0.0 });
-            geo.vertices.push_back({ radius / 2.0, (radius * s3 / 2.0) + 2.0 * k, 0.0 });
+            // One of the six triangular sectors
+            geo.vertices.push_back({ 0.0, 0.0, 0.0 });
+            geo.vertices.push_back({ radius, 0.0, 0.0 });
+            geo.vertices.push_back({ radius / 2.0, radius * s3 / 2.0, 0.0 });
         } else if (variant == "half") {
             // Half Hexagon (Trapezoid)
-            geo.vertices.push_back({  radius + k * s3,       -k,                     0.0 }); 
-            geo.vertices.push_back({ (radius / 2.0) + k/s3, (radius * s3 / 2.0) + k, 0.0 }); 
-            geo.vertices.push_back({-(radius / 2.0) - k/s3, (radius * s3 / 2.0) + k, 0.0 }); 
-            geo.vertices.push_back({ -radius - k * s3,       -k,                     0.0 }); 
+            geo.vertices.push_back({  radius, 0.0, 0.0 }); 
+            geo.vertices.push_back({  radius / 2.0,  radius * s3 / 2.0, 0.0 }); 
+            geo.vertices.push_back({ -radius / 2.0,  radius * s3 / 2.0, 0.0 }); 
+            geo.vertices.push_back({ -radius, 0.0, 0.0 }); 
         } else {
             // Full Hexagon
-            double r_eff = radius + (k / (s3 / 2.0));
             for (int i = 0; i < 6; ++i) {
                 double angle_rad = (M_PI / 180.0) * (60.0 * i);
-                geo.vertices.push_back({ r_eff * std::cos(angle_rad), r_eff * std::sin(angle_rad), 0.0 });
+                geo.vertices.push_back({ radius * std::cos(angle_rad), radius * std::sin(angle_rad), 0.0 });
             }
         }
 

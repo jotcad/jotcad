@@ -1,8 +1,19 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Initial Launch
+console.log('[Orchestrator] Starting JotCAD System...');
+
+try {
+  console.log('[Orchestrator] Cleaning up port 3030...');
+  // Use fuser to kill anything on 3030. || true to ignore errors if port is empty.
+  execSync('fuser -k 3030/tcp || true', { stdio: 'inherit' });
+} catch (e) {
+  // Ignore
+}
 
 const components = [
   {
@@ -13,219 +24,25 @@ const components = [
     env: { ...process.env, PORT: '9090' }
   },
   {
-    name: 'C++ Dispatcher',
+    name: 'C++ Ops Service',
     command: 'node',
-    args: [
-      '--input-type=module',
-      '-e',
-      `
-import { VFS, RESTBridge } from './fs/src/index.js';
-import { Dispatcher } from './geo/src/dispatcher.js';
-
-console.log('[Dispatcher] Initializing...');
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('[Dispatcher] Unhandled Rejection at:', promise, 'reason:', reason);
-    process.exit(1);
-});
-
-process.on('uncaughtException', (err) => {
-    console.error('[Dispatcher] Uncaught Exception:', err);
-    process.exit(1);
-});
-
-const vfs = new VFS({ id: 'dispatcher' });
-const bridge = new RESTBridge(vfs, 'http://localhost:9090/vfs');
-
-const d = new Dispatcher(vfs, { 
-    hubUrl: 'http://localhost:9090/vfs', 
-    binDir: './geo/bin' 
-});
-
-d.register('shape/box', 'box_agent');
-d.register('shape/triangle', 'triangle_agent');
-
-const boxUxCode = \`
-class BoxEditor extends HTMLElement {
-    constructor() {
-        super();
-        this.attachShadow({ mode: 'open' });
-    }
-
-    connectedCallback() {
-        this.render();
-    }
-
-    static get observedAttributes() {
-        return ['width', 'height', 'depth'];
-    }
-
-    attributeChangedCallback() {
-        this.render();
-    }
-
-    render() {
-        const w = this.getAttribute('width') || 10;
-        const h = this.getAttribute('height') || 10;
-        const d = this.getAttribute('depth') || 10;
-
-        this.shadowRoot.innerHTML = \\\`
-            <style>
-                .container { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; }
-                label { display: flex; justify-content: space-between; font-size: 11px; font-family: monospace; color: #cbd5e1; align-items: center; }
-                input { flex: 1; margin-left: 8px; cursor: pointer; accent-color: #f97316; }
-                span { width: 24px; text-align: right; font-weight: bold; color: white; }
-                .header { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #f97316; margin-bottom: 4px; }
-            </style>
-            <div class="container">
-                <div class="header">Box Agent UI</div>
-                <label>W <span>\\\${w}</span> <input type="range" id="w" min="1" max="100" value="\\\${w}" /></label>
-                <label>H <span>\\\${h}</span> <input type="range" id="h" min="1" max="100" value="\\\${h}" /></label>
-                <label>D <span>\\\${d}</span> <input type="range" id="d" min="1" max="100" value="\\\${d}" /></label>
-            </div>
-        \\\`;
-
-        ['w', 'h', 'd'].forEach(id => {
-            this.shadowRoot.getElementById(id).addEventListener('input', (e) => {
-                this.dispatchEvent(new CustomEvent('param-change', {
-                    detail: {
-                        width: Number(this.shadowRoot.getElementById('w').value),
-                        height: Number(this.shadowRoot.getElementById('h').value),
-                        depth: Number(this.shadowRoot.getElementById('d').value)
-                    },
-                    bubbles: true,
-                    composed: true
-                }));
-            });
-        });
-    }
-}
-customElements.define('jotcad-box-ux', BoxEditor);
-\`;
-
-const pianoUxCode = \`
-class PianoEditor extends HTMLElement {
-    constructor() {
-        super();
-        this.attachShadow({ mode: 'open' });
-    }
-
-    connectedCallback() {
-        this.render();
-    }
-
-    static get observedAttributes() {
-        return ['note'];
-    }
-
-    attributeChangedCallback() {
-        this.render();
-    }
-
-    render() {
-        const currentNote = this.getAttribute('note') || 'C4';
-        const notes = ['C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4', 'C5'];
-
-        this.shadowRoot.innerHTML = \\\`
-            <style>
-                .keyboard { display: flex; background: #1e293b; padding: 10px; border-radius: 8px; gap: 2px; height: 80px; }
-                .key { 
-                    flex: 1; 
-                    background: white; 
-                    border-radius: 0 0 4px 4px; 
-                    cursor: pointer; 
-                    display: flex; 
-                    align-items: flex-end; 
-                    justify-content: center; 
-                    font-size: 8px; 
-                    font-family: monospace; 
-                    padding-bottom: 5px;
-                    color: #64748b;
-                    transition: all 0.1s;
-                }
-                .key.black { 
-                    background: #0f172a; 
-                    color: white; 
-                    height: 60%; 
-                    margin-left: -10px; 
-                    margin-right: -10px; 
-                    z-index: 2; 
-                }
-                .key.active { background: #f97316; color: white; transform: translateY(2px); }
-                .key:hover { filter: brightness(0.9); }
-                .header { font-size: 10px; font-weight: bold; color: #f97316; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
-            </style>
-            <div class="header">Virtual Piano Agent</div>
-            <div class="keyboard">
-                \${notes.map(note => {
-                    const isBlack = note.includes('#');
-                    const isActive = note === currentNote;
-                    return \\\`<div class="key \${isBlack ? 'black' : ''} \${isActive ? 'active' : ''}" data-note="\${note}">\${note}</div>\\\`;
-                }).join('')}
-            </div>
-        \\\`;
-
-        this.shadowRoot.querySelectorAll('.key').forEach(key => {
-            key.addEventListener('click', () => {
-                this.dispatchEvent(new CustomEvent('param-change', {
-                    detail: { note: key.dataset.note },
-                    bubbles: true,
-                    composed: true
-                }));
-            });
-        });
-    }
-}
-customElements.define('jotcad-piano-ux', PianoEditor);
-\`;
-
-d.declareSchema('shape/box', {
-    type: 'object',
-    ux: 'vfs:/ui/components/box',
-    componentName: 'jotcad-box-ux',
-    properties: {
-        width: { type: 'number', default: 10 },
-        height: { type: 'number', default: 10 },
-        depth: { type: 'number', default: 10 }
-    }
-});
-
-d.declareSchema('instrument/piano', {
-    type: 'object',
-    ux: 'vfs:/ui/components/piano',
-    componentName: 'jotcad-piano-ux',
-    properties: {
-        note: { type: 'string', default: 'C4' }
-    }
-});
-
-d.declareSchema('shape/triangle', {
-
-    type: 'object',
-    properties: {
-        form: { type: 'string', enum: ['SSS', 'SAS', 'equilateral'], default: 'equilateral' },
-        side: { type: 'number', default: 10 },
-        a: { type: 'number' },
-        b: { type: 'number' },
-        c: { type: 'number' },
-        angle: { type: 'number' }
-    }
-});
-
-d.declareSchema('geo/mesh', {
-    type: 'mesh',
-    format: 'obj'
-});
-
-console.log('[Dispatcher] Starting bridge and watch loop...');
-await bridge.start();
-await vfs.writeData('ui/components/box', {}, boxUxCode);
-await vfs.writeData('ui/components/piano', {}, pianoUxCode);
-await d.start();
-console.log('[Dispatcher] Watch loop exited?');
-      `
-    ],
-    cwd: __dirname
+    args: ['geo/src/dispatcher_service.js'],
+    cwd: __dirname,
+    env: { ...process.env }
+  },
+  {
+    name: 'PDF Service',
+    command: 'node',
+    args: ['geo/src/pdf_service.js'],
+    cwd: __dirname,
+    env: { ...process.env }
+  },
+  {
+    name: 'Export Service',
+    command: 'node',
+    args: ['geo/src/export_service.js'],
+    cwd: __dirname,
+    env: { ...process.env }
   },
   {
     name: 'Interactive UX',
@@ -297,7 +114,18 @@ process.on('SIGTERM', () => shutdown());
 
 // Initial Launch
 console.log('[Orchestrator] Starting JotCAD System...');
-components.forEach(launch);
+
+const hub = components.find(c => c.name === 'VFS Hub');
+const rest = components.filter(c => c.name !== 'VFS Hub');
+
+launch(hub);
+
+console.log('[Orchestrator] Waiting for VFS Hub to be ready...');
+setTimeout(() => {
+    if (!shuttingDown) {
+        rest.forEach(launch);
+    }
+}, 1500);
 
 // Periodic check to ensure all processes are still in the Map and active
 setInterval(() => {
