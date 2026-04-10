@@ -32,17 +32,64 @@ class EventEmitter {
 /**
  * Normalizes arguments into a standard selector object.
  */
-export const normalizeSelector = (pathOrSelector, parameters) => {
+export const normalizeSelector = (pathOrSelector, parameters = {}) => {
+  let path = '';
+  let params = parameters || {};
+
   if (typeof pathOrSelector === 'string') {
-    return { path: pathOrSelector, parameters: parameters || {} };
+    path = pathOrSelector;
+    if (path.includes('?')) {
+        const [p, query] = path.split('?');
+        path = p;
+        try { params = { ...JSON.parse(decodeURIComponent(query)), ...params }; } catch(e) {}
+    }
+  } else if (pathOrSelector && typeof pathOrSelector === 'object') {
+    path = pathOrSelector.path;
+    params = pathOrSelector.parameters || parameters || {};
+  } else {
+    throw new Error(`Invalid selector: ${pathOrSelector}`);
   }
-  if (pathOrSelector && typeof pathOrSelector === 'object') {
-    return {
-      path: pathOrSelector.path,
-      parameters: pathOrSelector.parameters || parameters || {},
-    };
-  }
-  throw new Error(`Invalid selector: ${pathOrSelector}`);
+
+  const clean = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(clean);
+    
+    // Normalize nested selectors
+    if (obj.path && obj.parameters) return normalizeSelector(obj.path, obj.parameters);
+
+    const result = {};
+    for (const [k, v] of Object.entries(obj)) result[k] = clean(v);
+    return result;
+  };
+
+  return { path, parameters: clean(params) };
+};
+
+/**
+ * Logical equality check for two selectors.
+ */
+export const isMatch = (s1, s2) => {
+  if (!s1 || !s2) return s1 === s2;
+  const a = normalizeSelector(s1);
+  const b = normalizeSelector(s2);
+  if (a.path !== b.path) return false;
+  
+  const deepEqual = (p1, p2) => {
+    if (p1 === p2) return true;
+    if (typeof p1 !== typeof p2) return false;
+    if (!p1 || !p2 || typeof p1 !== 'object') return p1 === p2;
+    
+    const keysA = Object.keys(p1);
+    const keysB = Object.keys(p2);
+    if (keysA.length !== keysB.length) return false;
+    
+    for (const key of keysA) {
+        if (!deepEqual(p1[key], p2[key])) return false;
+    }
+    return true;
+  };
+
+  return deepEqual(a.parameters, b.parameters);
 };
 
 export class VFSClosedError extends Error {
@@ -67,12 +114,17 @@ export class MemoryStorage {
     });
   }
   async set(cid, stream, info) {
-    const reader = stream.getReader();
     const chunks = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
+    if (typeof stream.getReader === 'function') {
+        const reader = stream.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+    } else {
+        // Node.js Readable stream
+        for await (const chunk of stream) chunks.push(chunk);
     }
     const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
     const data = new Uint8Array(totalLength);
@@ -187,16 +239,32 @@ export class VFS {
    */
   async receive(event, from) {
     if (this.closed) return;
-    const { cid, state, path, parameters, source, data, target } = event;
+    let { cid, state, path, parameters, source, data, target } = event;
     if (source === this.id) return;
+
+    if (!cid) {
+        cid = await this.getCID({ path, parameters });
+    }
+
+    // console.log(`[VFS ${this.id}] receive: ${path} (${state}) from: ${source}`);
 
     let info = this.states.get(cid);
     if (!info) {
-      info = { path, parameters: parameters || {} };
+      info = { path, parameters: parameters || {}, sources: [] };
       this.states.set(cid, info);
+    } else {
+        // Diagnostic: If we found info, but the path is different, we have a problem
+        if (info.path !== path) {
+            console.error(`[VFS ${this.id}] CID COLLISION OR MISMAP! CID ${cid} already has path ${info.path}, but received ${path}`);
+        }
     }
 
-    // Only update state if it's more concrete than current or if current is LISTENING
+    if (source && info) {
+        if (!info.sources) info.sources = [];
+        if (typeof info.sources.includes === 'function' && !info.sources.includes(source)) {
+            info.sources.push(source);
+        }
+    }
     const statesPriority = {
         'LISTENING': 0,
         'PENDING': 1,
@@ -276,12 +344,12 @@ export class VFS {
     this._checkClosed();
     const s = normalizeSelector(pathOrSelector, parameters);
     const cid = await this.getCID(s);
-    console.log(`[VFS ${this.id}] tickle(${s.path}) CID: ${cid}`);
+    console.log(`[VFS ${this.id}] tickle(${s.path})`);
 
     let info = this.states.get(cid);
 
     if (!info) {
-      info = { state: 'PENDING', path: s.path, parameters: s.parameters };
+      info = { state: 'PENDING', path: s.path, parameters: s.parameters, sources: [] };
       this.states.set(cid, info);
       await this._emit(
 {
@@ -297,47 +365,49 @@ export class VFS {
   async read(pathOrSelector, parameters) {
     this._checkClosed();
     const s = normalizeSelector(pathOrSelector, parameters);
-    const cid = await this.getCID(s);
-    console.log(`[VFS ${this.id}] read(${s.path}, ${JSON.stringify(s.parameters)}) CID: ${cid}`);
-    await this.tickle(s);
-
-    let info = this.states.get(cid);
-    console.log(`[VFS ${this.id}] status for ${cid}: ${info.state}`);
-    if (info.state === 'AVAILABLE') {
-      const stream = await this.storage.get(cid);
-      if (stream) return stream;
+    
+    // Check for active logical reads
+    for (const [activeSelector, promise] of this.activeReads.entries()) {
+        if (isMatch(activeSelector, s)) return promise;
     }
 
-    if (info.state === 'LINKED') {
-      return this.read(info.target);
-    }
+    const readPromise = (async () => {
+      const state = await this.status(s.path, s.parameters);
+      const cid = await this.getCID(s);
 
-    if (this.activeReads.has(cid)) {
-      return this.activeReads.get(cid);
-    }
+      if (state === 'AVAILABLE' || state === 'SCHEMA') {
+        const stream = await this.storage.get(cid);
+        if (stream) return stream;
+      }
 
-    const readPromise = new Promise((resolve, reject) => {
-      const onState = (event) => {
-        if (event.state === 'CLOSED') {
-          this.events.off('state', onState);
-          this.activeReads.delete(cid);
-          reject(new VFSClosedError());
-        } else if (event.cid === cid) {
-          if (event.state === 'AVAILABLE') {
-            this.events.off('state', onState);
-            this.activeReads.delete(cid);
-            this.storage.get(cid).then(resolve);
-          } else if (event.state === 'LINKED') {
-            this.events.off('state', onState);
-            this.activeReads.delete(cid);
-            this.read(event.target).then(resolve).catch(reject);
+      // Signal demand
+      await this.receive({
+        path: s.path,
+        parameters: s.parameters,
+        state: 'PENDING',
+        source: 'local'
+      });
+
+      return new Promise((resolve, reject) => {
+        const onState = (event) => {
+          if (isMatch(event, s)) {
+            if (event.state === 'AVAILABLE' || event.state === 'SCHEMA') {
+              this.events.off('state', onState);
+              this.activeReads.delete(s);
+              // Recursively call read to handle the final retrieval
+              this.read(s).then(resolve).catch(reject);
+            } else if (event.state === 'LINKED') {
+              this.events.off('state', onState);
+              this.activeReads.delete(s);
+              this.read(event.target).then(resolve).catch(reject);
+            }
           }
-        }
-      };
-      this.events.on('state', onState);
-    });
+        };
+        this.events.on('state', onState);
+      });
+    })();
 
-    this.activeReads.set(cid, readPromise);
+    this.activeReads.set(s, readPromise);
     return readPromise;
   }
 
@@ -348,13 +418,20 @@ export class VFS {
     const stream = await this.read(pathOrSelector, parameters);
     const s = normalizeSelector(pathOrSelector, parameters);
 
-    // 1. Collect all bytes
+    // 1. Collect all bytes (Robust consumer for both Web and Node streams)
     const chunks = [];
-    const reader = stream.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
+    if (typeof stream.getReader === 'function') {
+        const reader = stream.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+    } else {
+        // Node.js Readable stream
+        for await (const chunk of stream) {
+            chunks.push(chunk);
+        }
     }
 
     let bytes;
@@ -380,21 +457,35 @@ export class VFS {
     if (schemaInfo && schemaInfo.state === 'SCHEMA') {
       const schemaStream = await this.storage.get(schemaCid);
       if (schemaStream) {
-        const schemaReader = schemaStream.getReader();
-        let schemaText = '';
-        while (true) {
-          const { done, value } = await schemaReader.read();
-          if (done) break;
-          schemaText += new TextDecoder().decode(value);
+        const schemaChunks = [];
+        if (typeof schemaStream.getReader === 'function') {
+            const reader = schemaStream.getReader();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              schemaChunks.push(value);
+            }
+        } else {
+            for await (const chunk of schemaStream) schemaChunks.push(chunk);
         }
+        
+        let schemaText = '';
+        const decoder = new TextDecoder();
+        for (const chunk of schemaChunks) schemaText += decoder.decode(chunk, { stream: true });
+        schemaText += decoder.decode();
+
         try {
           if (schemaText.trim()) {
             const schema = JSON.parse(schemaText);
-            if (schema.type === 'object' || schema.type === 'array' || schema.type === 'mesh') {
+            if (schema.type === 'object' || schema.type === 'array') {
               return JSON.parse(new TextDecoder().decode(bytes));
+            }
+            if (schema.type === 'mesh') {
+              return new TextDecoder().decode(bytes);
             }
           }
         } catch (e) {
+            // ... (rest preserved)
           console.warn(`[VFS] Failed to parse schema for ${s.path}`, e);
         }
       }
@@ -454,7 +545,7 @@ export class VFS {
 
     let info = this.states.get(cid);
     if (!info) {
-      info = { path: src.path, parameters: src.parameters };
+      info = { path: src.path, parameters: src.parameters, sources: [] };
       this.states.set(cid, info);
     }
 
@@ -521,7 +612,7 @@ export class VFS {
 
     let info = this.states.get(cid);
     if (!info) {
-      info = { path: s.path, parameters: s.parameters };
+      info = { path: s.path, parameters: s.parameters, sources: [] };
       this.states.set(cid, info);
     }
 
@@ -567,7 +658,7 @@ export class VFS {
     const cid = await this.getCID(s);
     let info = this.states.get(cid);
     if (!info) {
-      info = { path: s.path, parameters: s.parameters };
+      info = { path: s.path, parameters: s.parameters, sources: [] };
       this.states.set(cid, info);
     }
     if (info.activeLease) {

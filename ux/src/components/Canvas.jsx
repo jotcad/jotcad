@@ -4,6 +4,8 @@ import interact from 'interactjs';
 import { blackboard, vfs } from '../lib/blackboard';
 import { initSharedRenderer, createScene, updateViewports, captureThumbnail, renderJotToScene } from '../lib/three_utils';
 import { ScriptNode } from './ScriptNode';
+import { Viewport } from './Viewport';
+import { DynamicUX } from './DynamicUX';
 import * as THREE from 'three';
 import { 
   Box, 
@@ -23,38 +25,83 @@ import {
 } from 'lucide-solid';
 
 /**
- * A small status indicator pip.
+ * A list of status pips laid out contiguously in a clockwise direction along the border.
  */
 const StatusBadge = (props) => {
+    // 1. Gather active pips
+    const badges = [];
+    
+    // Grey: Schema
+    if (props.states.includes('SCHEMA')) {
+        badges.push({ 
+            id: 'schema', color: 'bg-slate-600', title: 'Schema Declared',
+            icon: <FileJson size={10} class="text-white" />
+        });
+    }
+
+    // White/Yellow/Blue: Availability State
+    if (props.states.includes('AVAILABLE')) {
+        badges.push({ 
+            id: 'available', color: 'bg-white', borderColor: 'border-node', title: 'Available',
+            icon: <Check size={10} class="text-node stroke-[4]" />
+        });
+    } else if (props.states.includes('PROVISIONING')) {
+        badges.push({ id: 'provisioning', color: 'bg-provisioning', title: 'Provisioning', animate: 'animate-pulse' });
+    } else if (props.states.includes('PENDING')) {
+        badges.push({ id: 'pending', color: 'bg-pending', title: 'Pending', animate: 'animate-bounce' });
+    }
+
+    // Blue/Cyan: Thumbnail
+    if (props.hasThumbnail) {
+        badges.push({ 
+            id: 'thumb-ready', color: 'bg-blue-600', title: 'Thumbnail Ready',
+            icon: <CheckCircle2 size={10} class="text-white" />
+        });
+    } else if (props.isGenerating) {
+        badges.push({ 
+            id: 'thumb-gen', color: 'bg-cyan-500', title: 'Generating Thumbnail...', animate: 'animate-pulse',
+            icon: <Activity size={10} class="text-white" />
+        });
+    }
+
+    // White: Result Count
+    if (props.resultCount > 1) {
+        badges.push({
+            id: 'count', color: 'bg-white', title: `${props.resultCount} results`,
+            content: <span class="text-blackboard text-[8px] font-black">{props.resultCount}</span>
+        });
+    }
+
+    // 2. Define clockwise positions (Top -> Right -> Bottom -> Left)
+    // Offset from the chip edge (-6px means slightly overlapping the border)
+    const positions = [
+        { top: '-6px', left: '-6px' },   // Pos 0: Top-Left
+        { top: '-6px', left: '14px' },   // Pos 1
+        { top: '-6px', left: '34px' },   // Pos 2
+        { top: '-6px', left: '54px' },   // Pos 3: Top-Right
+        { top: '14px', left: '54px' },   // Pos 4
+        { top: '34px', left: '54px' },   // Pos 5
+        { top: '54px', left: '54px' },   // Pos 6: Bottom-Right
+        { top: '54px', left: '34px' },   // Pos 7
+        { top: '54px', left: '14px' },   // Pos 8
+        { top: '54px', left: '-6px' },   // Pos 9: Bottom-Left
+    ];
+
     return (
-        <div class="absolute -top-1 -right-1 flex gap-0.5 pointer-events-none">
-            <Show when={props.hasThumbnail}>
-                <div class="w-3.5 h-3.5 rounded-full bg-blue-600 border border-blackboard flex items-center justify-center shadow-lg" title="Thumbnail Ready">
-                    <CheckCircle2 size={8} class="text-white" />
+        <For each={badges}>
+            {(badge, i) => (
+                <div 
+                    class={`absolute w-4 h-4 rounded-full border border-blackboard flex items-center justify-center shadow-lg z-20 transition-all duration-300 ${badge.color} ${badge.borderColor || ''} ${badge.animate || ''}`}
+                    style={{
+                        top: positions[i()]?.top || '0px',
+                        left: positions[i()]?.left || '0px'
+                    }}
+                    title={badge.title}
+                >
+                    {badge.icon || badge.content}
                 </div>
-            </Show>
-            <Show when={props.isGenerating && !props.hasThumbnail}>
-                <div class="w-3.5 h-3.5 rounded-full bg-cyan-500 border border-blackboard flex items-center justify-center shadow-lg animate-pulse" title="Generating Thumbnail...">
-                    <Activity size={8} class="text-white" />
-                </div>
-            </Show>
-            <Show when={props.states.includes('SCHEMA')}>
-                <div class="w-3.5 h-3.5 rounded-full bg-slate-500 border border-blackboard flex items-center justify-center shadow-lg" title="Schema Declared">
-                    <FileJson size={8} class="text-white" />
-                </div>
-            </Show>
-            <Show when={props.states.includes('AVAILABLE')}>
-                <div class="w-3.5 h-3.5 rounded-full bg-white border border-node flex items-center justify-center shadow-lg">
-                    <Check size={10} class="text-node stroke-[4]" />
-                </div>
-            </Show>
-            <Show when={props.states.includes('PROVISIONING')}>
-                <div class="w-3.5 h-3.5 rounded-full bg-provisioning border border-blackboard animate-pulse shadow-lg" />
-            </Show>
-            <Show when={props.states.includes('PENDING')}>
-                <div class="w-3.5 h-3.5 rounded-full bg-pending border border-blackboard animate-bounce shadow-lg" />
-            </Show>
-        </div>
+            )}
+        </For>
     );
 };
 
@@ -66,6 +113,7 @@ const PathNode = (props) => {
   const [isExpanded, setIsExpanded] = createSignal(false);
   const [thumbnail, setThumbnail] = createSignal(null);
   const [isGenerating, setIsGenerating] = createSignal(false);
+  const [viewData, setViewData] = createSignal(null);
 
   onMount(() => {
     interact(nodeRef).draggable({
@@ -75,6 +123,21 @@ const PathNode = (props) => {
         },
       },
     });
+  });
+
+  // Fetch data for dynamic viewing when expanded
+  createEffect(async () => {
+    if (isExpanded() && !viewData()) {
+        const hasAvailable = props.results.find(r => r.state === 'AVAILABLE');
+        if (hasAvailable) {
+            try {
+                const data = await vfs.readData(hasAvailable.path, hasAvailable.parameters);
+                setViewData(data);
+            } catch (e) {
+                console.warn('[PathNode] Failed to fetch view data:', e);
+            }
+        }
+    }
   });
 
   // Auto-generate thumbnail if available and is a mesh/shape
@@ -114,11 +177,11 @@ const PathNode = (props) => {
 
   const TypeIcon = () => {
     const p = props.path.toLowerCase();
-    const size = isExpanded() ? 20 : 18;
-    if (p.includes('box')) return <Box size={size} />;
-    if (p.includes('triangle')) return <Triangle size={size} />;
-    if (p.includes('mesh')) return <HexagonIcon size={size} />;
-    return <FileJson size={size} />;
+    const size = isExpanded() ? 20 : 24;
+    if (p.includes('box')) return <Box size={size} class="opacity-20" />;
+    if (p.includes('triangle')) return <Triangle size={size} class="opacity-20" />;
+    if (p.includes('mesh')) return <HexagonIcon size={size} class="opacity-20" />;
+    return <FileJson size={size} class="opacity-20" />;
   };
 
   const currentStates = () => props.results.map(r => r.state);
@@ -127,43 +190,45 @@ const PathNode = (props) => {
   return (
     <div
       ref={nodeRef}
-      class={`absolute select-none cursor-move rounded-full border-2 border-white/20 shadow-2xl flex items-center justify-center bg-node text-blackboard ${isExpanded() ? 'w-80 h-auto rounded-xl p-4 flex-col text-white bg-blackboard' : 'w-12 h-12'}`}
+      class={`absolute select-none cursor-move flex flex-col items-center gap-2 ${isExpanded() ? 'z-50' : 'z-10'}`}
       style={{
         left: '0px',
         top: '0px',
         transform: `translate(${props.pos?.x || 0}px, ${props.pos?.y || 0}px)`,
-        'z-index': isExpanded() ? 100 : 10,
         'pointer-events': 'auto'
       }}
       onDblClick={() => setIsExpanded(!isExpanded())}
     >
         <Show when={!isExpanded()}>
-            <div class="relative flex flex-col items-center justify-center w-full h-full">
+            {/* The Chip Body */}
+            <div class="w-16 h-16 rounded-xl border-2 border-white/10 shadow-2xl flex items-center justify-center bg-black/40 backdrop-blur-md relative group hover:border-white/30 transition-all overflow-visible">
                 <StatusBadge 
                     states={currentStates()} 
                     hasThumbnail={!!thumbnail()} 
                     isGenerating={isGenerating()} 
+                    resultCount={props.results.length}
                 />
+                
                 <Show when={thumbnail()} fallback={<TypeIcon />}>
-                    <img src={thumbnail()} class="w-full h-full object-cover rounded-full p-1" />
+                    <img src={thumbnail()} class="w-full h-full object-cover rounded-lg p-0.5" />
                 </Show>
-                <div class="absolute top-full mt-2 px-1.5 py-0.5 rounded text-[7px] font-black tracking-tighter whitespace-nowrap bg-black/80 backdrop-blur-sm border border-white/10 text-white shadow-xl">
-                    {props.path}
-                    <Show when={props.results.length > 0}>
-                        <span class="ml-1 opacity-50">[{props.results.length}]</span>
-                    </Show>
-                </div>
+            </div>
+
+            {/* Path Label Below */}
+            <div class="px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest whitespace-nowrap bg-blackboard/80 border border-white/5 text-white/60 shadow-lg uppercase">
+                {props.path.split('/').pop()}
             </div>
         </Show>
 
         <Show when={isExpanded()}>
-            <div class="flex flex-col gap-3 w-full">
+            <div class="w-80 h-auto rounded-xl p-4 flex flex-col text-white bg-blackboard border-2 border-white/10 shadow-2xl">
                 <div class="flex items-center justify-between border-b border-white/10 pb-2">
                     <div class="flex items-center gap-2 relative">
                         <StatusBadge 
                             states={currentStates()} 
                             hasThumbnail={!!thumbnail()} 
                             isGenerating={isGenerating()} 
+                            resultCount={props.results.length}
                         />
                         <Layers size={16} class="opacity-50 text-available" />
                         <span class="text-xs font-black tracking-widest truncate">{props.path}</span>
@@ -171,12 +236,13 @@ const PathNode = (props) => {
                     <button class="text-[10px] font-bold opacity-40 hover:opacity-100 hover:text-red-400 transition-colors" onClick={() => setIsExpanded(false)}>CLOSE</button>
                 </div>
 
-                <Show when={thumbnail()}>
-                    <div class="w-full h-48 bg-black/40 rounded-lg border border-white/5 overflow-hidden relative">
-                        <img src={thumbnail()} class="w-full h-full object-contain" />
-                        <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40">PREVIEW</div>
-                    </div>
-                </Show>
+                <div class="w-full h-64 bg-black/40 rounded-lg border border-white/5 overflow-hidden relative group">
+                    <Show when={viewData() && (props.path.includes('mesh') || props.path.includes('triangle') || props.path.includes('box'))} 
+                          fallback={<Show when={thumbnail()}><img src={thumbnail()} class="w-full h-full object-contain opacity-50" /></Show>}>
+                        <Viewport data={viewData()} />
+                    </Show>
+                    <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40 pointer-events-none group-hover:text-white/80 transition-colors">INTERACTIVE VIEW</div>
+                </div>
 
                 <Show when={schemaResult()}>
                     <div class="bg-slate-500/10 border border-slate-500/20 rounded-lg p-2 flex flex-col gap-1.5 mb-1">
@@ -185,7 +251,7 @@ const PathNode = (props) => {
                             <span class="text-[9px] font-black tracking-widest uppercase">Schema Defined</span>
                         </div>
                         <div class="text-[8px] font-mono opacity-60 grid grid-cols-2 gap-x-2 gap-y-1">
-                            <For each={Object.entries(schemaResult().data || {})}>
+                            <For each={Object.entries(schemaResult().data?.properties || schemaResult().data || {})}>
                                 {([k, v]) => (
                                     <>
                                         <span class="text-white/40">{k}:</span>
@@ -198,6 +264,14 @@ const PathNode = (props) => {
                             </Show>
                         </div>
                     </div>
+                </Show>
+
+                <Show when={schemaResult()?.data?.ux}>
+                    <DynamicUX 
+                        schema={schemaResult().data} 
+                        path={props.path} 
+                        parameters={props.results[0]?.parameters} 
+                    />
                 </Show>
 
                 <div class="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1 custom-scrollbar">

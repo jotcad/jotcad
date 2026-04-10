@@ -1,93 +1,70 @@
 # JotCAD Virtual File System (VFS) Specification
 
-The JotCAD VFS is a distributed, content-addressable blackboard system designed for collaborative geometry processing across C++, Node.js, and Browser environments.
+The JotCAD VFS is a distributed, content-addressable blackboard system designed for collaborative geometry processing across C++, Node.js, and Browser environments. It uses a **Symmetric Peer-to-Hub** architecture where all participants share a unified, eventually-consistent view of the world.
 
-## 1. Content Addressing (CID)
+## 1. Identity & Addressing
 
-Every artifact on the blackboard is addressed by a **Content-ID (CID)**. The CID must be deterministic across all platforms to allow for deduplication and global addressing.
+The VFS distinguishes between **Wire Identity** (used for routing and coordination) and **Storage Identity** (used for local caching).
 
-### Hashing Standard
-The CID is a SHA-256 hash of the concatenated **Path** and **Normalized Parameters**.
+### 1.1 The Selector (Wire Identity)
+The global identity of any artifact is its **Selector**: a combination of a `path` (e.g., `shape/hexagon`) and a `parameters` object (e.g., `{"radius": 50}`).
+- **Normalization:** Selectors are deeply and recursively normalized. Parameters are sorted alphabetically by key, and nested objects are themselves normalized.
+- **Matching:** Peer coordination uses **Logical Matching** (deep equality) of selectors, ensuring that different environments (C++, JS) can collaborate even if their JSON serialization differs slightly.
 
-**Formula:** `SHA256(path + JSON.stringify(sort_keys(parameters)))`
-
-**Implementation Rules:**
-1.  **Parameters:** Must be a flat JSON object. Keys must be sorted alphabetically before stringification.
-2.  **Stringification:** No spaces should be present in the JSON string (e.g., `{"a":1,"b":2}`).
-3.  **Concatenation:** The path is prepended directly to the JSON string.
+### 1.2 The Content-ID (CID) (Storage Identity)
+The **CID** is a local storage key derived from the normalized selector. 
+- **Hash:** SHA-256 of `path + JSON.stringify(normalizedParameters)`.
+- **Scope:** CIDs are used for internal indexing and disk storage. On the wire, the Hub strips CIDs to prevent "Hash Drift" from blocking communication.
 
 ## 2. States & Lifecycle
 
 A coordinate (`path` + `parameters`) can be in one of the following states:
 
-- **PENDING:** Demand exists (someone called `tickle`), but no data is available.
-- **PROVISIONING:** An agent has "leased" the coordinate and is currently computing the result.
-- **AVAILABLE:** The result is computed and stored in the VFS.
-- **LINKED:** An alias pointing to another coordinate.
-- **SCHEMA:** A special state for path-level metadata (defined at `path@schema`).
+- **LISTENING:** (Priority 0) One or more peers are capable of fulfilling this demand.
+- **PENDING:** (Priority 1) Demand exists (someone called `read` or `tickle`), but no data is available.
+- **PROVISIONING:** (Priority 2) An agent has "leased" the coordinate and is currently computing the result.
+- **AVAILABLE:** (Priority 3) The result is computed and stored in the VFS.
+- **LINKED:** (Priority 3) An alias pointing to another coordinate.
+- **SCHEMA:** (Priority 4) A special state for path-level metadata (defined at `path@schema`).
 
-## 3. High-Level Data API
+### Multi-Source Identity
+Each state entry tracks a `sources` array of Peer IDs (e.g., `peer:geo-ops-service`, `node`). This prevents different peers from overwriting the same coordinate metadata.
 
-To simplify agent development, the VFS provides data-aware methods that handle stream lifecycle and serialization automatically.
+## 3. Virtual Mailbox Protocol (Routing)
 
-### `readData(path, parameters)`
-Retrieves data and automatically deserializes it based on the following heuristics:
-1.  **Schema Check:** If a `SCHEMA` exists for the path, it uses the schema's `type` (e.g., `object`, `mesh`) to determine parsing.
-2.  **JSON Fallback:** If the text starts with `{` or `[`, it attempts `JSON.parse`.
-3.  **Binary Detection:** If non-printable characters are detected, it returns a `Uint8Array`.
-4.  **Text Fallback:** Returns a plain string.
+The VFS Hub acts as a **Logical Router** for peers that are behind firewalls or cannot accept incoming HTTP connections (like private C++ services or browser workers).
 
-### `writeData(path, parameters, data)`
-Automatically serializes data into a stream for storage:
-- **Object/Array:** Serialized via `JSON.stringify`.
-- **String:** Encoded via `TextEncoder`.
-- **Uint8Array/ArrayBuffer:** Written as raw bytes.
+### 3.1 Demand Routing
+When a peer requests a coordinate that is currently in a `LISTENING` state but not `AVAILABLE`, the Hub performs **Demand Routing**:
+1.  **Detection:** The Hub identifies peers `LISTENING` for the specific **Path**.
+2.  **Delivery:** The Hub sends a `COMMAND:READ` message over the persistent SSE (`/vfs/watch`) connection of the listening peer.
+3.  **Fulfillment:** The peer receives the command, computes the result, and sends it back to the Hub via `POST /vfs/reply/:commandId`.
+4.  **Persistence (The Blackboard):** The Hub "Tees" the fulfillment stream—it pipes the data to the requester while simultaneously saving it to its own VFS (transitioning the state to `AVAILABLE`).
+5.  **Completion:** Subsequent requests for the same selector are served directly from the Hub's cache without triggering new demands.
 
-### `declare(path, schema)`
-Formalizes the "form" of data for a path. 
-- Stores the schema at the coordinate `${path}@schema`.
-- Sets the state to `SCHEMA` (Priority 4).
-- The `schema` object should follow JSON Schema conventions where possible.
+### 3.2 Robust Reprocessing
+The Hub maintains an **Unfulfilled Demands** queue. It automatically re-evaluates and routes these demands whenever a new peer connects or a new `LISTENING` capability is advertised.
 
-## 4. Synchronization Protocol
+## 4. Environment Robustness
 
-### Initial Sync
-When a new peer (e.g., the Browser UX) connects, it should perform a one-time pull of all active states from the Hub:
-- `GET /vfs/states` -> returns `Array<{ cid, path, parameters, state }>`.
+The VFS is designed to be **Cross-Environment Aware**:
+- **Stream Handling:** Internal storage and REST bridges automatically detect and handle both **Web Streams** (browser) and **Node.js Readable Streams**, ensuring non-blocking data flow across all environments.
+- **Recursive Resolution:** C++ operators and Node services correctly resolve nested `vfs:/` URIs by recursively querying the VFS blackboard.
 
-### Real-time Updates
-Peers must subscribe to a Server-Sent Events (SSE) stream for live state changes:
-- `GET /vfs/watch?peerId=<id>`
+## 5. API Patterns
 
-### Validation
-Peers SHOULD validate that the `cid` received from a remote source matches their local calculation for the given `path` and `parameters`. Discrepancies indicate a hashing mismatch and must be treated as fatal errors in development.
-
-## 4. REST API (The Hub)
-
-The central Hub (usually Node.js) exposes the following endpoints:
-
-- `POST /vfs/tickle`: Manifest demand for a coordinate.
-- `POST /vfs/lease`: Secure a time-limited lock for computation.
-- `PUT /vfs/write`: Upload a result (`AVAILABLE`).
-- `POST /vfs/read`: Retrieve a result.
-- `GET /vfs/states`: List all known coordinates.
-- `GET /vfs/watch`: SSE stream for state changes.
-
-## 5. Visualization & Previews
-
-The JotCAD UX automatically generates 3D thumbnails for geometric artifacts stored on the blackboard.
-
-### 5.1 Geometry Detection
-A coordinate is flagged for visualization if:
-1.  The `path` contains keywords: `mesh`, `triangle`, or `box`.
-2.  The `SCHEMA` for the path declares `type: 'mesh'`.
-
-### 5.2 Thumbnail Generation
-When a compatible coordinate enters the `AVAILABLE` state:
-1.  The UX fetches the data using `vfs.readData()`.
-2.  The data is passed to an offscreen Three.js renderer.
-3.  The renderer identifies the format:
-    - **JOT Archive:** Parses bundled shapes and assets.
-    - **Raw Inexact Geometry:** Parses `v/f/t/h` codes.
-    - **Shape JSON:** Resolves hierarchy and `vfs:/` references.
-4.  A 256x256 PNG is generated and cached in the browser's reactive state.
+### Structured Selectors
+To avoid complex URI encoding in nested pipelines, parameters can be passed as **Structured Selectors**:
+```json
+{
+  "path": "op/offset",
+  "parameters": {
+    "kerf": 5,
+    "source": {
+      "path": "shape/hexagon",
+      "parameters": { "radius": 50 }
+    }
+  }
+}
+```
+The VFS core automatically normalizes these nested objects to maintain logical identity throughout the pipeline.

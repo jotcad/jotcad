@@ -1,8 +1,19 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Initial Launch
+console.log('[Orchestrator] Starting JotCAD System...');
+
+try {
+  console.log('[Orchestrator] Cleaning up port 3030...');
+  // Use fuser to kill anything on 3030. || true to ignore errors if port is empty.
+  execSync('fuser -k 3030/tcp || true', { stdio: 'inherit' });
+} catch (e) {
+  // Ignore
+}
 
 const components = [
   {
@@ -13,71 +24,25 @@ const components = [
     env: { ...process.env, PORT: '9090' }
   },
   {
-    name: 'C++ Dispatcher',
+    name: 'C++ Ops Service',
     command: 'node',
-    args: [
-      '--input-type=module',
-      '-e',
-      `
-import { VFS, RESTBridge } from './fs/src/index.js';
-import { Dispatcher } from './geo/src/dispatcher.js';
-
-console.log('[Dispatcher] Initializing...');
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('[Dispatcher] Unhandled Rejection at:', promise, 'reason:', reason);
-    process.exit(1);
-});
-
-process.on('uncaughtException', (err) => {
-    console.error('[Dispatcher] Uncaught Exception:', err);
-    process.exit(1);
-});
-
-const vfs = new VFS({ id: 'dispatcher' });
-const bridge = new RESTBridge(vfs, 'http://localhost:9090/vfs');
-
-const d = new Dispatcher(vfs, { 
-    hubUrl: 'http://localhost:9090/vfs', 
-    binDir: './geo/bin' 
-});
-
-d.register('shape/box', 'box_agent');
-d.register('shape/triangle', 'triangle_agent');
-
-d.declareSchema('shape/box', {
-    type: 'object',
-    properties: {
-        width: { type: 'number', default: 10 },
-        height: { type: 'number', default: 10 },
-        depth: { type: 'number', default: 10 }
-    }
-});
-
-d.declareSchema('shape/triangle', {
-    type: 'object',
-    properties: {
-        form: { type: 'string', enum: ['SSS', 'SAS', 'equilateral'], default: 'equilateral' },
-        side: { type: 'number', default: 10 },
-        a: { type: 'number' },
-        b: { type: 'number' },
-        c: { type: 'number' },
-        angle: { type: 'number' }
-    }
-});
-
-d.declareSchema('geo/mesh', {
-    type: 'mesh',
-    format: 'obj'
-});
-
-console.log('[Dispatcher] Starting bridge and watch loop...');
-await bridge.start();
-await d.start();
-console.log('[Dispatcher] Watch loop exited?');
-      `
-    ],
-    cwd: __dirname
+    args: ['geo/src/dispatcher_service.js'],
+    cwd: __dirname,
+    env: { ...process.env }
+  },
+  {
+    name: 'PDF Service',
+    command: 'node',
+    args: ['geo/src/pdf_service.js'],
+    cwd: __dirname,
+    env: { ...process.env }
+  },
+  {
+    name: 'Export Service',
+    command: 'node',
+    args: ['geo/src/export_service.js'],
+    cwd: __dirname,
+    env: { ...process.env }
   },
   {
     name: 'Interactive UX',
@@ -149,7 +114,18 @@ process.on('SIGTERM', () => shutdown());
 
 // Initial Launch
 console.log('[Orchestrator] Starting JotCAD System...');
-components.forEach(launch);
+
+const hub = components.find(c => c.name === 'VFS Hub');
+const rest = components.filter(c => c.name !== 'VFS Hub');
+
+launch(hub);
+
+console.log('[Orchestrator] Waiting for VFS Hub to be ready...');
+setTimeout(() => {
+    if (!shuttingDown) {
+        rest.forEach(launch);
+    }
+}, 1500);
 
 // Periodic check to ensure all processes are still in the Map and active
 setInterval(() => {

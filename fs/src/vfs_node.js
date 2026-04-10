@@ -3,23 +3,17 @@ import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import { pipeline } from 'stream/promises';
-import { VFS as CoreVFS } from './vfs_core.js';
+import { VFS as CoreVFS, normalizeSelector } from './vfs_core.js';
 
 export { VFSClosedError } from './vfs_core.js';
 
 export const getCID = async (selector) => {
-  const { path, parameters = {} } = selector;
-  if (!path) throw new Error('Selector must have a path');
+  const s = normalizeSelector(selector.path, selector.parameters);
+  if (!s.path) throw new Error('Selector must have a path');
   
-  const sortedParams = Object.keys(parameters)
-    .sort()
-    .reduce((acc, key) => {
-      acc[key] = parameters[key];
-      return acc;
-    }, {});
-    
   const hash = crypto.createHash('sha256');
-  hash.update(path + JSON.stringify(sortedParams));
+  // s.parameters is already recursively sorted and normalized
+  hash.update(s.path + JSON.stringify(s.parameters));
   return hash.digest('hex');
 };
 
@@ -60,18 +54,28 @@ export class VFS extends CoreVFS {
   }
 
   async init() {
+    if (this.initialized) return;
+    this.initialized = true;
+    
     if (this.storage instanceof DiskStorage) {
       const files = await fsPromises.readdir(this.storage.root);
       for (const file of files) {
         if (file.endsWith('.meta')) {
           const cid = file.slice(0, -5);
-          const metaContent = await fsPromises.readFile(
-            path.join(this.storage.root, file),
-            'utf-8'
-          );
           try {
+            const metaContent = await fsPromises.readFile(
+              path.join(this.storage.root, file),
+              'utf-8'
+            );
             const info = JSON.parse(metaContent);
-            this.states.set(cid, { ...info, state: 'AVAILABLE' });
+            // Crucial: ensure sources exists and is an array
+            const sanitizedInfo = {
+                path: info.path,
+                parameters: info.parameters || {},
+                sources: Array.isArray(info.sources) ? info.sources : [],
+                state: 'AVAILABLE'
+            };
+            this.states.set(cid, sanitizedInfo);
           } catch (e) {
             console.warn(`[VFS] Failed to parse meta for ${cid}`, e);
           }

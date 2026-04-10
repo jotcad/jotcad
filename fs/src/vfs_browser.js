@@ -1,18 +1,11 @@
-import { VFS as CoreVFS } from './vfs_core.js';
+import { VFS as CoreVFS, normalizeSelector } from './vfs_core.js';
 
 export const getCID = async (selector) => {
-  const { path, parameters = {} } = selector;
-  if (!path) throw new Error('Selector must have a path');
-
-  const sortedParams = Object.keys(parameters)
-    .sort()
-    .reduce((acc, key) => {
-      acc[key] = parameters[key];
-      return acc;
-    }, {});
+  const s = normalizeSelector(selector.path, selector.parameters);
+  if (!s.path) throw new Error('Selector must have a path');
 
   const msgUint8 = new TextEncoder().encode(
-    path + JSON.stringify(sortedParams)
+    s.path + JSON.stringify(s.parameters)
   );
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
   const hashArray = Array.from(new Uint8Array(hashBuffer));

@@ -45,7 +45,7 @@ export class Dispatcher {
     }
 
     try {
-      const query = this.vfs.watch('shape/*', { 
+      const query = this.vfs.watch('*', { 
         states: ['PENDING'],
         signal: this.abortController.signal
       });

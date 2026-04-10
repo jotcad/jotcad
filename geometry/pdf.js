@@ -18,31 +18,24 @@ const toStrokeColor = (rgb) =>
 const black = [0, 0, 0];
 
 const header = ({
-  min,
-  max,
-  scale = 1,
   width = 210,
   height = 297,
   trim = 5,
   lineWidth = 0.096,
 }) => {
-  const mediaX1 = (min[X] - trim) * scale;
-  const mediaY1 = (min[Y] - trim) * scale;
-  const mediaX2 = (max[X] + trim) * scale;
-  const mediaY2 = (max[Y] + trim) * scale;
-  const trimX1 = min[X] * scale;
-  const trimY1 = min[Y] * scale;
-  const trimX2 = max[X] * scale;
-  const trimY2 = max[Y] * scale;
+  const mediaX2 = width + trim * 2;
+  const mediaY2 = height + trim * 2;
+  const trimX1 = trim;
+  const trimY1 = trim;
+  const trimX2 = width + trim;
+  const trimY2 = height + trim;
   return [
     `%PDF-1.5`,
     `1 0 obj << /Pages 2 0 R /Type /Catalog >> endobj`,
     `2 0 obj << /Count 1 /Kids [ 3 0 R ] /Type /Pages >> endobj`,
     `3 0 obj <<`,
     `  /Contents 4 0 R`,
-    `  /MediaBox [ ${mediaX1.toFixed(9)} ${mediaY1.toFixed(
-      9
-    )} ${mediaX2.toFixed(9)} ${mediaY2.toFixed(9)} ]`,
+    `  /MediaBox [ 0 0 ${mediaX2.toFixed(9)} ${mediaY2.toFixed(9)} ]`,
     `  /TrimBox [ ${trimX1.toFixed(9)} ${trimY1.toFixed(9)} ${trimX2.toFixed(
       9
     )} ${trimY2.toFixed(9)} ]`,
@@ -66,7 +59,7 @@ const footer = [
 export const toPdf = (
   assets,
   shape,
-  { lineWidth = 0.096, size = [210, 297], definitions } = {}
+  { lineWidth = 0.096, size = [210, 297], definitions, trim = 5 } = {}
 ) => {
   const absolute = makeAbsolute(assets, shape);
   const geometries = [];
@@ -103,8 +96,8 @@ export const toPdf = (
   // This is the size of a post-script point in mm.
   const pointSize = 0.352777778;
   const scale = 1 / pointSize;
-  const width = max[X] - min[X];
-  const height = max[Y] - min[Y];
+  const width = (max[X] - min[X]) * scale;
+  const height = (max[Y] - min[Y]) * scale;
   const lines = [];
 
   for (const { tags, vertices, triangles, faces, segments } of geometries) {
@@ -114,8 +107,9 @@ export const toPdf = (
     const drawPolygon = (indices) => {
       indices.forEach((index, nth) => {
         const [x, y] = vertices[index];
-        const sx = x * scale;
-        const sy = y * scale;
+        // Translate to origin and add trim offset
+        const sx = (x - min[X]) * scale + (trim * scale);
+        const sy = (y - min[Y]) * scale + (trim * scale);
         if (nth === 0) {
           lines.push(`${sx.toFixed(9)} ${sy.toFixed(9)} m`); // move-to.
         } else {
@@ -151,10 +145,10 @@ export const toPdf = (
       for (const [startIdx, endIdx] of segments) {
         const start = vertices[startIdx];
         const end = vertices[endIdx];
-        const sx1 = start[X] * scale;
-        const sy1 = start[Y] * scale;
-        const sx2 = end[X] * scale;
-        const sy2 = end[Y] * scale;
+        const sx1 = (start[X] - min[X]) * scale + (trim * scale);
+        const sy1 = (start[Y] - min[Y]) * scale + (trim * scale);
+        const sx2 = (end[X] - min[X]) * scale + (trim * scale);
+        const sy2 = (end[Y] - min[Y]) * scale + (trim * scale);
 
         if (!last || start[X] !== last[X] || start[Y] !== last[Y]) {
           if (last) {
@@ -171,7 +165,7 @@ export const toPdf = (
 
   const output = []
     .concat(
-      header({ scale, min, max, width, height, lineWidth }),
+      header({ width, height, trim: trim * scale, lineWidth }),
       lines,
       footer
     )

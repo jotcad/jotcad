@@ -64,11 +64,20 @@ export class RESTBridgeBase {
       if (event.type === 'COMMAND') {
         if (event.op === 'READ') {
           const stream = await this.vfs.read(event.path, event.parameters);
-          await this.fetch(`${this.baseUrl}/reply/${event.id}`, {
+          
+          // TEE the stream so we can both reply to the Hub AND update local state
+          const [s1, s2] = stream.tee();
+          
+          // 1. Reply to Hub
+          const replyPromise = this.fetch(`${this.baseUrl}/reply/${event.id}`, {
             method: 'POST',
-            body: stream,
+            body: s1,
             duplex: 'half'
           });
+
+          // 2. Update local state (this unblocks local readData calls)
+          await this.vfs.write(event.path, event.parameters, s2);
+          await replyPromise;
         }
         return;
       }
