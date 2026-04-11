@@ -12,7 +12,7 @@ export const vfs = new VFS({
 });
 
 // Use the environment variable VITE_VFS_URL or fall back to the Export Peer (9092)
-const vfsUrl = import.meta.env.VITE_VFS_URL || `http://${window.location.hostname}:9092/vfs`;
+const vfsUrl = import.meta.env.VITE_VFS_URL || `http://${window.location.hostname}:9092`;
 const mesh = new MeshLink(vfs, [vfsUrl]);
 
 // Reactive graph state for Solid.js
@@ -45,6 +45,9 @@ export const blackboard = {
         vfs.close();
     },
     async read(path, parameters = {}) {
+        return vfs.read(path, parameters);
+    },
+    async tickle(path, parameters = {}) {
         return vfs.read(path, parameters);
     },
     async write(path, parameters = {}, data) {

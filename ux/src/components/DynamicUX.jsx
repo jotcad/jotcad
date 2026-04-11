@@ -32,7 +32,7 @@ export const DynamicUX = (props) => {
             const blob = new Blob([jsText], { type: 'text/javascript' });
             const url = URL.createObjectURL(blob);
             
-            await import(url);
+            await import(/* @vite-ignore */ url);
             URL.revokeObjectURL(url);
             
             console.log(`[DynamicUX] Component registered: ${schema.componentName}`);

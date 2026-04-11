@@ -227,7 +227,7 @@ export class VFS {
         const trimmed = text.trim();
         if (trimmed.startsWith('{') || trimmed.startsWith('[')) return JSON.parse(trimmed);
     } catch(e) {}
-    return text;
+    return bytes;
   }
 
   async write(pathOrSelector, parameters, stream) {
@@ -251,6 +251,14 @@ export class VFS {
       },
     });
     await this.write(pathOrSelector, parameters, stream);
+  }
+
+  /**
+   * Injects a state event into the local VFS listeners.
+   * Does not perform mesh-wide broadcast.
+   */
+  async receive(event) {
+    this.events.emit('state', event);
   }
 
   async close() {
