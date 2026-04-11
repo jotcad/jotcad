@@ -34,7 +34,6 @@ export const normalizeSelector = (pathOrSelector, params = {}) => {
   };
 
   const result = { path, parameters: clean(params) };
-  // Fixed Sort Order for top-level keys
   const sortedResult = {};
   Object.keys(result).sort().forEach(k => sortedResult[k] = result[k]);
   return sortedResult;
@@ -118,7 +117,7 @@ export class VFS {
     this.storage = options.storage || new MemoryStorage();
     this.getCID = options.getCID || (async (s) => crypto.createHash('sha256').update(JSON.stringify(s)).digest('hex'));
     this.providers = new Map();
-    this.activeWait = new Map(); // SelectorKey -> Promise<Stream>
+    this.activeWait = new Map(); // SelectorKey -> Promise<{success: boolean, cid: string}>
     this.events = new EventEmitter();
     this.mesh = null;
     this.closed = false;
@@ -137,76 +136,67 @@ export class VFS {
 
     const provider = this.providers.get(s.path);
     if (provider) {
-        const stream = await provider(this, s, context);
-        if (stream) {
-            await this.write(s.path, s.parameters, stream);
-            return this.storage.get(cid);
-        }
+        // If there's a provider, read() will handle the deduplication
+        return null; 
     }
     return null;
   }
 
   async read(pathOrSelector, parameters, context = {}) {
     const s = normalizeSelector(pathOrSelector, parameters);
-    const key = JSON.stringify(s); // Synchronous Key
+    const key = JSON.stringify(s);
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
 
-    // DEDUPLICATION: Check synchronously to prevent races
     if (this.activeWait.has(key)) {
-        const success = await this.activeWait.get(key);
-        if (success) {
-            const cid = await this.getCID(s);
-            return this.storage.get(cid);
-        }
-        return null;
+        const { success, cid } = await this.activeWait.get(key);
+        return success ? this.storage.get(cid) : null;
     }
 
     const workPromise = (async () => {
         try {
             const cid = await this.getCID(s);
             
-            // 1. Try local (storage or provider)
-            const localResult = await (async () => {
-                if (await this.storage.has(cid)) return true;
-                const provider = this.providers.get(s.path);
-                if (provider) {
-                    const stream = await provider(this, s, { ...context, expiresAt });
-                    if (stream) {
-                        await this.write(s.path, s.parameters, stream);
-                        return true;
-                    }
+            // 1. Try local storage
+            if (await this.storage.has(cid)) return { success: true, cid };
+
+            // 2. Try local provider
+            const provider = this.providers.get(s.path);
+            if (provider) {
+                const stream = await provider(this, s, { ...context, expiresAt });
+                if (stream) {
+                    await this.write(s.path, s.parameters, stream);
+                    return { success: true, cid };
                 }
-                return false;
-            })();
-
-            if (localResult) return true;
-
-            // 2. Try Mesh
-            if (this.mesh) {
-                return await this.mesh.read(s.path, s.parameters, { stack, expiresAt });
             }
 
-            return false;
+            // 3. Try mesh
+            if (this.mesh) {
+                const success = await this.mesh.read(s.path, s.parameters, { stack, expiresAt });
+                return { success, cid };
+            }
+
+            return { success: false, cid };
         } catch (err) {
             console.error(`[VFS ${this.id}] Read error:`, err);
-            return false;
+            return { success: false, cid: '' };
         } finally {
             this.activeWait.delete(key);
         }
     })();
 
     this.activeWait.set(key, workPromise);
-    const success = await workPromise;
-    if (success) {
-        const cid = await this.getCID(s);
-        return this.storage.get(cid);
-    }
-    return null;
+    const { success, cid } = await workPromise;
+    return success ? this.storage.get(cid) : null;
   }
 
   async readData(pathOrSelector, parameters, context = {}) {
     const stream = await this.read(pathOrSelector, parameters, context);
     if (!stream) return null;
+    
+    if (typeof stream.getReader !== 'function') {
+        throw new Error(`Invalid stream returned from read: ${typeof stream}`);
+    }
+
     const chunks = [];
     const reader = stream.getReader();
     try {

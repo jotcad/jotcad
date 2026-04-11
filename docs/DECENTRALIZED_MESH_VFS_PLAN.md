@@ -43,6 +43,7 @@ While Global SSE is decommissioned, nodes maintain a **Local-Only SSE** loop for
 To prevent redundant CPU/Network usage, nodes implement an **Atomic Reservation** pattern:
 - **Synchronous Locking:** Upon receiving a `READ`, the node synchronously checks an `activeWait` registry for the specific Selector.
 - **Task Joining:** If a task is in progress, the requester `awaits` the existing work promise rather than starting a new one.
+- **Guaranteed Fulfillment:** The work promise MUST NOT resolve until the data is fully committed to local storage (`await vfs.write`). This prevents race conditions where secondary requesters wake up before the data is physically available.
 - **Stream Sovereignty:** Once the work promise resolves, every requester receives a **fresh, independent stream** from local storage.
 
 ### 3.5. Request Expiration (Safe TTL)

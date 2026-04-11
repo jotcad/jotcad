@@ -17,10 +17,6 @@ static std::vector<uint8_t> hexagon_op(jotcad::fs::VFSClient* vfs, const std::st
     // 1. Write the raw mesh to a content-addressed location (geo/mesh)
     std::string mesh_text = geo.encode_text();
     std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
-    std::cout << "[Hexagon Op] Provisioning geo/mesh for params: " << params.dump() << " Stack: ";
-    for (const auto& s : stack) std::cout << s << " -> ";
-    std::cout << std::endl;
-    
     vfs->write("geo/mesh", params, mesh_data);
 
     // 2. Return the Shape JSON for the requested path
@@ -30,7 +26,6 @@ static std::vector<uint8_t> hexagon_op(jotcad::fs::VFSClient* vfs, const std::st
         {"tags", {{"type", "hexagon"}, {"variant", variant}}}
     };
     std::string shape_text = shape.dump(); // Use compact dump to match JS
-    std::cout << "[Hexagon Op] Returning Shape JSON for " << path << ": " << shape_text << std::endl;
     return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
 }
 

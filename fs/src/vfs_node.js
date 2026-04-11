@@ -12,9 +12,7 @@ export const getCID = async (selector) => {
   const s = normalizeSelector(selector.path, selector.parameters);
   if (!s.path) throw new Error('Selector must have a path');
   const json = JSON.stringify(s);
-  const cid = crypto.createHash('sha256').update(json).digest('hex');
-  console.log(`[VFS getCID] CID: ${cid} for ${json}`);
-  return cid;
+  return crypto.createHash('sha256').update(json).digest('hex');
 };
 
 export class DiskStorage {
@@ -31,13 +29,11 @@ export class DiskStorage {
   async set(cid, data, info) {
     const metaFile = path.join(this.root, `${cid}.meta`);
     const dataFile = path.join(this.root, `${cid}.data`);
-    console.log(`[DiskStorage] SET ${cid} (meta: ${metaFile}, data: ${dataFile})`);
     await fsPromises.writeFile(metaFile, JSON.stringify(info, null, 2));
     
     if (!data) return;
 
     if (typeof data.pipeTo === 'function') {
-        console.log(`[DiskStorage] Writing WebStream to ${cid}`);
         const out = fs.createWriteStream(dataFile);
         const writable = new WritableStream({
             write(chunk) { 
@@ -55,14 +51,11 @@ export class DiskStorage {
         });
         await data.pipeTo(writable);
     } else if (typeof data.pipe === 'function') {
-        console.log(`[DiskStorage] Writing NodeStream to ${cid}`);
         const out = fs.createWriteStream(dataFile);
         await pipeline(data, out);
     } else {
-        console.log(`[DiskStorage] Writing Buffer/String to ${cid} (${data.length} bytes)`);
         await fsPromises.writeFile(dataFile, data);
     }
-    console.log(`[DiskStorage] FINISHED ${cid}`);
   }
   async has(cid) {
     return fs.existsSync(path.join(this.root, `${cid}.data`));

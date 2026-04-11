@@ -105,12 +105,9 @@ void VFSNode::stop() {
 std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
     std::string cid = get_cid(req.path, req.parameters);
 
-    // 1. Local Cache
     if (has_local(cid)) return get_local(cid);
 
-    // 2. Provision (Local Op)
     if (handlers_.count(req.path)) {
-        std::cout << "[VFSNode " << config_.id << "] Provisioning: " << req.path << std::endl;
         auto data = handlers_[req.path](req);
         if (!data.empty()) {
             write_local(cid, data, req.path, req.parameters);
@@ -118,7 +115,6 @@ std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
         }
     }
 
-    // 3. Mesh Routing
     std::vector<std::string> new_stack = req.stack;
     new_stack.push_back(config_.id);
 
@@ -152,24 +148,17 @@ void VFSNode::write(const std::string& path, const json& parameters, const std::
 }
 
 std::string VFSNode::get_cid(const std::string& path, const json& parameters) {
-    // Match JS: JSON.stringify({ path, parameters }) where parameters are sorted.
-    // nlohmann::json sorts keys by default in its internal map.
     json selector = {{"path", path}, {"parameters", parameters}};
     std::string serialized = selector.dump();
-    std::string cid = picosha2::hash256_hex_string(serialized);
-    std::cout << "[VFSNode " << config_.id << "] CID: " << cid << " for " << serialized << std::endl;
-    return cid;
+    return picosha2::hash256_hex_string(serialized);
 }
 
 bool VFSNode::has_local(const std::string& cid) {
     if (config_.storage_dir.empty()) return false;
-    bool exists = fs::exists(fs::path(config_.storage_dir) / (cid + ".data"));
-    if (exists) std::cout << "[VFSNode " << config_.id << "] Local HIT for " << cid << std::endl;
-    return exists;
+    return fs::exists(fs::path(config_.storage_dir) / (cid + ".data"));
 }
 
 std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
-    std::cout << "[VFSNode " << config_.id << "] Reading local " << cid << std::endl;
     std::ifstream is(fs::path(config_.storage_dir) / (cid + ".data"), std::ios::binary);
     return std::vector<uint8_t>((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
 }
@@ -177,7 +166,6 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
 void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params) {
     if (config_.storage_dir.empty()) return;
     
-    std::cout << "[VFSNode " << config_.id << "] Writing local " << cid << " (" << data.size() << " bytes)" << std::endl;
     fs::path data_path = fs::path(config_.storage_dir) / (cid + ".data");
     fs::path meta_path = fs::path(config_.storage_dir) / (cid + ".meta");
 
