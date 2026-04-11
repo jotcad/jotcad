@@ -6,11 +6,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const binDir = path.join(__dirname, '..', 'bin');
 const opsPath = path.join(binDir, 'ops');
 
-console.log('[Ops Service] Starting persistent C++ service...');
+const hubUrl = process.env.VFS_HUB_URL || 'http://127.0.0.1:9090/vfs';
+const peerId = process.env.PEER_ID || 'geo-ops-service';
+
+console.log(`[Ops Service] Starting persistent C++ service with HUB: ${hubUrl} ID: ${peerId}`);
 
 const child = spawn(opsPath, [
-  '--hub', 'http://127.0.0.1:9090/vfs',
-  '--peer', 'geo-ops-service'
+  '--hub', hubUrl,
+  '--peer', peerId
 ], {
   cwd: path.join(__dirname, '../..')
 });

@@ -4,6 +4,7 @@
 #include "triangle_op.h"
 #include "offset_op.h"
 #include "outline_op.h"
+#include "pdf_op.h"
 #include <iostream>
 
 using namespace jotcad::geo;
@@ -17,6 +18,7 @@ int main(int argc, char** argv) {
     triangle_init();
     offset_init();
     outline_init();
+    pdf_init();
 
     std::cout << "[Ops] Registry complete. Starting Comprehensive Geometry Service..." << std::endl;
 

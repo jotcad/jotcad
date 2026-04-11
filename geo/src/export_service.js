@@ -1,12 +1,21 @@
 import { VFS, RESTBridge } from '../../fs/src/index.js';
-import fs from 'node:fs/promises';
+import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 
-const vfs = new VFS({ id: 'export-service' });
-const bridge = new RESTBridge(vfs, 'http://localhost:9090/vfs');
+const vfs = new VFS({ id: process.env.PEER_ID || 'export-service' });
+const hubUrl = process.env.VFS_HUB_URL || 'http://localhost:9090/vfs';
+const bridge = new RESTBridge(vfs, hubUrl);
+
+const logFile = path.resolve('export_service.log');
+function log(msg) {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
+    console.log(msg);
+}
 
 async function main() {
-    console.log('[Export Service] Initializing...');
+    log('[Export Service] Initializing...');
     await bridge.start();
 
     // 1. Declare Schema
@@ -26,12 +35,12 @@ async function main() {
         source: 'peer:export-service'
     });
 
-    console.log('[Export Service] Listening for op/export requests...');
+    log('[Export Service] Listening for op/export requests...');
 
     // 3. Watch for PENDING requests on op/export
     const query = vfs.watch('op/export', { states: ['PENDING'] });
     for await (const req of query) {
-        console.log(`[Export Service] Exporting ${req.path}...`);
+        log(`[Export Service] Exporting ${req.path}...`);
         try {
             const { source, filename = 'download.bin' } = req.parameters;
             if (!source) throw new Error('No source provided for export');
@@ -55,20 +64,34 @@ async function main() {
             }
 
             // Read source data as raw bytes
-            const stream = await vfs.read(srcPath, srcParams);
-            const chunks = [];
-            const reader = stream.getReader();
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
+            log(`[Export Service] Requesting source bytes: ${srcPath}`);
+            let data = await vfs.readData(srcPath, srcParams);
+            
+            if (data && typeof data.getReader === 'function') {
+                log(`[Export Service] Data is a stream, consuming...`);
+                const chunks = [];
+                const reader = data.getReader();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                }
+                const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+                const bytes = new Uint8Array(totalLength);
+                let offset = 0;
+                for (const chunk of chunks) {
+                    bytes.set(chunk, offset);
+                    offset += chunk.length;
+                }
+                data = bytes;
             }
-            const data = Buffer.concat(chunks.map(c => Buffer.from(c)));
+
+            log(`[Export Service] Received source data (${data instanceof Uint8Array ? data.length : 'NOT BYTES'} bytes)`);
 
             // Write to local filesystem (relative to the project root)
             const outPath = path.resolve(filename);
-            await fs.writeFile(outPath, data);
-            console.log(`[Export Service] Successfully exported to ${outPath}`);
+            await fsPromises.writeFile(outPath, data);
+            log(`[Export Service] Successfully exported to ${outPath}`);
 
             // Write a confirmation/metadata object back to VFS to fulfill the request
             const status = { 
@@ -79,12 +102,12 @@ async function main() {
             await vfs.writeData(req.path, req.parameters, status);
 
         } catch (err) {
-            console.error(`[Export Service] Error fulfilling ${req.path}:`, err.message);
+            log(`[Export Service ERROR] Error fulfilling ${req.path}: ${err.message}`);
         }
     }
 }
 
 main().catch(err => {
-    console.error('[Export Service] Fatal Error:', err);
+    log(`[Export Service FATAL ERROR] ${err.message}`);
     process.exit(1);
 });

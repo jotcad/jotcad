@@ -1,12 +1,13 @@
-import { RESTBridgeBase } from './vfs_rest_bridge_base.js';
-import { EventSource } from 'eventsource';
+import { MeshLinkBase } from './mesh_link.js';
 
 /**
- * RESTBridge for Node.js environments.
- * Uses the 'eventsource' npm package.
+ * MeshLink for Node.js environments.
  */
-export class RESTBridge extends RESTBridgeBase {
-  constructor(vfs, baseUrl) {
-    super(vfs, baseUrl, { EventSource, fetch: globalThis.fetch });
+export class MeshLink extends MeshLinkBase {
+  constructor(vfs, neighbors = [], options = {}) {
+    super(vfs, neighbors, { 
+        fetch: globalThis.fetch, 
+        localUrl: options.localUrl 
+    });
   }
 }

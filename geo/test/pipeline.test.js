@@ -10,7 +10,7 @@ async function test() {
 
     try {
         // Define the Pipeline using Structured Selectors
-        const filename = 'pipeline_structured.pdf';
+        const filename = 'pipeline_structured_final.pdf';
         
         const exportParams = {
             filename,
@@ -38,6 +38,10 @@ async function test() {
 
         console.log('[Test] Triggering full pipeline via structured op/export...');
         
+        // Use tickle to start the pipeline without capturing the promise locally
+        await vfs.tickle('op/export', exportParams);
+
+        // Wait for op/export to become AVAILABLE from the Export Service
         const result = await vfs.readData('op/export', exportParams);
 
         console.log('[Test] Pipeline completed successfully!');

@@ -17,39 +17,39 @@ try {
 
 const components = [
   {
-    name: 'VFS Hub',
+    name: 'Ops Peer (9091)',
     command: 'node',
-    args: ['fs/serve.js'],
+    args: ['geo/src/peer_wrapper.js', 'node', 'geo/src/dispatcher_service.js'],
     cwd: __dirname,
-    env: { ...process.env, PORT: '9090' }
+    env: { 
+        ...process.env, 
+        PORT: '9091',
+        PEER_ID: 'dispatcher-peer',
+        NEIGHBORS: '' // Ops is a leaf provider
+    }
   },
   {
-    name: 'C++ Ops Service',
+    name: 'Export Peer (9092)',
     command: 'node',
-    args: ['geo/src/dispatcher_service.js'],
+    args: ['geo/src/peer_wrapper.js', 'node', 'geo/src/export_service.js'],
     cwd: __dirname,
-    env: { ...process.env }
-  },
-  {
-    name: 'PDF Service',
-    command: 'node',
-    args: ['geo/src/pdf_service.js'],
-    cwd: __dirname,
-    env: { ...process.env }
-  },
-  {
-    name: 'Export Service',
-    command: 'node',
-    args: ['geo/src/export_service.js'],
-    cwd: __dirname,
-    env: { ...process.env }
+    env: { 
+        ...process.env, 
+        PORT: '9092',
+        PEER_ID: 'export-peer',
+        NEIGHBORS: 'http://localhost:9091/vfs' // Export uses Ops
+    }
   },
   {
     name: 'Interactive UX',
     command: 'npm',
     args: ['run', 'dev', '--', '--port', '3030'],
     cwd: path.join(__dirname, 'ux'),
-    env: { ...process.env }
+    env: { 
+        ...process.env,
+        // The UX can connect to the nearest peer (Export)
+        VITE_VFS_URL: 'http://localhost:9092/vfs'
+    }
   }
 ];
 
@@ -113,19 +113,11 @@ process.on('SIGINT', () => shutdown());
 process.on('SIGTERM', () => shutdown());
 
 // Initial Launch
-console.log('[Orchestrator] Starting JotCAD System...');
+console.log('[Orchestrator] Starting JotCAD Mesh-VFS...');
 
-const hub = components.find(c => c.name === 'VFS Hub');
-const rest = components.filter(c => c.name !== 'VFS Hub');
-
-launch(hub);
-
-console.log('[Orchestrator] Waiting for VFS Hub to be ready...');
-setTimeout(() => {
-    if (!shuttingDown) {
-        rest.forEach(launch);
-    }
-}, 1500);
+// In the Mesh-VFS, we launch all peers in parallel. 
+// They will retry neighbor connections as needed.
+components.forEach(launch);
 
 // Periodic check to ensure all processes are still in the Map and active
 setInterval(() => {

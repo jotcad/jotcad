@@ -26,7 +26,9 @@ export class RESTBridgeBase {
       if (event.source === 'remote' || event.source === 'node') return;
       if (!event.path) return; // Ignore lifecycle events like CLOSED
 
-      // Ensure we relay the state change to the hub
+      // MESH SILENCE: We no longer push every local state change to a Hub.
+      // Data and state remain local until explicitly requested via READ.
+      /*
       await this.fetch(`${this.baseUrl}/state`, {
         method: 'POST',
         headers: { 
@@ -35,8 +37,10 @@ export class RESTBridgeBase {
         },
         body: JSON.stringify(event)
       });
+      */
 
-      // Special handling for data upload if AVAILABLE
+      // MESH SILENCE: No more proactive PUSH of binary data.
+      /*
       if (event.state === 'AVAILABLE') {
         const stream = await this.vfs.storage.get(event.cid);
         if (stream) {
@@ -51,6 +55,7 @@ export class RESTBridgeBase {
           });
         }
       }
+      */
     });
 
     // 2. Remote -> Local (Inbound Commands via SSE)

@@ -1,13 +1,12 @@
-import { RESTBridgeBase } from './vfs_rest_bridge_base.js';
+import { MeshLinkBase } from './mesh_link.js';
 
 /**
- * RESTBridge for Browser environments.
- * Uses native EventSource and fetch.
+ * MeshLink for Browser environments.
+ * Uses native fetch.
  */
-export class RESTBridge extends RESTBridgeBase {
-  constructor(vfs, baseUrl) {
-    super(vfs, baseUrl, { 
-      EventSource: globalThis.EventSource, 
+export class MeshLink extends MeshLinkBase {
+  constructor(vfs, neighbors = []) {
+    super(vfs, neighbors, { 
       fetch: globalThis.fetch.bind(globalThis) 
     });
   }

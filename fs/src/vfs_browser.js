@@ -113,5 +113,26 @@ export class IndexedDBStorage {
 export class VFS extends CoreVFS {
   constructor(options = {}) {
     super({ getCID, ...options });
+    this.initialized = false;
+  }
+
+  async init() {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    if (this.storage instanceof IndexedDBStorage) {
+      console.log(`[VFS ${this.id}] EPHEMERAL WIPE: Cleaning IndexedDB storage...`);
+      const db = await this.storage._getDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(this.storage.storeName, 'readwrite');
+        const store = transaction.objectStore(this.storage.storeName);
+        const request = store.clear();
+        request.onsuccess = () => {
+          console.log(`[VFS ${this.id}] Successfully wiped browser storage.`);
+          resolve();
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
   }
 }
