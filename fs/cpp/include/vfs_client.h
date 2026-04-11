@@ -38,7 +38,7 @@ public:
     /**
      * Synchronously read an artifact. Blocks until AVAILABLE.
      */
-    virtual std::vector<uint8_t> read(const std::string& path, const json& parameters = json::object()) = 0;
+    virtual std::vector<uint8_t> read(const std::string& path, const json& parameters = json::object(), const std::vector<std::string>& stack = {}) = 0;
 
     /**
      * Synchronously write an artifact.

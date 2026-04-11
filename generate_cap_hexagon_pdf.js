@@ -1,4 +1,4 @@
-import { VFS, RESTBridge } from './fs/src/index.js';
+import { VFS, MeshLink } from './fs/src/index.js';
 import { toPdf } from './geometry/pdf.js';
 import { withAssets } from './geometry/assets.js';
 import { makeShape, edges } from './geometry/main.js';
@@ -7,11 +7,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 const vfs = new VFS({ id: 'pdf-generator' });
-const bridge = new RESTBridge(vfs, 'http://localhost:9090/vfs');
+const mesh = new MeshLink(vfs, ['http://localhost:9092/vfs']);
 
 async function main() {
-    console.log('[PDF] Starting VFS Bridge...');
-    await bridge.start();
+    console.log('[PDF] Starting Mesh Bridge...');
+    await vfs.init();
+    await mesh.start();
 
     const hexPath = 'shape/hexagon';
     
@@ -22,11 +23,7 @@ async function main() {
 
     console.log(`[PDF] Demanding hexagon cap (triangle) with params:`, parameters);
     
-    // 1. Demand the cap section
-    await vfs.tickle(hexPath, parameters);
-
-    // 2. Wait for it to be AVAILABLE and read it
-    console.log(`[PDF] Waiting for data...`);
+    // readData in vfs_core.js handles JSON parsing and recursive mesh search
     const shapeData = await vfs.readData(hexPath, parameters);
     
     if (!shapeData) {
@@ -69,7 +66,7 @@ async function main() {
         console.log(`[PDF] Successfully wrote ${outPath}`);
     });
 
-    await bridge.stop();
+    mesh.stop();
     vfs.close();
 }
 

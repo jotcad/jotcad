@@ -20,131 +20,63 @@ export const Watch = (path, parameters = {}) => ({
 });
 
 /**
- * Composes a final selector.
- */
-const composeSelector = (definition, triggerParams, callParams) => {
-  return {
-    path: definition.path,
-    mode: definition.mode,
-    parameters: {
-      ...definition.parameters,
-      ...triggerParams,
-      ...callParams,
-    },
-  };
-};
-
-/**
- * Node abstraction for agent-style processors using Socket Selectors.
+ * Node abstraction for agent-style processors.
+ * Refactored for Mesh-VFS: Uses registerProvider instead of watch.
  */
 export class Node {
   constructor(vfs, { sockets = {}, execute }) {
     this.vfs = vfs;
     this.socketsDef = sockets;
     this.execute = execute;
-    this.abortController = new AbortController();
+    this._fulfilled = new Map(); // path -> data
   }
 
   stop() {
-    console.log('[Node] Stopping agent...');
-    this.abortController.abort();
+    // registerProvider is active until VFS closes or overwritten
   }
 
   async start() {
-    const triggers = Object.entries(this.socketsDef).filter(
+    const outputs = Object.entries(this.socketsDef).filter(
       ([name, def]) => def.mode === 'write'
     );
 
-    const promises = triggers.map(([outName, outDef]) => {
-      return (async () => {
+    for (const [outName, outDef] of outputs) {
+      this.vfs.registerProvider(outDef.path, async (v, selector, context) => {
         try {
-          const query = this.vfs.watch(outDef.path, {
-            states: ['PENDING'],
-            signal: this.abortController.signal,
-          });
+          const sockets = {};
+          // Internal helpers prefixed with _ to avoid collision with user sockets
+          sockets._params = async () => selector.parameters;
 
-          for await (const req of query) {
-            if (this.abortController.signal.aborted) break;
-
-            const hasLease = await this.vfs.lease(
-              req.path,
-              req.parameters,
-              30000
-            );
-            if (!hasLease) continue;
-
-            try {
-              const sockets = {};
-              sockets.params = async () => req.parameters;
-
-              for (const [name, def] of Object.entries(this.socketsDef)) {
-                sockets[name] = {};
-                if (def.mode === 'read') {
-                  sockets[name].read = async (overrideParams = {}) => {
-                    return this.vfs.read(def.path, {
-                      ...def.parameters,
-                      ...req.parameters,
-                      ...overrideParams,
-                    });
-                  };
-                  sockets[name].readData = async (overrideParams = {}) => {
-                    return this.vfs.readData(def.path, {
-                      ...def.parameters,
-                      ...req.parameters,
-                      ...overrideParams,
-                    });
-                  };
-                } else if (def.mode === 'write') {
-                  sockets[name].write = async (stream, overrideParams = {}) => {
-                    return this.vfs.write(
-                      def.path,
-                      {
-                        ...def.parameters,
-                        ...req.parameters,
-                        ...overrideParams,
-                      },
-                      stream
-                    );
-                  };
-                  sockets[name].writeData = async (data, overrideParams = {}) => {
-                    return this.vfs.writeData(
-                      def.path,
-                      {
-                        ...def.parameters,
-                        ...req.parameters,
-                        ...overrideParams,
-                      },
-                      data
-                    );
-                  };
-                } else if (def.mode === 'watch') {
-                  sockets[name].watch = (options = {}) => {
-                    return this.vfs.watch(def.path, {
-                      ...options,
-                      signal: this.abortController.signal,
-                    });
-                  };
-                }
-              }
-
-              await this.execute(sockets);
-            } catch (err) {
-              if (
-                err instanceof VFSClosedError ||
-                this.abortController.signal.aborted
-              )
-                break;
-              throw err;
+          for (const [name, def] of Object.entries(this.socketsDef)) {
+            sockets[name] = {};
+            if (def.mode === 'read') {
+              sockets[name].read = async (overrideParams = {}) => {
+                return v.read(def.path, { ...def.parameters, ...selector.parameters, ...overrideParams }, context);
+              };
+              sockets[name].readData = async (overrideParams = {}) => {
+                return v.readData(def.path, { ...def.parameters, ...selector.parameters, ...overrideParams }, context);
+              };
+            } else if (def.mode === 'write') {
+              sockets[name].write = async (stream) => {
+                this._fulfilled.set(outDef.path, stream);
+              };
+              sockets[name].writeData = async (data) => {
+                this._fulfilled.set(outDef.path, data);
+              };
             }
           }
-        } catch (err) {
-          if (err instanceof VFSClosedError || err.name === 'AbortError')
-            return;
-          throw err;
-        }
-      })();
-    });
 
-    return Promise.all(promises);
+          await this.execute(sockets);
+          
+          const result = this._fulfilled.get(outDef.path);
+          this._fulfilled.delete(outDef.path);
+          return result;
+
+        } catch (err) {
+          console.error(`[Node ${v.id}] Execution error for ${selector.path}:`, err);
+          return null;
+        }
+      });
+    }
   }
 }

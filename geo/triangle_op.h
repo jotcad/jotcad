@@ -8,7 +8,7 @@
 namespace jotcad {
 namespace geo {
 
-static std::vector<uint8_t> triangle_op(jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params) {
+static std::vector<uint8_t> triangle_op(jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack = {}) {
     std::cout << "[Triangle Op] Generating triangle with params: " << params.dump() << std::endl;
     double a = 0, b = 0, c = 0;
     std::string form = params.value("form", "SSS");
@@ -31,7 +31,6 @@ static std::vector<uint8_t> triangle_op(jotcad::fs::VFSClient* vfs, const std::s
 
     // 1. Write the raw mesh to a content-addressed location (geo/mesh)
     std::string mesh_text = geo.encode_text();
-    std::cout << "[Triangle Op] Generated mesh, " << mesh_text.size() << " bytes. Writing to geo/mesh..." << std::endl;
     std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
     vfs->write("geo/mesh", params, mesh_data);
 
@@ -41,8 +40,7 @@ static std::vector<uint8_t> triangle_op(jotcad::fs::VFSClient* vfs, const std::s
         {"parameters", params},
         {"tags", {{"type", "triangle"}}}
     };
-    std::string shape_text = shape.dump(2);
-    std::cout << "[Triangle Op] Returning Shape JSON for " << path << std::endl;
+    std::string shape_text = shape.dump();
     return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
 }
 

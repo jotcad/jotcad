@@ -11,19 +11,16 @@ export { VFSClosedError } from './vfs_core.js';
 export const getCID = async (selector) => {
   const s = normalizeSelector(selector.path, selector.parameters);
   if (!s.path) throw new Error('Selector must have a path');
-  
-  const hash = crypto.createHash('sha256');
-  // s.parameters is already recursively sorted and normalized
-  hash.update(s.path + JSON.stringify(s.parameters));
-  return hash.digest('hex');
+  const json = JSON.stringify(s);
+  const cid = crypto.createHash('sha256').update(json).digest('hex');
+  console.log(`[VFS getCID] CID: ${cid} for ${json}`);
+  return cid;
 };
 
 export class DiskStorage {
   constructor(root) {
     this.root = root;
-    if (!fs.existsSync(this.root)) {
-      fs.mkdirSync(this.root, { recursive: true });
-    }
+    if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   }
   async get(cid) {
     const dataFile = path.join(this.root, `${cid}.data`);
@@ -31,31 +28,50 @@ export class DiskStorage {
     const nodeStream = fs.createReadStream(dataFile);
     return Readable.toWeb(nodeStream);
   }
-  async set(cid, stream, info) {
+  async set(cid, data, info) {
     const metaFile = path.join(this.root, `${cid}.meta`);
     const dataFile = path.join(this.root, `${cid}.data`);
+    console.log(`[DiskStorage] SET ${cid} (meta: ${metaFile}, data: ${dataFile})`);
     await fsPromises.writeFile(metaFile, JSON.stringify(info, null, 2));
     
-    // Handle both Node and Web Streams
-    if (typeof stream.pipeTo === 'function') {
+    if (!data) return;
+
+    if (typeof data.pipeTo === 'function') {
+        console.log(`[DiskStorage] Writing WebStream to ${cid}`);
         const out = fs.createWriteStream(dataFile);
-        await stream.pipeTo(new WritableStream({
-            write(chunk) { out.write(chunk); },
-            close() { out.end(); }
-        }));
+        const writable = new WritableStream({
+            write(chunk) { 
+                return new Promise((resolve, reject) => {
+                    if (!out.write(chunk)) out.once('drain', resolve);
+                    else resolve();
+                });
+            },
+            close() { 
+                return new Promise((resolve) => {
+                    out.end(resolve);
+                });
+            },
+            abort(err) { out.destroy(err); }
+        });
+        await data.pipeTo(writable);
+    } else if (typeof data.pipe === 'function') {
+        console.log(`[DiskStorage] Writing NodeStream to ${cid}`);
+        const out = fs.createWriteStream(dataFile);
+        await pipeline(data, out);
     } else {
-        const out = fs.createWriteStream(dataFile);
-        await pipeline(stream, out);
+        console.log(`[DiskStorage] Writing Buffer/String to ${cid} (${data.length} bytes)`);
+        await fsPromises.writeFile(dataFile, data);
     }
+    console.log(`[DiskStorage] FINISHED ${cid}`);
   }
   async has(cid) {
     return fs.existsSync(path.join(this.root, `${cid}.data`));
   }
   async delete(cid) {
-    const metaFile = path.join(this.root, `${cid}.meta`);
-    const dataFile = path.join(this.root, `${cid}.data`);
-    if (fs.existsSync(metaFile)) await fsPromises.unlink(metaFile);
-    if (fs.existsSync(dataFile)) await fsPromises.unlink(dataFile);
+    try {
+      await fsPromises.unlink(path.join(this.root, `${cid}.meta`));
+      await fsPromises.unlink(path.join(this.root, `${cid}.data`));
+    } catch (e) {}
   }
   async close() {}
 }
@@ -63,6 +79,7 @@ export class DiskStorage {
 export class VFS extends CoreVFS {
   constructor(options = {}) {
     super({ getCID, ...options });
+    this.initialized = false;
   }
 
   async init() {
@@ -78,10 +95,7 @@ export class VFS extends CoreVFS {
             await fsPromises.unlink(path.join(this.storage.root, file));
           }
         }
-        console.log(`[VFS ${this.id}] Successfully wiped storage. Starting with a Clean Slate.`);
-      } catch (e) {
-        console.error(`[VFS ${this.id}] ERROR: Failed to wipe storage directory.`, e);
-      }
+      } catch (e) {}
     }
   }
 }

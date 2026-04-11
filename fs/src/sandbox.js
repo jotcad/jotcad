@@ -4,6 +4,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { pipeline } from 'node:stream/promises';
+import { Readable } from 'node:stream';
 
 /**
  * In-memory sandbox using memfs.
@@ -29,9 +30,7 @@ export class MemSandbox {
     const data = this.fs.readFileSync(filename);
     return new ReadableStream({
       start(controller) {
-        controller.enqueue(
-          new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-        );
+        controller.enqueue(new Uint8Array(data));
         controller.close();
       },
     });
@@ -41,9 +40,9 @@ export class MemSandbox {
     if (content instanceof Uint8Array) return content;
     if (typeof content === 'string') return new TextEncoder().encode(content);
 
-    // Handle streams
-    const reader = content.getReader ? content.getReader() : null;
-    if (reader) {
+    // Handle Web Streams
+    if (content.getReader) {
+      const reader = content.getReader();
       const chunks = [];
       while (true) {
         const { done, value } = await reader.read();
@@ -61,10 +60,10 @@ export class MemSandbox {
     }
 
     // Handle Node streams
-    if (content.on) {
+    if (typeof content[Symbol.asyncIterator] === 'function') {
       const chunks = [];
       for await (const chunk of content) chunks.push(chunk);
-      return new Uint8Array(Buffer.concat(chunks).buffer);
+      return new Uint8Array(Buffer.concat(chunks));
     }
 
     return new TextEncoder().encode(JSON.stringify(content));
@@ -88,16 +87,13 @@ export class DiskSandbox {
     const fullPath = path.join(this.root, filename);
     await fsPromises.mkdir(path.dirname(fullPath), { recursive: true });
 
-    const out = fs.createWriteStream(fullPath);
-    if (content.pipe) {
-      await pipeline(content, out);
-    } else if (content.getReader) {
-      // Convert web stream to node stream for pipeline
-      const nodeStream = fs.createReadStream(null, { fd: -1 }); // Placeholder?
-      // Actually simpler to just write the Uint8Array
-      await fsPromises.writeFile(fullPath, await this._toUint8Array(content));
+    if (content.getReader || (typeof content === 'object' && content !== null && content[Symbol.asyncIterator])) {
+        const bytes = await this._toUint8Array(content);
+        await fsPromises.writeFile(fullPath, bytes);
+    } else if (typeof content === 'string' || content instanceof Uint8Array) {
+        await fsPromises.writeFile(fullPath, content);
     } else {
-      await fsPromises.writeFile(fullPath, await this._toUint8Array(content));
+        await fsPromises.writeFile(fullPath, JSON.stringify(content));
     }
   }
 
@@ -108,12 +104,11 @@ export class DiskSandbox {
   }
 
   async _toUint8Array(content) {
-    // Re-use logic from MemSandbox or keep it simple for disk
-    if (typeof content === 'string') return content;
     if (content instanceof Uint8Array) return content;
+    if (typeof content === 'string') return new TextEncoder().encode(content);
 
-    const reader = content.getReader ? content.getReader() : null;
-    if (reader) {
+    if (content.getReader) {
+      const reader = content.getReader();
       const chunks = [];
       while (true) {
         const { done, value } = await reader.read();
@@ -122,7 +117,14 @@ export class DiskSandbox {
       }
       return Buffer.concat(chunks);
     }
-    return JSON.stringify(content);
+
+    if (typeof content[Symbol.asyncIterator] === 'function') {
+        const chunks = [];
+        for await (const chunk of content) chunks.push(chunk);
+        return Buffer.concat(chunks);
+    }
+
+    return new TextEncoder().encode(JSON.stringify(content));
   }
 
   async close() {

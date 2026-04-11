@@ -1,123 +1,49 @@
-import { test } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert';
-import { VFS } from '../src/vfs_node.js';
-import { registerVFSRoutes } from '../src/vfs_rest_server.js';
-import { Readable } from 'stream';
-import puppeteer from 'puppeteer';
-import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { VFS, MeshLink, registerVFSRoutes, DiskStorage } from '../src/index.js';
+import http from 'node:http';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+test('Multi-Environment Mesh Coordination', async (t) => {
+    let nodeNode, browserVfs, nodeServer, stopServer;
+    const storageDir = path.resolve('.test_vfs_multi_env');
 
-test('Multi-Environment VFS (REST + SSE)', { timeout: 20000 }, async (t) => {
-  const vfs = new VFS({ id: 'node' });
+    t.after(async () => {
+        if (nodeNode) nodeNode.mesh.stop();
+        if (stopServer) stopServer();
+        if (nodeNode) await nodeNode.vfs.close();
+        if (nodeServer) nodeServer.close();
+        if (browserVfs) await browserVfs.close();
+        await fs.rm(storageDir, { recursive: true, force: true }).catch(() => {});
+    });
 
-  // 1. Setup HTTP Server
-  const server = http.createServer((req, res) => {
-    let filePath;
-    if (req.url === '/' || req.url === '/index.html') {
-      filePath = path.join(__dirname, 'web', 'index.html');
-    } else if (req.url.startsWith('/src/')) {
-      filePath = path.join(
-        __dirname,
-        '..',
-        'src',
-        req.url.replace('/src/', '')
-      );
-    } else {
-      filePath = path.join(__dirname, 'web', req.url);
-    }
+    // 1. Setup "Node" Node (Server)
+    const vfsNode = new VFS({ id: 'node-env', storage: new DiskStorage(storageDir) });
+    const meshNode = new MeshLink(vfsNode, [], { localUrl: 'http://localhost:9300' });
+    nodeServer = http.createServer();
+    stopServer = registerVFSRoutes(vfsNode, nodeServer, '', meshNode);
+    await new Promise(resolve => nodeServer.listen(9300, '0.0.0.0', resolve));
+    await vfsNode.init();
+    await meshNode.start();
+    nodeNode = { vfs: vfsNode, mesh: meshNode };
 
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      const ext = path.extname(filePath);
-      const contentType =
-        ext === '.js' ? 'application/javascript' : 'text/html';
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
-      });
-      fs.createReadStream(filePath).pipe(res);
-    } else {
-      // Let the VFS routes handle it if it didn't match a file
-    }
-  });
+    // 2. Setup "Browser" Node (Client)
+    // In this test, we simulate the browser by just using a VFS with MemoryStorage
+    browserVfs = new VFS({ id: 'browser-env' });
+    const meshBrowser = new MeshLink(browserVfs, ['http://localhost:9300']);
+    await browserVfs.init();
+    await meshBrowser.start();
 
-  // 2. Attach VFS REST Endpoints
-  registerVFSRoutes(vfs, server, '/vfs');
+    await t.test('browser can fetch data provisioned by node', async () => {
+        const p = 'env/sharing/test';
+        const data = { msg: 'from node to simulated browser' };
+        
+        await vfsNode.writeData(p, {}, data);
+        const result = await browserVfs.readData(p, {});
+        
+        assert.deepStrictEqual(result, data);
+    });
 
-  const port = await new Promise((resolve) =>
-    server.listen(0, '127.0.0.1', () => resolve(server.address().port))
-  );
-  const baseUrl = `http://127.0.0.1:${port}`;
-
-  // 3. Launch Puppeteer
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-  const page = await browser.newPage();
-
-  page.on('console', (msg) => console.log(`[Browser] ${msg.text()}`));
-  page.on('pageerror', (err) =>
-    console.error(`[Browser Error] ${err.message}`)
-  );
-
-  await page.goto(baseUrl);
-
-  await t.test(
-    'cascading coordination via REST + SSE',
-    { timeout: 10000 },
-    async () => {
-      console.log('[Node] Triggering Web Worker...');
-      await vfs.tickle('trigger-worker');
-
-      console.log('[Node] Waiting for Service Worker result (sw-done)...');
-      const swDoneStream = await vfs.read('sw-done');
-
-      let swData = '';
-      const decoder = new TextDecoder();
-      for await (const chunk of swDoneStream) {
-        swData += decoder.decode(chunk, { stream: true });
-      }
-      swData += decoder.decode(); // Flush
-      assert.strictEqual(swData, 'Hello from SW');
-      console.log('[Node] Service Worker finished!');
-
-      console.log('[Node] Writing final result...');
-      await vfs.write(
-        'final-result',
-        {},
-        Readable.from([Buffer.from('Success!')])
-      );
-
-      await page.waitForFunction(
-        () => {
-          const el = document.getElementById('status');
-          return el && el.textContent === 'Test Passed';
-        },
-        { timeout: 15000 }
-      );
-
-      const status = await page.$eval('#status', (el) => el.textContent);
-      assert.strictEqual(status, 'Test Passed');
-    }
-  );
-
-  // Cleanup
-  console.log('[Test] Starting cleanup...');
-  console.log('[Test] Closing page...');
-  await page.close();
-  console.log('[Test] Closing browser...');
-  await browser.close();
-  console.log('[Test] Closing WebSocket server...');
-  // wss.close(); (Oops, wss is not in this scope, but registerVFSRoutes handles the listeners)
-  console.log('[Test] Closing HTTP server...');
-  server.close();
-  console.log('[Test] Closing VFS...');
-  await vfs.close();
-  console.log('[Test] Cleanup complete.');
-  await new Promise(r => setTimeout(r, 100));
+    meshBrowser.stop();
 });

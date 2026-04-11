@@ -1,113 +1,57 @@
-import { VFS, RESTBridge } from '../../fs/src/index.js';
-import fs from 'node:fs';
+import http from 'node:http';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import { VFS, DiskStorage, MeshLink, registerVFSRoutes } from '../../fs/src/index.js';
 
-const vfs = new VFS({ id: process.env.PEER_ID || 'export-service' });
-const hubUrl = process.env.VFS_HUB_URL || 'http://localhost:9090/vfs';
-const bridge = new RESTBridge(vfs, hubUrl);
+const id = process.env.PEER_ID || 'export-node';
+const port = parseInt(process.env.PORT || '9092');
+const neighbors = (process.env.NEIGHBORS || '').split(',').filter(Boolean);
+const storageDir = path.resolve(`.vfs_storage_${id}`);
 
-const logFile = path.resolve('export_service.log');
-function log(msg) {
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
-    console.log(msg);
-}
+console.log(`[Export Node ${id}] Starting Native Mesh Node...`);
 
-async function main() {
-    log('[Export Service] Initializing...');
-    await bridge.start();
+const vfs = new VFS({ id, storage: new DiskStorage(storageDir) });
+const meshLink = new MeshLink(vfs, neighbors, { localUrl: `http://localhost:${port}` });
 
-    // 1. Declare Schema
-    vfs.declare('op/export', {
-        type: 'object',
-        properties: {
-            source: { type: 'string' },
-            filename: { type: 'string', default: 'download.bin' }
-        }
-    });
+// Register the Export Op as a VFS Provider
+vfs.registerProvider('op/export', async (v, selector) => {
+    console.log(`[Export Node] Provisioning Export: ${selector.path}`);
+    try {
+        const { source, filename = 'download.bin' } = selector.parameters;
+        if (!source) throw new Error('No source provided for export');
 
-    // 2. Advertise LISTENING
-    await vfs.receive({
-        path: 'op/export',
-        parameters: {},
-        state: 'LISTENING',
-        source: 'peer:export-service'
-    });
+        // 1. Resolve the source bytes from the mesh
+        // Note: v.readData will use meshLink to find it if it's not local!
+        const data = await v.readData(source);
+        if (!data) throw new Error(`Could not find source: ${JSON.stringify(source)}`);
 
-    log('[Export Service] Listening for op/export requests...');
+        // 2. Perform the export (Write to local disk)
+        const outPath = path.resolve(filename);
+        await fsPromises.writeFile(outPath, data);
+        console.log(`[Export Node] Exported to ${outPath}`);
 
-    // 3. Watch for PENDING requests on op/export
-    const query = vfs.watch('op/export', { states: ['PENDING'] });
-    for await (const req of query) {
-        log(`[Export Service] Exporting ${req.path}...`);
-        try {
-            const { source, filename = 'download.bin' } = req.parameters;
-            if (!source) throw new Error('No source provided for export');
+        // 3. Return the status object as the "file" content
+        const status = { 
+            exportedAt: new Date().toISOString(), 
+            filename: outPath, 
+            size: data.length 
+        };
+        const statusBytes = new TextEncoder().encode(JSON.stringify(status, null, 2));
+        return new ReadableStream({
+            start(c) { c.enqueue(statusBytes); c.close(); }
+        });
 
-            // Parse source selector
-            let srcPath, srcParams;
-            if (typeof source === 'object') {
-                srcPath = source.path;
-                srcParams = source.parameters || {};
-            } else {
-                // Fallback for string URIs
-                srcPath = source;
-                srcParams = {};
-                if (srcPath.startsWith('vfs:/')) srcPath = srcPath.slice(5);
-                const q = srcPath.indexOf('?');
-                if (q !== -1) {
-                    const queryStr = srcPath.slice(q + 1);
-                    srcPath = srcPath.slice(0, q);
-                    try { srcParams = JSON.parse(decodeURIComponent(queryStr)); } catch(e) {}
-                }
-            }
-
-            // Read source data as raw bytes
-            log(`[Export Service] Requesting source bytes: ${srcPath}`);
-            let data = await vfs.readData(srcPath, srcParams);
-            
-            if (data && typeof data.getReader === 'function') {
-                log(`[Export Service] Data is a stream, consuming...`);
-                const chunks = [];
-                const reader = data.getReader();
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    chunks.push(value);
-                }
-                const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-                const bytes = new Uint8Array(totalLength);
-                let offset = 0;
-                for (const chunk of chunks) {
-                    bytes.set(chunk, offset);
-                    offset += chunk.length;
-                }
-                data = bytes;
-            }
-
-            log(`[Export Service] Received source data (${data instanceof Uint8Array ? data.length : 'NOT BYTES'} bytes)`);
-
-            // Write to local filesystem (relative to the project root)
-            const outPath = path.resolve(filename);
-            await fsPromises.writeFile(outPath, data);
-            log(`[Export Service] Successfully exported to ${outPath}`);
-
-            // Write a confirmation/metadata object back to VFS to fulfill the request
-            const status = { 
-                exportedAt: new Date().toISOString(), 
-                filename: outPath, 
-                size: data.length 
-            };
-            await vfs.writeData(req.path, req.parameters, status);
-
-        } catch (err) {
-            log(`[Export Service ERROR] Error fulfilling ${req.path}: ${err.message}`);
-        }
+    } catch (err) {
+        console.error(`[Export Node ERROR] ${err.message}`);
+        return null;
     }
-}
+});
 
-main().catch(err => {
-    log(`[Export Service FATAL ERROR] ${err.message}`);
-    process.exit(1);
+const server = http.createServer();
+registerVFSRoutes(vfs, server, '', meshLink);
+
+server.listen(port, '0.0.0.0', async () => {
+    console.log(`[Export Node ${id}] Listening on http://localhost:${port}`);
+    await vfs.init();
+    await meshLink.start();
 });

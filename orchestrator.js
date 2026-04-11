@@ -8,36 +8,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 console.log('[Orchestrator] Starting JotCAD System...');
 
 try {
-  console.log('[Orchestrator] Cleaning up port 3030...');
-  // Use fuser to kill anything on 3030. || true to ignore errors if port is empty.
-  execSync('fuser -k 3030/tcp || true', { stdio: 'inherit' });
-} catch (e) {
-  // Ignore
-}
+  console.log('[Orchestrator] Cleaning up ports 3030, 9091, 9092...');
+  execSync('fuser -k 3030/tcp 9091/tcp 9092/tcp || true', { stdio: 'inherit' });
+} catch (e) {}
 
 const components = [
   {
-    name: 'Ops Peer (9091)',
-    command: 'node',
-    args: ['geo/src/peer_wrapper.js', 'node', 'geo/src/dispatcher_service.js'],
+    name: 'Ops Node (9091)',
+    command: './geo/bin/ops',
+    args: [],
     cwd: __dirname,
     env: { 
         ...process.env, 
         PORT: '9091',
-        PEER_ID: 'dispatcher-peer',
+        PEER_ID: 'geo-ops-node',
         NEIGHBORS: '' // Ops is a leaf provider
     }
   },
   {
-    name: 'Export Peer (9092)',
+    name: 'Export Node (9092)',
     command: 'node',
-    args: ['geo/src/peer_wrapper.js', 'node', 'geo/src/export_service.js'],
+    args: ['geo/src/export_service.js'], // We should update this to be a native VFS node too
     cwd: __dirname,
     env: { 
         ...process.env, 
         PORT: '9092',
-        PEER_ID: 'export-peer',
-        NEIGHBORS: 'http://localhost:9091/vfs' // Export uses Ops
+        PEER_ID: 'export-node',
+        NEIGHBORS: 'http://localhost:9091' // Export uses Ops
     }
   },
   {
@@ -47,8 +44,7 @@ const components = [
     cwd: path.join(__dirname, 'ux'),
     env: { 
         ...process.env,
-        // The UX can connect to the nearest peer (Export)
-        VITE_VFS_URL: 'http://localhost:9092/vfs'
+        VITE_VFS_URL: 'http://localhost:9092'
     }
   }
 ];
@@ -59,24 +55,17 @@ let shuttingDown = false;
 function shutdown(reason) {
   if (shuttingDown) return;
   shuttingDown = true;
-  
-  if (reason) {
-    console.error(`\n[Orchestrator] FATAL FAILURE: ${reason}`);
-  }
-  
+  if (reason) console.error(`\n[Orchestrator] FATAL FAILURE: ${reason}`);
   console.log('\n[Orchestrator] Shutting down all components...');
   for (const [name, child] of processes) {
     console.log(`[Orchestrator] Killing ${name}...`);
     child.kill();
   }
-  
-  // Exit with error if a failure caused the shutdown
   process.exit(reason ? 1 : 0);
 }
 
 function launch(component) {
   console.log(`[Orchestrator] Launching ${component.name}...`);
-  
   const child = spawn(component.command, component.args, {
     cwd: component.cwd,
     env: component.env || process.env,
@@ -96,12 +85,8 @@ function launch(component) {
   });
 
   child.on('close', (code) => {
-    if (!shuttingDown) {
-      if (code !== 0) {
+    if (!shuttingDown && code !== 0) {
         shutdown(`${component.name} exited unexpectedly with code ${code}`);
-      } else {
-        shutdown(`${component.name} exited prematurely`);
-      }
     }
     processes.delete(component.name);
   });
@@ -109,17 +94,13 @@ function launch(component) {
   processes.set(component.name, child);
 }
 
+// Initial Launch
+console.log('[Orchestrator] Starting JotCAD Mesh-VFS...');
+components.forEach(launch);
+
 process.on('SIGINT', () => shutdown());
 process.on('SIGTERM', () => shutdown());
 
-// Initial Launch
-console.log('[Orchestrator] Starting JotCAD Mesh-VFS...');
-
-// In the Mesh-VFS, we launch all peers in parallel. 
-// They will retry neighbor connections as needed.
-components.forEach(launch);
-
-// Periodic check to ensure all processes are still in the Map and active
 setInterval(() => {
     if (shuttingDown) return;
     for (const [name, child] of processes) {
