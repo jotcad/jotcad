@@ -21,6 +21,7 @@ const mesh = new MeshLink(vfs, [vfsUrl]);
 // Reactive graph state for Solid.js
 const [graph, setGraph] = createSignal({});
 const [schemas, setSchemas] = createSignal({});
+const [pulse, setPulse] = createSignal([]); // Array of recent notifications
 const [isConnected, setIsConnected] = createSignal(false);
 const [discoveryStatus, setDiscoveryStatus] = createSignal('idle'); // 'idle', 'loading', 'success', 'error'
 
@@ -28,6 +29,7 @@ export const blackboard = {
     vfs,
     graph,
     schemas,
+    pulse,
     isConnected,
     discoveryStatus,
     async start() {
@@ -40,6 +42,16 @@ export const blackboard = {
                 [event.cid]: { ...prev[event.cid], ...event }
             }));
         });
+
+        // Capture Pub-Sub Pulses
+        const originalNotify = mesh.notify.bind(mesh);
+        mesh.notify = (topic, payload) => {
+            originalNotify(topic, payload);
+            setPulse(prev => {
+                const next = [...prev, { topic, payload, t: Date.now() }];
+                return next.slice(-20); // Keep last 20 pulses
+            });
+        };
 
         // Track connectivity
         try {

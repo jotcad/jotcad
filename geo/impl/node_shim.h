@@ -17,7 +17,7 @@ class NodeClientShim : public jotcad::fs::VFSClient {
 public:
     NodeClientShim(jotcad::fs::VFSNode& node) : node_(node) {}
 
-    std::vector<uint8_t> read(const std::string& path, const json& parameters, const std::vector<std::string>& stack = {}) override {
+    std::vector<uint8_t> read(const std::string& path, const json& parameters = json::object(), const std::vector<std::string>& stack = {}) override {
         jotcad::fs::VFSNode::VFSRequest req;
         req.path = path;
         req.parameters = parameters;

@@ -5,6 +5,7 @@ import { blackboard, vfs } from '../lib/blackboard';
 import { initSharedRenderer, createScene, updateViewports, captureThumbnail, renderJotToScene } from '../lib/three_utils';
 import { JotNode } from './JotNode';
 import { CatalogNode } from './CatalogNode';
+import { MeshGraph } from './MeshGraph';
 import { Viewport } from './Viewport';
 import { DynamicUX } from './DynamicUX';
 import * as THREE from 'three';
@@ -493,6 +494,7 @@ export const Canvas = () => {
         <div class="pointer-events-auto">
             <JotNode />
             <CatalogNode />
+            <MeshGraph />
         </div>
         
         <For each={Object.keys(groupedNodes().paths)}>

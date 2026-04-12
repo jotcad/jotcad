@@ -62,3 +62,36 @@ The system is managed by `orchestrator.js` using a symmetric peering structure:
 - **Ops Node (9091):** C++ leaf provider for geometry.
 - **Export Node (9092):** Node.js gateway peered with Ops; handles PDF generation and file exports.
 - **UX (Browser):** Node.js client node peered with the Export Node.
+
+## 6. Observability Mandate (Pub-Sub)
+
+To provide real-time visibility into the demand-driven execution, the mesh implements a **Hop-by-Hop Pub-Sub** system.
+
+### 6.1. Subscription Propagation (SUB)
+- **Interest Table:** Nodes maintain a local table of `Topic -> Set<NeighborID>`.
+- **Demand-Linked:** Subscriptions are typically created automatically when a `READ` is initiated.
+- **Expiry:** All subscriptions are ephemeral and lease-based.
+
+### 6.2. Publication Propagation (PUB)
+- **Local Events:** Nodes emit local events for lifecycle transitions (`MATH_START`, `DISK_WRITE`).
+- **Gossip Forwarding:** Notifications are broadcast only to neighbors with matching subscriptions.
+- **Visual Feedback:** The UX node aggregates these notifications to draw a live, pulsing graph of the mesh activity.
+
+## 7. Implementation Status (Updated April 2026)
+
+| Feature | Status | Details |
+| :--- | :--- | :--- |
+| **Fail-Fast Validation** | [DONE] | Synchronous JSON Schema enforcement in JS/C++. |
+| **TTL Enforcement** | [DONE] | Request expiration verified across mesh nodes. |
+| **Stream Integrity** | [DONE] | Partial/Corrupted stream detection via Content-Length. |
+| **Path Specialization** | [DONE] | Refactored generic shapes into specialized sub-paths. |
+| **Handshake Protocol** | [DONE] | Symmetric peer discovery and reachability negotiation. |
+| **Mesh Pulse (Pub-Sub)**| [TODO] | Real-time status propagation and UX visualization. |
+
+## 8. Aspirational Goals
+
+### 8.1. Resource-Constrained Nodes (ESP/Microcontrollers)
+A primary long-term goal is to extend the JotCAD mesh to **Microcontroller-based nodes** (e.g., ESP32). 
+- **Footprint:** The VFS and MeshLink logic must be optimized for extremely low memory (RAM) and limited flash storage.
+- **Protocol Efficiency:** Implementation of a "Tiny Mesh" subset of the protocol, potentially utilizing binary serialization or stripped-down HTTP to minimize overhead.
+- **Hardware Integration:** Allowing hardware-level devices (CNC controllers, sensors) to act as leaf providers or observers within the geometric mesh.

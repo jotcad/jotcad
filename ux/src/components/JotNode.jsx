@@ -51,7 +51,7 @@ export const JotNode = (props) => {
       const textDecoder = new TextDecoder();
       const resultString = result.value ? textDecoder.decode(result.value) : 'Empty result';
       
-      await vfs.write('ui/result/jot_eval', {}, result.value || new Uint8Array(0));
+      await vfs.writeData('ui/result/jot_eval', {}, result.value || new Uint8Array(0));
       console.log('[JotNode] Result saved to ui/result/jot_eval. Content:', resultString);
       
     } catch (err) {

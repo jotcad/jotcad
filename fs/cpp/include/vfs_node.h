@@ -65,6 +65,10 @@ public:
     // Validate a request against its schema
     bool validate_selector(const VFSRequest& req, std::string& error_out);
 
+    // Pub-Sub
+    void subscribe(const std::string& topic, long long expiresAt, const std::vector<std::string>& stack);
+    void notify(const std::string& topic, const json& payload);
+
     // Add a peer via handshake
     void add_peer(const std::string& url);
 
@@ -81,6 +85,10 @@ private:
     std::map<std::string, std::string> peers_; // ID -> URL
     std::set<std::string> connecting_;
     std::mutex peer_mutex_;
+
+    // Interest Table: Topic -> Map<NeighborID, Expiry>
+    std::map<std::string, std::map<std::string, long long>> interests_;
+    std::mutex interest_mutex_;
 
     // Reverse connection registry
     std::map<std::string, httplib::Response*> reverse_listeners_;

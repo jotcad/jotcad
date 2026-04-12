@@ -169,6 +169,23 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         }));
       }
 
+      if (req.method === 'POST' && vfsPath === '/subscribe') {
+        const body = await getBody();
+        const { topic, expiresAt, stack } = body;
+        const peerId = req.headers['x-vfs-id'] || 'unknown';
+        meshLink?.addInterest(peerId, topic, expiresAt);
+        res.writeHead(200);
+        return res.end();
+      }
+
+      if (req.method === 'POST' && vfsPath === '/notify') {
+        const body = await getBody();
+        const { topic, payload } = body;
+        meshLink?.notify(topic, payload);
+        res.writeHead(200);
+        return res.end();
+      }
+
       if (req.method === 'POST' && vfsPath === '/listen') {
         const peerId = req.headers['x-vfs-peer-id'];
         const replyTo = req.headers['x-vfs-reply-to'];

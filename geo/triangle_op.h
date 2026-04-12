@@ -11,20 +11,8 @@ namespace geo {
 static std::vector<uint8_t> triangle_op_internal(jotcad::fs::VFSClient* vfs, double a, double b, double c, const nlohmann::json& params) {
     Geometry geo;
     makeTriangle(geo, a, b, c);
-
-    // Write the raw mesh
     std::string mesh_text = geo.encode_text();
-    std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
-    vfs->write("geo/mesh", params, mesh_data);
-
-    // Return the Shape JSON
-    nlohmann::json shape = {
-        {"geometry", "vfs:/geo/mesh"},
-        {"parameters", params},
-        {"tags", {{"type", "triangle"}}}
-    };
-    std::string s = shape.dump();
-    return std::vector<uint8_t>(s.begin(), s.end());
+    return std::vector<uint8_t>(mesh_text.begin(), mesh_text.end());
 }
 
 static void triangle_init() {

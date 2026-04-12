@@ -60,15 +60,41 @@ export class IndexedDBStorage {
   }
 
   async set(cid, stream, info) {
-    // For IndexedDB, we must buffer the stream into a Blob
-    const reader = stream.getReader();
-    const chunks = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
+    let blob;
+    let bytesReceived = 0;
+    const expectedSize = info?.size;
+
+    if (stream instanceof Uint8Array || stream instanceof Blob) {
+        blob = stream instanceof Blob ? stream : new Blob([stream]);
+        bytesReceived = blob.size;
+    } else if (typeof stream === 'string') {
+        blob = new Blob([stream]);
+        bytesReceived = blob.size;
+    } else if (stream && typeof stream.getReader === 'function') {
+        // Buffer the stream into a Blob
+        const reader = stream.getReader();
+        const chunks = [];
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                bytesReceived += value.length;
+            }
+            blob = new Blob(chunks);
+        } finally {
+            reader.releaseLock();
+        }
+    } else {
+        // Fallback for raw data wrapped in an object or null
+        blob = new Blob([stream]);
+        bytesReceived = blob.size;
     }
-    const blob = new Blob(chunks);
+
+    // Size Verification
+    if (expectedSize !== undefined && bytesReceived !== expectedSize) {
+        throw new Error(`Browser storage write aborted: Expected ${expectedSize} bytes, got ${bytesReceived}`);
+    }
 
     const db = await this._getDB();
     return new Promise((resolve, reject) => {

@@ -85,3 +85,29 @@ Because a `spy` query can return multiple results from multiple peers, the mesh 
 - **Canonical Identity Header:** The `<NAME>` field of each VFS entry in a `spy` response MUST be the stringified JSON of the **Canonical Selector** for that payload.
 - **Blind Streaming:** Intermediate nodes (`MeshLink`) do not need to parse or merge JSON arrays in memory. They simply pipe incoming VFS streams sequentially into the outgoing response stream, allowing infinite-length discovery responses with zero memory overhead.
 - **Deduplication:** The ultimate requester (e.g., the UI) can read the incoming Canonical Selector headers to deduplicate payloads on the fly before consuming the `<LEN>` bytes.
+
+## 7. Mesh Observability & Pub-Sub
+
+The VFS implements a **Demand-Driven Pub-Sub** architecture to provide real-time observability of the mesh without central coordination.
+
+### 7.1 Ephemeral Interest (SUB)
+Nodes express interest in specific topics (Selectors or Path Patterns) by sending a `SUB` command to their neighbors.
+- **Hop-by-Hop Routing:** A node does NOT record the original requester's identity. It only records that a **specific neighbor** is interested in a topic.
+- **Interest Table:** Each node maintains a local mapping: `Topic -> Set<NeighborID>`.
+- **Lease-Based (TTL):** Every subscription includes an `expiresAt` timestamp. If not renewed, the interest is automatically pruned to prevent "Event Storms" for stale requests.
+
+### 7.2 Publication & Notification (PUB)
+When an event occurs (e.g., `MATH_START`, `DISK_WRITE`, `ERROR`), the node **publishes** a notification.
+1.  **Local Match:** The node checks its Interest Table for any neighbors subscribed to the event's topic (or matching glob patterns).
+2.  **Broadcast:** The notification is sent to matching neighbors.
+3.  **Recursive Propagation:** Neighbors repeat this process, forwarding the notification down the "Interest Tree" until it reaches the ultimate subscribers (e.g., the Browser UI).
+
+### 7.3 Observability Topics
+Topics are formatted as VFS Selectors or Glob-like Path patterns:
+-   **Specific:** `shape/hexagon/full?radius=30` (Status of a unique calculation).
+-   **Pattern:** `shape/hexagon/*` (Any activity related to hexagons).
+-   **System:** `sys/peers` (Mesh topology and reachability updates).
+
+### 7.4 Protocol Integration
+-   **Forward Peers:** Notifications are sent via a symmetric `POST /notify` or persistent SSE/WebSocket channel.
+-   **Reverse Peers:** Notifications are pushed as commands down the active `POST /listen` long-poll response.

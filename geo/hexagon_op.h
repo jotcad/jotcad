@@ -9,20 +9,8 @@ namespace geo {
 static std::vector<uint8_t> hexagon_op_internal(jotcad::fs::VFSClient* vfs, double radius, const std::string& variant, const nlohmann::json& params) {
     Geometry geo;
     makeHexagon(geo, radius, variant);
-
-    // Write the raw mesh
     std::string mesh_text = geo.encode_text();
-    std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
-    vfs->write("geo/mesh", params, mesh_data);
-
-    // Return the Shape JSON
-    nlohmann::json shape = {
-        {"geometry", "vfs:/geo/mesh"},
-        {"parameters", params},
-        {"tags", {{"type", "hexagon"}, {"variant", variant}}}
-    };
-    std::string s = shape.dump();
-    return std::vector<uint8_t>(s.begin(), s.end());
+    return std::vector<uint8_t>(mesh_text.begin(), mesh_text.end());
 }
 
 static void hexagon_init() {
