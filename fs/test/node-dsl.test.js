@@ -26,7 +26,7 @@ test('Node with In/Out DSL', async (t) => {
       status: Out('process/status'),
     },
     async execute({ mesh, status }) {
-      const data = await mesh.readData();
+      const data = await mesh.readText();
       if (data) await status.writeData('Completed');
     },
   });
@@ -36,13 +36,13 @@ test('Node with In/Out DSL', async (t) => {
 
   await t.test('cascading dependency using In/Out DSL', async () => {
     await vfs.writeData('config/box', { id: 'b1' }, { size: 10 });
-    const result = await vfs.readData('process/status', { id: 'b1' });
+    const result = await vfs.readText('process/status', { id: 'b1' });
     assert.strictEqual(result, 'Completed');
   });
 
   await t.test('Node reparameterization with Out socket', async () => {
     await vfs.writeData('config/box', { id: 'b2' }, { size: 20 });
-    const result = await vfs.readData('process/status', { id: 'b2' });
+    const result = await vfs.readText('process/status', { id: 'b2' });
     assert.strictEqual(result, 'Completed');
   });
 

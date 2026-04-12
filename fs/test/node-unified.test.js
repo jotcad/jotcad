@@ -24,13 +24,13 @@ test('Unified Permissioned Sockets Node', async (t) => {
 
   await t.test('Node resolves from permissioned sockets', async () => {
     await vfs.writeData('config/box', { id: 'b1' }, { size: 10 });
-    const result = await vfs.readData('geometry/box', { id: 'b1' });
+    const result = await vfs.readText('geometry/box', { id: 'b1' });
     assert.strictEqual(result, 'Box(10)');
   });
 
   await t.test('Node enforces permissions', async () => {
     await vfs.writeData('config/box', { id: 'b2' }, { size: 5 });
-    const result = await vfs.readData('geometry/box', { id: 'b2' });
+    const result = await vfs.readText('geometry/box', { id: 'b2' });
     assert.strictEqual(result, 'Box(5)');
   });
 

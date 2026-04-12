@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { VFS, IndexedDBStorage } from '../../../fs/src/vfs_browser.js';
-import { MeshLink } from '../../../fs/src/vfs_rest_bridge_browser.js';
+import { MeshLink } from '../../../fs/src/mesh_link.js';
 
 /**
  * The Global VFS instance for the UI.

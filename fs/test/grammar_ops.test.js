@@ -66,7 +66,7 @@ test('Geometric Grammar Integration', async (t) => {
         const sector = { path: 'op/loop', parameters: { source: group } };
 
         console.log('[Test Grammar] Requesting complex grammar sector...');
-        const geoText = await vfs.readData(sector.path, sector.parameters);
+        const geoText = await vfs.readText(sector.path, sector.parameters);
         
         assert.ok(geoText, 'Result should be defined');
         

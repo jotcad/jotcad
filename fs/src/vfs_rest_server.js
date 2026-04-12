@@ -95,6 +95,24 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         return res.end(JSON.stringify([...(meshLink?.peers?.keys() || [])]));
       }
 
+      if (req.method === 'POST' && vfsPath === '/listen') {
+        const peerId = req.headers['x-vfs-peer-id'];
+        const replyTo = req.headers['x-vfs-reply-to'];
+        if (!peerId) {
+            res.writeHead(400);
+            return res.end('Missing x-vfs-peer-id');
+        }
+
+        if (meshLink) {
+            meshLink.registerReversePeer(peerId, res, replyTo, req);
+            // Note: res is NOT ended here; it's held by MeshLink for the next command.
+            return;
+        }
+
+        res.writeHead(501);
+        return res.end('MeshLink not initialized');
+      }
+
       if (req.method === 'GET' && vfsPath === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'OK', id: vfs.id }));

@@ -6,9 +6,9 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 
-const PORT_OPS = 9801;
-const PORT_EXPORT = 9802;
-const PORT_CLIENT = 9803;
+const PORT_OPS = 19801;
+const PORT_EXPORT = 19802;
+const PORT_CLIENT = 19803;
 
 test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
     let opsProcess, exportProcess, clientServer, clientVfs;

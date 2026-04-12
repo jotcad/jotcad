@@ -40,8 +40,8 @@ test('VFS Core Features', async (t) => {
 
     // Start multiple concurrent reads
     const [s1, s2] = await Promise.all([
-        vfs.readData('pending/item'),
-        vfs.readData('pending/item')
+        vfs.readText('pending/item'),
+        vfs.readText('pending/item')
     ]);
     
     assert.strictEqual(s1, "fulfilled");

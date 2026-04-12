@@ -27,7 +27,7 @@ test('Node with Parameter Composition', async (t) => {
     await vfs.writeData('test/in', { base: 100, trigger: 2 }, 'data');
     
     // Read with the same 'trigger' parameter
-    const result = await vfs.readData('test/out', { trigger: 2 });
+    const result = await vfs.readText('test/out', { trigger: 2 });
     assert.strictEqual(result, 'composed-data');
   });
 

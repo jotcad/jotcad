@@ -46,3 +46,23 @@ A node is the absolute authority over its local disk. It only stores data that i
 The VFS is **Web Stream Standardized**:
 - **Unified Streams:** All data transfer uses the **Web Streams API** (`ReadableStream`).
 - **Cross-Environment:** This ensures seamless data flow between C++ (via Node wrapper), Node.js services, and the Browser UX.
+
+## 5. Reverse Connections (Listen & Respond)
+
+To allow browsers and other nodes behind NAT/Firewalls to act as providers, the VFS supports **Reverse Connections** via a symmetric Long-Poll mechanism.
+
+### 5.1 The Listen Loop (`POST /listen`)
+A "Hidden Node" establishes a persistent command channel with a "Visible Node" (Server) by initiating a long-poll request.
+- **Endpoint:** `POST /vfs/listen?peerId={UUID}`
+- **Symmetric Exchange:** 
+    - **Inbound (Browser -> Server):** The `POST` body carries the binary result of the *previous* command. The `x-vfs-reply-to` header contains the `requestId`.
+    - **Outbound (Server -> Browser):** The `200 OK` response body carries the JSON definition of the *next* command.
+
+### 5.2 Command Execution
+When the mesh routes a `read` to a Hidden Node:
+1.  **Dispatch:** The Visible Node retrieves the pending `/listen` response for that `peerId`.
+2.  **Command:** It writes a `READ` command (Path, Parameters, RequestID) to the response and closes it.
+3.  **Wait:** The Visible Node holds the original mesh-read request open, awaiting a new `/listen` POST from the browser that references the `requestId`.
+
+### 5.3 Topology Sourcing
+Hidden Nodes are identified by their **UUID**. The `MeshLink` maintains a mapping of UUIDs to their currently active `/listen` slots, allowing the bread-crumb router to treat them as standard neighbors.

@@ -24,7 +24,7 @@ test('Agent-style Processors (as Providers)', async (t) => {
 
     // Cascading dependency: Read the mesh from the same VFS
     // We pass the context (stack) to prevent loops
-    const meshData = await v.readData(sourcePath, sourceParams, context);
+    const meshData = await v.readText(sourcePath, sourceParams, context);
     if (!meshData) return null;
 
     const match = meshData.match(/volume: (\d+)/);
@@ -39,7 +39,7 @@ test('Agent-style Processors (as Providers)', async (t) => {
   await t.test('cascading demand works', async () => {
     // We only request the final volume.
     // This should implicitly trigger the box generator via the provider chain.
-    const volume = await vfs.readData('analytics/volume', {
+    const volume = await vfs.readText('analytics/volume', {
       sourcePath: 'geometry/box',
       sourceParams: { width: 10, height: 2, depth: 5 },
     });

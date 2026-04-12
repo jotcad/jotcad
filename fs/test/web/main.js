@@ -1,5 +1,5 @@
 import { VFS, IndexedDBStorage } from '/src/vfs_browser.js';
-import { RESTBridge } from '/src/vfs_rest_bridge_browser.js';
+import { MeshLink } from '/src/mesh_link.js';
 import { SyncVFSServer } from '/src/sync_vfs_atomics.js';
 
 async function run() {
@@ -11,8 +11,8 @@ async function run() {
   const syncServer = new SyncVFSServer(vfs, sab);
   syncServer.start(1);
 
-  const bridge = new RESTBridge(vfs, `${location.origin}/vfs`);
-  await bridge.start();
+  const mesh = new MeshLink(vfs, [`${location.origin}/vfs`]);
+  await mesh.start();
 
   const worker = new Worker('worker.js', { type: 'module' });
   const workerPeer = { send: (event) => worker.postMessage(event) };

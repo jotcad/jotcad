@@ -160,7 +160,21 @@ export class VFS {
             if (await this.storage.has(cid)) return { success: true, cid };
 
             // 2. Try local provider
-            const provider = this.providers.get(s.path);
+            let provider = this.providers.get(s.path);
+            if (!provider) {
+                // Try suffix/prefix matches
+                for (const [pattern, handler] of this.providers.entries()) {
+                    if (pattern.startsWith('.') && s.path.endsWith(pattern)) {
+                        provider = handler;
+                        break;
+                    }
+                    if (pattern.endsWith('/') && s.path.startsWith(pattern)) {
+                        provider = handler;
+                        break;
+                    }
+                }
+            }
+
             if (provider) {
                 const stream = await provider(this, s, { ...context, expiresAt });
                 if (stream) {
@@ -225,9 +239,44 @@ export class VFS {
     const text = new TextDecoder().decode(bytes);
     try {
         const trimmed = text.trim();
-        if (trimmed.startsWith('{') || trimmed.startsWith('[')) return JSON.parse(trimmed);
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            return JSON.parse(trimmed);
+        }
     } catch(e) {}
+    
     return bytes;
+  }
+
+  async readText(pathOrSelector, parameters, context = {}) {
+    const stream = await this.read(pathOrSelector, parameters, context);
+    if (!stream) return null;
+    
+    const chunks = [];
+    const reader = stream.getReader();
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    
+    let bytes;
+    if (typeof Buffer !== 'undefined') {
+      bytes = Buffer.concat(chunks.map(c => Buffer.from(c)));
+    } else {
+      let len = chunks.reduce((acc, c) => acc + c.length, 0);
+      bytes = new Uint8Array(len);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+    }
+    
+    return new TextDecoder().decode(bytes);
   }
 
   async write(pathOrSelector, parameters, stream) {

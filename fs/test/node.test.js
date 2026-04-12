@@ -26,7 +26,7 @@ test('AgentNode abstraction', async (t) => {
       status: Out('process/status'),
     },
     async execute({ mesh, status }) {
-      const data = await mesh.readData();
+      const data = await mesh.readText();
       if (data) await status.writeData('Completed');
     },
   });
@@ -36,13 +36,13 @@ test('AgentNode abstraction', async (t) => {
 
   await t.test('Node resolves inputs from other blackboard locations', async () => {
     await vfs.writeData('config/box', { id: 'b1' }, { size: 10 });
-    const result = await vfs.readData('process/status', { id: 'b1' });
+    const result = await vfs.readText('process/status', { id: 'b1' });
     assert.strictEqual(result, 'Completed');
   });
 
   await t.test('Node can reparameterize output writes', async () => {
     await vfs.writeData('config/box', { id: 'b2' }, { size: 20 });
-    const result = await vfs.readData('process/status', { id: 'b2' });
+    const result = await vfs.readText('process/status', { id: 'b2' });
     assert.strictEqual(result, 'Completed');
   });
 

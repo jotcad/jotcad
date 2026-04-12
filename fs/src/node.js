@@ -56,6 +56,9 @@ export class Node {
               sockets[name].readData = async (overrideParams = {}) => {
                 return v.readData(def.path, { ...def.parameters, ...selector.parameters, ...overrideParams }, context);
               };
+              sockets[name].readText = async (overrideParams = {}) => {
+                return v.readText(def.path, { ...def.parameters, ...selector.parameters, ...overrideParams }, context);
+              };
             } else if (def.mode === 'write') {
               sockets[name].write = async (stream) => {
                 this._fulfilled.set(outDef.path, stream);

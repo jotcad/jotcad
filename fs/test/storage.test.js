@@ -27,7 +27,7 @@ test('VFS DiskStorage and Sessions', async (t) => {
     assert.ok(files.length >= 2, 'Should have at least meta and data files');
     
     // Read it back
-    const result = await vfs.readData('big-file');
+    const result = await vfs.readText('big-file');
     assert.strictEqual(result, content);
 
     await vfs.close();
@@ -45,10 +45,10 @@ test('VFS DiskStorage and Sessions', async (t) => {
     await vfsA.writeData('shared-path', {}, 'data-A');
     await vfsB.writeData('shared-path', {}, 'data-B');
 
-    const resA = await vfsA.readData('shared-path');
+    const resA = await vfsA.readText('shared-path');
     assert.strictEqual(resA, 'data-A');
 
-    const resB = await vfsB.readData('shared-path');
+    const resB = await vfsB.readText('shared-path');
     assert.strictEqual(resB, 'data-B');
 
     await vfsA.close();

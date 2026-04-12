@@ -45,27 +45,53 @@ class StaticPeer extends Peer {
         });
 
         if (resp.ok && resp.body) {
-            const chunks = [];
-            const reader = resp.body.getReader();
-            try {
-                while(true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    chunks.push(value);
-                }
-            } finally {
-                reader.releaseLock();
-            }
-            const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-            const data = new Uint8Array(totalLength);
-            let offset = 0;
-            for (const chunk of chunks) {
-                data.set(chunk, offset);
-                offset += chunk.length;
-            }
-            return data;
+            return resp.body;
         }
         return null;
+    }
+}
+
+/**
+ * ReversePeer: A peer reached by replying to a pending /listen request.
+ */
+class ReversePeer extends Peer {
+    constructor(id, registry) {
+        super(id);
+        this.registry = registry;
+    }
+
+    async read(path, parameters, context = {}) {
+        const { stack = [], expiresAt = Date.now() + 30000 } = context;
+        const requestId = globalThis.crypto.randomUUID();
+        
+        const replyPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.registry.replies.delete(requestId);
+                reject(new Error(`Reverse read timeout for ${path}`));
+            }, expiresAt - Date.now());
+
+            this.registry.replies.set(requestId, (stream) => {
+                clearTimeout(timeout);
+                resolve(stream);
+            });
+        });
+
+        const dispatched = this.registry.dispatch(this.id, {
+            type: 'COMMAND',
+            op: 'READ',
+            id: requestId,
+            path,
+            parameters,
+            stack,
+            expiresAt
+        });
+
+        if (!dispatched) {
+            this.registry.replies.delete(requestId);
+            return null;
+        }
+
+        return replyPromise;
     }
 }
 
@@ -75,16 +101,78 @@ class StaticPeer extends Peer {
 export class MeshLinkBase {
   constructor(vfs, neighborUrls = [], options = {}) {
     this.vfs = vfs;
-    this.fetch = options.fetch;
+    this.fetch = options.fetch || globalThis.fetch.bind(globalThis);
     this.localUrl = options.localUrl;
     this.peers = new Map(); // UUID -> Peer
     this.neighborUrls = neighborUrls.map(u => u.replace(/\/$/, ''));
     this.abortController = new AbortController();
+
+    this.reverseRegistry = {
+        listeners: new Map(), // PeerID -> Response Object
+        replies: new Map(),
+        dispatch: (peerId, command) => {
+            const res = this.reverseRegistry.listeners.get(peerId);
+            if (res) {
+                this.reverseRegistry.listeners.delete(peerId);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(command));
+                return true;
+            }
+            return false;
+        }
+    };
   }
 
   async start() {
     this.vfs.mesh = this;
     await Promise.all(this.neighborUrls.map(url => this.addPeer(url)));
+    
+    if (this.neighborUrls.length > 0) {
+        this.listenLoop(this.neighborUrls[0]);
+    }
+  }
+
+  async listenLoop(baseUrl, replyTo = null, stream = null) {
+      if (this.abortController.signal.aborted) return;
+
+      try {
+          const resp = await this.fetch(`${baseUrl}/listen`, {
+              method: 'POST',
+              headers: {
+                  'x-vfs-peer-id': this.vfs.id,
+                  'x-vfs-reply-to': replyTo || ''
+              },
+              body: stream,
+              duplex: 'half',
+              signal: this.abortController.signal
+          });
+
+          if (resp.status === 200) {
+              const text = await resp.text();
+              if (text) {
+                  const command = JSON.parse(text);
+                  
+                  if (command.type === 'COMMAND' && command.op === 'READ') {
+                      // As soon as we receive one /listen response we can open another /listen request
+                      this.listenLoop(baseUrl); 
+
+                      const resultStream = await this.vfs.read(command.path, command.parameters, { 
+                          stack: command.stack,
+                          expiresAt: command.expiresAt 
+                      });
+                      
+                      // Send the reply in a dedicated poll
+                      return this.listenLoop(baseUrl, command.id, resultStream);
+                  }
+              }
+          }
+      } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.warn(`[MeshLink ${this.vfs.id}] Listen loop error:`, err);
+          await new Promise(r => setTimeout(r, 1000));
+      }
+      
+      return this.listenLoop(baseUrl);
   }
 
   async addPeer(url) {
@@ -107,6 +195,30 @@ export class MeshLinkBase {
     return null;
   }
 
+  registerReversePeer(peerId, res, replyTo = null, stream = null) {
+      if (replyTo && stream) {
+          const resolve = this.reverseRegistry.replies.get(replyTo);
+          if (resolve) {
+              this.reverseRegistry.replies.delete(replyTo);
+              resolve(stream);
+          }
+      }
+
+      if (!this.peers.has(peerId)) {
+          this.peers.set(peerId, new ReversePeer(peerId, this.reverseRegistry));
+      }
+      
+      const existing = this.reverseRegistry.listeners.get(peerId);
+      if (existing) {
+          try {
+            existing.writeHead(204);
+            existing.end();
+          } catch(e) {}
+      }
+
+      this.reverseRegistry.listeners.set(peerId, res);
+  }
+
   async read(path, parameters, context = {}) {
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     const newStack = [...stack, this.vfs.id];
@@ -119,9 +231,9 @@ export class MeshLinkBase {
 
     const fetchPromises = targetPeers.map(async (peer) => {
         try {
-            const data = await peer.read(path, parameters, { stack: newStack, expiresAt });
-            if (data) {
-                await this.vfs.writeData(path, parameters, data);
+            const stream = await peer.read(path, parameters, { stack: newStack, expiresAt });
+            if (stream) {
+                await this.vfs.write(path, parameters, stream);
                 return true;
             }
         } catch (err) {}
@@ -137,5 +249,13 @@ export class MeshLinkBase {
 
   stop() {
     this.abortController.abort();
+    for (const res of this.reverseRegistry.listeners.values()) {
+        try { res.end(); } catch(e) {}
+    }
   }
 }
+
+/**
+ * MeshLink: Concrete environment-agnostic MeshLink implementation.
+ */
+export class MeshLink extends MeshLinkBase {}
