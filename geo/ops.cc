@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
     // Registry for a simple origin point
     Processor::Operation origin_op;
     origin_op.path = "shape/origin";
+    origin_op.schema = {{"type", "object"}};
     origin_op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
         return std::vector<uint8_t>{'v', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', '\n'};
     };

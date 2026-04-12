@@ -16,7 +16,15 @@ static std::string to_string(const std::vector<uint8_t>& bytes) {
 }
 
 static std::vector<uint8_t> to_bytes(const std::string& s) {
-    return std::vector<uint8_t>(s.begin(), s.end());
+    try {
+        if (s.size() > (size_t)1024 * 1024 * 1024) {
+             throw std::length_error("String size exceeds 1GB for vector conversion");
+        }
+        return std::vector<uint8_t>(s.begin(), s.end());
+    } catch (const std::exception& e) {
+        std::cerr << "[to_bytes] CRITICAL ERROR: " << e.what() << " (size: " << s.size() << ")" << std::endl;
+        throw;
+    }
 }
 
 static std::string read_to_string(jotcad::fs::VFSClient* vfs, const nlohmann::json& selector, const std::vector<std::string>& stack = {}) {
@@ -68,6 +76,12 @@ static void points_init() {
         }
         return to_bytes(out.str());
     };
+    op.schema = {
+        {"type", "object"},
+        {"properties", {
+            {"source", {{"type", "string"}}}
+        }}
+    };
     Processor::register_op(op);
 }
 
@@ -94,6 +108,13 @@ static void nth_init() {
         }
         return to_bytes(out.str());
     };
+    op.schema = {
+        {"type", "object"},
+        {"properties", {
+            {"source", {{"type", "string"}}},
+            {"indices", {{"type", "array"}, {"items", {{"type", "integer"}}}}}
+        }}
+    };
     Processor::register_op(op);
 }
 
@@ -107,6 +128,12 @@ static void group_init() {
             out << read_to_string(vfs, s, stack) << "\n";
         }
         return to_bytes(out.str());
+    };
+    op.schema = {
+        {"type", "object"},
+        {"properties", {
+            {"sources", {{"type", "array"}, {"items", {{"type", "string"}}}}}
+        }}
     };
     Processor::register_op(op);
 }
@@ -137,6 +164,12 @@ static void loop_init() {
                 out << "l " << points.size() << " 1\n";
             }
             return to_bytes(out.str());
+        };
+        op.schema = {
+            {"type", "object"},
+            {"properties", {
+                {"source", {{"type", "string"}}}
+            }}
         };
         return op;
     };

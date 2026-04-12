@@ -9,7 +9,10 @@ console.log('[Orchestrator] Starting JotCAD System...');
 
 try {
   console.log('[Orchestrator] Cleaning up ports 3030, 9091, 9092...');
-  execSync('fuser -k 3030/tcp 9091/tcp 9092/tcp || true', { stdio: 'inherit' });
+  // Force kill anything on these ports before starting
+  execSync('fuser -k 3030/tcp 9091/tcp 9092/tcp || true', { stdio: 'ignore' });
+  // Give it a moment to release
+  execSync('sleep 2');
 } catch (e) {}
 
 const components = [
@@ -22,8 +25,9 @@ const components = [
         ...process.env, 
         PORT: '9091',
         PEER_ID: 'geo-ops-node',
-        NEIGHBORS: '' // Ops is a leaf provider
-    }
+        NEIGHBORS: '' 
+        }
+
   },
   {
     name: 'Export Node (9092)',

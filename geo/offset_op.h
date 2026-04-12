@@ -10,8 +10,8 @@ static std::vector<uint8_t> offset_op(jotcad::fs::VFSClient* vfs, const std::str
     std::cout << "[Offset Op] Offsetting mesh..." << std::endl;
     double radius = params.value("radius", 1.0);
     
-    // Read dependency
-    auto input_bytes = vfs->read(params.at("source")["path"], params.at("source").value("parameters", nlohmann::json::object()), stack);
+    // Read dependency using resolve_geometry
+    auto input_bytes = Processor::resolve_geometry(vfs, params.at("source"), stack);
     if (input_bytes.empty()) return {};
 
     Geometry input_geo;
@@ -41,7 +41,7 @@ static void offset_init() {
     op.schema = {
         {"type", "object"},
         {"properties", {
-            {"source", {{"type", "string"}}},
+            {"source", {{"type", "object"}}},
             {"radius", {{"type", "number"}, {"default", 1}}}
         }}
     };

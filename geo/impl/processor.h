@@ -33,7 +33,29 @@ public:
         registry()[op.path] = op;
     }
 
-    // Serve is decommissioned in favor of VFSNode in ops.cc
+    static std::vector<uint8_t> resolve_geometry(jotcad::fs::VFSClient* vfs, const nlohmann::json& selector, const std::vector<std::string>& stack = {}) {
+        std::string path = selector.at("path");
+        nlohmann::json params = selector.value("parameters", nlohmann::json::object());
+
+        auto data = vfs->read(path, params, stack);
+        if (data.empty()) return {};
+
+        std::string text(data.begin(), data.end());
+
+        try {
+            auto j = nlohmann::json::parse(text);
+            if (j.contains("geometry")) {
+                std::string geo_url = j["geometry"];
+                if (geo_url.compare(0, 5, "vfs:/") == 0) {
+                    std::string geo_path = geo_url.substr(5);
+                    // Resolve the mesh data recursively using the Shape's parameters
+                    return resolve_geometry(vfs, {{"path", geo_path}, {"parameters", j.value("parameters", params)}}, stack);
+                }
+            }
+        } catch (...) {}
+
+        return data;
+    }
 };
 
 } // namespace geo

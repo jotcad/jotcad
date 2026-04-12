@@ -67,6 +67,8 @@ export class MemoryStorage {
   }
   async set(cid, stream, info) {
     let finalData;
+    let expectedSize = info?.size;
+
     if (stream instanceof Uint8Array) {
         finalData = stream;
     } else if (typeof stream === 'string') {
@@ -87,17 +89,31 @@ export class MemoryStorage {
         } else if (stream?.[Symbol.asyncIterator]) {
             for await (const chunk of stream) chunks.push(chunk);
         } else {
-            return;
+            // Handle raw bytes if they were wrapped in something else
+            finalData = stream;
         }
         
-        const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-        finalData = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-            finalData.set(chunk, offset);
-            offset += chunk.length;
+        if (!finalData) {
+            const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+            
+            // Size Verification
+            if (expectedSize !== undefined && totalLength !== expectedSize) {
+                throw new Error(`Stream aborted or corrupted: Expected ${expectedSize} bytes, got ${totalLength}`);
+            }
+
+            finalData = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of chunks) {
+                finalData.set(chunk, offset);
+                offset += chunk.length;
+            }
         }
     }
+
+    if (expectedSize !== undefined && finalData.length !== expectedSize) {
+        throw new Error(`Data size mismatch: Expected ${expectedSize} bytes, got ${finalData.length}`);
+    }
+
     this.results.set(cid, { data: finalData, info });
   }
   async has(cid) {
@@ -120,8 +136,12 @@ export class VFS {
   constructor(options = {}) {
     this.id = options.id || crypto.randomUUID();
     this.storage = options.storage || new MemoryStorage();
-    this.getCID = options.getCID || (async (s) => crypto.createHash('sha256').update(JSON.stringify(s)).digest('hex'));
+    this.getCID = options.getCID || (async (s) => {
+      const normalized = normalizeSelector(s);
+      return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+    });
     this.providers = new Map();
+    this.schemas = new Map();
     this.activeWait = new Map(); // SelectorKey -> Promise<{success: boolean, cid: string}>
     this.events = new EventEmitter();
     this.mesh = null;
@@ -131,9 +151,49 @@ export class VFS {
   registerProvider(path, handler, options = {}) {
     this.providers.set(path, handler);
     if (options.schema) {
+      this.schemas.set(path, options.schema);
       // Proactively publish schema to the mesh storage
       this.writeData('sys/schema', { target: path }, options.schema).catch(e => console.warn(`[VFS ${this.id}] Schema write failed:`, e));
     }
+  }
+
+  addSchema(path, schema) {
+    this.schemas.set(path, schema);
+  }
+
+  validateSelector(s) {
+    const schema = this.schemas.get(s.path);
+    if (!schema) return true; // No schema, assume permissive
+
+    const params = s.parameters || {};
+    
+    // Basic JSON Schema validation (subset)
+    if (schema.required) {
+      for (const req of schema.required) {
+        if (params[req] === undefined) {
+          throw new Error(`Underconstrained selector for ${s.path}: Missing required parameter '${req}'`);
+        }
+      }
+    }
+
+    if (schema.properties) {
+      for (const [key, val] of Object.entries(params)) {
+        const propSchema = schema.properties[key];
+        if (propSchema) {
+          if (propSchema.type === 'number' && typeof val !== 'number') {
+            throw new Error(`Invalid type for parameter '${key}' in ${s.path}: Expected number, got ${typeof val}`);
+          }
+          if (propSchema.type === 'string' && typeof val !== 'string') {
+            throw new Error(`Invalid type for parameter '${key}' in ${s.path}: Expected string, got ${typeof val}`);
+          }
+          if (propSchema.enum && !propSchema.enum.includes(val)) {
+            throw new Error(`Invalid value for parameter '${key}' in ${s.path}: Expected one of [${propSchema.enum.join(', ')}], got '${val}'`);
+          }
+        }
+      }
+    }
+
+    return true;
   }
 
   _matchesSpy(target, spy) {
@@ -197,8 +257,17 @@ export class VFS {
 
   async read(pathOrSelector, parameters, context = {}) {
     const s = normalizeSelector(pathOrSelector, parameters);
-    const key = JSON.stringify(s);
+    this.validateSelector(s);
+    
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    
+    // TTL Enforcement
+    if (Date.now() > expiresAt) {
+        console.warn(`[VFS ${this.id}] REJECTED Stale Request for ${s.path} (Expired ${Date.now() - expiresAt}ms ago)`);
+        return null;
+    }
+
+    const key = JSON.stringify(s);
 
     if (this.activeWait.has(key)) {
         const { success, cid } = await this.activeWait.get(key);
@@ -215,22 +284,20 @@ export class VFS {
             // 2. Try local provider
             let provider = this.providers.get(s.path);
             if (!provider) {
-                // Try suffix/prefix matches
                 for (const [pattern, handler] of this.providers.entries()) {
-                    if (pattern.startsWith('.') && s.path.endsWith(pattern)) {
-                        provider = handler;
-                        break;
-                    }
-                    if (pattern.endsWith('/') && s.path.startsWith(pattern)) {
-                        provider = handler;
-                        break;
-                    }
+                    if (pattern.startsWith('.') && s.path.endsWith(pattern)) { provider = handler; break; }
+                    if (pattern.endsWith('/') && s.path.startsWith(pattern)) { provider = handler; break; }
                 }
             }
 
             if (provider) {
                 const stream = await provider(this, s, { ...context, expiresAt });
                 if (stream) {
+                    // Providers are responsible for writing their own results to the VFS.
+                    // We just need to verify it ended up in storage.
+                    if (await this.storage.has(cid)) return { success: true, cid };
+                    
+                    // Fallback: If provider didn't write, we write it now.
                     await this.write(s.path, s.parameters, stream);
                     return { success: true, cid };
                 }
@@ -238,8 +305,27 @@ export class VFS {
 
             // 3. Try mesh
             if (this.mesh) {
-                const success = await this.mesh.read(s.path, s.parameters, { stack, expiresAt });
-                return { success, cid };
+                const meshResponse = await this.mesh.read(s.path, s.parameters, { stack, expiresAt });
+                if (meshResponse) {
+                    const headers = meshResponse.headers;
+                    let size = null;
+                    if (headers) {
+                        if (typeof headers.get === 'function') size = headers.get('Content-Length');
+                        else if (headers instanceof Map) size = headers.get('Content-Length');
+                        else size = headers['Content-Length'] || headers['content-length'];
+                    }
+
+                    const info = { path: s.path, parameters: s.parameters };
+                    if (size) info.size = parseInt(size, 10);
+                    
+                    try {
+                        await this.write(s.path, s.parameters, meshResponse.body || meshResponse, info);
+                        return { success: true, cid };
+                    } catch (err) {
+                        console.error(`[VFS ${this.id}] Integrity check failed for ${s.path}:`, err.message);
+                        return { success: false, cid };
+                    }
+                }
             }
 
             return { success: false, cid };
@@ -252,8 +338,8 @@ export class VFS {
     })();
 
     this.activeWait.set(key, workPromise);
-    const { success, cid } = await workPromise;
-    return success ? this.storage.get(cid) : null;
+    const result = await workPromise;
+    return result.success ? this.storage.get(result.cid) : null;
   }
 
   static formatVFSChunk(selector, dataBytes = new Uint8Array(0)) {
@@ -517,12 +603,18 @@ export class VFS {
     return new TextDecoder().decode(bytes);
   }
 
-  async write(pathOrSelector, parameters, stream) {
+  async write(pathOrSelector, parameters, stream, info = {}) {
     this._checkClosed();
     const s = normalizeSelector(pathOrSelector, parameters);
     const cid = await this.getCID(s);
-    await this.storage.set(cid, stream, { path: s.path, parameters: s.parameters });
-    this.events.emit('state', { path: s.path, parameters: s.parameters, cid, state: 'AVAILABLE' });
+    console.log(`[VFS ${this.id}] Writing CID: ${cid} for ${s.path} (Size: ${info.size || 'unknown'})`);
+    try {
+        await this.storage.set(cid, stream, { ...info, path: s.path, parameters: s.parameters });
+        this.events.emit('state', { path: s.path, parameters: s.parameters, cid, state: 'AVAILABLE' });
+    } catch (err) {
+        await this.storage.delete(cid);
+        throw err;
+    }
   }
 
   async writeData(pathOrSelector, parameters, data) {

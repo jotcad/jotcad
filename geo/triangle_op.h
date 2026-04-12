@@ -8,58 +8,88 @@
 namespace jotcad {
 namespace geo {
 
-static std::vector<uint8_t> triangle_op(jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack = {}) {
-    std::cout << "[Triangle Op] Generating triangle with params: " << params.dump() << std::endl;
-    double a = 0, b = 0, c = 0;
-    std::string form = params.value("form", "SSS");
-
-    if (form == "SSS") {
-        a = params.value("a", 1.0); 
-        b = params.value("b", 1.0); 
-        c = params.value("c", 1.0);
-    } else if (form == "SAS") {
-        a = params.value("a", 1.0); 
-        b = params.value("b", 1.0);
-        double angle_rad = params.value("angle", 60.0) * M_PI / 180.0;
-        c = std::sqrt(a*a + b*b - 2*a*b*std::cos(angle_rad));
-    } else if (form == "equilateral") {
-        a = b = c = params.value("side", 1.0);
-    }
-
+static std::vector<uint8_t> triangle_op_internal(jotcad::fs::VFSClient* vfs, double a, double b, double c, const nlohmann::json& params) {
     Geometry geo;
     makeTriangle(geo, a, b, c);
 
-    // 1. Write the raw mesh to a content-addressed location (geo/mesh)
+    // Write the raw mesh
     std::string mesh_text = geo.encode_text();
     std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
     vfs->write("geo/mesh", params, mesh_data);
 
-    // 2. Return the Shape JSON for the requested path
+    // Return the Shape JSON
     nlohmann::json shape = {
         {"geometry", "vfs:/geo/mesh"},
         {"parameters", params},
         {"tags", {{"type", "triangle"}}}
     };
-    std::string shape_text = shape.dump();
-    return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
+    std::string s = shape.dump();
+    return std::vector<uint8_t>(s.begin(), s.end());
 }
 
 static void triangle_init() {
-    Processor::Operation op;
-    op.path = "shape/triangle";
-    op.logic = triangle_op;
-    op.schema = {
-        {"type", "object"},
-        {"properties", {
-            {"form", {{"type", "string"}, {"enum", {"SSS", "SAS", "equilateral"}}, {"default", "equilateral"}}},
-            {"side", {{"type", "number"}, {"default", 10}}},
-            {"a", {{"type", "number"}, {"default", 10}}},
-            {"b", {{"type", "number"}, {"default", 10}}},
-            {"c", {{"type", "number"}, {"default", 10}}},
-            {"angle", {{"type", "number"}, {"default", 60}}}
-        }}
-    };
-    Processor::register_op(op);
+    // 1. SSS
+    {
+        Processor::Operation op;
+        op.path = "shape/triangle/sss";
+        op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
+            double a = params.at("a").get<double>();
+            double b = params.at("b").get<double>();
+            double c = params.at("c").get<double>();
+            return triangle_op_internal(vfs, a, b, c, params);
+        };
+        op.schema = {
+            {"type", "object"},
+            {"required", {"a", "b", "c"}},
+            {"properties", {
+                {"a", {{"type", "number"}}},
+                {"b", {{"type", "number"}}},
+                {"c", {{"type", "number"}}}
+            }}
+        };
+        Processor::register_op(op);
+    }
+
+    // 2. SAS
+    {
+        Processor::Operation op;
+        op.path = "shape/triangle/sas";
+        op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
+            double a = params.at("a").get<double>();
+            double b = params.at("b").get<double>();
+            double angle_rad = params.at("angle").get<double>() * M_PI / 180.0;
+            double c = std::sqrt(a*a + b*b - 2*a*b*std::cos(angle_rad));
+            return triangle_op_internal(vfs, a, b, c, params);
+        };
+        op.schema = {
+            {"type", "object"},
+            {"required", {"a", "angle", "b"}},
+            {"properties", {
+                {"a", {{"type", "number"}}},
+                {"angle", {{"type", "number"}}},
+                {"b", {{"type", "number"}}}
+            }}
+        };
+        Processor::register_op(op);
+    }
+
+    // 3. Equilateral
+    {
+        Processor::Operation op;
+        op.path = "shape/triangle/equilateral";
+        op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
+            double side = params.at("side").get<double>();
+            return triangle_op_internal(vfs, side, side, side, params);
+        };
+        op.schema = {
+            {"type", "object"},
+            {"required", {"side"}},
+            {"properties", {
+                {"side", {{"type", "number"}}}
+            }}
+        };
+        Processor::register_op(op);
+    }
 }
 
 } // namespace geo

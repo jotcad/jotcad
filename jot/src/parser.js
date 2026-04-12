@@ -13,9 +13,12 @@ export class JotParser {
 
     parse(text) {
         if (!text || !text.trim()) return null;
+        console.log('[JotParser] Tokenizing:', text);
         this.tokens = this._tokenize(text);
+        console.log('[JotParser] Tokens:', this.tokens);
         this.pos = 0;
         const expr = this._parseExpression();
+        console.log('[JotParser] AST:', JSON.stringify(expr, null, 2));
         if (this.pos < this.tokens.length) {
             throw new Error(`Unexpected token at end: ${this.tokens[this.pos]}`);
         }
@@ -24,9 +27,11 @@ export class JotParser {
 
     _tokenize(text) {
         const tokens = [];
+        // Ignore single-line comments
+        const cleanText = text.replace(/\/\/.*$/gm, '');
         const regex = /\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|:|\[|\]|,)\s*/g;
         let match;
-        while ((match = regex.exec(text)) !== null) {
+        while ((match = regex.exec(cleanText)) !== null) {
             tokens.push(match[1]);
         }
         return tokens;
@@ -139,35 +144,52 @@ export class JotParser {
     }
 
     _createSelector(name, args) {
-        const constructors = {
-            box: 'shape/box',
-            arc: 'shape/arc',
-            tri: 'shape/triangle',
-            orb: 'shape/orb',
-            pt: 'shape/point',
-            origin: 'shape/origin'
-        };
-
-        const path = constructors[name] || `op/${name}`;
+        let path = `op/${name}`;
         let parameters = {};
         
         if (args.length === 1 && typeof args[0] === 'object' && args[0].type !== 'SYMBOL' && !Array.isArray(args[0])) {
             parameters = args[0];
-        } else {
-            if (name === 'box') {
-                if (args.length >= 1) parameters.width = args[0];
-                if (args.length >= 2) parameters.height = args[1];
-                if (args.length >= 3) parameters.depth = args[2];
-            } else if (name === 'pt') {
-                parameters.x = args[0] || 0;
-                parameters.y = args[1] || 0;
-                parameters.z = args[2] || 0;
-            } else {
-                parameters.args = args;
-            }
         }
 
-        return normalizeSelector(path, parameters);
+        if (name === 'hexagon') {
+            const variant = parameters.variant || 'full';
+            path = `shape/hexagon/${variant}`;
+            // Clean up variant from parameters as it is now in the path
+            const { variant: _, ...rest } = parameters;
+            parameters = rest;
+        } else if (name === 'tri' || name === 'triangle') {
+            if (parameters.side !== undefined) {
+                path = 'shape/triangle/equilateral';
+            } else if (parameters.angle !== undefined) {
+                path = 'shape/triangle/sas';
+            } else if (parameters.a !== undefined && parameters.b !== undefined && parameters.c !== undefined) {
+                path = 'shape/triangle/sss';
+            } else {
+                // Default fallback if incomplete but let's try to be helpful
+                path = 'shape/triangle/equilateral';
+                if (parameters.side === undefined) parameters.side = 10;
+            }
+        } else if (name === 'box') {
+            path = 'shape/box';
+            if (args.length >= 1 && typeof args[0] !== 'object') parameters.width = args[0];
+            if (args.length >= 2 && typeof args[1] !== 'object') parameters.height = args[1];
+            if (args.length >= 3 && typeof args[2] !== 'object') parameters.depth = args[2];
+        } else if (name === 'pt') {
+            path = 'shape/point';
+            if (args.length >= 1 && typeof args[0] !== 'object') parameters.x = args[0];
+            if (args.length >= 2 && typeof args[1] !== 'object') parameters.y = args[1];
+            if (args.length >= 3 && typeof args[2] !== 'object') parameters.z = args[2];
+        } else if (name === 'arc') {
+            path = 'shape/arc';
+        } else if (name === 'orb') {
+            path = 'shape/orb';
+        } else if (name === 'origin') {
+            path = 'shape/origin';
+        }
+
+        const selector = normalizeSelector(path, parameters);
+        console.log(`[JotParser] Constructed selector for ${name}:`, JSON.stringify(selector, null, 2));
+        return selector;
     }
 
     _wrapInOp(opName, source, args) {

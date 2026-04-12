@@ -48,7 +48,10 @@ class StaticPeer extends Peer {
         });
 
         if (resp.ok && resp.body) {
-            return resp.body;
+            return {
+                body: resp.body,
+                headers: resp.headers
+            };
         }
         return null;
     }
@@ -99,9 +102,12 @@ class ReversePeer extends Peer {
                 reject(new Error(`Reverse read timeout for ${path}`));
             }, expiresAt - Date.now());
 
-            this.registry.replies.set(requestId, (stream) => {
+            this.registry.replies.set(requestId, (stream, headers = new Map()) => {
                 clearTimeout(timeout);
-                resolve(stream);
+                resolve({
+                    body: stream,
+                    headers: headers
+                });
             });
         });
 
@@ -133,9 +139,12 @@ class ReversePeer extends Peer {
                 reject(new Error(`Reverse spy timeout for ${path}`));
             }, expiresAt - Date.now());
 
-            this.registry.replies.set(requestId, (stream) => {
+            this.registry.replies.set(requestId, (stream, headers = new Map()) => {
                 clearTimeout(timeout);
-                resolve(stream);
+                resolve({
+                    body: stream,
+                    headers: headers
+                });
             });
         });
 
@@ -167,6 +176,7 @@ export class MeshLinkBase {
     this.fetch = options.fetch || globalThis.fetch.bind(globalThis);
     this.localUrl = options.localUrl;
     this.peers = new Map(); // UUID -> Peer
+    this.connecting = new Set(); // URL -> Boolean
     this.neighborUrls = neighborUrls.map(u => u.replace(/\/$/, ''));
     this.abortController = new AbortController();
 
@@ -188,36 +198,40 @@ export class MeshLinkBase {
 
   async start() {
     this.vfs.mesh = this;
-    await Promise.all(this.neighborUrls.map(url => this.addPeer(url)));
-    
-    if (this.neighborUrls.length > 0) {
-        this.listenLoop(this.neighborUrls[0]);
+    for (const url of this.neighborUrls) {
+      await this.addPeer(url);
     }
   }
 
   async listenLoop(baseUrl, replyTo = null, stream = null) {
+      console.log(`[MeshLink ${this.vfs.id}] listenLoop (replyTo: ${replyTo || "none"})`);
       if (this.abortController.signal.aborted) return;
 
       try {
+          // If we have a result stream to send, send it and wait for the NEXT command
+          const headers = {
+              'x-vfs-peer-id': this.vfs.id,
+              'x-vfs-reply-to': replyTo || ''
+          };
+
           const resp = await this.fetch(`${baseUrl}/listen`, {
               method: 'POST',
-              headers: {
-                  'x-vfs-peer-id': this.vfs.id,
-                  'x-vfs-reply-to': replyTo || ''
-              },
+              headers,
               body: stream,
               duplex: 'half',
               signal: this.abortController.signal
           });
 
+          console.log(`[MeshLink ${this.vfs.id}] Poll to ${baseUrl}/listen returned status: ${resp.status}`);
+          
+          const text = await resp.text();
+          console.log(`[MeshLink ${this.vfs.id}] Poll response text: '${text}'`);
+
           if (resp.status === 200) {
-              const text = await resp.text();
-              if (text) {
-                  const command = JSON.parse(text);
+              if (text && text.trim() !== "") {
+                  const command = JSON.parse(text); console.log(`[MeshLink ${this.vfs.id}] Received command:`, command.op, "ID:", command.id);
                   
                   if (command.type === 'COMMAND') {
-                      this.listenLoop(baseUrl); 
-                      
                       let resultStream = null;
                       if (command.op === 'READ') {
                           resultStream = await this.vfs.read(command.path, command.parameters, { 
@@ -231,37 +245,93 @@ export class MeshLinkBase {
                           });
                       }
                       
-                      // Send the reply in a dedicated poll
+                      // Continue loop with the new command's result
                       return this.listenLoop(baseUrl, command.id, resultStream);
                   }
               }
           }
       } catch (err) {
-          if (err.name === 'AbortError') return;
+          if (err.name === 'AbortError' || this.abortController.signal.aborted) return;
           console.warn(`[MeshLink ${this.vfs.id}] Listen loop error:`, err);
-          await new Promise(r => setTimeout(r, 1000));
+          
+          // Use a cancellable promise for backoff
+          await new Promise(resolve => {
+              const timer = setTimeout(resolve, 2000);
+              this.abortController.signal.addEventListener('abort', () => {
+                  clearTimeout(timer);
+                  resolve();
+              }, { once: true });
+          });
       }
       
+      // Always maintain an idle connection
       return this.listenLoop(baseUrl);
+  }
+
+  async testReachability(url) {
+    if (!url) return false;
+    try {
+      const resp = await this.fetch(`${url}/health`, { 
+          method: 'GET',
+          signal: AbortSignal.timeout(2000) 
+      });
+      return resp.ok;
+    } catch (e) {
+      return false;
+    }
   }
 
   async addPeer(url) {
     url = url.replace(/\/$/, '');
+    if (this.connecting.has(url)) return;
+    this.connecting.add(url);
+
     try {
-        const resp = await this.fetch(`${url}/health`, { signal: this.abortController.signal });
+        console.log(`[MeshLink ${this.vfs.id}] Handshaking with ${url}...`);
+        const resp = await this.fetch(`${url}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                id: this.vfs.id, 
+                url: this.localUrl 
+            }),
+            signal: this.abortController.signal
+        });
+
         if (resp.ok) {
             const info = await resp.json();
-            if (info.id && info.id !== this.vfs.id) {
-                if (!this.peers.has(info.id)) {
-                    this.peers.set(info.id, new StaticPeer(info.id, url, this.fetch, { 
+            const remoteId = info.id;
+            if (remoteId && remoteId !== this.vfs.id) {
+                if (!this.peers.has(remoteId)) {
+                    this.peers.set(remoteId, new StaticPeer(remoteId, url, this.fetch, { 
                         localUrl: this.localUrl,
                         signal: this.abortController.signal 
                     }));
                 }
+                
+                if (info.reachability === 'REVERSE') {
+                    console.log(`[MeshLink ${this.vfs.id}] Reverse linkage needed for ${url}`);
+                    this.listenLoop(url);
+                } else {
+                    console.log(`[MeshLink ${this.vfs.id}] Direct linkage confirmed for ${url}`);
+                }
+                return remoteId;
+            }
+        } else {
+            // Legacy fallback
+            const hResp = await this.fetch(`${url}/health`, { signal: this.abortController.signal });
+            if (hResp.ok) {
+                const info = await hResp.json();
+                this.peers.set(info.id, new StaticPeer(info.id, url, this.fetch, { localUrl: this.localUrl }));
+                this.listenLoop(url);
                 return info.id;
             }
         }
-    } catch (err) {}
+    } catch (err) {
+        console.warn(`[MeshLink ${this.vfs.id}] Handshake failed for ${url}:`, err.message);
+    } finally {
+        this.connecting.delete(url);
+    }
     return null;
   }
 
@@ -270,7 +340,12 @@ export class MeshLinkBase {
           const resolve = this.reverseRegistry.replies.get(replyTo);
           if (resolve) {
               this.reverseRegistry.replies.delete(replyTo);
-              resolve(stream);
+              
+              // Try to extract length if this was a chunked or pre-sized stream
+              const headers = new Map();
+              if (stream.length) headers.set('Content-Length', stream.length.toString());
+              
+              resolve(stream, headers);
           }
       }
 
@@ -296,16 +371,10 @@ export class MeshLinkBase {
     
     if (targetPeers.length === 0) return null;
 
-    const selector = { path, parameters };
-    const cid = await this.vfs.getCID(selector);
-
     const fetchPromises = targetPeers.map(async (peer) => {
         try {
-            const stream = await peer.read(path, parameters, { stack: newStack, expiresAt });
-            if (stream) {
-                await this.vfs.write(path, parameters, stream);
-                return true;
-            }
+            const resp = await peer.read(path, parameters, { stack: newStack, expiresAt });
+            if (resp) return resp;
         } catch (err) {}
         throw new Error('Peer failed');
     });
@@ -313,7 +382,7 @@ export class MeshLinkBase {
     try {
         return await Promise.any(fetchPromises);
     } catch (e) {
-        return false;
+        return null;
     }
   }
 

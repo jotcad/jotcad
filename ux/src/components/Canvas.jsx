@@ -3,7 +3,6 @@ import { createStore, reconcile } from 'solid-js/store';
 import interact from 'interactjs';
 import { blackboard, vfs } from '../lib/blackboard';
 import { initSharedRenderer, createScene, updateViewports, captureThumbnail, renderJotToScene } from '../lib/three_utils';
-import { ScriptNode } from './ScriptNode';
 import { JotNode } from './JotNode';
 import { CatalogNode } from './CatalogNode';
 import { Viewport } from './Viewport';
@@ -492,7 +491,6 @@ export const Canvas = () => {
 
       <div class="absolute inset-0 z-10 pointer-events-none overflow-hidden">
         <div class="pointer-events-auto">
-            <ScriptNode />
             <JotNode />
             <CatalogNode />
         </div>
@@ -526,3 +524,4 @@ export const Canvas = () => {
     </div>
   );
 };
+

@@ -2,11 +2,12 @@ import { createSignal, onMount, For, Show } from 'solid-js';
 import interact from 'interactjs';
 import { vfs, blackboard } from '../lib/blackboard';
 import { Database } from 'lucide-solid';
+import { JotParser } from '../../../jot/src/parser';
+import { JotEvaluator } from '../../../jot/src/evaluator';
 
 const DEFAULT_CODE = `
 // JotCAD Expressions
-// Declarative geometry that runs safely across the mesh
-box({ width: 100, height: 100, depth: 10 }).rx(0.1).ry(0.2)
+hexagon({ radius: 30, variant: 'full' })
 `.trim();
 
 export const JotNode = (props) => {
@@ -14,6 +15,9 @@ export const JotNode = (props) => {
   const [pos, setPos] = createSignal({ x: 400, y: 400 });
   const [code, setCode] = createSignal(DEFAULT_CODE);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
+
+  const parser = new JotParser();
+  const evaluator = new JotEvaluator();
 
   onMount(() => {
     interact(nodeRef).draggable({
@@ -29,19 +33,30 @@ export const JotNode = (props) => {
     if (isEvaluating()) return;
     setIsEvaluating(true);
     try {
-      console.log('[JotNode] Evaluating expression...');
-      const stream = await vfs.read('jot/eval', { expression: code() });
+      console.log('[JotNode] Compiling expression...');
+      const ast = parser.parse(code());
+      const selector = evaluator.resolve(ast);
+      
+      console.log('[JotNode] Translated to selector:', JSON.stringify(selector, null, 2));
+
+      const stream = await vfs.read(selector.path, selector.parameters);
       
       if (!stream) {
-          throw new Error('Evaluation returned no data.');
+          throw new Error('Mesh resolution failed: No provider found for ' + selector.path);
       }
 
-      await vfs.write('ui/result/jot_eval', {}, stream);
-      console.log('[JotNode] Saved to ui/result/jot_eval');
+      // Convert stream to readable text for logging
+      const reader = stream.getReader();
+      const result = await reader.read();
+      const textDecoder = new TextDecoder();
+      const resultString = result.value ? textDecoder.decode(result.value) : 'Empty result';
+      
+      await vfs.write('ui/result/jot_eval', {}, result.value || new Uint8Array(0));
+      console.log('[JotNode] Result saved to ui/result/jot_eval. Content:', resultString);
       
     } catch (err) {
-      console.error('[JotNode] Failed to evaluate:', err);
-      alert('Failed to evaluate: ' + err.message);
+      console.error('[JotNode] Compilation/Evaluation failed:', err);
+      alert('Error: ' + err.message);
     } finally {
       setIsEvaluating(false);
     }
@@ -58,7 +73,7 @@ export const JotNode = (props) => {
       }}
     >
       <div class="flex justify-between items-center">
-        <div class="text-xs font-black uppercase tracking-tighter text-white/40">JotCAD Expression</div>
+        <div class="text-xs font-black uppercase tracking-tighter text-white/40">Jot Engine Expression</div>
         <div class={`w-2 h-2 rounded-full ${isEvaluating() ? 'bg-cyan-400 animate-pulse' : 'bg-white/10'}`}></div>
       </div>
 

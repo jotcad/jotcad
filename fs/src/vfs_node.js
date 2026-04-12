@@ -29,32 +29,54 @@ export class DiskStorage {
   async set(cid, data, info) {
     const metaFile = path.join(this.root, `${cid}.meta`);
     const dataFile = path.join(this.root, `${cid}.data`);
-    await fsPromises.writeFile(metaFile, JSON.stringify(info, null, 2));
     
     if (!data) return;
 
-    if (typeof data.pipeTo === 'function') {
-        const out = fs.createWriteStream(dataFile);
-        const writable = new WritableStream({
-            write(chunk) { 
-                return new Promise((resolve, reject) => {
-                    if (!out.write(chunk)) out.once('drain', resolve);
-                    else resolve();
-                });
-            },
-            close() { 
-                return new Promise((resolve) => {
-                    out.end(resolve);
-                });
-            },
-            abort(err) { out.destroy(err); }
-        });
-        await data.pipeTo(writable);
-    } else if (typeof data.pipe === 'function') {
-        const out = fs.createWriteStream(dataFile);
-        await pipeline(data, out);
-    } else {
-        await fsPromises.writeFile(dataFile, data);
+    let bytesWritten = 0;
+    const expectedSize = info?.size;
+
+    try {
+        if (typeof data.pipeTo === 'function') {
+            const out = fs.createWriteStream(dataFile);
+            const writable = new WritableStream({
+                write(chunk) { 
+                    bytesWritten += chunk.length;
+                    return new Promise((resolve, reject) => {
+                        if (!out.write(chunk)) out.once('drain', resolve);
+                        else resolve();
+                    });
+                },
+                close() { 
+                    return new Promise((resolve) => {
+                        out.end(resolve);
+                    });
+                },
+                abort(err) { out.destroy(err); }
+            });
+            await data.pipeTo(writable);
+        } else if (typeof data.pipe === 'function') {
+            const out = fs.createWriteStream(dataFile);
+            data.on('data', (chunk) => { bytesWritten += chunk.length; });
+            await pipeline(data, out);
+        } else {
+            const buffer = (typeof data === 'string') ? Buffer.from(data) : data;
+            bytesWritten = buffer.length;
+            await fsPromises.writeFile(dataFile, buffer);
+        }
+
+        // Verify size
+        if (expectedSize !== undefined && bytesWritten !== expectedSize) {
+            throw new Error(`Disk write aborted or corrupted: Expected ${expectedSize} bytes, got ${bytesWritten}`);
+        }
+
+        // Only write meta if data was successful
+        await fsPromises.writeFile(metaFile, JSON.stringify(info, null, 2));
+
+    } catch (err) {
+        // Cleanup partial files on error
+        await fsPromises.unlink(dataFile).catch(() => {});
+        await fsPromises.unlink(metaFile).catch(() => {});
+        throw err;
     }
   }
   async has(cid) {
@@ -67,6 +89,21 @@ export class DiskStorage {
     } catch (e) {}
   }
   async close() {}
+  
+  async *iterateMeta() {
+      if (!fs.existsSync(this.root)) return;
+      const files = await fsPromises.readdir(this.root);
+      for (const file of files) {
+          if (file.endsWith('.meta')) {
+              const cid = file.slice(0, -5);
+              try {
+                  const content = await fsPromises.readFile(path.join(this.root, file), 'utf8');
+                  const info = JSON.parse(content);
+                  yield { cid, info };
+              } catch (e) {}
+          }
+      }
+  }
 }
 
 export class VFS extends CoreVFS {

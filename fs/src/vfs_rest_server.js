@@ -145,6 +145,30 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         return res.end(JSON.stringify([...(meshLink?.peers?.keys() || [])]));
       }
 
+      if (req.method === 'POST' && vfsPath === '/register') {
+        const { id: peerId, url: peerUrl } = await getBody();
+        if (!peerId) {
+            res.writeHead(400);
+            return res.end('Missing peer id');
+        }
+
+        const canReachDirect = await meshLink?.testReachability(peerUrl);
+        
+        // Add as a StaticPeer if we can reach it, but do it in the background
+        if (canReachDirect && peerUrl && !meshLink?.peers.has(peerId)) {
+            // Decouple to avoid recursive deadlock during mutual registration
+            setTimeout(() => {
+                meshLink?.addPeer(peerUrl);
+            }, 0);
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ 
+            id: vfs.id,
+            reachability: canReachDirect ? 'DIRECT' : 'REVERSE'
+        }));
+      }
+
       if (req.method === 'POST' && vfsPath === '/listen') {
         const peerId = req.headers['x-vfs-peer-id'];
         const replyTo = req.headers['x-vfs-reply-to'];

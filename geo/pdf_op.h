@@ -9,8 +9,8 @@ namespace geo {
 static std::vector<uint8_t> pdf_op(jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack = {}) {
     std::cout << "[PDF Op] Generating PDF..." << std::endl;
     
-    // Read dependency
-    auto input_bytes = vfs->read(params.at("source")["path"], params.at("source").value("parameters", nlohmann::json::object()), stack);
+    // Read dependency using resolve_geometry
+    auto input_bytes = Processor::resolve_geometry(vfs, params.at("source"), stack);
     if (input_bytes.empty()) return {};
 
     Geometry input_geo;
@@ -28,7 +28,7 @@ static void pdf_init() {
     op.schema = {
         {"type", "object"},
         {"properties", {
-            {"source", {{"type", "string"}}}
+            {"source", {{"type", "object"}}}
         }}
     };
     Processor::register_op(op);

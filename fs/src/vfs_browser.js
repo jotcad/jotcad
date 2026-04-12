@@ -108,6 +108,31 @@ export class IndexedDBStorage {
       this.db = null;
     }
   }
+
+  async *iterateMeta() {
+      const db = await this._getDB();
+      const transaction = db.transaction(this.storeName, 'readonly');
+      const store = transaction.objectStore(this.storeName);
+      
+      const request = store.openCursor();
+      const results = await new Promise((resolve, reject) => {
+          const items = [];
+          request.onsuccess = (e) => {
+              const cursor = e.target.result;
+              if (cursor) {
+                  items.push({ cid: cursor.key, info: cursor.value.info });
+                  cursor.continue();
+              } else {
+                  resolve(items);
+              }
+          };
+          request.onerror = () => reject(request.error);
+      });
+
+      for (const item of results) {
+          yield item;
+      }
+  }
 }
 
 export class VFS extends CoreVFS {

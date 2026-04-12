@@ -78,6 +78,7 @@ export const blackboard = {
                     
                     if (targetPath && schemaData) {
                         foundCount++;
+                        vfs.addSchema(targetPath, schemaData);
                         setSchemas(prev => ({
                             ...prev,
                             [targetPath]: schemaData

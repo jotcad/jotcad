@@ -5,7 +5,13 @@
 #include <vector>
 #include <functional>
 #include <map>
+#include <set>
 #include <memory>
+#include <mutex>
+
+namespace httplib {
+    class Response;
+}
 
 namespace jotcad {
 namespace fs {
@@ -39,7 +45,7 @@ public:
     ~VFSNode();
 
     // Register a local "Provisioning Op" (e.g., "shape/box")
-    void register_op(const std::string& path, OpHandler handler);
+    void register_op(const std::string& path, OpHandler handler, const json& schema = json::object());
 
     // Starts the HTTP server and joins the mesh.
     void listen();
@@ -50,13 +56,35 @@ public:
     // Perform a READ (Local Cache -> Provision -> Mesh)
     std::vector<uint8_t> read(const VFSRequest& req);
 
+    // Perform a SPY (Local Discovery -> Mesh Discovery)
+    std::vector<uint8_t> spy(const VFSRequest& req);
+
     // Perform a WRITE (Direct to Local Cache)
     void write(const std::string& path, const json& parameters, const std::vector<uint8_t>& data);
+
+    // Validate a request against its schema
+    bool validate_selector(const VFSRequest& req, std::string& error_out);
+
+    // Add a peer via handshake
+    void add_peer(const std::string& url);
+
+    // Register a reverse peer connection (for incoming commands)
+    void register_reverse_peer(const std::string& peer_id, httplib::Response& res);
 
 private:
     Config config_;
     std::map<std::string, OpHandler> handlers_;
+    std::map<std::string, json> schemas_;
     void* server_ptr_; // Internal httplib::Server
+    
+    // Peer management
+    std::map<std::string, std::string> peers_; // ID -> URL
+    std::set<std::string> connecting_;
+    std::mutex peer_mutex_;
+
+    // Reverse connection registry
+    std::map<std::string, httplib::Response*> reverse_listeners_;
+    std::mutex reverse_mutex_;
 
     std::string get_cid(const std::string& path, const json& parameters);
     bool has_local(const std::string& cid);

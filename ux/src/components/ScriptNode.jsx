@@ -9,28 +9,28 @@ const DEFAULT_CODE = `
 
 export const agent = {
   sockets: {
-    // 1. Demand a specific triangle (50 units equilateral)
-    input: In('shape/triangle', { form: 'equilateral', side: 50 }),
+    // 1. Demand a specific hexagon (25 units radius)
+    input: In('shape/hexagon', { radius: 25, variant: 'full' }),
     
     // 2. Output to a plain, easy-to-find result path
-    output: Out('ui/result/triangle')
+    output: Out('ui/result/hexagon')
   },
   
   async execute({ input, output, params }) {
-    console.log('[TrianglePipeline] Waking up to fulfill result...');
+    console.log('[HexagonPipeline] Waking up to fulfill result...');
     
-    // This will trigger the C++ Triangle Agent automatically
-    const triangle = await input.readData();
-    console.log('[TrianglePipeline] Received C++ geometry:', triangle);
+    // This will trigger the C++ Hexagon Agent automatically
+    const hexagon = await input.readData();
+    console.log('[HexagonPipeline] Received C++ geometry:', hexagon);
     
     // Pass the geometry through to our plain output path
     await output.writeData({
-        ...triangle,
-        processedBy: 'Interactive JS Agent',
+        ...hexagon,
+        processedBy: 'Jot Engine',
         timestamp: new Date().toISOString()
     });
     
-    console.log('[TrianglePipeline] Published to ui/result/triangle');
+    console.log('[HexagonPipeline] Published to ui/result/hexagon');
   }
 };
 `;
@@ -114,7 +114,7 @@ export const ScriptNode = (props) => {
       }}
     >
       <div class="flex justify-between items-center">
-        <div class="text-xs font-black uppercase tracking-tighter text-white/40">Interactive JS Agent</div>
+        <div class="text-xs font-black uppercase tracking-tighter text-white/40">Jot Engine</div>
         <div class={`w-2 h-2 rounded-full ${isRunning() ? 'bg-available animate-pulse' : 'bg-white/10'}`}></div>
       </div>
 
