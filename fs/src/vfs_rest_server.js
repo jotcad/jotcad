@@ -8,10 +8,23 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const activeListeners = new Set();
 
   const handleRequest = async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host}`);
+  console.log(`[VFS Server] Incoming Request: ${req.method} ${req.url}`);
+  // Add CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-vfs-peer-id, x-vfs-reply-to, x-vfs-local-url, x-vfs-id');
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      return res.end();
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
     if (!url.pathname.startsWith(prefix)) return;
 
     const vfsPath = url.pathname.slice(prefix.length);
+    console.log(`[VFS Server] Request: ${req.method} '${vfsPath}' (Path: '${url.pathname}', Prefix: '${prefix}')`);
 
     const getBody = () => new Promise((resolve) => {
       let body = '';
@@ -23,18 +36,23 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const reader = stream.getReader();
         try {
             while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                res.write(value);
+                try {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    res.write(value);
+                } catch (e) {
+                    console.warn('[VFS Server] Stream read error (peer disconnected):', e.message);
+                    break;
+                }
             }
         } finally {
             reader.releaseLock();
-            res.end();
+            if (!res.writableEnded) res.end();
         }
     };
 
     try {
-      if (req.method === 'POST' && vfsPath === '/read') {
+      if (req.method === 'POST' && vfsPath.trim() === '/read') {
         const body = await getBody();
         const s = normalizeSelector(body.path, body.parameters);
         const { stack = [], expiresAt } = body;
@@ -59,6 +77,38 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
         res.writeHead(404);
         return res.end('Not Found');
+      }
+
+      if (req.method === 'POST' && vfsPath.trim() === '/spy') {
+        console.log('[VFS Server] Entering /spy handler');
+        const body = await getBody();
+        console.log('[VFS Server] /spy body:', body);
+        const s = normalizeSelector(body.path, body.parameters);
+        const { stack = [], expiresAt } = body;
+        
+        console.log(`[VFS Server] Spy request for: ${s.path}`, s.parameters);
+
+        const peerUrl = req.headers['x-vfs-local-url'];
+        if (peerUrl && meshLink) {
+            meshLink.addPeer(peerUrl);
+        }
+
+        if (expiresAt && Date.now() > expiresAt) {
+            console.log('[VFS Server] Spy request expired');
+            res.writeHead(408);
+            return res.end('Request Expired');
+        }
+
+        const stream = await vfs.spy(s.path, s.parameters, { stack, expiresAt });
+        if (stream) {
+            console.log('[VFS Server] /spy stream found and returned');
+            res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'x-vfs-id': vfs.id });
+            return await pump(stream);
+        }
+
+        console.log(`[VFS Server] /spy: Not Found for ${s.path}`);
+        res.writeHead(404);
+        return res.end(`Not Found: ${s.path}`);
       }
 
       if (req.method === 'GET' && vfsPath === '/watch') {

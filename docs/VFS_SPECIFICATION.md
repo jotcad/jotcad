@@ -66,3 +66,22 @@ When the mesh routes a `read` to a Hidden Node:
 
 ### 5.3 Topology Sourcing
 Hidden Nodes are identified by their **UUID**. The `MeshLink` maintains a mapping of UUIDs to their currently active `/listen` slots, allowing the bread-crumb router to treat them as standard neighbors.
+
+## 6. Discovery Protocol (Spy)
+
+The VFS strictly separates **Execution (Demand)** from **Observation (Discovery)** to prevent infinite computation loops when encountering ambiguous requests.
+
+### 6.1 The "Fail Fast" Demand Law
+The `vfs.read()` operation represents **Demand**. A Demand selector MUST be fully constrained (either natively or via `.spec()` canonicalization). If a provider receives an underconstrained selector during a `read` (e.g., missing required parameters without defaults), it MUST reject the request synchronously. The VFS never guesses.
+
+### 6.2 The Spy Protocol (`vfs.spy()`)
+To explore the network or find multiple artifacts, nodes use the `spy` protocol. `spy` is an observational scatter-gather query that accepts underconstrained selectors and returns metadata or collections of existing artifacts.
+- **Routing (`Promise.allSettled`):** Unlike `read` which races neighbors (`Promise.any`), `spy` queries every neighbor, waits for all responses, and merges them.
+- **Explicit Constraints:** Missing keys in a `spy` parameter object do NOT imply a wildcard (to avoid infinite schema guessing). Instead, queries must use explicit constraint values or objects (e.g., `{"width": {"$gt": 10}}` or `{"node": "*"}`).
+
+### 6.3 The VFS Bundle Multiplexer
+Because a `spy` query can return multiple results from multiple peers, the mesh must aggregate them efficiently.
+- **Format:** The VFS uses the native VFS bundle format (`\n=<LEN> <NAME>\n<CONTENT>`) to multiplex responses.
+- **Canonical Identity Header:** The `<NAME>` field of each VFS entry in a `spy` response MUST be the stringified JSON of the **Canonical Selector** for that payload.
+- **Blind Streaming:** Intermediate nodes (`MeshLink`) do not need to parse or merge JSON arrays in memory. They simply pipe incoming VFS streams sequentially into the outgoing response stream, allowing infinite-length discovery responses with zero memory overhead.
+- **Deduplication:** The ultimate requester (e.g., the UI) can read the incoming Canonical Selector headers to deduplicate payloads on the fly before consuming the `<LEN>` bytes.

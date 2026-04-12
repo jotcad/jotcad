@@ -4,6 +4,8 @@ import interact from 'interactjs';
 import { blackboard, vfs } from '../lib/blackboard';
 import { initSharedRenderer, createScene, updateViewports, captureThumbnail, renderJotToScene } from '../lib/three_utils';
 import { ScriptNode } from './ScriptNode';
+import { JotNode } from './JotNode';
+import { CatalogNode } from './CatalogNode';
 import { Viewport } from './Viewport';
 import { DynamicUX } from './DynamicUX';
 import * as THREE from 'three';
@@ -468,6 +470,14 @@ export const Canvas = () => {
 
   return (
     <div class="canvas-container w-full h-full overflow-hidden bg-blackboard relative" ref={canvasRef}>
+      
+      <div class="absolute top-4 left-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 shadow-xl">
+        <div class={`w-2.5 h-2.5 rounded-full ${blackboard.isConnected() ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} />
+        <span class="text-[10px] font-black text-white/70 tracking-widest uppercase">
+            {blackboard.isConnected() ? 'Mesh Online' : 'Mesh Offline'}
+        </span>
+      </div>
+
       <svg class="absolute inset-0 w-full h-full pointer-events-none z-0">
         <For each={connections()}>
             {(conn) => (
@@ -483,6 +493,8 @@ export const Canvas = () => {
       <div class="absolute inset-0 z-10 pointer-events-none overflow-hidden">
         <div class="pointer-events-auto">
             <ScriptNode />
+            <JotNode />
+            <CatalogNode />
         </div>
         
         <For each={Object.keys(groupedNodes().paths)}>
@@ -505,32 +517,6 @@ export const Canvas = () => {
                 />
             )}
         </For>
-      </div>
-
-      <div class="absolute top-4 left-4 flex gap-2 z-50 p-1 bg-black/60 backdrop-blur-2xl rounded-xl border border-white/10 shadow-2xl pointer-events-auto">
-        <div class="flex items-center pl-3 text-white/30"><Search size={14} /></div>
-        <input 
-            type="text" 
-            placeholder="coordinate/path (e.g. shape/box)"
-            class="bg-transparent px-4 py-2 text-xs font-black tracking-widest focus:outline-none w-80 text-white placeholder-white/20"
-            id="path-input"
-            onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                    blackboard.tickle(e.currentTarget.value);
-                    e.currentTarget.value = '';
-                }
-            }}
-        />
-        <button 
-            class="bg-available hover:bg-available/80 text-black px-6 py-2 rounded-lg text-xs font-black tracking-widest transition-all active:scale-95 shadow-lg shadow-available/20"
-            onClick={() => {
-                const el = document.getElementById('path-input');
-                blackboard.tickle(el.value);
-                el.value = '';
-            }}
-        >
-            DEMAND
-        </button>
       </div>
 
       <div class="absolute bottom-6 left-6 flex flex-col gap-1 pointer-events-none">

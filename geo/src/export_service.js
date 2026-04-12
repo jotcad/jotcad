@@ -11,6 +11,8 @@ const storageDir = path.resolve(`.vfs_storage_${id}`);
 console.log(`[Export Node ${id}] Starting Native Mesh Node...`);
 
 const vfs = new VFS({ id, storage: new DiskStorage(storageDir) });
+await vfs.init(); // Initialize storage first
+
 const meshLink = new MeshLink(vfs, neighbors, { localUrl: `http://localhost:${port}` });
 
 // Register the Export Op as a VFS Provider
@@ -44,6 +46,11 @@ vfs.registerProvider('op/export', async (v, selector) => {
     } catch (err) {
         console.error(`[Export Node ERROR] ${err.message}`);
         return null;
+    }
+}, {
+    schema: {
+        source: { type: 'selector', description: 'The VFS path or selector to export' },
+        filename: { type: 'string', default: 'download.bin', description: 'The destination filename' }
     }
 });
 

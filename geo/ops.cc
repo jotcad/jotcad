@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
         std::cout << "[Ops Node] Registering VFS Op: " << path << std::endl;
         node.register_op(path, [&shim, op, path](const VFSNode::VFSRequest& req) {
             return op.logic(&shim, req.path, req.parameters, req.stack);
-        });
+        }, op.schema);
     }
 
     std::cout << "[Ops Node] Starting Native VFS Node on port " << port << "..." << std::endl;

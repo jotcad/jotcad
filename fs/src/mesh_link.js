@@ -10,6 +10,9 @@ class Peer {
     async read(path, parameters, stack) {
         throw new Error('Not implemented');
     }
+    async spy(path, parameters, stack) {
+        throw new Error('Not implemented');
+    }
 }
 
 /**
@@ -33,6 +36,32 @@ class StaticPeer extends Peer {
         if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
         const resp = await this.fetch(`${this.url}/read`, {
+            method: 'POST',
+            headers,
+            signal: this.signal,
+            body: JSON.stringify({ 
+                path, 
+                parameters, 
+                stack,
+                expiresAt 
+            })
+        });
+
+        if (resp.ok && resp.body) {
+            return resp.body;
+        }
+        return null;
+    }
+
+    async spy(path, parameters, context = {}) {
+        const { stack = [], expiresAt = Date.now() + 30000 } = context;
+        const headers = { 
+            'Content-Type': 'application/json',
+            'x-vfs-id': stack[0]
+        };
+        if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
+
+        const resp = await this.fetch(`${this.url}/spy`, {
             method: 'POST',
             headers,
             signal: this.signal,
@@ -79,6 +108,40 @@ class ReversePeer extends Peer {
         const dispatched = this.registry.dispatch(this.id, {
             type: 'COMMAND',
             op: 'READ',
+            id: requestId,
+            path,
+            parameters,
+            stack,
+            expiresAt
+        });
+
+        if (!dispatched) {
+            this.registry.replies.delete(requestId);
+            return null;
+        }
+
+        return replyPromise;
+    }
+
+    async spy(path, parameters, context = {}) {
+        const { stack = [], expiresAt = Date.now() + 30000 } = context;
+        const requestId = globalThis.crypto.randomUUID();
+        
+        const replyPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.registry.replies.delete(requestId);
+                reject(new Error(`Reverse spy timeout for ${path}`));
+            }, expiresAt - Date.now());
+
+            this.registry.replies.set(requestId, (stream) => {
+                clearTimeout(timeout);
+                resolve(stream);
+            });
+        });
+
+        const dispatched = this.registry.dispatch(this.id, {
+            type: 'COMMAND',
+            op: 'SPY',
             id: requestId,
             path,
             parameters,
@@ -152,14 +215,21 @@ export class MeshLinkBase {
               if (text) {
                   const command = JSON.parse(text);
                   
-                  if (command.type === 'COMMAND' && command.op === 'READ') {
-                      // As soon as we receive one /listen response we can open another /listen request
+                  if (command.type === 'COMMAND') {
                       this.listenLoop(baseUrl); 
-
-                      const resultStream = await this.vfs.read(command.path, command.parameters, { 
-                          stack: command.stack,
-                          expiresAt: command.expiresAt 
-                      });
+                      
+                      let resultStream = null;
+                      if (command.op === 'READ') {
+                          resultStream = await this.vfs.read(command.path, command.parameters, { 
+                              stack: command.stack,
+                              expiresAt: command.expiresAt 
+                          });
+                      } else if (command.op === 'SPY') {
+                          resultStream = await this.vfs.spy(command.path, command.parameters, { 
+                              stack: command.stack,
+                              expiresAt: command.expiresAt 
+                          });
+                      }
                       
                       // Send the reply in a dedicated poll
                       return this.listenLoop(baseUrl, command.id, resultStream);
@@ -245,6 +315,53 @@ export class MeshLinkBase {
     } catch (e) {
         return false;
     }
+  }
+
+  async spy(path, parameters, context = {}) {
+    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const newStack = [...stack, this.vfs.id];
+    const targetPeers = [...this.peers.values()].filter(p => !stack.includes(p.id));
+    
+    if (targetPeers.length === 0) return null;
+
+    const fetchPromises = targetPeers.map(async (peer) => {
+        try {
+            // Explicitly catch peer errors so one crash doesn't kill the mesh request
+            return await peer.spy(path, parameters, { stack: newStack, expiresAt });
+        } catch (err) {
+            console.warn(`[MeshLink ${this.vfs.id}] Spy peer error (peer: ${peer.id}):`, err);
+            return null;
+        }
+    });
+
+    const results = await Promise.allSettled(fetchPromises);
+    const streams = results
+        .filter(r => r.status === 'fulfilled' && r.value)
+        .map(r => r.value);
+
+    if (streams.length === 0) return null;
+
+    return new (globalThis.ReadableStream)({
+        async start(controller) {
+            for (const stream of streams) {
+                if (typeof stream.getReader === 'function') {
+                    const reader = stream.getReader();
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            controller.enqueue(value);
+                        }
+                    } catch (e) {} finally {
+                        reader.releaseLock();
+                    }
+                } else if (stream instanceof Uint8Array) {
+                    controller.enqueue(stream);
+                }
+            }
+            controller.close();
+        }
+    });
   }
 
   stop() {

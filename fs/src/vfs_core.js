@@ -109,6 +109,11 @@ export class MemoryStorage {
   async close() {
     this.results.clear();
   }
+  async *iterateMeta() {
+      for (const [cid, entry] of this.results.entries()) {
+          yield { cid, info: entry.info };
+      }
+  }
 }
 
 export class VFS {
@@ -123,8 +128,56 @@ export class VFS {
     this.closed = false;
   }
 
-  registerProvider(path, handler) {
+  registerProvider(path, handler, options = {}) {
     this.providers.set(path, handler);
+    if (options.schema) {
+      // Proactively publish schema to the mesh storage
+      this.writeData('sys/schema', { target: path }, options.schema).catch(e => console.warn(`[VFS ${this.id}] Schema write failed:`, e));
+    }
+  }
+
+  _matchesSpy(target, spy) {
+      if (!target) return false;
+      
+      // Path matching
+      if (spy.path) {
+          if (spy.path.endsWith('/*')) {
+              if (!target.path.startsWith(spy.path.slice(0, -2))) return false;
+          } else if (target.path !== spy.path) {
+              return false;
+          }
+      }
+      
+      if (!spy.parameters) return true;
+
+      // Parameter constraint matching
+      for (const [key, constraint] of Object.entries(spy.parameters)) {
+          const val = target.parameters?.[key];
+          
+          if (constraint === '*') {
+              if (val === undefined) return false;
+              continue;
+          }
+          
+          if (typeof constraint === 'object' && constraint !== null && !Array.isArray(constraint)) {
+              if (constraint.$exists !== undefined) {
+                  if (constraint.$exists !== (val !== undefined)) return false;
+                  continue;
+              }
+              if (constraint.$gt !== undefined && !(val > constraint.$gt)) return false;
+              if (constraint.$gte !== undefined && !(val >= constraint.$gte)) return false;
+              if (constraint.$lt !== undefined && !(val < constraint.$lt)) return false;
+              if (constraint.$lte !== undefined && !(val <= constraint.$lte)) return false;
+              if (constraint.$in !== undefined && !constraint.$in.includes(val)) return false;
+              if (constraint.$eq !== undefined && val !== constraint.$eq) return false;
+          } else {
+              // Deep equality for nested objects/arrays could be added here, 
+              // but strict equality works for primitives.
+              if (JSON.stringify(val) !== JSON.stringify(constraint)) return false;
+          }
+      }
+      
+      return true;
   }
 
   async localRead(pathOrSelector, parameters, context = {}) {
@@ -202,6 +255,191 @@ export class VFS {
     const { success, cid } = await workPromise;
     return success ? this.storage.get(cid) : null;
   }
+
+  static formatVFSChunk(selector, dataBytes = new Uint8Array(0)) {
+      const name = JSON.stringify(normalizeSelector(selector));
+      const headerStr = `\n=${dataBytes.length} ${name}\n`;
+      const headerBytes = new TextEncoder().encode(headerStr);
+      const combined = new Uint8Array(headerBytes.length + dataBytes.length);
+      combined.set(headerBytes);
+      combined.set(dataBytes, headerBytes.length);
+      return combined;
+  }
+
+  static async *parseVFSBundle(stream) {
+      if (!stream) return;
+      const reader = typeof stream.getReader === 'function' ? stream.getReader() : null;
+      let buffer = new Uint8Array(0);
+
+      const append = (chunk) => {
+          const newBuffer = new Uint8Array(buffer.length + chunk.length);
+          newBuffer.set(buffer);
+          newBuffer.set(chunk, buffer.length);
+          buffer = newBuffer;
+      };
+
+      const decoder = new TextDecoder();
+
+      try {
+          while (true) {
+              if (reader) {
+                  const { done, value } = await reader.read();
+                  if (value) append(value);
+                  if (done && buffer.length === 0) break;
+              } else {
+                  // If it's not a stream, it might be a raw Uint8Array
+                  if (stream instanceof Uint8Array) {
+                      append(stream);
+                      stream = null; // Don't append again
+                  } else if (stream[Symbol.asyncIterator]) {
+                      const { done, value } = await stream.next();
+                      if (value) append(value);
+                      if (done && buffer.length === 0) break;
+                  } else {
+                      break;
+                  }
+              }
+
+              let offset = 0;
+              while (offset < buffer.length) {
+                  // Find \n=
+                  if (buffer[offset] === 10 && buffer[offset + 1] === 61) {
+                      let newlineIdx = -1;
+                      for (let i = offset + 2; i < buffer.length; i++) {
+                          if (buffer[i] === 10) {
+                              newlineIdx = i;
+                              break;
+                          }
+                      }
+                      
+                      if (newlineIdx !== -1) {
+                          const headerStr = decoder.decode(buffer.subarray(offset + 2, newlineIdx));
+                          const spaceIdx = headerStr.indexOf(' ');
+                          if (spaceIdx !== -1) {
+                              const len = parseInt(headerStr.slice(0, spaceIdx), 10);
+                              const nameStr = headerStr.slice(spaceIdx + 1);
+                              let selector;
+                              try { selector = JSON.parse(nameStr); } catch (e) { selector = { path: nameStr }; }
+
+                              const payloadStart = newlineIdx + 1;
+                              if (buffer.length >= payloadStart + len) {
+                                  const payload = buffer.subarray(payloadStart, payloadStart + len);
+                                  yield { selector, data: new Uint8Array(payload) }; // Yield a copy or subarray
+                                  offset = payloadStart + len;
+                                  continue; // Look for next chunk
+                              }
+                          }
+                      }
+                  } else if (buffer[offset] !== 10) {
+                      // Move forward if not \n
+                      offset++;
+                      continue;
+                  }
+                  
+                  // Incomplete header or payload, wait for more data
+                  break;
+              }
+              
+              if (offset > 0) {
+                  buffer = buffer.slice(offset);
+              }
+              
+              if ((!reader && !stream) || (reader && buffer.length === 0)) break;
+          }
+      } finally {
+          if (reader) reader.releaseLock();
+      }
+  }
+
+  async spy(pathOrSelector, parameters, context = {}) {
+      const s = normalizeSelector(pathOrSelector, parameters);
+      const { stack = [], expiresAt = Date.now() + 30000 } = context;
+      const chunks = [];
+      const seenCIDs = new Set();
+
+      // 1. Passive Local Spy (Scan Storage)
+      if (typeof this.storage.iterateMeta === "function") {
+          for await (const { cid, info } of this.storage.iterateMeta()) {
+              if (info && this._matchesSpy(info, s)) {
+                  if (!seenCIDs.has(cid)) {
+                      seenCIDs.add(cid);
+                      try {
+                          const stream = await this.storage.get(cid);
+                          if (stream) {
+                              const bytes = await this._streamToBytes(stream);
+                              chunks.push(VFS.formatVFSChunk(info, bytes));
+                          }
+                      } catch (e) {
+                          chunks.push(VFS.formatVFSChunk({ path: "sys/diag", parameters: { node: this.id, error: e.message } }));
+                      }
+                  }
+              }
+          }
+      }
+
+      // 2. Mesh Spy
+      if (this.mesh) {
+          try {
+              const meshStream = await this.mesh.spy(s.path, s.parameters, { stack, expiresAt });
+              if (meshStream) {
+                  const reader = meshStream.getReader();
+                  try {
+                      while (true) {
+                          const { done, value } = await reader.read();
+                          if (done) break;
+                          chunks.push(value);
+                      }
+                  } finally {
+                      reader.releaseLock();
+                  }
+              }
+          } catch (e) {
+              chunks.push(VFS.formatVFSChunk({ path: "sys/diag", parameters: { node: this.id, error: e.message } }));
+          }
+      }
+
+      if (chunks.length === 0) return null;
+
+      return new WebReadableStream({
+          start(controller) {
+              for (const chunk of chunks) {
+                  controller.enqueue(chunk);
+              }
+              controller.close();
+          }
+      });
+  }
+
+  async _streamToBytes(stream) {
+      if (stream instanceof Uint8Array) return stream;
+      if (typeof stream === 'string') return new TextEncoder().encode(stream);
+      
+      const chunks = [];
+      if (typeof stream.getReader === 'function') {
+          const reader = stream.getReader();
+          try {
+              while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  chunks.push(value);
+              }
+          } finally {
+              reader.releaseLock();
+          }
+      } else if (stream[Symbol.asyncIterator]) {
+          for await (const chunk of stream) chunks.push(chunk);
+      }
+      
+      let len = chunks.reduce((acc, c) => acc + c.length, 0);
+      const bytes = new Uint8Array(len);
+      let offset = 0;
+      for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.length;
+      }
+      return bytes;
+  }
+
 
   async readData(pathOrSelector, parameters, context = {}) {
     const stream = await this.read(pathOrSelector, parameters, context);

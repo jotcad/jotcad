@@ -1,4 +1,4 @@
-import { normalizeSelector } from '@jotcad/fs';
+import { normalizeSelector } from '../../fs/src/vfs_core.js';
 
 /**
  * JotCAD Secure Parser
