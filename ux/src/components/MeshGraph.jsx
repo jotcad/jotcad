@@ -41,10 +41,13 @@ export function MeshGraph() {
 
   const formatTopic = (topic) => {
     try {
+        if (typeof topic === 'object') {
+            return `${topic.path} (${Object.keys(topic.parameters || {}).length} params)`;
+        }
         const [path, params] = topic.split('?');
         if (!params) return path;
         return `${path} (...)`;
-    } catch (e) { return topic; }
+    } catch (e) { return String(topic); }
   };
 
   return (
@@ -79,8 +82,8 @@ export function MeshGraph() {
                   {new Date(pulse.t).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
               </div>
-              <div class="text-[11px] font-mono text-white/70 truncate" title={pulse.topic}>
-                {formatTopic(pulse.topic)}
+              <div class="text-[11px] font-mono text-white/70 truncate" title={JSON.stringify(pulse.selector)}>
+                {formatTopic(pulse.selector || pulse.topic)}
               </div>
               <div class="text-[9px] text-white/30 truncate uppercase tracking-tighter">
                 {pulse.payload.peer || 'unknown-peer'}

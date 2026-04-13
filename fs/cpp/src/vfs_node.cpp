@@ -52,7 +52,7 @@ void VFSNode::register_op(const std::string& path, OpHandler handler, const json
     if (!schema.empty()) {
         schemas_[path] = schema;
         std::string serialized = schema.dump();
-        write("sys/schema", {{"target", path}}, safe_to_bytes(serialized));
+        write("sys/schema", {{"target", path}, {"provider", config_.id}}, safe_to_bytes(serialized));
     }
 }
 

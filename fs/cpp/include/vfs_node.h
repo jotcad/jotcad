@@ -66,8 +66,8 @@ public:
     bool validate_selector(const VFSRequest& req, std::string& error_out);
 
     // Pub-Sub
-    void subscribe(const std::string& topic, long long expiresAt, const std::vector<std::string>& stack);
-    void notify(const std::string& topic, const json& payload, const std::vector<std::string>& stack = {});
+    void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack);
+    void notify(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
 
     // Add a peer via handshake
     void add_peer(const std::string& url);
@@ -86,9 +86,12 @@ private:
     std::set<std::string> connecting_;
     std::mutex peer_mutex_;
 
-    // Interest Table: Topic -> Map<NeighborID, Expiry>
+    // Interest Table: Serialized Selector -> Map<NeighborID, Expiry>
     std::map<std::string, std::map<std::string, long long>> interests_;
     std::mutex interest_mutex_;
+    
+    // We also need to store the actual json selector for each key to support semantic matching
+    std::map<std::string, json> interest_selectors_;
 
     // Reverse connection registry
     std::map<std::string, httplib::Response*> reverse_listeners_;

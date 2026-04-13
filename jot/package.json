@@ -7,6 +7,6 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@jotcad/fs": "workspace:*"
+    "@jotcad/fs": "*"
   }
 }

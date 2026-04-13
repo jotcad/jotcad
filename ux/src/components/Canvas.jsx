@@ -6,6 +6,7 @@ import { initSharedRenderer, createScene, updateViewports, captureThumbnail, ren
 import { JotNode } from './JotNode';
 import { CatalogNode } from './CatalogNode';
 import { MeshGraph } from './MeshGraph';
+import { MeshMap } from './MeshMap';
 import { Viewport } from './Viewport';
 import { DynamicUX } from './DynamicUX';
 import * as THREE from 'three';
@@ -471,6 +472,8 @@ export const Canvas = () => {
   return (
     <div class="canvas-container w-full h-full overflow-hidden bg-blackboard relative" ref={canvasRef}>
       
+      <MeshMap />
+
       <div class="absolute top-4 left-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 shadow-xl">
         <div class={`w-2.5 h-2.5 rounded-full ${blackboard.isConnected() ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} />
         <span class="text-[10px] font-black text-white/70 tracking-widest uppercase">
