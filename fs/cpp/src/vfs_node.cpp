@@ -148,13 +148,14 @@ void VFSNode::listen() {
             auto body = json::parse(req.body);
             std::string topic = body.at("topic").get<std::string>();
             long long expiresAt = body.at("expiresAt").get<long long>();
+            std::vector<std::string> stack = body.value("stack", std::vector<std::string>());
             std::string peer_id = req.get_header_value("x-vfs-id");
             if (peer_id.empty()) peer_id = "unknown";
             {
                 std::lock_guard<std::mutex> lock(interest_mutex_);
                 interests_[topic][peer_id] = expiresAt;
             }
-            subscribe(topic, expiresAt, body.value("stack", std::vector<std::string>()));
+            subscribe(topic, expiresAt, stack);
             res.status = 200;
         } catch (...) { res.status = 400; }
     });
@@ -162,7 +163,7 @@ void VFSNode::listen() {
     svr->Post("/notify", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
-            notify(body.at("topic"), body.at("payload"));
+            notify(body.at("topic"), body.at("payload"), body.value("stack", std::vector<std::string>()));
             res.status = 200;
         } catch (...) { res.status = 400; }
     });
@@ -174,6 +175,26 @@ void VFSNode::listen() {
     });
 
     for (const auto& url : config_.neighbors) std::thread([this, url]() { this->add_peer(url); }).detach();
+
+    // Topology Heartbeat Thread
+    std::thread([this]() {
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            json neighbors = json::array();
+            {
+                std::lock_guard<std::mutex> lock(peer_mutex_);
+                for (const auto& [id, url] : peers_) {
+                    neighbors.push_back({{"id", id}, {"reachability", "DIRECT"}});
+                }
+            }
+            notify("sys/topo", {
+                {"type", "TOPOLOGY_UPDATE"},
+                {"peer", config_.id},
+                {"neighbors", neighbors}
+            });
+        }
+    }).detach();
+
     std::cout << "[VFSNode " << config_.id << "] Listening on 0.0.0.0:" << config_.port << std::endl;
     svr->listen("0.0.0.0", config_.port);
 }
@@ -326,7 +347,11 @@ void VFSNode::subscribe(const std::string& topic, long long expiresAt, const std
     }
 }
 
-void VFSNode::notify(const std::string& topic, const json& payload) {
+void VFSNode::notify(const std::string& topic, const json& payload, const std::vector<std::string>& stack) {
+    for (const auto& id : stack) if (id == config_.id) return; // STOP LOOP
+    std::vector<std::string> new_stack = stack;
+    new_stack.push_back(config_.id);
+
     std::lock_guard<std::mutex> lock(interest_mutex_);
     if (!interests_.count(topic)) return;
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -335,9 +360,9 @@ void VFSNode::notify(const std::string& topic, const json& payload) {
         if (now > it->second) { it = subs.erase(it); continue; }
         std::string p_id = it->first, p_url;
         { std::lock_guard<std::mutex> pl(peer_mutex_); if (peers_.count(p_id)) p_url = peers_[p_id]; }
-        if (!p_url.empty()) std::thread([p_url, topic, payload]() {
+        if (!p_url.empty()) std::thread([p_url, topic, payload, new_stack]() {
             httplib::Client cli(p_url); cli.set_connection_timeout(std::chrono::seconds(1));
-            json b = {{"topic", topic}, {"payload", payload}}; cli.Post("/notify", b.dump(), "application/json");
+            json b = {{"topic", topic}, {"payload", payload}, {"stack", new_stack}}; cli.Post("/notify", b.dump(), "application/json");
         }).detach();
         ++it;
     }

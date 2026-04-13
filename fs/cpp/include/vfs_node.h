@@ -67,7 +67,7 @@ public:
 
     // Pub-Sub
     void subscribe(const std::string& topic, long long expiresAt, const std::vector<std::string>& stack);
-    void notify(const std::string& topic, const json& payload);
+    void notify(const std::string& topic, const json& payload, const std::vector<std::string>& stack = {});
 
     // Add a peer via handshake
     void add_peer(const std::string& url);

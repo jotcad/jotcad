@@ -6,11 +6,27 @@ import crypto from 'crypto';
 class Peer {
     constructor(id) {
         this.id = id;
+        this.reachability = 'UNKNOWN'; // 'DIRECT' or 'REVERSE'
+        this.lastPulse = 0;
+        this.pps = 0;
+        this._pulseCount = 0;
     }
+    
+    _tickPPS() {
+        this.pps = this._pulseCount;
+        this._pulseCount = 0;
+    }
+
     async read(path, parameters, stack) {
         throw new Error('Not implemented');
     }
     async spy(path, parameters, stack) {
+        throw new Error('Not implemented');
+    }
+    async subscribe(topic, expiresAt, stack) {
+        throw new Error('Not implemented');
+    }
+    async notify(topic, payload, stack) {
         throw new Error('Not implemented');
     }
 }
@@ -31,7 +47,7 @@ class StaticPeer extends Peer {
         const { stack = [], expiresAt = Date.now() + 30000 } = context;
         const headers = { 
             'Content-Type': 'application/json',
-            'x-vfs-id': stack[0] // Originator hint
+            'x-vfs-id': stack[0]
         };
         if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
@@ -39,47 +55,49 @@ class StaticPeer extends Peer {
             method: 'POST',
             headers,
             signal: this.signal,
-            body: JSON.stringify({ 
-                path, 
-                parameters, 
-                stack,
-                expiresAt 
-            })
+            body: JSON.stringify({ path, parameters, stack, expiresAt })
         });
 
         if (resp.ok && resp.body) {
-            return {
-                body: resp.body,
-                headers: resp.headers
-            };
+            return { body: resp.body, headers: resp.headers };
         }
         return null;
     }
 
     async spy(path, parameters, context = {}) {
         const { stack = [], expiresAt = Date.now() + 30000 } = context;
-        const headers = { 
-            'Content-Type': 'application/json',
-            'x-vfs-id': stack[0]
-        };
+        const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
         if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
         const resp = await this.fetch(`${this.url}/spy`, {
             method: 'POST',
             headers,
             signal: this.signal,
-            body: JSON.stringify({ 
-                path, 
-                parameters, 
-                stack,
-                expiresAt 
-            })
+            body: JSON.stringify({ path, parameters, stack, expiresAt })
         });
 
-        if (resp.ok && resp.body) {
-            return resp.body;
-        }
+        if (resp.ok && resp.body) return resp.body;
         return null;
+    }
+
+    async subscribe(topic, expiresAt, stack) {
+        await this.fetch(`${this.url}/subscribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-vfs-id': stack[stack.length-1] },
+            signal: this.signal,
+            body: JSON.stringify({ topic, expiresAt, stack })
+        }).catch(() => {});
+    }
+
+    async notify(topic, payload, stack = []) {
+        this._pulseCount++;
+        this.lastPulse = Date.now();
+        await this.fetch(`${this.url}/notify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: this.signal,
+            body: JSON.stringify({ topic, payload, stack })
+        }).catch(() => {});
     }
 }
 
@@ -95,7 +113,6 @@ class ReversePeer extends Peer {
     async read(path, parameters, context = {}) {
         const { stack = [], expiresAt = Date.now() + 30000 } = context;
         const requestId = globalThis.crypto.randomUUID();
-        
         const replyPromise = new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this.registry.replies.delete(requestId);
@@ -104,35 +121,20 @@ class ReversePeer extends Peer {
 
             this.registry.replies.set(requestId, (stream, headers = new Map()) => {
                 clearTimeout(timeout);
-                resolve({
-                    body: stream,
-                    headers: headers
-                });
+                resolve({ body: stream, headers: headers });
             });
         });
 
-        const dispatched = this.registry.dispatch(this.id, {
-            type: 'COMMAND',
-            op: 'READ',
-            id: requestId,
-            path,
-            parameters,
-            stack,
-            expiresAt
-        });
-
-        if (!dispatched) {
+        if (!this.registry.dispatch(this.id, { type: 'COMMAND', op: 'READ', id: requestId, path, parameters, stack, expiresAt })) {
             this.registry.replies.delete(requestId);
             return null;
         }
-
         return replyPromise;
     }
 
     async spy(path, parameters, context = {}) {
         const { stack = [], expiresAt = Date.now() + 30000 } = context;
         const requestId = globalThis.crypto.randomUUID();
-        
         const replyPromise = new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this.registry.replies.delete(requestId);
@@ -141,29 +143,25 @@ class ReversePeer extends Peer {
 
             this.registry.replies.set(requestId, (stream, headers = new Map()) => {
                 clearTimeout(timeout);
-                resolve({
-                    body: stream,
-                    headers: headers
-                });
+                resolve({ body: stream, headers: headers });
             });
         });
 
-        const dispatched = this.registry.dispatch(this.id, {
-            type: 'COMMAND',
-            op: 'SPY',
-            id: requestId,
-            path,
-            parameters,
-            stack,
-            expiresAt
-        });
-
-        if (!dispatched) {
+        if (!this.registry.dispatch(this.id, { type: 'COMMAND', op: 'SPY', id: requestId, path, parameters, stack, expiresAt })) {
             this.registry.replies.delete(requestId);
             return null;
         }
-
         return replyPromise;
+    }
+
+    async subscribe(topic, expiresAt, stack) {
+        this.registry.dispatch(this.id, { type: 'COMMAND', op: 'SUB', topic, expiresAt, stack });
+    }
+
+    async notify(topic, payload, stack = []) {
+        this._pulseCount++;
+        this.lastPulse = Date.now();
+        this.registry.dispatch(this.id, { type: 'COMMAND', op: 'NOTIFY', topic, payload, stack });
     }
 }
 
@@ -175,13 +173,18 @@ export class MeshLinkBase {
     this.vfs = vfs;
     this.fetch = options.fetch || globalThis.fetch.bind(globalThis);
     this.localUrl = options.localUrl;
-    this.peers = new Map(); // UUID -> Peer
-    this.connecting = new Set(); // URL -> Boolean
+    this.peers = new Map();
+    this.connecting = new Set();
     this.neighborUrls = neighborUrls.map(u => u.replace(/\/$/, ''));
     this.abortController = new AbortController();
 
+    // Pub-Sub State
+    this.interests = new Map(); // Topic -> Map<NeighborID, Expiry>
+    this.lastNotify = new Map(); // Topic -> Last Payload
+    this.notifyHistory = [];
+
     this.reverseRegistry = {
-        listeners: new Map(), // PeerID -> Response Object
+        listeners: new Map(),
         replies: new Map(),
         dispatch: (peerId, command) => {
             const res = this.reverseRegistry.listeners.get(peerId);
@@ -194,145 +197,141 @@ export class MeshLinkBase {
             return false;
         }
     };
+
+    // Auto-propagate local VFS events
+    this.vfs.events.on('trace', (ev) => {
+        const topic = ev.selector ? `${ev.selector.path}?${JSON.stringify(ev.selector.parameters)}` : 'sys/trace';
+        this.notify(topic, { ...ev, peer: this.vfs.id, timestamp: Date.now() });
+    });
+
+    this._ppsInterval = setInterval(() => {
+        for (const peer of this.peers.values()) peer._tickPPS();
+    }, 1000);
+    if (this._ppsInterval.unref) this._ppsInterval.unref();
+
+    // Topology Heartbeat
+    this._topoInterval = setInterval(() => {
+        const neighbors = [...this.peers.values()].map(p => ({ id: p.id, reachability: p.reachability }));
+        this.notify('sys/topo', { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors });
+    }, 5000);
+    if (this._topoInterval.unref) this._topoInterval.unref();
+  }
+
+  async subscribe(topic, expiresAt = Date.now() + 60000, stack = []) {
+      const neighbors = [...this.peers.values()].filter(p => !stack.includes(p.id));
+      const newStack = [...stack, this.vfs.id];
+      for (const peer of neighbors) {
+          try { peer.subscribe(topic, expiresAt, newStack).catch(() => {}); } catch (e) {}
+      }
+  }
+
+  addInterest(neighborId, topic, expiresAt, stack = []) {
+      if (!this.interests.has(topic)) this.interests.set(topic, new Map());
+      const subs = this.interests.get(topic);
+      const isNewTopic = subs.size === 0;
+      subs.set(neighborId, expiresAt);
+      for (const [id, expiry] of subs.entries()) { if (Date.now() > expiry) subs.delete(id); }
+
+      if (isNewTopic) {
+          this.subscribe(topic, expiresAt, [...stack, neighborId]).catch(() => {});
+      }
+  }
+
+  notify(topic, payload, stack = []) {
+      if (stack.includes(this.vfs.id)) return;
+      const newStack = [...stack, this.vfs.id];
+      this.lastNotify.set(topic, payload);
+      this.notifyHistory.push({ topic, payload: { ...payload, stack: newStack }, t: Date.now() });
+      if (this.notifyHistory.length > 100) this.notifyHistory.shift();
+
+      for (const [subTopic, neighbors] of this.interests.entries()) {
+          const isMatch = subTopic === topic || (subTopic.endsWith('*') && topic.startsWith(subTopic.slice(0, -1)));
+          if (isMatch) {
+              for (const [neighborId, expiry] of neighbors.entries()) {
+                  if (Date.now() > expiry) { neighbors.delete(neighborId); continue; }
+                  const peer = this.peers.get(neighborId);
+                  if (peer) peer.notify(topic, payload, newStack).catch(() => {});
+              }
+          }
+      }
   }
 
   async start() {
     this.vfs.mesh = this;
-    for (const url of this.neighborUrls) {
-      await this.addPeer(url);
-    }
+    for (const url of this.neighborUrls) { await this.addPeer(url); }
   }
 
   async listenLoop(baseUrl, replyTo = null, stream = null) {
-      console.log(`[MeshLink ${this.vfs.id}] listenLoop (replyTo: ${replyTo || "none"})`);
       if (this.abortController.signal.aborted) return;
-
       try {
-          // If we have a result stream to send, send it and wait for the NEXT command
-          const headers = {
-              'x-vfs-peer-id': this.vfs.id,
-              'x-vfs-reply-to': replyTo || ''
-          };
-
+          const headers = { 'x-vfs-peer-id': this.vfs.id };
+          if (replyTo) headers['x-vfs-reply-to'] = replyTo;
           const resp = await this.fetch(`${baseUrl}/listen`, {
               method: 'POST',
               headers,
-              body: stream,
-              duplex: 'half',
-              signal: this.abortController.signal
+              signal: this.abortController.signal,
+              body: stream
           });
 
-          console.log(`[MeshLink ${this.vfs.id}] Poll to ${baseUrl}/listen returned status: ${resp.status}`);
-          
-          const text = await resp.text();
-          console.log(`[MeshLink ${this.vfs.id}] Poll response text: '${text}'`);
-
           if (resp.status === 200) {
-              if (text && text.trim() !== "") {
-                  const command = JSON.parse(text); console.log(`[MeshLink ${this.vfs.id}] Received command:`, command.op, "ID:", command.id);
-                  
-                  if (command.type === 'COMMAND') {
-                      let resultStream = null;
-                      if (command.op === 'READ') {
-                          resultStream = await this.vfs.read(command.path, command.parameters, { 
-                              stack: command.stack,
-                              expiresAt: command.expiresAt 
-                          });
-                      } else if (command.op === 'SPY') {
-                          resultStream = await this.vfs.spy(command.path, command.parameters, { 
-                              stack: command.stack,
-                              expiresAt: command.expiresAt 
-                          });
-                      }
-                      
-                      // Continue loop with the new command's result
-                      return this.listenLoop(baseUrl, command.id, resultStream);
-                  }
+              const command = await resp.json();
+              if (command.op === 'READ') {
+                  const resultStream = await this.vfs.read(command.path, command.parameters, { stack: command.stack, expiresAt: command.expiresAt });
+                  return this.listenLoop(baseUrl, command.id, resultStream);
+              } else if (command.op === 'SPY') {
+                  const resultStream = await this.vfs.spy(command.path, command.parameters, { stack: command.stack, expiresAt: command.expiresAt });
+                  return this.listenLoop(baseUrl, command.id, resultStream);
+              } else if (command.op === 'SUB') {
+                  this.addInterest(command.stack[0] || 'unknown', command.topic, command.expiresAt, command.stack);
+                  return this.listenLoop(baseUrl);
+              } else if (command.op === 'NOTIFY') {
+                  this.notify(command.topic, command.payload, command.stack);
+                  return this.listenLoop(baseUrl);
               }
           }
       } catch (err) {
-          if (err.name === 'AbortError' || this.abortController.signal.aborted) return;
-          console.warn(`[MeshLink ${this.vfs.id}] Listen loop error:`, err);
-          
-          // Use a cancellable promise for backoff
+          if (this.abortController.signal.aborted) return;
           await new Promise(resolve => {
               const timer = setTimeout(resolve, 2000);
-              this.abortController.signal.addEventListener('abort', () => {
-                  clearTimeout(timer);
-                  resolve();
-              }, { once: true });
+              this.abortController.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
           });
       }
-      
-      // Always maintain an idle connection
       return this.listenLoop(baseUrl);
   }
 
   async testReachability(url) {
     if (!url) return false;
     try {
-      const resp = await this.fetch(`${url}/health`, { 
-          method: 'GET',
-          signal: AbortSignal.timeout(2000) 
-      });
+      const resp = await this.fetch(`${url}/health`, { method: 'GET', signal: AbortSignal.timeout(2000) });
       return resp.ok;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   }
 
   async addPeer(url) {
     url = url.replace(/\/$/, '');
     if (this.connecting.has(url)) return;
     this.connecting.add(url);
-
     try {
-        console.log(`[MeshLink ${this.vfs.id}] Handshaking with ${url}...`);
         const resp = await this.fetch(`${url}/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                id: this.vfs.id, 
-                url: this.localUrl 
-            }),
+            body: JSON.stringify({ id: this.vfs.id, url: this.localUrl }),
             signal: this.abortController.signal
         });
-
         if (resp.ok) {
             const info = await resp.json();
             const remoteId = info.id;
             if (remoteId && remoteId !== this.vfs.id) {
                 if (!this.peers.has(remoteId)) {
-                    this.peers.set(remoteId, new StaticPeer(remoteId, url, this.fetch, { 
-                        localUrl: this.localUrl,
-                        signal: this.abortController.signal 
-                    }));
+                    const peer = new StaticPeer(remoteId, url, this.fetch, { localUrl: this.localUrl, signal: this.abortController.signal });
+                    peer.reachability = 'DIRECT';
+                    this.peers.set(remoteId, peer);
                 }
-                
-                if (info.reachability === 'REVERSE') {
-                    console.log(`[MeshLink ${this.vfs.id}] Reverse linkage needed for ${url}`);
-                    this.listenLoop(url);
-                } else {
-                    console.log(`[MeshLink ${this.vfs.id}] Direct linkage confirmed for ${url}`);
-                }
+                if (info.reachability === 'REVERSE') this.listenLoop(url);
                 return remoteId;
             }
-        } else {
-            // Legacy fallback
-            const hResp = await this.fetch(`${url}/health`, { signal: this.abortController.signal });
-            if (hResp.ok) {
-                const info = await hResp.json();
-                this.peers.set(info.id, new StaticPeer(info.id, url, this.fetch, { localUrl: this.localUrl }));
-                this.listenLoop(url);
-                return info.id;
-            }
         }
-    } catch (err) {
-        console.warn(`[MeshLink ${this.vfs.id}] Handshake failed for ${url}:`, err.message);
-    } finally {
-        this.connecting.delete(url);
-    }
-    return null;
+    } catch (e) {} finally { this.connecting.delete(url); }
   }
 
   registerReversePeer(peerId, res, replyTo = null, stream = null) {
@@ -340,27 +339,18 @@ export class MeshLinkBase {
           const resolve = this.reverseRegistry.replies.get(replyTo);
           if (resolve) {
               this.reverseRegistry.replies.delete(replyTo);
-              
-              // Try to extract length if this was a chunked or pre-sized stream
               const headers = new Map();
               if (stream.length) headers.set('Content-Length', stream.length.toString());
-              
               resolve(stream, headers);
           }
       }
-
       if (!this.peers.has(peerId)) {
-          this.peers.set(peerId, new ReversePeer(peerId, this.reverseRegistry));
+          const peer = new ReversePeer(peerId, this.reverseRegistry);
+          peer.reachability = 'REVERSE';
+          this.peers.set(peerId, peer);
       }
-      
       const existing = this.reverseRegistry.listeners.get(peerId);
-      if (existing) {
-          try {
-            existing.writeHead(204);
-            existing.end();
-          } catch(e) {}
-      }
-
+      if (existing) try { existing.writeHead(204); existing.end(); } catch(e) {}
       this.reverseRegistry.listeners.set(peerId, res);
   }
 
@@ -368,65 +358,30 @@ export class MeshLinkBase {
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     const newStack = [...stack, this.vfs.id];
     const targetPeers = [...this.peers.values()].filter(p => !stack.includes(p.id));
-    
     if (targetPeers.length === 0) return null;
-
     const fetchPromises = targetPeers.map(async (peer) => {
-        try {
-            const resp = await peer.read(path, parameters, { stack: newStack, expiresAt });
-            if (resp) return resp;
-        } catch (err) {}
+        try { const resp = await peer.read(path, parameters, { stack: newStack, expiresAt }); if (resp) return resp; } catch (err) {}
         throw new Error('Peer failed');
     });
-
-    try {
-        return await Promise.any(fetchPromises);
-    } catch (e) {
-        return null;
-    }
+    try { return await Promise.any(fetchPromises); } catch (e) { return null; }
   }
 
   async spy(path, parameters, context = {}) {
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     const newStack = [...stack, this.vfs.id];
     const targetPeers = [...this.peers.values()].filter(p => !stack.includes(p.id));
-    
     if (targetPeers.length === 0) return null;
-
     const fetchPromises = targetPeers.map(async (peer) => {
-        try {
-            // Explicitly catch peer errors so one crash doesn't kill the mesh request
-            return await peer.spy(path, parameters, { stack: newStack, expiresAt });
-        } catch (err) {
-            console.warn(`[MeshLink ${this.vfs.id}] Spy peer error (peer: ${peer.id}):`, err);
-            return null;
-        }
+        try { return await peer.spy(path, parameters, { stack: newStack, expiresAt }); } catch (err) { return null; }
     });
-
     const results = await Promise.allSettled(fetchPromises);
-    const streams = results
-        .filter(r => r.status === 'fulfilled' && r.value)
-        .map(r => r.value);
-
-    if (streams.length === 0) return null;
-
-    return new (globalThis.ReadableStream)({
+    const validStreams = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+    if (validStreams.length === 0) return null;
+    return new ReadableStream({
         async start(controller) {
-            for (const stream of streams) {
-                if (typeof stream.getReader === 'function') {
-                    const reader = stream.getReader();
-                    try {
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            controller.enqueue(value);
-                        }
-                    } catch (e) {} finally {
-                        reader.releaseLock();
-                    }
-                } else if (stream instanceof Uint8Array) {
-                    controller.enqueue(stream);
-                }
+            for (const stream of validStreams) {
+                const reader = stream.getReader();
+                try { while (true) { const { done, value } = await reader.read(); if (done) break; controller.enqueue(value); } } finally { reader.releaseLock(); }
             }
             controller.close();
         }
@@ -435,13 +390,10 @@ export class MeshLinkBase {
 
   stop() {
     this.abortController.abort();
-    for (const res of this.reverseRegistry.listeners.values()) {
-        try { res.end(); } catch(e) {}
-    }
+    clearInterval(this._ppsInterval);
+    clearInterval(this._topoInterval);
+    for (const res of this.reverseRegistry.listeners.values()) { try { res.end(); } catch(e) {} }
   }
 }
 
-/**
- * MeshLink: Concrete environment-agnostic MeshLink implementation.
- */
 export class MeshLink extends MeshLinkBase {}

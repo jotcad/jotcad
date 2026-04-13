@@ -138,7 +138,7 @@ export class VFS {
     });
     this.providers = new Map();
     this.schemas = new Map();
-    this.activeWait = new Map(); // SelectorKey -> Promise<{success: boolean, cid: string}>
+    this.activeWait = new Map(); // SelectorKey -> Promise<{success: boolean, cid: string, metadata: object}>
     this.events = new EventEmitter();
     this.mesh = null;
     this.closed = false;
@@ -169,28 +169,38 @@ export class VFS {
   }
 
   async read(pathOrSelector, parameters, context = {}) {
+    const result = await this._readResult(pathOrSelector, parameters, context);
+    if (result && result.success) return this.storage.get(result.cid);
+    return null;
+  }
+
+  /**
+   * Internal read that returns the full work result including metadata.
+   */
+  async _readResult(pathOrSelector, parameters, context = {}) {
+    const { stack = [], expiresAt = Date.now() + 30000, followLinks = true, depth = 0 } = context;
     const s = normalizeSelector(pathOrSelector, parameters);
+    if (depth > 10) throw new Error(`Maximum recursion depth exceeded for ${s.path}`);
     this.validateSelector(s);
-    const { stack = [], expiresAt = Date.now() + 30000, followLinks = true } = context;
     if (Date.now() > expiresAt) return null;
 
     const key = JSON.stringify(s);
-    this.events.emit('trace', { type: 'READ_START', selector: s, stack });
-
-    if (this.mesh) {
-        const topic = `${s.path}?${JSON.stringify(s.parameters)}`;
-        this.mesh.subscribe(topic, expiresAt, stack).catch(() => {});
-    }
-
-    if (this.activeWait.has(key)) {
-        const result = await this.activeWait.get(key);
-        return result.success ? this.storage.get(result.cid) : null;
-    }
+    if (this.activeWait.has(key)) return this.activeWait.get(key);
 
     const workPromise = (async () => {
         const cid = await this.getCID(s);
         try {
-            if (await this.storage.has(cid)) return { success: true, cid };
+            // Check local storage
+            if (await this.storage.has(cid)) {
+                const info = await this._getStorageInfo(cid);
+                return { success: true, cid, metadata: info?.tags || {} };
+            }
+
+            this.events.emit('trace', { type: 'READ_START', selector: s, stack });
+            if (this.mesh) {
+                const topic = `${s.path}?${JSON.stringify(s.parameters)}`;
+                this.mesh.subscribe(topic, expiresAt, stack).catch(() => {});
+            }
 
             let provider = this.providers.get(s.path);
             if (!provider) {
@@ -201,7 +211,7 @@ export class VFS {
             }
 
             let resultData = null;
-            let resultInfo = { path: s.path, parameters: s.parameters };
+            let resultMetadata = {};
 
             if (provider) {
                 this.events.emit('trace', { type: 'HANDLER_START', selector: s, peer: this.id });
@@ -209,17 +219,7 @@ export class VFS {
             } else if (this.mesh) {
                 this.events.emit('trace', { type: 'MESH_START', selector: s, peer: this.id });
                 const meshResponse = await this.mesh.read(s.path, s.parameters, { stack, expiresAt });
-                if (meshResponse) {
-                    const headers = meshResponse.headers;
-                    let size = null;
-                    if (headers) {
-                        if (typeof headers.get === 'function') size = headers.get('Content-Length');
-                        else if (headers instanceof Map) size = headers.get('Content-Length');
-                        else size = headers['Content-Length'] || headers['content-length'];
-                    }
-                    if (size) resultInfo.size = parseInt(size, 10);
-                    resultData = meshResponse.body || meshResponse;
-                }
+                if (meshResponse) resultData = meshResponse.body || meshResponse;
             }
 
             if (resultData) {
@@ -227,19 +227,25 @@ export class VFS {
                     const peekResult = await this._peekLink(resultData);
                     if (peekResult.isLink) {
                         const linkMetadata = await this._extractMetadata(peekResult.text);
-                        Object.assign(resultInfo, linkMetadata);
-                        const linkedStream = await this.read(peekResult.linkPath, peekResult.linkParams || s.parameters, { 
-                            ...context, stack: [...stack, this.id] 
+                        const linkedResult = await this._readResult(peekResult.linkPath, peekResult.linkParams || s.parameters, { 
+                            ...context, depth: depth + 1, stack: [...stack, this.id] 
                         });
-                        if (linkedStream) resultData = linkedStream;
+                        
+                        if (linkedResult && linkedResult.success) {
+                            resultData = await this.storage.get(linkedResult.cid);
+                            resultMetadata = { ...linkMetadata, ...linkedResult.metadata };
+                        } else {
+                            return { success: false, cid };
+                        }
                     } else {
                         resultData = peekResult.stream;
                     }
                 }
 
                 try {
-                    await this.write(s.path, s.parameters, resultData, resultInfo);
-                    return { success: true, cid };
+                    const writeInfo = { path: s.path, parameters: s.parameters, tags: resultMetadata };
+                    await this.write(s.path, s.parameters, resultData, writeInfo);
+                    return { success: true, cid, metadata: resultMetadata };
                 } catch (err) {
                     return { success: false, cid };
                 }
@@ -247,7 +253,7 @@ export class VFS {
             return { success: false, cid };
         } catch (err) {
             this.events.emit('trace', { type: 'ERROR', selector: s, message: err.message, peer: this.id });
-            return { success: false, cid: '' };
+            return { success: false, cid: '', error: err.message };
         } finally {
             this.activeWait.delete(key);
             this.events.emit('trace', { type: 'READ_END', selector: s });
@@ -255,16 +261,22 @@ export class VFS {
     })();
 
     this.activeWait.set(key, workPromise);
-    const result = await workPromise;
-    return result.success ? this.storage.get(result.cid) : null;
+    return workPromise;
+  }
+
+  async _getStorageInfo(cid) {
+      if (typeof this.storage.iterateMeta === 'function') {
+          for await (const entry of this.storage.iterateMeta()) {
+              if (entry.cid === cid) return entry.info;
+          }
+      }
+      return null;
   }
 
   async _extractMetadata(jsonOrText) {
       try {
           const j = typeof jsonOrText === 'string' ? JSON.parse(jsonOrText) : jsonOrText;
-          const metadata = {};
-          if (j.tags) metadata.tags = j.tags;
-          return metadata;
+          return j.tags || {};
       } catch (e) { return {}; }
   }
 
@@ -296,7 +308,7 @@ export class VFS {
 
       return {
           isLink: false, text,
-          stream: new ReadableStream({
+          stream: new WebReadableStream({
               async start(controller) {
                   controller.enqueue(value);
                   try {
@@ -482,5 +494,11 @@ export class VFS {
       let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
       return bytes;
+  }
+
+  _matchesSpy(info, s) {
+      if (!info.path) return false;
+      if (s.path.endsWith('*')) return info.path.startsWith(s.path.slice(0, -1));
+      return info.path === s.path;
   }
 }

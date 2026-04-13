@@ -22,6 +22,7 @@ const mesh = new MeshLink(vfs, [vfsUrl]);
 const [graph, setGraph] = createSignal({});
 const [schemas, setSchemas] = createSignal({});
 const [pulse, setPulse] = createSignal([]); // Array of recent notifications
+const [meshTopology, setMeshTopology] = createSignal({ peers: [] });
 const [isConnected, setIsConnected] = createSignal(false);
 const [discoveryStatus, setDiscoveryStatus] = createSignal('idle'); // 'idle', 'loading', 'success', 'error'
 
@@ -30,6 +31,7 @@ export const blackboard = {
     graph,
     schemas,
     pulse,
+    meshTopology,
     isConnected,
     discoveryStatus,
     async start() {
@@ -44,28 +46,54 @@ export const blackboard = {
         });
 
         // Capture Pub-Sub Pulses
+        const meshMap = new Map(); // Global Adjacency List: PeerID -> Set of Neighbors
         const originalNotify = mesh.notify.bind(mesh);
+        
         mesh.notify = (topic, payload) => {
             originalNotify(topic, payload);
+            
+            if (payload.type === 'TOPOLOGY_UPDATE') {
+                meshMap.set(payload.peer, payload.neighbors);
+            }
+
             setPulse(prev => {
                 const next = [...prev, { topic, payload, t: Date.now() }];
                 return next.slice(-20); // Keep last 20 pulses
             });
         };
 
-        // Track connectivity
-        try {
-            await mesh.fetch(`${vfsUrl}/health`);
-            setIsConnected(true);
-            console.log('[UX] Successfully connected to mesh at:', vfsUrl);
-        } catch (e) {
-            setIsConnected(false);
-            console.error('[UX] Failed to connect to mesh at:', vfsUrl, e);
-        }
+        // ... existing connectivity code ...
 
         await mesh.start();
         setIsConnected(true);
         console.log('[UX] MeshLink started.');
+
+        // Initial subscription to topology updates
+        vfs.read('sys/topo/*', {}, { followLinks: false }).catch(() => {});
+
+        // Topology Sampling Loop
+        setInterval(() => {
+            const nodes = new Map();
+            // 1. Add current node
+            nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [] });
+
+            // 2. Add learned peers from meshMap
+            for (const [peerId, neighbors] of meshMap.entries()) {
+                if (!nodes.has(peerId)) nodes.set(peerId, { id: peerId, type: 'PEER', pps: 0, neighbors });
+                else nodes.get(peerId).neighbors = neighbors;
+            }
+
+            // 3. Sync PPS and reachability from direct MeshLink peers
+            for (const p of mesh.peers.values()) {
+                if (nodes.has(p.id)) {
+                    const n = nodes.get(p.id);
+                    n.pps = p.pps;
+                    n.reachability = p.reachability;
+                }
+            }
+
+            setMeshTopology({ peers: [...nodes.values()] });
+        }, 1000);
         
         this.discoverSchemas();
     },

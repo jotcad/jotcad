@@ -173,15 +173,15 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const body = await getBody();
         const { topic, expiresAt, stack } = body;
         const peerId = req.headers['x-vfs-id'] || 'unknown';
-        meshLink?.addInterest(peerId, topic, expiresAt);
+        meshLink?.addInterest(peerId, topic, expiresAt, stack || []);
         res.writeHead(200);
         return res.end();
       }
 
       if (req.method === 'POST' && vfsPath === '/notify') {
         const body = await getBody();
-        const { topic, payload } = body;
-        meshLink?.notify(topic, payload);
+        const { topic, payload, stack } = body;
+        meshLink?.notify(topic, payload, stack || []);
         res.writeHead(200);
         return res.end();
       }
