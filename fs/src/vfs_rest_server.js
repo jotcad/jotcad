@@ -171,17 +171,17 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       if (req.method === 'POST' && vfsPath === '/subscribe') {
         const body = await getBody();
-        const { topic, expiresAt, stack } = body;
+        const { selector, expiresAt, stack } = body;
         const peerId = req.headers['x-vfs-id'] || 'unknown';
-        meshLink?.addInterest(peerId, topic, expiresAt, stack || []);
+        meshLink?.addInterest(peerId, selector, expiresAt, stack || []);
         res.writeHead(200);
         return res.end();
       }
 
       if (req.method === 'POST' && vfsPath === '/notify') {
         const body = await getBody();
-        const { topic, payload, stack } = body;
-        meshLink?.notify(topic, payload, stack || []);
+        const { selector, payload, stack } = body;
+        meshLink?.notify(selector, payload, stack || []);
         res.writeHead(200);
         return res.end();
       }

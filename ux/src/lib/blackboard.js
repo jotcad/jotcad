@@ -53,6 +53,7 @@ export const blackboard = {
             originalNotify(topic, payload);
             
             if (payload.type === 'TOPOLOGY_UPDATE') {
+                console.log(`[UX] Topology Heartbeat from ${payload.peer}:`, payload.neighbors);
                 meshMap.set(payload.peer, payload.neighbors);
             }
 
@@ -69,7 +70,7 @@ export const blackboard = {
         console.log('[UX] MeshLink started.');
 
         // Initial subscription to topology updates
-        vfs.read('sys/topo/*', {}, { followLinks: false }).catch(() => {});
+        vfs.read('sys/topo', {}, { followLinks: false }).catch(() => {});
 
         // Topology Sampling Loop
         setInterval(() => {

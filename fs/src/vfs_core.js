@@ -197,11 +197,10 @@ export class VFS {
             }
 
             this.events.emit('trace', { type: 'READ_START', selector: s, stack });
+            // Auto-subscribe to status updates
             if (this.mesh) {
-                const topic = `${s.path}?${JSON.stringify(s.parameters)}`;
-                this.mesh.subscribe(topic, expiresAt, stack).catch(() => {});
+                this.mesh.subscribe(s, expiresAt, stack).catch(() => {});
             }
-
             let provider = this.providers.get(s.path);
             if (!provider) {
                 for (const [pattern, handler] of this.providers.entries()) {

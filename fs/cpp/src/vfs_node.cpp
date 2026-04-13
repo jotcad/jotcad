@@ -37,11 +37,14 @@ namespace {
 std::vector<uint8_t> safe_to_bytes(const std::string& s) {
     return std::vector<uint8_t>(s.begin(), s.end());
 }
-}
 
-void VFSNode::stop() {
-    auto* svr = static_cast<httplib::Server*>(server_ptr_);
-    if (svr->is_running()) svr->stop();
+bool matches(const json& sub, const json& event) {
+    if (sub["path"] == event["path"]) {
+        if (sub["parameters"].empty()) return true;
+        return sub["parameters"] == event["parameters"];
+    }
+    return false;
+}
 }
 
 void VFSNode::register_op(const std::string& path, OpHandler handler, const json& schema) {
@@ -106,9 +109,7 @@ void VFSNode::listen() {
             auto data = read(vfs_req);
             if (!data.empty()) {
                 res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
-            } else {
-                res.status = 404;
-            }
+            } else { res.status = 404; }
         } catch (...) { res.status = 400; }
     });
 
@@ -121,9 +122,7 @@ void VFSNode::listen() {
             auto data = spy(vfs_req);
             if (!data.empty()) {
                 res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
-            } else {
-                res.status = 404;
-            }
+            } else { res.status = 404; }
         } catch (...) { res.status = 400; }
     });
 
@@ -146,16 +145,19 @@ void VFSNode::listen() {
     svr->Post("/subscribe", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
-            std::string topic = body.at("topic").get<std::string>();
+            json selector = body.at("selector");
             long long expiresAt = body.at("expiresAt").get<long long>();
             std::vector<std::string> stack = body.value("stack", std::vector<std::string>());
             std::string peer_id = req.get_header_value("x-vfs-id");
             if (peer_id.empty()) peer_id = "unknown";
+
+            std::string key = selector.dump();
             {
                 std::lock_guard<std::mutex> lock(interest_mutex_);
-                interests_[topic][peer_id] = expiresAt;
+                interests_[key][peer_id] = expiresAt;
+                interest_selectors_[key] = selector;
             }
-            subscribe(topic, expiresAt, stack);
+            subscribe(selector, expiresAt, stack);
             res.status = 200;
         } catch (...) { res.status = 400; }
     });
@@ -163,7 +165,7 @@ void VFSNode::listen() {
     svr->Post("/notify", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
-            notify(body.at("topic"), body.at("payload"), body.value("stack", std::vector<std::string>()));
+            notify(body.at("selector"), body.at("payload"), body.value("stack", std::vector<std::string>()));
             res.status = 200;
         } catch (...) { res.status = 400; }
     });
@@ -183,11 +185,9 @@ void VFSNode::listen() {
             json neighbors = json::array();
             {
                 std::lock_guard<std::mutex> lock(peer_mutex_);
-                for (const auto& [id, url] : peers_) {
-                    neighbors.push_back({{"id", id}, {"reachability", "DIRECT"}});
-                }
+                for (const auto& [id, url] : peers_) neighbors.push_back({{"id", id}, {"reachability", "DIRECT"}});
             }
-            notify("sys/topo", {
+            notify({{"path", "sys/topo"}, {"parameters", {{"id", config_.id}}}}, {
                 {"type", "TOPOLOGY_UPDATE"},
                 {"peer", config_.id},
                 {"neighbors", neighbors}
@@ -199,13 +199,17 @@ void VFSNode::listen() {
     svr->listen("0.0.0.0", config_.port);
 }
 
+void VFSNode::stop() {
+    auto* svr = static_cast<httplib::Server*>(server_ptr_);
+    if (svr->is_running()) svr->stop();
+}
+
 bool VFSNode::validate_selector(const VFSRequest& req, std::string& error_out) {
     if (!schemas_.count(req.path)) return true;
     const json& schema = schemas_[req.path];
-    const json& params = req.parameters;
     if (schema.contains("required")) {
         for (const auto& f : schema["required"]) {
-            if (!params.contains(f.get<std::string>())) {
+            if (!req.parameters.contains(f.get<std::string>())) {
                 error_out = "Missing: " + f.get<std::string>();
                 return false;
             }
@@ -224,13 +228,12 @@ std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
     if (has_local(cid)) return get_local(cid);
 
     std::vector<uint8_t> data;
-
     if (handlers_.count(req.path)) {
-        std::string topic = req.path + "?" + req.parameters.dump();
-        notify(topic, {{"type", "WORKING"}, {"peer", config_.id}});
+        json selector = {{"path", req.path}, {"parameters", req.parameters}};
+        notify(selector, {{"type", "WORKING"}, {"peer", config_.id}});
         data = handlers_[req.path](req);
         if (!data.empty()) {
-            notify(topic, {{"type", "SUCCESS"}, {"peer", config_.id}, {"size", data.size()}});
+            notify(selector, {{"type", "SUCCESS"}, {"peer", config_.id}, {"size", data.size()}});
             write_local(cid, data, req.path, req.parameters);
         }
     }
@@ -240,12 +243,10 @@ std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
         new_stack.push_back(config_.id);
         std::lock_guard<std::mutex> lock(peer_mutex_);
         for (const auto& [id, url] : peers_) {
-            bool in_stack = false;
-            for (const auto& s_id : req.stack) if (s_id == id) { in_stack = true; break; }
+            bool in_stack = false; for (const auto& s_id : req.stack) if (s_id == id) in_stack = true;
             if (in_stack) continue;
             try {
-                httplib::Client cli(url);
-                cli.set_read_timeout(30, 0);
+                httplib::Client cli(url); cli.set_read_timeout(30, 0);
                 json body = {{"path", req.path}, {"parameters", req.parameters}, {"stack", new_stack}, {"expiresAt", req.expiresAt}};
                 auto res = cli.Post("/read", body.dump(), "application/json");
                 if (res && res->status == 200) {
@@ -258,7 +259,6 @@ std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
     }
 
     if (!data.empty()) {
-        // Transparent Link Following
         try {
             auto j = json::parse(std::string(data.begin(), data.end()));
             if (j.contains("geometry") && j["geometry"].is_string()) {
@@ -274,8 +274,49 @@ std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
             }
         } catch (...) {}
     }
-
     return data;
+}
+
+void VFSNode::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
+    std::vector<std::string> n_stack = stack; n_stack.push_back(config_.id);
+    std::lock_guard<std::mutex> lock(peer_mutex_);
+    for (const auto& [id, url] : peers_) {
+        bool skip = false; for (const auto& s : stack) if (s == id) skip = true;
+        if (skip) continue;
+        std::thread([url, selector, expiresAt, n_stack, this]() {
+            httplib::Client cli(url); cli.set_connection_timeout(std::chrono::seconds(1));
+            json b = {{"selector", selector}, {"expiresAt", expiresAt}, {"stack", n_stack}};
+            cli.Post("/subscribe", b.dump(), "application/json");
+        }).detach();
+    }
+}
+
+void VFSNode::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
+    for (const auto& id : stack) if (id == config_.id) return;
+    std::vector<std::string> n_stack = stack; n_stack.push_back(config_.id);
+
+    std::lock_guard<std::mutex> lock(interest_mutex_);
+    for (auto& [key, subs] : interests_) {
+        if (matches(interest_selectors_[key], selector)) {
+            auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            for (auto it = subs.begin(); it != subs.end(); ) {
+                if (now > it->second) { it = subs.erase(it); continue; }
+                std::string p_id = it->first, p_url;
+                { std::lock_guard<std::mutex> pl(peer_mutex_); if (peers_.count(p_id)) p_url = peers_[p_id]; }
+                
+                // Don't send back to neighbor that sent it
+                bool in_stack = false;
+                for (const auto& s_id : stack) if (s_id == p_id) in_stack = true;
+
+                if (!p_url.empty() && !in_stack) std::thread([p_url, selector, payload, n_stack]() {
+                    httplib::Client cli(p_url); cli.set_connection_timeout(std::chrono::seconds(1));
+                    json b = {{"selector", selector}, {"payload", payload}, {"stack", n_stack}};
+                    cli.Post("/notify", b.dump(), "application/json");
+                }).detach();
+                ++it;
+            }
+        }
+    }
 }
 
 std::vector<uint8_t> VFSNode::spy(const VFSRequest& req) {
@@ -321,7 +362,7 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
     if (size <= 0) return {};
     is.seekg(0, std::ios::beg);
     std::vector<uint8_t> buf((size_t)size);
-    if (is.read((char*)buf.data(), size)) return buf;
+    if (is.read((char*)buf.data(), (size_t)size)) return buf;
     return {};
 }
 
@@ -331,41 +372,6 @@ void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& da
     os.write((const char*)data.data(), data.size());
     std::ofstream mos(fs::path(config_.storage_dir) / (cid + ".meta"));
     mos << json({{"path", path}, {"parameters", params}}).dump(2);
-}
-
-void VFSNode::subscribe(const std::string& topic, long long expiresAt, const std::vector<std::string>& stack) {
-    std::vector<std::string> n_stack = stack; n_stack.push_back(config_.id);
-    std::lock_guard<std::mutex> lock(peer_mutex_);
-    for (const auto& [id, url] : peers_) {
-        bool skip = false; for (const auto& s : stack) if (s == id) skip = true;
-        if (skip) continue;
-        std::thread([url, topic, expiresAt, n_stack]() {
-            httplib::Client cli(url); cli.set_connection_timeout(std::chrono::seconds(1));
-            json b = {{"topic", topic}, {"expiresAt", expiresAt}, {"stack", n_stack}};
-            cli.Post("/subscribe", b.dump(), "application/json");
-        }).detach();
-    }
-}
-
-void VFSNode::notify(const std::string& topic, const json& payload, const std::vector<std::string>& stack) {
-    for (const auto& id : stack) if (id == config_.id) return; // STOP LOOP
-    std::vector<std::string> new_stack = stack;
-    new_stack.push_back(config_.id);
-
-    std::lock_guard<std::mutex> lock(interest_mutex_);
-    if (!interests_.count(topic)) return;
-    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    auto& subs = interests_[topic];
-    for (auto it = subs.begin(); it != subs.end(); ) {
-        if (now > it->second) { it = subs.erase(it); continue; }
-        std::string p_id = it->first, p_url;
-        { std::lock_guard<std::mutex> pl(peer_mutex_); if (peers_.count(p_id)) p_url = peers_[p_id]; }
-        if (!p_url.empty()) std::thread([p_url, topic, payload, new_stack]() {
-            httplib::Client cli(p_url); cli.set_connection_timeout(std::chrono::seconds(1));
-            json b = {{"topic", topic}, {"payload", payload}, {"stack", new_stack}}; cli.Post("/notify", b.dump(), "application/json");
-        }).detach();
-        ++it;
-    }
 }
 
 } // namespace fs

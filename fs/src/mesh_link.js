@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { normalizeSelector } from './vfs_core.js';
 
 /**
  * Peer: Abstract interface for any entity we can request data from.
@@ -23,10 +24,10 @@ class Peer {
     async spy(path, parameters, stack) {
         throw new Error('Not implemented');
     }
-    async subscribe(topic, expiresAt, stack) {
+    async subscribe(selector, expiresAt, stack) {
         throw new Error('Not implemented');
     }
-    async notify(topic, payload, stack) {
+    async notify(selector, payload, stack) {
         throw new Error('Not implemented');
     }
 }
@@ -85,7 +86,7 @@ class StaticPeer extends Peer {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-vfs-id': stack[stack.length-1] },
             signal: this.signal,
-            body: JSON.stringify({ topic, expiresAt, stack })
+            body: JSON.stringify({ selector: topic, expiresAt, stack })
         }).catch(() => {});
     }
 
@@ -96,7 +97,7 @@ class StaticPeer extends Peer {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: this.signal,
-            body: JSON.stringify({ topic, payload, stack })
+            body: JSON.stringify({ selector: topic, payload, stack })
         }).catch(() => {});
     }
 }
@@ -155,13 +156,13 @@ class ReversePeer extends Peer {
     }
 
     async subscribe(topic, expiresAt, stack) {
-        this.registry.dispatch(this.id, { type: 'COMMAND', op: 'SUB', topic, expiresAt, stack });
+        this.registry.dispatch(this.id, { type: 'COMMAND', op: 'SUB', selector: topic, expiresAt, stack });
     }
 
     async notify(topic, payload, stack = []) {
         this._pulseCount++;
         this.lastPulse = Date.now();
-        this.registry.dispatch(this.id, { type: 'COMMAND', op: 'NOTIFY', topic, payload, stack });
+        this.registry.dispatch(this.id, { type: 'COMMAND', op: 'NOTIFY', selector: topic, payload, stack });
     }
 }
 
@@ -179,8 +180,8 @@ export class MeshLinkBase {
     this.abortController = new AbortController();
 
     // Pub-Sub State
-    this.interests = new Map(); // Topic -> Map<NeighborID, Expiry>
-    this.lastNotify = new Map(); // Topic -> Last Payload
+    this.interests = new Map(); // Normalized Topic JSON -> { selector, subs: Map<NeighborID, Expiry> }
+    this.lastNotify = new Map();
     this.notifyHistory = [];
 
     this.reverseRegistry = {
@@ -200,8 +201,8 @@ export class MeshLinkBase {
 
     // Auto-propagate local VFS events
     this.vfs.events.on('trace', (ev) => {
-        const topic = ev.selector ? `${ev.selector.path}?${JSON.stringify(ev.selector.parameters)}` : 'sys/trace';
-        this.notify(topic, { ...ev, peer: this.vfs.id, timestamp: Date.now() });
+        const selector = ev.selector || { path: 'sys/trace', parameters: {} };
+        this.notify(selector, { ...ev, peer: this.vfs.id, timestamp: Date.now() });
     });
 
     this._ppsInterval = setInterval(() => {
@@ -212,48 +213,79 @@ export class MeshLinkBase {
     // Topology Heartbeat
     this._topoInterval = setInterval(() => {
         const neighbors = [...this.peers.values()].map(p => ({ id: p.id, reachability: p.reachability }));
-        this.notify('sys/topo', { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors });
+        const selector = { path: 'sys/topo', parameters: { id: this.vfs.id } };
+        this.notify(selector, { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors });
     }, 5000);
     if (this._topoInterval.unref) this._topoInterval.unref();
   }
 
-  async subscribe(topic, expiresAt = Date.now() + 60000, stack = []) {
+  async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
       const neighbors = [...this.peers.values()].filter(p => !stack.includes(p.id));
       const newStack = [...stack, this.vfs.id];
       for (const peer of neighbors) {
-          try { peer.subscribe(topic, expiresAt, newStack).catch(() => {}); } catch (e) {}
+          try { peer.subscribe(selector, expiresAt, newStack).catch(() => {}); } catch (e) {}
       }
   }
 
-  addInterest(neighborId, topic, expiresAt, stack = []) {
-      if (!this.interests.has(topic)) this.interests.set(topic, new Map());
-      const subs = this.interests.get(topic);
-      const isNewTopic = subs.size === 0;
-      subs.set(neighborId, expiresAt);
-      for (const [id, expiry] of subs.entries()) { if (Date.now() > expiry) subs.delete(id); }
+  addInterest(neighborId, selector, expiresAt, stack = []) {
+      const topicString = JSON.stringify(normalizeSelector(selector));
+      if (!this.interests.has(topicString)) this.interests.set(topicString, { selector, subs: new Map() });
+      const entry = this.interests.get(topicString);
+      const isNewTopic = entry.subs.size === 0;
+      entry.subs.set(neighborId, expiresAt);
+      for (const [id, expiry] of entry.subs.entries()) { if (Date.now() > expiry) entry.subs.delete(id); }
 
       if (isNewTopic) {
-          this.subscribe(topic, expiresAt, [...stack, neighborId]).catch(() => {});
+          this.subscribe(selector, expiresAt, [...stack, neighborId]).catch(() => {});
       }
   }
 
-  notify(topic, payload, stack = []) {
+  notify(selector, payload, stack = []) {
+      // Loop protection: If we've already seen this notification, stop.
       if (stack.includes(this.vfs.id)) return;
+      
       const newStack = [...stack, this.vfs.id];
-      this.lastNotify.set(topic, payload);
-      this.notifyHistory.push({ topic, payload: { ...payload, stack: newStack }, t: Date.now() });
+      const s = normalizeSelector(selector);
+      const topicString = JSON.stringify(s);
+
+      this.lastNotify.set(topicString, payload);
+      
+      // Store in history with the full traversal stack
+      this.notifyHistory.push({ 
+          selector: s, 
+          payload: { ...payload, stack: newStack }, 
+          t: Date.now() 
+      });
       if (this.notifyHistory.length > 100) this.notifyHistory.shift();
 
-      for (const [subTopic, neighbors] of this.interests.entries()) {
-          const isMatch = subTopic === topic || (subTopic.endsWith('*') && topic.startsWith(subTopic.slice(0, -1)));
-          if (isMatch) {
-              for (const [neighborId, expiry] of neighbors.entries()) {
-                  if (Date.now() > expiry) { neighbors.delete(neighborId); continue; }
+      for (const [topic, entry] of this.interests.entries()) {
+          if (this._matches(entry.selector, s)) {
+              for (const [neighborId, expiry] of entry.subs.entries()) {
+                  if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
+                  
+                  // Don't send back to the neighbor that just sent it to us
+                  if (stack.includes(neighborId)) continue;
+
                   const peer = this.peers.get(neighborId);
-                  if (peer) peer.notify(topic, payload, newStack).catch(() => {});
+                  if (peer) peer.notify(s, payload, newStack).catch(() => {});
               }
           }
       }
+  }
+
+  _matches(sub, event) {
+      if (!sub || !event) return false;
+      if (sub.path === event.path) {
+          const subKeys = Object.keys(sub.parameters || {});
+          if (subKeys.length === 0) return true; // Broad path match
+          
+          // Parameter subset match: event must have at least all parameters of sub
+          for (const key of subKeys) {
+              if (JSON.stringify(sub.parameters[key]) !== JSON.stringify(event.parameters?.[key])) return false;
+          }
+          return true;
+      }
+      return false;
   }
 
   async start() {
@@ -282,10 +314,10 @@ export class MeshLinkBase {
                   const resultStream = await this.vfs.spy(command.path, command.parameters, { stack: command.stack, expiresAt: command.expiresAt });
                   return this.listenLoop(baseUrl, command.id, resultStream);
               } else if (command.op === 'SUB') {
-                  this.addInterest(command.stack[0] || 'unknown', command.topic, command.expiresAt, command.stack);
+                  this.addInterest(command.stack[0] || 'unknown', command.selector, command.expiresAt, command.stack);
                   return this.listenLoop(baseUrl);
               } else if (command.op === 'NOTIFY') {
-                  this.notify(command.topic, command.payload, command.stack);
+                  this.notify(command.selector, command.payload, command.stack);
                   return this.listenLoop(baseUrl);
               }
           }
@@ -326,6 +358,11 @@ export class MeshLinkBase {
                     const peer = new StaticPeer(remoteId, url, this.fetch, { localUrl: this.localUrl, signal: this.abortController.signal });
                     peer.reachability = 'DIRECT';
                     this.peers.set(remoteId, peer);
+                    
+                    // Interest Catch-up
+                    for (const entry of this.interests.values()) {
+                        peer.subscribe(entry.selector, Date.now() + 60000, [this.vfs.id]).catch(() => {});
+                    }
                 }
                 if (info.reachability === 'REVERSE') this.listenLoop(url);
                 return remoteId;
@@ -348,6 +385,11 @@ export class MeshLinkBase {
           const peer = new ReversePeer(peerId, this.reverseRegistry);
           peer.reachability = 'REVERSE';
           this.peers.set(peerId, peer);
+          
+          // Interest Catch-up
+          for (const entry of this.interests.values()) {
+              peer.subscribe(entry.selector, Date.now() + 60000, [this.vfs.id]).catch(() => {});
+          }
       }
       const existing = this.reverseRegistry.listeners.get(peerId);
       if (existing) try { existing.writeHead(204); existing.end(); } catch(e) {}
