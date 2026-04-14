@@ -111,3 +111,38 @@ Topics are formatted as VFS Selectors or Glob-like Path patterns:
 ### 7.4 Protocol Integration
 -   **Forward Peers:** Notifications are sent via a symmetric `POST /notify` or persistent SSE/WebSocket channel.
 -   **Reverse Peers:** Notifications are pushed as commands down the active `POST /listen` long-poll response.
+
+## 8. Operation Interface Model (Ports)
+
+VFS Operations (especially those involving side-effects) are modeled as **Port Maps** where the schema defines the relationship between Inputs, Arguments, and Outputs.
+
+### 8.1 Unified Argument Set
+Operations define a single `arguments` block that includes both literal parameters (numbers, strings) and qualified flow ports (`$in`, `$out`).
+
+### 8.2 Argument-Output Overlap (Sinks)
+A side-effect is modeled by an overlap between the `arguments` and `outputs` keys. If a key (e.g., `path`) exists in both, the value of that argument determines the VFS destination where the operation's produced data will be "sunk".
+
+### 8.3 Aliases & Identity (The Pass-Through)
+To support side-effectors that logically return their input (e.g., `op/pdf`), operations use the `metadata.aliases` block.
+- **Unique Identity:** Every operation has a unique Selector and CID.
+- **Data Pass-Through:** `metadata.aliases: { "$out": "$in" }` asserts that the **data content** of `$out` is identical to `$in`.
+- **VFS Linkage:** The provider for such an operation returns a VFS Link (`vfs:/...`) pointing to the input CID, ensuring storage efficiency and functional chain continuity.
+
+### 8.4 Example: Side-Effector (`op/pdf`)
+```json
+{
+  "path": "op/pdf",
+  "arguments": {
+    "$in": { "type": "geometry" },
+    "$out": { "type": "geometry" },
+    "path": { "type": "string", "default": "export.pdf" }
+  },
+  "outputs": {
+    "$out": { "type": "geometry" },
+    "path": { "mime": "application/pdf" }
+  },
+  "metadata": {
+    "aliases": { "$out": "$in" }
+  }
+}
+```

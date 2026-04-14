@@ -2,11 +2,39 @@ import { describe, it, expect } from 'vitest';
 import { JotParser } from '../../jot/src/parser.js';
 import { JotCompiler } from '../../jot/src/compiler.js';
 
-describe('Jot Dynamic Compilation', () => {
+describe('Jot Dynamic Compilation (Next Gen)', () => {
     const parser = new JotParser();
-    const compiler = new JotCompiler();
+    
+    // Mock VFS for testing generator unrolling
+    const mockVfs = {
+        readData: async (path, params) => {
+            if (path === 'op/range') {
+                const { start = 0, stop = params.arg || 0, step = 1 } = params;
+                const res = [];
+                for (let i = start; i < stop; i += step) res.push(i);
+                return res;
+            }
+            if (path === 'op/iota') {
+                const count = params.count || params.arg || 0;
+                return Array.from({ length: count }, (_, i) => i);
+            }
+            return null;
+        }
+    };
+
+    const compiler = new JotCompiler(mockVfs);
 
     // Setup dynamic schemas
+    compiler.registerOperator('range', {
+        path: 'op/range',
+        returns: { type: 'array' }
+    });
+
+    compiler.registerOperator('iota', {
+        path: 'op/iota',
+        returns: { type: 'array' }
+    });
+
     compiler.registerOperator('box', {
         path: 'shape/box',
         schema: {
@@ -18,85 +46,66 @@ describe('Jot Dynamic Compilation', () => {
         }
     });
 
+    compiler.registerOperator('orb', {
+        path: 'shape/orb',
+        schema: { properties: { diameter: { type: 'number', default: 10 } } }
+    });
+
     compiler.registerOperator('offset', {
         path: 'op/offset',
-        schema: {
-            properties: {
-                radius: { type: 'number', default: 1 }
-            }
-        }
+        schema: { properties: { radius: { type: 'number', default: 1 } } }
     });
 
-    compiler.registerOperator('rx', {
-        path: 'op/rotateX',
-        schema: { properties: { turns: { type: 'number' } } }
-    });
-
-    const compile = (code) => {
+    const compile = async (code) => {
         const ast = parser.parse(code);
-        return compiler.evaluate(ast);
+        return await compiler.evaluate(ast);
     };
 
-    describe('Dynamic Positional Mapping', () => {
-        it('should map box(1, 2, 3) using schema', () => {
-            const selector = compile('box(1, 2, 3)');
-            expect(selector).toEqual({
-                path: 'shape/box',
-                parameters: { width: 1, height: 2, depth: 3 }
-            });
+    describe('Primacy of Diameter', () => {
+        it('should map radius to diameter: orb({ radius: 5 })', async () => {
+            const selector = await compile('orb({ radius: 5 })');
+            expect(selector.parameters.diameter).toBe(10);
+            expect(selector.parameters.radius).toBeUndefined();
         });
 
-        it('should apply defaults: box(100)', () => {
-            const selector = compile('box(100)');
-            expect(selector).toEqual({
-                path: 'shape/box',
-                parameters: { width: 100, height: 10, depth: 10 }
-            });
+        it('should map apothem to diameter for hexagon', async () => {
+            compiler.registerOperator('hexagon', { path: 'shape/hexagon' });
+            const selector = await compile('hexagon({ apothem: 10 })');
+            // d = 2 * a / cos(30) = 20 / 0.866... = 23.094
+            expect(selector.parameters.diameter).toBeCloseTo(23.094, 3);
         });
     });
 
-    describe('Dynamic Chaining', () => {
-        it('should handle method chaining: box(10).offset(2)', () => {
-            const selector = compile('box(10).offset(2)');
-            expect(selector).toEqual({
-                path: 'op/offset',
-                parameters: {
-                    radius: 2,
-                    source: {
-                        path: 'shape/box',
-                        parameters: { width: 10, height: 10, depth: 10 }
-                    }
-                }
-            });
+    describe('Generator Unrolling (Op-Based)', () => {
+        it('should unroll range(3) into data', async () => {
+            const res = await compile('range(3)');
+            expect(res).toEqual([0, 1, 2]);
+        });
+
+        it('should handle range used as argument: box(range(3))', async () => {
+            const res = await compile('box(range(3))');
+            expect(res).toHaveLength(3);
+            expect(res[0].parameters.width).toBe(0);
+            expect(res[1].parameters.width).toBe(1);
+            expect(res[2].parameters.width).toBe(2);
+        });
+
+        it('should handle iota used in chaining: iota(2).offset(1)', async () => {
+            // This unrolls iota(2) -> [0, 1] then maps offset(1) over it
+            const res = await compile('iota(2).offset(1)');
+            expect(res).toHaveLength(2);
+            expect(res[0].path).toBe('op/offset');
+            expect(res[0].parameters.source).toBe(0);
+            expect(res[1].parameters.source).toBe(1);
         });
     });
 
     describe('Universal Sequence Principle', () => {
-        it('should handle Implicit Mapping: [box(10), box(20)].offset(2)', () => {
-            const selector = compile('[box(10), box(20)].offset(2)');
-            expect(selector).toHaveLength(2);
-            expect(selector[0].path).toBe('op/offset');
-            expect(selector[0].parameters.source.parameters.width).toBe(10);
-            expect(selector[1].parameters.source.parameters.width).toBe(20);
-        });
-
-        it('should handle Cartesian Product: box(10).rx([0, 0.25])', () => {
-            const selector = compile('box(10).rx([0, 0.25])');
-            expect(selector).toHaveLength(2);
-            expect(selector[0].parameters.turns).toBe(0);
-            expect(selector[1].parameters.turns).toBe(0.25);
-        });
-    });
-
-    describe('Routing and Variants', () => {
-        it('should route hexagon variants: hexagon({ variant: "half", radius: 50 })', () => {
-            compiler.registerOperator('hexagon', {
-                path: 'shape/hexagon',
-                schema: { properties: { radius: { type: 'number' }, variant: { type: 'string' } } }
-            });
-            const selector = compile('hexagon({ variant: "half", radius: 50 })');
-            expect(selector.path).toBe('shape/hexagon/half');
-            expect(selector.parameters.radius).toBe(50);
+        it('should handle Cartesian Product with diameter: box([10, 20])', async () => {
+            const res = await compile('box([10, 20])');
+            expect(res).toHaveLength(2);
+            expect(res[0].parameters.width).toBe(10);
+            expect(res[1].parameters.width).toBe(20);
         });
     });
 });

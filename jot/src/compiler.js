@@ -7,14 +7,13 @@ import { normalizeSelector } from '../../fs/src/vfs_core.js';
  * using a dynamic schema catalog.
  */
 export class JotCompiler {
-    constructor() {
+    constructor(vfs = null) {
         this.operators = new Map();
+        this.vfs = vfs;
     }
 
     /**
      * Register an operator with its schema and path template.
-     * @param {string} name The Jot function/method name (e.g., 'box')
-     * @param {object} config { path: 'shape/box', schema: { ... } }
      */
     registerOperator(name, config) {
         this.operators.set(name, config);
@@ -23,12 +22,13 @@ export class JotCompiler {
     /**
      * Evaluate an AST node or value.
      */
-    evaluate(node) {
+    async evaluate(node) {
         if (node === null || node === undefined) return null;
 
         // 1. Handle Sequences (Arrays)
         if (Array.isArray(node)) {
-            const results = node.map(n => this.evaluate(n));
+            const results = [];
+            for (const n of node) results.push(await this.evaluate(n));
             return this.flatten(results);
         }
 
@@ -43,69 +43,70 @@ export class JotCompiler {
 
         // 3. Handle CALL Nodes (e.g., box(10))
         if (node.type === 'CALL') {
-            return this._evaluateCall(node);
+            return await this._evaluateCall(node);
         }
 
         // 4. Handle METHOD Nodes (e.g., subject.offset(2))
         if (node.type === 'METHOD') {
-            return this._evaluateMethod(node);
+            return await this._evaluateMethod(node);
         }
 
         // 5. Handle already-resolved Selectors or Objects
         if (node.path && node.parameters) {
             const resolvedParams = {};
             for (const [k, v] of Object.entries(node.parameters)) {
-                resolvedParams[k] = this.evaluate(v);
+                resolvedParams[k] = await this.evaluate(v);
             }
             return this.applySequencePrinciple(node.path, resolvedParams);
         }
 
         const result = {};
         for (const [k, v] of Object.entries(node)) {
-            result[k] = this.evaluate(v);
+            result[k] = await this.evaluate(v);
         }
         return result;
     }
 
-    _evaluateCall(node) {
+    async _evaluateCall(node) {
         const op = this.operators.get(node.name);
         const path = op ? op.path : `op/${node.name}`;
         const schema = op ? op.schema : null;
+        const returns = op ? op.returns : null;
 
-        const parameters = this.mapArguments(node.args, schema);
-        
-        // Handle special routing like hexagon variant
-        let finalPath = path;
-        if (node.name === 'hexagon' && parameters.variant) {
-            finalPath = `${path}/${parameters.variant}`;
-            delete parameters.variant;
-        } else if ((node.name === 'triangle' || node.name === 'tri') && schema === null) {
-            // Fallback for triangle if no schema is loaded yet
-            if (parameters.side !== undefined) finalPath = 'shape/triangle/equilateral';
-            else if (parameters.angle !== undefined) finalPath = 'shape/triangle/sas';
-            else if (parameters.a !== undefined) finalPath = 'shape/triangle/sss';
+        const args = [];
+        for (const arg of node.args) args.push(await this.evaluate(arg));
+        const parameters = this.mapArguments(args, schema, node.name);
+
+        const result = this.applySequencePrinciple(path, parameters);
+
+        // Generator Unrolling: If it's a generator op, resolve it now
+        if (this.vfs && !Array.isArray(result) && returns?.type === 'array') {
+            const data = await this.vfs.readData(result.path, result.parameters);
+            if (Array.isArray(data)) return data;
         }
 
-        return this.applySequencePrinciple(finalPath, parameters);
+        return result;
     }
 
-    _evaluateMethod(node) {
-        const subject = this.evaluate(node.subject);
+    async _evaluateMethod(node) {
+        const subject = await this.evaluate(node.subject);
         
         // Universal Sequence Principle: If subject is a sequence, map over it
         if (Array.isArray(subject)) {
-            return this.flatten(subject.map(s => this.evaluate({
-                ...node,
-                subject: s
-            })));
+            const results = [];
+            for (const s of subject) {
+                results.push(await this.evaluate({ ...node, subject: s }));
+            }
+            return this.flatten(results);
         }
 
         const op = this.operators.get(node.name);
         const path = op ? op.path : `op/${node.name}`;
         const schema = op ? op.schema : null;
 
-        const args = node.args.map(arg => this.evaluate(arg));
-        const parameters = this.mapArguments(args, schema);
+        const args = [];
+        for (const arg of node.args) args.push(await this.evaluate(arg));
+        const parameters = this.mapArguments(args, schema, node.name);
 
         // Standard method chaining: wrap subject as 'source'
         parameters.source = subject;
@@ -122,16 +123,14 @@ export class JotCompiler {
     /**
      * Map positional arguments to property names based on JSON Schema.
      */
-    mapArguments(args, schema) {
-        const parameters = {};
+    mapArguments(args, schema, opName) {
+        let parameters = {};
         
         // 1. If single argument is an object, use it directly (named parameters)
         if (args.length === 1 && typeof args[0] === 'object' && !Array.isArray(args[0]) && args[0].type !== 'SYMBOL') {
-            return { ...args[0] };
-        }
-
-        // 2. Map positional arguments using schema properties
-        if (schema && schema.properties) {
+            parameters = { ...args[0] };
+        } else if (schema && schema.properties) {
+            // 2. Map positional arguments using schema properties
             const propNames = Object.keys(schema.properties);
             args.forEach((arg, i) => {
                 if (i < propNames.length) {
@@ -149,6 +148,26 @@ export class JotCompiler {
             // Fallback if no schema: use generic 'args' array or first arg
             if (args.length === 1) parameters.arg = args[0];
             else if (args.length > 1) parameters.args = args;
+        }
+
+        // 3. Primacy of Diameter (Standardization)
+        // Convert radius -> diameter
+        if (parameters.radius !== undefined) {
+            if (parameters.diameter === undefined) parameters.diameter = parameters.radius * 2;
+            delete parameters.radius;
+        }
+
+        // Convert apothem -> diameter (for hexagon specifically)
+        if (parameters.apothem !== undefined && (opName === 'hexagon' || opName?.includes('hexagon'))) {
+            // d = 2 * a / cos(30)
+            if (parameters.diameter === undefined) parameters.diameter = (2 * parameters.apothem) / 0.86602540378;
+            delete parameters.apothem;
+        }
+
+        // 4. Variant routing (Special case for hexagon variants)
+        if (opName === 'hexagon' && parameters.variant) {
+            // This is slightly tricky as we return parameters here, not the path.
+            // We'll let evaluateCall handle the path modification if variant is present.
         }
 
         return parameters;

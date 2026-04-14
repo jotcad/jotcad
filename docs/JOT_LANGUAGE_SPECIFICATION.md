@@ -10,15 +10,21 @@ The JotCAD language is a **Functional Request DSL**. It provides a high-level, h
 - **Silent Construction:** Writing an expression does not execute work. It only builds the "recipe".
 - **Lexical Pithiness:** Prefer short, whole words for operations. Avoid cryptic abbreviations.
 - **Diameter Standard:** Standardize on **Diameter** (Width/Bounding Envelope) for all primitives. Diameter is a universal property of every shape and aligns with physical measurement tools.
+    - **Normalization:** The engine automatically converts `radius` ($d=2r$) and `apothem` (for hexagons) to `diameter` to ensure deterministic Content-IDs across the mesh.
 - **Angular Turns:** Use **Turns** (Tau) where `1.0` is a full rotation ($360^\circ$).
 - **Demand-Driven:** Work is only triggered when a requester performs a `READ`.
 
 ### 1.1. Absence of Control Flow
 The JotCAD DSL intentionally excludes traditional programming control flow structures.
-- **No Iteration:** There are no `for` or `while` loops. Iteration is handled implicitly by the **Universal Sequence Principle**.
+- **No Iteration:** There are no `for` or `while` loops. Iteration is handled implicitly by the **Universal Sequence Principle**. Utility operations like `range()` or `iota()` are unrolled into sequences by the compiler.
 - **No Recursion:** Functions cannot call themselves. The language builds a static, deterministic tree of operations.
 - **No Conditionals:** There are no `if/else` or `switch` expressions. Logic is applied via **Selectors** and **Implicit Mapping** over data sets.
 - **Host-Logic Separation:** Any complex procedural logic (loops, branches, recursion) should be executed in the host environment (e.g., JavaScript) to generate the static JotCAD expression.
+
+### 1.2. Logical Pass-Throughs (Aliases)
+Some operations (like `.pdf()` or `.stl()`) perform side-effects but should not "break" the functional chain.
+- **Alias Assertion:** These operations use `metadata.aliases` to declare that their functional result is identical to their input.
+- **The "Tee" Pattern:** `box(10).pdf().offset(2)` resolves logically to `box(10).offset(2)`. The compiler triggers the side-effect in parallel but continues the geometric pipeline using the subject's selector.
 
 ## 2. The Universal Sequence Principle
 In JotCAD, every object is treated as an ordered **Sequence**. This enables powerful set-based operations without explicit loops.
