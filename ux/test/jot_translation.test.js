@@ -95,8 +95,8 @@ describe('Jot Dynamic Compilation (Next Gen)', () => {
             const res = await compile('iota(2).offset(1)');
             expect(res).toHaveLength(2);
             expect(res[0].path).toBe('op/offset');
-            expect(res[0].parameters.source).toBe(0);
-            expect(res[1].parameters.source).toBe(1);
+            expect(res[0].parameters.$in).toBe(0);
+            expect(res[1].parameters.$in).toBe(1);
         });
     });
 

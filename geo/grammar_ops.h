@@ -58,7 +58,7 @@ static void points_init() {
     Processor::Operation op;
     op.path = "op/points";
     op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        std::string geo = read_to_string(vfs, params.at("source"), stack);
+        std::string geo = read_to_string(vfs, params.at("$in"), stack);
         if (geo.empty()) return to_bytes("");
 
         std::stringstream ss(geo);
@@ -77,9 +77,14 @@ static void points_init() {
         return to_bytes(out.str());
     };
     op.schema = {
-        {"type", "object"},
-        {"properties", {
-            {"source", {{"type", "string"}}}
+        {"arguments", {
+            {"$in", {{"type", "shape"}}}
+        }},
+        {"inputs", {
+            {"$in", {{"type", "shape"}}}
+        }},
+        {"outputs", {
+            {"$out", {{"type", "geometry"}}}
         }}
     };
     Processor::register_op(op);
@@ -89,7 +94,7 @@ static void nth_init() {
     Processor::Operation op;
     op.path = "op/nth";
     op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        std::string geo = read_to_string(vfs, params.at("source"), stack);
+        std::string geo = read_to_string(vfs, params.at("$in"), stack);
         auto indices = params.at("indices").get<std::vector<int>>();
         if (geo.empty()) return to_bytes("");
 
@@ -109,10 +114,15 @@ static void nth_init() {
         return to_bytes(out.str());
     };
     op.schema = {
-        {"type", "object"},
-        {"properties", {
-            {"source", {{"type", "string"}}},
+        {"arguments", {
+            {"$in", {{"type", "shape"}}},
             {"indices", {{"type", "array"}, {"items", {{"type", "integer"}}}}}
+        }},
+        {"inputs", {
+            {"$in", {{"type", "shape"}}}
+        }},
+        {"outputs", {
+            {"$out", {{"type", "geometry"}}}
         }}
     };
     Processor::register_op(op);
@@ -122,17 +132,29 @@ static void group_init() {
     Processor::Operation op;
     op.path = "op/group";
     op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        auto sources = params.at("sources").get<std::vector<nlohmann::json>>();
+        auto sources = params.at("$in").get<std::vector<nlohmann::json>>();
         std::stringstream out;
         for (const auto& s : sources) {
             out << read_to_string(vfs, s, stack) << "\n";
         }
-        return to_bytes(out.str());
+        
+        vfs->write("geo/mesh", params, to_bytes(out.str()));
+        nlohmann::json shape = {
+            {"geometry", "vfs:/geo/mesh"},
+            {"parameters", params},
+            {"tags", {{"type", "group"}}}
+        };
+        return to_bytes(shape.dump());
     };
     op.schema = {
-        {"type", "object"},
-        {"properties", {
-            {"sources", {{"type", "array"}, {"items", {{"type", "string"}}}}}
+        {"arguments", {
+            {"$in", {{"type", "array"}, {"items", {{"type", "shape"}}}}}
+        }},
+        {"inputs", {
+            {"$in", {{"type", "array"}, {"items", {{"type", "shape"}}}}}
+        }},
+        {"outputs", {
+            {"$out", {{"type", "shape"}}}
         }}
     };
     Processor::register_op(op);
@@ -143,7 +165,7 @@ static void loop_init() {
         Processor::Operation op;
         op.path = name;
         op.logic = [closed](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-            std::string geo = read_to_string(vfs, params.at("source"), stack);
+            std::string geo = read_to_string(vfs, params.at("$in"), stack);
             if (geo.empty()) return to_bytes("");
 
             std::stringstream ss(geo);
@@ -163,12 +185,24 @@ static void loop_init() {
             if (closed && points.size() > 2) {
                 out << "l " << points.size() << " 1\n";
             }
-            return to_bytes(out.str());
+            
+            vfs->write("geo/mesh", params, to_bytes(out.str()));
+            nlohmann::json shape = {
+                {"geometry", "vfs:/geo/mesh"},
+                {"parameters", params},
+                {"tags", {{"type", "path"}}}
+            };
+            return to_bytes(shape.dump());
         };
         op.schema = {
-            {"type", "object"},
-            {"properties", {
-                {"source", {{"type", "string"}}}
+            {"arguments", {
+                {"$in", {{"type", "shape"}}}
+            }},
+            {"inputs", {
+                {"$in", {{"type", "shape"}}}
+            }},
+            {"outputs", {
+                {"$out", {{"type", "shape"}}}
             }}
         };
         return op;

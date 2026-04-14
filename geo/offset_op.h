@@ -13,7 +13,9 @@ static void offset_init() {
         std::cout << "[Offset Op] Offsetting mesh..." << std::endl;
         double radius = params.value("radius", 1.0);
         
-        auto input_bytes = vfs->read(params.at("source")["path"], params.at("source").value("parameters", nlohmann::json::object()), stack);
+        auto in_selector = params.at("$in");
+        auto input_bytes = vfs->read(in_selector["path"], in_selector.value("parameters", nlohmann::json::object()), stack);
+        
         if (input_bytes.empty()) return std::vector<uint8_t>();
 
         Geometry input_geo;
@@ -26,10 +28,16 @@ static void offset_init() {
         return std::vector<uint8_t>(mesh_text.begin(), mesh_text.end());
     };
     op.schema = {
-        {"type", "object"},
-        {"properties", {
-            {"source", {{"type", "object"}}},
+        {"arguments", {
+            {"$in", {{"type", "shape"}, {"description", "Input geometry"}}},
+            {"$out", {{"type", "shape"}, {"description", "Resulting geometry"}}},
             {"radius", {{"type", "number"}, {"default", 1}}}
+        }},
+        {"inputs", {
+            {"$in", {{"type", "shape"}}}
+        }},
+        {"outputs", {
+            {"$out", {{"type", "shape"}}}
         }}
     };
     Processor::register_op(op);

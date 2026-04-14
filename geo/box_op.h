@@ -35,11 +35,14 @@ static void box_init() {
     op.path = "shape/box";
     op.logic = box_op;
     op.schema = {
-        {"type", "object"},
-        {"properties", {
+        {"arguments", {
             {"width", {{"type", "number"}, {"default", 10}}},
             {"height", {{"type", "number"}, {"default", 10}}},
             {"depth", {{"type", "number"}, {"default", 10}}}
+        }},
+        {"inputs", {}},
+        {"outputs", {
+            {"$out", {{"type", "shape"}}}
         }}
     };
     Processor::register_op(op);

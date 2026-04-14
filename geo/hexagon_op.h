@@ -22,10 +22,12 @@ static void hexagon_init() {
             return hexagon_op_internal(vfs, radius, variant, params);
         };
         op.schema = {
-            {"type", "object"},
-            {"required", {"radius"}},
-            {"properties", {
+            {"arguments", {
                 {"radius", {{"type", "number"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {
+                {"$out", {{"type", "shape"}}}
             }}
         };
         Processor::register_op(op);

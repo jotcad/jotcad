@@ -48,9 +48,24 @@ int main(int argc, char** argv) {
     // Registry for a simple origin point
     Processor::Operation origin_op;
     origin_op.path = "shape/origin";
-    origin_op.schema = {{"type", "object"}};
     origin_op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        return std::vector<uint8_t>{'v', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', '\n'};
+        std::vector<uint8_t> geo = {'v', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', '\n'};
+        
+        vfs->write("geo/mesh", params, geo);
+        nlohmann::json shape = {
+            {"geometry", "vfs:/geo/mesh"},
+            {"parameters", params},
+            {"tags", {{"type", "origin"}}}
+        };
+        std::string shape_text = shape.dump();
+        return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
+    };
+    origin_op.schema = {
+        {"arguments", {}},
+        {"inputs", {}},
+        {"outputs", {
+            {"$out", {{"type", "shape"}}}
+        }}
     };
     Processor::register_op(origin_op);
 
@@ -67,7 +82,7 @@ int main(int argc, char** argv) {
         }, op.schema);
     }
 
-    std::cout << "[Ops Node] Starting Native VFS Node on port " << port << "..." << std::endl;
+    std::cout << "[Ops Node] Starting Native VFS Node on port " << port << "... (Build: " << __DATE__ << " " << __TIME__ << ")" << std::endl;
     node.listen();
 
     return 0;

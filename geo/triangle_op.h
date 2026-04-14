@@ -27,12 +27,14 @@ static void triangle_init() {
             return triangle_op_internal(vfs, a, b, c, params);
         };
         op.schema = {
-            {"type", "object"},
-            {"required", {"a", "b", "c"}},
-            {"properties", {
+            {"arguments", {
                 {"a", {{"type", "number"}}},
                 {"b", {{"type", "number"}}},
                 {"c", {{"type", "number"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {
+                {"$out", {{"type", "shape"}}}
             }}
         };
         Processor::register_op(op);
@@ -50,12 +52,14 @@ static void triangle_init() {
             return triangle_op_internal(vfs, a, b, c, params);
         };
         op.schema = {
-            {"type", "object"},
-            {"required", {"a", "angle", "b"}},
-            {"properties", {
+            {"arguments", {
                 {"a", {{"type", "number"}}},
                 {"angle", {{"type", "number"}}},
                 {"b", {{"type", "number"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {
+                {"$out", {{"type", "shape"}}}
             }}
         };
         Processor::register_op(op);
@@ -70,10 +74,12 @@ static void triangle_init() {
             return triangle_op_internal(vfs, side, side, side, params);
         };
         op.schema = {
-            {"type", "object"},
-            {"required", {"side"}},
-            {"properties", {
+            {"arguments", {
                 {"side", {{"type", "number"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {
+                {"$out", {{"type", "shape"}}}
             }}
         };
         Processor::register_op(op);

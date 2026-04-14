@@ -108,13 +108,12 @@ export class JotCompiler {
         for (const arg of node.args) args.push(await this.evaluate(arg));
         const parameters = this.mapArguments(args, schema, node.name);
 
-        // Standard method chaining: wrap subject as 'source'
-        parameters.source = subject;
+        // Standard method chaining: wrap subject as '$in'
+        parameters.$in = subject;
 
         // Handle Boolean Operations (and -> op/group)
         if (node.name === 'and') {
-            parameters.sources = [subject, ...args];
-            delete parameters.source;
+            parameters.$in = [subject, ...args];
         }
 
         return this.applySequencePrinciple(path, parameters);
@@ -129,9 +128,10 @@ export class JotCompiler {
         // 1. If single argument is an object, use it directly (named parameters)
         if (args.length === 1 && typeof args[0] === 'object' && !Array.isArray(args[0]) && args[0].type !== 'SYMBOL') {
             parameters = { ...args[0] };
-        } else if (schema && schema.properties) {
-            // 2. Map positional arguments using schema properties
-            const propNames = Object.keys(schema.properties);
+        } else if (schema && (schema.arguments || schema.properties)) {
+            // 2. Map positional arguments using schema definitions
+            const argDefs = schema.arguments || schema.properties;
+            const propNames = Object.keys(argDefs);
             args.forEach((arg, i) => {
                 if (i < propNames.length) {
                     parameters[propNames[i]] = arg;
@@ -139,7 +139,7 @@ export class JotCompiler {
             });
             
             // Apply defaults
-            for (const [name, config] of Object.entries(schema.properties)) {
+            for (const [name, config] of Object.entries(argDefs)) {
                 if (parameters[name] === undefined && config.default !== undefined) {
                     parameters[name] = config.default;
                 }

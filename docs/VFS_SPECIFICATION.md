@@ -114,31 +114,33 @@ Topics are formatted as VFS Selectors or Glob-like Path patterns:
 
 ## 8. Operation Interface Model (Ports)
 
-VFS Operations (especially those involving side-effects) are modeled as **Port Maps** where the schema defines the relationship between Inputs, Arguments, and Outputs.
+VFS Operations are modeled as **Port Maps** where the schema defines the relationship between Inputs, Arguments, and Outputs.
 
-### 8.1 Unified Argument Set
-Operations define a single `arguments` block that includes both literal parameters (numbers, strings) and qualified flow ports (`$in`, `$out`).
+### 8.1 Symmetrical Port Mapping
+- **`arguments`**: The unified set of all parameter values (literals and selectors).
+- **`inputs`**: A dictionary mapping argument keys to their role as VFS-linked sources.
+- **`outputs`**: A dictionary mapping result ports to their semantic roles and MIME types.
 
 ### 8.2 Argument-Output Overlap (Sinks)
-A side-effect is modeled by an overlap between the `arguments` and `outputs` keys. If a key (e.g., `path`) exists in both, the value of that argument determines the VFS destination where the operation's produced data will be "sunk".
+A side-effect is modeled by an overlap between the `arguments` and `outputs` keys. If a key (e.g., `path`) exists in both, the value of that argument determines the VFS destination where the produced data will be "sunk".
 
 ### 8.3 Aliases & Identity (The Pass-Through)
-To support side-effectors that logically return their input (e.g., `op/pdf`), operations use the `metadata.aliases` block.
-- **Unique Identity:** Every operation has a unique Selector and CID.
-- **Data Pass-Through:** `metadata.aliases: { "$out": "$in" }` asserts that the **data content** of `$out` is identical to `$in`.
-- **VFS Linkage:** The provider for such an operation returns a VFS Link (`vfs:/...`) pointing to the input CID, ensuring storage efficiency and functional chain continuity.
+`metadata.aliases: { "$out": "$in" }` asserts that the **data content** of `$out` is identical to `$in`. This allows operations like `op/pdf` to function as logical "Tees".
 
 ### 8.4 Example: Side-Effector (`op/pdf`)
 ```json
 {
   "path": "op/pdf",
   "arguments": {
-    "$in": { "type": "geometry" },
-    "$out": { "type": "geometry" },
+    "$in": { "type": "shape" },
+    "$out": { "type": "shape" },
     "path": { "type": "string", "default": "export.pdf" }
   },
+  "inputs": {
+    "$in": { "type": "shape" }
+  },
   "outputs": {
-    "$out": { "type": "geometry" },
+    "$out": { "type": "shape" },
     "path": { "mime": "application/pdf" }
   },
   "metadata": {
@@ -146,3 +148,28 @@ To support side-effectors that logically return their input (e.g., `op/pdf`), op
   }
 }
 ```
+
+## 9. Core Type System
+
+To ensure structural integrity across the mesh, the VFS distinguishes between raw spatial data and semantic organizational containers.
+
+### 9.1 Geometry Type (`geometry`)
+- **Nature:** Raw spatial payload.
+- **Content:** Binary or text-based mesh data (Vertices, Edges, Faces).
+- **Identity:** Typically content-addressed under `geo/mesh/*`.
+- **Constraint:** Pure data; has no concept of transformation or metadata.
+
+### 9.2 Shape Type (`shape`)
+- **Nature:** Semantic container (JSON).
+- **Structure:** 
+    - `geometry`: A VFS Link (`vfs:/...`) pointing to a `geometry` artifact.
+    - `transforms`: Affine transformation matrices.
+    - `metadata`: Key-value tags (color, name, material).
+    - `components`: Nested `shape` objects for hierarchical assemblies.
+- **Role:** The primary unit of exchange for the Jot language and UX.
+
+### 9.3 Type-Specific Port Mapping
+Operations use these types in their `arguments` and `outputs` blocks to define their contract:
+- `shape/box` produces a `shape`.
+- `op/points` consumes a `shape` but produces `geometry`.
+- `op/offset` consumes and produces a `shape`.

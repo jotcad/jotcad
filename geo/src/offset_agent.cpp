@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
     return Processor::run(argc, argv, [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params) {
         std::cout << "[OffsetAgent] Computing offset for " << path << std::endl;
 
-        std::string source_uri = params["source"];
+        std::string source_uri = params["$in"];
         double kerf = params.value("kerf", 0.0);
 
         // Simple URI parser

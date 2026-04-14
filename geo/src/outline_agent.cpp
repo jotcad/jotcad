@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
     return Processor::run(argc, argv, [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params) {
         std::cout << "[OutlineAgent] Computing outline for " << path << std::endl;
 
-        std::string source_uri = params["source"];
+        std::string source_uri = params["$in"];
 
         // Resolve source path and parameters
         std::string source_path = source_uri;

@@ -12,22 +12,39 @@ static void outline_init() {
     op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
         std::cout << "[Outline Op] Outlining mesh..." << std::endl;
         
-        auto input_bytes = vfs->read(params.at("source")["path"], params.at("source").value("parameters", nlohmann::json::object()), stack);
+        auto in_selector = params.at("$in");
+        auto input_bytes = vfs->read(in_selector["path"], in_selector.value("parameters", nlohmann::json::object()), stack);
         if (input_bytes.empty()) return std::vector<uint8_t>();
 
         Geometry input_geo;
         input_geo.decode_text(std::string(input_bytes.begin(), input_bytes.end()));
 
-        Geometry output_geo = input_geo; // Copy
+        Geometry output_geo = input_geo;
         applyOutline(output_geo);
 
+        // 1. Write raw mesh to content-addressed store
         std::string mesh_text = output_geo.encode_text();
-        return std::vector<uint8_t>(mesh_text.begin(), mesh_text.end());
+        vfs->write("geo/mesh", params, std::vector<uint8_t>(mesh_text.begin(), mesh_text.end()));
+
+        // 2. Return Shape JSON
+        nlohmann::json shape = {
+            {"geometry", "vfs:/geo/mesh"},
+            {"parameters", params},
+            {"tags", {{"type", "outline"}}}
+        };
+        std::string shape_text = shape.dump();
+        return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
     };
     op.schema = {
-        {"type", "object"},
-        {"properties", {
-            {"source", {{"type", "object"}}}
+        {"arguments", {
+            {"$in", {{"type", "shape"}}},
+            {"$out", {{"type", "shape"}}}
+        }},
+        {"inputs", {
+            {"$in", {{"type", "shape"}}}
+        }},
+        {"outputs", {
+            {"$out", {{"type", "shape"}}}
         }}
     };
     Processor::register_op(op);
