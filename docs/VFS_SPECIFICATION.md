@@ -7,8 +7,9 @@ The JotCAD VFS is a distributed, content-addressable mesh system designed for co
 The VFS uses a **Symmetric Identity** model where the request itself serves as the global address.
 
 ### 1.1 The Selector (Wire Identity)
-The global identity of any artifact is its **Selector**: a combination of a `path` (e.g., `shape/hexagon`) and a `parameters` object (e.g., `{"radius": 50}`).
+The global identity of any artifact is its **Selector**: a combination of a `path` (e.g., `shape/hexagon`) and a `parameters` object (e.g., `{"diameter": 100}`).
 - **Normalization:** Selectors are deeply and recursively normalized. Parameters are sorted alphabetically by key, and nested objects are themselves normalized.
+- **Parametric Standardization:** Primitives must normalize equivalent parameters to a single canonical key before hashing. For example, `radius: 50` and `apothem: 43.3` must both be converted to `diameter: 100`.
 - **Deterministic Identity:** Every node calculates the identity of a request locally by hashing the normalized selector (SHA-256).
 
 ### 1.2 Identity Secrecy

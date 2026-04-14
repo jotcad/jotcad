@@ -7,9 +7,21 @@ import { normalizeSelector } from '../../fs/src/vfs_core.js';
  * using a dynamic schema catalog.
  */
 export class JotCompiler {
-    constructor(vfs = null) {
+    constructor(vfs = null, options = {}) {
         this.operators = new Map();
         this.vfs = vfs;
+        this.options = {
+            optimizeAliases: true,
+            ...options
+        };
+        this.sideDemands = new Map();
+    }
+
+    /**
+     * Register a local (functional) operator that returns data directly.
+     */
+    registerLocal(name, fn) {
+        this.operators.set(name, { local: fn });
     }
 
     /**
@@ -20,66 +32,73 @@ export class JotCompiler {
     }
 
     /**
-     * Evaluate an AST node or value.
+     * Evaluate an AST node and return all resulting VFS demands.
      */
     async evaluate(node) {
+        this.sideDemands = new Map();
+        const result = await this._evaluateRecursive(node, true);
+        
+        const sideValues = Array.from(this.sideDemands.values());
+        if (sideValues.length === 0) {
+            return result;
+        }
+
+        return this.flatten([result, ...sideValues]);
+    }
+
+    async _evaluateRecursive(node, isTopLevel = false) {
         if (node === null || node === undefined) return null;
 
+        let result;
         // 1. Handle Sequences (Arrays)
         if (Array.isArray(node)) {
             const results = [];
-            for (const n of node) results.push(await this.evaluate(n));
-            return this.flatten(results);
-        }
-
-        // 2. Handle Primitive Values
-        if (typeof node !== 'object') {
-            return node;
-        }
-
-        if (node.type === 'SYMBOL') {
-            return node;
-        }
-
-        // 3. Handle CALL Nodes (e.g., box(10))
-        if (node.type === 'CALL') {
-            return await this._evaluateCall(node);
-        }
-
-        // 4. Handle METHOD Nodes (e.g., subject.offset(2))
-        if (node.type === 'METHOD') {
-            return await this._evaluateMethod(node);
-        }
-
-        // 5. Handle already-resolved Selectors or Objects
-        if (node.path && node.parameters) {
+            for (const n of node) results.push(await this._evaluateRecursive(n));
+            result = this.flatten(results);
+        } else if (typeof node !== 'object') {
+            // 2. Handle Primitive Values
+            result = node;
+        } else if (node.type === 'SYMBOL') {
+            result = node;
+        } else if (node.type === 'CALL') {
+            // 3. Handle CALL Nodes (e.g., box(10))
+            result = await this._evaluateCall(node);
+        } else if (node.type === 'METHOD') {
+            // 4. Handle METHOD Nodes (e.g., subject.offset(2))
+            result = await this._evaluateMethod(node);
+        } else if (node.path && node.parameters) {
+            // 5. Handle already-resolved Selectors or Objects
             const resolvedParams = {};
             for (const [k, v] of Object.entries(node.parameters)) {
-                resolvedParams[k] = await this.evaluate(v);
+                resolvedParams[k] = await this._evaluateRecursive(v);
             }
-            return this.applySequencePrinciple(node.path, resolvedParams);
+            result = this.applySequencePrinciple(node.path, resolvedParams);
+        } else {
+            result = {};
+            for (const [k, v] of Object.entries(node)) {
+                result[k] = await this._evaluateRecursive(v);
+            }
         }
 
-        const result = {};
-        for (const [k, v] of Object.entries(node)) {
-            result[k] = await this.evaluate(v);
-        }
         return result;
     }
 
     async _evaluateCall(node) {
-        const op = this.operators.get(node.name);
+        // Strict case-sensitive lookup for registered operator
+        let op = this.operators.get(node.name);
+        
+        // 2. Resolve Path: If registered, use that path. If not, default to op/name
         const path = op ? op.path : `op/${node.name}`;
         const schema = op ? op.schema : null;
         const returns = op ? op.returns : null;
 
         const args = [];
-        for (const arg of node.args) args.push(await this.evaluate(arg));
+        for (const arg of node.args) args.push(await this._evaluateRecursive(arg));
         const parameters = this.mapArguments(args, schema, node.name);
 
         const result = this.applySequencePrinciple(path, parameters);
 
-        // Generator Unrolling: If it's a generator op, resolve it now
+        // Generator Unrolling: Fetch data if marked as array return
         if (this.vfs && !Array.isArray(result) && returns?.type === 'array') {
             const data = await this.vfs.readData(result.path, result.parameters);
             if (Array.isArray(data)) return data;
@@ -89,26 +108,36 @@ export class JotCompiler {
     }
 
     async _evaluateMethod(node) {
-        const subject = await this.evaluate(node.subject);
+        const subject = await this._evaluateRecursive(node.subject);
         
-        // Universal Sequence Principle: If subject is a sequence, map over it
+        // Universal Sequence Principle: Map over sequences
         if (Array.isArray(subject)) {
             const results = [];
             for (const s of subject) {
-                results.push(await this.evaluate({ ...node, subject: s }));
+                results.push(await this._evaluateRecursive({ ...node, subject: s }));
             }
             return this.flatten(results);
         }
 
-        const op = this.operators.get(node.name);
+        // 1. Operator lookup (try exact, then case-insensitive)
+        let op = this.operators.get(node.name);
+        if (!op) {
+            for (const [name, config] of this.operators.entries()) {
+                if (name.toLowerCase() === node.name.toLowerCase()) {
+                    op = config;
+                    break;
+                }
+            }
+        }
+
+        // 2. Determine Path
         const path = op ? op.path : `op/${node.name}`;
         const schema = op ? op.schema : null;
 
         const args = [];
-        for (const arg of node.args) args.push(await this.evaluate(arg));
+        for (const arg of node.args) args.push(await this._evaluateRecursive(arg));
         const parameters = this.mapArguments(args, schema, node.name);
 
-        // Standard method chaining: wrap subject as '$in'
         parameters.$in = subject;
 
         // Handle Boolean Operations (and -> op/group)
@@ -116,7 +145,20 @@ export class JotCompiler {
             parameters.$in = [subject, ...args];
         }
 
-        return this.applySequencePrinciple(path, parameters);
+        const result = this.applySequencePrinciple(path, parameters);
+
+        // Alias Resolution (Optimization)
+        const isAlias = op?.metadata?.aliases?.['$out'] === '$in';
+        if (this.options.optimizeAliases && isAlias) {
+            // Record the side effect demand (de-duplicated)
+            const results = Array.isArray(result) ? result : [result];
+            for (const r of results) {
+                this.sideDemands.set(JSON.stringify(r), r);
+            }
+            return subject;
+        }
+
+        return result;
     }
 
     /**
@@ -125,29 +167,32 @@ export class JotCompiler {
     mapArguments(args, schema, opName) {
         let parameters = {};
         
+        const argDefs = schema ? (schema.arguments || schema.properties) : null;
+
         // 1. If single argument is an object, use it directly (named parameters)
-        if (args.length === 1 && typeof args[0] === 'object' && !Array.isArray(args[0]) && args[0].type !== 'SYMBOL') {
+        if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0]) && args[0].type !== 'SYMBOL') {
             parameters = { ...args[0] };
-        } else if (schema && (schema.arguments || schema.properties)) {
+        } else if (argDefs) {
             // 2. Map positional arguments using schema definitions
-            const argDefs = schema.arguments || schema.properties;
             const propNames = Object.keys(argDefs);
             args.forEach((arg, i) => {
                 if (i < propNames.length) {
                     parameters[propNames[i]] = arg;
                 }
             });
-            
-            // Apply defaults
+        } else {
+            // Fallback if no schema: use generic 'arg' or 'args'
+            if (args.length === 1) parameters.arg = args[0];
+            else if (args.length > 1) parameters.args = args;
+        }
+
+        // Apply defaults for missing parameters
+        if (argDefs) {
             for (const [name, config] of Object.entries(argDefs)) {
                 if (parameters[name] === undefined && config.default !== undefined) {
                     parameters[name] = config.default;
                 }
             }
-        } else {
-            // Fallback if no schema: use generic 'args' array or first arg
-            if (args.length === 1) parameters.arg = args[0];
-            else if (args.length > 1) parameters.args = args;
         }
 
         // 3. Primacy of Diameter (Standardization)
@@ -164,18 +209,9 @@ export class JotCompiler {
             delete parameters.apothem;
         }
 
-        // 4. Variant routing (Special case for hexagon variants)
-        if (opName === 'hexagon' && parameters.variant) {
-            // This is slightly tricky as we return parameters here, not the path.
-            // We'll let evaluateCall handle the path modification if variant is present.
-        }
-
         return parameters;
     }
 
-    /**
-     * Implement the Universal Sequence Principle (Implicit Mapping + Cartesian Product).
-     */
     /**
      * Implement the Universal Sequence Principle (Implicit Mapping + Cartesian Product).
      */

@@ -14,17 +14,34 @@ The JotCAD language is a **Functional Request DSL**. It provides a high-level, h
 - **Angular Turns:** Use **Turns** (Tau) where `1.0` is a full rotation ($360^\circ$).
 - **Demand-Driven:** Work is only triggered when a requester performs a `READ`.
 
-### 1.1. Absence of Control Flow
+### 1.1 Naming Conventions (Casing)
+The JotCAD DSL distinguishes between object creation and geometric transformation through casing. **Lookups are strictly case-sensitive**:
+- **Constructors (PascalCase):** Used for creating new shapes.
+    - Examples: `Box(10, 20)`, `Orb(5)`, `Group(a, b)`.
+    - If called as `box(10)`, the compiler will not resolve it to the `shape/box` constructor unless explicitly registered with that casing.
+- **Operations (camelCase):** Used for methods applied to existing subjects.
+    - Examples: `shape.offset(2)`, `shape.rotateX(0.5)`, `shape.extrude(10)`.
+- **Aliases:** Short-form operations also follow camelCase (e.g., `.rx()`, `.sz()`).
+
+### 1.2. Absence of Control Flow
 The JotCAD DSL intentionally excludes traditional programming control flow structures.
 - **No Iteration:** There are no `for` or `while` loops. Iteration is handled implicitly by the **Universal Sequence Principle**. Utility operations like `range()` or `iota()` are unrolled into sequences by the compiler.
 - **No Recursion:** Functions cannot call themselves. The language builds a static, deterministic tree of operations.
 - **No Conditionals:** There are no `if/else` or `switch` expressions. Logic is applied via **Selectors** and **Implicit Mapping** over data sets.
 - **Host-Logic Separation:** Any complex procedural logic (loops, branches, recursion) should be executed in the host environment (e.g., JavaScript) to generate the static JotCAD expression.
 
-### 1.2. Logical Pass-Throughs (Aliases)
-Some operations (like `.pdf()` or `.stl()`) perform side-effects but should not "break" the functional chain.
-- **Alias Assertion:** These operations use `metadata.aliases` to declare that their functional result is identical to their input.
-- **The "Tee" Pattern:** `box(10).pdf().offset(2)` resolves logically to `box(10).offset(2)`. The compiler triggers the side-effect in parallel but continues the geometric pipeline using the subject's selector.
+### 1.3. Logical Pass-Throughs (Optimized Aliases)
+Some operations (like `.pdf()` or `.stl()`) perform side-effects but should not "pollute" the functional chain of geometric selectors.
+
+- **Alias Assertion:** These operations use `metadata.aliases` to declare that their functional result (`$out`) is logically identical to their input (`$in`).
+- **Optimization Mode (`optimizeAliases: true`):**
+    - The compiler identifies these "Tee" operations and moves them to a separate **Side Demands** collection.
+    - The expression `Box(10).pdf("out.pdf").offset(2)` resolves to a sequence: `[Box(10).offset(2), Box(10).pdf("out.pdf")]`.
+    - **Benefit:** The `offset` selector remains clean and cacheable, as it points directly to the `Box` instead of a PDF wrapper.
+- **Unoptimized Mode (`optimizeAliases: false`):**
+    - The expression resolves to a single nested VFS selector: `op/offset?in=op/pdf?in=shape/box`.
+    - Work is still performed via VFS link-following, but the selector identity is tied to the side-effect.
+- **Deduplication:** Side demands are automatically de-duplicated by their canonical VFS selector to avoid redundant work during complex mapping operations.
 
 ## 2. The Universal Sequence Principle
 In JotCAD, every object is treated as an ordered **Sequence**. This enables powerful set-based operations without explicit loops.
@@ -105,13 +122,13 @@ The `.at(anchor, op)` operator allows for localized work relative to a specific 
 ### 8.1. Constructors (Fundamental Shapes)
 | Op | Arguments | VFS Path | Description |
 | :--- | :--- | :--- | :--- |
-| `arc()` | `diameter, [opts]` | `shape/arc` | 2D Circle or Arc. |
-| `box()` | `w, h, [d]` | `shape/box` | 2D Rectangle or 3D Box. |
-| `orb()` | `diameter, [opts]` | `shape/orb` | 3D Sphere. |
-| `tri()` | (Polymorphic) | `shape/triangle` | Various triangle forms. |
+| `Arc()` | `diameter, [opts]` | `shape/arc` | 2D Circle or Arc. |
+| `Box()` | `w, h, [d]` | `shape/box` | 2D Rectangle or 3D Box. |
+| `Orb()` | `diameter, [opts]` | `shape/orb` | 3D Sphere. |
+| `Tri()` | (Polymorphic) | `shape/triangle` | Various triangle forms. |
 | `Part()` | `name, jot` | `op/tag` | Named semantic container. |
-| `pt()` | `x, y, [z]` | `shape/point` | A single vertex coordinate. |
-| `origin()`| - | `shape/origin` | Coordinate [0,0,0]. |
+| `Pt()` | `x, y, [z]` | `shape/point` | A single vertex coordinate. |
+| `Origin()`| - | `shape/origin` | Coordinate [0,0,0]. |
 | `X() / Y() / Z()`| `[num]` | `shape/axis` | Points or Planes along an axis. |
 
 ### 8.2. Geometric Operators (Selection & Topology)
