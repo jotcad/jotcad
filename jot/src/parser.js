@@ -99,7 +99,7 @@ export class JotParser {
             const name = this._consume();
             if (this._peek() === '(') {
                 const args = this._parseArguments();
-                return this._createSelector(name, args);
+                return { type: 'CALL', name, args };
             }
             return { type: 'SYMBOL', name };
         }
@@ -143,83 +143,7 @@ export class JotParser {
         return args;
     }
 
-    _createSelector(name, args) {
-        let path = `op/${name}`;
-        let parameters = {};
-        
-        if (args.length === 1 && typeof args[0] === 'object' && args[0].type !== 'SYMBOL' && !Array.isArray(args[0])) {
-            parameters = args[0];
-        }
-
-        if (name === 'hexagon') {
-            const variant = parameters.variant || 'full';
-            path = `shape/hexagon/${variant}`;
-            // Clean up variant from parameters as it is now in the path
-            const { variant: _, ...rest } = parameters;
-            parameters = rest;
-        } else if (name === 'tri' || name === 'triangle') {
-            if (parameters.side !== undefined) {
-                path = 'shape/triangle/equilateral';
-            } else if (parameters.angle !== undefined) {
-                path = 'shape/triangle/sas';
-            } else if (parameters.a !== undefined && parameters.b !== undefined && parameters.c !== undefined) {
-                path = 'shape/triangle/sss';
-            } else {
-                // Default fallback if incomplete but let's try to be helpful
-                path = 'shape/triangle/equilateral';
-                if (parameters.side === undefined) parameters.side = 10;
-            }
-        } else if (name === 'box') {
-            path = 'shape/box';
-            if (args.length >= 1 && typeof args[0] !== 'object') parameters.width = args[0];
-            if (args.length >= 2 && typeof args[1] !== 'object') parameters.height = args[1];
-            if (args.length >= 3 && typeof args[2] !== 'object') parameters.depth = args[2];
-        } else if (name === 'pt') {
-            path = 'shape/point';
-            if (args.length >= 1 && typeof args[0] !== 'object') parameters.x = args[0];
-            if (args.length >= 2 && typeof args[1] !== 'object') parameters.y = args[1];
-            if (args.length >= 3 && typeof args[2] !== 'object') parameters.z = args[2];
-        } else if (name === 'arc') {
-            path = 'shape/arc';
-        } else if (name === 'orb') {
-            path = 'shape/orb';
-        } else if (name === 'origin') {
-            path = 'shape/origin';
-        }
-
-        const selector = normalizeSelector(path, parameters);
-        console.log(`[JotParser] Constructed selector for ${name}:`, JSON.stringify(selector, null, 2));
-        return selector;
-    }
-
-    _wrapInOp(opName, source, args) {
-        const ops = {
-            rx: 'op/rotateX',
-            ry: 'op/rotateY',
-            rz: 'op/rotateZ',
-            move: 'op/move',
-            at: 'op/move',
-            size: 'op/size',
-            sz: 'op/size',
-            extrude: 'op/extrude',
-            offset: 'op/offset',
-            outline: 'op/outline',
-            points: 'op/points',
-            spec: 'op/spec'
-        };
-
-        const path = ops[opName] || `op/${opName}`;
-        let parameters = { source };
-        
-        if (opName === 'spec') {
-            parameters.spec = args[0];
-        } else if (opName === 'rx' || opName === 'rotateX') parameters.turns = args[0];
-        else if (opName === 'ry' || opName === 'rotateY') parameters.turns = args[0];
-        else if (opName === 'rz' || opName === 'rotateZ') parameters.turns = args[0];
-        else if (opName === 'offset') parameters.radius = args[0];
-        else if (opName === 'extrude') parameters.height = args[0];
-        else if (args.length > 0) parameters.args = args;
-
-        return normalizeSelector(path, parameters);
+    _wrapInOp(name, subject, args) {
+        return { type: 'METHOD', subject, name, args };
     }
 }
