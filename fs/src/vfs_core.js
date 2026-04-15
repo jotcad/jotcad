@@ -202,9 +202,29 @@ export class VFS {
     return null;
   }
 
-  /**
-   * Internal read that returns the full work result including metadata.
-   */
+  async link(srcPathOrSelector, srcParams, tgtPathOrSelector, tgtParams) {
+    this._checkClosed();
+    const src = normalizeSelector(srcPathOrSelector, srcParams);
+    const tgt = normalizeSelector(tgtPathOrSelector, tgtParams);
+    const cid = await this.getCID(src);
+    
+    // Formal link: Metadata contains 'target' selector
+    await this.storage.set(cid, new TextEncoder().encode(`vfs:/${tgt.path}`), {
+      path: src.path,
+      parameters: src.parameters,
+      target: tgt,
+      state: 'LINKED'
+    });
+    
+    this.events.emit('state', {
+      path: src.path,
+      parameters: src.parameters,
+      cid,
+      state: 'LINKED',
+      target: tgt
+    });
+  }
+
   async _readResult(pathOrSelector, parameters, context = {}) {
     const {
       stack = [],
@@ -227,6 +247,20 @@ export class VFS {
         // Check local storage
         if (await this.storage.has(cid)) {
           const info = await this._getStorageInfo(cid);
+          
+          // Formal Link Resolution (Unambiguous Aliasing)
+          if (followLinks && info?.target) {
+            return this._readResult(
+              info.target.path,
+              info.target.parameters,
+              {
+                ...context,
+                depth: depth + 1,
+                stack: [...stack, this.id],
+              }
+            );
+          }
+
           return { success: true, cid, metadata: info?.tags || {} };
         }
 
@@ -273,31 +307,6 @@ export class VFS {
         }
 
         if (resultData) {
-          if (followLinks) {
-            const peekResult = await this._peekLink(resultData);
-            if (peekResult.isLink) {
-              const linkMetadata = await this._extractMetadata(peekResult.text);
-              const linkedResult = await this._readResult(
-                peekResult.linkPath,
-                peekResult.linkParams || s.parameters,
-                {
-                  ...context,
-                  depth: depth + 1,
-                  stack: [...stack, this.id],
-                }
-              );
-
-              if (linkedResult && linkedResult.success) {
-                resultData = await this.storage.get(linkedResult.cid);
-                resultMetadata = { ...linkMetadata, ...linkedResult.metadata };
-              } else {
-                return { success: false, cid };
-              }
-            } else {
-              resultData = peekResult.stream;
-            }
-          }
-
           try {
             const writeInfo = {
               path: s.path,
@@ -348,71 +357,6 @@ export class VFS {
     }
   }
 
-  async _peekLink(stream) {
-    if (stream instanceof Uint8Array || typeof stream === 'string') {
-      const text =
-        typeof stream === 'string' ? stream : new TextDecoder().decode(stream);
-
-      // A PURE link is just the vfs:/... string, nothing else.
-      if (
-        text.startsWith('vfs:/') &&
-        !text.includes('\n') &&
-        text.length < 1024
-      ) {
-        return {
-          isLink: true,
-          linkPath: text.slice(5),
-          stream,
-          text,
-        };
-      }
-      return { isLink: false, stream, text };
-    }
-
-    const reader = stream.getReader();
-    const { done, value } = await reader.read();
-    if (done || !value) {
-      reader.releaseLock();
-      return { isLink: false, stream, text: null };
-    }
-
-    const text = new TextDecoder().decode(value);
-    // A PURE link is just the vfs:/... string, nothing else.
-    if (
-      text.startsWith('vfs:/') &&
-      !text.includes('\n') &&
-      text.length < 1024
-    ) {
-      reader.releaseLock();
-      return {
-        isLink: true,
-        linkPath: text.slice(5),
-        stream: null, // Original stream consumed
-        text,
-      };
-    }
-
-    return {
-      isLink: false,
-      text,
-      stream: new WebReadableStream({
-        async start(controller) {
-          controller.enqueue(value);
-          try {
-            while (true) {
-              const { done, value: nextValue } = await reader.read();
-              if (done) break;
-              controller.enqueue(nextValue);
-            }
-          } finally {
-            reader.releaseLock();
-            controller.close();
-          }
-        },
-      }),
-    };
-  }
-
   async write(pathOrSelector, parameters, stream, info = {}) {
     this._checkClosed();
     const s = normalizeSelector(pathOrSelector, parameters);
@@ -450,7 +394,9 @@ export class VFS {
   }
 
   async readData(pathOrSelector, parameters, context = {}) {
-    const stream = await this.read(pathOrSelector, parameters, context);
+    const result = await this._readResult(pathOrSelector, parameters, context);
+    if (!result || !result.success) return null;
+    const stream = await this.storage.get(result.cid);
     if (!stream) return null;
     const chunks = [];
     const reader = stream.getReader();

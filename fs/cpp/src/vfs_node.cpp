@@ -300,23 +300,50 @@ bool VFSNode::validate_selector(const VFSRequest& req, std::string& error_out) {
     return true;
 }
 
+void VFSNode::link(const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params) {
+    std::string src_cid = get_cid(src_path, src_params);
+    write_local_link(src_cid, src_path, src_params, tgt_path, tgt_params);
+}
+
 std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     if (req.expiresAt > 0 && now > req.expiresAt) return {};
+    if (req.stack.size() > 10) return {}; // Prevent infinite loops
+
     std::string error;
     if (!validate_selector(req, error)) return {};
 
     std::string cid = get_cid(req.path, req.parameters);
-    if (has_local(cid)) return get_local(cid);
+
+    // 1. Formal Link Resolution (Local .meta 'target')
+    if (has_local(cid)) {
+        try {
+            std::string meta_path = (fs::path(config_.storage_dir) / (cid + ".meta")).string();
+            std::ifstream is(meta_path);
+            json meta = json::parse(is);
+            if (meta.contains("target")) {
+                VFSRequest next_req = req;
+                next_req.path = meta["target"]["path"];
+                next_req.parameters = meta["target"]["parameters"];
+                return read(next_req);
+            }
+        } catch (...) {}
+    }
 
     std::vector<uint8_t> data;
-    if (handlers_.count(req.path)) {
-        json selector = {{"path", req.path}, {"parameters", req.parameters}};
-        notify(selector, {{"type", "WORKING"}, {"peer", config_.id}});
-        data = handlers_[req.path](req);
-        if (!data.empty()) {
-            notify(selector, {{"type", "SUCCESS"}, {"peer", config_.id}, {"size", data.size()}});
-            write_local(cid, data, req.path, req.parameters);
+    if (has_local(cid)) {
+        data = get_local(cid);
+    }
+    
+    if (data.empty()) {
+        if (handlers_.count(req.path)) {
+            json selector = {{"path", req.path}, {"parameters", req.parameters}};
+            notify(selector, {{"type", "WORKING"}, {"peer", config_.id}});
+            data = handlers_[req.path](req);
+            if (!data.empty()) {
+                notify(selector, {{"type", "SUCCESS"}, {"peer", config_.id}, {"size", data.size()}});
+                write_local(cid, data, req.path, req.parameters);
+            }
         }
     }
 
@@ -458,7 +485,32 @@ void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& da
 
     std::ofstream mos(meta_path);
     // Align with VFS Selector standard: {path, parameters}
-    json meta = {{"path", path}, {"parameters", params}};
+    json meta = {{"path", path}, {"parameters", params}, {"state", "AVAILABLE"}};
+    mos << meta.dump();
+    mos.close();
+}
+
+void VFSNode::write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params) {
+    if (config_.storage_dir.empty()) return;
+    std::string data_path = (fs::path(config_.storage_dir) / (src_cid + ".data")).string();
+    std::string meta_path = (fs::path(config_.storage_dir) / (src_cid + ".meta")).string();
+    
+    // Data contains a fallback text pointer
+    std::string link_ptr = "vfs:/" + tgt_path;
+    std::ofstream os(data_path);
+    os << link_ptr;
+    os.close();
+
+    std::ofstream mos(meta_path);
+    json meta = {
+        {"path", src_path}, 
+        {"parameters", src_params}, 
+        {"state", "LINKED"},
+        {"target", {
+            {"path", tgt_path},
+            {"parameters", tgt_params}
+        }}
+    };
     mos << meta.dump();
     mos.close();
 }

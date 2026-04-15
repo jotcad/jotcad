@@ -26,6 +26,7 @@ class VFSNode {
 public:
     struct Config {
         std::string id;
+        std::string version;
         std::string storage_dir;
         std::vector<std::string> neighbors;
         int port = 9090;
@@ -61,6 +62,12 @@ public:
 
     // Perform a WRITE (Direct to Local Cache)
     void write(const std::string& path, const json& parameters, const std::vector<uint8_t>& data);
+
+    // Perform a Content-Addressable WRITE (Returns CID)
+    std::string write_cid(const std::string& path, const std::vector<uint8_t>& data);
+
+    // Create a LINK (alias) between two coordinates
+    void link(const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 
     // Validate a request against its schema
     bool validate_selector(const VFSRequest& req, std::string& error_out);
@@ -101,6 +108,7 @@ private:
     bool has_local(const std::string& cid);
     std::vector<uint8_t> get_local(const std::string& cid);
     void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
+    void write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 };
 
 } // namespace fs
