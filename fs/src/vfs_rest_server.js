@@ -8,47 +8,56 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const activeListeners = new Set();
 
   const handleRequest = async (req, res) => {
-  console.log(`[VFS Server] Incoming Request: ${req.method} ${req.url}`);
-  // Add CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-vfs-peer-id, x-vfs-reply-to, x-vfs-local-url, x-vfs-id');
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
+    console.log(`[VFS Server] Incoming Request: ${req.method} ${req.url}`);
+    // Add CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, x-vfs-peer-id, x-vfs-reply-to, x-vfs-local-url, x-vfs-id'
+    );
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
       res.writeHead(204);
       return res.end();
-  }
+    }
 
-  const url = new URL(req.url, `http://${req.headers.host}`);
+    const url = new URL(req.url, `http://${req.headers.host}`);
 
     if (!url.pathname.startsWith(prefix)) return;
 
     const vfsPath = url.pathname.slice(prefix.length);
-    console.log(`[VFS Server] Request: ${req.method} '${vfsPath}' (Path: '${url.pathname}', Prefix: '${prefix}')`);
+    console.log(
+      `[VFS Server] Request: ${req.method} '${vfsPath}' (Path: '${url.pathname}', Prefix: '${prefix}')`
+    );
 
-    const getBody = () => new Promise((resolve) => {
-      let body = '';
-      req.on('data', chunk => body += chunk);
-      req.on('end', () => resolve(JSON.parse(body || '{}')));
-    });
+    const getBody = () =>
+      new Promise((resolve) => {
+        let body = '';
+        req.on('data', (chunk) => (body += chunk));
+        req.on('end', () => resolve(JSON.parse(body || '{}')));
+      });
 
     const pump = async (stream) => {
-        const reader = stream.getReader();
-        try {
-            while (true) {
-                try {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    res.write(value);
-                } catch (e) {
-                    console.warn('[VFS Server] Stream read error (peer disconnected):', e.message);
-                    break;
-                }
-            }
-        } finally {
-            reader.releaseLock();
-            if (!res.writableEnded) res.end();
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          try {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          } catch (e) {
+            console.warn(
+              '[VFS Server] Stream read error (peer disconnected):',
+              e.message
+            );
+            break;
+          }
         }
+      } finally {
+        reader.releaseLock();
+        if (!res.writableEnded) res.end();
+      }
     };
 
     try {
@@ -60,19 +69,22 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         // Auto-Peering (Symmetry)
         const peerUrl = req.headers['x-vfs-local-url'];
         if (peerUrl && meshLink) {
-            meshLink.addPeer(peerUrl);
+          meshLink.addPeer(peerUrl);
         }
-        
+
         if (expiresAt && Date.now() > expiresAt) {
-            res.writeHead(408);
-            return res.end('Request Expired');
+          res.writeHead(408);
+          return res.end('Request Expired');
         }
 
         // Standard Mesh Read (Local -> MeshLink)
         const stream = await vfs.read(s.path, s.parameters, { stack });
         if (stream) {
-            res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'x-vfs-id': vfs.id });
-            return await pump(stream);
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'x-vfs-id': vfs.id,
+          });
+          return await pump(stream);
         }
 
         res.writeHead(404);
@@ -85,25 +97,31 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         console.log('[VFS Server] /spy body:', body);
         const s = normalizeSelector(body.path, body.parameters);
         const { stack = [], expiresAt } = body;
-        
+
         console.log(`[VFS Server] Spy request for: ${s.path}`, s.parameters);
 
         const peerUrl = req.headers['x-vfs-local-url'];
         if (peerUrl && meshLink) {
-            meshLink.addPeer(peerUrl);
+          meshLink.addPeer(peerUrl);
         }
 
         if (expiresAt && Date.now() > expiresAt) {
-            console.log('[VFS Server] Spy request expired');
-            res.writeHead(408);
-            return res.end('Request Expired');
+          console.log('[VFS Server] Spy request expired');
+          res.writeHead(408);
+          return res.end('Request Expired');
         }
 
-        const stream = await vfs.spy(s.path, s.parameters, { stack, expiresAt });
+        const stream = await vfs.spy(s.path, s.parameters, {
+          stack,
+          expiresAt,
+        });
         if (stream) {
-            console.log('[VFS Server] /spy stream found and returned');
-            res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'x-vfs-id': vfs.id });
-            return await pump(stream);
+          console.log('[VFS Server] /spy stream found and returned');
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'x-vfs-id': vfs.id,
+          });
+          return await pump(stream);
         }
 
         console.log(`[VFS Server] /spy: Not Found for ${s.path}`);
@@ -111,62 +129,30 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         return res.end(`Not Found: ${s.path}`);
       }
 
-      if (req.method === 'GET' && vfsPath === '/watch') {
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*'
-        });
-
-        const onState = (event) => {
-          res.write(`data: ${JSON.stringify(event)}\n\n`);
-        };
-
-        vfs.events.on('state', onState);
-        activeListeners.add(onState);
-
-        req.on('close', () => {
-            vfs.events.off('state', onState);
-            activeListeners.delete(onState);
-        });
-        return;
-      }
-
-      if (req.method === 'POST' && vfsPath === '/cid') {
-        const body = await getBody();
-        const cid = await vfs.getCID(body);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ cid }));
-      }
-
-      if (req.method === 'GET' && vfsPath === '/peers') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify([...(meshLink?.peers?.keys() || [])]));
-      }
-
       if (req.method === 'POST' && vfsPath === '/register') {
         const { id: peerId, url: peerUrl } = await getBody();
         if (!peerId) {
-            res.writeHead(400);
-            return res.end('Missing peer id');
+          res.writeHead(400);
+          return res.end('Missing peer id');
         }
 
         const canReachDirect = await meshLink?.testReachability(peerUrl);
-        
+
         // Add as a StaticPeer if we can reach it, but do it in the background
         if (canReachDirect && peerUrl && !meshLink?.peers.has(peerId)) {
-            // Decouple to avoid recursive deadlock during mutual registration
-            setTimeout(() => {
-                meshLink?.addPeer(peerUrl);
-            }, 0);
+          // Decouple to avoid recursive deadlock during mutual registration
+          setTimeout(() => {
+            meshLink?.addPeer(peerUrl);
+          }, 0);
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ 
+        return res.end(
+          JSON.stringify({
             id: vfs.id,
-            reachability: canReachDirect ? 'DIRECT' : 'REVERSE'
-        }));
+            reachability: canReachDirect ? 'DIRECT' : 'REVERSE',
+          })
+        );
       }
 
       if (req.method === 'POST' && vfsPath === '/subscribe') {
@@ -190,14 +176,14 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const peerId = req.headers['x-vfs-peer-id'];
         const replyTo = req.headers['x-vfs-reply-to'];
         if (!peerId) {
-            res.writeHead(400);
-            return res.end('Missing x-vfs-peer-id');
+          res.writeHead(400);
+          return res.end('Missing x-vfs-peer-id');
         }
 
         if (meshLink) {
-            meshLink.registerReversePeer(peerId, res, replyTo, req);
-            // Note: res is NOT ended here; it's held by MeshLink for the next command.
-            return;
+          meshLink.registerReversePeer(peerId, res, replyTo, req);
+          // Note: res is NOT ended here; it's held by MeshLink for the next command.
+          return;
         }
 
         res.writeHead(501);
@@ -206,12 +192,21 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       if (req.method === 'GET' && vfsPath === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'OK', id: vfs.id }));
+        return res.end(JSON.stringify({ status: 'OK', id: vfs.id }));
       }
 
+      if (req.method === 'GET' && vfsPath === '/version') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(
+          JSON.stringify({ version: vfs.version || 'unknown', id: vfs.id })
+        );
+      }
     } catch (err) {
       console.error(`[MeshServer ${vfs.id}] REST Error:`, err);
-      if (!res.writableEnded) { res.writeHead(500); res.end(err.message); }
+      if (!res.writableEnded) {
+        res.writeHead(500);
+        res.end(err.message);
+      }
     }
   };
 
@@ -220,7 +215,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   return () => {
     server.off('request', handleRequest);
     for (const listener of activeListeners) {
-        vfs.events.off('state', listener);
+      vfs.events.off('state', listener);
     }
     activeListeners.clear();
   };

@@ -45,14 +45,70 @@ bool matches(const json& sub, const json& event) {
     }
     return false;
 }
+
+std::string vfs_hash256(const std::vector<uint8_t>& data) {
+    picosha2::hash256_one_by_one hasher;
+    hasher.process(data.begin(), data.end());
+    hasher.finish();
+    std::vector<uint8_t> hash(32);
+    hasher.get_hash_bytes(hash.begin(), hash.end());
+    
+    std::stringstream ss;
+    for (uint8_t b : hash) {
+        ss << std::setfill('0') << std::setw(2) << std::hex << (int)b;
+    }
+    return ss.str();
+}
+
+std::string vfs_hash256_str(const std::string& data) {
+    picosha2::hash256_one_by_one hasher;
+    hasher.process(data.begin(), data.end());
+    hasher.finish();
+    std::vector<uint8_t> hash(32);
+    hasher.get_hash_bytes(hash.begin(), hash.end());
+    
+    std::stringstream ss;
+    for (uint8_t b : hash) {
+        ss << std::setfill('0') << std::setw(2) << std::hex << (int)b;
+    }
+    return ss.str();
+}
+
+/**
+ * Normalizes JSON to match JS JSON.stringify behavior:
+ * 1. Floats that are integers (e.g., 10.0) are converted to integers.
+ */
+void normalize_json(json& j) {
+    if (j.is_number_float()) {
+        double v = j.get<double>();
+        if (v == (double)(long long)v) {
+            j = (long long)v;
+        }
+    } else if (j.is_object()) {
+        for (auto& [key, value] : j.items()) {
+            normalize_json(value);
+        }
+    } else if (j.is_array()) {
+        for (auto& element : j) {
+            normalize_json(element);
+        }
+    }
+}
 }
 
 void VFSNode::register_op(const std::string& path, OpHandler handler, const json& schema) {
     handlers_[path] = handler;
     if (!schema.empty()) {
-        schemas_[path] = schema;
-        std::string serialized = schema.dump();
-        write("sys/schema", {{"target", path}, {"provider", config_.id}}, safe_to_bytes(serialized));
+        json schema_with_origin = schema;
+        schema_with_origin["_origin"] = config_.id;
+        schemas_[path] = schema_with_origin;
+        std::string serialized = schema_with_origin.dump();
+        
+        json selector = {{"path", "sys/schema"}, {"parameters", {{"target", path}, {"provider", config_.id}}}};
+        write("sys/schema", selector["parameters"], safe_to_bytes(serialized));
+        
+        // Push-based announcement: Notify the mesh immediately
+        notify(selector, {{"type", "SCHEMA_ANNOUNCEMENT"}, {"target", path}, {"provider", config_.id}});
     }
 }
 
@@ -96,6 +152,10 @@ void VFSNode::listen() {
 
     svr->Get("/health", [this](const httplib::Request&, httplib::Response& res) {
         res.set_content(json({{"status", "OK"}, {"id", config_.id}}).dump(), "application/json");
+    });
+
+    svr->Get("/version", [this](const httplib::Request&, httplib::Response& res) {
+        res.set_content(json({{"version", config_.version}, {"id", config_.id}}).dump(), "application/json");
     });
 
     svr->Post("/read", [this](const httplib::Request& req, httplib::Response& res) {
@@ -195,6 +255,28 @@ void VFSNode::listen() {
         }
     }).detach();
 
+    // Schema Heartbeat Thread
+    std::thread([this]() {
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            json catalog = json::object();
+            {
+                // Snapshot local schemas
+                for (auto const& [path, schema] : schemas_) {
+                    catalog[path] = schema;
+                }
+            }
+            if (!catalog.empty()) {
+                json selector = {{"path", "sys/schema"}, {"parameters", {{"provider", config_.id}}}};
+                notify(selector, {
+                    {"type", "CATALOG_ANNOUNCEMENT"},
+                    {"provider", config_.id},
+                    {"catalog", catalog}
+                });
+            }
+        }
+    }).detach();
+
     std::cout << "[VFSNode " << config_.id << "] Listening on 0.0.0.0:" << config_.port << std::endl;
     svr->listen("0.0.0.0", config_.port);
 }
@@ -258,22 +340,6 @@ std::vector<uint8_t> VFSNode::read(const VFSRequest& req) {
         }
     }
 
-    if (!data.empty()) {
-        try {
-            auto j = json::parse(std::string(data.begin(), data.end()));
-            if (j.contains("geometry") && j["geometry"].is_string()) {
-                std::string url = j["geometry"];
-                if (url.compare(0, 5, "vfs:/") == 0) {
-                    VFSRequest link_req;
-                    link_req.path = url.substr(5);
-                    link_req.parameters = j.value("parameters", req.parameters);
-                    link_req.stack = req.stack;
-                    link_req.expiresAt = req.expiresAt;
-                    return read(link_req);
-                }
-            }
-        } catch (...) {}
-    }
     return data;
 }
 
@@ -330,6 +396,7 @@ std::vector<uint8_t> VFSNode::spy(const VFSRequest& req) {
                     if (meta["path"].get<std::string>().find(req.path) != std::string::npos) {
                         auto data = get_local(entry.path().stem().string());
                         if (data.empty()) continue;
+                        // VFS Header format: "\n=<LEN> <SELECTOR_JSON>\n"
                         std::string header = "\n=" + std::to_string(data.size()) + " " + meta.dump() + "\n";
                         res.insert(res.end(), header.begin(), header.end());
                         res.insert(res.end(), data.begin(), data.end());
@@ -345,9 +412,23 @@ void VFSNode::write(const std::string& path, const json& parameters, const std::
     write_local(get_cid(path, parameters), data, path, parameters);
 }
 
+std::string VFSNode::write_cid(const std::string& path, const std::vector<uint8_t>& data) {
+    // 1. Calculate the hash of the data
+    std::string hash = vfs_hash256(data);
+    
+    // 2. Use the hash as the 'cid' parameter
+    json parameters = {{"cid", hash}};
+    
+    // 3. Store locally under the provided path with the cid parameter
+    write_local(get_cid(path, parameters), data, path, parameters);
+    
+    return hash;
+}
+
 std::string VFSNode::get_cid(const std::string& path, const json& parameters) {
     json s = {{"path", path}, {"parameters", parameters}};
-    return picosha2::hash256_hex_string(s.dump());
+    normalize_json(s);
+    return vfs_hash256_str(s.dump());
 }
 
 bool VFSNode::has_local(const std::string& cid) {
@@ -368,10 +449,18 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
 
 void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params) {
     if (config_.storage_dir.empty()) return;
-    std::ofstream os(fs::path(config_.storage_dir) / (cid + ".data"), std::ios::binary);
+    std::string data_path = (fs::path(config_.storage_dir) / (cid + ".data")).string();
+    std::string meta_path = (fs::path(config_.storage_dir) / (cid + ".meta")).string();
+    
+    std::ofstream os(data_path, std::ios::binary);
     os.write((const char*)data.data(), data.size());
-    std::ofstream mos(fs::path(config_.storage_dir) / (cid + ".meta"));
-    mos << json({{"path", path}, {"parameters", params}}).dump(2);
+    os.close();
+
+    std::ofstream mos(meta_path);
+    // Align with VFS Selector standard: {path, parameters}
+    json meta = {{"path", path}, {"parameters", params}};
+    mos << meta.dump();
+    mos.close();
 }
 
 } // namespace fs
