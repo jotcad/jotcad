@@ -25,6 +25,16 @@ struct Geometry {
     };
     std::vector<Face> faces;
 
+    void apply_tf(const std::vector<double>& tf) {
+        if (tf.size() < 16) return;
+        for (auto& v : vertices) {
+            double x = v.x * tf[0] + v.y * tf[4] + v.z * tf[8] + tf[12];
+            double y = v.x * tf[1] + v.y * tf[5] + v.z * tf[9] + tf[13];
+            double z = v.x * tf[2] + v.y * tf[6] + v.z * tf[10] + tf[14];
+            v.x = x; v.y = y; v.z = z;
+        }
+    }
+
     std::string encode_text() const {
         try {
             std::ostringstream ss;
@@ -77,9 +87,9 @@ struct Geometry {
                 if (!(ls >> code)) continue;
 
                 if (code == "v") {
-                    double x1, y1, z1, x2, y2, z2;
-                    while (ls >> x1 >> y1 >> z1 >> x2 >> y2 >> z2) {
-                        vertices.push_back({x2, y2, z2});
+                    double x1, y1, z1;
+                    if (ls >> x1 >> y1 >> z1) {
+                        vertices.push_back({x1, y1, z1});
                     }
                 } else if (code == "p") {
                     int idx;
@@ -89,7 +99,7 @@ struct Geometry {
                     while (ls >> v1 >> v2) segments.push_back({v1, v2});
                 } else if (code == "t") {
                     int v1, v2, v3;
-                    if (ls >> v1 >> v2 >> v3) triangles.push_back({v1, v2, v3});
+                    while (ls >> v1 >> v2 >> v3) triangles.push_back({v1, v2, v3});
                 } else if (code == "f") {
                     Face face;
                     std::vector<int> loop;

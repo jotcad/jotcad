@@ -314,7 +314,7 @@ enables the creation of parametric "recipes" that remain abstract until a `READ`
 is performed.
 
 - **Syntax:** `Box(10, 10, length)`
-- **Resolution:** When requested via `vfs:/shape/my_box?length=50`, the symbol
+- **Resolution:** When requested via `{ "path": "shape/my_box", "parameters": { "length": 50 } }`, the symbol
   `length` is automatically resolved to the value `50` during evaluation.
 
 ### 10.2. Semantic Canonicalization (`.spec()`)

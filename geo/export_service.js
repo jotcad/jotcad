@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
-import { VFS, DiskStorage, MeshLink, registerVFSRoutes } from '../../fs/src/index.js';
+import { VFS, DiskStorage, MeshLink, registerVFSRoutes } from '../fs/src/index.js';
 
 const id = process.env.PEER_ID || 'export-node';
 const port = parseInt(process.env.PORT || '9092');

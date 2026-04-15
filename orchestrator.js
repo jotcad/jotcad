@@ -32,7 +32,7 @@ const components = [
   {
     name: 'Export Node (9092)',
     command: 'node',
-    args: ['geo/src/export_service.js'], // We should update this to be a native VFS node too
+    args: ['geo/export_service.js'], // We should update this to be a native VFS node too
     cwd: __dirname,
     env: { 
         ...process.env, 

@@ -1,12 +1,14 @@
-#include "impl/processor.h"
-#include "impl/node_shim.h"
+#include "../../fs/cpp/include/vfs_node.h"
 #include "hexagon_op.h"
 #include "box_op.h"
 #include "triangle_op.h"
 #include "offset_op.h"
 #include "outline_op.h"
+#include "points_op.h"
+#include "nth_op.h"
+#include "group_op.h"
+#include "path_op.h"
 #include "pdf_op.h"
-#include "grammar_ops.h"
 #include <iostream>
 #include <cstdlib>
 
@@ -14,6 +16,14 @@ using namespace jotcad::geo;
 using namespace jotcad::fs;
 
 int main(int argc, char** argv) {
+    if (argc > 1) {
+        std::string arg = argv[1];
+        if (arg == "--version" || arg == "-v") {
+            std::cout << "JotCAD Ops Node v1.1.0 (Build: " << __DATE__ << " " << __TIME__ << ")" << std::endl;
+            return 0;
+        }
+    }
+
     std::string peer_id = std::getenv("PEER_ID") ? std::getenv("PEER_ID") : "geo-ops-node";
     int port = std::getenv("PORT") ? std::atoi(std::getenv("PORT")) : 9091;
     std::string neighbors_str = std::getenv("NEIGHBORS") ? std::getenv("NEIGHBORS") : "";
@@ -28,12 +38,12 @@ int main(int argc, char** argv) {
 
     VFSNode::Config config;
     config.id = peer_id;
+    config.version = "JotCAD Ops Node v1.1.0 (Build: " + std::string(__DATE__) + " " + std::string(__TIME__) + ")";
     config.port = port;
     config.storage_dir = ".vfs_storage_" + peer_id;
     config.neighbors = neighbors;
 
     VFSNode node(config);
-    NodeClientShim shim(node);
 
     std::cout << "[Ops Node] Initializing Geometry Registry..." << std::endl;
 
@@ -42,18 +52,24 @@ int main(int argc, char** argv) {
     box_init();
     triangle_init();
     
-    // Geometric Grammar
-    grammar_init();
+    // Geometric Grammar (Separated Ops)
+    points_init();
+    nth_init();
+    group_init();
+    path_init();
 
     // Registry for a simple origin point
     Processor::Operation origin_op;
-    origin_op.path = "shape/origin";
-    origin_op.logic = [](jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
+    origin_op.path = "jot/Origin";
+    origin_op.logic = [](VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
         std::vector<uint8_t> geo = {'v', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', ' ', '0', '.', '0', '0', '0', '0', '0', '0', '\n'};
         
-        vfs->write("geo/mesh", params, geo);
+        std::string hash = vfs->write_cid("geo/mesh", geo);
         nlohmann::json shape = {
-            {"geometry", "vfs:/geo/mesh"},
+            {"geometry", {
+                {"path", "geo/mesh"},
+                {"parameters", {{"cid", hash}}}
+            }},
             {"parameters", params},
             {"tags", {{"type", "origin"}}}
         };
@@ -77,8 +93,8 @@ int main(int argc, char** argv) {
     // REGISTER ALL OPS from Processor to VFSNode
     for (auto const& [path, op] : Processor::registry()) {
         std::cout << "[Ops Node] Registering VFS Op: " << path << std::endl;
-        node.register_op(path, [&shim, op, path](const VFSNode::VFSRequest& req) {
-            return op.logic(&shim, req.path, req.parameters, req.stack);
+        node.register_op(path, [&node, op](const VFSNode::VFSRequest& req) {
+            return op.logic(&node, req.path, req.parameters, req.stack);
         }, op.schema);
     }
 

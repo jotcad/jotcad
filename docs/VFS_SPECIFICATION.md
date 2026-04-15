@@ -279,20 +279,25 @@ raw spatial data and semantic organizational containers.
 
 ### 9.1 Geometry Type (`geometry`)
 
-- **Nature:** Raw spatial payload.
-- **Content:** Binary or text-based mesh data (Vertices, Edges, Faces).
+- **Nature:** Raw spatial payload (text/JOT).
+- **Content:** Mesh data (Vertices, Edges, Faces).
 - **Identity:** Typically content-addressed under `geo/mesh/*`.
 - **Constraint:** Pure data; has no concept of transformation or metadata.
+- **Indexing**: Uses **0-based vertex indexing** for all primitive codes (`f`, `t`, `s`, `p`) to enable direct memory mapping in high-performance kernels.
 
 ### 9.2 Shape Type (`shape`)
 
 - **Nature:** Semantic container (JSON).
+- **Contract**: Operators are **Higher-Order Providers**. They must:
+  1. **Read Shape**: Accept a Shape JSON as input.
+  2. **Unwrap**: Recursively resolve the `geometry` selector within the shape.
+  3. **Transform**: Apply the `tf` (4x4 matrix) to vertices to reach world-space.
+  4. **Process & Re-package**: Generate new geometry and return a *new* Shape JSON.
 - **Structure:**
-  - `geometry`: A VFS Link (`vfs:/...`) pointing to a `geometry` artifact.
-  - `transforms`: Affine transformation matrices.
-  - `metadata`: Key-value tags (color, name, material).
+  - `geometry`: A structured **VFS Selector** (e.g. `{ "path": "geo/mesh", "parameters": {"cid": "..."}}`) pointing to a `geometry` artifact.
+  - `tf`: Affine transformation matrix (16 doubles).
+  - `tags`: Key-value tags (color, name, material).
   - `components`: Nested `shape` objects for hierarchical assemblies.
-- **Role:** The primary unit of exchange for the Jot language and UX.
 
 ### 9.3 Type-Specific Port Mapping
 
