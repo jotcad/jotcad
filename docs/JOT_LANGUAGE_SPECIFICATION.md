@@ -124,6 +124,10 @@ mechanism for generating arrays and patterns.
 - `Arc(10, 20).rotateX(0.5)` -> Returns a sequence of two arcs, both rotated
   180°.
 
+**Exemptions:** Semantic structural types represented as arrays (like `vec3` or 
+`intv`) and greedily harvested sequences (`nums`, `jots`) are treated as single 
+atomic units and do **not** trigger Cartesian Expansion.
+
 ### 2.3. Universal Flattening
 
 The language engine automatically flattens nested arrays encountered in the
@@ -147,13 +151,15 @@ the argument stack.
 - **`vec3`**: First array of 3 numbers `[x, y, z]`.
 - **`intv`**: Normalizes ranges (e.g., `10` -> `[-5, 5]`).
 
-### 3.2. Greedy Consumers
+### 3.2. Contiguous Greedy Consumers
 
-These consumers perform **Universal Flattening** on the stack.
+These consumers perform **Universal Flattening** on the stack and harvest all 
+matching values starting from the current position until a non-matching value 
+is encountered.
 
-- **`nums`**: Collects all numbers. Expands range objects `{ge, le, by}`.
-- **`jots`**: Collects all VFS Selectors and nested expression sequences.
-- **`tags(whitelist)`**: Collects matching strings into a boolean map.
+- **`nums`**: Contiguous numbers into an array. Expands range objects `{ge, le, by}`.
+- **`jots`**: Contiguous VFS Selectors and nested expression sequences into an array.
+- **`tags(whitelist)`**: Contiguous symbols/strings into a boolean map.
 
 ## 4. The Workbench Principle (Alignment)
 

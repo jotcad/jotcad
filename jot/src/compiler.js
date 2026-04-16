@@ -12,6 +12,7 @@ export class JotCompiler {
     this.vfs = vfs;
     this.options = {
       optimizeAliases: true,
+      defaultPrefix: 'jot/',
       ...options,
     };
     this.sideDemands = new Map();
@@ -43,7 +44,9 @@ export class JotCompiler {
       return result;
     }
 
-    return this.flatten([result, ...sideValues]);
+    const all = [result, ...sideValues].filter(v => v !== null && v !== undefined);
+    const flattened = this.flatten(all);
+    return flattened.length === 1 ? flattened[0] : flattened;
   }
 
   async _evaluateRecursive(
@@ -67,6 +70,8 @@ export class JotCompiler {
       // 2. Handle Primitive Values
       result = node;
     } else if (node.type === 'SYMBOL') {
+      if (node.name === 'true') return true;
+      if (node.name === 'false') return false;
       result =
         parameters[node.name] !== undefined ? parameters[node.name] : node;
     } else if (node.type === 'CALL') {
@@ -85,7 +90,7 @@ export class JotCompiler {
           currentSubject
         );
       }
-      result = this.applySequencePrinciple(node.path, resolvedParams);
+      result = this.applySequencePrinciple(node.path, resolvedParams, node.schema);
     } else {
       result = {};
       for (const [k, v] of Object.entries(node)) {
@@ -110,7 +115,7 @@ export class JotCompiler {
 
   async _evaluateCall(node, parameters, currentSubject = null) {
     let op = this.operators.get(node.name);
-    const path = op ? op.path : `op/${node.name}`;
+    const path = op ? op.path : `${this.options.defaultPrefix}${node.name}`;
     const schema = op ? op.schema : null;
     const returns = op ? op.returns : null;
 
@@ -134,7 +139,7 @@ export class JotCompiler {
       resolvedParams[inputKey] = currentSubject;
     }
 
-    const result = this.applySequencePrinciple(path, resolvedParams);
+    const result = this.applySequencePrinciple(path, resolvedParams, schema);
 
     if (this.vfs && !Array.isArray(result) && returns?.type === 'array') {
       const data = await this.vfs.readData(result.path, result.parameters);
@@ -193,7 +198,7 @@ export class JotCompiler {
       resolvedParams.$in = [subject, ...args];
     }
 
-    const result = this.applySequencePrinciple(path, resolvedParams);
+    const result = this.applySequencePrinciple(path, resolvedParams, schema);
 
     const isAlias = op?.metadata?.aliases?.['$out'] === '$in';
     if (this.options.optimizeAliases && isAlias) {
@@ -207,12 +212,49 @@ export class JotCompiler {
     return result;
   }
 
+  _matchType(val, type) {
+    if (!type) return true;
+    const t = type.toLowerCase();
+
+    // 1. Numeric Consumers (num, nums, number)
+    if (t === 'num' || t === 'nums' || t === 'number') {
+      return typeof val === 'number';
+    }
+
+    // 2. String Consumers (str, string, tags)
+    if (t === 'str' || t === 'string' || t === 'tags') {
+      return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
+    }
+
+    // 3. Boolean Consumers (bool, boolean)
+    if (t === 'bool' || t === 'boolean') {
+      return typeof val === 'boolean';
+    }
+
+    // 4. VFS/Selector Consumers (jot, jots, shape, geometry, selector)
+    if (t === 'jot' || t === 'jots' || t === 'shape' || t === 'geometry' || t === 'selector') {
+      return typeof val === 'object' && val !== null && val.path;
+    }
+
+    // 5. Structural Consumers (vec3, intv, array)
+    if (t === 'vec3') {
+      return Array.isArray(val) && val.length === 3 && val.every(v => typeof v === 'number');
+    }
+    if (t === 'intv') {
+      return typeof val === 'number' || (Array.isArray(val) && val.length === 2);
+    }
+    if (t === 'array') {
+      return Array.isArray(val);
+    }
+
+    return true;
+  }
+
   /**
    * Map positional arguments to property names based on JSON Schema.
    */
   mapArguments(args, schema, opName, hasSubject = false) {
     let parameters = {};
-
     const argDefs = schema ? schema.arguments || schema.properties : null;
 
     if (
@@ -221,24 +263,66 @@ export class JotCompiler {
       args[0] !== null &&
       !Array.isArray(args[0]) &&
       args[0].type !== 'SYMBOL' &&
-      !args[0].path // Don't treat VFS selectors as named parameter objects
+      !args[0].path
     ) {
       parameters = { ...args[0] };
     } else if (argDefs) {
       const propNames = Object.keys(argDefs);
-      // If we have a subject, it usually occupies the first slot (e.g. $in or source)
-      const startIndex = hasSubject ? 1 : 0;
-      args.forEach((arg, i) => {
-        const propIndex = i + startIndex;
-        if (propIndex < propNames.length) {
-          parameters[propNames[propIndex]] = arg;
+      const propConfigs = Object.values(argDefs);
+      
+      let argIndex = 0;
+      let subjectSkipped = !hasSubject;
+
+      for (let i = 0; i < propNames.length; i++) {
+        const name = propNames[i];
+        const config = propConfigs[i];
+        const t = config.type ? config.type.toLowerCase() : '';
+
+        // If method call, skip the first 'jot' slot for subject
+        if (!subjectSkipped && (t === 'jot' || t === 'shape' || t === 'selector' || t === 'jots')) {
+          subjectSkipped = true;
+          continue;
         }
-      });
+
+        if (argIndex >= args.length) continue;
+
+        const isGreedy = t === 'nums' || t === 'jots' || t === 'tags';
+        if (isGreedy) {
+          const matching = [];
+          while (argIndex < args.length && this._matchType(args[argIndex], t)) {
+            matching.push(args[argIndex]);
+            argIndex++;
+          }
+          if (matching.length > 0) {
+            if (t === 'tags') {
+              const tagMap = {};
+              matching.forEach(tag => {
+                const key = (typeof tag === 'object' && tag.type === 'SYMBOL') ? tag.name : tag;
+                tagMap[key] = true;
+              });
+              parameters[name] = tagMap;
+            } else {
+              parameters[name] = matching;
+            }
+          }
+        } else {
+          const val = args[argIndex];
+          if (this._matchType(val, t)) {
+            if (t === 'intv' && typeof val === 'number') {
+              parameters[name] = [-val / 2, val / 2];
+            } else {
+              parameters[name] = val;
+            }
+            argIndex++;
+          }
+        }
+      }
     } else {
       if (args.length === 1) parameters.arg = args[0];
       else if (args.length > 1) parameters.args = args;
     }
 
+    // Apply Defaults
     if (argDefs) {
       for (const [name, config] of Object.entries(argDefs)) {
         if (parameters[name] === undefined && config.default !== undefined) {
@@ -247,30 +331,38 @@ export class JotCompiler {
       }
     }
 
+    // Normalizations
     if (parameters.radius !== undefined) {
-      if (parameters.diameter === undefined)
-        parameters.diameter = parameters.radius * 2;
+      if (parameters.diameter === undefined) parameters.diameter = parameters.radius * 2;
       delete parameters.radius;
     }
-
-    if (
-      parameters.apothem !== undefined &&
-      (opName === 'hexagon' || opName?.includes('hexagon'))
-    ) {
-      if (parameters.diameter === undefined)
-        parameters.diameter = (2 * parameters.apothem) / 0.86602540378;
+    if (parameters.apothem !== undefined && (opName === 'hexagon' || opName?.includes('hexagon'))) {
+      if (parameters.diameter === undefined) parameters.diameter = (2 * parameters.apothem) / 0.86602540378;
       delete parameters.apothem;
     }
 
     return parameters;
   }
 
-  applySequencePrinciple(path, parameters) {
-    const sequenceKeys = Object.keys(parameters).filter(
-      (k) =>
-        Array.isArray(parameters[k]) &&
-        (parameters[k].length === 0 || !parameters[k][0]?.path)
-    );
+  applySequencePrinciple(path, parameters, schema) {
+    const argDefs = schema?.arguments || schema?.properties || {};
+
+    const sequenceKeys = Object.keys(parameters).filter((k) => {
+      const val = parameters[k];
+      if (!Array.isArray(val)) return false;
+      
+      // Never expand VFS selectors (jots) as they are the items themselves
+      if (val.length > 0 && val[0]?.path) return false;
+
+      // Check schema: skip structural types that are represented as arrays
+      const type = argDefs[k]?.type?.toLowerCase() || '';
+      if (type === 'vec3' || type === 'intv' || type === 'tags') return false;
+
+      // Greedy consumers (nums, jots) already harvested their arrays, don't re-expand
+      if (type === 'nums' || type === 'jots') return false;
+
+      return true;
+    });
 
     if (sequenceKeys.length === 0) {
       return normalizeSelector(path, parameters);

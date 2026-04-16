@@ -66,13 +66,14 @@ static void pdf_init() {
             {"$in", {{"type", "shape"}}}
         }},
         {"outputs", {
-            {"$out", {{"type", "shape"}}},
+            {"$out", {{"type", "shape"}, {"description", "Functional return (geometry)"}}},
             {"path", {{"mime", "application/pdf"}}}
         }},
         {"metadata", {
             {"aliases", {{"$out", "$in"}}}
         }}
     };
+
     Processor::register_op(op);
 }
 
