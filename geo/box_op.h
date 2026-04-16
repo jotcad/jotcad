@@ -1,16 +1,19 @@
 #pragma once
 #include "impl/processor.h"
 #include "impl/box.h"
+#include "../../fs/cpp/include/vfs_node.h"
 #include <iostream>
 
 namespace jotcad {
 namespace geo {
 
-static std::vector<uint8_t> box_op(jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack = {}) {
+static std::vector<uint8_t> box_op(jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack = {}) {
     std::cout << "[Box Op] Generating box with params: " << params.dump() << std::endl;
-    double width = params.value("width", 10.0);
-    double height = params.value("height", 10.0);
-    double depth = params.value("depth", 10.0);
+    
+    double dflt = params.value("size", 10.0);
+    double width = params.value("width", dflt);
+    double height = params.value("height", dflt);
+    double depth = params.value("depth", dflt);
 
     Geometry geo;
     makeBox(geo, width, height, depth);
@@ -18,11 +21,14 @@ static std::vector<uint8_t> box_op(jotcad::fs::VFSClient* vfs, const std::string
     // 1. Write the raw mesh to a content-addressed location (geo/mesh)
     std::string mesh_text = geo.encode_text();
     std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
-    vfs->write("geo/mesh", params, mesh_data);
+    std::string hash = vfs->write_cid("geo/mesh", mesh_data);
 
-    // 2. Return the Shape JSON for the requested path
+    // 2. Return the Shape JSON referencing the CID via a structured selector
     nlohmann::json shape = {
-        {"geometry", "vfs:/geo/mesh"},
+        {"geometry", {
+            {"path", "geo/mesh"},
+            {"parameters", {{"cid", hash}}}
+        }},
         {"parameters", params},
         {"tags", {{"type", "box"}}}
     };
@@ -32,7 +38,7 @@ static std::vector<uint8_t> box_op(jotcad::fs::VFSClient* vfs, const std::string
 
 static void box_init() {
     Processor::Operation op;
-    op.path = "shape/box";
+    op.path = "jot/Box";
     op.logic = box_op;
     op.schema = {
         {"arguments", {
