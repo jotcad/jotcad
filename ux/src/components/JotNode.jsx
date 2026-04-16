@@ -1,13 +1,15 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
 import interact from 'interactjs';
 import { vfs, blackboard } from '../lib/blackboard';
-import { Database, Minus, Maximize2 } from 'lucide-solid';
+import { Database, Minus, Maximize2, Layers } from 'lucide-solid';
 import { JotParser } from '../../../jot/src/parser';
 import { JotCompiler } from '../../../jot/src/compiler';
+import { Viewport } from './Viewport';
+import { packZFS } from '../lib/three_utils';
 
 const DEFAULT_CODE = `
 // JotCAD Expressions
-hexagon({ radius: 30, variant: 'full' })
+Hexagon(30)
 `.trim();
 
 export const JotNode = (props) => {
@@ -16,9 +18,7 @@ export const JotNode = (props) => {
   const [code, setCode] = createSignal(DEFAULT_CODE);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
-
-  const parser = new JotParser();
-  const compiler = new JotCompiler();
+  const [resultData, setResultData] = createSignal(null);
 
   onMount(() => {
     interact(nodeRef).draggable({
@@ -28,6 +28,9 @@ export const JotNode = (props) => {
         },
       },
     });
+
+    // Auto-evaluate on mount
+    evaluateJot();
   });
 
   const evaluateJot = async () => {
@@ -35,42 +38,65 @@ export const JotNode = (props) => {
     setIsEvaluating(true);
     try {
       console.log('[JotNode] Compiling expression...');
-      
+      const parser = new JotParser();
+      const compiler = new JotCompiler(vfs);
+
       // Register all discovered schemas with the compiler
       const currentSchemas = blackboard.schemas();
       for (const [path, schema] of Object.entries(currentSchemas)) {
-          // Extract the last part of the path as the "function name"
-          const name = path.split('/').pop();
-          compiler.registerOperator(name, { path, schema });
+        // Only discover operators from the jot/ namespace
+        if (!path.startsWith('jot/')) continue;
+
+        const parts = path.split('/').filter(Boolean);
+        parts.shift(); // remove 'jot'
+
+        // Use '/' for internal hierarchy mapping
+        let name = parts.join('/');
+        
+        // Handle common default variants
+        if (name === 'Hexagon/full') {
+          compiler.registerOperator('Hexagon', { path, schema });
+        } else if (name === 'Triangle/equilateral') {
+          compiler.registerOperator('Triangle', { path, schema });
+        } else if (name === 'Box/full') {
+          compiler.registerOperator('Box', { path, schema });
+        }
+
+        // Always register the full name as well
+        compiler.registerOperator(name, { path, schema });
       }
 
       const ast = parser.parse(code());
-      const selector = compiler.evaluate(ast);
-      
-      console.log('[JotNode] Translated to selector:', JSON.stringify(selector, null, 2));
+      const resolved = await compiler.evaluate(ast);
 
-      // Handle Sequences (Arrays)
-      const selectors = Array.isArray(selector) ? selector : [selector];
-      
-      for (const s of selectors) {
-          const stream = await vfs.read(s.path, s.parameters);
-          
-          if (!stream) {
-              console.warn(`[JotNode] Mesh resolution failed: No provider found for ${s.path}`);
-              continue;
-          }
+      console.log(
+        '[JotNode] Translated to selector:',
+        JSON.stringify(resolved, null, 2)
+      );
 
-          // Convert stream to readable text for logging
-          const reader = stream.getReader();
-          const result = await reader.read();
-          const textDecoder = new TextDecoder();
-          const resultString = result.value ? textDecoder.decode(result.value) : 'Empty result';
-          
-          // For now, only the last result is saved to this specific path
-          await vfs.writeData('ui/result/jot_eval', {}, result.value || new Uint8Array(0));
-          console.log(`[JotNode] Result for ${s.path} saved. Content:`, resultString);
+      // Handle Sequences (Arrays) - if array, wrap in Group for visualization
+      let finalSelector = resolved;
+      if (Array.isArray(resolved)) {
+        finalSelector = { path: 'jot/group', parameters: { $in: resolved } };
       }
+
+      const data = await vfs.readData(finalSelector.path, finalSelector.parameters);
       
+      if (data) {
+        console.log('[JotNode] RAW SHAPE DATA:', JSON.stringify(data, null, 2));
+        
+        // Pack into self-contained ZFS for robust visualization and debugging
+        if (typeof data === 'object' && (data.geometry || data.shapes)) {
+          const unified = await packZFS(vfs, data);
+          setResultData(unified);
+        } else {
+          setResultData(data);
+        }
+        
+        console.log('[JotNode] Visualization updated locally.');
+      } else {
+        console.warn(`[JotNode] Mesh resolution failed: No data for ${finalSelector.path}`);
+      }
     } catch (err) {
       console.error('[JotNode] Compilation/Evaluation failed:', err);
       alert('Error: ' + err.message);
@@ -86,47 +112,71 @@ export const JotNode = (props) => {
       style={{
         left: `${pos().x}px`,
         top: `${pos().y}px`,
-        width: isMinimized() ? '200px' : '400px',
+        width: isMinimized() ? '200px' : '500px',
         'z-index': 20,
-        transition: 'width 0.2s, height 0.2s'
+        transition: 'width 0.2s, height 0.2s',
       }}
     >
-      <div 
+      <div
         class="flex justify-between items-center cursor-move"
         onDblClick={() => setIsMinimized(!isMinimized())}
       >
-        <div class="text-xs font-black uppercase tracking-tighter text-white/40">Jot Engine Expression</div>
+        <div class="text-xs font-black uppercase tracking-tighter text-white/40">
+          Jot Engine Expression
+        </div>
         <div class="flex items-center gap-2">
-            <div class={`w-2 h-2 rounded-full ${isEvaluating() ? 'bg-cyan-400 animate-pulse' : 'bg-white/10'}`}></div>
-            <button 
-                class="text-white/20 hover:text-white transition-colors"
-                onClick={() => setIsMinimized(!isMinimized())}
-            >
-                {isMinimized() ? <Maximize2 size={12} /> : <Minus size={12} />}
-            </button>
+          <div
+            class={`w-2 h-2 rounded-full ${
+              isEvaluating() ? 'bg-cyan-400 animate-pulse' : 'bg-white/10'
+            }`}
+          ></div>
+          <button
+            class="text-white/20 hover:text-white transition-colors"
+            onClick={() => setIsMinimized(!isMinimized())}
+          >
+            {isMinimized() ? <Maximize2 size={12} /> : <Minus size={12} />}
+          </button>
         </div>
       </div>
 
       <Show when={!isMinimized()}>
         <textarea
-            class="bg-black/40 border border-white/5 rounded-lg p-3 font-mono text-[11px] h-32 focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar"
-            value={code()}
-            onInput={(e) => setCode(e.target.value)}
-            spellcheck={false}
+          class="bg-black/40 border border-white/5 rounded-lg p-3 font-mono text-[11px] h-32 focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar"
+          value={code()}
+          onInput={(e) => setCode(e.target.value)}
+          spellcheck={false}
         />
 
         <div class="flex gap-2">
-            <button
+          <button
             onClick={evaluateJot}
             disabled={isEvaluating()}
             class={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-                isEvaluating() 
-                ? 'bg-cyan-500/20 text-cyan-400' 
+              isEvaluating()
+                ? 'bg-cyan-500/20 text-cyan-400'
                 : 'bg-cyan-400 text-black hover:bg-cyan-300'
             }`}
-            >
+          >
             {isEvaluating() ? 'EVALUATING...' : 'EVALUATE JOT'}
-            </button>
+          </button>
+        </div>
+
+        {/* Local Visualization Viewport */}
+        <div class="w-full h-64 bg-black/40 rounded-lg border border-white/10 overflow-hidden relative group mt-1">
+          <Show 
+            when={resultData()} 
+            fallback={
+              <div class="w-full h-full flex flex-col items-center justify-center gap-2 opacity-20 transition-opacity group-hover:opacity-40">
+                <Layers size={32} />
+                <span class="text-[10px] font-black uppercase tracking-widest">No Result Yet</span>
+              </div>
+            }
+          >
+            <Viewport data={resultData()} />
+          </Show>
+          <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40 pointer-events-none group-hover:text-white/80 transition-colors">
+            LOCAL VIEWPORT
+          </div>
         </div>
       </Show>
     </div>

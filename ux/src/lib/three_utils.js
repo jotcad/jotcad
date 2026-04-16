@@ -371,7 +371,9 @@ export async function renderJotToScene(vfs, data, scene) {
 }
 
 export function createScene() {
-  return new THREE.Scene();
+  const scene = new THREE.Scene();
+  scene.add(new THREE.AxesHelper(10)); // X=Red, Y=Green, Z=Blue
+  return scene;
 }
 
 const thumbCache = new Map(); // CID -> dataURL
