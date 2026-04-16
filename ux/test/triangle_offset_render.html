@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Triangle Offset Render Test</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; }
+        #viewport { width: 512px; height: 512px; border: 1px solid blue; }
+    </style>
+</head>
+<body>
+    <canvas id="viewport"></canvas>
+    <script type="module">
+        import * as THREE from 'three';
+        import { 
+            initSharedRenderer, 
+            renderJotToScene, 
+            updateViewports, 
+            registerViewport,
+            createScene
+        } from '../src/lib/three_utils.js';
+
+        const ZFS_DATA = `
+=242 files/main.json
+{"geometry":{"parameters":{"cid":"3c295ec9c986a116b21a18f381001d1cf534d27f79e6b712ab0619bb8bf05e25"},"path":"geo/mesh"},"parameters":{"$in":{"parameters":{"diameter":30},"path":"jot/Triangle/equilateral"},"radius":5},"tags":{"type":"offset"}}
+=1882 assets/text/geo/mesh?{"cid":"3c295ec9c986a116b21a18f381001d1cf534d27f79e6b712ab0619bb8bf05e25"}
+v 0.0000000000 0.0000000000 0.0000000000 0.0000000000 0.0000000000 0.0000000000
+v 25.9807621135 0.0000000000 0.0000000000 25.9807621135 0.0000000000 0.0000000000
+v 12.9903810568 22.5000000000 0.0000000000 12.9903810568 22.5000000000 0.0000000000
+v 30.6001597761 1.9134171618 0.0000000000 30.6001597761 1.9134171618 0.0000000000
+v 17.6097787194 24.4134171618 0.0000000000 17.6097787194 24.4134171618 0.0000000000
+v 16.5259149627 26.0355339059 0.0000000000 16.5259149627 26.0355339059 0.0000000000
+v 14.9037982186 27.1193976626 0.0000000000 14.9037982186 27.1193976626 0.0000000000
+v 12.9903810568 27.5000000000 0.0000000000 12.9903810568 27.5000000000 0.0000000000
+v 11.0769638950 27.1193976626 0.0000000000 11.0769638950 27.1193976626 0.0000000000
+v 9.4548471509 26.0355339059 0.0000000000 9.4548471509 26.0355339059 0.0000000000
+v 8.3709833942 24.4134171618 0.0000000000 8.3709833942 24.4134171618 0.0000000000
+v -4.6193976626 1.9134171618 0.0000000000 -4.6193976626 1.9134171618 0.0000000000
+v -5.0000000000 0.0000000000 0.0000000000 -5.0000000000 0.0000000000 0.0000000000
+v -4.6193976626 -1.9134171618 0.0000000000 -4.6193976626 -1.9134171618 0.0000000000
+v -3.5355339059 -3.5355339059 0.0000000000 -3.5355339059 -3.5355339059 0.0000000000
+v -1.9134171618 -4.6193976626 0.0000000000 -1.9134171618 -4.6193976626 0.0000000000
+v -0.0000000000 -5.0000000000 0.0000000000 -0.0000000000 -5.0000000000 0.0000000000
+v 25.9807621135 -5.0000000000 0.0000000000 25.9807621135 -5.0000000000 0.0000000000
+v 27.8941792753 -4.6193976626 0.0000000000 27.8941792753 -4.6193976626 0.0000000000
+v 29.5162960194 -3.5355339059 0.0000000000 29.5162960194 -3.5355339059 0.0000000000
+v 30.6001597761 -1.9134171618 0.0000000000 30.6001597761 -1.9134171618 0.0000000000
+v 30.9807621135 0.0000000000 0.0000000000 30.9807621135 0.0000000000 0.0000000000
+f 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21
+`.trim();
+
+        async function run() {
+            const renderer = initSharedRenderer();
+            document.body.appendChild(renderer.domElement);
+            renderer.domElement.style.pointerEvents = 'auto';
+
+            const scene = createScene();
+            scene.background = new THREE.Color(0x222222); 
+            
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+            camera.position.set(40, 40, 40);
+            camera.lookAt(0, 0, 0);
+
+            // Lighting
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dl = new THREE.DirectionalLight(0xffffff, 0.8);
+            dl.position.set(10, 10, 10);
+            scene.add(dl);
+
+            const viewportCanvas = document.getElementById('viewport');
+            registerViewport('test-triangle-offset', viewportCanvas, scene, camera);
+
+            console.log('[Test] Rendering Triangle Offset...');
+            await renderJotToScene(null, ZFS_DATA, scene);
+            
+            let frames = 0;
+            function animate() {
+                updateViewports();
+                frames++;
+                if (frames < 15) {
+                    requestAnimationFrame(animate);
+                } else {
+                    console.log('[Test] Render Complete');
+                    window.RENDER_COMPLETE = true;
+                }
+            }
+            animate();
+        }
+
+        run().catch(console.error);
+    </script>
+</body>
+</html>
