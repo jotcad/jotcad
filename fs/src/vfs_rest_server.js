@@ -137,7 +137,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
           return res.end('Missing peer id');
         }
 
-        const canReachDirect = await meshLink?.testReachability(peerUrl);
+        const canReachDirect = await meshLink?.probeDirectReachability(peerUrl);
 
         // Add as a StaticPeer if we can reach it, but do it in the background
         if (canReachDirect && peerUrl && !meshLink?.peers.has(peerId)) {

@@ -409,7 +409,7 @@ export class MeshLinkBase {
     }
   }
 
-  async testReachability(url) {
+  async probeDirectReachability(url) {
     if (!url) return false;
     try {
       const resp = await this.fetch(`${url.replace(/\/$/, '')}/health`, {
