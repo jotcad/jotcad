@@ -14,7 +14,10 @@ test('Agent-style Processors (as Providers)', async (t) => {
     const mesh = `Mesh(box, volume: ${volume})`;
     const bytes = new TextEncoder().encode(mesh);
     return new WebReadableStream({
-        start(c) { c.enqueue(bytes); c.close(); }
+      start(c) {
+        c.enqueue(bytes);
+        c.close();
+      },
     });
   });
 
@@ -30,9 +33,12 @@ test('Agent-style Processors (as Providers)', async (t) => {
     const match = meshData.match(/volume: (\d+)/);
     const volume = match ? match[1] : '0';
     const bytes = new TextEncoder().encode(volume);
-    
+
     return new WebReadableStream({
-        start(c) { c.enqueue(bytes); c.close(); }
+      start(c) {
+        c.enqueue(bytes);
+        c.close();
+      },
     });
   });
 
@@ -53,8 +59,8 @@ test('Agent-style Processors (as Providers)', async (t) => {
     // Wrap the box provider to track calls
     const originalProvider = vfs.providers.get('geometry/box');
     vfs.registerProvider('geometry/box', async (v, s, c) => {
-        boxComputeCount++;
-        return originalProvider(v, s, c);
+      boxComputeCount++;
+      return originalProvider(v, s, c);
     });
 
     // Request the same volume again

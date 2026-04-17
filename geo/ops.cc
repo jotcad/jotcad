@@ -49,8 +49,8 @@ int main(int argc, char** argv) {
     // Register all ops from the Processor registry into the VFS Node
     for (auto const& [path, op] : Processor::registry()) {
         std::cout << "[Ops Node] Registering VFS Op: " << path << std::endl;
-        node.register_op(path, [path](const VFSNode::VFSRequest& req) {
-            return Processor::registry()[path].logic(req.vfs, req.path, req.parameters, req.stack);
+        node.register_op(path, [&node, path](const VFSNode::VFSRequest& req) {
+            return Processor::registry()[path].logic(&node, req.path, req.parameters, req.stack);
         }, op.schema);
     }
 

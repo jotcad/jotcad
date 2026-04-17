@@ -34,11 +34,14 @@ test('AgentNode abstraction', async (t) => {
   await boxNode.start();
   await processNode.start();
 
-  await t.test('Node resolves inputs from other blackboard locations', async () => {
-    await vfs.writeData('config/box', { id: 'b1' }, { size: 10 });
-    const result = await vfs.readText('process/status', { id: 'b1' });
-    assert.strictEqual(result, 'Completed');
-  });
+  await t.test(
+    'Node resolves inputs from other blackboard locations',
+    async () => {
+      await vfs.writeData('config/box', { id: 'b1' }, { size: 10 });
+      const result = await vfs.readText('process/status', { id: 'b1' });
+      assert.strictEqual(result, 'Completed');
+    }
+  );
 
   await t.test('Node can reparameterize output writes', async () => {
     await vfs.writeData('config/box', { id: 'b2' }, { size: 20 });

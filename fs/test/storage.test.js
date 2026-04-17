@@ -25,7 +25,7 @@ test('VFS DiskStorage and Sessions', async (t) => {
     // Verify files exist on disk (.meta and .data)
     const files = fs.readdirSync(root);
     assert.ok(files.length >= 2, 'Should have at least meta and data files');
-    
+
     // Read it back
     const result = await vfs.readText('big-file');
     assert.strictEqual(result, content);

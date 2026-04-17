@@ -409,6 +409,18 @@ export class MeshLinkBase {
     }
   }
 
+  async testReachability(url) {
+    if (!url) return false;
+    try {
+      const resp = await this.fetch(`${url.replace(/\/$/, '')}/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
+      return resp.ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
   registerReversePeer(peerId, res, replyTo = null, stream = null) {
     if (replyTo && stream) {
       const resolve = this.reverseRegistry.replies.get(replyTo);

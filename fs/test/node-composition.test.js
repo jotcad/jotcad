@@ -22,14 +22,17 @@ test('Node with Parameter Composition', async (t) => {
 
   await compositionNode.start();
 
-  await t.test('read and write sockets correctly compose parameters', async () => {
-    // Write data with a 'trigger' parameter
-    await vfs.writeData('test/in', { base: 100, trigger: 2 }, 'data');
-    
-    // Read with the same 'trigger' parameter
-    const result = await vfs.readText('test/out', { trigger: 2 });
-    assert.strictEqual(result, 'composed-data');
-  });
+  await t.test(
+    'read and write sockets correctly compose parameters',
+    async () => {
+      // Write data with a 'trigger' parameter
+      await vfs.writeData('test/in', { base: 100, trigger: 2 }, 'data');
+
+      // Read with the same 'trigger' parameter
+      const result = await vfs.readText('test/out', { trigger: 2 });
+      assert.strictEqual(result, 'composed-data');
+    }
+  );
 
   compositionNode.stop();
   await vfs.close();

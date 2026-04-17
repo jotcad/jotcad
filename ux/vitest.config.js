@@ -7,7 +7,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     // This is needed for Solid.js to work correctly in Vitest
-    resolveSnapshotPath: (testPath, snapshotExtension) => testPath + snapshotExtension,
+    resolveSnapshotPath: (testPath, snapshotExtension) =>
+      testPath + snapshotExtension,
     server: {
       deps: {
         inline: [/solid-js/],
