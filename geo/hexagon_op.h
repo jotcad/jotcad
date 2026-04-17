@@ -1,67 +1,56 @@
 #pragma once
-#include "impl/processor.h"
+#include "impl/protocols.h"
 #include "impl/hexagon.h"
-#include "../../fs/cpp/include/vfs_node.h"
-#include <iostream>
+#include "impl/processor.h"
 
 namespace jotcad {
 namespace geo {
 
-static std::vector<uint8_t> hexagon_op_internal(jotcad::fs::VFSNode* vfs, double radius, const std::string& variant, const nlohmann::json& params) {
-    Geometry geo;
-    makeHexagon(geo, radius, variant);
-    
-    // 1. Write the raw mesh to a content-addressed location (geo/mesh)
-    std::string mesh_text = geo.encode_text();
-    std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
-    std::string hash = vfs->write_cid("geo/mesh", mesh_data);
+template <typename P = JotVfsProtocol>
+struct HexagonOp : P {
+    static constexpr const char* path = "jot/Hexagon/full";
 
-    // 2. Return the Shape JSON referencing the CID via a structured selector
-    nlohmann::json shape = {
-        {"geometry", {
-            {"path", "geo/mesh"},
-            {"parameters", {{"cid", hash}}}
-        }},
-        {"parameters", params},
-        {"tags", {{"type", "hexagon", {"variant", variant}}}}
-    };
-    std::string shape_text = shape.dump();
-    return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
-}
+    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<double>& diameter, const std::string& variant, Shape& out) {
+        std::vector<Shape> items;
+        for (double d : diameter) {
+            Geometry geo; makeHexagon(geo, d / 2.0, variant);
+            items.push_back(Shape::from_json(P::json::parse(P::write_shape(vfs, {{"d",d},{"v",variant}}, geo, {{"type","hexagon"},{"plane","Z0"}}))));
+        }
 
-static void hexagon_init() {
-    auto register_variant = [](const std::string& variant) {
-        Processor::Operation op;
-        op.path = "jot/Hexagon/" + variant;
-        op.logic = [variant](jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-            double radius = 0;
-            if (params.contains("diameter")) {
-                radius = params.at("diameter").get<double>() / 2.0;
-            } else if (params.contains("radius")) {
-                radius = params.at("radius").get<double>();
-            } else if (params.contains("apothem")) {
-                // d = 2 * a / cos(30) => r = a / cos(30)
-                radius = params.at("apothem").get<double>() / 0.86602540378;
-            }
-            return hexagon_op_internal(vfs, radius, variant, params);
-        };
-        op.schema = {
+        if (items.size() == 1) out = items[0];
+        else {
+            out.geometry = {"op/group", nlohmann::json::object()};
+            nlohmann::json items_json = nlohmann::json::array();
+            for (const auto& item : items) items_json.push_back(item.to_json());
+            out.geometry.parameters["items"] = items_json;
+        }
+    }
+
+    static std::vector<uint8_t> logic(jotcad::fs::VFSNode* vfs, const std::string& path, const typename P::json& params, const std::vector<std::string>& stack) {
+        auto diameter = Processor::decode<std::vector<double>>(vfs, "diameter", params, schema(), stack);
+        auto variant = Processor::decode<std::string>(vfs, "variant", params, schema(), stack);
+        
+        Shape out;
+        execute(vfs, diameter, variant, out);
+        return P::write_shape_obj(out);
+    }
+
+    static typename P::json schema() {
+        return {
             {"arguments", {
-                {"diameter", {{"type", "number"}}}
+                {"diameter", {{"type", "jot:numbers"}, {"default", 10}}},
+                {"variant", {{"type", "jot:string"}, {"default", "full"}}}
             }},
             {"inputs", {}},
             {"outputs", {
-                {"$out", {{"type", "shape"}}}
+                {"$out", {{"type", "jot:shape"}}}
             }}
         };
-        Processor::register_op(op);
-    };
+    }
+};
 
-    register_variant("full");
-    register_variant("half");
-    register_variant("middle");
-    register_variant("cap");
-    register_variant("sector");
+static void hexagon_init() {
+    Processor::register_op<HexagonOp<>>();
 }
 
 } // namespace geo

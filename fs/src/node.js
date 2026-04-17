@@ -51,13 +51,37 @@ export class Node {
             sockets[name] = {};
             if (def.mode === 'read') {
               sockets[name].read = async (overrideParams = {}) => {
-                return v.read(def.path, { ...def.parameters, ...selector.parameters, ...overrideParams }, context);
+                return v.read(
+                  def.path,
+                  {
+                    ...def.parameters,
+                    ...selector.parameters,
+                    ...overrideParams,
+                  },
+                  context
+                );
               };
               sockets[name].readData = async (overrideParams = {}) => {
-                return v.readData(def.path, { ...def.parameters, ...selector.parameters, ...overrideParams }, context);
+                return v.readData(
+                  def.path,
+                  {
+                    ...def.parameters,
+                    ...selector.parameters,
+                    ...overrideParams,
+                  },
+                  context
+                );
               };
               sockets[name].readText = async (overrideParams = {}) => {
-                return v.readText(def.path, { ...def.parameters, ...selector.parameters, ...overrideParams }, context);
+                return v.readText(
+                  def.path,
+                  {
+                    ...def.parameters,
+                    ...selector.parameters,
+                    ...overrideParams,
+                  },
+                  context
+                );
               };
             } else if (def.mode === 'write') {
               sockets[name].write = async (stream) => {
@@ -70,13 +94,15 @@ export class Node {
           }
 
           await this.execute(sockets);
-          
+
           const result = this._fulfilled.get(outDef.path);
           this._fulfilled.delete(outDef.path);
           return result;
-
         } catch (err) {
-          console.error(`[Node ${v.id}] Execution error for ${selector.path}:`, err);
+          console.error(
+            `[Node ${v.id}] Execution error for ${selector.path}:`,
+            err
+          );
           return null;
         }
       });

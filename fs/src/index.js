@@ -3,7 +3,7 @@ export {
   MemoryStorage,
   normalizeSelector,
   isMatch,
-  WebReadableStream
+  WebReadableStream,
 } from './vfs_core.js';
 export { VFS, DiskStorage, getCID } from './vfs_node.js';
 export { MeshLink } from './mesh_link.js';

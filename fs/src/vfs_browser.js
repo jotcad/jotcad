@@ -4,9 +4,8 @@ export const getCID = async (selector) => {
   const s = normalizeSelector(selector.path, selector.parameters);
   if (!s.path) throw new Error('Selector must have a path');
 
-  const msgUint8 = new TextEncoder().encode(
-    s.path + JSON.stringify(s.parameters)
-  );
+  // Standardize the JSON representation for hashing
+  const msgUint8 = new TextEncoder().encode(JSON.stringify(s));
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray
@@ -65,35 +64,37 @@ export class IndexedDBStorage {
     const expectedSize = info?.size;
 
     if (stream instanceof Uint8Array || stream instanceof Blob) {
-        blob = stream instanceof Blob ? stream : new Blob([stream]);
-        bytesReceived = blob.size;
+      blob = stream instanceof Blob ? stream : new Blob([stream]);
+      bytesReceived = blob.size;
     } else if (typeof stream === 'string') {
-        blob = new Blob([stream]);
-        bytesReceived = blob.size;
+      blob = new Blob([stream]);
+      bytesReceived = blob.size;
     } else if (stream && typeof stream.getReader === 'function') {
-        // Buffer the stream into a Blob
-        const reader = stream.getReader();
-        const chunks = [];
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                bytesReceived += value.length;
-            }
-            blob = new Blob(chunks);
-        } finally {
-            reader.releaseLock();
+      // Buffer the stream into a Blob
+      const reader = stream.getReader();
+      const chunks = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          bytesReceived += value.length;
         }
+        blob = new Blob(chunks);
+      } finally {
+        reader.releaseLock();
+      }
     } else {
-        // Fallback for raw data wrapped in an object or null
-        blob = new Blob([stream]);
-        bytesReceived = blob.size;
+      // Fallback for raw data wrapped in an object or null
+      blob = new Blob([stream]);
+      bytesReceived = blob.size;
     }
 
     // Size Verification
     if (expectedSize !== undefined && bytesReceived !== expectedSize) {
-        throw new Error(`Browser storage write aborted: Expected ${expectedSize} bytes, got ${bytesReceived}`);
+      throw new Error(
+        `Browser storage write aborted: Expected ${expectedSize} bytes, got ${bytesReceived}`
+      );
     }
 
     const db = await this._getDB();
@@ -136,28 +137,28 @@ export class IndexedDBStorage {
   }
 
   async *iterateMeta() {
-      const db = await this._getDB();
-      const transaction = db.transaction(this.storeName, 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      
-      const request = store.openCursor();
-      const results = await new Promise((resolve, reject) => {
-          const items = [];
-          request.onsuccess = (e) => {
-              const cursor = e.target.result;
-              if (cursor) {
-                  items.push({ cid: cursor.key, info: cursor.value.info });
-                  cursor.continue();
-              } else {
-                  resolve(items);
-              }
-          };
-          request.onerror = () => reject(request.error);
-      });
+    const db = await this._getDB();
+    const transaction = db.transaction(this.storeName, 'readonly');
+    const store = transaction.objectStore(this.storeName);
 
-      for (const item of results) {
-          yield item;
-      }
+    const request = store.openCursor();
+    const results = await new Promise((resolve, reject) => {
+      const items = [];
+      request.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          items.push({ cid: cursor.key, info: cursor.value.info });
+          cursor.continue();
+        } else {
+          resolve(items);
+        }
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    for (const item of results) {
+      yield item;
+    }
   }
 }
 
@@ -172,7 +173,9 @@ export class VFS extends CoreVFS {
     this.initialized = true;
 
     if (this.storage instanceof IndexedDBStorage) {
-      console.log(`[VFS ${this.id}] EPHEMERAL WIPE: Cleaning IndexedDB storage...`);
+      console.log(
+        `[VFS ${this.id}] EPHEMERAL WIPE: Cleaning IndexedDB storage...`
+      );
       const db = await this.storage._getDB();
       return new Promise((resolve, reject) => {
         const transaction = db.transaction(this.storage.storeName, 'readwrite');

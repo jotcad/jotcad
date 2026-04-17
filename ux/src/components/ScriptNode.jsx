@@ -72,23 +72,24 @@ export const ScriptNode = (props) => {
         const module = await import(/* @vite-ignore */ url);
         URL.revokeObjectURL(url);
 
-        if (!module.agent) throw new Error('Exported "agent" object not found.');
+        if (!module.agent)
+          throw new Error('Exported "agent" object not found.');
 
         // Instantiate and start the agent
         const agentDef = module.agent;
         activeAgent = new Node(vfs, agentDef);
         activeAgent.start();
-        
+
         // Announce sockets as LISTENING states
         for (const [name, socket] of Object.entries(agentDef.sockets || {})) {
-            const cid = await vfs.getCID({ path: socket.path, parameters: {} });
-            await vfs.receive({
-                cid,
-                path: socket.path,
-                parameters: {},
-                state: 'LISTENING',
-                source: `ui-agent:${name}`
-            });
+          const cid = await vfs.getCID({ path: socket.path, parameters: {} });
+          await vfs.receive({
+            cid,
+            path: socket.path,
+            parameters: {},
+            state: 'LISTENING',
+            source: `ui-agent:${name}`,
+          });
         }
 
         setIsRunning(true);
@@ -110,12 +111,18 @@ export const ScriptNode = (props) => {
       style={{
         transform: `translate(${pos().x}px, ${pos().y}px)`,
         width: '400px',
-        'z-index': 20
+        'z-index': 20,
       }}
     >
       <div class="flex justify-between items-center">
-        <div class="text-xs font-black uppercase tracking-tighter text-white/40">Jot Engine</div>
-        <div class={`w-2 h-2 rounded-full ${isRunning() ? 'bg-available animate-pulse' : 'bg-white/10'}`}></div>
+        <div class="text-xs font-black uppercase tracking-tighter text-white/40">
+          Jot Engine
+        </div>
+        <div
+          class={`w-2 h-2 rounded-full ${
+            isRunning() ? 'bg-available animate-pulse' : 'bg-white/10'
+          }`}
+        ></div>
       </div>
 
       <textarea
@@ -129,8 +136,8 @@ export const ScriptNode = (props) => {
         <button
           onClick={toggleAgent}
           class={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-            isRunning() 
-              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+            isRunning()
+              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
               : 'bg-provisioning text-black hover:bg-provisioning/80'
           }`}
         >

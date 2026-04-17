@@ -267,6 +267,20 @@ export function updateViewports() {
   });
 }
 
+const normalizeId = (id) => {
+  if (typeof id === 'string') return id;
+  if (id && typeof id === 'object' && id.path) {
+    const params = id.parameters || {};
+    // Sort keys for deterministic JSON
+    const sortedParams = Object.keys(params).sort().reduce((acc, key) => {
+      acc[key] = params[key];
+      return acc;
+    }, {});
+    return id.path + '?' + JSON.stringify(sortedParams);
+  }
+  return JSON.stringify(id);
+};
+
 class JOTAssets {
   constructor(vfs) {
     this.vfs = vfs;
@@ -286,23 +300,32 @@ class JOTAssets {
       offset += len;
       if (text[offset] === '\n') offset++;
       if (name.startsWith('files/')) this.main = JSON.parse(content);
-      else if (name.startsWith('assets/text/')) this.cache.set(name.substring('assets/text/'.length), content);
+      else if (name.startsWith('assets/text/')) {
+        const id = name.substring('assets/text/'.length);
+        // We don't normalize here because the ZFS should already be in normalized format
+        // OR we can normalize the name if it's a URL-style string
+        this.cache.set(id, content);
+      }
     }
     return this.main;
   }
   async getText(id) {
-    let cacheKey = id;
-    if (typeof id === 'object' && id.path) {
-       cacheKey = id.path + (id.parameters ? '?' + JSON.stringify(id.parameters) : '');
-    }
+    const cacheKey = normalizeId(id);
     if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+    
+    // Attempt fallback to URL-style if JSON-style fails (for legacy or manual ZFS)
+    if (typeof id === 'object' && id.path && id.parameters) {
+        const urlKey = id.path + '?' + new URLSearchParams(id.parameters).toString();
+        if (this.cache.has(urlKey)) return this.cache.get(urlKey);
+    }
+
     if (!this.vfs) return null;
     try {
       if (typeof id === 'object' && id.path) {
         const data = await this.vfs.readData(id.path, id.parameters);
         if (data) {
           const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
-          this.cache.set(id, text);
+          this.cache.set(cacheKey, text);
           return text;
         }
       }
@@ -321,7 +344,7 @@ export async function packZFS(vfs, shape) {
       const path = g.path || (typeof g === 'string' ? g : null);
       const params = g.parameters || {};
       if (path) {
-        const id = path + '?' + JSON.stringify(params);
+        const id = normalizeId({ path, parameters: params });
         if (!assets.has(id)) {
           try {
             const text = await vfs.readText(path, params);

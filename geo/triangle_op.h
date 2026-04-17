@@ -1,110 +1,55 @@
 #pragma once
-#include "impl/processor.h"
+#include "impl/protocols.h"
 #include "impl/triangle.h"
-#include <iostream>
-#include <cmath>
-#include <algorithm>
+#include "impl/processor.h"
 
 namespace jotcad {
 namespace geo {
 
-static std::vector<uint8_t> triangle_op_internal(jotcad::fs::VFSNode* vfs, double a, double b, double c, const nlohmann::json& params) {
-    Geometry geo;
-    makeTriangle(geo, a, b, c);
+template <typename P = JotVfsProtocol>
+struct TriangleOp : P {
+    static constexpr const char* path = "jot/Triangle/equilateral";
 
-    // 1. Write raw mesh to content-addressed store
-    std::string mesh_text = geo.encode_text();
-    std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
-    std::string hash = vfs->write_cid("geo/mesh", mesh_data);
+    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<double>& diameter, Shape& out) {
+        std::vector<Shape> items;
+        for (double d : diameter) {
+            Geometry geo; makeTriangle(geo, d, d, d);
+            double h = (d * 0.86602540378);
+            for (auto& v : geo.vertices) { v.x -= d / 2.0; v.y -= h / 3.0; }
+            items.push_back(Shape::from_json(P::json::parse(P::write_shape(vfs, {{"d",d}}, geo, {{"type","triangle"},{"plane","Z0"}}))));
+        }
 
-    // 2. Return Shape JSON referencing the CID via structured selector
-    nlohmann::json shape = {
-        {"geometry", {
-            {"path", "geo/mesh"},
-            {"parameters", {{"cid", hash}}}
-        }},
-        {"parameters", params},
-        {"tags", {{"type", "triangle"}}}
-    };
-    std::string shape_text = shape.dump();
-    return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
-}
+        if (items.size() == 1) out = items[0];
+        else {
+            out.geometry = {"op/group", nlohmann::json::object()};
+            nlohmann::json items_json = nlohmann::json::array();
+            for (const auto& item : items) items_json.push_back(item.to_json());
+            out.geometry.parameters["items"] = items_json;
+        }
+    }
+
+    static std::vector<uint8_t> logic(jotcad::fs::VFSNode* vfs, const std::string& path, const typename P::json& params, const std::vector<std::string>& stack) {
+        auto diameter = Processor::decode<std::vector<double>>(vfs, "diameter", params, schema(), stack);
+        Shape out;
+        execute(vfs, diameter, out);
+        return P::write_shape_obj(out);
+    }
+
+    static typename P::json schema() {
+        return {
+            {"arguments", {
+                {"diameter", {{"type", "jot:numbers"}, {"default", 10}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {
+                {"$out", {{"type", "jot:shape"}}}
+            }}
+        };
+    }
+};
 
 static void triangle_init() {
-    // 1. SSS
-    {
-        Processor::Operation op;
-        op.path = "jot/Triangle/sss";
-        op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-            double a = params.at("a").get<double>();
-            double b = params.at("b").get<double>();
-            double c = params.at("c").get<double>();
-            return triangle_op_internal(vfs, a, b, c, params);
-        };
-        op.schema = {
-            {"arguments", {
-                {"a", {{"type", "number"}}},
-                {"b", {{"type", "number"}}},
-                {"c", {{"type", "number"}}}
-            }},
-            {"inputs", {}},
-            {"outputs", {
-                {"$out", {{"type", "shape"}}}
-            }}
-        };
-        Processor::register_op(op);
-    }
-
-    // 2. SAS
-    {
-        Processor::Operation op;
-        op.path = "jot/Triangle/sas";
-        op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-            double a = params.at("a").get<double>();
-            double b = params.at("b").get<double>();
-            double angle_rad = params.at("angle").get<double>() * M_PI / 180.0;
-            double c = std::sqrt(a*a + b*b - 2*a*b*std::cos(angle_rad));
-            return triangle_op_internal(vfs, a, b, c, params);
-        };
-        op.schema = {
-            {"arguments", {
-                {"a", {{"type", "number"}}},
-                {"angle", {{"type", "number"}}},
-                {"b", {{"type", "number"}}}
-            }},
-            {"inputs", {}},
-            {"outputs", {
-                {"$out", {{"type", "shape"}}}
-            }}
-        };
-        Processor::register_op(op);
-    }
-
-    // 3. Equilateral
-    {
-        Processor::Operation op;
-        op.path = "jot/Triangle/equilateral";
-        op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-            double side = 0;
-            if (params.contains("diameter")) {
-                // For equilateral triangle, diameter (circumcircle) d = side / sin(60) => side = d * sin(60)
-                side = params.at("diameter").get<double>() * std::sin(M_PI / 3.0);
-            } else if (params.contains("side")) {
-                side = params.at("side").get<double>();
-            }
-            return triangle_op_internal(vfs, side, side, side, params);
-        };
-        op.schema = {
-            {"arguments", {
-                {"diameter", {{"type", "number"}}}
-            }},
-            {"inputs", {}},
-            {"outputs", {
-                {"$out", {{"type", "shape"}}}
-            }}
-        };
-        Processor::register_op(op);
-    }
+    Processor::register_op<TriangleOp<>>();
 }
 
 } // namespace geo

@@ -8,7 +8,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const activeListeners = new Set();
 
   const handleRequest = async (req, res) => {
-    console.log(`[VFS Server] Incoming Request: ${req.method} ${req.url}`);
+    const timestamp = new Date().toISOString();
     // Add CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -24,12 +24,13 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
     const url = new URL(req.url, `http://${req.headers.host}`);
 
-    if (!url.pathname.startsWith(prefix)) return;
+    if (!url.pathname.startsWith(prefix)) {
+      console.log(`[${timestamp}] [VFS Server] ?? ${req.method} ${url.pathname} (Unrouted)`);
+      return;
+    }
 
     const vfsPath = url.pathname.slice(prefix.length);
-    console.log(
-      `[VFS Server] Request: ${req.method} '${vfsPath}' (Path: '${url.pathname}', Prefix: '${prefix}')`
-    );
+    console.log(`[${timestamp}] [VFS Server] -> ${req.method} ${vfsPath}`);
 
     const getBody = () =>
       new Promise((resolve) => {

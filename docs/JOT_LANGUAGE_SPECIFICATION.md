@@ -161,7 +161,37 @@ is encountered.
 - **`jots`**: Contiguous VFS Selectors and nested expression sequences into an array.
 - **`tags(whitelist)`**: Contiguous symbols/strings into a boolean map.
 
-## 4. The Workbench Principle (Alignment)
+## 4. Higher-Order Provider Interface (C++)
+
+C++ Operators utilize **Typed Port Injection** to maintain architectural purity. Instead of raw JSON manipulation, operators interact with a formal **Shape** struct.
+
+### 4.1. The Shape Container
+
+```cpp
+struct Shape {
+    Selector geometry;          // VFS path + parameters
+    std::vector<double> tf;     // 4x4 Affine Matrix
+    nlohmann::json tags;        // Semantic metadata
+    std::vector<Shape> components; // Hierarchical items
+};
+```
+
+### 4.2. Port Mapping
+
+The `Processor` automatically bridges the VFS JSON to the `execute()` signature:
+
+- **Input Ports:** Labeled `$in` in schema; resolved via `vfs->read<json>` and injected as `const Shape&` or `const std::vector<Shape>&`.
+- **Output Ports:** Labeled `$out` or custom sink names; injected as mutable references (e.g., `Shape& out`).
+- **Literal Arguments:** Decoded directly into `double`, `std::string`, or `std::vector<double>`.
+
+### 4.3. Standard Operator Lifecycle
+
+1. **Unwrap:** Resolve the nested `geometry` selector within the input Shape.
+2. **Transform:** Apply the `tf` matrix to bring geometry into world-space.
+3. **Execute:** Perform the kernel logic.
+4. **Re-package:** Generate new geometry CIDs and return a fresh Shape with identity `tf`.
+
+## 5. The Workbench Principle (Alignment)
 
 To enable "Blind Coupling" of disparate shapes, the language enforces a standard
 **Fundamental Alignment** for all geometric features.
@@ -183,6 +213,24 @@ All logical anchors (`corners`, `edges`, `faces`) are normalized to this frame:
 - **Y-Axis:** The **Secondary Direction**. (Tangent to the path or surface).
 - **Z-Axis:** The **Normal Direction**. (Pointing "Up" or "Out" from the
   material).
+
+### 4.3. Planar Canonicalization (The `Z0` Contract)
+
+To ensure high-performance 2D operations (Clipper, Arrangement) can operate on 
+arbitrarily oriented shapes in 3D space, JotCAD enforces a **Planar Contract**:
+
+- **Local Z-Invariant:** All 2D geometry (Shapes, Paths) MUST be stored in a 
+  canonical "Local XY" state where all vertex $Z$ coordinates are strictly `0.0`.
+- **The `plane: "Z0"` Tag:** This explicit tag in the Shape JSON signals that 
+  the geometry adheres to the Planar Contract.
+- **Dispatching:** Operators like `.offset()` and `.fill()` check for this tag. 
+  If present, they perform fast 2D calculations on the local coordinates, 
+  ignoring the world transform (`tf`).
+- **World Placement:** The transformation matrix (`tf`) handles the rotation and 
+  translation of the canonical $Z=0$ mesh into its 3D world position.
+
+**Mandate:** 2D constructors (`Arc`, `Triangle`, 2D `Box`) MUST emit the 
+`plane: "Z0"` tag and ensure their internal mesh is $Z=0$.
 
 ## 5. Identity and Attributes
 

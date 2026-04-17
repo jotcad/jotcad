@@ -34,24 +34,34 @@ local CID mapping.
 
 ## 2. Peer-to-Peer Protocol (Routing)
 
-The VFS operates as a **Bread-crumb Mesh**. There is no central Hub or Single
-Point of Failure.
+### 2.1 Formal Links (Unambiguous Aliasing)
 
-### 2.1 Recursive Bread-crumb READ (`POST /read`)
+The VFS supports **Formal Links**, a mechanism for aliasing one Selector to another. This is used for parametric standardization and canonical coordinate mapping.
 
-When a peer requests data that is not available in its local storage or local
-providers, it performs a mesh search:
+- **Link Definition:** A Link is a local artifact whose metadata contains a `target` Selector and whose state is marked as `LINKED`.
+- **Recursive Resolution:** When `vfs.read()` encounters a `LINKED` artifact, it recursively initiates a new `read` for the `target` Selector.
+- **Loop Protection:** Recursion is limited to a maximum depth (default: 10) to prevent infinite aliasing loops.
+- **Content Pointer:** The data payload of a Link typically contains a fallback text pointer (e.g., `vfs:/path/to/target`) for environments that do not support metadata resolution.
 
-1.  **Stack Creation:** The requester appends its own URL to a `stack` array.
-2.  **Parallel Forwarding:** The request is sent to all known neighbors.
-3.  **Loop Prevention:** A node receiving a request checks if its own URL is in
-    the `stack`. If so, it returns a 404 to block the loop.
-4.  **Auto-Peering:** A node "learns" the address of its immediate sender from
-    the stack and adds it to its local neighbors list, creating a symmetric
-    connection dynamically.
-5.  **Synchronous Fulfillment:** The provider writes the data to the HTTP
-    response body. Intermediate nodes pipe this stream back to the requester
-    while simultaneously caching it locally.
+### 2.2 Recursive Bread-crumb READ (`POST /read`)
+
+The `read` operation is the primary mechanism for demand-driven data retrieval.
+
+- **Unambiguous Signaling (Throwing Model):** A `read` MUST either return the requested data with a `200 OK` or fail with an explicit HTTP error code. 
+- **Error Format:** Failures are returned as JSON objects with `type: "sys/error"`.
+  - `404 Not Found`: Artifact does not exist in the mesh.
+  - `408 Request Expired`: The `expiresAt` timestamp has passed.
+  - `400 Bad Request`: Validation failure or routing loop detected.
+  - `508 Loop Detected`: Recursive link depth exceeded.
+
+### 2.3 Long-Polling Reverse Connections
+
+To prevent "Hot Loop" flooding, reverse connection providers use long-polling.
+
+- **Blocking Wait:** The server MUST hold a `/listen` request open until a command is available or a timeout occurs (default: 30s).
+- **Timeout Response:** If no command is available within the timeout period, the server MUST return `204 No Content`. Requesters SHOULD immediately re-initiate the `/listen` request.
+- **Notification Enqueuing:** Notifications for reverse peers are enqueued as `NOTIFY` commands in the same queue as `READ` commands.
+
 
 ### 2.2 Demand-Driven Work
 

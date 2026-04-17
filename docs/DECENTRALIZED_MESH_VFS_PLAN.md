@@ -146,7 +146,10 @@ implements a **Hop-by-Hop Pub-Sub** system.
 | **Stream Integrity**     | [DONE] | Partial/Corrupted stream detection via Content-Length. |
 | **Path Specialization**  | [DONE] | Refactored generic shapes into specialized sub-paths.  |
 | **Handshake Protocol**   | [DONE] | Symmetric peer discovery and reachability negotiation. |
-| **Mesh Pulse (Pub-Sub)** | [TODO] | Real-time status propagation and UX visualization.     |
+| **Mesh Pulse (Pub-Sub)** | [DONE] | Event-driven notifications with long-poll pooling.    |
+| **Throwing VFS Core**    | [DONE] | Unambiguous error signaling via VFSException.          |
+| **Formal Links**         | [DONE] | Recursive alias resolution for standardization.        |
+| **Typed Port Injection** | [DONE] | C++ operators use formal Shape struct and execute().   |
 
 ## 8. Aspirational Goals
 

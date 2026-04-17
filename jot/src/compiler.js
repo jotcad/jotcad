@@ -90,7 +90,7 @@ export class JotCompiler {
           currentSubject
         );
       }
-      result = this.applySequencePrinciple(node.path, resolvedParams, node.schema);
+      result = normalizeSelector(node.path, resolvedParams);
     } else {
       result = {};
       for (const [k, v] of Object.entries(node)) {
@@ -139,7 +139,7 @@ export class JotCompiler {
       resolvedParams[inputKey] = currentSubject;
     }
 
-    const result = this.applySequencePrinciple(path, resolvedParams, schema);
+    const result = normalizeSelector(path, resolvedParams);
 
     if (this.vfs && !Array.isArray(result) && returns?.type === 'array') {
       const data = await this.vfs.readData(result.path, result.parameters);
@@ -198,7 +198,7 @@ export class JotCompiler {
       resolvedParams.$in = [subject, ...args];
     }
 
-    const result = this.applySequencePrinciple(path, resolvedParams, schema);
+    const result = normalizeSelector(path, resolvedParams);
 
     const isAlias = op?.metadata?.aliases?.['$out'] === '$in';
     if (this.options.optimizeAliases && isAlias) {
@@ -212,46 +212,36 @@ export class JotCompiler {
     return result;
   }
 
+  /**
+   * Namespaced Type Matching (jot:number, jot:shape, etc.)
+   */
   _matchType(val, type) {
     if (!type) return true;
     const t = type.toLowerCase();
 
-    // 1. Numeric Consumers (num, nums, number)
-    if (t === 'num' || t === 'nums' || t === 'number') {
-      return typeof val === 'number';
-    }
+    // 1. Scalar Matchers (Consume 1)
+    if (t === 'jot:number') return typeof val === 'number';
+    if (t === 'jot:string') return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
+    if (t === 'jot:boolean') return typeof val === 'boolean';
+    if (t === 'jot:shape') return typeof val === 'object' && val !== null && val.path;
 
-    // 2. String Consumers (str, string, tags)
-    if (t === 'str' || t === 'string' || t === 'tags') {
-      return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
-    }
+    // 2. Plural Matchers (Consume All - matching element-wise)
+    if (t === 'jot:numbers') return typeof val === 'number';
+    if (t === 'jot:strings') return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
+    if (t === 'jot:booleans') return typeof val === 'boolean';
+    if (t === 'jot:shapes') return typeof val === 'object' && val !== null && val.path;
 
-    // 3. Boolean Consumers (bool, boolean)
-    if (t === 'bool' || t === 'boolean') {
-      return typeof val === 'boolean';
-    }
-
-    // 4. VFS/Selector Consumers (jot, jots, shape, geometry, selector)
-    if (t === 'jot' || t === 'jots' || t === 'shape' || t === 'geometry' || t === 'selector') {
-      return typeof val === 'object' && val !== null && val.path;
-    }
-
-    // 5. Structural Consumers (vec3, intv, array)
-    if (t === 'vec3') {
-      return Array.isArray(val) && val.length === 3 && val.every(v => typeof v === 'number');
-    }
-    if (t === 'intv') {
-      return typeof val === 'number' || (Array.isArray(val) && val.length === 2);
-    }
-    if (t === 'array') {
-      return Array.isArray(val);
-    }
+    // 3. Legacy / Internal types (can be namespaced later if needed)
+    if (t === 'vec3') return Array.isArray(val) && val.length === 3 && val.every(v => typeof v === 'number');
+    if (t === 'intv') return typeof val === 'number' || (Array.isArray(val) && val.length === 2);
+    if (t === 'array') return Array.isArray(val);
 
     return true;
   }
 
   /**
    * Map positional arguments to property names based on JSON Schema.
+   * Logic: Scalar-takes-1, Greedy-Plural-takes-All.
    */
   mapArguments(args, schema, opName, hasSubject = false) {
     let parameters = {};
@@ -278,34 +268,28 @@ export class JotCompiler {
         const config = propConfigs[i];
         const t = config.type ? config.type.toLowerCase() : '';
 
-        // If method call, skip the first 'jot' slot for subject
-        if (!subjectSkipped && (t === 'jot' || t === 'shape' || t === 'selector' || t === 'jots')) {
+        // If method call, skip the first 'jot:shape' slot for subject
+        if (!subjectSkipped && (t === 'jot:shape' || t === 'jot:shapes')) {
           subjectSkipped = true;
           continue;
         }
 
         if (argIndex >= args.length) continue;
 
-        const isGreedy = t === 'nums' || t === 'jots' || t === 'tags';
+        const isGreedy = t.endsWith('s') && t.startsWith('jot:');
+        
         if (isGreedy) {
           const matching = [];
+          // Consume all contiguous arguments that match the element type
           while (argIndex < args.length && this._matchType(args[argIndex], t)) {
             matching.push(args[argIndex]);
             argIndex++;
           }
           if (matching.length > 0) {
-            if (t === 'tags') {
-              const tagMap = {};
-              matching.forEach(tag => {
-                const key = (typeof tag === 'object' && tag.type === 'SYMBOL') ? tag.name : tag;
-                tagMap[key] = true;
-              });
-              parameters[name] = tagMap;
-            } else {
-              parameters[name] = matching;
-            }
+            parameters[name] = matching;
           }
         } else {
+          // Scalar slot: Match 1
           const val = args[argIndex];
           if (this._matchType(val, t)) {
             if (t === 'intv' && typeof val === 'number') {
@@ -342,52 +326,6 @@ export class JotCompiler {
     }
 
     return parameters;
-  }
-
-  applySequencePrinciple(path, parameters, schema) {
-    const argDefs = schema?.arguments || schema?.properties || {};
-
-    const sequenceKeys = Object.keys(parameters).filter((k) => {
-      const val = parameters[k];
-      if (!Array.isArray(val)) return false;
-      
-      // Never expand VFS selectors (jots) as they are the items themselves
-      if (val.length > 0 && val[0]?.path) return false;
-
-      // Check schema: skip structural types that are represented as arrays
-      const type = argDefs[k]?.type?.toLowerCase() || '';
-      if (type === 'vec3' || type === 'intv' || type === 'tags') return false;
-
-      // Greedy consumers (nums, jots) already harvested their arrays, don't re-expand
-      if (type === 'nums' || type === 'jots') return false;
-
-      return true;
-    });
-
-    if (sequenceKeys.length === 0) {
-      return normalizeSelector(path, parameters);
-    }
-
-    let combos = [{}];
-    for (const [k, v] of Object.entries(parameters)) {
-      if (!sequenceKeys.includes(k)) {
-        combos[0][k] = v;
-      }
-    }
-
-    for (const key of sequenceKeys) {
-      const nextCombos = [];
-      for (const combo of combos) {
-        const vals = parameters[key];
-        for (const val of vals) {
-          nextCombos.push({ ...combo, [key]: val });
-        }
-      }
-      combos = nextCombos;
-    }
-
-    const selectors = combos.map((p) => normalizeSelector(path, p));
-    return selectors.length === 1 ? selectors[0] : selectors;
   }
 
   flatten(arr) {

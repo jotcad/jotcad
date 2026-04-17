@@ -31,32 +31,20 @@ content-addressable storage.
 
 ## Development
 
-### Building C++ Geometry Agents
+### Building C++ Geometry Ops Node
 
-The native geometry kernels (Hexagon, Box, PDF, etc.) must be compiled to the
-`geo/bin/ops` binary:
+The native geometry kernels (Hexagon, Box, Offset, etc.) are implemented as a unified C++ VFS Node. Compile the source into the `geo/bin/ops` binary:
 
 ```bash
 cd geo && ./build.sh && cd ..
 ```
 
-### Registering Native Agents
-
-When adding or updating native agents, ensure they are registered in the
-`Dispatcher` within `start_all.sh`. This maps VFS paths to the `ops` binary
-execution:
-
-- `shape/box` -> `box_agent`
-- `shape/hexagon` -> `hexagon_agent`
-- `shape/triangle` -> `triangle_agent`
-- `op/pdf` -> `pdf_agent`
-
 ### Starting the System
 
-Run the orchestration script to start the VFS Hub, C++ Dispatcher, and UX:
+Run the orchestration script to start the Peer Nodes (VFS Hub, Ops Node, Export Node) and the UX:
 
 ```bash
-./start_all.sh
+npm start
 ```
 
 ## Documentation

@@ -87,13 +87,18 @@ export class DiskSandbox {
     const fullPath = path.join(this.root, filename);
     await fsPromises.mkdir(path.dirname(fullPath), { recursive: true });
 
-    if (content.getReader || (typeof content === 'object' && content !== null && content[Symbol.asyncIterator])) {
-        const bytes = await this._toUint8Array(content);
-        await fsPromises.writeFile(fullPath, bytes);
+    if (
+      content.getReader ||
+      (typeof content === 'object' &&
+        content !== null &&
+        content[Symbol.asyncIterator])
+    ) {
+      const bytes = await this._toUint8Array(content);
+      await fsPromises.writeFile(fullPath, bytes);
     } else if (typeof content === 'string' || content instanceof Uint8Array) {
-        await fsPromises.writeFile(fullPath, content);
+      await fsPromises.writeFile(fullPath, content);
     } else {
-        await fsPromises.writeFile(fullPath, JSON.stringify(content));
+      await fsPromises.writeFile(fullPath, JSON.stringify(content));
     }
   }
 
@@ -119,9 +124,9 @@ export class DiskSandbox {
     }
 
     if (typeof content[Symbol.asyncIterator] === 'function') {
-        const chunks = [];
-        for await (const chunk of content) chunks.push(chunk);
-        return Buffer.concat(chunks);
+      const chunks = [];
+      for await (const chunk of content) chunks.push(chunk);
+      return Buffer.concat(chunks);
     }
 
     return new TextEncoder().encode(JSON.stringify(content));

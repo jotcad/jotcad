@@ -5,6 +5,15 @@
 namespace jotcad {
 namespace geo {
 
+static void makeRectangle(Geometry& geo, double w, double h) {
+    geo.vertices = {
+        {0, 0, 0}, {w, 0, 0}, {w, h, 0}, {0, h, 0}
+    };
+    geo.faces = {
+        {{{0, 1, 2, 3}}}
+    };
+}
+
 static void makeBox(Geometry& geo, double w, double h, double d) {
     geo.vertices = {
         {0, 0, 0}, {w, 0, 0}, {w, h, 0}, {0, h, 0},

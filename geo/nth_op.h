@@ -1,49 +1,63 @@
 #pragma once
+#include "impl/protocols.h"
 #include "impl/processor.h"
-#include "impl/geometry.h"
-#include <vector>
 
 namespace jotcad {
 namespace geo {
 
-static void nth_init() {
-    Processor::Operation op;
-    op.path = "jot/nth";
-    op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        std::cout << "[Nth Op] Filtering sequence..." << std::endl;
+template <typename P = JotVfsProtocol>
+struct NthOp : P {
+    static constexpr const char* path = "jot/nth";
+
+    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<Shape>& in, const std::vector<double>& indices, Shape& out) {
+        std::vector<Shape> results;
+        for (double idx_d : indices) {
+            int idx = (int)idx_d;
+            if (idx >= 0 && idx < (int)in.size()) {
+                results.push_back(in[idx]);
+            } else {
+                throw jotcad::fs::VFSException("Index out of bounds in nth: " + std::to_string(idx), 400);
+            }
+        }
+
+        if (results.size() == 1) out = results[0];
+        else {
+            // Wrap in op/group shape
+            out.geometry = {"op/group", nlohmann::json::object()};
+            nlohmann::json items = nlohmann::json::array();
+            for (const auto& r : results) items.push_back(r.to_json());
+            out.geometry.parameters["items"] = items;
+        }
+    }
+
+    static std::vector<uint8_t> logic(jotcad::fs::VFSNode* vfs, const std::string& path, const typename P::json& params, const std::vector<std::string>& stack) {
+        auto in = Processor::decode<std::vector<Shape>>(vfs, "$in", params, schema(), stack);
+        auto indices = Processor::decode<std::vector<double>>(vfs, "indices", params, schema(), stack);
         
-        auto in_selector = params.at("$in");
-        jotcad::fs::VFSNode::VFSRequest in_req;
-        in_req.path = in_selector["path"];
-        in_req.parameters = in_selector.value("parameters", nlohmann::json::object());
-        in_req.stack = stack;
-        auto shape_bytes = vfs->read(in_req);
-        if (shape_bytes.empty()) return std::vector<uint8_t>();
+        Shape out;
+        execute(vfs, in, indices, out);
+        
+        return P::write_shape_obj(out);
+    }
 
-        // For Nth, if the input is already a sequence (Group/Array), we pick members.
-        // If it's a single shape, we pick from its internal components if they exist.
-        nlohmann::json in_shape = nlohmann::json::parse(std::string(shape_bytes.begin(), shape_bytes.end()));
-        auto indices = params.at("indices").get<std::vector<int>>();
+    static typename P::json schema() {
+        return {
+            {"arguments", {
+                {"$in", {{"type", "jot:shapes"}}},
+                {"indices", {{"type", "jot:numbers"}, {"default", 0}}}
+            }},
+            {"inputs", {
+                {"$in", {{"type", "shapes"}}}
+            }},
+            {"outputs", {
+                {"$out", {{"type", "jot:shape"}}}
+            }}
+        };
+    }
+};
 
-        // TODO: Implement proper sequence filtering. 
-        // For now, return the original shape as a pass-through if index 0 is requested.
-        for (int idx : indices) if (idx == 0) return shape_bytes;
-
-        return std::vector<uint8_t>();
-    };
-    op.schema = {
-        {"arguments", {
-            {"$in", {{"type", "shape"}}},
-            {"indices", {{"type", "array"}, {"items", {{"type", "integer"}}}}}
-        }},
-        {"inputs", {
-            {"$in", {{"type", "shape"}}}
-        }},
-        {"outputs", {
-            {"$out", {{"type", "shape"}}}
-        }}
-    };
-    Processor::register_op(op);
+static void nth_init() {
+    Processor::register_op<NthOp<>>();
 }
 
 } // namespace geo
