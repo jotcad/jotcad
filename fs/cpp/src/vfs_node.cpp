@@ -251,6 +251,7 @@ bool VFSNode::validate_selector(const VFSRequest& req, std::string& error_out) {
 }
 
 std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req, int depth) {
+    std::cout << "[VFS " << config_.id << "] READ: " << req.path << " " << req.parameters.dump() << " (depth: " << depth << ")" << std::endl;
     if (depth > 10) throw VFSException("Recursive link depth exceeded", 508);
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     if (req.expiresAt > 0 && now > req.expiresAt) throw VFSException("VFS Request Expired", 408);
@@ -291,12 +292,14 @@ std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req, int depth) {
 }
 
 void VFSNode::write(const std::string& path, const json& parameters, const std::vector<uint8_t>& data) {
+    std::cout << "[VFS " << config_.id << "] WRITE: " << path << " " << parameters.dump() << " (" << data.size() << " bytes)" << std::endl;
     write_local(get_cid(path, parameters), data, path, parameters);
 }
 
 std::string VFSNode::write_cid(const std::string& path, const std::vector<uint8_t>& data) {
     std::string hash = vfs_hash256(data);
     json parameters = {{"cid", hash}};
+    std::cout << "[VFS " << config_.id << "] WRITE_CID: " << path << " cid=" << hash << std::endl;
     write_local(get_cid(path, parameters), data, path, parameters);
     return hash;
 }
@@ -329,6 +332,7 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
 
 void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params) {
     if (config_.storage_dir.empty()) return;
+    std::cout << "[VFS " << config_.id << "] Persisting local CID: " << cid << " for " << path << std::endl;
     std::lock_guard<std::mutex> lock(storage_mutex_);
     std::ofstream os(std::filesystem::path(config_.storage_dir) / (cid + ".data"), std::ios::binary);
     os.write((const char*)data.data(), data.size());

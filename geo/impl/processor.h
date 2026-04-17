@@ -35,19 +35,61 @@ public:
         registry()[path] = op;
     }
 
-    static void register_op(const Operation& op) {
+    /**
+     * UNIFIED DISPATCHER (The Bridge)
+     * Maps argument_keys() from the request JSON to the execute() signature.
+     * Supports additional 'bound_args' for internal variants.
+     */
+    template <typename Op, typename... T, typename... Bound>
+    static std::vector<uint8_t> logic_wrapper(jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack, Bound&&... bound_args) {
+        auto keys = Op::argument_keys();
+        auto schema = Op::schema();
+        Shape out;
+        
+        std::cout << "[Processor] Logic Wrapper: " << path << " with " << sizeof...(T) << " args" << std::endl;
+
+        try {
+            // Specialize for common patterns (In + Bound + Out)
+            if constexpr (sizeof...(T) == 1) {
+                auto a1 = decode<typename std::tuple_element<0, std::tuple<T...>>::type>(vfs, keys[0], params, schema, stack);
+                Op::execute(vfs, a1, std::forward<Bound>(bound_args)..., out);
+            } else if constexpr (sizeof...(T) == 2) {
+                auto a1 = decode<typename std::tuple_element<0, std::tuple<T...>>::type>(vfs, keys[0], params, schema, stack);
+                auto a2 = decode<typename std::tuple_element<1, std::tuple<T...>>::type>(vfs, keys[1], params, schema, stack);
+                Op::execute(vfs, a1, a2, std::forward<Bound>(bound_args)..., out);
+            } else if constexpr (sizeof...(T) == 3) {
+                auto a1 = decode<typename std::tuple_element<0, std::tuple<T...>>::type>(vfs, keys[0], params, schema, stack);
+                auto a2 = decode<typename std::tuple_element<1, std::tuple<T...>>::type>(vfs, keys[1], params, schema, stack);
+                auto a3 = decode<typename std::tuple_element<2, std::tuple<T...>>::type>(vfs, keys[2], params, schema, stack);
+                Op::execute(vfs, a1, a2, a3, std::forward<Bound>(bound_args)..., out);
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[Processor] FATAL: Op " << path << " failed: " << e.what() << std::endl;
+            throw;
+        }
+        
+        std::cout << "[Processor] Op " << path << " finished successfully" << std::endl;
+        return JotVfsProtocol::write_shape_obj(out);
+    }
+
+    /**
+     * THE PRIMARY REGISTRATION PATH
+     * T... are the types of the arguments (including inputs) BEFORE the output Shape& references.
+     */
+    template <typename Op, typename... T>
+    static void register_op(const std::string& path_override, const json& override_schema = json()) {
+        Operation op;
+        op.path = path_override;
+        op.schema = override_schema.is_null() ? Op::schema() : override_schema;
+        op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack) {
+            return logic_wrapper<Op, T...>(vfs, path, params, stack);
+        };
         registry()[op.path] = op;
     }
 
-    template <typename Op>
-    static void register_op(const std::string& override_path = "") {
-        Operation op;
-        op.path = override_path.empty() ? Op::path : override_path;
-        op.schema = Op::schema();
-        op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack) {
-            return Op::logic(vfs, path, params, stack);
-        };
-        registry()[op.path] = op;
+    template <typename Op, typename... T>
+    static void register_op() {
+        register_op<Op, T...>(Op::path);
     }
 
     template <typename T>
@@ -70,7 +112,6 @@ public:
                 resolved = vfs->read<json>({val.at("path"), val.value("parameters", json::object()), stack});
             }
             
-            // If the resolved object is a Shape, check its geometry for jot/group
             if (resolved.is_object() && resolved.contains("geometry")) {
                 auto geo = resolved["geometry"];
                 if (geo.value("path", "") == "jot/group") {
@@ -97,35 +138,6 @@ public:
             return val.template get<std::string>();
         }
         return T();
-    }
-
-    static std::vector<json> cartesian_batch(const json& params, const std::vector<std::string>& keys) {
-        std::vector<json> results = {{}};
-        for (const auto& key : keys) {
-            std::vector<json> next_results;
-            if (params.contains(key)) {
-                auto val = params.at(key);
-                if (val.is_array()) {
-                    for (const auto& combo : results) {
-                        for (const auto& item : val) {
-                            json next = combo;
-                            next[key] = item;
-                            next_results.push_back(next);
-                        }
-                    }
-                } else {
-                    for (const auto& combo : results) {
-                        json next = combo;
-                        next[key] = val;
-                        next_results.push_back(next);
-                    }
-                }
-            } else {
-                next_results = results;
-            }
-            results = next_results;
-        }
-        return results;
     }
 };
 

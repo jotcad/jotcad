@@ -1,57 +1,53 @@
 #pragma once
 #include "impl/protocols.h"
 #include "impl/processor.h"
-#include "impl/outline.h"
 
 namespace jotcad {
 namespace geo {
 
 template <typename P = JotVfsProtocol>
 struct OutlineOp : P {
-    static constexpr const char* path = "op/outline";
+    static constexpr const char* path = "jot/outline";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, Shape& out) {
-        // 1. Unwrap Geometry Selector
         auto geo_selector = in.geometry;
-        
-        // 2. Read Geometry Artifact (Raw bytes)
         auto geo_bytes = vfs->template read<std::vector<uint8_t>>({
             geo_selector.path, 
-            geo_selector.parameters, 
-            {} 
+            geo_selector.parameters
         });
+        
+        Geometry geo; geo.decode_text(std::string(geo_bytes.begin(), geo_bytes.end()));
+        
+        Geometry outline;
+        outline.vertices = geo.vertices;
+        for (const auto& face : geo.faces) {
+            for (const auto& loop : face.loops) {
+                Geometry::Face f; f.loops.push_back(loop);
+                outline.faces.push_back(f);
+            }
+        }
 
-        // 3. Transform to World Space
-        Geometry mesh;
-        mesh.decode_text(std::string(geo_bytes.begin(), geo_bytes.end()));
-        mesh.apply_tf(in.tf);
-
-        // 4. Process
-        applyOutline(mesh);
-
-        // 5. Re-package (fresh mesh result)
-        auto shape_data = P::write_shape(vfs, {}, mesh, {{"type", "outline"}});
-        out = Shape::from_json(nlohmann::json::parse(shape_data));
+        out = in;
+        out.geometry = Shape::from_json(P::json::parse(P::write_shape(vfs, {{"op","outline"}}, outline, {{"type","outline"}}))).geometry;
+        out.add_tag("operation", "outline");
     }
 
-    static std::vector<uint8_t> logic(jotcad::fs::VFSNode* vfs, const std::string& path, const typename P::json& params, const std::vector<std::string>& stack) {
-        auto in = Processor::decode<Shape>(vfs, "$in", params, schema(), stack);
-        Shape out;
-        execute(vfs, in, out);
-        return P::write_shape_obj(out);
-    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
 
     static typename P::json schema() {
         return {
-            {"arguments", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
             {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
 
 static void outline_init() {
-    Processor::register_op<OutlineOp<>>();
+    Processor::register_op<OutlineOp<>, Shape>();
 }
 
 } // namespace geo

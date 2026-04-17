@@ -1,53 +1,50 @@
 #pragma once
 #include "impl/protocols.h"
 #include "impl/processor.h"
-#include "impl/geometry.h"
 
 namespace jotcad {
 namespace geo {
 
 template <typename P = JotVfsProtocol>
 struct PointsOp : P {
-    static constexpr const char* path = "op/points";
+    static constexpr const char* path = "jot/points";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, Shape& out) {
         auto geo_selector = in.geometry;
         auto geo_bytes = vfs->template read<std::vector<uint8_t>>({
             geo_selector.path, 
-            geo_selector.parameters, 
-            {} 
+            geo_selector.parameters
         });
+        
+        Geometry geo; geo.decode_text(std::string(geo_bytes.begin(), geo_bytes.end()));
+        
+        // Logical Transform: Return points
+        nlohmann::json pts = nlohmann::json::array();
+        for (const auto& v : geo.vertices) {
+            pts.push_back({v.x, v.y, v.z});
+        }
 
-        Geometry mesh;
-        mesh.decode_text(std::string(geo_bytes.begin(), geo_bytes.end()));
-        mesh.apply_tf(in.tf);
-
-        Geometry out_geo;
-        out_geo.vertices = mesh.vertices;
-        for (size_t i = 0; i < mesh.vertices.size(); ++i) out_geo.points.push_back((int)i);
-
-        auto shape_data = P::write_shape(vfs, {}, out_geo, {{"type", "points"}});
-        out = Shape::from_json(nlohmann::json::parse(shape_data));
+        out = in;
+        out.geometry = {"op/points", {{"points", pts}}};
+        out.add_tag("operation", "points");
     }
 
-    static std::vector<uint8_t> logic(jotcad::fs::VFSNode* vfs, const std::string& path, const typename P::json& params, const std::vector<std::string>& stack) {
-        auto in = Processor::decode<Shape>(vfs, "$in", params, schema(), stack);
-        Shape out;
-        execute(vfs, in, out);
-        return P::write_shape_obj(out);
-    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
 
     static typename P::json schema() {
         return {
-            {"arguments", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
             {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
 
 static void points_init() {
-    Processor::register_op<PointsOp<>>();
+    Processor::register_op<PointsOp<>, Shape>();
 }
 
 } // namespace geo

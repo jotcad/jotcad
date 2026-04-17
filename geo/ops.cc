@@ -9,6 +9,7 @@
 #include "rotate_op.h"
 #include "pdf_op.h"
 #include "path_op.h"
+#include "color_op.h"
 #include "group_op.h"
 #include "impl/processor.h"
 #include <iostream>
@@ -46,6 +47,7 @@ int main(int argc, char** argv) {
     rotate_init();
     pdf_init();
     path_init();
+    color_init();
     group_init();
 
     // Register all ops from the Processor registry into the VFS Node
@@ -55,6 +57,11 @@ int main(int argc, char** argv) {
             return Processor::registry()[path].logic(&node, req.path, req.parameters, req.stack);
         }, op.schema);
     }
+
+    // Register geo/mesh as a generic provider for geometry blobs (CIDs)
+    node.register_op("geo/mesh", [&node](const VFSNode::VFSRequest& req) {
+        return node.read<std::vector<uint8_t>>(req);
+    }, {{"arguments",{{"cid",{{"type","string"}}}}}});
 
     // Fixed Race Condition: Wait for a peer before broadcasting schema
     std::thread schema_broadcaster([&node]() {

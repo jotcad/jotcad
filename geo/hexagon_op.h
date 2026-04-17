@@ -6,10 +6,11 @@
 namespace jotcad {
 namespace geo {
 
-template <typename P = JotVfsProtocol>
+template <const char* Variant, typename P = JotVfsProtocol>
 struct HexagonOp : P {
-    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<double>& diameter, const std::string& variant, Shape& out) {
+    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<double>& diameter, Shape& out) {
         std::vector<Shape> items;
+        std::string variant = Variant;
         for (double d : diameter) {
             Geometry geo; makeHexagon(geo, d / 2.0, variant);
             items.push_back(Shape::from_json(P::json::parse(P::write_shape(vfs, {{"d",d},{"v",variant}}, geo, {{"type","hexagon"},{"plane","Z0"}}))));
@@ -24,42 +25,36 @@ struct HexagonOp : P {
         }
     }
 
-    static std::vector<uint8_t> logic(jotcad::fs::VFSNode* vfs, const std::string& variant, const typename P::json& params, const std::vector<std::string>& stack) {
-        auto diameter = Processor::decode<std::vector<double>>(vfs, "diameter", params, schema(), stack);
-        Shape out;
-        execute(vfs, diameter, variant, out);
-        return P::write_shape_obj(out);
-    }
+    static std::vector<std::string> argument_keys() { return {"diameter"}; }
 
     static typename P::json schema() {
         return {
             {"arguments", {
-                {"diameter", {{"type", "jot:numbers"}, {"default", 10}}}
+                {"diameter", {{"type", "jot:numbers"}, {"default", 10}}},
+                {"$out", {{"type", "jot:shape"}}}
             }},
             {"inputs", {}},
-            {"outputs", {
-                {"$out", {{"type", "jot:shape"}}}
-            }}
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
 
-static void hexagon_init() {
-    auto reg = [](const std::string& path, const std::string& variant) {
-        auto schema = HexagonOp<>::schema();
-        if (variant == "full") {
-            schema["metadata"]["alias"] = "jot/Hexagon";
-        }
-        Processor::register_op(path, [variant](jotcad::fs::VFSNode* vfs, const std::string& p, const nlohmann::json& params, const std::vector<std::string>& stack) {
-            return HexagonOp<>::logic(vfs, variant, params, stack);
-        }, schema);
-    };
+// Template constants for variants
+static constexpr char hex_full[] = "full";
+static constexpr char hex_cap[] = "cap";
+static constexpr char hex_middle[] = "middle";
+static constexpr char hex_sector[] = "sector";
+static constexpr char hex_half[] = "half";
 
-    reg("jot/Hexagon/full", "full");
-    reg("jot/Hexagon/cap", "cap");
-    reg("jot/Hexagon/middle", "middle");
-    reg("jot/Hexagon/sector", "sector");
-    reg("jot/Hexagon/half", "half");
+static void hexagon_init() {
+    auto s_full = HexagonOp<hex_full>::schema();
+    s_full["metadata"]["alias"] = "jot/Hexagon";
+    Processor::register_op<HexagonOp<hex_full>, std::vector<double>>("jot/Hexagon/full", s_full);
+    
+    Processor::register_op<HexagonOp<hex_cap>, std::vector<double>>("jot/Hexagon/cap");
+    Processor::register_op<HexagonOp<hex_middle>, std::vector<double>>("jot/Hexagon/middle");
+    Processor::register_op<HexagonOp<hex_sector>, std::vector<double>>("jot/Hexagon/sector");
+    Processor::register_op<HexagonOp<hex_half>, std::vector<double>>("jot/Hexagon/half");
 }
 
 } // namespace geo
