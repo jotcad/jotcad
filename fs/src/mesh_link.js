@@ -249,11 +249,21 @@ export class MeshLinkBase {
   }
 
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
+    const s = normalizeSelector(selector);
+    
+    // 1. Record local interest so we can relay notifications back to this path
+    // If the stack is empty, it means we are the originator.
+    // If not, the stack.back() is the neighbor who asked us.
+    if (stack.length > 0) {
+        this.addInterest(stack[stack.length - 1], s, expiresAt, stack);
+    }
+
+    // 2. Relay subscription upstream to neighbors
     const neighbors = [...this.peers.values()].filter(p => !stack.includes(p.id));
     const newStack = [...stack, this.vfs.id];
     for (const peer of neighbors) {
       try {
-        peer.subscribe(selector, expiresAt, newStack).catch(() => {});
+        peer.subscribe(s, expiresAt, newStack).catch(() => {});
       } catch (e) {}
     }
   }
@@ -261,23 +271,17 @@ export class MeshLinkBase {
   addInterest(neighborId, selector, expiresAt, stack = []) {
     const topicString = JSON.stringify(normalizeSelector(selector));
     if (!this.interests.has(topicString))
-      this.interests.set(topicString, { selector, subs: new Map() });
+      this.interests.set(topicString, { selector, subs: new Map(), lastValue: null });
     const entry = this.interests.get(topicString);
     const isNewSubscriber = !entry.subs.has(neighborId);
     entry.subs.set(neighborId, expiresAt);
     
-    // Immediate state push for Topology/Schema subscriptions
-    if (isNewSubscriber) {
-        if (selector.path === 'sys/topo') {
-            this.notify(selector, {
-                type: 'TOPOLOGY_UPDATE',
-                peer: this.vfs.id,
-                neighbors: [...this.peers.values()].map(p => ({ id: p.id, reachability: p.reachability }))
-            });
-        } else if (selector.path === 'sys/schema') {
-            this.vfs.spy('sys/schema').then(stream => {
-               // Full catalog push would go here. For now, trigger a general notify if available.
-            });
+    // Immediate Relay Priming: If we have a cached value for this topic, 
+    // send it to the new subscriber immediately.
+    if (isNewSubscriber && entry.lastValue) {
+        const peer = this.peers.get(neighborId);
+        if (peer) {
+            peer.notify(selector, entry.lastValue, [this.vfs.id]).catch(() => {});
         }
     }
 
@@ -287,19 +291,31 @@ export class MeshLinkBase {
   }
 
   notify(selector, payload, stack = []) {
+    // 1. Inbound Rule: If we have already seen this message, drop it.
     if (stack.includes(this.vfs.id)) return;
-    const newStack = [...stack, this.vfs.id];
+
     const s = normalizeSelector(selector);
-    const topicString = JSON.stringify(s);
-    this.lastNotify.set(topicString, payload);
+    
+    // 2. Preparation: Update Last-Value Cache for matching interests
+    for (const [topic, entry] of this.interests.entries()) {
+      if (this._matches(entry.selector, s)) {
+          entry.lastValue = payload;
+      }
+    }
+
+    // 3. Relay Rule: Prepare the stack for the next hop.
+    const nextStack = [...stack, this.vfs.id];
 
     for (const [topic, entry] of this.interests.entries()) {
       if (this._matches(entry.selector, s)) {
         for (const [neighborId, expiry] of entry.subs.entries()) {
           if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
+          
+          // 4. Outbound Rule: If the neighbor has already seen this message, skip them.
           if (stack.includes(neighborId)) continue;
+          
           const peer = this.peers.get(neighborId);
-          if (peer) peer.notify(s, payload, newStack).catch(() => {});
+          if (peer) peer.notify(s, payload, nextStack).catch(() => {});
         }
       }
     }
@@ -308,6 +324,7 @@ export class MeshLinkBase {
   _matches(sub, event) {
     if (!sub || !event) return false;
     if (sub.path === event.path) {
+      // Relaxed Matching: If the subscription has NO parameters, it matches EVERYTHING on that path.
       const subKeys = Object.keys(sub.parameters || {});
       if (subKeys.length === 0) return true;
       for (const key of subKeys) {

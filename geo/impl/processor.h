@@ -40,9 +40,9 @@ public:
     }
 
     template <typename Op>
-    static void register_op() {
+    static void register_op(const std::string& override_path = "") {
         Operation op;
-        op.path = Op::path;
+        op.path = override_path.empty() ? Op::path : override_path;
         op.schema = Op::schema();
         op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack) {
             return Op::logic(vfs, path, params, stack);
@@ -70,10 +70,10 @@ public:
                 resolved = vfs->read<json>({val.at("path"), val.value("parameters", json::object()), stack});
             }
             
-            // If the resolved object is a Shape, check its geometry for op/group
+            // If the resolved object is a Shape, check its geometry for jot/group
             if (resolved.is_object() && resolved.contains("geometry")) {
                 auto geo = resolved["geometry"];
-                if (geo.value("path", "") == "op/group") {
+                if (geo.value("path", "") == "jot/group") {
                     for (auto& item : geo["parameters"]["items"]) results.push_back(Shape::from_json(item));
                 } else {
                     results.push_back(Shape::from_json(resolved));

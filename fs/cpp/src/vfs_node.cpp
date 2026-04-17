@@ -199,11 +199,17 @@ void VFSNode::listen() {
                 interests_[key][peer_id] = expiresAt;
                 interest_selectors_[key] = selector;
                 
-                // Immediate state push for Topology/Schema subscriptions
-                if (selector["path"] == "sys/topo") {
-                    notify(selector, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}});
-                } else if (selector["path"] == "sys/schema") {
-                    notify(selector, get_catalog());
+                // Immediate state push for Topology/Schema subscriptions (Detached)
+                if (selector["path"] == "sys/topo" || selector["path"] == "sys/schema") {
+                    std::thread([this, selector, key, peer_id]() {
+                        // Small delay to ensure caller has finished processing the SUB response
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        if (selector["path"] == "sys/topo") {
+                            notify(selector, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}}, {});
+                        } else {
+                            notify(selector, {{"type", "CATALOG_ANNOUNCEMENT"}, {"provider", config_.id}, {"catalog", get_catalog()["catalog"]}}, {});
+                        }
+                    }).detach();
                 }
             }
             subscribe(selector, expiresAt, stack);
@@ -369,15 +375,27 @@ void VFSNode::subscribe(const json& selector, long long expiresAt, const std::ve
 }
 
 void VFSNode::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
+    // 1. Inbound Rule: If we have already seen this message, drop it.
     for (const auto& id : stack) if (id == config_.id) return;
-    std::vector<std::string> n_stack = stack; n_stack.push_back(config_.id);
+
+    // 2. Relay Rule: Prepare the stack for the next hop.
+    std::vector<std::string> next_stack = stack; 
+    next_stack.push_back(config_.id);
+
     std::lock_guard<std::mutex> lock(interest_mutex_);
     for (auto& [key, subs] : interests_) {
         if (matches(interest_selectors_[key], selector)) {
             auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
             for (auto it = subs.begin(); it != subs.end(); ) {
                 if (now > it->second) { it = subs.erase(it); continue; }
-                std::string p_id = it->first; bool sent = false;
+                std::string p_id = it->first; 
+                
+                // 3. Outbound Rule: If the neighbor has already seen this message, skip them.
+                bool neighbor_seen = false;
+                for (const auto& s_id : stack) if (s_id == p_id) neighbor_seen = true;
+                if (neighbor_seen) { ++it; continue; }
+
+                bool sent = false;
                 { 
                     std::lock_guard<std::mutex> ql(g_reverse_queues_mutex);
                     if (g_reverse_queues.count(p_id)) {
@@ -388,9 +406,9 @@ void VFSNode::notify(const json& selector, const json& payload, const std::vecto
                 }
                 if (!sent) {
                     std::string p_url; { std::lock_guard<std::mutex> pl(peer_mutex_); if (peers_.count(p_id)) p_url = peers_[p_id]; }
-                    if (!p_url.empty()) std::thread([p_url, selector, payload, n_stack]() {
+                    if (!p_url.empty()) std::thread([p_url, selector, payload, next_stack]() {
                         httplib::Client cli(p_url); cli.set_connection_timeout(std::chrono::seconds(1));
-                        cli.Post("/notify", json({{"selector", selector}, {"payload", payload}, {"stack", n_stack}}).dump(), "application/json");
+                        cli.Post("/notify", json({{"selector", selector}, {"payload", payload}, {"stack", next_stack}}).dump(), "application/json");
                     }).detach();
                 }
                 ++it;

@@ -20,7 +20,7 @@ struct RotateOp : P {
 
         if (results.size() == 1) out = results[0];
         else {
-            out.geometry = {"op/group", nlohmann::json::object()};
+            out.geometry = {"jot/group", nlohmann::json::object()};
             nlohmann::json items = nlohmann::json::array();
             for (const auto& r : results) items.push_back(r.to_json());
             out.geometry.parameters["items"] = items;
@@ -63,9 +63,15 @@ struct RotateOp : P {
 };
 
 static void rotate_init() {
-    Processor::register_op("op/rotateX", RotateOp<>::rotateX, RotateOp<>::schema());
-    Processor::register_op("op/rotateY", RotateOp<>::rotateY, RotateOp<>::schema());
-    Processor::register_op("op/rotateZ", RotateOp<>::rotateZ, RotateOp<>::schema());
+    auto reg = [](const std::string& path, auto handler, const std::string& alias) {
+        auto schema = RotateOp<>::schema();
+        schema["metadata"]["alias"] = alias;
+        Processor::register_op(path, handler, schema);
+    };
+
+    reg("jot/rotateX", RotateOp<>::rotateX, "jot/rx");
+    reg("jot/rotateY", RotateOp<>::rotateY, "jot/ry");
+    reg("jot/rotateZ", RotateOp<>::rotateZ, "jot/rz");
 }
 
 } // namespace geo

@@ -12,6 +12,8 @@
 #include "group_op.h"
 #include "impl/processor.h"
 #include <iostream>
+#include <thread>
+#include <chrono>
 
 using namespace jotcad::geo;
 using namespace jotcad::fs;
@@ -54,8 +56,19 @@ int main(int argc, char** argv) {
         }, op.schema);
     }
 
-    // Broadcast batched schema catalog once
-    node.notify_schema();
+    // Fixed Race Condition: Wait for a peer before broadcasting schema
+    std::thread schema_broadcaster([&node]() {
+        std::cout << "[Ops Node] Schema Broadcaster Waiting for Peers..." << std::endl;
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            if (!node.get_neighbors().empty()) {
+                std::cout << "[Ops Node] Peer Detected. Broadcasting Schema Catalog..." << std::endl;
+                node.notify_schema();
+                break;
+            }
+        }
+    });
+    schema_broadcaster.detach();
 
     std::cout << "[Ops Node] Starting Native VFS Node on port " << port << "... (Build: " << __DATE__ << " " << __TIME__ << ")" << std::endl;
     node.listen();

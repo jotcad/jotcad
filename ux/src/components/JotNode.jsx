@@ -44,26 +44,16 @@ export const JotNode = (props) => {
       // Register all discovered schemas with the compiler
       const currentSchemas = blackboard.schemas();
       for (const [path, schema] of Object.entries(currentSchemas)) {
-        // Only discover operators from the jot/ namespace
-        if (!path.startsWith('jot/')) continue;
-
-        const parts = path.split('/').filter(Boolean);
-        parts.shift(); // remove 'jot'
-
-        // Use '/' for internal hierarchy mapping
-        let name = parts.join('/');
-        
-        // Handle common default variants
-        if (name === 'Hexagon/full') {
-          compiler.registerOperator('Hexagon', { path, schema });
-        } else if (name === 'Triangle/equilateral') {
-          compiler.registerOperator('Triangle', { path, schema });
-        } else if (name === 'Box/full') {
-          compiler.registerOperator('Box', { path, schema });
+        // 1. Canonical Name (e.g. jot/Box -> Box)
+        if (path.startsWith('jot/')) {
+          compiler.registerOperator(path.slice(4), { path, schema });
         }
-
-        // Always register the full name as well
-        compiler.registerOperator(name, { path, schema });
+        
+        // 2. Metadata Alias (e.g. jot/Hexagon -> Hexagon)
+        const alias = schema.metadata?.alias;
+        if (alias && alias.startsWith('jot/')) {
+          compiler.registerOperator(alias.slice(4), { path, schema });
+        }
       }
 
       const ast = parser.parse(code());
@@ -144,6 +134,12 @@ export const JotNode = (props) => {
           class="bg-black/40 border border-white/5 rounded-lg p-3 font-mono text-[11px] h-32 focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar"
           value={code()}
           onInput={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.shiftKey && e.key === 'Enter') {
+              e.preventDefault();
+              evaluateJot();
+            }
+          }}
           spellcheck={false}
         />
 
