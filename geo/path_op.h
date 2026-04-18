@@ -9,7 +9,7 @@ template <typename P = JotVfsProtocol>
 struct LinkOp : P {
     static constexpr const char* path = "jot/link";
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& a, const Shape& b, Shape& out) {
-        out.geometry.path = ""; // Clear geometry
+        out.geometry = std::nullopt; // Clear geometry
         out.components = {a, b};
         out.add_tag("type", "link");
     }
@@ -23,7 +23,7 @@ template <typename P = JotVfsProtocol>
 struct LoopOp : P {
     static constexpr const char* path = "jot/loop";
     static void execute(jotcad::fs::VFSNode* vfs, const std::vector<Shape>& segments, Shape& out) {
-        out.geometry.path = "";
+        out.geometry = std::nullopt;
         out.components = segments;
         out.add_tag("type", "loop");
     }

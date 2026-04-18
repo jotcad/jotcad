@@ -14,7 +14,8 @@ int main() {
     Shape out;
     PdfOp<>::execute(&vfs, hex, "test.pdf", 0.1, out);
     
-    assert(out.geometry.path == hex.geometry.path);
+    assert(out.geometry.has_value());
+    assert(out.geometry->path == hex.geometry->path);
     
     std::cout << "✅ PDF PASS" << std::endl;
     return 0;

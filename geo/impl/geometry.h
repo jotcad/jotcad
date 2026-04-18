@@ -6,12 +6,13 @@
 #include <sstream>
 #include <iomanip>
 #include <iostream>
+#include "kernel.h"
 
 namespace jotcad {
 namespace geo {
 
 struct Vertex {
-    double x, y, z;
+    FT x, y, z;
 };
 
 struct Geometry {
@@ -27,21 +28,28 @@ struct Geometry {
 
     void apply_tf(const std::vector<double>& tf) {
         if (tf.size() < 16) return;
+        // Construct exact transformation
+        Transformation t(tf[0], tf[1], tf[2], tf[3],
+                         tf[4], tf[5], tf[6], tf[7],
+                         tf[8], tf[9], tf[10], tf[11]);
+        
         for (auto& v : vertices) {
-            double x = v.x * tf[0] + v.y * tf[4] + v.z * tf[8] + tf[12];
-            double y = v.x * tf[1] + v.y * tf[5] + v.z * tf[9] + tf[13];
-            double z = v.x * tf[2] + v.y * tf[6] + v.z * tf[10] + tf[14];
-            v.x = x; v.y = y; v.z = z;
+            Point_3 p(v.x, v.y, v.z);
+            p = t.transform(p);
+            v.x = p.x(); v.y = p.y(); v.z = p.z();
         }
     }
 
     std::string encode_text() const {
         try {
             std::ostringstream ss;
-            ss << std::fixed << std::setprecision(10);
+            ss << std::fixed << std::setprecision(18);
             for (const auto& v : vertices) {
-                ss << "v " << v.x << " " << v.y << " " << v.z 
-                   << " " << v.x << " " << v.y << " " << v.z << "\n";
+                double dx = CGAL::to_double(v.x);
+                double dy = CGAL::to_double(v.y);
+                double dz = CGAL::to_double(v.z);
+                ss << "v " << dx << " " << dy << " " << dz 
+                   << " " << dx << " " << dy << " " << dz << "\n";
             }
             if (!points.empty()) {
                 ss << "p";
@@ -89,7 +97,7 @@ struct Geometry {
                 if (code == "v") {
                     double x1, y1, z1;
                     if (ls >> x1 >> y1 >> z1) {
-                        vertices.push_back({x1, y1, z1});
+                        vertices.push_back({FT(x1), FT(y1), FT(z1)});
                     }
                 } else if (code == "p") {
                     int idx;

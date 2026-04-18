@@ -9,7 +9,8 @@ int main() {
     Shape out;
     HexagonOp<hex_full>::execute(&vfs, {30.0}, out);
     
-    assert(out.geometry.path == "geo/mesh");
+    assert(out.geometry.has_value());
+    assert(out.geometry->path == "geo/mesh");
     assert(out.tags["type"] == "hexagon");
     
     Geometry geo = vfs.read_geo(out.geometry);

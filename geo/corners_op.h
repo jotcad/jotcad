@@ -11,7 +11,11 @@ struct CornersOp : P {
     static constexpr const char* path = "jot/corners";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, bool proxy, Shape& out) {
-        Geometry geo = vfs->template read<Geometry>({in.geometry.path, in.geometry.parameters});
+        if (!in.geometry.has_value()) {
+            out = in;
+            return;
+        }
+        Geometry geo = vfs->template read<Geometry>({in.geometry->path, in.geometry->parameters});
         std::vector<Shape> components;
 
         for (const auto& face : geo.faces) {
@@ -27,33 +31,33 @@ struct CornersOp : P {
                     auto v_next = geo.vertices[idx_next];
                     auto v_prev = geo.vertices[idx_prev];
 
-                    // Vectors in global space
-                    double dx = v_next.x - v_curr.x;
-                    double dy = v_next.y - v_curr.y;
-                    double dz = v_next.z - v_curr.z;
-                    double len_next = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    // Vectors in exact space
+                    FT dx = v_next.x - v_curr.x;
+                    FT dy = v_next.y - v_curr.y;
+                    FT dz = v_next.z - v_curr.z;
+                    FT sql_next = dx*dx + dy*dy + dz*dz;
                     
-                    if (len_next < 1e-9) continue;
+                    if (sql_next < 1e-18) continue;
+                    FT len_next = FT(std::sqrt(CGAL::to_double(sql_next)));
 
                     // X Axis = Unit Outgoing Edge
-                    double ux = dx / len_next;
-                    double uy = dy / len_next;
-                    double uz = dz / len_next;
+                    FT ux = dx / len_next;
+                    FT uy = dy / len_next;
+                    FT uz = dz / len_next;
 
                     // Z Axis = Face Normal (Approximated from triangle if needed, here Z0 for 2D)
-                    // TODO: For 3D, use Newell's or cross product of legs.
-                    double nx = 0, ny = 0, nz = 1; 
+                    FT nx = 0, ny = 0, nz = 1; 
 
                     // Y Axis = Z cross X
-                    double vy = nz * ux - nx * uz;
-                    double vx = ny * uz - nz * uy;
-                    double vz = nx * uy - ny * ux;
+                    FT vx = ny * uz - nz * uy;
+                    FT vy = nz * ux - nx * uz;
+                    FT vz = nx * uy - ny * ux;
 
                     // Local-to-Global Matrix
-                    Matrix m;
-                    m.data[0] = ux; m.data[1] = vx; m.data[2] = nx; m.data[3] = v_curr.x;
-                    m.data[4] = uy; m.data[5] = vy; m.data[6] = ny; m.data[7] = v_curr.y;
-                    m.data[8] = uz; m.data[9] = vz; m.data[10] = nz; m.data[11] = v_curr.z;
+                    // Transformation(m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23)
+                    Matrix m(Transformation(ux, vx, nx, v_curr.x,
+                                            uy, vy, ny, v_curr.y,
+                                            uz, vz, nz, v_curr.z));
 
                     Shape corner;
                     corner.tf = m.to_vec();
@@ -63,20 +67,16 @@ struct CornersOp : P {
                     if (proxy) {
                         // V-Proxy at Origin
                         Geometry v_geo;
-                        v_geo.vertices.push_back({0, 0, 0}); // Corner
-                        v_geo.vertices.push_back({len_next, 0, 0}); // Outgoing Leg
+                        v_geo.vertices.push_back({FT(0), FT(0), FT(0)}); // Corner
+                        v_geo.vertices.push_back({len_next, FT(0), FT(0)}); // Outgoing Leg
                         
                         // Transform Incoming Leg to local space
-                        double p_dx = v_prev.x - v_curr.x;
-                        double p_dy = v_prev.y - v_curr.y;
-                        double p_dz = v_prev.z - v_curr.z;
+                        FT p_dx = v_prev.x - v_curr.x;
+                        FT p_dy = v_prev.y - v_curr.y;
+                        FT p_dz = v_prev.z - v_curr.z;
                         
-                        // Inverse Matrix multiplication (Point mapping)
-                        Matrix inv = m.inverse();
-                        double lx = inv.data[0]*p_dx + inv.data[1]*p_dy + inv.data[2]*p_dz;
-                        double ly = inv.data[4]*p_dx + inv.data[5]*p_dy + inv.data[6]*p_dz;
-                        double lz = inv.data[8]*p_dx + inv.data[9]*p_dy + inv.data[10]*p_dz;
-                        v_geo.vertices.push_back({lx, ly, lz});
+                        Point_3 local_p = m.inverse().t.transform(Point_3(p_dx, p_dy, p_dz));
+                        v_geo.vertices.push_back({local_p.x(), local_p.y(), local_p.z()});
 
                         v_geo.segments.push_back({0, 1});
                         v_geo.segments.push_back({0, 2});
@@ -88,7 +88,7 @@ struct CornersOp : P {
             }
         }
 
-        out.geometry.path = "op/group";
+        out.geometry = std::nullopt;
         out.components = components;
         out.add_tag("type", "corners");
     }

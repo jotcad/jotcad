@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <optional>
 #include <json.hpp>
 #include "vfs_node.h"
 
@@ -14,7 +15,7 @@ using json = nlohmann::json;
  * Shape: The foundational semantic container for JOT.
  */
 struct Shape {
-    jotcad::fs::Selector geometry;
+    std::optional<jotcad::fs::Selector> geometry;
 
     std::vector<double> tf = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     json tags = json::object();
@@ -29,10 +30,12 @@ struct Shape {
 
     json to_json() const {
         json j = {
-            {"geometry", geometry.to_json()},
             {"tf", tf},
             {"tags", tags}
         };
+        if (geometry.has_value()) {
+            j["geometry"] = geometry->to_json();
+        }
         if (!components.empty()) {
             json comps = json::array();
             for (const auto& c : components) comps.push_back(c.to_json());
@@ -43,7 +46,9 @@ struct Shape {
 
     static Shape from_json(const json& j) {
         Shape s;
-        if (j.contains("geometry")) s.geometry = jotcad::fs::Selector::from_json(j.at("geometry"));
+        if (j.contains("geometry") && !j.at("geometry").is_null()) {
+            s.geometry = jotcad::fs::Selector::from_json(j.at("geometry"));
+        }
         s.tf = j.value("tf", std::vector<double>{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1});
         s.tags = j.value("tags", json::object());
         if (j.contains("components")) {

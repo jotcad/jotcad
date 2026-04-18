@@ -24,22 +24,23 @@ struct JotVfsProtocol {
     }
 
     /**
-     * Marshall a JOT Shape (Helper for primitives)
+     * Assemble a JOT Shape from geometry and tags
      */
-    static std::vector<uint8_t> write_shape(jotcad::fs::VFSNode* vfs, const json& params, const Geometry& geo, const json& tags) {
+    static Shape make_shape(jotcad::fs::VFSNode* vfs, const Geometry& geo, const json& tags) {
         Shape s;
         s.geometry = vfs->write_geometry(geo);
         s.tags = tags;
-        return write_shape_obj(s);
+        return s;
     }
 
     static std::vector<uint8_t> write_group(const std::vector<Shape>& items) {
         Shape group_shape;
-        group_shape.geometry = {"op/group", json::object()};
+        // Group has no geometry of its own
+        group_shape.geometry = std::nullopt;
         
         json items_json = json::array();
         for (const auto& item : items) items_json.push_back(item.to_json());
-        group_shape.geometry.parameters["items"] = items_json;
+        group_shape.add_tag("items", items_json); // Standard grouping tag
 
         return write_shape_obj(group_shape);
     }

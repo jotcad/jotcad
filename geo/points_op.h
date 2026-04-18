@@ -10,7 +10,12 @@ struct PointsOp : P {
     static constexpr const char* path = "jot/points";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, Shape& out) {
-        auto geo_selector = in.geometry;
+        if (!in.geometry.has_value()) {
+            out = in;
+            return;
+        }
+
+        auto geo_selector = *in.geometry;
         auto geo_bytes = vfs->template read<std::vector<uint8_t>>({
             geo_selector.path, 
             geo_selector.parameters
@@ -20,8 +25,8 @@ struct PointsOp : P {
         
         // Logical Transform: Return points
         nlohmann::json pts = nlohmann::json::array();
-        for (const auto& v : geo.vertices) {
-            pts.push_back({v.x, v.y, v.z});
+        for (auto& v : geo.vertices) {
+            pts.push_back({CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)});
         }
 
         out = in;

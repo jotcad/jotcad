@@ -17,23 +17,22 @@ struct BoxOp : P {
                 if (depth.size() > 0 && depth[0] > 0) {
                     for (double d : depth) {
                         Geometry geo; makeBox(geo, w, h, d);
-                        for (auto& v : geo.vertices) { v.x -= w/2.0; v.y -= h/2.0; v.z -= d/2.0; }
-                        items.push_back(Shape::from_json(P::json::parse(P::write_shape(vfs, {{"w",w},{"h",h},{"d",d}}, geo, {{"type","box"}}))));
+                        for (auto& v : geo.vertices) { v.x -= FT(w/2.0); v.y -= FT(h/2.0); v.z -= FT(d/2.0); }
+                        items.push_back(P::make_shape(vfs, geo, {{"type","box"}}));
                     }
                 } else {
                     Geometry geo; makeRectangle(geo, w, h);
-                    for (auto& v : geo.vertices) { v.x -= w/2.0; v.y -= h/2.0; }
-                    items.push_back(Shape::from_json(P::json::parse(P::write_shape(vfs, {{"w",w},{"h",h}}, geo, {{"type","box"},{"plane","Z0"}}))));
+                    for (auto& v : geo.vertices) { v.x -= FT(w/2.0); v.y -= FT(h/2.0); }
+                    items.push_back(P::make_shape(vfs, geo, {{"type","box"},{"plane","Z0"}}));
                 }
             }
         }
 
         if (items.size() == 1) out = items[0];
         else {
-            out.geometry = {"jot/group", nlohmann::json::object()};
-            nlohmann::json items_json = nlohmann::json::array();
-            for (const auto& item : items) items_json.push_back(item.to_json());
-            out.geometry.parameters["items"] = items_json;
+            out.geometry = std::nullopt;
+            out.components = items;
+            out.add_tag("type", "group");
         }
     }
 

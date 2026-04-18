@@ -21,6 +21,8 @@ int main() {
     assert(c0.tags["type"] == "corner");
     assert(c0.tags["index"] == 0);
     
+    assert(c0.geometry.has_value());
+    
     // c0.tf should map origin to a point at distance 15.0 from center
     double tx = c0.tf[3];
     double ty = c0.tf[7];

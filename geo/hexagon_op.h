@@ -12,16 +12,15 @@ struct HexagonOp : P {
         std::vector<Shape> items;
         std::string variant = Variant;
         for (double d : diameter) {
-            Geometry geo; makeHexagon(geo, d / 2.0, variant);
-            items.push_back(Shape::from_json(P::json::parse(P::write_shape(vfs, {{"d",d},{"v",variant}}, geo, {{"type","hexagon"},{"plane","Z0"}}))));
+            Geometry geo; makeHexagon(geo, d/2.0, Variant);
+            items.push_back(P::make_shape(vfs, geo, {{"type","hexagon"},{"plane","Z0"}}));
         }
 
         if (items.size() == 1) out = items[0];
         else {
-            out.geometry = {"jot/group", nlohmann::json::object()};
-            nlohmann::json items_json = nlohmann::json::array();
-            for (const auto& item : items) items_json.push_back(item.to_json());
-            out.geometry.parameters["items"] = items_json;
+            out.geometry = std::nullopt;
+            out.components = items;
+            out.add_tag("type", "group");
         }
     }
 

@@ -26,10 +26,11 @@ struct MockVFS : public VFSNode {
     }
 
     // Helper to resolve geometry
-    Geometry read_geo(const Selector& s) {
+    Geometry read_geo(const std::optional<Selector>& s) {
+        if (!s.has_value()) return Geometry();
         VFSNode::VFSRequest req;
-        req.path = s.path;
-        req.parameters = s.parameters;
+        req.path = s->path;
+        req.parameters = s->parameters;
         return read<Geometry>(req);
     }
 };

@@ -1,93 +1,93 @@
 #pragma once
 #include <vector>
-#include <cmath>
-#include <stdexcept>
+#include "kernel.h"
 
 namespace jotcad {
 namespace geo {
 
+/**
+ * Matrix: Exact transformation helper wrapper around CGAL::Aff_transformation_3.
+ */
 struct Matrix {
-    double data[16] = {
-        1, 0, 0, 0,
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1
-    };
+    Transformation t;
+
+    Matrix() : t(CGAL::IDENTITY) {}
+    Matrix(const Transformation& trans) : t(trans) {}
 
     static Matrix identity() { return Matrix(); }
 
     static Matrix translate(double x, double y, double z) {
-        Matrix m;
-        m.data[3] = x; m.data[7] = y; m.data[11] = z;
-        return m;
+        return Matrix(Transformation(CGAL::TRANSLATION, Vector_3(FT(x), FT(y), FT(z))));
     }
 
-    static Matrix rotateX(double rad) {
-        Matrix m;
+    static Matrix rotateX(double rad_turns) {
+        // CGAL doesn't have a direct rad_turns rotate, we'll use double for the trig then convert to exact if needed,
+        // or just construct the rotation matrix.
+        double rad = rad_turns * 2.0 * M_PI;
         double c = std::cos(rad);
         double s = std::sin(rad);
-        m.data[5] = c; m.data[6] = -s;
-        m.data[9] = s; m.data[10] = c;
-        return m;
+        return Matrix(Transformation(1, 0, 0, 0,
+                                     0, c, -s, 0,
+                                     0, s, c, 0));
     }
 
-    static Matrix rotateY(double rad) {
-        Matrix m;
+    static Matrix rotateY(double rad_turns) {
+        double rad = rad_turns * 2.0 * M_PI;
         double c = std::cos(rad);
         double s = std::sin(rad);
-        m.data[0] = c; m.data[2] = s;
-        m.data[8] = -s; m.data[10] = c;
-        return m;
+        return Matrix(Transformation(c, 0, s, 0,
+                                     0, 1, 0, 0,
+                                     -s, 0, c, 0));
     }
 
-    static Matrix rotateZ(double rad) {
-        Matrix m;
+    static Matrix rotateZ(double rad_turns) {
+        double rad = rad_turns * 2.0 * M_PI;
         double c = std::cos(rad);
         double s = std::sin(rad);
-        m.data[0] = c; m.data[1] = -s;
-        m.data[4] = s; m.data[5] = c;
-        return m;
+        return Matrix(Transformation(c, -s, 0, 0,
+                                     s, c, 0, 0,
+                                     0, 0, 1, 0));
     }
 
     Matrix operator*(const Matrix& other) const {
-        Matrix result;
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                double sum = 0;
-                for (int k = 0; k < 4; k++) {
-                    sum += data[i * 4 + k] * other.data[k * 4 + j];
-                }
-                result.data[i * 4 + j] = sum;
-            }
-        }
-        return result;
+        return Matrix(t * other.t);
     }
 
-    // Basic Inverse (for rigid body transforms: rotation + translation)
     Matrix inverse() const {
-        Matrix res;
-        // Transpose of 3x3 rotation part
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                res.data[i * 4 + j] = data[j * 4 + i];
-            }
-        }
-        // New translation: -R^T * t
-        double tx = data[3], ty = data[7], tz = data[11];
-        res.data[3] = -(res.data[0] * tx + res.data[1] * ty + res.data[2] * tz);
-        res.data[7] = -(res.data[4] * tx + res.data[5] * ty + res.data[6] * tz);
-        res.data[11] = -(res.data[8] * tx + res.data[9] * ty + res.data[10] * tz);
-        return res;
+        return Matrix(t.inverse());
     }
 
     std::vector<double> to_vec() const {
-        return std::vector<double>(data, data + 16);
+        // We export back to the standard 16-element row-major vector for JOT JSON compatibility
+        // Row 0
+        double m00 = CGAL::to_double(t.m(0, 0));
+        double m01 = CGAL::to_double(t.m(0, 1));
+        double m02 = CGAL::to_double(t.m(0, 2));
+        double m03 = CGAL::to_double(t.m(0, 3));
+        // Row 1
+        double m10 = CGAL::to_double(t.m(1, 0));
+        double m11 = CGAL::to_double(t.m(1, 1));
+        double m12 = CGAL::to_double(t.m(1, 2));
+        double m13 = CGAL::to_double(t.m(1, 3));
+        // Row 2
+        double m20 = CGAL::to_double(t.m(2, 0));
+        double m21 = CGAL::to_double(t.m(2, 1));
+        double m22 = CGAL::to_double(t.m(2, 2));
+        double m23 = CGAL::to_double(t.m(2, 3));
+        
+        return {
+            m00, m01, m02, m03,
+            m10, m11, m12, m13,
+            m20, m21, m22, m23,
+            0.0, 0.0, 0.0, 1.0
+        };
     }
 
     static Matrix from_vec(const std::vector<double>& v) {
-        Matrix m;
-        if (v.size() == 16) for (int i = 0; i < 16; i++) m.data[i] = v[i];
-        return m;
+        if (v.size() < 12) return Matrix();
+        return Matrix(Transformation(v[0], v[1], v[2], v[3],
+                                     v[4], v[5], v[6], v[7],
+                                     v[8], v[9], v[10], v[11]));
     }
 };
 

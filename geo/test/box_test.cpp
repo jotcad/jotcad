@@ -9,7 +9,8 @@ int main() {
     Shape out;
     BoxOp<>::execute(&vfs, {10.0}, {10.0}, {10.0}, out);
     
-    assert(out.geometry.path == "geo/mesh");
+    assert(out.geometry.has_value());
+    assert(out.geometry->path == "geo/mesh");
     assert(out.tags["type"] == "box");
     
     Geometry geo = vfs.read_geo(out.geometry);

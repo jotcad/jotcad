@@ -10,34 +10,26 @@ template <typename P = JotVfsProtocol>
 struct PdfOp : P {
     static constexpr const char* path = "jot/pdf";
 
-    static void walk(jotcad::fs::VFSNode* vfs, const Shape& shape, std::vector<double> current_tf, PDFWriter& writer) {
-        // Compose transformation: current_tf * shape.tf
-        std::vector<double> next_tf(16, 0.0);
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                for (int k = 0; k < 4; ++k) {
-                    next_tf[i * 4 + j] += current_tf[i * 4 + k] * shape.tf[k * 4 + j];
-                }
-            }
-        }
+    static void walk(jotcad::fs::VFSNode* vfs, const Shape& shape, const Matrix& parent_tf, PDFWriter& writer) {
+        Matrix current_tf = parent_tf * Matrix::from_vec(shape.tf);
 
-        if (!shape.geometry.path.empty()) {
+        if (shape.geometry.has_value()) {
             try {
                 auto geo = vfs->template read<Geometry>({
-                    shape.geometry.path, 
-                    shape.geometry.parameters,
+                    shape.geometry->path, 
+                    shape.geometry->parameters,
                     {} // Empty stack
                 });
                 
-                geo.apply_tf(next_tf);
+                geo.apply_tf(current_tf.to_vec());
                 writer.add_geometry(geo, shape.tags);
             } catch (const std::exception& e) {
-                std::cerr << "[PdfOp] Warning: Could not resolve geometry " << shape.geometry.path << ": " << e.what() << std::endl;
+                std::cerr << "[PdfOp] Warning: Could not resolve geometry " << shape.geometry->path << ": " << e.what() << std::endl;
             }
         }
 
         for (const auto& child : shape.components) {
-            walk(vfs, child, next_tf, writer);
+            walk(vfs, child, current_tf, writer);
         }
     }
 
@@ -80,9 +72,8 @@ static void pdf_init() {
             PDFWriter::Config config;
             config.lineWidth = lineWidth;
             PDFWriter writer(config);
-            std::vector<double> identity = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
             
-            PdfOp<>::walk(vfs, in, identity, writer);
+            PdfOp<>::walk(vfs, in, Matrix::identity(), writer);
             return writer.write();
         }
         

@@ -10,10 +10,15 @@ struct OutlineOp : P {
     static constexpr const char* path = "jot/outline";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, Shape& out) {
+        if (!in.geometry.has_value()) {
+            out = in;
+            return;
+        }
+
         // 1. Resolve Input Geometry
         Geometry geo = vfs->template read<Geometry>({
-            in.geometry.path, 
-            in.geometry.parameters
+            in.geometry->path, 
+            in.geometry->parameters
         });
         
         // 2. Compute Outline (Extract unique segments from loops)

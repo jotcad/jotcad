@@ -11,14 +11,19 @@ struct OffsetOp : P {
     static constexpr const char* path = "jot/offset";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, double distance, Shape& out) {
+        if (!in.geometry.has_value()) {
+            out = in;
+            return;
+        }
+
         // 1. Resolve Input Geometry
         Geometry geo = vfs->template read<Geometry>({
-            in.geometry.path, 
-            in.geometry.parameters
+            in.geometry->path, 
+            in.geometry->parameters
         });
         
         // 2. Perform Real Geometric Offset (Minkowski)
-        applyOffset(geo, distance);
+        applyOffset(geo, FT(distance));
 
         // 3. Sink to Mesh (Deduplicated) and Return
         out = in;

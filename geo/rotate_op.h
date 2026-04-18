@@ -42,7 +42,7 @@ struct RotateOp : P {
 
         if (results.size() == 1) out = results[0];
         else {
-            out.geometry.path = "";
+            out.geometry = std::nullopt;
             out.components = results;
             out.add_tag("type", "group");
         }
