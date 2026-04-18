@@ -82,28 +82,19 @@ public:
         registry()[path] = op;
     }
 
+    template <typename Op, typename Out, typename... T, size_t... Is, typename... Bound>
+    static void logic_executor(jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const json& schema, const std::vector<std::string>& stack, std::index_sequence<Is...>, Out& out, Bound&&... bound_args) {
+        auto keys = Op::argument_keys();
+        Op::execute(vfs, decode<T>(vfs, keys[Is], params, schema, stack)..., std::forward<Bound>(bound_args)..., out);
+    }
+
     template <typename Op, typename Out, typename... T, typename... Bound>
     static std::vector<uint8_t> logic_wrapper(jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack, Bound&&... bound_args) {
-        auto keys = Op::argument_keys();
         auto schema = Op::schema();
         Out out;
         
         try {
-            if constexpr (sizeof...(T) == 0) {
-                Op::execute(vfs, std::forward<Bound>(bound_args)..., out);
-            } else if constexpr (sizeof...(T) == 1) {
-                auto a1 = decode<typename std::tuple_element<0, std::tuple<T...>>::type>(vfs, keys[0], params, schema, stack);
-                Op::execute(vfs, a1, std::forward<Bound>(bound_args)..., out);
-            } else if constexpr (sizeof...(T) == 2) {
-                auto a1 = decode<typename std::tuple_element<0, std::tuple<T...>>::type>(vfs, keys[0], params, schema, stack);
-                auto a2 = decode<typename std::tuple_element<1, std::tuple<T...>>::type>(vfs, keys[1], params, schema, stack);
-                Op::execute(vfs, a1, a2, std::forward<Bound>(bound_args)..., out);
-            } else if constexpr (sizeof...(T) == 3) {
-                auto a1 = decode<typename std::tuple_element<0, std::tuple<T...>>::type>(vfs, keys[0], params, schema, stack);
-                auto a2 = decode<typename std::tuple_element<1, std::tuple<T...>>::type>(vfs, keys[1], params, schema, stack);
-                auto a3 = decode<typename std::tuple_element<2, std::tuple<T...>>::type>(vfs, keys[2], params, schema, stack);
-                Op::execute(vfs, a1, a2, a3, std::forward<Bound>(bound_args)..., out);
-            }
+            logic_executor<Op, Out, T...>(vfs, path, params, schema, stack, std::make_index_sequence<sizeof...(T)>{}, out, std::forward<Bound>(bound_args)...);
         } catch (const std::exception& e) {
             std::cerr << "[Processor] FATAL: Op " << path << " failed: " << e.what() << std::endl;
             throw;
@@ -136,24 +127,31 @@ public:
     static T decode(jotcad::fs::VFSNode* vfs, const std::string& key, const json& params, const json& schema, const std::vector<std::string>& stack) {
         json arg_schema = schema["arguments"].value(key, json::object());
         json val = params.contains(key) ? params.at(key) : arg_schema.value("default", json());
-        bool is_input = schema.contains("inputs") && schema["inputs"].contains(key);
         
         if constexpr (std::is_same_v<T, Shape>) {
-            if (is_input && val.is_object() && val.contains("path")) {
+            if (val.is_object() && val.contains("path") && !val["path"].get<std::string>().empty()) {
+                // Address: Reify from Mesh
                 return Shape::from_json(vfs->read<json>({val.at("path"), val.value("parameters", json::object()), stack}));
             }
+            // Value: Parse Literal
             return Shape::from_json(val);
         }
         else if constexpr (std::is_same_v<T, std::vector<Shape>>) {
             std::vector<Shape> results;
-            json resolved = val;
-            if (is_input && val.is_object() && val.contains("path")) {
-                resolved = vfs->read<json>({val.at("path"), val.value("parameters", json::object()), stack});
-            }
-            if (resolved.is_array()) {
-                for (auto& item : resolved) results.push_back(Shape::from_json(item));
-            } else if (!resolved.is_null()) {
-                results.push_back(Shape::from_json(resolved));
+            if (val.is_array()) {
+                for (auto& item : val) {
+                   if (item.is_object() && item.contains("path") && !item["path"].get<std::string>().empty()) {
+                       results.push_back(Shape::from_json(vfs->read<json>({item.at("path"), item.value("parameters", json::object()), stack})));
+                   } else {
+                       results.push_back(Shape::from_json(item));
+                   }
+                }
+            } else if (!val.is_null()) {
+                if (val.is_object() && val.contains("path") && !val["path"].get<std::string>().empty()) {
+                    results.push_back(Shape::from_json(vfs->read<json>({val.at("path"), val.value("parameters", json::object()), stack})));
+                } else {
+                    results.push_back(Shape::from_json(val));
+                }
             }
             return results;
         }

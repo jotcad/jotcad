@@ -86,7 +86,22 @@ For computationally expensive operations (e.g., complex Booleans or heavy mesh p
 1.  **Stage 1: The Logical Operator**: Returns a `Shape` JSON (the "Passport"). This shape contains metadata (tags, transforms) but its `geometry.path` points to a **Geometry Provider** instead of raw data. This stage is extremely fast and CID-stable.
 2.  **Stage 2: The Geometry Provider**: The actual math engine. It is only triggered when a downstream consumer (like a 3D renderer or PDF exporter) calls `vfs.read()` on the geometry selector found in the Passport.
 
-Use this pattern when the cost of calculating vertices exceeds the overhead of an additional mesh request ($>100ms$).
+### 1.6 Recursive Reification
+
+To ensure operators always work with valid data, the `Processor` perform **Recursive Reification** on all `Shape` inputs.
+
+- **Automatic Link Following**: If an operator argument is a `Selector` (mesh address), the `Processor` eagerly follows the link to fetch the terminal `Shape` metadata before the operator executes.
+- **Unified Consistency**: This reification applies to both single `Shape` arguments and elements within `std::vector<Shape>`, ensuring that nested tools in boolean operations are fully hydrated.
+
+### 1.7 Optional Geometry
+
+A `Shape` in JOT is a recursive container. The `geometry` field is **optional**.
+
+- **Geometric Nodes**: Shapes that carry a mesh (e.g., a Box) have a `geometry` selector.
+- **Structural Nodes**: Shapes that act as containers (e.g., a Group) have `std::nullopt` for geometry but contain `components`.
+- **Hybrid Nodes**: Shapes can carry both local geometry and nested components.
+
+Operators MUST check `shape.geometry.has_value()` before attempting to read geometry bits from the VFS.
 
 
 ## 2. Naming & Casing Standards

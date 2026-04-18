@@ -251,6 +251,7 @@ bool VFSNode::validate_selector(const VFSRequest& req, std::string& error_out) {
 }
 
 std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req, int depth) {
+    if (req.path.empty()) throw VFSException("Selector must have a path", 400);
     std::cout << "[VFS " << config_.id << "] READ: " << req.path << " " << req.parameters.dump() << " (depth: " << depth << ")" << std::endl;
     if (depth > 10) throw VFSException("Recursive link depth exceeded", 508);
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
