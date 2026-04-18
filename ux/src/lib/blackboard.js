@@ -105,10 +105,12 @@ export const blackboard = {
 
       if (payload.type === 'CATALOG_ANNOUNCEMENT') {
         const { catalog, provider } = payload;
+        console.log(`[UX] Received Catalog Announcement from ${provider}:`, Object.keys(catalog || {}));
         if (catalog) {
           setSchemas((prev) => {
             const next = { ...prev };
             for (const [path, schema] of Object.entries(catalog)) {
+              console.log(`  - ${path} (aliases: ${JSON.stringify(schema.aliases || [])})`);
               const schemaWithOrigin = { ...schema, _origin: provider };
               vfs.addSchema(path, schemaWithOrigin);
               next[path] = schemaWithOrigin;

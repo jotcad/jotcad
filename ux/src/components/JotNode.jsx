@@ -63,16 +63,24 @@ export const JotNode = (props) => {
 
       // Register all discovered schemas with the compiler
       const currentSchemas = blackboard.schemas();
+      console.log(`[JotNode] Discovering operators from ${Object.keys(currentSchemas).length} schemas...`);
       for (const [path, schema] of Object.entries(currentSchemas)) {
         // 1. Canonical Name (e.g. jot/Box -> Box)
         if (path.startsWith('jot/')) {
-          compiler.registerOperator(path.slice(4), { path, schema });
+          const name = path.slice(4);
+          console.log(`  Registering Operator: ${name} -> ${path}`);
+          compiler.registerOperator(name, { path, schema });
         }
         
-        // 2. Metadata Alias (e.g. jot/Hexagon -> Hexagon)
-        const alias = schema.metadata?.alias;
-        if (alias && alias.startsWith('jot/')) {
-          compiler.registerOperator(alias.slice(4), { path, schema });
+        // 2. Multiple Aliases (e.g. jot/on -> aliases: ["jot/at"])
+        if (Array.isArray(schema.aliases)) {
+          for (const alias of schema.aliases) {
+            if (alias.startsWith('jot/')) {
+              const name = alias.slice(4);
+              console.log(`  Registering Alias: ${name} -> ${path}`);
+              compiler.registerOperator(name, { path, schema });
+            }
+          }
         }
       }
 
