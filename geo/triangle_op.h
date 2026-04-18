@@ -94,9 +94,9 @@ struct EquilateralTriangleOp : P {
 };
 
 static void triangle_init() {
-    Processor::register_op<EquilateralTriangleOp<>, std::vector<double>>("jot/Triangle/equilateral");
-    Processor::register_op<TriangleSSSOp<>, std::vector<double>, std::vector<double>, std::vector<double>>("jot/Triangle/sss");
-    Processor::register_op<TriangleSASOp<>, std::vector<double>, std::vector<double>, std::vector<double>>("jot/Triangle/sas");
+    Processor::register_op<EquilateralTriangleOp<>, Shape, std::vector<double>>("jot/Triangle/equilateral");
+    Processor::register_op<TriangleSSSOp<>, Shape, std::vector<double>, std::vector<double>, std::vector<double>>("jot/Triangle/sss");
+    Processor::register_op<TriangleSASOp<>, Shape, std::vector<double>, std::vector<double>, std::vector<double>>("jot/Triangle/sas");
 }
 
 } // namespace geo

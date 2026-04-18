@@ -200,8 +200,10 @@ export class JotCompiler {
 
     const result = normalizeSelector(path, resolvedParams);
 
-    const isAlias = op?.metadata?.aliases?.['$out'] === '$in';
-    if (this.options.optimizeAliases && isAlias) {
+    const isTee = op?.schema?.metadata?.passthrough === true || op?.metadata?.passthrough === true || op?.metadata?.aliases?.['$out'] === '$in';
+    
+    if (this.options.optimizeAliases && isTee) {
+      console.log(`[JotCompiler] Lifting passthrough operation: ${node.name}`);
       const results = Array.isArray(result) ? result : [result];
       for (const r of results) {
         this.sideDemands.set(JSON.stringify(r), r);

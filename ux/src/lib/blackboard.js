@@ -97,8 +97,8 @@ export const blackboard = {
     });
 
     const originalNotify = mesh.notify.bind(mesh);
-    mesh.notify = (selector, payload, stack) => {
-      originalNotify(selector, payload, stack);
+    mesh.notify = (selector, payload, stack = []) => {
+      // 1. Local Processing (Before Loop Prevention)
       if (payload.type === 'TOPOLOGY_UPDATE') {
         meshMap.set(payload.peer, payload.neighbors);
       }
@@ -122,6 +122,9 @@ export const blackboard = {
         const next = [...prev, { selector, payload, t: Date.now() }];
         return next.slice(-20);
       });
+
+      // 2. Mesh Forwarding (With Loop Prevention)
+      originalNotify(selector, payload, stack);
     };
 
     try {

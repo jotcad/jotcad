@@ -54,7 +54,7 @@ struct BoxOp : P {
 };
 
 static void box_init() {
-    Processor::register_op<BoxOp<>, std::vector<double>, std::vector<double>, std::vector<double>>();
+    Processor::register_op<BoxOp<>, Shape, std::vector<double>, std::vector<double>, std::vector<double>>();
 }
 
 } // namespace geo

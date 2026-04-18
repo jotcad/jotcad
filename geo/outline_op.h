@@ -10,25 +10,32 @@ struct OutlineOp : P {
     static constexpr const char* path = "jot/outline";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, Shape& out) {
-        auto geo_selector = in.geometry;
-        auto geo_bytes = vfs->template read<std::vector<uint8_t>>({
-            geo_selector.path, 
-            geo_selector.parameters
+        // 1. Resolve Input Geometry
+        Geometry geo = vfs->template read<Geometry>({
+            in.geometry.path, 
+            in.geometry.parameters
         });
         
-        Geometry geo; geo.decode_text(std::string(geo_bytes.begin(), geo_bytes.end()));
-        
+        // 2. Compute Outline (Extract unique segments from loops)
         Geometry outline;
         outline.vertices = geo.vertices;
+        
         for (const auto& face : geo.faces) {
             for (const auto& loop : face.loops) {
-                Geometry::Face f; f.loops.push_back(loop);
-                outline.faces.push_back(f);
+                if (loop.size() < 2) continue;
+                for (size_t i = 0; i < loop.size(); ++i) {
+                    int v1 = loop[i];
+                    int v2 = loop[(i + 1) % loop.size()];
+                    outline.segments.push_back({v1, v2});
+                }
             }
         }
 
+        // 3. Sink and Return
+        std::string hash = vfs->write_with_cid("geo/mesh", outline);
+
         out = in;
-        out.geometry = Shape::from_json(P::json::parse(P::write_shape(vfs, {{"op","outline"}}, outline, {{"type","outline"}}))).geometry;
+        out.geometry = {"geo/mesh", {{"cid", hash}}};
         out.add_tag("operation", "outline");
     }
 
@@ -47,7 +54,7 @@ struct OutlineOp : P {
 };
 
 static void outline_init() {
-    Processor::register_op<OutlineOp<>, Shape>();
+    Processor::register_op<OutlineOp<>, Shape, Shape>();
 }
 
 } // namespace geo

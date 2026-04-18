@@ -62,26 +62,32 @@ The `Processor` handles the **Universal Sequence Principle** automatically:
 - If a user provides a sequence (e.g., `distance: [10, 20]`), `execute` is called for each value, and the results are harvested into a unified VFS sequence.
 - **Atomic Types:** Use `std::vector<double>` in the `execute` signature if the operator needs to consume a whole sequence at once (e.g., `PointsOp`).
 
-### 1.4 The "Tee" Pattern & Side-Effects
+### 1.4 The "Tee" Pattern (Side-Effects)
 
-Some operators, like `jot/pdf` or `jot/stl`, are designed to produce side-effects (files in the VFS) without altering the geometric result. These follow the **Tee Pattern**:
+Some operators, like `jot/pdf` or `jot/stl`, produce side-effects (artifacts) while acting as identity pass-throughs for geometry. These follow the **Port-Based Artifact Pattern**:
 
-1.  **Identity Preservation:** The `execute` function should perform a pure pass-through (`out = in`).
-2.  **VFS Sink:** Use `vfs->write()` to persist the side-effect (e.g., PDF bytes) at a specific path.
-3.  **Metadata Signaling:** Set `optimizeAliases: true` in the schema metadata to inform the compiler that this operation does not change the Content-ID of the shape.
+1.  **Identity Preservation:** The `execute` function performs a pure pass-through (`out = in`).
+2.  **On-Demand Generation:** Instead of generating the artifact on every geometry read, the operator's registration logic handles a `$port` parameter.
+3.  **Port Access:** The artifact (e.g., PDF bytes) is only generated and returned when the VFS requests the selector with a specific port (e.g., `parameters: { "$port": "filename" }`).
+4.  **Metadata Signaling:** Set `passthrough: true` in the schema metadata to inform the compiler to "lift" the demand into the side-effect list.
 
 ```cpp
-static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, const std::string& filename, Shape& out) {
-    // 1. Generate side-effect data
-    auto data = generate_my_format(in);
-    
-    // 2. Sink to VFS
-    vfs->write(filename, {}, data);
-
-    // 3. Pure Pass-through
-    out = in;
+// Schema defines the Port
+"outputs": {
+  "$out": { "type": "shape" },
+  "filename": { "type": "file", "mimeType": "application/pdf" }
 }
 ```
+
+### 1.5 Two-Stage Resolution (Lazy Geometry)
+
+For computationally expensive operations (e.g., complex Booleans or heavy mesh processing), JOT supports a **Two-Stage Resolution** pattern to defer math until it is strictly necessary.
+
+1.  **Stage 1: The Logical Operator**: Returns a `Shape` JSON (the "Passport"). This shape contains metadata (tags, transforms) but its `geometry.path` points to a **Geometry Provider** instead of raw data. This stage is extremely fast and CID-stable.
+2.  **Stage 2: The Geometry Provider**: The actual math engine. It is only triggered when a downstream consumer (like a 3D renderer or PDF exporter) calls `vfs.read()` on the geometry selector found in the Passport.
+
+Use this pattern when the cost of calculating vertices exceeds the overhead of an additional mesh request ($>100ms$).
+
 
 ## 2. Naming & Casing Standards
 
@@ -100,8 +106,24 @@ Operators should throw `VFSException` (defined in `geo/impl/vfs_node.h`) for una
 
 ## 4. Build System
 
-The C++ node is built using `geo/build.sh`. It produces a single static binary `geo/bin/ops` which hosts the entire operator catalog.
+JotCAD uses a tiered **Makefile** build system for high-performance incremental compilation.
+
+### 4.1 Core Library
+The VFS core and all operator logic are compiled into a static library: `geo/bin/libjotgeo.a`. This allows both the production binary and unit tests to share the exact same compiled logic.
+
+### 4.2 Mandatory Testing
+Unit tests are **integrated into the build process**. A build is only considered successful if all operator tests pass.
 
 ```bash
-./geo/build.sh
+# Build everything and run all unit tests
+cd geo && ./build.sh
+
+# Run tests independently
+npm run test:unit
+```
+
+### 4.3 Clean Builds
+To perform a full clean and rebuild:
+```bash
+cd geo && make clean && make
 ```

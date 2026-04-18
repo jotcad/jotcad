@@ -44,7 +44,7 @@ struct PointsOp : P {
 };
 
 static void points_init() {
-    Processor::register_op<PointsOp<>, Shape>();
+    Processor::register_op<PointsOp<>, Shape, Shape>();
 }
 
 } // namespace geo

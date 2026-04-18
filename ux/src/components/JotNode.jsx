@@ -19,6 +19,26 @@ export const JotNode = (props) => {
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
   const [resultData, setResultData] = createSignal(null);
+  const [associatedFiles, setAssociatedFiles] = createSignal([]);
+
+  const downloadFile = async (file) => {
+    try {
+      console.log(`[JotNode] Downloading artifact: ${file.label} from ${file.selector.path}`);
+      const data = await vfs.readData(file.selector.path, file.selector.parameters);
+      if (data) {
+        const blob = new Blob([data], { type: file.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.label;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('[JotNode] Download failed:', err);
+      alert('Download failed: ' + err.message);
+    }
+  };
 
   onMount(() => {
     interact(nodeRef).draggable({
@@ -60,32 +80,63 @@ export const JotNode = (props) => {
       const resolved = await compiler.evaluate(ast);
 
       console.log(
-        '[JotNode] Translated to selector:',
+        '[JotNode] Compiled result:',
         JSON.stringify(resolved, null, 2)
       );
 
-      // Handle Sequences (Arrays) - if array, wrap in Group for visualization
-      let finalSelector = resolved;
-      if (Array.isArray(resolved)) {
-        finalSelector = { path: 'jot/group', parameters: { $in: resolved } };
-      }
+      // Distinguish Primary Result from Side-Demands
+      // compiler.evaluate returns [Primary, ...SideDemands] if passthrough ops were used
+      const allSelectors = Array.isArray(resolved) ? resolved : [resolved];
+      const primarySelector = allSelectors[0];
 
-      const data = await vfs.readData(finalSelector.path, finalSelector.parameters);
+      // 1. Identify Associated Files (Side-Demands) from ALL selectors
+      const files = [];
+      const findFiles = (node) => {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) {
+          node.forEach(findFiles);
+          return;
+        }
+        if (node.path && currentSchemas[node.path]) {
+          const schema = currentSchemas[node.path];
+          if (schema.outputs) {
+            for (const [key, out] of Object.entries(schema.outputs)) {
+              if (out.type === 'file') {
+                const label = node.parameters?.[key] || key;
+                files.push({
+                  label,
+                  selector: {
+                    ...node,
+                    parameters: { ...node.parameters, $port: key }
+                  },
+                  mimeType: out.mimeType || 'application/octet-stream'
+                });
+              }
+            }
+          }
+        }
+        if (node.parameters) {
+          Object.values(node.parameters).forEach(findFiles);
+        }
+      };
+      
+      allSelectors.forEach(findFiles);
+      setAssociatedFiles(files);
+
+      // 2. Resolve Primary Geometry for visualization
+      const data = await vfs.readData(primarySelector.path, primarySelector.parameters);
       
       if (data) {
-        console.log('[JotNode] RAW SHAPE DATA:', JSON.stringify(data, null, 2));
+        console.log('[JotNode] Primary Shape Data:', JSON.stringify(data, null, 2));
         
-        // Pack into self-contained ZFS for robust visualization and debugging
         if (typeof data === 'object' && (data.geometry || data.shapes)) {
           const unified = await packZFS(vfs, data);
           setResultData(unified);
         } else {
           setResultData(data);
         }
-        
-        console.log('[JotNode] Visualization updated locally.');
       } else {
-        console.warn(`[JotNode] Mesh resolution failed: No data for ${finalSelector.path}`);
+        console.warn(`[JotNode] Mesh resolution failed for ${primarySelector.path}`);
       }
     } catch (err) {
       console.error('[JotNode] Compilation/Evaluation failed:', err);
@@ -156,6 +207,23 @@ export const JotNode = (props) => {
             {isEvaluating() ? 'EVALUATING...' : 'EVALUATE JOT'}
           </button>
         </div>
+
+        {/* Associated Files / Downloads */}
+        <Show when={associatedFiles().length > 0}>
+          <div class="flex flex-wrap gap-2 py-1">
+            <For each={associatedFiles()}>
+              {(file) => (
+                <button
+                  onClick={() => downloadFile(file)}
+                  class="px-2 py-1 bg-white/10 hover:bg-white/20 border border-white/10 rounded text-[10px] font-mono text-cyan-400 transition-colors flex items-center gap-1"
+                >
+                  <Database size={10} />
+                  {file.label}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
 
         {/* Local Visualization Viewport */}
         <div class="w-full h-64 bg-black/40 rounded-lg border border-white/10 overflow-hidden relative group mt-1">

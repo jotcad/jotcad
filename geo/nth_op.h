@@ -35,7 +35,7 @@ struct NthOp : P {
 };
 
 static void nth_init() {
-    Processor::register_op<NthOp<>, std::vector<Shape>, double>();
+    Processor::register_op<NthOp<>, Shape, std::vector<Shape>, double>();
 }
 
 } // namespace geo

@@ -19,6 +19,24 @@ namespace fs {
 
 using json = nlohmann::json;
 
+// Global VFS utility declarations
+std::string vfs_hash256(const std::vector<uint8_t>& data);
+std::string vfs_hash256_str(const std::string& data);
+
+/**
+ * Selector: The universal address for mesh content.
+ */
+struct Selector {
+    std::string path;
+    json parameters = json::object();
+
+    json to_json() const { return {{"path", path}, {"parameters", parameters}}; }
+    static Selector from_json(const json& j) {
+        if (j.is_string()) return {j.get<std::string>(), json::object()};
+        return {j.at("path").get<std::string>(), j.value("parameters", json::object())};
+    }
+};
+
 /**
  * VFSException: Signals resolution or validation failures within the mesh.
  */
@@ -72,8 +90,57 @@ public:
     std::vector<uint8_t> spy(const VFSRequest& req);
 
     // Perform a WRITE (Direct to Local Cache)
-    void write(const std::string& path, const json& parameters, const std::vector<uint8_t>& data);
-    std::string write_cid(const std::string& path, const std::vector<uint8_t>& data);
+    template<typename T = std::vector<uint8_t>>
+    void write(const std::string& path, const json& parameters, const T& data) {
+        std::vector<uint8_t> bytes;
+        if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
+            bytes = data;
+        } else if constexpr (std::is_same_v<T, json>) {
+            std::string s = data.dump();
+            bytes = std::vector<uint8_t>(s.begin(), s.end());
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            bytes = std::vector<uint8_t>(data.begin(), data.end());
+        } else {
+            // Fallback for types specialized in other headers (e.g. Shape/Geometry)
+            write_specialized(path, parameters, data);
+            return;
+        }
+        write_local(get_cid(path, parameters), bytes, path, parameters);
+    }
+
+    template<typename T = std::vector<uint8_t>>
+    std::string write_with_cid(const std::string& path, const T& data) {
+        std::vector<uint8_t> bytes;
+        if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
+            bytes = data;
+        } else if constexpr (std::is_same_v<T, json>) {
+            std::string s = data.dump();
+            bytes = std::vector<uint8_t>(s.begin(), s.end());
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            bytes = std::vector<uint8_t>(data.begin(), data.end());
+        } else {
+            return write_with_cid_specialized(path, data);
+        }
+        
+        std::string hash = vfs_hash256(bytes);
+        json parameters = {{"cid", hash}};
+        write_local(get_cid(path, parameters), bytes, path, parameters);
+        return hash;
+    }
+
+    template<typename T = std::vector<uint8_t>>
+    Selector write_geometry(const T& data) {
+        return {"geo/mesh", {{"cid", write_with_cid("geo/mesh", data)}}};
+    }
+
+    template<typename T = std::vector<uint8_t>>
+    Selector write_shape(const T& data) {
+        return {"geo/mesh", {{"cid", write_with_cid("geo/mesh", data)}}};
+    }
+
+    template<typename T> void write_specialized(const std::string&, const json&, const T&);
+    template<typename T> std::string write_with_cid_specialized(const std::string&, const T&);
+
     void link(const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 
     bool validate_selector(const VFSRequest& req, std::string& error_out);

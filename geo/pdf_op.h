@@ -23,15 +23,13 @@ struct PdfOp : P {
 
         if (!shape.geometry.path.empty()) {
             try {
-                auto geo_bytes = vfs->template read<std::vector<uint8_t>>({
+                auto geo = vfs->template read<Geometry>({
                     shape.geometry.path, 
-                    shape.geometry.parameters
+                    shape.geometry.parameters,
+                    {} // Empty stack
                 });
                 
-                Geometry geo; 
-                geo.decode_text(std::string(geo_bytes.begin(), geo_bytes.end()));
                 geo.apply_tf(next_tf);
-                
                 writer.add_geometry(geo, shape.tags);
             } catch (const std::exception& e) {
                 std::cerr << "[PdfOp] Warning: Could not resolve geometry " << shape.geometry.path << ": " << e.what() << std::endl;
@@ -44,20 +42,6 @@ struct PdfOp : P {
     }
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, const std::string& filename, double lineWidth, Shape& out) {
-        PDFWriter::Config config;
-        config.lineWidth = lineWidth;
-        PDFWriter writer(config);
-        
-        std::vector<double> identity = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-        
-        walk(vfs, in, identity, writer);
-        
-        auto pdf_data = writer.write();
-        
-        // SINK: Export to VFS at the specific path requested. 
-        // Correct signature: (path, parameters, data)
-        vfs->write(filename, nlohmann::json::object(), pdf_data);
-
         // TEE: Pure functional pass-through. 
         out = in;
     }
@@ -73,17 +57,40 @@ struct PdfOp : P {
                 {"$out", {{"type", "jot:shape"}}}
             }},
             {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}},
+            {"outputs", {
+                {"$out", {{"type", "shape"}}},
+                {"filename", {{"type", "file"}, {"mimeType", "application/pdf"}}}
+            }},
             {"metadata", {
                 {"alias", "jot/pdf"},
-                {"optimizeAliases", true} // Signal that this is a "Tee" operation
+                {"passthrough", true}
             }}
         };
     }
 };
 
 static void pdf_init() {
-    Processor::register_op<PdfOp<>, Shape, std::string, double>();
+    auto logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack) -> std::vector<uint8_t> {
+        if (params.contains("$port") && params["$port"] == "filename") {
+            // PORT REQUEST: Generate and return the actual PDF bytes
+            Shape in = Processor::decode<Shape>(vfs, "$in", params, PdfOp<>::schema(), stack);
+            std::string filename = params.value("filename", "output.pdf");
+            double lineWidth = params.value("lineWidth", 0.096);
+            
+            PDFWriter::Config config;
+            config.lineWidth = lineWidth;
+            PDFWriter writer(config);
+            std::vector<double> identity = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+            
+            PdfOp<>::walk(vfs, in, identity, writer);
+            return writer.write();
+        }
+        
+        // DEFAULT: Pass-through geometry
+        return Processor::logic_wrapper<PdfOp<>, Shape, Shape, std::string, double>(vfs, path, params, stack);
+    };
+
+    Processor::register_op("jot/pdf", logic, PdfOp<>::schema());
 }
 
 } // namespace geo

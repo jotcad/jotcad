@@ -9,8 +9,8 @@ template <typename P = JotVfsProtocol>
 struct LinkOp : P {
     static constexpr const char* path = "jot/link";
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& a, const Shape& b, Shape& out) {
-        out = a;
-        out.geometry = {"jot/link", {{"a", a.to_json()}, {"b", b.to_json()}}};
+        out.geometry.path = ""; // Clear geometry
+        out.components = {a, b};
         out.add_tag("type", "link");
     }
     static std::vector<std::string> argument_keys() { return {"$a", "$b"}; }
@@ -23,10 +23,8 @@ template <typename P = JotVfsProtocol>
 struct LoopOp : P {
     static constexpr const char* path = "jot/loop";
     static void execute(jotcad::fs::VFSNode* vfs, const std::vector<Shape>& segments, Shape& out) {
-        out.geometry = {"jot/loop", nlohmann::json::object()};
-        nlohmann::json items = nlohmann::json::array();
-        for (const auto& s : segments) items.push_back(s.to_json());
-        out.geometry.parameters["segments"] = items;
+        out.geometry.path = "";
+        out.components = segments;
         out.add_tag("type", "loop");
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
@@ -36,8 +34,8 @@ struct LoopOp : P {
 };
 
 static void path_init() {
-    Processor::register_op<LinkOp<>, Shape, Shape>();
-    Processor::register_op<LoopOp<>, std::vector<Shape>>();
+    Processor::register_op<LinkOp<>, Shape, Shape, Shape>();
+    Processor::register_op<LoopOp<>, Shape, std::vector<Shape>>();
 }
 
 } // namespace geo

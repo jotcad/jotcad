@@ -14,7 +14,7 @@
 namespace jotcad {
 namespace fs {
 
-static std::string vfs_hash256(const std::vector<uint8_t>& data) {
+std::string vfs_hash256(const std::vector<uint8_t>& data) {
     uint64_t hash = 0x811c9dc5;
     for (auto b : data) { hash ^= b; hash *= 0x01000193; }
     std::stringstream ss;
@@ -22,7 +22,7 @@ static std::string vfs_hash256(const std::vector<uint8_t>& data) {
     return ss.str();
 }
 
-static std::string vfs_hash256_str(const std::string& str) {
+std::string vfs_hash256_str(const std::string& str) {
     std::vector<uint8_t> data(str.begin(), str.end());
     return vfs_hash256(data);
 }
@@ -291,19 +291,6 @@ std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req, int depth) {
     throw VFSException("Artifact not found in mesh: " + req.path, 404);
 }
 
-void VFSNode::write(const std::string& path, const json& parameters, const std::vector<uint8_t>& data) {
-    std::cout << "[VFS " << config_.id << "] WRITE: " << path << " " << parameters.dump() << " (" << data.size() << " bytes)" << std::endl;
-    write_local(get_cid(path, parameters), data, path, parameters);
-}
-
-std::string VFSNode::write_cid(const std::string& path, const std::vector<uint8_t>& data) {
-    std::string hash = vfs_hash256(data);
-    json parameters = {{"cid", hash}};
-    std::cout << "[VFS " << config_.id << "] WRITE_CID: " << path << " cid=" << hash << std::endl;
-    write_local(get_cid(path, parameters), data, path, parameters);
-    return hash;
-}
-
 void VFSNode::link(const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params) {
     write_local_link(get_cid(src_path, src_params), src_path, src_params, tgt_path, tgt_params);
 }
@@ -325,8 +312,11 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
     std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid + ".data");
     std::ifstream is(p, std::ios::binary | std::ios::ate);
     if (!is) return {};
-    std::streamsize size = is.tellg(); is.seekg(0, std::ios::beg);
-    std::vector<uint8_t> buf((size_t)size); if (is.read((char*)buf.data(), (size_t)size)) return buf;
+    std::streamsize size = is.tellg(); 
+    if (size <= 0) return {}; // Safety: Prevent max_size() crash on -1 or empty
+    is.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buf((size_t)size); 
+    if (is.read((char*)buf.data(), (size_t)size)) return buf;
     return {};
 }
 

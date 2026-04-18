@@ -49,12 +49,12 @@ static constexpr char hex_half[] = "half";
 static void hexagon_init() {
     auto s_full = HexagonOp<hex_full>::schema();
     s_full["metadata"]["alias"] = "jot/Hexagon";
-    Processor::register_op<HexagonOp<hex_full>, std::vector<double>>("jot/Hexagon/full", s_full);
+    Processor::register_op<HexagonOp<hex_full>, Shape, std::vector<double>>("jot/Hexagon/full", s_full);
     
-    Processor::register_op<HexagonOp<hex_cap>, std::vector<double>>("jot/Hexagon/cap");
-    Processor::register_op<HexagonOp<hex_middle>, std::vector<double>>("jot/Hexagon/middle");
-    Processor::register_op<HexagonOp<hex_sector>, std::vector<double>>("jot/Hexagon/sector");
-    Processor::register_op<HexagonOp<hex_half>, std::vector<double>>("jot/Hexagon/half");
+    Processor::register_op<HexagonOp<hex_cap>, Shape, std::vector<double>>("jot/Hexagon/cap");
+    Processor::register_op<HexagonOp<hex_middle>, Shape, std::vector<double>>("jot/Hexagon/middle");
+    Processor::register_op<HexagonOp<hex_sector>, Shape, std::vector<double>>("jot/Hexagon/sector");
+    Processor::register_op<HexagonOp<hex_half>, Shape, std::vector<double>>("jot/Hexagon/half");
 }
 
 } // namespace geo

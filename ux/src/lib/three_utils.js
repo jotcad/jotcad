@@ -100,9 +100,35 @@ export const decodeTf = (tf) => {
   return m;
 };
 
+const toColor = (tags) => {
+  if (!tags) return new THREE.Color(0x808080);
+  const colorVal = tags.color || tags.tags?.color; // Handle both flat and nested tags
+  if (colorVal) {
+    return new THREE.Color(colorVal);
+  }
+  // Handle legacy color:red style tags
+  for (const key of Object.keys(tags)) {
+    if (key.startsWith('color:')) return new THREE.Color(key.substring(6));
+  }
+  return new THREE.Color(0x808080);
+};
+
 export const buildMeshes = async ({ assets, shape, scene }) => {
+  // Add lights if not already present in the scene for Lambert/Phong materials
+  if (!scene.getObjectByName('ambient_light')) {
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    ambient.name = 'ambient_light';
+    scene.add(ambient);
+    const directional = new THREE.DirectionalLight(0xffffff, 0.6);
+    directional.position.set(10, 20, 10);
+    directional.name = 'directional_light';
+    scene.add(directional);
+  }
+
   const walk = async (s, parentMat = identity) => {
     const worldMat = parentMat.clone().multiply(decodeTf(s.tf));
+    const shapeColor = toColor(s.tags);
+
     if (s.geometry) {
       const text = await assets.getText(s.geometry);
       if (text) {
@@ -126,7 +152,10 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
             const g = new THREE.BufferGeometry();
             g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
             g.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
-            const mesh = new THREE.Mesh(g, new THREE.MeshNormalMaterial({ side: THREE.DoubleSide }));
+            const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
+                color: shapeColor,
+                side: THREE.DoubleSide 
+            }));
             mesh.applyMatrix4(worldMat);
             scene.add(mesh);
           }
@@ -142,7 +171,7 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           if (pos.length > 0) {
             const g = new THREE.BufferGeometry();
             g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x00ff00 }));
+            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: shapeColor }));
             line.applyMatrix4(worldMat);
             scene.add(line);
           }
@@ -189,7 +218,10 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           g.setAttribute('normal', new THREE.Float32BufferAttribute(normArr, 3));
           g.setIndex(indices);
           
-          const mesh = new THREE.Mesh(g, new THREE.MeshNormalMaterial({ side: THREE.DoubleSide }));
+          const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
+              color: shapeColor,
+              side: THREE.DoubleSide 
+          }));
           mesh.applyMatrix4(worldMat);
           scene.add(mesh);
         }

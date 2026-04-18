@@ -11,19 +11,40 @@ struct RotateOp : P {
         std::vector<Shape> results;
         for (auto src : sources) {
             for (double t : turns) {
+                double rad = t * 2.0 * M_PI;
+                double c = std::cos(rad);
+                double s = std::sin(rad);
+                
+                std::vector<double> r = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+                if (axis == 0) { // X
+                    r[5] = c; r[6] = -s; r[9] = s; r[10] = c;
+                } else if (axis == 1) { // Y
+                    r[0] = c; r[2] = s; r[8] = -s; r[10] = c;
+                } else { // Z
+                    r[0] = c; r[1] = -s; r[4] = s; r[5] = c;
+                }
+
+                // Compose: out.tf = src.tf * r
+                std::vector<double> next_tf(16, 0.0);
+                for (int i = 0; i < 4; ++i) {
+                    for (int j = 0; j < 4; ++j) {
+                        for (int k = 0; k < 4; ++k) {
+                            next_tf[i * 4 + j] += src.tf[i * 4 + k] * r[k * 4 + j];
+                        }
+                    }
+                }
+                
                 Shape res = src;
-                res.geometry.parameters["turns"] = t;
-                res.geometry.parameters["axis"] = axis;
+                res.tf = next_tf;
                 results.push_back(res);
             }
         }
 
         if (results.size() == 1) out = results[0];
         else {
-            out.geometry = {"jot/group", nlohmann::json::object()};
-            nlohmann::json items = nlohmann::json::array();
-            for (const auto& r : results) items.push_back(r.to_json());
-            out.geometry.parameters["items"] = items;
+            out.geometry.path = "";
+            out.components = results;
+            out.add_tag("type", "group");
         }
     }
 

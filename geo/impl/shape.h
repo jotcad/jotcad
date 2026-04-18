@@ -3,6 +3,7 @@
 #include <vector>
 #include <array>
 #include <json.hpp>
+#include "vfs_node.h"
 
 namespace jotcad {
 namespace geo {
@@ -13,19 +14,7 @@ using json = nlohmann::json;
  * Shape: The foundational semantic container for JOT.
  */
 struct Shape {
-    struct Selector {
-        std::string path;
-        json parameters = json::object();
-
-        json to_json() const {
-            return {{"path", path}, {"parameters", parameters}};
-        }
-
-        static Selector from_json(const json& j) {
-            if (j.is_string()) return {j.get<std::string>(), json::object()};
-            return {j.at("path").get<std::string>(), j.value("parameters", json::object())};
-        }
-    } geometry;
+    jotcad::fs::Selector geometry;
 
     std::vector<double> tf = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     json tags = json::object();
@@ -54,7 +43,7 @@ struct Shape {
 
     static Shape from_json(const json& j) {
         Shape s;
-        if (j.contains("geometry")) s.geometry = Selector::from_json(j.at("geometry"));
+        if (j.contains("geometry")) s.geometry = jotcad::fs::Selector::from_json(j.at("geometry"));
         s.tf = j.value("tf", std::vector<double>{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1});
         s.tags = j.value("tags", json::object());
         if (j.contains("components")) {

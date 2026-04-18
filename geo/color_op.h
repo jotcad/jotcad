@@ -31,7 +31,7 @@ struct ColorOp : P {
 };
 
 static void color_init() {
-    Processor::register_op<ColorOp<>, Shape, std::string>();
+    Processor::register_op<ColorOp<>, Shape, Shape, std::string>();
 }
 
 } // namespace geo

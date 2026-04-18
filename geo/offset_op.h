@@ -1,6 +1,7 @@
 #pragma once
 #include "impl/protocols.h"
 #include "impl/processor.h"
+#include "impl/offset.h"
 
 namespace jotcad {
 namespace geo {
@@ -10,10 +11,19 @@ struct OffsetOp : P {
     static constexpr const char* path = "jot/offset";
 
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, double distance, Shape& out) {
+        // 1. Resolve Input Geometry
+        Geometry geo = vfs->template read<Geometry>({
+            in.geometry.path, 
+            in.geometry.parameters
+        });
+        
+        // 2. Perform Real Geometric Offset (Minkowski)
+        applyOffset(geo, distance);
+
+        // 3. Sink to Mesh (Deduplicated) and Return
         out = in;
-        out.geometry.parameters["distance"] = distance;
+        out.geometry = vfs->write_geometry(geo);
         out.add_tag("operation", "offset");
-        if (in.tags.value("plane", "") == "Z0") out.add_tag("plane", "Z0");
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "distance"}; }
@@ -32,7 +42,7 @@ struct OffsetOp : P {
 };
 
 static void offset_init() {
-    Processor::register_op<OffsetOp<>, Shape, double>();
+    Processor::register_op<OffsetOp<>, Shape, Shape, double>();
 }
 
 } // namespace geo
