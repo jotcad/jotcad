@@ -23,6 +23,7 @@ struct NthOp : P {
 
     static typename P::json schema() {
         return {
+            {"metadata", {{"alias", "jot/nth"}}},
             {"arguments", {
                 {"$in", {{"type", "jot:shapes"}}},
                 {"index", {{"type", "jot:number"}, {"default", 0}}},

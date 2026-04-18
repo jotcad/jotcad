@@ -6,6 +6,54 @@
 namespace jotcad {
 namespace geo {
 
+/**
+ * AtOp: Simple Spatial Placement (jot/at)
+ */
+template <typename P = JotVfsProtocol>
+struct AtOp : P {
+    static constexpr const char* path = "jot/at";
+
+    static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, const std::vector<Shape>& targets, Shape& out) {
+        if (targets.empty()) {
+            out = in;
+            return;
+        }
+
+        std::vector<Shape> results;
+        for (const auto& target : targets) {
+            Matrix T = Matrix::from_vec(target.tf);
+            Matrix acc_m = Matrix::from_vec(in.tf);
+            Shape clone = in;
+            clone.tf = (T * acc_m).to_vec();
+            results.push_back(clone);
+        }
+
+        if (results.size() == 1) out = results[0];
+        else {
+            out.geometry = std::nullopt;
+            out.components = results;
+            out.add_tag("type", "group");
+        }
+    }
+
+    static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
+
+    static typename P::json schema() {
+        return {
+            {"path", "jot/at"},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}}},
+                {"targets", {{"type", "jot:shapes"}}}
+            }},
+            {"inputs", {{"$in", {{"type", "shape"}}}, {"targets", {{"type", "shapes"}}}}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
+    }
+};
+
+/**
+ * OnOp: Sequential Workbench Accumulator (jot/on)
+ */
 template <typename P = JotVfsProtocol>
 struct OnOp : P {
     static constexpr const char* path = "jot/on";
@@ -16,19 +64,14 @@ struct OnOp : P {
             return;
         }
 
-        // ACCUMULATOR PATTERN: Sequentially apply the op to the result of the previous step
-        // We use strict conjugation: T * op * T_inv
         Shape accumulator = in;
-
         for (const auto& target : targets) {
             Matrix T = Matrix::from_vec(target.tf);
             Matrix T_inv = T.inverse();
 
-            // 1. Mount: Map subject into local workbench space
             Shape workbench_subject = accumulator;
             workbench_subject.tf = (T_inv * Matrix::from_vec(accumulator.tf)).to_vec();
 
-            // 2. Operate: Perform workbench logic at origin
             nlohmann::json hydrated = Processor::hydrate(op, workbench_subject);
             Shape workbench_result = Shape::from_json(vfs->template read<nlohmann::json>({
                 hydrated.at("path"), 
@@ -36,7 +79,6 @@ struct OnOp : P {
                 {} // stack
             }));
 
-            // 3. Unmount: Map result back to global space
             accumulator = workbench_result;
             accumulator.tf = (T * Matrix::from_vec(workbench_result.tf)).to_vec();
         }
@@ -48,6 +90,7 @@ struct OnOp : P {
 
     static typename P::json schema() {
         return {
+            {"path", "jot/on"},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"targets", {{"type", "jot:shapes"}}},
@@ -60,7 +103,8 @@ struct OnOp : P {
 };
 
 static void on_init() {
-    Processor::register_op<OnOp<>, Shape, Shape, std::vector<Shape>, nlohmann::json>();
+    Processor::register_op<AtOp<>, Shape, Shape, std::vector<Shape>>("jot/at");
+    Processor::register_op<OnOp<>, Shape, Shape, std::vector<Shape>, nlohmann::json>("jot/on");
 }
 
 } // namespace geo

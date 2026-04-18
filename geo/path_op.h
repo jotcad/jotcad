@@ -9,13 +9,18 @@ template <typename P = JotVfsProtocol>
 struct LinkOp : P {
     static constexpr const char* path = "jot/link";
     static void execute(jotcad::fs::VFSNode* vfs, const Shape& a, const Shape& b, Shape& out) {
-        out.geometry = std::nullopt; // Clear geometry
+        out.geometry = std::nullopt;
         out.components = {a, b};
         out.add_tag("type", "link");
     }
     static std::vector<std::string> argument_keys() { return {"$a", "$b"}; }
     static typename P::json schema() {
-        return {{"arguments", {{"$a", {{"type", "jot:shape"}}}, {"$b", {{"type", "jot:shape"}}}, {"$out", {{"type", "jot:shape"}}}}}, {"inputs", {{"$a", {{"type", "shape"}}}, {"$b", {{"type", "shape"}}}}}, {"outputs", {{"$out", {{"type", "shape"}}}}}};
+        return {
+            {"path", "jot/link"},
+            {"arguments", {{"$a", {{"type", "jot:shape"}}}, {"$b", {{"type", "jot:shape"}}}, {"$out", {{"type", "jot:shape"}}}}},
+            {"inputs", {{"$a", {{"type", "shape"}}}, {"$b", {{"type", "shape"}}}}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
     }
 };
 
@@ -29,13 +34,18 @@ struct LoopOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
-        return {{"arguments", {{"$in", {{"type", "jot:shapes"}}}, {"$out", {{"type", "jot:shape"}}}}}, {"inputs", {{"$in", {{"type", "shapes"}}}}}, {"outputs", {{"$out", {{"type", "shape"}}}}}};
+        return {
+            {"path", "jot/loop"},
+            {"arguments", {{"$in", {{"type", "jot:shapes"}}}, {"$out", {{"type", "jot:shape"}}}}},
+            {"inputs", {{"$in", {{"type", "shapes"}}}}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
     }
 };
 
 static void path_init() {
-    Processor::register_op<LinkOp<>, Shape, Shape, Shape>();
-    Processor::register_op<LoopOp<>, Shape, std::vector<Shape>>();
+    Processor::register_op<LinkOp<>, Shape, Shape, Shape>("jot/link");
+    Processor::register_op<LoopOp<>, Shape, std::vector<Shape>>("jot/loop");
 }
 
 } // namespace geo

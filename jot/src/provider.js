@@ -34,15 +34,31 @@ export function registerJotProvider(vfs, options = {}) {
     });
 
     compiler.registerOperator('offset', {
-      path: 'op/offset',
+      path: 'jot/offset',
       schema: { arguments: { radius: { type: 'jot:number', default: 1 } } },
     });
 
     compiler.registerOperator('outline', {
-      path: 'op/outline',
+      path: 'jot/outline',
       schema: {
         arguments: { $in: { type: 'jot:shape' } },
         outputs: { $out: { type: 'jot:shape' } },
+      },
+    });
+
+    compiler.registerOperator('points', {
+      path: 'jot/points',
+      schema: {
+        arguments: { $in: { type: 'jot:shape' } },
+        outputs: { $out: { type: 'jot:geometry' } },
+      },
+    });
+
+    compiler.registerOperator('path', {
+      path: 'jot/path',
+      schema: {
+        arguments: { $in: { type: 'jot:shape' } },
+        outputs: { $out: { type: 'jot:geometry' } },
       },
     });
 
@@ -56,19 +72,90 @@ export function registerJotProvider(vfs, options = {}) {
       },
     });
 
-    // and/Group is a Greedy consumer of shapes
-    compiler.registerOperator('and', {
-      path: 'op/group',
+    compiler.registerOperator('Group', {
+      path: 'jot/group',
       schema: {
-        arguments: { $in: { type: 'jot:shapes' } }
+        arguments: { shapes: { type: 'jot:shapes' } }
+      }
+    });
+
+    compiler.registerOperator('group', {
+      path: 'jot/group',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' },
+          others: { type: 'jot:shapes' } 
+        }
+      }
+    });
+
+    compiler.registerOperator('and', {
+      path: 'jot/group',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' },
+          others: { type: 'jot:shapes' } 
+        }
+      }
+    });
+
+    compiler.registerOperator('cut', {
+      path: 'jot/cut',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' },
+          tools: { type: 'jot:shapes' } 
+        }
+      }
+    });
+
+    compiler.registerOperator('at', {
+      path: 'jot/on',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' },
+          targets: { type: 'jot:shapes' },
+          op: { type: 'jot:operation' }
+        }
+      }
+    });
+
+    compiler.registerOperator('on', {
+      path: 'jot/on',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' },
+          targets: { type: 'jot:shapes' },
+          op: { type: 'jot:operation' }
+        }
+      }
+    });
+
+    compiler.registerOperator('corners', {
+      path: 'jot/corners',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' },
+          proxy: { type: 'jot:boolean', default: true }
+        }
+      }
+    });
+
+    compiler.registerOperator('color', {
+      path: 'jot/color',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' },
+          color: { type: 'jot:string' }
+        }
       }
     });
 
     const rxSpec = {
-      path: 'op/rotateX',
+      path: 'jot/rotateX',
       schema: {
         arguments: { 
-          source: { type: 'jot:shape' }, 
+          $in: { type: 'jot:shape' }, 
           turns: { type: 'jot:numbers' } 
         },
       },
@@ -76,8 +163,46 @@ export function registerJotProvider(vfs, options = {}) {
     compiler.registerOperator('rx', rxSpec);
     compiler.registerOperator('rotateX', rxSpec);
 
+    compiler.registerOperator('ry', {
+      path: 'jot/rotateY',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' }, 
+          turns: { type: 'jot:numbers' } 
+        },
+      },
+    });
+    compiler.registerOperator('rotateY', {
+        path: 'jot/rotateY',
+        schema: {
+          arguments: { 
+            $in: { type: 'jot:shape' }, 
+            turns: { type: 'jot:numbers' } 
+          },
+        },
+    });
+
+    compiler.registerOperator('rz', {
+      path: 'jot/rotateZ',
+      schema: {
+        arguments: { 
+          $in: { type: 'jot:shape' }, 
+          turns: { type: 'jot:numbers' } 
+        },
+      },
+    });
+    compiler.registerOperator('rotateZ', {
+        path: 'jot/rotateZ',
+        schema: {
+          arguments: { 
+            $in: { type: 'jot:shape' }, 
+            turns: { type: 'jot:numbers' } 
+          },
+        },
+    });
+
     compiler.registerOperator('pdf', {
-      path: 'op/pdf',
+      path: 'jot/pdf',
       schema: {
         arguments: { 
           $in: { type: 'jot:shape' }, 
@@ -93,16 +218,8 @@ export function registerJotProvider(vfs, options = {}) {
     if (!expression) return null;
 
     try {
-      // 1. Parse the expression
       const ast = parser.parse(expression);
-
-      // 2. Resolve AST to VFS Selectors using the compiler
       const resolved = await compiler.evaluate(ast, params);
-
-      // 3. Chain the request to the mesh
-      // Note: If resolved is an array, it's a legacy sequence that should 
-      // ideally be wrapped or handled by the caller. 
-      // For now, we return it so the VFS can attempt to resolve the first item.
       if (Array.isArray(resolved)) {
         return {
             type: 'jot/sequence',

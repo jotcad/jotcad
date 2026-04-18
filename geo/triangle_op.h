@@ -33,7 +33,17 @@ struct TriangleSSSOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"a", "b", "c"}; }
     static typename P::json schema() {
-        return {{"arguments", {{"a", {{"type", "jot:numbers"}, {"default", 10}}}, {"b", {{"type", "jot:numbers"}, {"default", 10}}}, {"c", {{"type", "jot:numbers"}, {"default", 10}}}, {"$out", {{"type", "jot:shape"}}}}}, {"inputs", {}}, {"outputs", {{"$out", {{"type", "shape"}}}}}};
+        return {
+            {"path", "jot/Triangle/sss"},
+            {"arguments", {
+                {"a", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"b", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"c", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
     }
 };
 
@@ -64,7 +74,17 @@ struct TriangleSASOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"a", "angle", "b"}; }
     static typename P::json schema() {
-        return {{"arguments", {{"a", {{"type", "jot:numbers"}, {"default", 10}}}, {"angle", {{"type", "jot:numbers"}, {"default", 60}}}, {"b", {{"type", "jot:numbers"}, {"default", 10}}}, {"$out", {{"type", "jot:shape"}}}}}, {"inputs", {}}, {"outputs", {{"$out", {{"type", "shape"}}}}}};
+        return {
+            {"path", "jot/Triangle/sas"},
+            {"arguments", {
+                {"a", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"angle", {{"type", "jot:numbers"}, {"default", {60.0}}}},
+                {"b", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
     }
 };
 
@@ -88,7 +108,16 @@ struct EquilateralTriangleOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"diameter"}; }
     static typename P::json schema() {
-        return {{"metadata", {{"alias", "jot/Triangle"}}}, {"arguments", {{"diameter", {{"type", "jot:numbers"}, {"default", 10}}}, {"$out", {{"type", "jot:shape"}}}}}, {"inputs", {}}, {"outputs", {{"$out", {{"type", "shape"}}}}}};
+        return {
+            {"path", "jot/Triangle/equilateral"},
+            {"aliases", {"jot/Triangle", "jot/triangle"}},
+            {"arguments", {
+                {"diameter", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
     }
 };
 

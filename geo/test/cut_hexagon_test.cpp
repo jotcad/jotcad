@@ -31,14 +31,6 @@ int main() {
     // 4. Verify
     Geometry geo = vfs.read_geo(result.geometry);
     
-    std::cout << "Final Geometry Text:" << std::endl;
-    std::cout << geo.encode_text() << std::endl;
-    
-    std::cout << "Faces: " << geo.faces.size() << std::endl;
-    if (geo.faces.size() > 0) {
-        std::cout << "Loops in Face 0: " << geo.faces[0].loops.size() << std::endl;
-    }
-
     // It SHOULD have a hole. 1 face, 2 loops.
     assert(geo.faces.size() == 1);
     assert(geo.faces[0].loops.size() == 2);

@@ -79,6 +79,7 @@ public:
 
     static void register_op(const std::string& path, LogicHandler logic, const json& schema) {
         Operation op; op.path = path; op.logic = logic; op.schema = schema;
+        op.schema["path"] = path; // Schema invariant: knows its own canonical form
         registry()[path] = op;
     }
 
@@ -90,7 +91,8 @@ public:
 
     template <typename Op, typename Out, typename... T, typename... Bound>
     static std::vector<uint8_t> logic_wrapper(jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack, Bound&&... bound_args) {
-        auto schema = Op::schema();
+        // Registry lookup to get the correct schema (which may have been overridden during registration)
+        auto schema = registry()[path].schema;
         Out out;
         
         try {
@@ -112,6 +114,7 @@ public:
         Operation op;
         op.path = path_override;
         op.schema = override_schema.is_null() ? Op::schema() : override_schema;
+        op.schema["path"] = path_override; // Schema invariant
         op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack) {
             return logic_wrapper<Op, Out, T...>(vfs, path, params, stack);
         };

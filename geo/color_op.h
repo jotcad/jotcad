@@ -18,20 +18,20 @@ struct ColorOp : P {
 
     static typename P::json schema() {
         return {
+            {"path", "jot/color"},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"color", {{"type", "jot:string"}, {"default", "black"}}},
                 {"$out", {{"type", "jot:shape"}}}
             }},
             {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}},
-            {"metadata", {{"alias", "jot/color"}}}
+            {"outputs", {{"$out", {{"type", "shape"}, {"alias", "$in"}}}}}
         };
     }
 };
 
 static void color_init() {
-    Processor::register_op<ColorOp<>, Shape, Shape, std::string>();
+    Processor::register_op<ColorOp<>, Shape, Shape, std::string>("jot/color");
 }
 
 } // namespace geo

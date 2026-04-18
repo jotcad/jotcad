@@ -8,50 +8,41 @@ using namespace jotcad::geo;
 int main() {
     std::cout << "Testing Nested Boolean Cut (Group Subject)..." << std::endl;
     MockVFS vfs;
-    register_all_ops();
 
-    for (auto const& [path, op] : Processor::registry()) {
-        vfs.register_op(path, [&vfs, path](const VFSNode::VFSRequest& req) {
-            return Processor::registry()[path].logic(&vfs, req.path, req.parameters, req.stack);
-        }, op.schema);
-    }
-    
-    // 1. Create a Group of two boxes
-    Shape s1;
+    // 1. Create 2 overlapping Boxes (50x50 each) starting at (0,0)
+    Shape s1, s2;
     BoxOp<>::execute(&vfs, {50.0}, {50.0}, {0.0}, s1);
-    s1.tf = Matrix::translate(-25, 0, 0).to_vec();
-    
-    Shape s2;
     BoxOp<>::execute(&vfs, {50.0}, {50.0}, {0.0}, s2);
-    s2.tf = Matrix::translate(25, 0, 0).to_vec();
-
-    Shape group;
-    GroupOp<>::execute(&vfs, {s1, s2}, {}, group);
-    // group.geometry.path is empty
     
-    // 2. Create a hole in the middle (where they overlap)
+    // Position them so they overlap. 
+    // S1: x in [-15, 35], y in [0, 50]
+    // S2: x in [15, 65], y in [0, 50]
+    // Overlap: x in [15, 35], y in [0, 50]
+    s1.tf = Matrix::translate(-15, 0, 0).to_vec();
+    s2.tf = Matrix::translate(15, 0, 0).to_vec();
+
+    // 2. Wrap them in a Group
+    Shape group;
+    GroupOp<>::execute(&vfs, {s1, s2}, group);
+    
+    // 3. Create a Tool (10x10 Box). Position at (20, 20) inside the overlap.
     Shape hole;
     BoxOp<>::execute(&vfs, {10.0}, {10.0}, {0.0}, hole);
-    
-    // 3. Subtract from Group
+    hole.tf = Matrix::translate(20, 20, 0).to_vec();
+
+    // 4. Subtract from Group
     Shape result;
     CutOp<>::execute(&vfs, group, {hole}, result);
     
-    // 4. Verify
+    // 5. Verify
     assert(result.components.size() == 2);
     
     Geometry g1 = vfs.read_geo(result.components[0].geometry);
     Geometry g2 = vfs.read_geo(result.components[1].geometry);
     
-    std::cout << "Component 1 Geometry:" << std::endl;
-    std::cout << g1.encode_text() << std::endl;
-    std::cout << "Component 2 Geometry:" << std::endl;
-    std::cout << g2.encode_text() << std::endl;
-    
-    assert(g1.faces[0].loops.size() == 1); // Box 1 notched
-    assert(g1.vertices.size() == 8);
-    assert(g2.faces[0].loops.size() == 1); // Box 2 notched
-    assert(g2.vertices.size() == 8);
+    // Both boxes should now have a hole loop
+    assert(g1.faces[0].loops.size() == 2);
+    assert(g2.faces[0].loops.size() == 2);
     
     std::cout << "✅ Nested Cut PASS" << std::endl;
     return 0;

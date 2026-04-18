@@ -1,7 +1,8 @@
 #pragma once
 #include "impl/protocols.h"
-#include "impl/processor.h"
+#include "impl/geometry.h"
 #include "impl/offset.h"
+#include "impl/processor.h"
 
 namespace jotcad {
 namespace geo {
@@ -16,38 +17,31 @@ struct OffsetOp : P {
             return;
         }
 
-        // 1. Resolve Input Geometry
-        Geometry geo = vfs->template read<Geometry>({
-            in.geometry->path, 
-            in.geometry->parameters
-        });
-        
-        // 2. Perform Real Geometric Offset (Minkowski)
+        Geometry geo = vfs->template read<Geometry>({in.geometry->path, in.geometry->parameters});
         applyOffset(geo, FT(distance));
-
-        // 3. Sink to Mesh (Deduplicated) and Return
+        
         out = in;
         out.geometry = vfs->write_geometry(geo);
-        out.add_tag("operation", "offset");
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "distance"}; }
 
     static typename P::json schema() {
         return {
+            {"path", "jot/offset"},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"distance", {{"type", "jot:number"}, {"default", 1.0}}},
                 {"$out", {{"type", "jot:shape"}}}
             }},
             {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "shape"}, {"alias", "$in"}}}}}
         };
     }
 };
 
 static void offset_init() {
-    Processor::register_op<OffsetOp<>, Shape, Shape, double>();
+    Processor::register_op<OffsetOp<>, Shape, Shape, double>("jot/offset");
 }
 
 } // namespace geo

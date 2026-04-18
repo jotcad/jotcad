@@ -45,13 +45,17 @@ static bool matches(const json& selector, const json& target) {
     if (selector.contains("path") && target.contains("path")) {
         std::string s_path = selector["path"];
         std::string t_path = target["path"];
-        if (s_path.back() == '*') {
+        if (s_path.size() > 0 && s_path.back() == '*') {
             if (t_path.find(s_path.substr(0, s_path.size()-1)) != 0) return false;
         } else if (s_path != t_path) return false;
     }
-    if (selector.contains("parameters") && target.contains("parameters")) {
+
+    if (selector.contains("parameters") && selector["parameters"].is_object()) {
+        // If selector parameters are empty, it matches any parameters in the target.
         for (auto& [key, value] : selector["parameters"].items()) {
-            if (!target["parameters"].contains(key) || target["parameters"][key] != value) return false;
+            if (!target.contains("parameters") || !target["parameters"].contains(key) || target["parameters"][key] != value) {
+                return false;
+            }
         }
     }
     return true;
@@ -191,27 +195,42 @@ void VFSNode::listen() {
             json selector = body.at("selector");
             long long expiresAt = body.at("expiresAt").get<long long>();
             std::vector<std::string> stack = body.value("stack", std::vector<std::string>());
+            
+            // Neighbor Identification:
+            // 1. Explicit ID from header
+            // 2. Last hop in the stack
+            // 3. Fallback to a connection-based ID (for anonymous HTTP neighbors)
             std::string peer_id = req.get_header_value("x-vfs-id");
             if (peer_id.empty() && !stack.empty()) peer_id = stack.back();
-            if (!peer_id.empty()) {
+            if (peer_id.empty()) peer_id = "anonymous-neighbor-" + req.remote_addr;
+
+            {
                 std::lock_guard<std::mutex> lock(interest_mutex_);
                 std::string key = selector.dump();
                 interests_[key][peer_id] = expiresAt;
                 interest_selectors_[key] = selector;
                 
-                // Immediate state push for Topology/Schema subscriptions (Detached)
-                if (selector["path"] == "sys/topo" || selector["path"] == "sys/schema") {
-                    std::thread([this, selector, key, peer_id]() {
-                        // Small delay to ensure caller has finished processing the SUB response
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        if (selector["path"] == "sys/topo") {
-                            notify(selector, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}}, {});
-                        } else {
-                            notify(selector, {{"type", "CATALOG_ANNOUNCEMENT"}, {"provider", config_.id}, {"catalog", get_catalog()["catalog"]}}, {});
-                        }
-                    }).detach();
+                // Record the reverse URL if provided (standard mesh behavior)
+                std::string remote_url = req.get_header_value("x-vfs-local-url");
+                if (!remote_url.empty() && !peers_.count(peer_id)) {
+                    std::lock_guard<std::mutex> pl(peer_mutex_);
+                    peers_[peer_id] = remote_url;
                 }
             }
+
+            // Immediate state push for Topology/Schema subscriptions (Demand-Driven)
+            if (selector["path"] == "sys/topo" || selector["path"] == "sys/schema") {
+                std::thread([this, selector, peer_id]() {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    if (selector["path"] == "sys/topo") {
+                        notify(selector, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}}, {});
+                    } else {
+                        notify(selector, {{"type", "CATALOG_ANNOUNCEMENT"}, {"provider", config_.id}, {"catalog", get_catalog()["catalog"]}}, {});
+                    }
+                }).detach();
+            }
+
+            // Relay subscription upstream
             subscribe(selector, expiresAt, stack);
             res.status = 200;
         } catch (...) { res.status = 400; }
@@ -226,8 +245,16 @@ void VFSNode::listen() {
     svr->Post("/register", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
-            std::string peer_url = body.value("url", "");
-            if (!peer_url.empty()) std::thread([this, peer_url]() { this->add_peer(peer_url); }).detach();
+            std::string remote_id = body.value("id", "");
+            std::string remote_url = body.value("url", "");
+            
+            if (!remote_id.empty()) {
+                std::lock_guard<std::mutex> lock(peer_mutex_);
+                peers_[remote_id] = remote_url;
+                if (!remote_url.empty()) {
+                    std::thread([this, remote_url]() { this->add_peer(remote_url); }).detach();
+                }
+            }
             res.set_content(json({{"id", config_.id}}).dump(), "application/json");
         } catch (...) { res.status = 400; }
     });

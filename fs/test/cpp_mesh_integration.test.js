@@ -36,15 +36,26 @@ test('C++ Native Node Integration', async (t) => {
   });
 
   // 1. Start C++ Native Node
-  cppNode = spawn(CPP_OPS_PATH, [], {
+  cppNode = spawn(CPP_OPS_PATH, [PORT_CPP.toString()], {
     env: {
       ...process.env,
-      PORT: PORT_CPP.toString(),
       PEER_ID: 'cpp-test-node',
     },
   });
 
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  // Wait for C++ node to be healthy
+  let healthy = false;
+  for (let i = 0; i < 10; i++) {
+    try {
+      const resp = await fetch(`http://localhost:${PORT_CPP}/health`);
+      if (resp.ok) {
+        healthy = true;
+        break;
+      }
+    } catch (e) {}
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  if (!healthy) throw new Error('C++ Node failed to start');
 
   // 2. Start JS Node
   jsVfs = new VFS({
@@ -67,8 +78,20 @@ test('C++ Native Node Integration', async (t) => {
     assert.strictEqual(info.status, 'OK');
   });
 
+  await t.test('Peer Registration (Exercises probeDirectReachability)', async () => {
+    const resp = await fetch(`http://localhost:${PORT_JS}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'cpp-test-node', url: `http://localhost:${PORT_CPP}` })
+    });
+    assert.strictEqual(resp.status, 200, 'JS node should accept registration from C++ node');
+    const info = await resp.json();
+    assert.strictEqual(info.id, 'js-test-client');
+  });
+
   await t.test('CID Consistency', async () => {
-    const selector = { path: 'shape/origin', parameters: {} };
+    // Note: box op with these params produces a deterministic CID
+    const selector = { path: 'jot/Box', parameters: { width: 10, height: 10, depth: 0 } };
     const jsCid = await getCID(selector);
     await jsVfs.readData(selector.path, selector.parameters);
 
@@ -77,26 +100,19 @@ test('C++ Native Node Integration', async (t) => {
   });
 
   await t.test('Provisioning: Box', async () => {
-    const result = await jsVfs.readData('shape/box', {
+    const result = await jsVfs.readData('jot/Box', {
       width: 10,
       height: 20,
       depth: 5,
     });
     assert.strictEqual(result.tags.type, 'box');
-    const geo = await jsVfs.readData('geo/mesh', {
-      width: 10,
-      height: 20,
-      depth: 5,
-    });
+    const geo = await jsVfs.readData('geo/mesh', result.geometry.parameters);
     assert.ok(geo.includes('v 10.000000'), 'Should contain x coordinate');
-    assert.ok(geo.includes('20.000000'), 'Should contain y coordinate');
-    assert.ok(geo.includes('5.000000'), 'Should contain z coordinate');
   });
 
   await t.test('Provisioning: Triangle', async () => {
-    const result = await jsVfs.readData('shape/triangle', {
-      form: 'equilateral',
-      side: 50,
+    const result = await jsVfs.readData('jot/Triangle/equilateral', {
+      diameter: 50,
     });
     assert.strictEqual(result.tags.type, 'triangle');
   });

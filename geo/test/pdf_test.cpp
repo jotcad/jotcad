@@ -12,7 +12,7 @@ int main() {
     HexagonOp<hex_full>::execute(&vfs, {30.0}, hex);
     
     Shape out;
-    PdfOp<>::execute(&vfs, hex, "test.pdf", 0.1, out);
+    PdfOp<>::execute(&vfs, hex, "test.pdf", out);
     
     assert(out.geometry.has_value());
     assert(out.geometry->path == hex.geometry->path);

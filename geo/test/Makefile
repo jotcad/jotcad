@@ -11,9 +11,10 @@ LIBS = -L../bin -ljotgeo -lpthread
 BIN_DIR = bin
 LIB_GEO = ../bin/libjotgeo.a
 
-TEST_SOURCES = hexagon_test.cpp box_test.cpp offset_test.cpp outline_test.cpp \
+TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp offset_test.cpp outline_test.cpp \
                group_test.cpp rotate_test.cpp pdf_test.cpp corners_test.cpp on_test.cpp \
-               cut_test.cpp nested_cut_test.cpp cut_hexagon_test.cpp
+               cut_test.cpp nested_cut_test.cpp cut_hexagon_test.cpp accumulator_test.cpp \
+               schema_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 
 all: $(LIB_GEO) $(TEST_BINS)

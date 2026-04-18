@@ -11,11 +11,7 @@ int main() {
     std::cout << "Testing Sequential Accumulator (On)..." << std::endl;
     
     // Setup VFS
-    std::string test_storage = ".vfs_storage_acc_test_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
-    std::filesystem::create_directories(test_storage);
-    VFSNode::Config mock_config = {"mock_acc", "0.0.1", test_storage, {}, 0};
     MockVFS vfs;
-    vfs.config() = mock_config;
 
     register_all_ops();
     for (auto const& [path, op] : Processor::registry()) {
@@ -62,6 +58,5 @@ int main() {
     assert(geo.vertices.size() == 12);
     
     std::cout << "✅ Accumulator PASS" << std::endl;
-    std::filesystem::remove_all(test_storage);
     return 0;
 }

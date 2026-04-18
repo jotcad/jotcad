@@ -115,7 +115,10 @@ export class JotCompiler {
 
   async _evaluateCall(node, parameters, currentSubject = null) {
     let op = this.operators.get(node.name);
-    const path = op ? op.path : `${this.options.defaultPrefix}${node.name}`;
+    if (!op) {
+      throw new Error(`Unregistered operator: ${node.name}. Please ensure it is registered in the JotProvider.`);
+    }
+    const path = op.path;
     const schema = op ? op.schema : null;
     const returns = op ? op.returns : null;
 
@@ -180,8 +183,12 @@ export class JotCompiler {
       }
     }
 
-    const path = op ? op.path : `op/${node.name}`;
-    const schema = op ? op.schema : null;
+    if (!op) {
+      throw new Error(`Unregistered method: ${node.name}. Please ensure it is registered in the JotProvider.`);
+    }
+
+    const path = op.path;
+    const schema = op.schema;
 
     // A method ALWAYS provides its subject as context to its arguments
     const args = [];

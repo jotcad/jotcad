@@ -15,7 +15,7 @@ struct OutlineOp : P {
             return;
         }
 
-        // 1. Resolve Input Geometry
+        // 1. Read input geometry
         Geometry geo = vfs->template read<Geometry>({
             in.geometry->path, 
             in.geometry->parameters
@@ -41,13 +41,13 @@ struct OutlineOp : P {
 
         out = in;
         out.geometry = {"geo/mesh", {{"cid", hash}}};
-        out.add_tag("operation", "outline");
     }
 
     static std::vector<std::string> argument_keys() { return {"$in"}; }
 
     static typename P::json schema() {
         return {
+            {"path", "jot/outline"},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"$out", {{"type", "jot:shape"}}}
@@ -59,7 +59,7 @@ struct OutlineOp : P {
 };
 
 static void outline_init() {
-    Processor::register_op<OutlineOp<>, Shape, Shape>();
+    Processor::register_op<OutlineOp<>, Shape, Shape>("jot/outline");
 }
 
 } // namespace geo

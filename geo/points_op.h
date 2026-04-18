@@ -15,29 +15,33 @@ struct PointsOp : P {
             return;
         }
 
-        auto geo_selector = *in.geometry;
-        auto geo_bytes = vfs->template read<std::vector<uint8_t>>({
-            geo_selector.path, 
-            geo_selector.parameters
+        // 1. Read input geometry
+        Geometry geo = vfs->template read<Geometry>({
+            in.geometry->path, 
+            in.geometry->parameters
         });
         
-        Geometry geo; geo.decode_text(std::string(geo_bytes.begin(), geo_bytes.end()));
+        // 2. Clear faces/segments, keep only vertices
+        Geometry points;
+        points.vertices = geo.vertices;
         
-        // Logical Transform: Return points
-        nlohmann::json pts = nlohmann::json::array();
-        for (auto& v : geo.vertices) {
-            pts.push_back({CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)});
+        // 3. Add explicit point markers (indices to all vertices)
+        for (size_t i = 0; i < points.vertices.size(); ++i) {
+            points.points.push_back((int)i);
         }
 
+        // 4. Sink and Return
+        std::string hash = vfs->write_with_cid("geo/mesh", points);
+
         out = in;
-        out.geometry = {"op/points", {{"points", pts}}};
-        out.add_tag("operation", "points");
+        out.geometry = {"geo/mesh", {{"cid", hash}}};
     }
 
     static std::vector<std::string> argument_keys() { return {"$in"}; }
 
     static typename P::json schema() {
         return {
+            {"path", "jot/points"},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"$out", {{"type", "jot:shape"}}}
@@ -49,7 +53,7 @@ struct PointsOp : P {
 };
 
 static void points_init() {
-    Processor::register_op<PointsOp<>, Shape, Shape>();
+    Processor::register_op<PointsOp<>, Shape, Shape>("jot/points");
 }
 
 } // namespace geo
