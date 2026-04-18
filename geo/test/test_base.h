@@ -14,6 +14,9 @@ namespace geo {
 
 using namespace jotcad::fs;
 
+// External registration function from ops_library
+void register_all_ops();
+
 struct MockVFS : public VFSNode {
     MockVFS() : VFSNode({"mock", "0.0.1", ".vfs_storage_mock", {}, 0}) {
         std::filesystem::create_directories(".vfs_storage_mock");

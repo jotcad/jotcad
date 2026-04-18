@@ -14,7 +14,7 @@ fi
 echo "Starting JotCAD Operator Unit Tests..."
 echo "--------------------------------------"
 
-TESTS=("hexagon" "box" "offset" "outline" "group" "rotate" "pdf")
+TESTS=("hexagon" "box" "offset" "outline" "group" "rotate" "pdf" "corners" "on")
 FAILED=0
 
 for test in "${TESTS[@]}"; do

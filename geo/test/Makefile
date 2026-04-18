@@ -12,7 +12,7 @@ BIN_DIR = bin
 LIB_GEO = ../bin/libjotgeo.a
 
 TEST_SOURCES = hexagon_test.cpp box_test.cpp offset_test.cpp outline_test.cpp \
-               group_test.cpp rotate_test.cpp pdf_test.cpp
+               group_test.cpp rotate_test.cpp pdf_test.cpp corners_test.cpp on_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 
 all: $(LIB_GEO) $(TEST_BINS)

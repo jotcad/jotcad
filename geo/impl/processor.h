@@ -166,6 +166,18 @@ public:
         else if constexpr (std::is_same_v<T, std::string>) return val.is_string() ? val.get<std::string>() : "";
         return T();
     }
+
+    static json hydrate(const json& recipe, const Shape& subject) {
+        if (!recipe.is_object() || !recipe.contains("path")) return recipe;
+        json hydrated = recipe;
+        if (!hydrated.contains("parameters")) hydrated["parameters"] = json::object();
+        if (hydrated["parameters"].contains("$in")) {
+            hydrated["parameters"]["$in"] = hydrate(hydrated["parameters"]["$in"], subject);
+        } else {
+            hydrated["parameters"]["$in"] = subject.to_json();
+        }
+        return hydrated;
+    }
 };
 
 } // namespace geo

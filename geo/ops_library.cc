@@ -10,6 +10,8 @@
 #include "group_op.h"
 #include "pdf_op.h"
 #include "path_op.h"
+#include "corners_op.h"
+#include "on_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -27,6 +29,8 @@ void register_all_ops() {
     pdf_init();
     path_init();
     rotate_init();
+    corners_init();
+    on_init();
 }
 
 } // namespace geo
