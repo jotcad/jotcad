@@ -16,39 +16,32 @@ struct OnOp : P {
             return;
         }
 
-        std::vector<Shape> results;
+        // ACCUMULATOR PATTERN: Sequentially apply the op to the result of the previous step
+        // We use strict conjugation: T * op * T_inv
+        Shape accumulator = in;
+
         for (const auto& target : targets) {
-            Matrix target_tf = Matrix::from_vec(target.tf);
-            Matrix inv = target_tf.inverse();
+            Matrix T = Matrix::from_vec(target.tf);
+            Matrix T_inv = T.inverse();
 
-            // 1. Clamping: Move subject to origin relative to target
-            Shape workbench_subject = in;
-            workbench_shape_transform(workbench_subject, inv);
+            // 1. Mount: Map subject into local workbench space
+            Shape workbench_subject = accumulator;
+            workbench_subject.tf = (T_inv * Matrix::from_vec(accumulator.tf)).to_vec();
 
-            // 2. Hydrate and Execute
+            // 2. Operate: Perform workbench logic at origin
             nlohmann::json hydrated = Processor::hydrate(op, workbench_subject);
-            Shape workbench_result = Shape::from_json(vfs->template read<nlohmann::json>({hydrated.at("path"), hydrated.value("parameters", nlohmann::json::object())}));
+            Shape workbench_result = Shape::from_json(vfs->template read<nlohmann::json>({
+                hydrated.at("path"), 
+                hydrated.value("parameters", nlohmann::json::object()),
+                {} // stack
+            }));
 
-            // 3. Unclamping: Move result back to world
-            workbench_shape_transform(workbench_result, target_tf);
-            results.push_back(workbench_result);
+            // 3. Unmount: Map result back to global space
+            accumulator = workbench_result;
+            accumulator.tf = (T * Matrix::from_vec(workbench_result.tf)).to_vec();
         }
 
-        if (results.size() == 1) {
-            out = results[0];
-        } else {
-            out.geometry = std::nullopt;
-            out.components = results;
-            out.add_tag("type", "group");
-        }
-    }
-
-    // Recursively apply transform to a shape and its components (metadata only)
-    static void workbench_shape_transform(Shape& s, const Matrix& m) {
-        Matrix current = Matrix::from_vec(s.tf);
-        s.tf = (m * current).to_vec();
-        // Note: For 'on' we only transform the top-level tf. 
-        // If the shape has components, they stay relative to the parent.
+        out = accumulator;
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "targets", "op"}; }

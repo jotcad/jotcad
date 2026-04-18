@@ -38,10 +38,20 @@ int main() {
     CutOp<>::execute(&vfs, group, {hole}, result);
     
     // 4. Verify
-    Geometry geo = vfs.read_geo(result.geometry);
-    // Should have 1 face (they merged) with 1 hole
-    assert(geo.faces.size() == 1);
-    assert(geo.faces[0].loops.size() == 2);
+    assert(result.components.size() == 2);
+    
+    Geometry g1 = vfs.read_geo(result.components[0].geometry);
+    Geometry g2 = vfs.read_geo(result.components[1].geometry);
+    
+    std::cout << "Component 1 Geometry:" << std::endl;
+    std::cout << g1.encode_text() << std::endl;
+    std::cout << "Component 2 Geometry:" << std::endl;
+    std::cout << g2.encode_text() << std::endl;
+    
+    assert(g1.faces[0].loops.size() == 1); // Box 1 notched
+    assert(g1.vertices.size() == 8);
+    assert(g2.faces[0].loops.size() == 1); // Box 2 notched
+    assert(g2.vertices.size() == 8);
     
     std::cout << "✅ Nested Cut PASS" << std::endl;
     return 0;

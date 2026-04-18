@@ -103,6 +103,23 @@ A `Shape` in JOT is a recursive container. The `geometry` field is **optional**.
 
 Operators MUST check `shape.geometry.has_value()` before attempting to read geometry bits from the VFS.
 
+### 1.8 Hierarchical Mapping (e.g., `cut`, `offset`)
+
+Advanced operators MUST follow the **Hierarchical Mapping** principle to preserve part integrity:
+- **No Implicit Union**: Operators should never automatically merge a subject's geometry with its children.
+- **Recursive Walk**: The operation should be applied independently to every geometry node in the shape tree.
+- **Structure Preservation**: The output of an operation on a `Group` should still be a `Group`, with the operation mapped across its components.
+
+### 1.9 Conjugation & The Workbench (`on`)
+
+The `jot/on` operator implements the **Conjugation Pattern**: $T \times op \times T^{-1}$.
+
+1.  **Clamping ($T^{-1}$)**: The subject is moved from its global position to the workbench origin $(0,0,0)$.
+2.  **Operation ($op$)**: The specified operation (recipe) is executed in the local workbench space.
+3.  **Unclamping ($T$)**: The result is moved back to the global position.
+
+When given a group of target frames, `jot/on` acts as an **Accumulator (Fold)**, sequentially applying the operation to each frame using the result of the previous step. This ensures features like multiple corner cuts correctly accumulate on a single manifold part.
+
 
 ## 2. Naming & Casing Standards
 
