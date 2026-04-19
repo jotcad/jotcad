@@ -40,9 +40,8 @@ $(OPS_BIN): $(DRIVER_OBJ) $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
 
 # Run unit tests
-test: $(LIB_JOTGEO)
-	@chmod +x test/run_unit_tests.sh
-	@./test/run_unit_tests.sh
+test:
+	@$(MAKE) -C test test
 
 # Compile vfs_node
 $(OBJ_DIR)/vfs_node.o: $(VFS_SRC)
