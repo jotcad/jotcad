@@ -1,8 +1,7 @@
 #pragma once
 #include "impl/protocols.h"
-#include "impl/geometry.h"
-#include "impl/offset.h"
 #include "impl/processor.h"
+#include "impl/offset.h"
 
 namespace jotcad {
 namespace geo {
@@ -10,38 +9,57 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct OffsetOp : P {
     static constexpr const char* path = "jot/offset";
-
-    static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, double distance, Shape& out) {
-        if (!in.geometry.has_value()) {
-            out = in;
-            return;
-        }
-
-        Geometry geo = vfs->template read<Geometry>({in.geometry->path, in.geometry->parameters});
-        applyOffset(geo, FT(distance));
-        
-        out = in;
-        out.geometry = vfs->write_geometry(geo);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double diameter) {
+        Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        Geometry res = geo;
+        applyOffset(res, diameter);
+        Shape out = in;
+        out.geometry = vfs->write<Geometry>(res);
+        vfs->write<Shape>(fulfilling, out);
     }
-
-    static std::vector<std::string> argument_keys() { return {"$in", "distance"}; }
-
+    static std::vector<std::string> argument_keys() { return {"$in", "diameter"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/offset"},
+            {"description", "Creates a Minkowski offset."},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
-                {"distance", {{"type", "jot:number"}, {"default", 1.0}}},
-                {"$out", {{"type", "jot:shape"}}}
+                {"diameter", {{"type", "number"}, {"default", 1.0}}}
             }},
-            {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}, {"alias", "$in"}}}}}
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct OffsetClosureOp : P {
+    static constexpr const char* path = "jot/offset/closure";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double diameter, bool closure) {
+        Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        Geometry expanded = geo;
+        applyOffset(expanded, std::abs(diameter));
+        Geometry closed = expanded;
+        applyOffset(closed, -std::abs(diameter));
+        Shape out = in;
+        out.geometry = vfs->write<Geometry>(closed);
+        vfs->write<Shape>(fulfilling, out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "diameter", "closure"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/offset/closure"},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}}},
+                {"diameter", {{"type", "number"}, {"default", 1.0}}},
+                {"closure", {{"type", "boolean"}, {"const", true}}}
+            }}
         };
     }
 };
 
 static void offset_init() {
-    Processor::register_op<OffsetOp<>, Shape, Shape, double>("jot/offset");
+    Processor::register_op<OffsetOp<>, Shape, double>("jot/offset");
+    Processor::register_op<OffsetClosureOp<>, Shape, double, bool>("jot/offset/closure");
 }
 
 } // namespace geo

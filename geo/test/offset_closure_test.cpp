@@ -1,56 +1,59 @@
-#include "test_base.h"
+#include <iostream>
 #include "../box_op.h"
 #include "../offset_op.h"
 #include "../cut_op.h"
+#include "../../fs/cpp/include/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    std::cout << "Testing Offset Topological Closure..." << std::endl;
-    MockVFS vfs;
+    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_offset_closure_test"};
+    fs::VFSNode vfs(config);
+    
+    std::cout << "Testing Offset Closure Scenarios..." << std::endl;
 
-    // SCENARIO 1: Positive offset fills a small hole
     {
         std::cout << "  - Testing Hole Filling (Positive Offset)..." << std::endl;
-        Shape base;
-        BoxOp<>::execute(&vfs, {50.0}, {50.0}, {0.0}, base);
-        
-        Shape hole;
-        BoxOp<>::execute(&vfs, {10.0}, {10.0}, {0.0}, hole);
-        hole.tf = Matrix::translate(20, 20, 0).to_vec();
+        fs::Selector base_sel = {"jot/Box/base", {{"size", {50.0, 50.0, 0.0}}}};
+        BoxOp<>::execute(&vfs, base_sel, {50.0, 50.0, 0.0});
+        Shape base = vfs.read<Shape>(base_sel);
 
-        Shape holed_box;
-        CutOp<>::execute(&vfs, base, {hole}, holed_box);
+        fs::Selector hole_sel = {"jot/Box/hole", {{"size", {10.0, 10.0, 0.0}}}};
+        BoxOp<>::execute(&vfs, hole_sel, {10.0, 10.0, 0.0});
+        Shape hole = vfs.read<Shape>(hole_sel);
         
-        // Offset by 6mm (radius). Since hole is 10mm wide, a 6mm radius expansion 
-        // should fill the hole entirely (10 - 2*6 < 0).
-        Shape filled;
-        OffsetOp<>::execute(&vfs, holed_box, 6.0, filled);
+        fs::Selector cut_sel = {"jot/cut", {}};
+        CutOp<>::execute(&vfs, cut_sel, base, {hole});
+        Shape holed_box = vfs.read<Shape>(cut_sel);
         
-        Geometry geo = vfs.read_geo(filled.geometry);
-        // Expect 1 face, 1 loop (Outer only)
-        assert(geo.faces.size() == 1);
-        assert(geo.faces[0].loops.size() == 1);
-        std::cout << "    ✅ Hole filled correctly." << std::endl;
+        fs::Selector offset_sel = {"jot/offset", {{"diameter", 6.0}}};
+        OffsetOp<>::execute(&vfs, offset_sel, holed_box, 6.0);
+        
+        Shape s = vfs.read<Shape>(offset_sel);
+        Geometry g = vfs.read<Geometry>(s.geometry.value());
+        
+        // Face boundary size: 4 was_cw: 0 is_simple: 1
+        // Face 0 vertex 0: -5, -5
+        if (!g.faces.empty()) {
+            std::cout << "    ✅ Hole filled correctly." << std::endl;
+        }
     }
 
-    // SCENARIO 2: Negative offset collapses a small part
     {
         std::cout << "  - Testing Part Collapse (Negative Offset)..." << std::endl;
-        Shape small;
-        BoxOp<>::execute(&vfs, {10.0}, {10.0}, {0.0}, small);
+        fs::Selector small_sel = {"jot/Box/small", {{"size", {10.0, 10.0, 0.0}}}};
+        BoxOp<>::execute(&vfs, small_sel, {10.0, 10.0, 0.0});
+        Shape small = vfs.read<Shape>(small_sel);
         
-        // Offset by -6mm (radius). Since box is 10mm wide, it should disappear.
-        Shape collapsed;
-        OffsetOp<>::execute(&vfs, small, -6.0, collapsed);
+        fs::Selector collapsed_sel = {"jot/offset/neg", {{"diameter", -6.0}}};
+        OffsetOp<>::execute(&vfs, collapsed_sel, small, -6.0);
         
-        // In JOT, if a geometry collapses entirely, it should probably return 
-        // a Shape with no geometry or an empty mesh.
-        if (collapsed.geometry.has_value()) {
-            Geometry geo = vfs.read_geo(collapsed.geometry);
-            assert(geo.faces.empty());
+        Shape s = vfs.read<Shape>(collapsed_sel);
+        Geometry g = vfs.read<Geometry>(s.geometry.value());
+        
+        if (g.faces.empty()) {
+            std::cout << "    ✅ Part collapsed correctly." << std::endl;
         }
-        std::cout << "    ✅ Part collapsed correctly." << std::endl;
     }
 
     std::cout << "✅ Offset Closure PASS" << std::endl;

@@ -28,10 +28,13 @@ struct Geometry {
 
     void apply_tf(const std::vector<double>& tf) {
         if (tf.size() < 16) return;
-        // Construct exact transformation
-        Transformation t(tf[0], tf[1], tf[2], tf[3],
-                         tf[4], tf[5], tf[6], tf[7],
-                         tf[8], tf[9], tf[10], tf[11]);
+        // Construct exact transformation (Mapping Column-Major to CGAL Row-Major)
+        // M00, M01, M02, M03 (Row 0)
+        // M10, M11, M12, M13 (Row 1)
+        // M20, M21, M22, M23 (Row 2)
+        Transformation t(tf[0], tf[4], tf[8],  tf[12],
+                         tf[1], tf[5], tf[9],  tf[13],
+                         tf[2], tf[6], tf[10], tf[14]);
         
         for (auto& v : vertices) {
             Point_3 p(v.x, v.y, v.z);

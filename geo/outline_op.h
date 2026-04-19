@@ -8,58 +8,39 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct OutlineOp : P {
     static constexpr const char* path = "jot/outline";
-
-    static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, Shape& out) {
-        if (!in.geometry.has_value()) {
-            out = in;
-            return;
-        }
-
-        // 1. Read input geometry
-        Geometry geo = vfs->template read<Geometry>({
-            in.geometry->path, 
-            in.geometry->parameters
-        });
-        
-        // 2. Compute Outline (Extract unique segments from loops)
-        Geometry outline;
-        outline.vertices = geo.vertices;
-        
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        if (!in.geometry.has_value()) { vfs->write<Shape>(fulfilling, in); return; }
+        Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        Geometry res;
         for (const auto& face : geo.faces) {
             for (const auto& loop : face.loops) {
-                if (loop.size() < 2) continue;
                 for (size_t i = 0; i < loop.size(); ++i) {
                     int v1 = loop[i];
                     int v2 = loop[(i + 1) % loop.size()];
-                    outline.segments.push_back({v1, v2});
+                    int base = (int)res.vertices.size();
+                    res.vertices.push_back(geo.vertices[v1]);
+                    res.vertices.push_back(geo.vertices[v2]);
+                    res.segments.push_back({base, base + 1});
                 }
             }
         }
-
-        // 3. Sink and Return
-        std::string hash = vfs->write_with_cid("geo/mesh", outline);
-
-        out = in;
-        out.geometry = {"geo/mesh", {{"cid", hash}}};
+        Shape out = in;
+        out.geometry = vfs->write<Geometry>(res);
+        vfs->write<Shape>(fulfilling, out);
     }
-
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-
     static typename P::json schema() {
         return {
             {"path", "jot/outline"},
-            {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
-                {"$out", {{"type", "jot:shape"}}}
-            }},
-            {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"description", "Extracts the boundary edges of the input shape as line segments."},
+            {"arguments", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to outline."}}}}},
+            {"outputs", {{"$out", {{"type", "shape"}, {"description", "The resulting wireframe/outline shape."}}}}}
         };
     }
 };
 
 static void outline_init() {
-    Processor::register_op<OutlineOp<>, Shape, Shape>("jot/outline");
+    Processor::register_op<OutlineOp<>, Shape>("jot/outline");
 }
 
 } // namespace geo

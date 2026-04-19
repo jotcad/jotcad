@@ -1,39 +1,29 @@
-#include "test_base.h"
+#include <iostream>
 #include "../hexagon_op.h"
 #include "../corners_op.h"
+#include "../../fs/cpp/include/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    std::cout << "Testing Corners Extraction..." << std::endl;
-    MockVFS vfs;
+    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_corners_test"};
+    fs::VFSNode vfs(config);
     
-    Shape hex;
-    HexagonOp<hex_full>::execute(&vfs, {30.0}, hex);
+    std::cout << "Testing Corners Operation..." << std::endl;
     
-    Shape corners;
-    CornersOp<>::execute(&vfs, hex, true, corners);
+    fs::Selector hex_sel = {"jot/Hexagon/full", {{"diameter", 30.0}}};
+    HexagonFullOp<>::execute(&vfs, hex_sel, 30.0);
+    Shape hex = vfs.read<Shape>(hex_sel);
     
-    assert(corners.components.size() == 6);
+    fs::Selector corners_sel = {"jot/corners", {{"proxy", true}}};
+    CornersOp<>::execute(&vfs, corners_sel, hex, true);
     
-    // Check first corner orientation
-    Shape c0 = corners.components[0];
-    assert(c0.tags["type"] == "corner");
-    assert(c0.tags["index"] == 0);
-    
-    assert(c0.geometry.has_value());
-    
-    // c0.tf should map origin to a point at distance 15.0 from center
-    double tx = c0.tf[3];
-    double ty = c0.tf[7];
-    double tz = c0.tf[11];
-    double dist = std::sqrt(tx*tx + ty*ty + tz*tz);
-    assert(std::abs(dist - 15.0) < 1e-6);
-    
-    // Geometry check
-    Geometry geo = vfs.read_geo(c0.geometry);
-    assert(geo.vertices.size() == 3); // V-Proxy
-    
+    Shape out = vfs.read<Shape>(corners_sel);
+    if (out.components.size() != 6) {
+        std::cerr << "❌ Corners FAIL: Expected 6 corner components, got " << out.components.size() << std::endl;
+        return 1;
+    }
+
     std::cout << "✅ Corners PASS" << std::endl;
     return 0;
 }

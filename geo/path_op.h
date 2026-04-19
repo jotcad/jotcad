@@ -8,18 +8,27 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct LinkOp : P {
     static constexpr const char* path = "jot/link";
-    static void execute(jotcad::fs::VFSNode* vfs, const Shape& a, const Shape& b, Shape& out) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& a, const Shape& b) {
+        Shape out;
         out.geometry = std::nullopt;
         out.components = {a, b};
         out.add_tag("type", "link");
+        vfs->write<Shape>(fulfilling, out);
     }
     static std::vector<std::string> argument_keys() { return {"$a", "$b"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/link"},
-            {"arguments", {{"$a", {{"type", "jot:shape"}}}, {"$b", {{"type", "jot:shape"}}}, {"$out", {{"type", "jot:shape"}}}}},
-            {"inputs", {{"$a", {{"type", "shape"}}}, {"$b", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"description", "Creates a semantic link between two shapes, establishing a topological connection."},
+            {"arguments", {
+                {"$a", {{"type", "jot:shape"}, {"description", "The first shape to be linked."}}},
+                {"$b", {{"type", "jot:shape"}, {"description", "The second shape to be linked."}}}
+            }},
+            {"inputs", {
+                {"$a", {{"type", "shape"}, {"description", "The first shape."}}}, 
+                {"$b", {{"type", "shape"}, {"description", "The second shape."}}}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}, {"description", "A group containing both linked shapes."}}}}}
         };
     }
 };
@@ -27,25 +36,30 @@ struct LinkOp : P {
 template <typename P = JotVfsProtocol>
 struct LoopOp : P {
     static constexpr const char* path = "jot/loop";
-    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<Shape>& segments, Shape& out) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& segments) {
+        Shape out;
         out.geometry = std::nullopt;
         out.components = segments;
         out.add_tag("type", "loop");
+        vfs->write<Shape>(fulfilling, out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/loop"},
-            {"arguments", {{"$in", {{"type", "jot:shapes"}}}, {"$out", {{"type", "jot:shape"}}}}},
-            {"inputs", {{"$in", {{"type", "shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"description", "Closes a sequence of connected segments into a topological loop."},
+            {"arguments", {
+                {"$in", {{"type", "jot:shapes"}, {"description", "The sequence of segments to form into a loop."}}}
+            }},
+            {"inputs", {{"$in", {{"type", "shapes"}, {"description", "The sequence of segments."}}}}},
+            {"outputs", {{"$out", {{"type", "shape"}, {"description", "The resulting loop shape."}}}}}
         };
     }
 };
 
 static void path_init() {
-    Processor::register_op<LinkOp<>, Shape, Shape, Shape>("jot/link");
-    Processor::register_op<LoopOp<>, Shape, std::vector<Shape>>("jot/loop");
+    Processor::register_op<LinkOp<>, Shape, Shape>("jot/link");
+    Processor::register_op<LoopOp<>, std::vector<Shape>>("jot/loop");
 }
 
 } // namespace geo

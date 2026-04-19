@@ -3,29 +3,30 @@
 ## Architecture & Build
 
 Refer to the root [README.md](./README.md) for core architecture and C++ rebuild
-instructions.
+instructions. All C++ implementations must link against **`-lcrypto`**.
 
 ## AI Operational Mandates
 
-- **PROTOCOL INTEGRITY (CRITICAL)**: Do NOT "fix", "improve", or modify the core
-  VFS Mesh protocols (`read`, `listen`, `register`, `notify`, `subscribe`,
-  `spy`) or add new endpoints (like `version`, `watch`, `cid`) without explicit
-  architectural discussion and permission from the user. The protocol is
-  designed to be a pure, minimal, push/subscribe mesh. We have wasted
-  significant time reverting over-engineered pull-based discovery hacks. Stick
-  to the established Pub-Sub flows.
+- **PROTOCOL INTEGRITY (CRITICAL)**: Do NOT modify the core VFS Mesh protocols 
+  (`read`, `listen`, `register`, `notify`, `subscribe`, `spy`) without explicit 
+  discussion. The protocol is a pure, minimal, push/subscribe mesh. 
+- **ACTOR FULFILLMENT MODEL**: Operators return `void` and MUST satisfy their 
+  assigned address by calling `vfs->write<Shape>(fulfilling, out)`.
+- **IMMUTABLE GEOMETRY**: Primitives and transformative operators MUST NOT 
+  overwrite input CIDs. New geometry must be materialized via anonymous writes: 
+  `vfs->write<Geometry>(res)`.
+- **TOP-LEVEL NAMESPACES**: The `fs` namespace (VFS Mesh) and `jotcad` 
+  namespace (Geometry Engine) are decoupled. Do NOT nest `fs` inside `jotcad`.
+- **ATOMIC SELECTORS**: Standardize on `fs::Selector` as the atomic unit of 
+  addressing. Avoid decomposed paths and parameters in the API.
+- **MANDATORY RECIPES**: Chained operations (e.g., `On`, `At`) require explicit 
+  `$in` placeholders in their recipes. No implicit magic fallbacks.
 - **Directives & Execution**: AI may rebuild C++ (`./build.sh`) directly.
-  However, AI must ALWAYS ask the user to start or restart the cluster/services
-  (e.g., `npm start`, `./start_all.sh`, `fuser -k`). Always explain why a
-  restart is needed.
+  AI must ALWAYS ask the user to start or restart the cluster/services
+  (e.g., `npm start`, `./start_all.sh`).
 - **Strict Case-Sensitivity**: Lookups are exact. PascalCase for Constructors
   (`Box`), camelCase for Operations (`.offset`).
-- **Optimization Strategy**: Always prefer the "Tee Pattern" for side-effects
-  like `.pdf()` using `metadata.aliases`.
-- **Normalization**: Standardize all radial/apothem parameters to `diameter` for
-  deterministic Content-IDs.
+- **Standardization**: All radial/apothem parameters MUST be normalized to 
+  **`diameter`** before mesh commitment.
 - **Formal VFS Links**: Use `vfs.link(src, tgt)` for aliases. Resolution is 
-  STRICTLY metadata-driven (via `.meta` target). NEVER "guess" or sniff links 
-  from raw data content (e.g., `vfs:/` text pointers are just data).
-- **Agent Discovery**: The UX dynamically discovers schemas; ensure casing is
-  handled correctly in the registration loop within `JotNode.jsx`.
+  STRICTLY metadata-driven.

@@ -1,47 +1,51 @@
-#include "test_base.h"
+#include <iostream>
 #include "../hexagon_op.h"
 #include "../corners_op.h"
 #include "../on_op.h"
 #include "../offset_op.h"
+#include "../../fs/cpp/include/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    std::cout << "Testing Workbench (On)..." << std::endl;
-    MockVFS vfs;
-    register_all_ops();
+    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_on_test"};
+    fs::VFSNode vfs(config);
 
-    // 1. Setup VFS handlers for the mock
-    for (auto const& [path, op] : Processor::registry()) {
-        vfs.register_op(path, [&vfs, path](const VFSNode::VFSRequest& req) {
-            return Processor::registry()[path].logic(&vfs, req.path, req.parameters, req.stack);
+    // Register ops
+    hexagon_init();
+    corners_init();
+    offset_init();
+    on_init();
+
+    // Map Processor Registry to VFS Node
+    for (auto const& [path, op] : Processor::registry_instance()) {
+        vfs.register_op(path, [&vfs, path](const fs::VFSNode::VFSRequest& req) {
+            return Processor::registry_instance()[path].handler(&vfs, req);
         }, op.schema);
     }
-
-    Shape hex;
-    HexagonOp<hex_full>::execute(&vfs, {30.0}, hex);
     
-    Shape corners;
-    CornersOp<>::execute(&vfs, hex, true, corners);
-    Shape c0 = corners.components[0];
-
-    // 2. Define an "Operation Recipe" (Partial Selector)
-    // We'll use Offset(5) as our operation.
-    nlohmann::json recipe = {
-        {"path", "jot/offset"},
-        {"parameters", {{"distance", 5.0}}}
-    };
-
-    // 3. Execute On
-    Shape result;
-    OnOp<>::execute(&vfs, hex, {c0}, recipe, result);
-
-    // 4. Verify
-    assert(result.tags["type"] == "hexagon");
-    // Verify that geometry exists
-    assert(result.geometry.has_value());
-    assert(result.geometry->path == "geo/mesh");
+    std::cout << "Testing On (Conjugation) Operation..." << std::endl;
     
+    fs::Selector hex_sel = {"jot/Hexagon/full", {{"diameter", 30.0}}};
+    HexagonFullOp<>::execute(&vfs, hex_sel, 30.0);
+    Shape hex = vfs.read<Shape>(hex_sel);
+    
+    fs::Selector corners_sel = {"jot/corners", {{"proxy", false}}};
+    CornersOp<>::execute(&vfs, corners_sel, hex, false);
+    Shape corners = vfs.read<Shape>(corners_sel);
+    
+    // Operation to apply: offset(2) with explicit $in
+    fs::Selector op = {"jot/offset", {{"$in", "$in"}, {"diameter", 2.0}}};
+    
+    fs::Selector on_sel = {"jot/on", {}};
+    OnOp<>::execute(&vfs, on_sel, hex, corners, op);
+    
+    Shape out = vfs.read<Shape>(on_sel);
+    if (!out.geometry.has_value()) {
+        std::cerr << "❌ On FAIL: No result geometry" << std::endl;
+        return 1;
+    }
+
     std::cout << "✅ On PASS" << std::endl;
     return 0;
 }

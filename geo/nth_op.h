@@ -8,35 +8,28 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct NthOp : P {
     static constexpr const char* path = "jot/nth";
-
-    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<Shape>& sources, double index, Shape& out) {
-        if (sources.empty()) return;
-        
-        int i = (int)index;
-        if (i < 0) i = 0;
-        if (i >= (int)sources.size()) i = (int)sources.size() - 1;
-        
-        out = sources[i];
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, int index) {
+        if (index >= 0 && index < (int)in.components.size()) {
+            vfs->write<Shape>(fulfilling, in.components[index]);
+        } else {
+            vfs->write<Shape>(fulfilling, in);
+        }
     }
-
     static std::vector<std::string> argument_keys() { return {"$in", "index"}; }
-
     static typename P::json schema() {
         return {
-            {"metadata", {{"alias", "jot/nth"}}},
+            {"path", "jot/nth"},
+            {"description", "Selects the N-th component shape from a group."},
             {"arguments", {
-                {"$in", {{"type", "jot:shapes"}}},
-                {"index", {{"type", "jot:number"}, {"default", 0}}},
-                {"$out", {{"type", "jot:shape"}}}
-            }},
-            {"inputs", {{"$in", {{"type", "shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+                {"$in", {{"type", "jot:shape"}}},
+                {"index", {{"type", "integer"}, {"default", 0}}}
+            }}
         };
     }
 };
 
 static void nth_init() {
-    Processor::register_op<NthOp<>, Shape, std::vector<Shape>, double>();
+    Processor::register_op<NthOp<>, Shape, int>("jot/nth");
 }
 
 } // namespace geo

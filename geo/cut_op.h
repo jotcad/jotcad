@@ -22,25 +22,26 @@ struct CutOp : P {
         Matrix world_tf;
     };
 
-    static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, const std::vector<Shape>& tools, Shape& out) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
+        Shape out = in;
         if (tools.empty()) {
-            out = in;
+            vfs->write<Shape>(fulfilling, out);
             return;
         }
 
-        out = in;
         std::vector<ToolNode> tool_nodes;
         for (const auto& tool : tools) {
             collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
         }
 
         recursive_subtract(vfs, out, Matrix::identity(), tool_nodes);
+        vfs->write<Shape>(fulfilling, out);
     }
 
-    static void collect_tool_geometry(jotcad::fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
+    static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
         Matrix current_tf = parent_tf * Matrix::from_vec(s.tf);
         if (s.geometry.has_value()) {
-            Geometry geo = vfs->template read<Geometry>({s.geometry->path, s.geometry->parameters});
+            Geometry geo = vfs->read<Geometry>(s.geometry.value());
             tool_nodes.push_back({geo, current_tf});
         }
         for (const auto& child : s.components) {
@@ -48,12 +49,12 @@ struct CutOp : P {
         }
     }
 
-    static void recursive_subtract(jotcad::fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
+    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
         Matrix subject_world_tf = parent_tf * Matrix::from_vec(s.tf);
         Matrix subject_world_inv = subject_world_tf.inverse();
 
         if (s.geometry.has_value()) {
-            Geometry local_geo = vfs->template read<Geometry>({s.geometry->path, s.geometry->parameters});
+            Geometry local_geo = vfs->read<Geometry>(s.geometry.value());
             General_polygon_set_2 subject_set;
             add_geometry_to_gps(local_geo, Matrix::identity(), subject_set);
 
@@ -65,7 +66,7 @@ struct CutOp : P {
             }
 
             Geometry result_geo = gps_to_geometry(subject_set);
-            s.geometry = vfs->write_geometry(result_geo);
+            s.geometry = vfs->write<Geometry>(result_geo);
         }
 
         for (auto& child : s.components) {
@@ -92,7 +93,6 @@ struct CutOp : P {
             if (boundary.size() < 3 || !boundary.is_simple()) continue;
             if (boundary.is_clockwise_oriented()) boundary.reverse_orientation();
             
-            // Re-verify after potentially reversing
             if (!boundary.is_simple()) continue;
 
             std::vector<Polygon_2> holes;
@@ -152,15 +152,13 @@ struct CutOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}
-            }},
-            {"inputs", {{"$in", {{"type", "shape"}}}, {"tools", {{"type", "shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            }}
         };
     }
 };
 
 static void cut_init() {
-    Processor::register_op<CutOp<>, Shape, Shape, std::vector<Shape>>("jot/cut");
+    Processor::register_op<CutOp<>, Shape, std::vector<Shape>>("jot/cut");
 }
 
 } // namespace geo

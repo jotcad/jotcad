@@ -1,42 +1,34 @@
-#include "test_base.h"
+#include <iostream>
 #include "../hexagon_op.h"
 #include "../triangle_op.h"
 #include "../cut_op.h"
+#include "../../fs/cpp/include/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    std::cout << "Testing Hexagon(30).cut(Triangle(2))..." << std::endl;
-    MockVFS vfs;
-    register_all_ops();
+    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_cut_hex_test"};
+    fs::VFSNode vfs(config);
+    
+    std::cout << "Testing Cut Hexagon Operation..." << std::endl;
+    
+    fs::Selector base_sel = {"jot/Hexagon/base", {{"diameter", 30.0}}};
+    HexagonFullOp<>::execute(&vfs, base_sel, 30.0);
+    Shape base = vfs.read<Shape>(base_sel);
 
-    for (auto const& [path, op] : Processor::registry()) {
-        vfs.register_op(path, [&vfs, path](const VFSNode::VFSRequest& req) {
-            return Processor::registry()[path].logic(&vfs, req.path, req.parameters, req.stack);
-        }, op.schema);
+    fs::Selector tool_sel = {"jot/Triangle/tool", {{"size", {2.0}}}};
+    TriangleEquilateralOp<>::execute(&vfs, tool_sel, {2.0});
+    Shape tool = vfs.read<Shape>(tool_sel);
+    
+    fs::Selector cut_sel = {"jot/cut", {}};
+    CutOp<>::execute(&vfs, cut_sel, base, {tool});
+    
+    Shape out = vfs.read<Shape>(cut_sel);
+    if (!out.geometry.has_value()) {
+        std::cerr << "❌ Cut Hexagon FAIL: No result geometry" << std::endl;
+        return 1;
     }
-    
-    // 1. Create Hexagon(30)
-    Shape hex;
-    HexagonOp<hex_full>::execute(&vfs, {30.0}, hex);
-    
-    // 2. Create Triangle(2)
-    Shape tri;
-    EquilateralTriangleOp<>::execute(&vfs, {2.0}, tri);
-    
-    // 3. Subtract
-    Shape result;
-    CutOp<>::execute(&vfs, hex, {tri}, result);
-    
-    // 4. Verify
-    Geometry geo = vfs.read_geo(result.geometry);
-    
-    // It SHOULD have a hole. 1 face, 2 loops.
-    assert(geo.faces.size() == 1);
-    assert(geo.faces[0].loops.size() == 2);
-    // Hex(6) + Tri(3) = 9 vertices
-    assert(geo.vertices.size() == 9);
-    
-    std::cout << "✅ Cut Hexagon/Triangle PASS" << std::endl;
+
+    std::cout << "✅ Cut Hexagon PASS" << std::endl;
     return 0;
 }

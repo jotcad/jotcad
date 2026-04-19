@@ -6,105 +6,93 @@
 namespace jotcad {
 namespace geo {
 
-/**
- * AtOp: Simple Spatial Placement (jot/at)
- */
 template <typename P = JotVfsProtocol>
 struct AtOp : P {
     static constexpr const char* path = "jot/at";
-
-    static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, const std::vector<Shape>& targets, Shape& out) {
-        if (targets.empty()) {
-            out = in;
-            return;
-        }
-
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& target, const fs::Selector& op) {
         std::vector<Shape> results;
-        for (const auto& target : targets) {
-            Matrix T = Matrix::from_vec(target.tf);
-            Matrix acc_m = Matrix::from_vec(in.tf);
-            Shape clone = in;
-            clone.tf = (T * acc_m).to_vec();
-            results.push_back(clone);
-        }
+        place_at(vfs, in, target, Matrix::identity(), op, results);
+        Shape out;
+        out.components = results;
+        vfs->write<Shape>(fulfilling, out);
+    }
 
-        if (results.size() == 1) out = results[0];
-        else {
-            out.geometry = std::nullopt;
-            out.components = results;
-            out.add_tag("type", "group");
+    static void place_at(fs::VFSNode* vfs, const Shape& in, const Shape& target, const Matrix& parent_frame, const fs::Selector& op, std::vector<Shape>& results) {
+        Matrix world_frame = parent_frame * Matrix::from_vec(target.tf);
+        if (target.geometry.has_value()) {
+            Shape clone = in;
+            clone.tf = (world_frame * Matrix::from_vec(in.tf)).to_vec();
+            if (!op.path.empty()) {
+                nlohmann::json hydrated = Processor::hydrate(op.to_json(), clone);
+                clone = vfs->read<Shape>(fs::Selector::from_json(hydrated));
+            }
+            results.push_back(clone);
+        } else {
+            for (const auto& child : target.components) {
+                place_at(vfs, in, child, world_frame, op, results);
+            }
         }
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
-
+    static std::vector<std::string> argument_keys() { return {"$in", "target", "op"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/at"},
+            {"description", "Places copies of the input shape at every location defined by the target shape."},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
-                {"targets", {{"type", "jot:shapes"}}}
-            }},
-            {"inputs", {{"$in", {{"type", "shape"}}}, {"targets", {{"type", "shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+                {"target", {{"type", "jot:shape"}}},
+                {"op", {{"type", "jot:selector"}, {"default", nlohmann::json::object()}}}
+            }}
         };
     }
 };
 
-/**
- * OnOp: Sequential Workbench Accumulator (jot/on)
- */
 template <typename P = JotVfsProtocol>
 struct OnOp : P {
     static constexpr const char* path = "jot/on";
-
-    static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, const std::vector<Shape>& targets, const nlohmann::json& op, Shape& out) {
-        if (targets.empty()) {
-            out = in;
-            return;
-        }
-
-        Shape accumulator = in;
-        for (const auto& target : targets) {
-            Matrix T = Matrix::from_vec(target.tf);
-            Matrix T_inv = T.inverse();
-
-            Shape workbench_subject = accumulator;
-            workbench_subject.tf = (T_inv * Matrix::from_vec(accumulator.tf)).to_vec();
-
-            nlohmann::json hydrated = Processor::hydrate(op, workbench_subject);
-            Shape workbench_result = Shape::from_json(vfs->template read<nlohmann::json>({
-                hydrated.at("path"), 
-                hydrated.value("parameters", nlohmann::json::object()),
-                {} // stack
-            }));
-
-            accumulator = workbench_result;
-            accumulator.tf = (T * Matrix::from_vec(workbench_result.tf)).to_vec();
-        }
-
-        out = accumulator;
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& target, const fs::Selector& op) {
+        Shape res = in;
+        apply_on(vfs, res, target, Matrix::identity(), op);
+        vfs->write<Shape>(fulfilling, res);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "targets", "op"}; }
+    static void apply_on(fs::VFSNode* vfs, Shape& subject, const Shape& target, const Matrix& parent_frame, const fs::Selector& op) {
+        Matrix world_frame = parent_frame * Matrix::from_vec(target.tf);
+        if (target.geometry.has_value()) {
+            Matrix world_frame_inv = world_frame.inverse();
+            Shape local_subject = subject;
+            local_subject.tf = (world_frame_inv * Matrix::from_vec(subject.tf)).to_vec();
+            
+            nlohmann::json hydrated = Processor::hydrate(op.to_json(), local_subject);
+            Shape local_result = vfs->read<Shape>(fs::Selector::from_json(hydrated));
+            
+            subject = local_result;
+            subject.tf = (world_frame * Matrix::from_vec(local_result.tf)).to_vec();
+        } else {
+            for (const auto& child : target.components) {
+                apply_on(vfs, subject, child, world_frame, op);
+            }
+        }
+    }
 
+    static std::vector<std::string> argument_keys() { return {"$in", "target", "op"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/on"},
+            {"description", "Sequentially applies an operation to the input shape at every location defined by the target shape (Reduce)."},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
-                {"targets", {{"type", "jot:shapes"}}},
-                {"op", {{"type", "jot:operation"}}}
-            }},
-            {"inputs", {{"$in", {{"type", "shape"}}}, {"targets", {{"type", "shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+                {"target", {{"type", "jot:shape"}}},
+                {"op", {{"type", "jot:selector"}}}
+            }}
         };
     }
 };
 
 static void on_init() {
-    Processor::register_op<AtOp<>, Shape, Shape, std::vector<Shape>>("jot/at");
-    Processor::register_op<OnOp<>, Shape, Shape, std::vector<Shape>, nlohmann::json>("jot/on");
+    Processor::register_op<AtOp<>, Shape, Shape, fs::Selector>("jot/at");
+    Processor::register_op<OnOp<>, Shape, Shape, fs::Selector>("jot/on");
 }
 
 } // namespace geo

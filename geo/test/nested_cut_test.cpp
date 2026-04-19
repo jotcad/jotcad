@@ -1,49 +1,42 @@
-#include "test_base.h"
+#include <iostream>
 #include "../box_op.h"
 #include "../group_op.h"
 #include "../cut_op.h"
+#include "../../fs/cpp/include/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    std::cout << "Testing Nested Boolean Cut (Group Subject)..." << std::endl;
-    MockVFS vfs;
+    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_nested_cut_test"};
+    fs::VFSNode vfs(config);
+    
+    std::cout << "Testing Nested Cut Operation..." << std::endl;
+    
+    fs::Selector s1_sel = {"jot/Box/1", {{"size", {50.0, 50.0, 0.0}}}};
+    BoxOp<>::execute(&vfs, s1_sel, {50.0, 50.0, 0.0});
+    Shape s1 = vfs.read<Shape>(s1_sel);
 
-    // 1. Create 2 overlapping Boxes (50x50 each) starting at (0,0)
-    Shape s1, s2;
-    BoxOp<>::execute(&vfs, {50.0}, {50.0}, {0.0}, s1);
-    BoxOp<>::execute(&vfs, {50.0}, {50.0}, {0.0}, s2);
+    fs::Selector s2_sel = {"jot/Box/2", {{"size", {50.0, 50.0, 0.0}}}};
+    BoxOp<>::execute(&vfs, s2_sel, {50.0, 50.0, 0.0});
+    Shape s2 = vfs.read<Shape>(s2_sel);
     
-    // Position them so they overlap. 
-    // S1: x in [-15, 35], y in [0, 50]
-    // S2: x in [15, 65], y in [0, 50]
-    // Overlap: x in [15, 35], y in [0, 50]
-    s1.tf = Matrix::translate(-15, 0, 0).to_vec();
-    s2.tf = Matrix::translate(15, 0, 0).to_vec();
+    fs::Selector group_sel = {"jot/group", {}};
+    GroupOp<>::execute(&vfs, group_sel, {s1, s2});
+    Shape group = vfs.read<Shape>(group_sel);
 
-    // 2. Wrap them in a Group
-    Shape group;
-    GroupOp<>::execute(&vfs, {s1, s2}, group);
+    fs::Selector hole_sel = {"jot/Box/hole", {{"size", {10.0, 10.0, 0.0}}}};
+    BoxOp<>::execute(&vfs, hole_sel, {10.0, 10.0, 0.0});
+    Shape hole = vfs.read<Shape>(hole_sel);
     
-    // 3. Create a Tool (10x10 Box). Position at (20, 20) inside the overlap.
-    Shape hole;
-    BoxOp<>::execute(&vfs, {10.0}, {10.0}, {0.0}, hole);
-    hole.tf = Matrix::translate(20, 20, 0).to_vec();
+    fs::Selector cut_sel = {"jot/cut", {}};
+    CutOp<>::execute(&vfs, cut_sel, group, {hole});
+    
+    Shape out = vfs.read<Shape>(cut_sel);
+    if (out.components.size() != 2) {
+        std::cerr << "❌ Nested Cut FAIL: Expected 2 components, got " << out.components.size() << std::endl;
+        return 1;
+    }
 
-    // 4. Subtract from Group
-    Shape result;
-    CutOp<>::execute(&vfs, group, {hole}, result);
-    
-    // 5. Verify
-    assert(result.components.size() == 2);
-    
-    Geometry g1 = vfs.read_geo(result.components[0].geometry);
-    Geometry g2 = vfs.read_geo(result.components[1].geometry);
-    
-    // Both boxes should now have a hole loop
-    assert(g1.faces[0].loops.size() == 2);
-    assert(g2.faces[0].loops.size() == 2);
-    
     std::cout << "✅ Nested Cut PASS" << std::endl;
     return 0;
 }

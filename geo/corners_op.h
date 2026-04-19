@@ -10,17 +10,14 @@ template <typename P = JotVfsProtocol>
 struct CornersOp : P {
     static constexpr const char* path = "jot/corners";
 
-    static void execute(jotcad::fs::VFSNode* vfs, const Shape& in, bool proxy, Shape& out) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, bool proxy) {
         if (!in.geometry.has_value()) {
-            out = in;
+            vfs->write<Shape>(fulfilling, in);
             return;
         }
 
         // 1. Read input geometry
-        Geometry geo = vfs->template read<Geometry>({
-            in.geometry->path, 
-            in.geometry->parameters
-        });
+        Geometry geo = vfs->read<Geometry>(in.geometry.value());
 
         std::vector<Shape> components;
         
@@ -76,16 +73,18 @@ struct CornersOp : P {
 
                         v_geo.segments.push_back({0, 1});
                         v_geo.segments.push_back({0, 2});
-                        corner.geometry = vfs->write_geometry(v_geo);
+                        corner.geometry = vfs->write<Geometry>(v_geo);
                     }
                     components.push_back(corner);
                 }
             }
         }
 
+        Shape out;
         out.geometry = std::nullopt;
         out.components = components;
         out.add_tag("type", "corners");
+        vfs->write<Shape>(fulfilling, out);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "proxy"}; }
@@ -93,18 +92,17 @@ struct CornersOp : P {
     static typename P::json schema() {
         return {
             {"path", "jot/corners"},
+            {"description", "Extracts the corners (vertices) of a shape as a group of coordinate frames oriented along the edges."},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
-                {"proxy", {{"type", "jot:boolean"}, {"default", true}}}
-            }},
-            {"inputs", {{"$in", {{"type", "shape"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+                {"proxy", {{"type", "boolean"}, {"default", true}}}
+            }}
         };
     }
 };
 
 static void corners_init() {
-    Processor::register_op<CornersOp<>, Shape, Shape, bool>("jot/corners");
+    Processor::register_op<CornersOp<>, Shape, bool>("jot/corners");
 }
 
 } // namespace geo

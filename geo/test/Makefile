@@ -7,11 +7,11 @@ INCLUDES = -I.. -I../impl -I../../fs/cpp/include -I../../fs/cpp/vendor \
            -I../../geometry/native/include/CGAL/include
 
 # Core dependencies (VFS, shared logic, and operator catalog)
-CORE_SOURCES = ../../fs/cpp/src/vfs_node.cpp ../ops_library.cc
-CORE_OBJS = bin/vfs_node.o bin/ops_library.o
+CORE_SOURCES = ../../fs/cpp/src/vfs_node.cpp ../ops_library.cc ../impl/registry.cc
+CORE_OBJS = bin/vfs_node.o bin/ops_library.o bin/registry.o
 
 DEFS = -DCGAL_DISABLE_GMP=1
-LIBS = -lpthread
+LIBS = -lpthread -lcrypto
 
 BIN_DIR = bin
 
@@ -20,6 +20,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp offset_test.cpp o
                cut_test.cpp nested_cut_test.cpp cut_hexagon_test.cpp accumulator_test.cpp \
                schema_test.cpp offset_closure_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
+
+TEST_RUNS = $(addprefix test-, $(TEST_SOURCES:_test.cpp=))
 
 all: $(TEST_BINS)
 
@@ -33,20 +35,21 @@ bin/ops_library.o: ../ops_library.cc
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
+# Compile implementation registry
+bin/registry.o: ../impl/registry.cc
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+HEADERS = $(wildcard ../*.h) $(wildcard ../impl/*.h)
+
 # Build each test independently
-$(BIN_DIR)/%_test: %_test.cpp test_base.h $(CORE_OBJS)
+$(BIN_DIR)/%_test: %_test.cpp test_base.h $(CORE_OBJS) $(HEADERS)
 	@mkdir -p $(BIN_DIR)
 	@echo "[Build] $@"
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) $< $(CORE_OBJS) $(LIBS) -o $@
 
 # Run all tests
-test: $(TEST_BINS)
-	@echo "Starting JotCAD Operator Unit Tests..."
-	@echo "--------------------------------------"
-	@for t in $(TEST_BINS); do \
-		echo "[Run] $$t"; \
-		./$$t || exit 1; \
-	done
+test: $(TEST_RUNS)
 	@echo "--------------------------------------"
 	@echo "✨ ALL UNIT TESTS PASSED"
 

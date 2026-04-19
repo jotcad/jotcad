@@ -9,68 +9,29 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct RotateOp : P {
     static constexpr const char* path = "jot/rotate";
-
-    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<Shape>& in, const std::vector<double>& turns, int axis, Shape& out) {
-        std::vector<Shape> results;
-        for (const auto& src : in) {
-            for (double t : turns) {
-                Matrix r;
-                if (axis == 0) r = Matrix::rotationX(t);
-                else if (axis == 1) r = Matrix::rotationY(t);
-                else r = Matrix::rotationZ(t);
-                
-                Matrix current = Matrix::from_vec(src.tf);
-                Shape res = src;
-                res.tf = (r * current).to_vec();
-                results.push_back(res);
-            }
-        }
-
-        if (results.size() == 1) out = results[0];
-        else {
-            out.geometry = std::nullopt;
-            out.components = results;
-            out.add_tag("type", "group");
-        }
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double angle) {
+        Shape out = in;
+        double turns = angle / 360.0;
+        Matrix r = Matrix::rotationZ(turns);
+        out.tf = (r * Matrix::from_vec(in.tf)).to_vec();
+        vfs->write<Shape>(fulfilling, out);
     }
-
-    static std::vector<uint8_t> rotate_logic(jotcad::fs::VFSNode* vfs, const nlohmann::json& params, const std::vector<std::string>& stack, int axis) {
-        auto in = Processor::decode<std::vector<Shape>>(vfs, "$in", params, {}, stack);
-        auto turns = Processor::decode<std::vector<double>>(vfs, "turns", params, {}, stack);
-        
-        Shape out;
-        execute(vfs, in, turns, axis, out);
-        return P::write_shape_obj(out);
-    }
-
-    static std::vector<uint8_t> rotateX(jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        return rotate_logic(vfs, params, stack, 0);
-    }
-    static std::vector<uint8_t> rotateY(jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        return rotate_logic(vfs, params, stack, 1);
-    }
-    static std::vector<uint8_t> rotateZ(jotcad::fs::VFSNode* vfs, const std::string& path, const nlohmann::json& params, const std::vector<std::string>& stack) {
-        return rotate_logic(vfs, params, stack, 2);
+    static std::vector<std::string> argument_keys() { return {"$in", "angle"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/rotate"},
+            {"description", "Rotates the input shape around the Z-axis."},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}, {"description", "The shape to rotate."}}},
+                {"angle", {{"type", "number"}, {"default", 0.0}, {"description", "The rotation angle in degrees."}}}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}, {"description", "The rotated shape."}}}}}
+        };
     }
 };
 
 static void rotate_init() {
-    auto get_schema = [](const std::string& path, const std::string& alias) {
-        return nlohmann::json{
-            {"path", path},
-            {"aliases", {alias}},
-            {"arguments", {
-                {"$in", {{"type", "jot:shapes"}}},
-                {"turns", {{"type", "jot:numbers"}, {"default", 0.0}}}
-            }},
-            {"inputs", {{"$in", {{"type", "shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
-        };
-    };
-
-    Processor::register_op("jot/rotateX", RotateOp<>::rotateX, get_schema("jot/rotateX", "jot/rx"));
-    Processor::register_op("jot/rotateY", RotateOp<>::rotateY, get_schema("jot/rotateY", "jot/ry"));
-    Processor::register_op("jot/rotateZ", RotateOp<>::rotateZ, get_schema("jot/rotateZ", "jot/rz"));
+    Processor::register_op<RotateOp<>, Shape, double>("jot/rotate");
 }
 
 } // namespace geo

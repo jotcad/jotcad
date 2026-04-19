@@ -10,30 +10,42 @@
 #include <iomanip>
 #include <condition_variable>
 #include <queue>
+#include <openssl/sha.h>
 
-namespace jotcad {
 namespace fs {
 
 std::string vfs_hash256(const std::vector<uint8_t>& data) {
-    uint64_t hash = 0x811c9dc5;
-    for (auto b : data) { hash ^= b; hash *= 0x01000193; }
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, data.data(), data.size());
+    SHA256_Final(hash, &sha256);
     std::stringstream ss;
-    ss << std::hex << std::setw(16) << std::setfill('0') << hash;
+    for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
     return ss.str();
 }
 
-std::string vfs_hash256_str(const std::string& str) {
-    std::vector<uint8_t> data(str.begin(), str.end());
-    return vfs_hash256(data);
+std::string vfs_hash256_str(const std::string& input) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, input.c_str(), input.size());
+    SHA256_Final(hash, &sha256);
+    std::stringstream ss;
+    for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+    return ss.str();
 }
 
 static void normalize_json(json& j) {
     if (j.is_object()) {
+        std::vector<std::string> keys;
+        for (auto it = j.begin(); it != j.end(); ++it) keys.push_back(it.key());
+        std::sort(keys.begin(), keys.end());
         json sorted = json::object();
-        for (auto it = j.begin(); it != j.end(); ++it) {
-            json val = it.value();
+        for (const auto& k : keys) {
+            json val = j[k];
             normalize_json(val);
-            sorted[it.key()] = val;
+            sorted[k] = val;
         }
         j = sorted;
     } else if (j.is_array()) {
@@ -49,9 +61,7 @@ static bool matches(const json& selector, const json& target) {
             if (t_path.find(s_path.substr(0, s_path.size()-1)) != 0) return false;
         } else if (s_path != t_path) return false;
     }
-
     if (selector.contains("parameters") && selector["parameters"].is_object()) {
-        // If selector parameters are empty, it matches any parameters in the target.
         for (auto& [key, value] : selector["parameters"].items()) {
             if (!target.contains("parameters") || !target["parameters"].contains(key) || target["parameters"][key] != value) {
                 return false;
@@ -91,7 +101,6 @@ static std::shared_ptr<PeerQueue> get_or_create_queue(const std::string& peer_id
 VFSNode::VFSNode(const Config& config) : config_(config) {
     server_ptr_ = new httplib::Server();
     if (!config_.storage_dir.empty()) {
-        std::filesystem::remove_all(config_.storage_dir);
         std::filesystem::create_directories(config_.storage_dir);
     }
 }
@@ -109,7 +118,7 @@ void VFSNode::register_op(const std::string& path, OpHandler handler, const json
 
 void VFSNode::notify_schema() {
     json catalog = get_catalog();
-    notify({{"path", "sys/schema"}}, catalog);
+    notify({{"path", "sys/schema"}}, catalog, {});
 }
 
 json VFSNode::get_catalog() {
@@ -148,8 +157,7 @@ void VFSNode::add_peer(const std::string& url) {
                     peers_[id] = url;
                 }
                 std::cout << "[VFSNode " << config_.id << "] Peer Added: " << id << " (" << url << ")" << std::endl;
-                // Notify mesh of topology change
-                notify({{"path", "sys/topo"}}, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}});
+                notify({{"path", "sys/topo"}}, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}}, {});
             } catch (...) {}
         }
     }
@@ -165,11 +173,11 @@ void VFSNode::listen() {
         try {
             auto body = json::parse(req.body);
             VFSRequest vfs_req;
-            vfs_req.path = body.at("path").get<std::string>();
-            vfs_req.parameters = body.value("parameters", json::object());
+            vfs_req.selector.path = body.at("path").get<std::string>();
+            vfs_req.selector.parameters = body.value("parameters", json::object());
             vfs_req.stack = body.value("stack", std::vector<std::string>());
             vfs_req.expiresAt = body.value("expiresAt", 0LL);
-            auto data = read_impl(vfs_req);
+            auto data = read_impl(vfs_req.selector);
             res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
             res.status = e.code;
@@ -195,30 +203,20 @@ void VFSNode::listen() {
             json selector = body.at("selector");
             long long expiresAt = body.at("expiresAt").get<long long>();
             std::vector<std::string> stack = body.value("stack", std::vector<std::string>());
-            
-            // Neighbor Identification:
-            // 1. Explicit ID from header
-            // 2. Last hop in the stack
-            // 3. Fallback to a connection-based ID (for anonymous HTTP neighbors)
             std::string peer_id = req.get_header_value("x-vfs-id");
             if (peer_id.empty() && !stack.empty()) peer_id = stack.back();
             if (peer_id.empty()) peer_id = "anonymous-neighbor-" + req.remote_addr;
-
             {
                 std::lock_guard<std::mutex> lock(interest_mutex_);
                 std::string key = selector.dump();
                 interests_[key][peer_id] = expiresAt;
                 interest_selectors_[key] = selector;
-                
-                // Record the reverse URL if provided (standard mesh behavior)
                 std::string remote_url = req.get_header_value("x-vfs-local-url");
                 if (!remote_url.empty() && !peers_.count(peer_id)) {
                     std::lock_guard<std::mutex> pl(peer_mutex_);
                     peers_[peer_id] = remote_url;
                 }
             }
-
-            // Immediate state push for Topology/Schema subscriptions (Demand-Driven)
             if (selector["path"] == "sys/topo" || selector["path"] == "sys/schema") {
                 std::thread([this, selector, peer_id]() {
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -229,8 +227,6 @@ void VFSNode::listen() {
                     }
                 }).detach();
             }
-
-            // Relay subscription upstream
             subscribe(selector, expiresAt, stack);
             res.status = 200;
         } catch (...) { res.status = 400; }
@@ -247,7 +243,6 @@ void VFSNode::listen() {
             auto body = json::parse(req.body);
             std::string remote_id = body.value("id", "");
             std::string remote_url = body.value("url", "");
-            
             if (!remote_id.empty()) {
                 std::lock_guard<std::mutex> lock(peer_mutex_);
                 peers_[remote_id] = remote_url;
@@ -264,67 +259,51 @@ void VFSNode::listen() {
 
 void VFSNode::stop() {
     auto* svr = static_cast<httplib::Server*>(server_ptr_);
-    if (svr->is_running()) svr->stop();
+    if (svr && svr->is_running()) svr->stop();
 }
 
 bool VFSNode::validate_selector(const VFSRequest& req, std::string& error_out) {
     std::lock_guard<std::mutex> lock(handlers_mutex_);
-    if (!schemas_.count(req.path)) return true;
-    const json& schema = schemas_[req.path];
+    if (!schemas_.count(req.selector.path)) return true;
+    const json& schema = schemas_[req.selector.path];
     if (schema.contains("required")) {
-        for (const auto& f : schema["required"]) { if (!req.parameters.contains(f.get<std::string>())) { error_out = "Missing required parameter: " + f.get<std::string>(); return false; } }
+        for (const auto& f : schema["required"]) { if (!req.selector.parameters.contains(f.get<std::string>())) { error_out = "Missing required parameter: " + f.get<std::string>(); return false; } }
     }
     return true;
 }
 
-std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req, int depth) {
-    if (req.path.empty()) throw VFSException("Selector must have a path", 400);
-    std::cout << "[VFS " << config_.id << "] READ: " << req.path << " " << req.parameters.dump() << " (depth: " << depth << ")" << std::endl;
+std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth) {
+    if (sel.path.empty()) throw VFSException("Selector must have a path", 400);
+    std::cout << "[VFS READ] " << sel.path << " params: " << sel.parameters.dump() << std::endl;
     if (depth > 10) throw VFSException("Recursive link depth exceeded", 508);
-    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    if (req.expiresAt > 0 && now > req.expiresAt) throw VFSException("VFS Request Expired", 408);
-    if (req.stack.size() > 10) throw VFSException("VFS Routing Loop or Stack Depth exceeded", 400);
-    std::string error; if (!validate_selector(req, error)) throw VFSException(error, 400);
-    std::string cid = get_cid(req.path, req.parameters);
+    std::string cid = get_cid(sel);
     if (has_local(cid)) {
         try {
             json meta; { std::lock_guard<std::mutex> lock(storage_mutex_); std::ifstream is((std::filesystem::path(config_.storage_dir) / (cid + ".meta")).string()); meta = json::parse(is); }
             if (meta.value("state", "") == "LINKED" && meta.contains("target")) {
-                VFSRequest next_req = req; next_req.path = meta["target"]["path"]; next_req.parameters = meta["target"]["parameters"];
-                return read_impl(next_req, depth + 1);
+                Selector next_sel = Selector::from_json(meta["target"]);
+                return read_impl(next_sel, depth + 1);
             }
-        } catch (...) {}
+        } catch (const std::exception& e) {
+            std::cerr << "[VFS READ] Meta Error: " << e.what() << std::endl;
+        }
     }
     if (has_local(cid)) return get_local(cid);
-    OpHandler handler = nullptr; { std::lock_guard<std::mutex> lock(handlers_mutex_); if (handlers_.count(req.path)) handler = handlers_[req.path]; }
+    OpHandler handler = nullptr; { std::lock_guard<std::mutex> lock(handlers_mutex_); if (handlers_.count(sel.path)) handler = handlers_[sel.path]; }
     if (handler) {
+        VFSRequest req = {sel, {config_.id}, 0};
         auto data = handler(req);
-        if (!data.empty()) { write_local(cid, data, req.path, req.parameters); return data; }
+        if (!data.empty()) { write_local(cid, data, sel.path, sel.parameters); return data; }
     }
-    std::vector<std::string> new_stack = req.stack; new_stack.push_back(config_.id);
-    std::vector<std::string> target_urls; { std::lock_guard<std::mutex> lock(peer_mutex_); for (const auto& [id, url] : peers_) { bool in_stack = false; for (const auto& s_id : req.stack) if (s_id == id) in_stack = true; if (!in_stack) target_urls.push_back(url); } }
-    for (const auto& url : target_urls) {
-        try {
-            httplib::Client cli(url); cli.set_read_timeout(60, 0);
-            json body = {{"path", req.path}, {"parameters", req.parameters}, {"stack", new_stack}, {"expiresAt", req.expiresAt}};
-            auto res = cli.Post("/read", body.dump(), "application/json");
-            if (res && res->status == 200) {
-                std::vector<uint8_t> data(res->body.begin(), res->body.end());
-                write_local(cid, data, req.path, req.parameters); return data;
-            } else if (res && res->status >= 400 && res->status != 404) {
-                json err_body = json::parse(res->body); throw VFSException(err_body.value("message", "Upstream peer error"), res->status);
-            }
-        } catch (const VFSException&) { throw; } catch (...) {}
-    }
-    throw VFSException("Artifact not found in mesh: " + req.path, 404);
+    throw VFSException("Artifact not found in mesh: " + sel.path, 404);
 }
 
-void VFSNode::link(const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params) {
-    write_local_link(get_cid(src_path, src_params), src_path, src_params, tgt_path, tgt_params);
+void VFSNode::link(const Selector& src, const Selector& tgt) {
+    write_local_link(get_cid(src), src.path, src.parameters, tgt.path, tgt.parameters);
 }
 
-std::string VFSNode::get_cid(const std::string& path, const json& parameters) {
-    json s = {{"path", path}, {"parameters", parameters}};
+std::string VFSNode::get_cid(const Selector& sel) {
+    json s = {{"path", sel.path}, {"parameters", sel.parameters}};
     normalize_json(s);
     return vfs_hash256_str(s.dump());
 }
@@ -341,7 +320,7 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
     std::ifstream is(p, std::ios::binary | std::ios::ate);
     if (!is) return {};
     std::streamsize size = is.tellg(); 
-    if (size <= 0) return {}; // Safety: Prevent max_size() crash on -1 or empty
+    if (size <= 0) return {}; 
     is.seekg(0, std::ios::beg);
     std::vector<uint8_t> buf((size_t)size); 
     if (is.read((char*)buf.data(), (size_t)size)) return buf;
@@ -350,7 +329,6 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
 
 void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params) {
     if (config_.storage_dir.empty()) return;
-    std::cout << "[VFS " << config_.id << "] Persisting local CID: " << cid << " for " << path << std::endl;
     std::lock_guard<std::mutex> lock(storage_mutex_);
     std::ofstream os(std::filesystem::path(config_.storage_dir) / (cid + ".data"), std::ios::binary);
     os.write((const char*)data.data(), data.size());
@@ -361,10 +339,8 @@ void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& da
 void VFSNode::write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params) {
     if (config_.storage_dir.empty()) return;
     std::lock_guard<std::mutex> lock(storage_mutex_);
-    std::ofstream os(std::filesystem::path(config_.storage_dir) / (src_cid + ".data"));
-    os << "vfs:/" << tgt_path;
-    std::ofstream mos(std::filesystem::path(config_.storage_dir) / (src_cid + ".meta"));
-    mos << json({ {"path", src_path}, {"parameters", src_params}, {"state", "LINKED"}, {"target", {{"path", tgt_path}, {"parameters", tgt_params}}} }).dump();
+    std::ofstream ms(std::filesystem::path(config_.storage_dir) / (src_cid + ".meta"));
+    ms << json({ {"path", src_path}, {"parameters", src_params}, {"state", "LINKED"}, {"target", {{"path", tgt_path}, {"parameters", tgt_params}}} }).dump();
 }
 
 std::vector<uint8_t> VFSNode::spy(const VFSRequest& req) {
@@ -373,7 +349,7 @@ std::vector<uint8_t> VFSNode::spy(const VFSRequest& req) {
         if (entry.path().extension() == ".meta") {
             try {
                 std::ifstream is(entry.path()); json meta = json::parse(is);
-                if (meta["path"].get<std::string>().find(req.path) != std::string::npos) {
+                if (meta["path"].get<std::string>().find(req.selector.path) != std::string::npos) {
                     auto data = get_local(entry.path().stem().string());
                     std::string header = "\n=" + std::to_string(data.size()) + " " + meta.dump() + "\n";
                     res.insert(res.end(), header.begin(), header.end()); res.insert(res.end(), data.begin(), data.end());
@@ -397,13 +373,8 @@ void VFSNode::subscribe(const json& selector, long long expiresAt, const std::ve
 }
 
 void VFSNode::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
-    // 1. Inbound Rule: If we have already seen this message, drop it.
     for (const auto& id : stack) if (id == config_.id) return;
-
-    // 2. Relay Rule: Prepare the stack for the next hop.
-    std::vector<std::string> next_stack = stack; 
-    next_stack.push_back(config_.id);
-
+    std::vector<std::string> next_stack = stack; next_stack.push_back(config_.id);
     std::lock_guard<std::mutex> lock(interest_mutex_);
     for (auto& [key, subs] : interests_) {
         if (matches(interest_selectors_[key], selector)) {
@@ -411,35 +382,45 @@ void VFSNode::notify(const json& selector, const json& payload, const std::vecto
             for (auto it = subs.begin(); it != subs.end(); ) {
                 if (now > it->second) { it = subs.erase(it); continue; }
                 std::string p_id = it->first; 
-                
-                // 3. Outbound Rule: If the neighbor has already seen this message, skip them.
                 bool neighbor_seen = false;
                 for (const auto& s_id : stack) if (s_id == p_id) neighbor_seen = true;
                 if (neighbor_seen) { ++it; continue; }
-
-                bool sent = false;
-                { 
-                    std::lock_guard<std::mutex> ql(g_reverse_queues_mutex);
-                    if (g_reverse_queues.count(p_id)) {
-                        auto q = g_reverse_queues[p_id]; std::lock_guard<std::mutex> lq(q->mutex);
-                        q->commands.push({"NOTIFY", "0", "", selector, {}, 0, payload});
-                        q->cv.notify_one(); sent = true;
-                    }
-                }
-                if (!sent) {
-                    std::string p_url; { std::lock_guard<std::mutex> pl(peer_mutex_); if (peers_.count(p_id)) p_url = peers_[p_id]; }
-                    if (!p_url.empty()) std::thread([p_url, selector, payload, next_stack]() {
-                        httplib::Client cli(p_url); cli.set_connection_timeout(std::chrono::seconds(1));
-                        cli.Post("/notify", json({{"selector", selector}, {"payload", payload}, {"stack", next_stack}}).dump(), "application/json");
-                    }).detach();
-                }
+                std::string p_url; { std::lock_guard<std::mutex> pl(peer_mutex_); if (peers_.count(p_id)) p_url = peers_[p_id]; }
+                if (!p_url.empty()) std::thread([p_url, selector, payload, next_stack]() {
+                    httplib::Client cli(p_url); cli.set_connection_timeout(std::chrono::seconds(1));
+                    cli.Post("/notify", json({{"selector", selector}, {"payload", payload}, {"stack", next_stack}}).dump(), "application/json");
+                }).detach();
                 ++it;
             }
         }
     }
 }
 
+Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& data) {
+    std::string cid = get_cid(sel);
+    write_local(cid, data, sel.path, sel.parameters);
+    return sel;
+}
+
+template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) { return read_impl(sel); }
+template<> json VFSNode::read<json>(const Selector& sel) { return json::parse(read_impl(sel)); }
+
+template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data) {
+    if (sel.path.empty()) throw VFSException("Anonymous write of raw bytes is not permitted; provide a Selector.", 400);
+    return write_bytes(sel, data);
+}
+template<> Selector VFSNode::write<json>(const Selector& sel, const json& data) {
+    if (sel.path.empty()) throw VFSException("Anonymous write of JSON is not permitted; provide a Selector.", 400);
+    std::string s = data.dump();
+    std::vector<uint8_t> bytes(s.begin(), s.end());
+    return write_bytes(sel, bytes);
+}
+template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data) {
+    if (sel.path.empty()) throw VFSException("Anonymous write of string is not permitted; provide a Selector.", 400);
+    std::vector<uint8_t> bytes(data.begin(), data.end());
+    return write_bytes(sel, bytes);
+}
+
 void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Response& res) {}
 
 } // namespace fs
-} // namespace jotcad
