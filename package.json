@@ -14,6 +14,7 @@
     "cli": "node cli/cli.js",
     "rollup": "npm run rollup --workspaces --if-present",
     "test": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test fs/test/*.test.js geo/test/*.test.js",
+    "test:unit": "cd geo/test && chmod +x run_unit_tests.sh && ./run_unit_tests.sh",
     "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test '*/*.test.js'",
     "lintfix_one": "npx eslint --fix $1",
     "debug": "http-server . -p 9090"
@@ -42,6 +43,7 @@
     "fs",
     "geo",
     "geometry",
+    "jot",
     "op",
     "ops",
     "server",

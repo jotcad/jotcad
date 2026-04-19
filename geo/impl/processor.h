@@ -1,27 +1,75 @@
 #pragma once
 
-#include "../../fs/cpp/include/vfs_client.h"
+#include "../../fs/cpp/include/vfs_node.h"
 #include "geometry.h"
+#include "shape.h"
+#include "protocols.h"
 #include <string>
-#include <iostream>
-#include <thread>
-#include <chrono>
+#include <vector>
 #include <map>
 #include <functional>
+#include <json.hpp>
+#include <type_traits>
+#include <tuple>
 
 namespace jotcad {
+namespace fs {
+
+template<>
+inline jotcad::geo::Geometry VFSNode::read<jotcad::geo::Geometry>(const VFSRequest& req) {
+    auto bytes = read_impl(req);
+    jotcad::geo::Geometry geo;
+    geo.decode_text(std::string(bytes.begin(), bytes.end()));
+    return geo;
+}
+
+// Specializations for Shape
+template<>
+inline void VFSNode::write_specialized<jotcad::geo::Shape>(const std::string& path, const json& parameters, const jotcad::geo::Shape& data) {
+    std::string s = data.to_json().dump();
+    std::vector<uint8_t> bytes(s.begin(), s.end());
+    write_local(get_cid(path, parameters), bytes, path, parameters);
+}
+
+template<>
+inline std::string VFSNode::write_with_cid_specialized<jotcad::geo::Shape>(const std::string& path, const jotcad::geo::Shape& data) {
+    std::string s = data.to_json().dump();
+    std::vector<uint8_t> bytes(s.begin(), s.end());
+    std::string hash = vfs_hash256(bytes);
+    write_local(get_cid(path, {{"cid", hash}}), bytes, path, {{"cid", hash}});
+    return hash;
+}
+
+// Specializations for Geometry
+template<>
+inline void VFSNode::write_specialized<jotcad::geo::Geometry>(const std::string& path, const json& parameters, const jotcad::geo::Geometry& data) {
+    std::string s = data.encode_text();
+    std::vector<uint8_t> bytes(s.begin(), s.end());
+    write_local(get_cid(path, parameters), bytes, path, parameters);
+}
+
+template<>
+inline std::string VFSNode::write_with_cid_specialized<jotcad::geo::Geometry>(const std::string& path, const jotcad::geo::Geometry& data) {
+    std::string s = data.encode_text();
+    std::vector<uint8_t> bytes(s.begin(), s.end());
+    std::string hash = vfs_hash256(bytes);
+    write_local(get_cid(path, {{"cid", hash}}), bytes, path, {{"cid", hash}});
+    return hash;
+}
+
+} // namespace fs
+
 namespace geo {
 
 class Processor {
 public:
-    using LogicHandler = std::function<std::vector<uint8_t>(jotcad::fs::VFSClient*, const std::string&, const nlohmann::json&)>;
+    using json = nlohmann::json;
+    using LogicHandler = std::function<std::vector<uint8_t>(jotcad::fs::VFSNode*, const std::string&, const json&, const std::vector<std::string>&)>;
     
     struct Operation {
         std::string path;
         LogicHandler logic;
-        nlohmann::json schema;
-        std::string ux_code;
-        std::string ux_path; // e.g. "ui/components/box"
+        json schema;
     };
 
     static std::map<std::string, Operation>& registry() {
@@ -29,95 +77,107 @@ public:
         return reg;
     }
 
-    static void register_op(const Operation& op) {
-        std::cout << "[Processor] Registering operation: " << op.path << std::endl;
+    static void register_op(const std::string& path, LogicHandler logic, const json& schema) {
+        Operation op; op.path = path; op.logic = logic; op.schema = schema;
+        op.schema["path"] = path; // Schema invariant: knows its own canonical form
+        registry()[path] = op;
+    }
+
+    template <typename Op, typename Out, typename... T, size_t... Is, typename... Bound>
+    static void logic_executor(jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const json& schema, const std::vector<std::string>& stack, std::index_sequence<Is...>, Out& out, Bound&&... bound_args) {
+        auto keys = Op::argument_keys();
+        Op::execute(vfs, decode<T>(vfs, keys[Is], params, schema, stack)..., std::forward<Bound>(bound_args)..., out);
+    }
+
+    template <typename Op, typename Out, typename... T, typename... Bound>
+    static std::vector<uint8_t> logic_wrapper(jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack, Bound&&... bound_args) {
+        // Registry lookup to get the correct schema (which may have been overridden during registration)
+        auto schema = registry()[path].schema;
+        Out out;
+        
+        try {
+            logic_executor<Op, Out, T...>(vfs, path, params, schema, stack, std::make_index_sequence<sizeof...(T)>{}, out, std::forward<Bound>(bound_args)...);
+        } catch (const std::exception& e) {
+            std::cerr << "[Processor] FATAL: Op " << path << " failed: " << e.what() << std::endl;
+            throw;
+        }
+        
+        if constexpr (std::is_same_v<Out, Shape>) return JotVfsProtocol::write_shape_obj(out);
+        if constexpr (std::is_same_v<Out, std::vector<uint8_t>>) return out;
+        if constexpr (std::is_same_v<Out, json>) { std::string s = out.dump(); return std::vector<uint8_t>(s.begin(), s.end()); }
+        if constexpr (std::is_same_v<Out, std::string>) return std::vector<uint8_t>(out.begin(), out.end());
+        return JotVfsProtocol::write_json(out);
+    }
+
+    template <typename Op, typename Out, typename... T>
+    static void register_op(const std::string& path_override, const json& override_schema = json()) {
+        Operation op;
+        op.path = path_override;
+        op.schema = override_schema.is_null() ? Op::schema() : override_schema;
+        op.schema["path"] = path_override; // Schema invariant
+        op.logic = [](jotcad::fs::VFSNode* vfs, const std::string& path, const json& params, const std::vector<std::string>& stack) {
+            return logic_wrapper<Op, Out, T...>(vfs, path, params, stack);
+        };
         registry()[op.path] = op;
     }
 
-    struct Context {
-        std::string hub_url;
-        std::string peer_id;
-    };
-
-    static Context parse_args(int argc, char** argv) {
-        Context ctx;
-        for (int i = 1; i < argc; ++i) {
-            std::string arg = argv[i];
-            if (arg == "--hub" && i + 1 < argc) ctx.hub_url = argv[++i];
-            else if (arg == "--peer" && i + 1 < argc) ctx.peer_id = argv[++i];
-        }
-        return ctx;
+    template <typename Op, typename Out, typename... T>
+    static void register_op() {
+        register_op<Op, Out, T...>(Op::path);
     }
 
-    static int serve(int argc, char** argv) {
-        auto ctx = parse_args(argc, argv);
-        if (ctx.hub_url.empty()) {
-            std::cerr << "Usage: processor --hub <url> [--peer <id>]" << std::endl;
-            return 1;
-        }
-
-        std::string peer_id = ctx.peer_id.empty() ? "geo-service" : ctx.peer_id;
-        std::cout << "[Processor] Service starting as peer: " << peer_id << std::endl;
-        std::cout << "[Processor] Connecting to Hub at: " << ctx.hub_url << std::endl;
-        auto vfs = jotcad::fs::create_rest_client(ctx.hub_url, peer_id);
-
-// Give the Hub a moment to stabilize if it was just started
-std::this_thread::sleep_for(std::chrono::seconds(1));
-
-// Register the mailbox handler
-vfs->on_read([&](const std::string& path, const nlohmann::json& params) {
-    auto it = registry().find(path);
-    if (it != registry().end()) {
-        std::cout << "[Processor] Dispatching READ request to operation: " << path << std::endl;
-        try {
-            return it->second.logic(vfs.get(), path, params);
-        } catch (const std::exception& e) {
-            std::cerr << "[Processor] Logic Error: " << e.what() << std::endl;
-        }
-    } else {
-        std::cerr << "[Processor] Error: Unknown path in mailbox: " << path << std::endl;
-    }
-    return std::vector<uint8_t>();
-});
-
-// Start watching (starts background SSE thread)
-vfs->watch("*", [](const jotcad::fs::VFSEvent& ev) {
-    // Internal events handled by VFS client
-});
-
-        // Initialize and Advertise all registered operations
-        std::cout << "[Processor] Initializing " << registry().size() << " registered operations..." << std::endl;
-        for (auto& [path, op] : registry()) {
-            try {
-                std::cout << "[Processor]   -> " << path << std::endl;
-
-                // 1. Declare Schema
-                if (!op.schema.empty()) {
-                    vfs->declare(path, op.schema);
-                }
-
-                // 2. Seed UX code if provided
-                if (!op.ux_code.empty() && !op.ux_path.empty()) {
-                    std::vector<uint8_t> ux_data(op.ux_code.begin(), op.ux_code.end());
-                    vfs->write(op.ux_path, nlohmann::json::object(), ux_data);
-                }
-
-                // 3. Advertise LISTENING
-                vfs->write_state(path, nlohmann::json::object(), "LISTENING", "peer:" + peer_id);
-            } catch (const std::exception& e) {
-                std::cerr << "[Processor] FATAL error during initialization of " << path << ": " << e.what() << std::endl;
-                // We continue to the next op instead of crashing the whole service
+    template <typename T>
+    static T decode(jotcad::fs::VFSNode* vfs, const std::string& key, const json& params, const json& schema, const std::vector<std::string>& stack) {
+        json arg_schema = schema["arguments"].value(key, json::object());
+        json val = params.contains(key) ? params.at(key) : arg_schema.value("default", json());
+        
+        if constexpr (std::is_same_v<T, Shape>) {
+            if (val.is_object() && val.contains("path") && !val["path"].get<std::string>().empty()) {
+                // Address: Reify from Mesh
+                return Shape::from_json(vfs->read<json>({val.at("path"), val.value("parameters", json::object()), stack}));
             }
+            // Value: Parse Literal
+            return Shape::from_json(val);
         }
-        std::cout << "[Processor] Service ready. Waiting for requests..." << std::endl;
-
-        // Block main thread with heartbeat
-        while (true) {
-            std::cout << "[Processor] Heartbeat: " << peer_id << " is alive (" << registry().size() << " operations registered)" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(10));
+        else if constexpr (std::is_same_v<T, std::vector<Shape>>) {
+            std::vector<Shape> results;
+            if (val.is_array()) {
+                for (auto& item : val) {
+                   if (item.is_object() && item.contains("path") && !item["path"].get<std::string>().empty()) {
+                       results.push_back(Shape::from_json(vfs->read<json>({item.at("path"), item.value("parameters", json::object()), stack})));
+                   } else {
+                       results.push_back(Shape::from_json(item));
+                   }
+                }
+            } else if (!val.is_null()) {
+                if (val.is_object() && val.contains("path") && !val["path"].get<std::string>().empty()) {
+                    results.push_back(Shape::from_json(vfs->read<json>({val.at("path"), val.value("parameters", json::object()), stack})));
+                } else {
+                    results.push_back(Shape::from_json(val));
+                }
+            }
+            return results;
         }
+        else if constexpr (std::is_same_v<T, double>) return val.is_number() ? val.get<double>() : 0.0;
+        else if constexpr (std::is_same_v<T, std::vector<double>>) {
+            if (val.is_array()) return val.get<std::vector<double>>();
+            if (val.is_number()) return {val.get<double>()};
+            return {};
+        }
+        else if constexpr (std::is_same_v<T, std::string>) return val.is_string() ? val.get<std::string>() : "";
+        return T();
+    }
 
-        return 0;
+    static json hydrate(const json& recipe, const Shape& subject) {
+        if (!recipe.is_object() || !recipe.contains("path")) return recipe;
+        json hydrated = recipe;
+        if (!hydrated.contains("parameters")) hydrated["parameters"] = json::object();
+        if (hydrated["parameters"].contains("$in")) {
+            hydrated["parameters"]["$in"] = hydrate(hydrated["parameters"]["$in"], subject);
+        } else {
+            hydrated["parameters"]["$in"] = subject.to_json();
+        }
+        return hydrated;
     }
 };
 

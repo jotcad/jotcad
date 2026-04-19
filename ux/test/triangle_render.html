@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Triangle Render Test</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; }
+        #viewport { width: 512px; height: 512px; border: 1px solid green; }
+    </style>
+</head>
+<body>
+    <canvas id="viewport"></canvas>
+    <script type="module">
+        import * as THREE from 'three';
+        import { 
+            initSharedRenderer, 
+            renderJotToScene, 
+            updateViewports, 
+            registerViewport,
+            createScene
+        } from '../src/lib/three_utils.js';
+
+        const ZFS_DATA = `
+=176 files/main.json
+{"geometry":{"parameters":{"cid":"b074e57ca73004dd9ae4d6033765cc16635105fc0648b59f7b290021c0c6418c"},"path":"geo/mesh"},"parameters":{"diameter":30},"tags":{"type":"triangle"}}
+=254 assets/text/geo/mesh?{"cid":"b074e57ca73004dd9ae4d6033765cc16635105fc0648b59f7b290021c0c6418c"}
+v 0.0000000000 0.0000000000 0.0000000000 0.0000000000 0.0000000000 0.0000000000
+v 25.9807621134 0.0000000000 0.0000000000 25.9807621134 0.0000000000 0.0000000000
+v 12.9903810567 22.4999999999 0.0000000000 12.9903810567 22.4999999999 0.0000000000
+f 0 1 2
+`.trim();
+
+        async function run() {
+            const renderer = initSharedRenderer();
+            document.body.appendChild(renderer.domElement);
+            renderer.domElement.style.pointerEvents = 'auto';
+
+            const scene = createScene();
+            scene.background = new THREE.Color(0x222222); 
+            
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+            camera.position.set(30, 30, 30);
+            camera.lookAt(13, 11, 0); // Looking at roughly the center of the triangle
+
+            // Lighting
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dl = new THREE.DirectionalLight(0xffffff, 0.8);
+            dl.position.set(10, 10, 10);
+            scene.add(dl);
+
+            const viewportCanvas = document.getElementById('viewport');
+            registerViewport('test-triangle', viewportCanvas, scene, camera);
+
+            console.log('[Test] Rendering Triangle...');
+            await renderJotToScene(null, ZFS_DATA, scene);
+            
+            let frames = 0;
+            function animate() {
+                updateViewports();
+                frames++;
+                if (frames < 10) {
+                    requestAnimationFrame(animate);
+                } else {
+                    console.log('[Test] Render Complete');
+                    window.RENDER_COMPLETE = true;
+                }
+            }
+            animate();
+        }
+
+        run().catch(console.error);
+    </script>
+</body>
+</html>

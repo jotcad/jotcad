@@ -1,67 +1,130 @@
 #pragma once
-#include "impl/processor.h"
+#include "impl/protocols.h"
 #include "impl/triangle.h"
-#include <iostream>
+#include "impl/processor.h"
 #include <cmath>
-#include <algorithm>
 
 namespace jotcad {
 namespace geo {
 
-static std::vector<uint8_t> triangle_op(jotcad::fs::VFSClient* vfs, const std::string& path, const nlohmann::json& params) {
-    std::cout << "[Triangle Op] Generating triangle with params: " << params.dump() << std::endl;
-    double a = 0, b = 0, c = 0;
-    std::string form = params.value("form", "SSS");
+template <typename P = JotVfsProtocol>
+struct TriangleSSSOp : P {
+    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<double>& a, const std::vector<double>& b, const std::vector<double>& c, Shape& out) {
+        std::vector<Shape> items;
+        for (size_t i = 0; i < a.size(); ++i) {
+            double va = a[i];
+            double vb = b.size() > i ? b[i] : a[i];
+            double vc = c.size() > i ? c[i] : a[i];
+            Geometry geo; makeTriangle(geo, va, vb, vc);
+            
+            // Center the triangle
+            FT cx = (FT(va) + geo.vertices[2].x) / FT(3);
+            FT cy = geo.vertices[2].y / FT(3);
+            for (auto& v : geo.vertices) { v.x -= cx; v.y -= cy; }
 
-    if (form == "SSS") {
-        a = params.value("a", 1.0); 
-        b = params.value("b", 1.0); 
-        c = params.value("c", 1.0);
-    } else if (form == "SAS") {
-        a = params.value("a", 1.0); 
-        b = params.value("b", 1.0);
-        double angle_rad = params.value("angle", 60.0) * M_PI / 180.0;
-        c = std::sqrt(a*a + b*b - 2*a*b*std::cos(angle_rad));
-    } else if (form == "equilateral") {
-        a = b = c = params.value("side", 1.0);
+            items.push_back(P::make_shape(vfs, geo, {{"type","triangle"},{"plane","Z0"}}));
+        }
+        if (items.size() == 1) out = items[0];
+        else {
+            out.geometry = std::nullopt;
+            out.components = items;
+            out.add_tag("type", "group");
+        }
     }
+    static std::vector<std::string> argument_keys() { return {"a", "b", "c"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/Triangle/sss"},
+            {"arguments", {
+                {"a", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"b", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"c", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
+    }
+};
 
-    Geometry geo;
-    makeTriangle(geo, a, b, c);
+template <typename P = JotVfsProtocol>
+struct TriangleSASOp : P {
+    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<double>& a, const std::vector<double>& angle, const std::vector<double>& b, Shape& out) {
+        std::vector<Shape> items;
+        for (size_t i = 0; i < a.size(); ++i) {
+            double va = a[i];
+            double vang = angle.size() > i ? angle[i] : angle[0];
+            double vb_side = b.size() > i ? b[i] : b[0];
+            double angle_rad = vang * M_PI / 180.0;
+            double vc = std::sqrt(va*va + vb_side*vb_side - 2*va*vb_side*std::cos(angle_rad));
+            Geometry geo; makeTriangle(geo, va, vb_side, vc);
+            
+            FT cx = (FT(va) + geo.vertices[2].x) / FT(3);
+            FT cy = geo.vertices[2].y / FT(3);
+            for (auto& v : geo.vertices) { v.x -= cx; v.y -= cy; }
 
-    // 1. Write the raw mesh to a content-addressed location (geo/mesh)
-    std::string mesh_text = geo.encode_text();
-    std::cout << "[Triangle Op] Generated mesh, " << mesh_text.size() << " bytes. Writing to geo/mesh..." << std::endl;
-    std::vector<uint8_t> mesh_data(mesh_text.begin(), mesh_text.end());
-    vfs->write("geo/mesh", params, mesh_data);
+            items.push_back(P::make_shape(vfs, geo, {{"type","triangle"},{"plane","Z0"}}));
+        }
+        if (items.size() == 1) out = items[0];
+        else {
+            out.geometry = std::nullopt;
+            out.components = items;
+            out.add_tag("type", "group");
+        }
+    }
+    static std::vector<std::string> argument_keys() { return {"a", "angle", "b"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/Triangle/sas"},
+            {"arguments", {
+                {"a", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"angle", {{"type", "jot:numbers"}, {"default", {60.0}}}},
+                {"b", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
+    }
+};
 
-    // 2. Return the Shape JSON for the requested path
-    nlohmann::json shape = {
-        {"geometry", "vfs:/geo/mesh"},
-        {"parameters", params},
-        {"tags", {{"type", "triangle"}}}
-    };
-    std::string shape_text = shape.dump(2);
-    std::cout << "[Triangle Op] Returning Shape JSON for " << path << std::endl;
-    return std::vector<uint8_t>(shape_text.begin(), shape_text.end());
-}
+template <typename P = JotVfsProtocol>
+struct EquilateralTriangleOp : P {
+    static void execute(jotcad::fs::VFSNode* vfs, const std::vector<double>& diameter, Shape& out) {
+        std::vector<Shape> items;
+        for (double d : diameter) {
+            Geometry geo; makeTriangle(geo, d, d, d);
+            FT cx = (FT(d) + geo.vertices[2].x) / FT(3);
+            FT cy = geo.vertices[2].y / FT(3);
+            for (auto& v : geo.vertices) { v.x -= cx; v.y -= cy; }
+            items.push_back(P::make_shape(vfs, geo, {{"type","triangle"},{"plane","Z0"}}));
+        }
+        if (items.size() == 1) out = items[0];
+        else {
+            out.geometry = std::nullopt;
+            out.components = items;
+            out.add_tag("type", "group");
+        }
+    }
+    static std::vector<std::string> argument_keys() { return {"diameter"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/Triangle/equilateral"},
+            {"aliases", {"jot/Triangle", "jot/triangle"}},
+            {"arguments", {
+                {"diameter", {{"type", "jot:numbers"}, {"default", {10.0}}}},
+                {"$out", {{"type", "jot:shape"}}}
+            }},
+            {"inputs", {}},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
+    }
+};
 
 static void triangle_init() {
-    Processor::Operation op;
-    op.path = "shape/triangle";
-    op.logic = triangle_op;
-    op.schema = {
-        {"type", "object"},
-        {"properties", {
-            {"form", {{"type", "string"}, {"enum", {"SSS", "SAS", "equilateral"}}, {"default", "equilateral"}}},
-            {"side", {{"type", "number"}, {"default", 10}}},
-            {"a", {{"type", "number"}, {"default", 10}}},
-            {"b", {{"type", "number"}, {"default", 10}}},
-            {"c", {{"type", "number"}, {"default", 10}}},
-            {"angle", {{"type", "number"}, {"default", 60}}}
-        }}
-    };
-    Processor::register_op(op);
+    Processor::register_op<EquilateralTriangleOp<>, Shape, std::vector<double>>("jot/Triangle/equilateral");
+    Processor::register_op<TriangleSSSOp<>, Shape, std::vector<double>, std::vector<double>, std::vector<double>>("jot/Triangle/sss");
+    Processor::register_op<TriangleSASOp<>, Shape, std::vector<double>, std::vector<double>, std::vector<double>>("jot/Triangle/sas");
 }
 
 } // namespace geo

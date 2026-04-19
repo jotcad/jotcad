@@ -16,13 +16,17 @@ coordinate space.
 
 ### 2. Content Addressing (CID)
 
-Every artifact on the blackboard is addressed by a **Content-ID (CID)**. The CID is a SHA-256 hash of the concatenated **Path** and **Normalized Parameters**.
+Every artifact on the blackboard is addressed by a **Content-ID (CID)**. The CID
+is a SHA-256 hash of the concatenated **Path** and **Normalized Parameters**.
 
 **Formula:** `SHA256(path + JSON.stringify(sort_keys(parameters)))`
 
 **Implementation Rules:**
-1.  **Parameters:** Must be a flat JSON object. Keys must be sorted alphabetically before stringification.
-2.  **Stringification:** No spaces should be present in the JSON string (e.g., `{"a":1,"b":2}`).
+
+1.  **Parameters:** Must be a flat JSON object. Keys must be sorted
+    alphabetically before stringification.
+2.  **Stringification:** No spaces should be present in the JSON string (e.g.,
+    `{"a":1,"b":2}`).
 3.  **Concatenation:** The path is prepended directly to the JSON string.
 
 ### 3. Dual Planes (Request & Result)
@@ -48,7 +52,10 @@ Any given (path, parameters) point exists in one of five states:
    active lease.
 3. **`PROVISIONING`**: A processor holds a time-limited lease and is actively
    computing/streaming.
-4. **`LINKED`**: The point is an alias for another coordinate (Normalization).
+4. **`LINKED`**: The point is a formal, unambiguous alias for another coordinate.
+   Link resolution is metadata-driven; the VFS follows the `target` selector 
+   defined in the coordinate's envelope. Implicit "guessing" of links from data
+   content is forbidden.
 5. **`AVAILABLE`**: The computation is complete, and the artifact is ready in
    the Result Plane.
 
@@ -137,8 +144,9 @@ Manifests demand for a coordinate. Returns the current state immediately.
 
 ### `read(selector)`
 
-Blocks until the coordinate state reaches `AVAILABLE`. Returns a stream. If the
-state is `LINKED`, it recursively resolves the target coordinate.
+Blocks until the coordinate state reaches `AVAILABLE` or `LINKED`. If the state
+is `LINKED`, it recursively resolves the formal `target` selector from the 
+metadata. This resolution is unambiguous and strictly metadata-driven.
 
 ### `link(source, target)`
 

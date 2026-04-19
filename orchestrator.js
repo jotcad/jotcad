@@ -8,48 +8,48 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 console.log('[Orchestrator] Starting JotCAD System...');
 
 try {
-  console.log('[Orchestrator] Cleaning up port 3030...');
-  // Use fuser to kill anything on 3030. || true to ignore errors if port is empty.
-  execSync('fuser -k 3030/tcp || true', { stdio: 'inherit' });
-} catch (e) {
-  // Ignore
-}
+  console.log('[Orchestrator] Cleaning up ports 3030, 9091, 9092...');
+  // Force kill anything on these ports before starting
+  execSync('fuser -k 3030/tcp 9091/tcp 9092/tcp || true', { stdio: 'ignore' });
+  // Give it a moment to release
+  execSync('sleep 2');
+} catch (e) {}
 
 const components = [
   {
-    name: 'VFS Hub',
-    command: 'node',
-    args: ['fs/serve.js'],
+    name: 'Ops Node (9091)',
+    command: './geo/bin/ops',
+    args: [],
     cwd: __dirname,
-    env: { ...process.env, PORT: '9090' }
+    env: { 
+        ...process.env, 
+        PORT: '9091',
+        PEER_ID: 'geo-ops-node',
+        NEIGHBORS: '' 
+        }
+
   },
   {
-    name: 'C++ Ops Service',
+    name: 'Export Node (9092)',
     command: 'node',
-    args: ['geo/src/dispatcher_service.js'],
+    args: ['geo/export_service.js'], // We should update this to be a native VFS node too
     cwd: __dirname,
-    env: { ...process.env }
-  },
-  {
-    name: 'PDF Service',
-    command: 'node',
-    args: ['geo/src/pdf_service.js'],
-    cwd: __dirname,
-    env: { ...process.env }
-  },
-  {
-    name: 'Export Service',
-    command: 'node',
-    args: ['geo/src/export_service.js'],
-    cwd: __dirname,
-    env: { ...process.env }
+    env: { 
+        ...process.env, 
+        PORT: '9092',
+        PEER_ID: 'export-node',
+        NEIGHBORS: 'http://localhost:9091' // Export uses Ops
+    }
   },
   {
     name: 'Interactive UX',
     command: 'npm',
     args: ['run', 'dev', '--', '--port', '3030'],
     cwd: path.join(__dirname, 'ux'),
-    env: { ...process.env }
+    env: { 
+        ...process.env,
+        VITE_VFS_URL: 'http://localhost:9092'
+    }
   }
 ];
 
@@ -59,24 +59,17 @@ let shuttingDown = false;
 function shutdown(reason) {
   if (shuttingDown) return;
   shuttingDown = true;
-  
-  if (reason) {
-    console.error(`\n[Orchestrator] FATAL FAILURE: ${reason}`);
-  }
-  
+  if (reason) console.error(`\n[Orchestrator] FATAL FAILURE: ${reason}`);
   console.log('\n[Orchestrator] Shutting down all components...');
   for (const [name, child] of processes) {
     console.log(`[Orchestrator] Killing ${name}...`);
     child.kill();
   }
-  
-  // Exit with error if a failure caused the shutdown
   process.exit(reason ? 1 : 0);
 }
 
 function launch(component) {
   console.log(`[Orchestrator] Launching ${component.name}...`);
-  
   const child = spawn(component.command, component.args, {
     cwd: component.cwd,
     env: component.env || process.env,
@@ -96,12 +89,8 @@ function launch(component) {
   });
 
   child.on('close', (code) => {
-    if (!shuttingDown) {
-      if (code !== 0) {
+    if (!shuttingDown && code !== 0) {
         shutdown(`${component.name} exited unexpectedly with code ${code}`);
-      } else {
-        shutdown(`${component.name} exited prematurely`);
-      }
     }
     processes.delete(component.name);
   });
@@ -109,25 +98,13 @@ function launch(component) {
   processes.set(component.name, child);
 }
 
+// Initial Launch
+console.log('[Orchestrator] Starting JotCAD Mesh-VFS...');
+components.forEach(launch);
+
 process.on('SIGINT', () => shutdown());
 process.on('SIGTERM', () => shutdown());
 
-// Initial Launch
-console.log('[Orchestrator] Starting JotCAD System...');
-
-const hub = components.find(c => c.name === 'VFS Hub');
-const rest = components.filter(c => c.name !== 'VFS Hub');
-
-launch(hub);
-
-console.log('[Orchestrator] Waiting for VFS Hub to be ready...');
-setTimeout(() => {
-    if (!shuttingDown) {
-        rest.forEach(launch);
-    }
-}, 1500);
-
-// Periodic check to ensure all processes are still in the Map and active
 setInterval(() => {
     if (shuttingDown) return;
     for (const [name, child] of processes) {

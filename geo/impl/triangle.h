@@ -1,21 +1,27 @@
 #pragma once
 #include "geometry.h"
-#include <cmath>
 #include <vector>
+#include <cmath>
 
 namespace jotcad {
 namespace geo {
 
-static void makeTriangle(Geometry& geo, double a, double b, double c) {
-    geo.vertices.push_back({0, 0, 0});
-    geo.vertices.push_back({a, 0, 0});
+static void makeTriangle(Geometry& geo, double va, double vb, double vc) {
+    // va is side along X, vb is side opposite first vertex, vc is side from origin
+    // Vertex 0: (0,0)
+    // Vertex 1: (va, 0)
+    // Vertex 2: (x, y) using Law of Cosines
+    double cosA = (va*va + vc*vc - vb*vb) / (2 * va * vc);
+    double sinA = std::sqrt(std::max(0.0, 1.0 - cosA*cosA));
     
-    // Using law of cosines to find the third vertex
-    double cosA = (a*a + c*c - b*b) / (2 * a * c);
-    double sinA = std::sqrt(std::max(0.0, 1 - cosA*cosA));
-    
-    geo.vertices.push_back({c * cosA, c * sinA, 0});
-    geo.faces.push_back({{{0, 1, 2}}});
+    geo.vertices = {
+        {FT(0), FT(0), FT(0)},
+        {FT(va), FT(0), FT(0)},
+        {FT(vc * cosA), FT(vc * sinA), FT(0)}
+    };
+    geo.faces = {
+        {{{0, 1, 2}}}
+    };
 }
 
 } // namespace geo

@@ -9,28 +9,28 @@ const DEFAULT_CODE = `
 
 export const agent = {
   sockets: {
-    // 1. Demand a specific triangle (50 units equilateral)
-    input: In('shape/triangle', { form: 'equilateral', side: 50 }),
+    // 1. Demand a specific hexagon (25 units radius)
+    input: In('shape/hexagon', { radius: 25, variant: 'full' }),
     
     // 2. Output to a plain, easy-to-find result path
-    output: Out('ui/result/triangle')
+    output: Out('ui/result/hexagon')
   },
   
   async execute({ input, output, params }) {
-    console.log('[TrianglePipeline] Waking up to fulfill result...');
+    console.log('[HexagonPipeline] Waking up to fulfill result...');
     
-    // This will trigger the C++ Triangle Agent automatically
-    const triangle = await input.readData();
-    console.log('[TrianglePipeline] Received C++ geometry:', triangle);
+    // This will trigger the C++ Hexagon Agent automatically
+    const hexagon = await input.readData();
+    console.log('[HexagonPipeline] Received C++ geometry:', hexagon);
     
     // Pass the geometry through to our plain output path
     await output.writeData({
-        ...triangle,
-        processedBy: 'Interactive JS Agent',
+        ...hexagon,
+        processedBy: 'Jot Engine',
         timestamp: new Date().toISOString()
     });
     
-    console.log('[TrianglePipeline] Published to ui/result/triangle');
+    console.log('[HexagonPipeline] Published to ui/result/hexagon');
   }
 };
 `;
@@ -72,23 +72,24 @@ export const ScriptNode = (props) => {
         const module = await import(/* @vite-ignore */ url);
         URL.revokeObjectURL(url);
 
-        if (!module.agent) throw new Error('Exported "agent" object not found.');
+        if (!module.agent)
+          throw new Error('Exported "agent" object not found.');
 
         // Instantiate and start the agent
         const agentDef = module.agent;
         activeAgent = new Node(vfs, agentDef);
         activeAgent.start();
-        
+
         // Announce sockets as LISTENING states
         for (const [name, socket] of Object.entries(agentDef.sockets || {})) {
-            const cid = await vfs.getCID({ path: socket.path, parameters: {} });
-            await vfs.receive({
-                cid,
-                path: socket.path,
-                parameters: {},
-                state: 'LISTENING',
-                source: `ui-agent:${name}`
-            });
+          const cid = await vfs.getCID({ path: socket.path, parameters: {} });
+          await vfs.receive({
+            cid,
+            path: socket.path,
+            parameters: {},
+            state: 'LISTENING',
+            source: `ui-agent:${name}`,
+          });
         }
 
         setIsRunning(true);
@@ -110,12 +111,18 @@ export const ScriptNode = (props) => {
       style={{
         transform: `translate(${pos().x}px, ${pos().y}px)`,
         width: '400px',
-        'z-index': 20
+        'z-index': 20,
       }}
     >
       <div class="flex justify-between items-center">
-        <div class="text-xs font-black uppercase tracking-tighter text-white/40">Interactive JS Agent</div>
-        <div class={`w-2 h-2 rounded-full ${isRunning() ? 'bg-available animate-pulse' : 'bg-white/10'}`}></div>
+        <div class="text-xs font-black uppercase tracking-tighter text-white/40">
+          Jot Engine
+        </div>
+        <div
+          class={`w-2 h-2 rounded-full ${
+            isRunning() ? 'bg-available animate-pulse' : 'bg-white/10'
+          }`}
+        ></div>
       </div>
 
       <textarea
@@ -129,8 +136,8 @@ export const ScriptNode = (props) => {
         <button
           onClick={toggleAgent}
           class={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-            isRunning() 
-              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+            isRunning()
+              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
               : 'bg-provisioning text-black hover:bg-provisioning/80'
           }`}
         >

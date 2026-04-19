@@ -62,18 +62,16 @@ then the content.
   many bytes to read for the content.
 - **`<FILENAME>`:** A logical path/name for the content. This is crucial for
   `fromJot` to understand what kind of data it's reading.
-  - **Main Shape Data:** These filenames always start with `files/` (e.g.,
-    `files/my_model.json`). There should be exactly one such entry in a valid
-    JOT string, containing the JSON definition of the `Shape`.
-  - **Geometry Assets:** These filenames always start with `assets/text/`
-    followed by the unique 64-character hash (TextId) of the geometry content
-    (e.g., `assets/text/1d8aebd...`).
-- **`\n` (Header-Content Splitter):** A newline separates the header line from
-  the actual data.
-- **`<FILE_CONTENT>`:** The raw data. For `files/` entries, it's a JSON string.
-  For `assets/text/` entries, it's the raw text geometry data. Geometry data
-  (faces `f`, triangles `t`, etc.) uses **1-based vertex indexing** consistent 
-  with the OBJ standard.
+- **`<FILE_CONTENT>`:** The raw data. Geometry data entries (`assets/text/...`)
+  use a specialized line-based format:
+  - **`v <x_inexact> <y_inexact> <z_inexact> [<x_exact> <y_exact> <z_exact>]`**
+    - **Inexact (First 3):** Mandatory floating-point values for visualization
+      (consumed by JS/Three.js).
+    - **Exact (Optional 4-6):** Indefinite precision strings (e.g., `1/3` or
+      `0.33333333333333333333`) for high-precision C++ kernels. If missing,
+      agents fallback to the inexact representation.
+  - **`f`, `t`, `s`, `p`**: Use **0-based vertex indexing** for high-performance
+    direct memory mapping.
 
 #### 5. Interacting with JOT: `toJot` and `fromJot`
 
@@ -110,19 +108,28 @@ When `fromJot` processes this:
 
 #### 7. VFS-Linked Geometry
 
-In addition to bundled assets, a `Shape` can reference geometry stored at a different VFS coordinate using a `vfs:/` URI. This is particularly useful for distributed workflows where a shape is defined on one peer but the raw geometry is computed by a specialized agent (like a C++ dispatcher) and stored elsewhere on the blackboard.
-
-**Format:** `vfs:/<path>?<parameters_as_query>`
+In addition to bundled assets, a `Shape` can reference geometry stored at a
+different VFS coordinate using a structured **VFS Selector** (a JSON object
+containing `path` and `parameters`). This is particularly useful for
+distributed workflows where a shape is defined on one peer but the raw geometry
+is computed by a specialized agent (like a C++ dispatcher) and stored elsewhere
+on the blackboard.
 
 **Example:**
+
 ```json
 {
-  "geometry": "vfs:/geo/mesh?a=50&b=50&c=50&type=triangle",
-  "tags": ["remote-linked"]
+  "geometry": {
+    "path": "geo/mesh",
+    "parameters": { "cid": "abc...xyz" }
+  },
+  "tags": { "type": "remote-linked" }
 }
 ```
 
-When the VFS-aware renderer encounters such a URI, it performs a `vfs.readData()` call to resolve the geometry dynamically across the distributed blackboard.
+When the VFS-aware renderer encounters such a selector, it performs a
+`vfs.readData()` call to resolve the geometry dynamically across the distributed
+blackboard.
 
 This explanatory documentation should provide a clearer understanding for
 someone looking to use or implement the JOT format.
