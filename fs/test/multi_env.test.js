@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MeshLink, registerVFSRoutes, DiskStorage } from '../src/index.js';
+import { VFS, MeshLink, registerVFSRoutes, DiskStorage, MemoryStorage } from '../src/index.js';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -35,7 +35,10 @@ test('Multi-Environment Mesh Coordination', async (t) => {
 
   // 2. Setup "Browser" Node (Client)
   // In this test, we simulate the browser by just using a VFS with MemoryStorage
-  browserVfs = new VFS({ id: 'browser-env' });
+  browserVfs = new VFS({ 
+    id: 'browser-env',
+    storage: new MemoryStorage('browser-env')
+  });
   const meshBrowser = new MeshLink(browserVfs, ['http://localhost:9300']);
   await browserVfs.init();
   await meshBrowser.start();
@@ -44,7 +47,7 @@ test('Multi-Environment Mesh Coordination', async (t) => {
     const p = 'env/sharing/test';
     const data = { msg: 'from node to simulated browser' };
 
-    await vfsNode.writeData(p, {}, data);
+    await vfsNode.writeData(p, data);
     const result = await browserVfs.readData(p, {});
 
     assert.deepStrictEqual(result, data);

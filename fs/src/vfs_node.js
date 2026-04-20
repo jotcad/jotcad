@@ -18,12 +18,19 @@ export class DiskStorage {
 
   async has(cid) {
     const dataFile = path.join(this.root, `${cid}.data`);
-    return fs.existsSync(dataFile);
+    const exists = fs.existsSync(dataFile);
+    if (exists) console.log(`[DiskStorage ${this.root}] has(${cid.slice(0, 8)}) -> TRUE`);
+    return exists;
   }
 
   async get(cid) {
     const dataFile = path.join(this.root, `${cid}.data`);
-    if (!fs.existsSync(dataFile)) return null;
+    if (!fs.existsSync(dataFile)) {
+        console.log(`[DiskStorage ${this.root}] get(${cid.slice(0, 8)}) -> MISS`);
+        return null;
+    }
+    const stats = fs.statSync(dataFile);
+    console.log(`[DiskStorage ${this.root}] get(${cid.slice(0, 8)}) -> HIT (${stats.size} bytes)`);
     return Readable.toWeb(fs.createReadStream(dataFile));
   }
 
@@ -56,6 +63,7 @@ export class DiskStorage {
     }
 
     await fsPromises.writeFile(metaFile, JSON.stringify(info));
+    console.log(`[DiskStorage ${this.root}] set(${cid.slice(0, 8)}) - data size: ${bytesWritten}, info: ${Object.keys(info)}`);
   }
 
   async delete(cid) {
@@ -90,7 +98,11 @@ export class VFS extends CoreVFS {
 
   async init() {
     await super.init();
-    if (process.env.VFS_EPHEMERAL_WIPE === 'true' || process.env.NODE_ENV === 'test') {
+    const shouldWipe = process.env.VFS_EPHEMERAL_WIPE === 'true' || 
+                       process.env.NODE_ENV === 'test' ||
+                       process.argv.includes('--test');
+
+    if (shouldWipe) {
       console.log(`[VFS ${this.id}] EPHEMERAL WIPE: Cleaning storage directory: ${this.storage.root}`);
       try {
         const files = await fsPromises.readdir(this.storage.root);

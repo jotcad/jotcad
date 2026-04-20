@@ -149,12 +149,23 @@ export async function jcbHash(val) {
 
 /**
  * getCID: Identity of terminal content.
+ * 
+ * JCB (JotCAD Canonical Binary) is used to produce a stable, 
+ * deterministic representation of structured data across JS and C++.
+ * 
+ * - Identity (CID): Derived by hashing the Safe-JCB string (Base64-encoded JCB).
+ * - Storage: Disk content remains raw (e.g., human-readable JSON).
+ * - Transport: Safe-JCB carrier strings are used when JSON-safety is required.
  */
 export async function getCID(data) {
   let bytes;
-  if (data instanceof Uint8Array) bytes = data;
-  else if (typeof data === 'string') bytes = new TextEncoder().encode(data);
-  else {
+  if (data instanceof Uint8Array) {
+      bytes = data;
+  } else if (typeof data === 'string') {
+      bytes = new TextEncoder().encode(data);
+  } else {
+      // For structured data, the CID is the hash of the Safe-JCB string.
+      // Safe-JCB = Base64(JCB binary).
       const safe = encodeSafe(data);
       bytes = new TextEncoder().encode(safe);
   }

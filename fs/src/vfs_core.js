@@ -56,15 +56,24 @@ export class VFSClosedError extends Error {
 }
 
 export class MemoryStorage {
-  constructor() {
+  constructor(vfsId = 'unknown') {
+    this.vfsId = vfsId;
     this.data = new Map();
     this.info = new Map();
   }
   async init() {}
-  async has(cid) { return this.data.has(cid); }
+  async has(cid) { 
+    const result = this.data.has(cid);
+    if (result) console.log(`[MemoryStorage ${this.vfsId}] has(${cid.slice(0, 8)}) -> TRUE`);
+    return result;
+  }
   async get(cid) {
     const bytes = this.data.get(cid);
-    if (!bytes) return null;
+    if (!bytes) {
+        console.log(`[MemoryStorage ${this.vfsId}] get(${cid.slice(0, 8)}) -> MISS`);
+        return null;
+    }
+    console.log(`[MemoryStorage ${this.vfsId}] get(${cid.slice(0, 8)}) -> HIT (${bytes.length} bytes)`);
     return new WebReadableStream({
       start(controller) { controller.enqueue(bytes); controller.close(); },
     });
@@ -94,6 +103,7 @@ export class MemoryStorage {
     }
     this.data.set(cid, bytes);
     this.info.set(cid, info);
+    console.log(`[MemoryStorage ${this.vfsId}] set(${cid.slice(0, 8)}) - data size: ${bytes.length}, info: ${Object.keys(info)}`);
   }
   async delete(cid) { this.data.delete(cid); this.info.delete(cid); }
   async close() { this.data.clear(); this.info.clear(); }
@@ -103,9 +113,9 @@ export class MemoryStorage {
 }
 
 export class VFS {
-  constructor({ id, storage = new MemoryStorage() } = {}) {
+  constructor({ id, storage } = {}) {
     this.id = id || globalThis.crypto.randomUUID();
-    this.storage = storage;
+    this.storage = storage || new MemoryStorage(this.id);
     this.providers = new Map();
     this.activeWait = new Map();
     this.events = new EventEmitter();
@@ -177,13 +187,18 @@ export class VFS {
     this._checkClosed();
     
     let bytes;
+    let cid;
+
     if (streamOrBytes instanceof Uint8Array) {
         bytes = streamOrBytes;
+        cid = await getCID(bytes);
     } else if (typeof streamOrBytes === 'string') {
         bytes = new TextEncoder().encode(streamOrBytes);
+        cid = await getCID(streamOrBytes);
     } else if (streamOrBytes === null) {
         bytes = new Uint8Array();
-    } else if (typeof streamOrBytes.getReader === 'function') {
+        cid = await getCID(bytes);
+    } else if (streamOrBytes && typeof streamOrBytes.getReader === 'function') {
         const chunks = [];
         const reader = streamOrBytes.getReader();
         try {
@@ -197,11 +212,13 @@ export class VFS {
         bytes = new Uint8Array(len);
         let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        cid = await getCID(bytes);
     } else {
-        bytes = new TextEncoder().encode(encodeSafe(streamOrBytes));
+        // Structured data: use canonical JCB for hash, but store raw JSON for readability.
+        cid = await getCID(streamOrBytes);
+        bytes = new TextEncoder().encode(JSON.stringify(streamOrBytes));
     }
 
-    const cid = await getCID(bytes);
     const s = normalizeSelector(selector);
     const addrKey = await getSelectorKey(s);
 
@@ -221,22 +238,14 @@ export class VFS {
   }
 
   async writeData(selector, data, context = {}) {
-    let bytes;
-    if (data instanceof Uint8Array) {
-        bytes = data;
-    } else if (typeof data === 'string') {
-        bytes = new TextEncoder().encode(data);
-    } else {
-        bytes = new TextEncoder().encode(JSON.stringify(data));
-    }
-    return await this.write(selector, bytes, context);
+    return await this.write(selector, data, context);
   }
 
   async readData(selector, context = {}) {
     if (!selector) throw new Error('VFS.readData: Missing required selector');
     const s = normalizeSelector(selector);
     if (!s.path && !s.parameters?.cid) throw new Error('VFS.readData: Selector must have a path or CID');
-    
+
     const stream = await this.read(s, context);
     if (!stream) throw new Error(`VFS.readData: Failed to read data for selector ${JSON.stringify(s)}`);
     const chunks = [];
@@ -250,27 +259,42 @@ export class VFS {
     const bytes = new Uint8Array(len);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    
+
+    console.log(`[VFS ${this.id}] readData decoded ${bytes.length} bytes`);
+
     // 1. Try JCB Decoding (Binary)
     try {
-        return decodeJCB(bytes);
-    } catch (e) {}
+        const decoded = decodeJCB(bytes);
+        if (decoded !== undefined) {
+            console.log(`[VFS ${this.id}] readData JCB success`);
+            return decoded;
+        }
+    } catch (e) {
+        console.log(`[VFS ${this.id}] readData JCB failed: ${e.message}`);
+    }
 
     const text = new TextDecoder().decode(bytes);
+    console.log(`[VFS ${this.id}] readData text: "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"`);
 
     // 2. Try Safe Decoding (Base64-JCB)
     try {
-        return decodeSafe(text.trim());
+        const decoded = decodeSafe(text.trim());
+        if (decoded !== undefined) {
+            console.log(`[VFS ${this.id}] readData Safe success`);
+            return decoded;
+        }
     } catch (e) {}
 
     // 3. Try JSON Parsing (Fallback for legacy/text providers)
     try {
         const trimmed = text.trim();
         if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-            return JSON.parse(trimmed);
+            const parsed = JSON.parse(trimmed);
+            console.log(`[VFS ${this.id}] readData JSON success`);
+            return parsed;
         }
     } catch (e) {}
-    
+
     return bytes;
   }
 
@@ -338,16 +362,21 @@ export class VFS {
     const workPromise = (async () => {
       try {
         if (s.parameters.cid) {
-            if (await this.storage.has(s.parameters.cid)) return { success: true, cid: s.parameters.cid };
+            if (await this.storage.has(s.parameters.cid)) {
+                console.log(`[VFS ${this.id}] Storage hit for CID ${s.parameters.cid}`);
+                return { success: true, cid: s.parameters.cid };
+            }
         }
         if (await this.storage.has(addrKey)) {
           const info = await this._getStorageInfo(addrKey);
+          console.log(`[VFS ${this.id}] Storage hit for addrKey ${addrKey} (cid: ${info?.cid})`);
           if (followLinks && info?.target) {
             return await this._readResult(info.target, { ...context, depth: depth + 1, stack: [...stack, addrKey] });
           }
           if (info?.cid) return { success: true, cid: info.cid, metadata: info || {} };
         }
 
+        console.log(`[VFS ${this.id}] Storage miss for ${s.path}, trying providers/mesh`);
         let provider = this.providers.get(s.path);
         if (!provider) {
           for (const [pattern, handler] of this.providers.entries()) {

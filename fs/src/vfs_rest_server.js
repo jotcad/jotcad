@@ -29,14 +29,22 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/read') {
         const body = await getBody(req);
         const { selector, stack = [], expiresAt } = body;
+        if (!selector) {
+            console.log(`[MeshServer ${vfs.id}] /read 400: Missing selector`);
+            res.writeHead(400);
+            return res.end('Missing selector');
+        }
+        console.log(`[MeshServer ${vfs.id}] /read request: ${selector.path} ${JSON.stringify(selector.parameters)}`);
         const stream = await vfs.read(selector, { stack, expiresAt });
         if (stream) {
+          console.log(`[MeshServer ${vfs.id}] /read 200: ${selector.path}`);
           res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
             'x-vfs-id': vfs.id,
           });
           return await pump(stream, res);
         }
+        console.log(`[MeshServer ${vfs.id}] /read 404: ${selector.path}`);
         res.writeHead(404);
         return res.end();
       }
@@ -44,6 +52,10 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/spy') {
         const body = await getBody(req);
         const { selector, stack = [], expiresAt } = body;
+        if (!selector) {
+            res.writeHead(400);
+            return res.end('Missing selector');
+        }
         const stream = await vfs.spy(selector, { stack, expiresAt });
         if (stream) {
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'x-vfs-id': vfs.id });
@@ -73,6 +85,10 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/subscribe') {
         const body = await getBody(req);
         const { selector, expiresAt, stack } = body;
+        if (!selector) {
+            res.writeHead(400);
+            return res.end('Missing selector');
+        }
         const peerId = req.headers['x-vfs-id'] || 'unknown';
         meshLink?.addInterest(peerId, selector, expiresAt, stack || []);
         res.writeHead(200);

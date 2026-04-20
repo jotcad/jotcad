@@ -43,16 +43,22 @@ class ForwardConnection extends Connection {
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
     const body = JSON.stringify({ selector, stack, expiresAt });
-    console.log(`[MeshLink ${this.neighborId}] POST /read body: ${body}`);
-    const resp = await this.fetch(`${this.url}/read`, {
-      method: 'POST',
-      headers,
-      signal: this.signal || AbortSignal.timeout(5000),
-      body,
-    });
+    try {
+        const resp = await this.fetch(`${this.url}/read`, {
+          method: 'POST',
+          headers,
+          signal: this.signal || AbortSignal.timeout(5000),
+          body,
+        });
 
-    if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
-    return null;
+        if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
+        
+        const errText = await resp.text().catch(() => 'no body');
+        throw new Error(`POST /read failed with status ${resp.status}: ${errText}`);
+    } catch (err) {
+        console.log(`[MeshLink ${this.neighborId}] read error: ${err.message}`);
+        throw err;
+    }
   }
 
   async spy(selector, context = {}) {
@@ -117,7 +123,7 @@ class ReverseConnection extends Connection {
       });
     });
 
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'READ', id: requestId, ...selector, stack, expiresAt });
+    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'READ', id: requestId, selector, stack, expiresAt });
     return replyPromise.catch(() => null);
   }
 
@@ -136,7 +142,7 @@ class ReverseConnection extends Connection {
       });
     });
 
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SPY', id: requestId, ...selector, stack, expiresAt });
+    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SPY', id: requestId, selector, stack, expiresAt });
     return replyPromise.catch(() => null);
   }
 
@@ -278,6 +284,10 @@ export class MeshLinkBase {
             const cmd = await resp.json();
             if (cmd.type === 'COMMAND') {
               const sel = cmd.selector;
+              if ((cmd.op === 'READ' || cmd.op === 'SPY') && !sel) {
+                console.error(`[MeshLink ${this.vfs.id}] Received COMMAND ${cmd.op} without selector`);
+                continue;
+              }
               if (cmd.op === 'READ') {
                 stream = await this.vfs.read(sel, {
                   stack: cmd.stack,
@@ -291,14 +301,22 @@ export class MeshLinkBase {
                 });
                 replyTo = cmd.id;
               } else if (cmd.op === 'SUB') {
+                if (!sel) {
+                    console.error(`[MeshLink ${this.vfs.id}] Received SUB without selector`);
+                    continue;
+                }
                 this.addInterest(
                   cmd.stack[0] || 'unknown',
-                  cmd.selector,
+                  sel,
                   cmd.expiresAt,
                   cmd.stack
                 );
               }
             } else if (cmd.type === 'NOTIFY') {
+              if (!cmd.selector) {
+                  console.error(`[MeshLink ${this.vfs.id}] Received NOTIFY without selector`);
+                  continue;
+              }
               this.notify(cmd.selector, cmd.payload, cmd.stack);
             }
           } else { await new Promise(r => setTimeout(r, 5000)); }
@@ -382,7 +400,12 @@ export class MeshLinkBase {
       if (resp) return resp;
       throw new Error('Conn failed');
     });
-    try { return await Promise.any(fetchPromises); } catch (e) { return null; } finally { for (const p of fetchPromises) p.catch(() => {}); }
+    try { 
+        return await Promise.any(fetchPromises); 
+    } catch (e) { 
+        console.log(`[MeshLink ${this.vfs.id}] read failed for all peers: ${e.message}`);
+        return null; 
+    } finally { for (const p of fetchPromises) p.catch(() => {}); }
   }
 
   async spy(selector, context = {}) {

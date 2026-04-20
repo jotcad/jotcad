@@ -11,10 +11,13 @@ instructions. All C++ implementations must link against **`-lcrypto`**.
   (`read`, `listen`, `register`, `notify`, `subscribe`, `spy`) without explicit 
   discussion. The protocol is a pure, minimal, push/subscribe mesh. 
 - **ADDRESS vs CONTENT**: Strictly separate the mesh address from the content.
-  - **Selector Key**: `hash(normalize(Selector))` identifies the *address* (the `.meta` pointer).
-  - **CID**: `hash(Safe-JCB)` identifies the *content* (the terminal `.data`).
-- **SAFE IDENTITY (Base64-JCB)**: Structured data is stored as ASCII-safe strings.
-  - **The Flow**: `json` -> **JCB (Binary)** -> **Base64 (Safe String)** -> **Hash (CID)** -> **Disk**.
+  - **Selector Key**: `hash(JCB(normalize(Selector)))` identifies the *address* (the `.meta` pointer).
+  - **CID**: `hash(JCB(val))` identifies the *content* (the terminal `.data`).
+- **JOTCAD CANONICAL BINARY (JCB)**: A tag-prefixed binary format used to produce stable, deterministic identities across JavaScript and C++.
+  - **Identity-First**: JCB is used EXCLUSIVELY to generate stable hashes (CIDs). It ensures that logically equivalent objects (regardless of key order) share the same address.
+  - **Storage**: The actual `.data` content on disk remains the **raw representation** (e.g., readable JSON or binary blobs). To verify a CID for an object, the VFS must parse the storage content and apply the JCB transform before hashing.
+- **SAFE IDENTITY (Base64-JCB)**: A Base64-encoded version of the JCB binary used as an ASCII-safe carrier string.
+  - **JSON Safety**: Use Safe-JCB ONLY when a canonical identity (CID or Selector) must be embedded as a single string value within a JSON message (like mesh transport) to avoid parsing discrepancies or escaping issues.
   - **Zero Escaping**: Base64 characters are safe constituents of JSON strings and never require escaping.
 - **PROTOCOL REFINEMENTS**:
   - **Strict readData**: `readData(selector)` MUST receive a full Selector object (path + parameters). Passing split arguments is a terminal error.
