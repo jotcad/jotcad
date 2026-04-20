@@ -149,9 +149,7 @@ void VFSNode::listen() {
     svr->Post("/read", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
-            Selector sel;
-            sel.path = body.at("path").get<std::string>();
-            sel.parameters = body.value("parameters", json::object());
+            Selector sel = body.at("selector").get<Selector>();
             
             std::cout << "[VFSNode " << config_.id << "] /read request for " << sel.path << std::endl;
 
@@ -186,8 +184,8 @@ void VFSNode::listen() {
         std::unique_lock<std::mutex> lock(q->mutex);
         if (q->cv.wait_for(lock, std::chrono::seconds(30), [&q] { return !q->commands.empty(); })) {
             Command cmd = q->commands.front(); q->commands.pop();
-            json resp = {{"type", cmd.type}, {"op", cmd.type == "COMMAND" ? "READ" : "NOTIFY"}, {"id", cmd.id}};
-            if (cmd.type == "COMMAND") { resp["path"] = cmd.path; resp["parameters"] = cmd.parameters; resp["stack"] = cmd.stack; resp["expiresAt"] = cmd.expiresAt; }
+            json resp = {{"type", cmd.type}, {"op", cmd.type == "COMMAND" ? (cmd.id.empty() ? "SUB" : "READ") : "NOTIFY"}, {"id", cmd.id}};
+            if (cmd.type == "COMMAND") { resp["selector"] = {{"path", cmd.path}, {"parameters", cmd.parameters}}; resp["stack"] = cmd.stack; resp["expiresAt"] = cmd.expiresAt; }
             else { resp["selector"] = cmd.parameters; resp["payload"] = cmd.payload; }
             res.set_content(resp.dump(), "application/json");
         } else { res.status = 204; }
@@ -351,7 +349,7 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
     for (const auto& url : target_urls) {
         try {
             httplib::Client cli(url); cli.set_read_timeout(5, 0);
-            json body = {{"path", sel.path}, {"parameters", sel.parameters}, {"stack", next_stack}};
+            json body = {{"selector", sel}, {"stack", next_stack}};
             auto res = cli.Post("/read", body.dump(), "application/json");
             if (res && res->status == 200) {
                 std::vector<uint8_t> data(res->body.begin(), res->body.end());

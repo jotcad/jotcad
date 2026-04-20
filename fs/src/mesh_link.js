@@ -42,11 +42,13 @@ class ForwardConnection extends Connection {
     const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
+    const body = JSON.stringify({ selector, stack, expiresAt });
+    console.log(`[MeshLink ${this.neighborId}] POST /read body: ${body}`);
     const resp = await this.fetch(`${this.url}/read`, {
       method: 'POST',
       headers,
       signal: this.signal || AbortSignal.timeout(5000),
-      body: JSON.stringify({ ...selector, stack, expiresAt }),
+      body,
     });
 
     if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
@@ -62,7 +64,7 @@ class ForwardConnection extends Connection {
       method: 'POST',
       headers,
       signal: this.signal || AbortSignal.timeout(5000),
-      body: JSON.stringify({ ...selector, stack, expiresAt }),
+      body: JSON.stringify({ selector, stack, expiresAt }),
     });
 
     if (resp.ok && resp.body) return resp.body;
@@ -275,15 +277,26 @@ export class MeshLinkBase {
           if (resp.status === 200) {
             const cmd = await resp.json();
             if (cmd.type === 'COMMAND') {
-              const sel = { path: cmd.path, parameters: cmd.parameters };
+              const sel = cmd.selector;
               if (cmd.op === 'READ') {
-                stream = await this.vfs.read(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt });
+                stream = await this.vfs.read(sel, {
+                  stack: cmd.stack,
+                  expiresAt: cmd.expiresAt,
+                });
                 replyTo = cmd.id;
               } else if (cmd.op === 'SPY') {
-                stream = await this.vfs.spy(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt });
+                stream = await this.vfs.spy(sel, {
+                  stack: cmd.stack,
+                  expiresAt: cmd.expiresAt,
+                });
                 replyTo = cmd.id;
               } else if (cmd.op === 'SUB') {
-                this.addInterest(cmd.stack[0] || 'unknown', cmd.selector, cmd.expiresAt, cmd.stack);
+                this.addInterest(
+                  cmd.stack[0] || 'unknown',
+                  cmd.selector,
+                  cmd.expiresAt,
+                  cmd.stack
+                );
               }
             } else if (cmd.type === 'NOTIFY') {
               this.notify(cmd.selector, cmd.payload, cmd.stack);

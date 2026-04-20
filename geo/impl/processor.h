@@ -67,15 +67,16 @@ struct Processor {
             return s;
         } else if constexpr (std::is_same_v<T, std::vector<Shape>>) {
             std::vector<Shape> results;
-            if (val.is_array()) {
-                for (const auto& item : val) {
-                    if (item.is_object() && item.contains("path")) {
-                        results.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
-                    } else {
-                        Shape s = Shape::from_json(item);
-                        if (!s.geometry.has_value()) throw std::runtime_error("Shape array element missing geometry");
-                        results.push_back(s);
-                    }
+            if (!val.is_array()) {
+                throw std::runtime_error("Argument '" + key + "' must be an array for std::vector<Shape>");
+            }
+            for (const auto& item : val) {
+                if (item.is_object() && item.contains("path")) {
+                    results.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
+                } else {
+                    Shape s = Shape::from_json(item);
+                    if (!s.geometry.has_value()) throw std::runtime_error("Shape array element missing geometry");
+                    results.push_back(s);
                 }
             }
             return results;

@@ -10,7 +10,12 @@ template <typename P = JotVfsProtocol>
 struct OffsetOp : P {
     static constexpr const char* path = "jot/offset";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double diameter) {
+        if (!in.geometry.has_value()) {
+            throw std::runtime_error("jot/offset: Input shape has no geometry");
+        }
+        std::cout << "[OffsetOp] Reading geometry for offset..." << std::endl;
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        std::cout << "[OffsetOp] Applying offset of " << diameter << " to " << geo.vertices.size() << " vertices" << std::endl;
         Geometry res = geo;
         applyOffset(res, diameter);
         Shape out = in;

@@ -12,7 +12,7 @@ struct NthOp : P {
         if (index >= 0 && index < (int)in.components.size()) {
             vfs->write<Shape>(fulfilling, in.components[index]);
         } else {
-            vfs->write<Shape>(fulfilling, in);
+            throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds (size " + std::to_string(in.components.size()) + ")");
         }
     }
     static std::vector<std::string> argument_keys() { return {"$in", "index"}; }

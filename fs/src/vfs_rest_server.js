@@ -28,10 +28,13 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       if (req.method === 'POST' && vfsPath === '/read') {
         const body = await getBody(req);
-        const { path, parameters, stack = [], expiresAt } = body;
-        const stream = await vfs.read({ path, parameters }, { stack, expiresAt });
+        const { selector, stack = [], expiresAt } = body;
+        const stream = await vfs.read(selector, { stack, expiresAt });
         if (stream) {
-          res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'x-vfs-id': vfs.id });
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'x-vfs-id': vfs.id,
+          });
           return await pump(stream, res);
         }
         res.writeHead(404);
@@ -40,8 +43,8 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       if (req.method === 'POST' && vfsPath === '/spy') {
         const body = await getBody(req);
-        const { path, parameters, stack = [], expiresAt } = body;
-        const stream = await vfs.spy({ path, parameters }, { stack, expiresAt });
+        const { selector, stack = [], expiresAt } = body;
+        const stream = await vfs.spy(selector, { stack, expiresAt });
         if (stream) {
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'x-vfs-id': vfs.id });
           return await pump(stream, res);

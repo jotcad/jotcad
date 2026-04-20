@@ -28,16 +28,20 @@ struct PdfOp : P {
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& pdf_path) {
+        std::cout << "[PdfOp] Generating PDF..." << std::endl;
         PDFWriter writer;
         walk(vfs, in, Matrix::identity(), writer);
         auto pdf_bytes = writer.write();
         
-        // Explicit fulfillment of the export path
-        fs::Selector export_sel = { pdf_path.empty() ? "export.pdf" : pdf_path, {} };
-        vfs->write<std::vector<uint8_t>>(export_sel, pdf_bytes);
-        
-        // Fulfill the requested operator address with the input shape (Tee Pattern)
+        // 1. Primary Output: Shape Pass-through
         vfs->write<Shape>(fulfilling, in);
+
+        // 2. Secondary Output: PDF bytes at selector + $path parameter
+        fs::Selector side = fulfilling;
+        side.parameters["$path"] = pdf_path;
+        vfs->write<std::vector<uint8_t>>(side, pdf_bytes);
+        
+        std::cout << "[PdfOp] Fulfilled Shape and side-wrote PDF to $path (" << pdf_bytes.size() << " bytes)." << std::endl;
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "path"}; }
@@ -49,6 +53,10 @@ struct PdfOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"path", {{"type", "string"}, {"default", "export.pdf"}}}
+            }},
+            {"outputs", {
+                {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
+                {"$path", {{"type", "mime:pdf"}, {"description", "The generated PDF blob."}}}
             }}
         };
     }

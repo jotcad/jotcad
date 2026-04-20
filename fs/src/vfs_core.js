@@ -165,6 +165,7 @@ export class VFS {
 
   async read(selector, context = {}) {
     const s = normalizeSelector(selector);
+    console.log(`[VFS] Request: ${s.path} ${JSON.stringify(s.parameters || {})}`);
     const result = await this._readResult(s, context);
     if (result && result.success) return this.storage.get(result.cid);
     if (result && result.error === 'Expired') return null;
@@ -220,7 +221,14 @@ export class VFS {
   }
 
   async writeData(selector, data, context = {}) {
-    const bytes = (data instanceof Uint8Array) ? data : new TextEncoder().encode(JSON.stringify(data));
+    let bytes;
+    if (data instanceof Uint8Array) {
+        bytes = data;
+    } else if (typeof data === 'string') {
+        bytes = new TextEncoder().encode(data);
+    } else {
+        bytes = new TextEncoder().encode(JSON.stringify(data));
+    }
     return await this.write(selector, bytes, context);
   }
 
@@ -230,7 +238,7 @@ export class VFS {
     if (!s.path && !s.parameters?.cid) throw new Error('VFS.readData: Selector must have a path or CID');
     
     const stream = await this.read(s, context);
-    if (!stream) return null;
+    if (!stream) throw new Error(`VFS.readData: Failed to read data for selector ${JSON.stringify(s)}`);
     const chunks = [];
     const reader = stream.getReader();
     while (true) {
@@ -268,9 +276,32 @@ export class VFS {
 
   async readText(selector, context = {}) {
     const data = await this.readData(selector, context);
-    if (!data) return null;
+    if (!data)
+      throw new Error(
+        `VFS.readText: Failed to read text for selector ${JSON.stringify(
+          selector
+        )}`
+      );
+
+    const serializeShape = async (shape) => {
+      if (shape.geometry) {
+        return await this.readText(shape.geometry, context);
+      }
+      let out = '';
+      if (shape.components && Array.isArray(shape.components)) {
+        for (const child of shape.components) {
+          out += await serializeShape(child);
+        }
+      }
+      return out;
+    };
+
     if (typeof data === 'string') return data;
     if (data instanceof Uint8Array) return new TextDecoder().decode(data);
+    if (typeof data === 'object' && !Array.isArray(data)) {
+      // It's a Shape object
+      return await serializeShape(data);
+    }
     return JSON.stringify(data);
   }
 

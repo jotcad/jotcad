@@ -25,3 +25,5 @@ instructions. All C++ implementations must link against **`-lcrypto`**.
 - **FORMAL VFS LINKS**: Use `vfs.link(src, tgt)` to handle semantic aliasing (the "remainer"). Aliases are strictly metadata-driven.
 - **ACTOR FULFILLMENT MODEL**: Operators return `void` and MUST satisfy their assigned address by calling `vfs->write<Shape>(fulfilling, out)`.
 - **IMMUTABLE GEOMETRY**: Primitives and transformative operators MUST NOT overwrite input CIDs. New geometry must be materialized via anonymous writes: `vfs->write<Geometry>(res)`.
+- **ATOMIC SELECTOR WIRE FORMAT**: Network requests (`POST /read`, `POST /listen`) MUST wrap the Selector object in a top-level `selector` key. This ensures the protocol remains extensible and uniform across languages.
+- **SIDE-WRITE PATTERN**: Operators producing auxiliary artifacts (e.g., `jot/pdf`) SHOULD fulfill the primary address with the transformed shape (pass-through) and write the secondary artifact to a derived address by adding a specific parameter (e.g., `$path`) to the fulfilling selector. This keeps artifacts introspectable and avoids "Tee" patterns that hide data.

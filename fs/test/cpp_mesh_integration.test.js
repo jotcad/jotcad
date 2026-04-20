@@ -12,13 +12,13 @@ import {
   getSelectorKey,
 } from '../src/index.js';
 
-const CPP_OPS_PATH = path.resolve('geo/bin/ops');
+const CPP_OPS_PATH = path.resolve('../geo/bin/ops');
 const PORT_CPP = 20101;
 const PORT_JS = 20102;
 const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');
 const STORAGE_CPP = path.resolve('.vfs_storage_cpp-test-node');
 
-test('C++ Native Node Integration', async (t) => {
+test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
   let cppNode;
   let server;
   let jsVfs;
