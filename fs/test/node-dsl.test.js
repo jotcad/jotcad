@@ -14,8 +14,9 @@ test('Node with In/Out DSL', async (t) => {
       mesh: Out('geometry/box'),
     },
     async execute({ _params, config, mesh }) {
-      const { id } = await _params();
-      const { size } = await config.readData();
+      const data = await config.readData();
+      if (!data) return;
+      const { size } = data;
       await mesh.writeData(`Box(${size})`);
     },
   });
@@ -35,18 +36,19 @@ test('Node with In/Out DSL', async (t) => {
   await processNode.start();
 
   await t.test('cascading dependency using In/Out DSL', async () => {
-    await vfs.writeData('config/box', { id: 'b1' }, { size: 10 });
-    const result = await vfs.readText('process/status', { id: 'b1' });
+    // 1. Provision the leaf config
+    await vfs.writeData({ path: 'config/box', parameters: { id: 'test' } }, { size: 10 });
+    
+    // 2. Trigger the chain
+    const result = await vfs.readText({ path: 'process/status', parameters: { id: 'test' } });
     assert.strictEqual(result, 'Completed');
   });
 
   await t.test('Node reparameterization with Out socket', async () => {
-    await vfs.writeData('config/box', { id: 'b2' }, { size: 20 });
-    const result = await vfs.readText('process/status', { id: 'b2' });
+    await vfs.writeData({ path: 'config/box', parameters: { id: 'other' } }, { size: 5 });
+    const result = await vfs.readText({ path: 'process/status', parameters: { id: 'other' } });
     assert.strictEqual(result, 'Completed');
   });
 
-  boxNode.stop();
-  processNode.stop();
   await vfs.close();
 });

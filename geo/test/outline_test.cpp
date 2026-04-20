@@ -12,7 +12,7 @@ int main() {
     std::cout << "Testing Outline Operation..." << std::endl;
     
     fs::Selector box_fulfilling = {"jot/Box", {{"size", {10.0, 10.0, 10.0}}}};
-    BoxOp<>::execute(&vfs, box_fulfilling, {10.0, 10.0, 10.0});
+    BoxOp<>::execute(&vfs, box_fulfilling, 10.0, 10.0, 10.0);
     Shape box = vfs.read<Shape>(box_fulfilling);
     
     fs::Selector outline_fulfilling = {"jot/outline", {{"$in", "jot/Box"}}};

@@ -25,7 +25,7 @@ int main() {
     std::cout << "Testing Accumulator (On) Operation..." << std::endl;
     
     fs::Selector base_sel = {"jot/Box/base", {{"size", {50.0, 50.0, 0.0}}}};
-    BoxOp<>::execute(&vfs, base_sel, {50.0, 50.0, 0.0});
+    BoxOp<>::execute(&vfs, base_sel, 50.0, 50.0, 0.0);
     Shape base = vfs.read<Shape>(base_sel);
 
     // Create target points

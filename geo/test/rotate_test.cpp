@@ -12,7 +12,7 @@ int main() {
     std::cout << "Testing Rotate Operation..." << std::endl;
     
     fs::Selector s1_sel = {"jot/Box/1", {{"size", {10, 10, 0}}}};
-    BoxOp<>::execute(&vfs, s1_sel, {10, 10, 0});
+    BoxOp<>::execute(&vfs, s1_sel, 10, 10, 0);
     Shape s1 = vfs.read<Shape>(s1_sel);
 
     fs::Selector rotate_sel = {"jot/rotate", {{"angle", 90.0}}};

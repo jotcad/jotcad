@@ -1,7 +1,15 @@
 /**
  * Simple EventEmitter shim for both Node and Browser.
  */
-import crypto from 'crypto';
+import { 
+  normalizeSelector, 
+  getCID, 
+  getSelectorKey, 
+  encodeJCB, 
+  decodeJCB 
+} from './cid.js';
+
+export { normalizeSelector, getCID, getSelectorKey, encodeJCB, decodeJCB };
 
 export const WebReadableStream = globalThis.ReadableStream;
 
@@ -9,50 +17,34 @@ class EventEmitter {
   constructor() {
     this.listeners = new Map();
   }
-  on(event, cb) {
-    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
-    this.listeners.get(event).add(cb);
+  on(event, fn) {
+    if (!this.listeners.has(event)) this.listeners.set(event, []);
+    this.listeners.get(event).push(fn);
   }
-  off(event, cb) {
-    this.listeners.get(event)?.delete(cb);
+  off(event, fn) {
+    const l = this.listeners.get(event);
+    if (l) {
+      const idx = l.indexOf(fn);
+      if (idx !== -1) l.splice(idx, 1);
+    }
   }
-  emit(event, data) {
-    this.listeners.get(event)?.forEach((cb) => cb(data));
+  emit(event, ...args) {
+    const l = this.listeners.get(event);
+    if (l) l.forEach((fn) => fn(...args));
   }
 }
 
-/**
- * Deterministic Selector Normalization.
- */
-export const normalizeSelector = (pathOrSelector, params = {}) => {
-  if (typeof pathOrSelector === 'object' && pathOrSelector !== null) {
-    return normalizeSelector(pathOrSelector.path, pathOrSelector.parameters);
+export function isMatch(selector, target) {
+  const s = normalizeSelector(selector);
+  const t = normalizeSelector(target);
+  if (s.path.endsWith('*')) {
+    if (!t.path.startsWith(s.path.slice(0, -1))) return false;
+  } else if (s.path !== t.path) return false;
+  for (const [k, v] of Object.entries(s.parameters)) {
+    if (JSON.stringify(v) !== JSON.stringify(t.parameters[k])) return false;
   }
-  const path = pathOrSelector;
-
-  const clean = (obj) => {
-    if (!obj || typeof obj !== 'object') return obj;
-    if (Array.isArray(obj)) return obj.map(clean);
-    const result = {};
-    const keys = Object.keys(obj).sort();
-    for (const k of keys) result[k] = clean(obj[k]);
-    return result;
-  };
-
-  const result = { path, parameters: clean(params) };
-  const sortedResult = {};
-  Object.keys(result)
-    .sort()
-    .forEach((k) => (sortedResult[k] = result[k]));
-  return sortedResult;
-};
-
-export const isMatch = (s1, s2) => {
-  if (!s1 || !s2) return s1 === s2;
-  const a = normalizeSelector(s1);
-  const b = normalizeSelector(s2);
-  return JSON.stringify(a) === JSON.stringify(b);
-};
+  return true;
+}
 
 export class VFSClosedError extends Error {
   constructor() {
@@ -63,374 +55,305 @@ export class VFSClosedError extends Error {
 
 export class MemoryStorage {
   constructor() {
-    this.results = new Map();
+    this.data = new Map();
+    this.info = new Map();
   }
+  async init() {}
+  async has(cid) { return this.data.has(cid); }
   async get(cid) {
-    const entry = this.results.get(cid);
-    if (!entry) return null;
-    const data = entry.data;
+    const bytes = this.data.get(cid);
+    if (!bytes) return null;
     return new WebReadableStream({
-      start(c) {
-        if (data.length > 0) c.enqueue(data);
-        c.close();
-      },
+      start(controller) { controller.enqueue(bytes); controller.close(); },
     });
   }
-  async set(cid, stream, info) {
-    let finalData;
-    let expectedSize = info?.size;
-
-    if (stream instanceof Uint8Array) {
-      finalData = stream;
-    } else if (typeof stream === 'string') {
-      finalData = new TextEncoder().encode(stream);
+  async set(cid, streamOrBytes, info = {}) {
+    let bytes;
+    if (streamOrBytes instanceof Uint8Array) {
+      bytes = streamOrBytes;
+    } else if (typeof streamOrBytes === 'string') {
+      bytes = new TextEncoder().encode(streamOrBytes);
+    } else if (streamOrBytes === null) {
+      bytes = new Uint8Array();
     } else {
       const chunks = [];
-      if (typeof stream?.getReader === 'function') {
-        const reader = stream.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-          }
-        } finally {
-          reader.releaseLock();
+      const reader = streamOrBytes.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
         }
-      } else if (stream?.[Symbol.asyncIterator]) {
-        for await (const chunk of stream) chunks.push(chunk);
-      } else {
-        finalData = stream;
-      }
-
-      if (!finalData) {
-        const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-        if (expectedSize !== undefined && totalLength !== expectedSize) {
-          throw new Error(
-            `Stream aborted or corrupted: Expected ${expectedSize} bytes, got ${totalLength}`
-          );
-        }
-        finalData = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          finalData.set(chunk, offset);
-          offset += chunk.length;
-        }
-      }
+      } finally { reader.releaseLock(); }
+      const len = chunks.reduce((acc, c) => acc + c.length, 0);
+      bytes = new Uint8Array(len);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     }
-
-    if (expectedSize !== undefined && finalData.length !== expectedSize) {
-      throw new Error(
-        `Data size mismatch: Expected ${expectedSize} bytes, got ${finalData.length}`
-      );
-    }
-
-    this.results.set(cid, { data: finalData, info });
+    this.data.set(cid, bytes);
+    this.info.set(cid, info);
   }
-  async has(cid) {
-    return this.results.has(cid);
-  }
-  async delete(cid) {
-    this.results.delete(cid);
-  }
-  async close() {
-    this.results.clear();
-  }
+  async delete(cid) { this.data.delete(cid); this.info.delete(cid); }
+  async close() { this.data.clear(); this.info.clear(); }
   async *iterateMeta() {
-    for (const [cid, entry] of this.results.entries()) {
-      yield { cid, info: entry.info };
-    }
+    for (const [cid, info] of this.info.entries()) { yield { cid, info }; }
   }
 }
 
 export class VFS {
-  constructor(options = {}) {
-    this.id = options.id || crypto.randomUUID();
-    this.version = options.version || '1.1.0';
-    this.storage = options.storage || new MemoryStorage();
-    this.getCID =
-      options.getCID ||
-      (async (s) => {
-        const normalized = normalizeSelector(s);
-        return crypto
-          .createHash('sha256')
-          .update(JSON.stringify(normalized))
-          .digest('hex');
-      });
+  constructor({ id, storage = new MemoryStorage() } = {}) {
+    this.id = id || globalThis.crypto.randomUUID();
+    this.storage = storage;
     this.providers = new Map();
-    this.schemas = new Map();
-    this.activeWait = new Map(); // SelectorKey -> Promise<{success: boolean, cid: string, metadata: object}>
+    this.activeWait = new Map();
     this.events = new EventEmitter();
     this.mesh = null;
     this.closed = false;
   }
 
+  async init() {
+    await this.storage.init();
+  }
+
+  _checkClosed() {
+    if (this.closed) throw new VFSClosedError();
+  }
+
   registerProvider(path, handler, options = {}) {
     this.providers.set(path, handler);
     if (options.schema) {
-      this.schemas.set(path, options.schema);
-      this.writeData(
-        'sys/schema',
-        { target: path, provider: this.id },
-        options.schema
-      ).catch((e) => console.warn(`[VFS ${this.id}] Schema write failed:`, e));
+        this._schemas = this._schemas || new Map();
+        this._schemas.set(path, options.schema);
     }
   }
 
   addSchema(path, schema) {
-    this.schemas.set(path, schema);
+    this._schemas = this._schemas || new Map();
+    this._schemas.set(path, schema);
   }
 
   validateSelector(s) {
-    const schema = this.schemas.get(s.path);
-    if (!schema) return true;
+    if (!this._schemas || !this._schemas.has(s.path)) return true;
+    const schema = this._schemas.get(s.path);
     const params = s.parameters || {};
+
     if (schema.required) {
       for (const req of schema.required) {
         if (params[req] === undefined)
-          throw new Error(
-            `Underconstrained selector for ${s.path}: Missing required parameter '${req}'`
-          );
+          throw new Error(`Missing required parameter '${req}'`);
+      }
+    }
+
+    if (schema.properties) {
+      for (const [key, prop] of Object.entries(schema.properties)) {
+        if (params[key] !== undefined) {
+          if (prop.type === 'number' && typeof params[key] !== 'number')
+            throw new Error(`Invalid parameter type for '${key}': Expected number`);
+          if (prop.type === 'string' && typeof params[key] !== 'string')
+            throw new Error(`Invalid parameter type for '${key}': Expected string`);
+          if (prop.enum && !prop.enum.includes(params[key]))
+            throw new Error(`Invalid enum value for '${key}': Expected one of [${prop.enum.join(', ')}]`);
+        }
       }
     }
     return true;
   }
 
-  async read(pathOrSelector, parameters, context = {}) {
-    const result = await this._readResult(pathOrSelector, parameters, context);
+  async getCID(data) { return getCID(data); }
+
+  async read(selector, context = {}) {
+    const s = normalizeSelector(selector);
+    const result = await this._readResult(s, context);
     if (result && result.success) return this.storage.get(result.cid);
+    if (result && result.error === 'Expired') return null;
+    if (result && result.error) throw new Error(result.error);
     return null;
   }
 
-  async link(srcPathOrSelector, srcParams, tgtPathOrSelector, tgtParams) {
+  async write(selector, streamOrBytes, info = {}) {
     this._checkClosed();
-    const src = normalizeSelector(srcPathOrSelector, srcParams);
-    const tgt = normalizeSelector(tgtPathOrSelector, tgtParams);
-    const cid = await this.getCID(src);
     
-    // Formal link: Metadata contains 'target' selector
-    await this.storage.set(cid, new TextEncoder().encode(`vfs:/${tgt.path}`), {
-      path: src.path,
-      parameters: src.parameters,
-      target: tgt,
+    let bytes;
+    if (streamOrBytes instanceof Uint8Array) {
+        bytes = streamOrBytes;
+    } else if (typeof streamOrBytes === 'string') {
+        bytes = new TextEncoder().encode(streamOrBytes);
+    } else if (streamOrBytes === null) {
+        bytes = new Uint8Array();
+    } else if (typeof streamOrBytes.getReader === 'function') {
+        const chunks = [];
+        const reader = streamOrBytes.getReader();
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+        } finally { reader.releaseLock(); }
+        const len = chunks.reduce((acc, c) => acc + c.length, 0);
+        bytes = new Uint8Array(len);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    } else {
+        bytes = new TextEncoder().encode(encodeSafe(streamOrBytes));
+    }
+
+    const cid = await getCID(bytes);
+    await this.storage.set(cid, bytes);
+
+    const s = normalizeSelector(selector);
+    const addrKey = await getSelectorKey(s);
+    
+    await this.storage.set(addrKey, null, {
+        ...info,
+        cid,
+        path: s.path,
+        parameters: s.parameters,
+        state: 'AVAILABLE'
+    });
+
+    this.events.emit('state', { path: s.path, parameters: s.parameters, cid, state: 'AVAILABLE' });
+    return { cid };
+  }
+
+  async writeData(selector, data) {
+    return await this.write(selector, data);
+  }
+
+  async readData(selector, context = {}) {
+    const s = normalizeSelector(selector);
+    const stream = await this.read(s, context);
+    if (!stream) return null;
+    const chunks = [];
+    const reader = stream.getReader();
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    
+    // 1. Try JCB Decoding (Binary)
+    try {
+        return decodeJCB(bytes);
+    } catch (e) {}
+
+    const text = new TextDecoder().decode(bytes);
+
+    // 2. Try Safe Decoding (Base64-JCB)
+    try {
+        return decodeSafe(text.trim());
+    } catch (e) {}
+
+    // 3. Try JSON Parsing (Fallback for legacy/text providers)
+    try {
+        const trimmed = text.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            return JSON.parse(trimmed);
+        }
+    } catch (e) {}
+    
+    return bytes;
+  }
+
+  async readText(selector, context = {}) {
+    const data = await this.readData(selector, context);
+    if (!data) return null;
+    if (typeof data === 'string') return data;
+    if (data instanceof Uint8Array) return new TextDecoder().decode(data);
+    return JSON.stringify(data);
+  }
+
+  async link(src, tgt) {
+    this._checkClosed();
+    const s_src = normalizeSelector(src);
+    const s_tgt = normalizeSelector(tgt);
+    const addrKey = await getSelectorKey(s_src);
+    
+    await this.storage.set(addrKey, null, {
+      path: s_src.path,
+      parameters: s_src.parameters,
+      target: s_tgt,
       state: 'LINKED'
     });
     
-    this.events.emit('state', {
-      path: src.path,
-      parameters: src.parameters,
-      cid,
-      state: 'LINKED',
-      target: tgt
-    });
+    this.events.emit('state', { path: s_src.path, parameters: s_src.parameters, addrKey, state: 'LINKED', target: s_tgt });
   }
 
-  async _readResult(pathOrSelector, parameters, context = {}) {
-    const {
-      stack = [],
-      expiresAt = Date.now() + 30000,
-      followLinks = true,
-      depth = 0,
-    } = context;
-    const s = normalizeSelector(pathOrSelector, parameters);
-    if (depth > 10)
-      throw new Error(`Maximum recursion depth exceeded for ${s.path}`);
+  async _readResult(selector, context = {}) {
+    const { stack = [], expiresAt = Date.now() + 10000, followLinks = true, depth = 0 } = context;
+    const s = normalizeSelector(selector);
+    if (depth > 10) throw new Error(`Maximum recursion depth exceeded for ${s.path}`);
+    
+    // Throw validation errors immediately
     this.validateSelector(s);
-    if (Date.now() > expiresAt) return null;
+    
+    if (Date.now() > expiresAt) return { success: false, error: 'Expired' };
 
-    const key = JSON.stringify(s);
-    if (this.activeWait.has(key)) return this.activeWait.get(key);
+    const addrKey = await getSelectorKey(s);
+    if (stack.includes(addrKey)) throw new Error(`Circular link detected for ${s.path}`);
+    if (this.activeWait.has(addrKey)) return await this.activeWait.get(addrKey);
 
     const workPromise = (async () => {
-      const cid = await this.getCID(s);
       try {
-        // Check local storage
-        if (await this.storage.has(cid)) {
-          const info = await this._getStorageInfo(cid);
-          
-          // Formal Link Resolution (Unambiguous Aliasing)
+        if (s.parameters.cid) {
+            if (await this.storage.has(s.parameters.cid)) return { success: true, cid: s.parameters.cid };
+        }
+        if (await this.storage.has(addrKey)) {
+          const info = await this._getStorageInfo(addrKey);
           if (followLinks && info?.target) {
-            return this._readResult(
-              info.target.path,
-              info.target.parameters,
-              {
-                ...context,
-                depth: depth + 1,
-                stack: [...stack, this.id],
-              }
-            );
+            return await this._readResult(info.target, { ...context, depth: depth + 1, stack: [...stack, addrKey] });
           }
-
-          return { success: true, cid, metadata: info?.tags || {} };
+          if (info?.cid) return { success: true, cid: info.cid, metadata: info || {} };
         }
 
-        this.events.emit('trace', { type: 'READ_START', selector: s, stack });
-        // Auto-subscribe to status updates
-        if (this.mesh) {
-          this.mesh.subscribe(s, expiresAt, stack).catch(() => {});
-        }
         let provider = this.providers.get(s.path);
         if (!provider) {
           for (const [pattern, handler] of this.providers.entries()) {
-            if (pattern.startsWith('.') && s.path.endsWith(pattern)) {
-              provider = handler;
-              break;
-            }
-            if (pattern.endsWith('/') && s.path.startsWith(pattern)) {
-              provider = handler;
-              break;
-            }
+            if (pattern.endsWith('*') && s.path.startsWith(pattern.slice(0, -1))) { provider = handler; break; }
           }
         }
 
         let resultData = null;
-        let resultMetadata = {};
-
         if (provider) {
-          this.events.emit('trace', {
-            type: 'HANDLER_START',
-            selector: s,
-            peer: this.id,
-          });
           resultData = await provider(this, s, { ...context, expiresAt });
         } else if (this.mesh) {
-          this.events.emit('trace', {
-            type: 'MESH_START',
-            selector: s,
-            peer: this.id,
-          });
-          const meshResponse = await this.mesh.read(s.path, s.parameters, {
-            stack,
-            expiresAt,
-          });
+          const meshResponse = await this.mesh.read(s, { stack: [...stack, this.id], expiresAt });
           if (meshResponse) resultData = meshResponse.body || meshResponse;
         }
 
         if (resultData) {
-          try {
-            const writeInfo = {
-              path: s.path,
-              parameters: s.parameters,
-              tags: resultMetadata,
-            };
-            await this.write(s.path, s.parameters, resultData, writeInfo);
-            return { success: true, cid, metadata: resultMetadata };
-          } catch (err) {
-            return { success: false, cid };
-          }
+          const { cid } = await this.write(s, resultData);
+          return { success: true, cid };
         }
-        return { success: false, cid };
+        return { success: false };
       } catch (err) {
-        this.events.emit('trace', {
-          type: 'ERROR',
-          selector: s,
-          message: err.message,
-          peer: this.id,
-        });
-        return { success: false, cid: '', error: err.message };
+        return { success: false, error: err.message };
       } finally {
-        this.activeWait.delete(key);
-        this.events.emit('trace', { type: 'READ_END', selector: s });
+        this.activeWait.delete(addrKey);
       }
     })();
 
-    this.activeWait.set(key, workPromise);
-    return workPromise;
+    this.activeWait.set(addrKey, workPromise);
+    return await workPromise;
   }
 
-  async _getStorageInfo(cid) {
-    if (typeof this.storage.iterateMeta === 'function') {
-      for await (const entry of this.storage.iterateMeta()) {
-        if (entry.cid === cid) return entry.info;
-      }
-    }
+  async spy(selector, context = {}) {
+    const s = normalizeSelector(selector);
+    if (this.mesh) return await this.mesh.spy(s, context);
     return null;
   }
 
-  async _extractMetadata(jsonOrText) {
-    try {
-      const j =
-        typeof jsonOrText === 'string' ? JSON.parse(jsonOrText) : jsonOrText;
-      return j.tags || {};
-    } catch (e) {
-      return {};
-    }
-  }
-
-  async write(pathOrSelector, parameters, stream, info = {}) {
-    this._checkClosed();
-    const s = normalizeSelector(pathOrSelector, parameters);
-    const cid = await this.getCID(s);
-    try {
-      await this.storage.set(cid, stream, {
-        ...info,
-        path: s.path,
-        parameters: s.parameters,
-      });
-      this.events.emit('state', {
-        path: s.path,
-        parameters: s.parameters,
-        cid,
-        state: 'AVAILABLE',
-      });
-    } catch (err) {
-      await this.storage.delete(cid);
-      throw err;
-    }
-  }
-
-  async writeData(pathOrSelector, parameters, data) {
-    let bytes;
-    if (data instanceof Uint8Array) bytes = data;
-    else if (typeof data === 'string') bytes = new TextEncoder().encode(data);
-    else bytes = new TextEncoder().encode(JSON.stringify(data, null, 2));
-    const stream = new WebReadableStream({
-      start(controller) {
-        controller.enqueue(bytes);
-        controller.close();
-      },
-    });
-    await this.write(pathOrSelector, parameters, stream);
-  }
-
-  async readData(pathOrSelector, parameters, context = {}) {
-    const result = await this._readResult(pathOrSelector, parameters, context);
-    if (!result || !result.success) return null;
-    const stream = await this.storage.get(result.cid);
-    if (!stream) return null;
-    const chunks = [];
-    const reader = stream.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
+  async _getStorageInfo(key) {
+    if (typeof this.storage.iterateMeta === 'function') {
+      for await (const entry of this.storage.iterateMeta()) {
+        if (entry.cid === key) return entry.info;
       }
-    } finally {
-      reader.releaseLock();
     }
-    let len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.length;
-    }
-    const text = new TextDecoder().decode(bytes);
-    try {
-      const trimmed = text.trim();
-      if (trimmed.startsWith('{') || trimmed.startsWith('['))
-        return JSON.parse(trimmed);
-    } catch (e) {}
-    return bytes;
-  }
-
-  async readText(pathOrSelector, parameters, context = {}) {
-    const data = await this.readData(pathOrSelector, parameters, context);
-    if (!data) return null;
-    if (typeof data === 'string') return data;
-    if (data instanceof Uint8Array) return new TextDecoder().decode(data);
-    return JSON.stringify(data, null, 2);
+    return null;
   }
 
   async close() {
@@ -438,164 +361,5 @@ export class VFS {
     this.activeWait.clear();
     if (this.mesh) this.mesh.stop();
     await this.storage.close();
-  }
-
-  _checkClosed() {
-    if (this.closed) throw new VFSClosedError();
-  }
-
-  static formatVFSChunk(selector, dataBytes = new Uint8Array(0)) {
-    const name = JSON.stringify(normalizeSelector(selector));
-    const headerStr = `\n=${dataBytes.length} ${name}\n`;
-    const headerBytes = new TextEncoder().encode(headerStr);
-    const combined = new Uint8Array(headerBytes.length + dataBytes.length);
-    combined.set(headerBytes);
-    combined.set(dataBytes, headerBytes.length);
-    return combined;
-  }
-
-  static async *parseVFSBundle(stream) {
-    if (!stream) return;
-    const reader =
-      typeof stream.getReader === 'function' ? stream.getReader() : null;
-    let buffer = new Uint8Array(0);
-    const append = (chunk) => {
-      const newBuffer = new Uint8Array(buffer.length + chunk.length);
-      newBuffer.set(buffer);
-      newBuffer.set(chunk, buffer.length);
-      buffer = newBuffer;
-    };
-    const decoder = new TextDecoder();
-    try {
-      while (true) {
-        if (reader) {
-          const { done, value } = await reader.read();
-          if (value) append(value);
-          if (done && buffer.length === 0) break;
-        } else break;
-
-        let offset = 0;
-        while (offset < buffer.length) {
-          if (buffer[offset] === 10 && buffer[offset + 1] === 61) {
-            let newlineIdx = -1;
-            for (let i = offset + 2; i < buffer.length; i++) {
-              if (buffer[i] === 10) {
-                newlineIdx = i;
-                break;
-              }
-            }
-            if (newlineIdx !== -1) {
-              const headerStr = decoder.decode(
-                buffer.subarray(offset + 2, newlineIdx)
-              );
-              const spaceIdx = headerStr.indexOf(' ');
-              if (spaceIdx !== -1) {
-                const len = parseInt(headerStr.slice(0, spaceIdx), 10);
-                const nameStr = headerStr.slice(spaceIdx + 1);
-                let selector;
-                try {
-                  selector = JSON.parse(nameStr);
-                } catch (e) {
-                  selector = { path: nameStr };
-                }
-                const payloadStart = newlineIdx + 1;
-                if (buffer.length >= payloadStart + len) {
-                  const payload = buffer.subarray(
-                    payloadStart,
-                    payloadStart + len
-                  );
-                  yield { selector, data: new Uint8Array(payload) };
-                  offset = payloadStart + len;
-                  continue;
-                }
-              }
-            }
-          } else if (buffer[offset] !== 10) {
-            offset++;
-            continue;
-          }
-          break;
-        }
-        if (offset > 0) buffer = buffer.slice(offset);
-        if (reader && buffer.length === 0) break;
-      }
-    } finally {
-      if (reader) reader.releaseLock();
-    }
-  }
-
-  async spy(pathOrSelector, parameters, context = {}) {
-    const s = normalizeSelector(pathOrSelector, parameters);
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
-    const chunks = [];
-    const seenCIDs = new Set();
-    if (typeof this.storage.iterateMeta === 'function') {
-      for await (const { cid, info } of this.storage.iterateMeta()) {
-        if (info && this._matchesSpy(info, s)) {
-          if (!seenCIDs.has(cid)) {
-            seenCIDs.add(cid);
-            const stream = await this.storage.get(cid);
-            if (stream) {
-              const bytes = await this._streamToBytes(stream);
-              chunks.push(VFS.formatVFSChunk(info, bytes));
-            }
-          }
-        }
-      }
-    }
-    if (this.mesh) {
-      const meshStream = await this.mesh.spy(s.path, s.parameters, {
-        stack,
-        expiresAt,
-      });
-      if (meshStream) {
-        const reader = meshStream.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-          }
-        } finally {
-          reader.releaseLock();
-        }
-      }
-    }
-    if (chunks.length === 0) return null;
-    return new WebReadableStream({
-      start(controller) {
-        for (const chunk of chunks) controller.enqueue(chunk);
-        controller.close();
-      },
-    });
-  }
-
-  async _streamToBytes(stream) {
-    if (stream instanceof Uint8Array) return stream;
-    const chunks = [];
-    const reader = stream.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    let len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return bytes;
-  }
-
-  _matchesSpy(info, s) {
-    if (!info.path) return false;
-    if (s.path.endsWith('*')) return info.path.startsWith(s.path.slice(0, -1));
-    return info.path === s.path;
   }
 }

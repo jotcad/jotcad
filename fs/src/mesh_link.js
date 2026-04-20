@@ -18,8 +18,8 @@ class Connection {
     this._pulseCount = 0;
   }
 
-  async read(path, parameters, stack) { throw new Error('Not implemented'); }
-  async spy(path, parameters, stack) { throw new Error('Not implemented'); }
+  async read(selector, context) { throw new Error('Not implemented'); }
+  async spy(selector, context) { throw new Error('Not implemented'); }
   async subscribe(selector, expiresAt, stack) { throw new Error('Not implemented'); }
   async notify(selector, payload, stack) { throw new Error('Not implemented'); }
 }
@@ -37,7 +37,7 @@ class ForwardConnection extends Connection {
     this.reachability = 'DIRECT';
   }
 
-  async read(path, parameters, context = {}) {
+  async read(selector, context = {}) {
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
@@ -45,15 +45,15 @@ class ForwardConnection extends Connection {
     const resp = await this.fetch(`${this.url}/read`, {
       method: 'POST',
       headers,
-      signal: this.signal,
-      body: JSON.stringify({ path, parameters, stack, expiresAt }),
+      signal: this.signal || AbortSignal.timeout(5000),
+      body: JSON.stringify({ ...selector, stack, expiresAt }),
     });
 
     if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
     return null;
   }
 
-  async spy(path, parameters, context = {}) {
+  async spy(selector, context = {}) {
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
@@ -61,31 +61,31 @@ class ForwardConnection extends Connection {
     const resp = await this.fetch(`${this.url}/spy`, {
       method: 'POST',
       headers,
-      signal: this.signal,
-      body: JSON.stringify({ path, parameters, stack, expiresAt }),
+      signal: this.signal || AbortSignal.timeout(5000),
+      body: JSON.stringify({ ...selector, stack, expiresAt }),
     });
 
     if (resp.ok && resp.body) return resp.body;
     return null;
   }
 
-  async subscribe(topic, expiresAt, stack) {
+  async subscribe(selector, expiresAt, stack) {
     await this.fetch(`${this.url}/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-vfs-id': stack[stack.length - 1] },
-      signal: this.signal,
-      body: JSON.stringify({ selector: topic, expiresAt, stack }),
+      signal: this.signal || AbortSignal.timeout(5000),
+      body: JSON.stringify({ selector, expiresAt, stack }),
     }).catch(() => {});
   }
 
-  async notify(topic, payload, stack = []) {
+  async notify(selector, payload, stack = []) {
     this._pulseCount++;
     this.lastPulse = Date.now();
     await this.fetch(`${this.url}/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: this.signal,
-      body: JSON.stringify({ selector: topic, payload, stack }),
+      signal: this.signal || AbortSignal.timeout(5000),
+      body: JSON.stringify({ selector, payload, stack }),
     }).catch(() => {});
   }
 }
@@ -100,13 +100,13 @@ class ReverseConnection extends Connection {
     this.reachability = 'REVERSE';
   }
 
-  async read(path, parameters, context = {}) {
+  async read(selector, context = {}) {
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     const requestId = globalThis.crypto.randomUUID();
     const replyPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.registry.replies.delete(requestId);
-        reject(new Error(`Reverse read timeout for ${path}`));
+        reject(new Error(`Reverse read timeout for ${selector.path}`));
       }, Math.max(0, expiresAt - Date.now()));
 
       this.registry.replies.set(requestId, (stream, headers = new Map()) => {
@@ -115,17 +115,17 @@ class ReverseConnection extends Connection {
       });
     });
 
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'READ', id: requestId, path, parameters, stack, expiresAt });
+    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'READ', id: requestId, ...selector, stack, expiresAt });
     return replyPromise.catch(() => null);
   }
 
-  async spy(path, parameters, context = {}) {
+  async spy(selector, context = {}) {
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     const requestId = globalThis.crypto.randomUUID();
     const replyPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.registry.replies.delete(requestId);
-        reject(new Error(`Reverse spy timeout for ${path}`));
+        reject(new Error(`Reverse spy timeout for ${selector.path}`));
       }, expiresAt - Date.now());
 
       this.registry.replies.set(requestId, (stream, headers = new Map()) => {
@@ -134,18 +134,18 @@ class ReverseConnection extends Connection {
       });
     });
 
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SPY', id: requestId, path, parameters, stack, expiresAt });
+    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SPY', id: requestId, ...selector, stack, expiresAt });
     return replyPromise.catch(() => null);
   }
 
-  async subscribe(topic, expiresAt, stack) {
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SUB', selector: topic, expiresAt, stack });
+  async subscribe(selector, expiresAt, stack) {
+    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SUB', selector, expiresAt, stack });
   }
 
-  async notify(topic, payload, stack = []) {
+  async notify(selector, payload, stack = []) {
     this._pulseCount++;
     this.lastPulse = Date.now();
-    this.registry.dispatch(this.neighborId, { type: 'NOTIFY', selector: topic, payload, stack });
+    this.registry.dispatch(this.neighborId, { type: 'NOTIFY', selector, payload, stack });
   }
 }
 
@@ -191,22 +191,20 @@ export class MeshLinkBase {
 
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
     const s = normalizeSelector(selector);
-    if (stack.length > 0) {
-      this.addInterest(stack[stack.length - 1], s, expiresAt, stack);
-    }
-
+    if (stack.includes(this.vfs.id)) return;
     const nextStack = [...stack, this.vfs.id];
     for (const conn of this.peers.values()) {
-      if (!stack.includes(conn.neighborId)) {
+      if (!nextStack.includes(conn.neighborId)) {
         conn.subscribe(s, expiresAt, nextStack).catch(() => {});
       }
     }
   }
 
   addInterest(neighborId, selector, expiresAt, stack = []) {
-    const topic = JSON.stringify(normalizeSelector(selector));
+    const s = normalizeSelector(selector);
+    const topic = JSON.stringify(s);
     if (!this.interests.has(topic))
-      this.interests.set(topic, { selector, subs: new Map(), lastValue: null });
+      this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null });
     
     const entry = this.interests.get(topic);
     const isNew = !entry.subs.has(neighborId);
@@ -214,11 +212,16 @@ export class MeshLinkBase {
 
     if (isNew && entry.lastValue) {
       const conn = this.peers.get(neighborId);
-      if (conn) conn.notify(selector, entry.lastValue, [this.vfs.id]).catch(() => {});
+      if (conn) conn.notify(s, entry.lastValue, [this.vfs.id]).catch(() => {});
     }
 
     if (isNew && entry.subs.size === 1) {
-      this.subscribe(selector, expiresAt, [...stack, neighborId]).catch(() => {});
+      const subStack = [...stack, neighborId];
+      for (const conn of this.peers.values()) {
+        if (!subStack.includes(conn.neighborId)) {
+          conn.subscribe(s, expiresAt, [...subStack, this.vfs.id]).catch(() => {});
+        }
+      }
     }
   }
 
@@ -232,7 +235,7 @@ export class MeshLinkBase {
         entry.lastValue = payload;
         for (const [neighborId, expiry] of entry.subs.entries()) {
           if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
-          if (stack.includes(neighborId)) continue;
+          if (nextStack.includes(neighborId)) continue;
           const conn = this.peers.get(neighborId);
           if (conn) conn.notify(s, payload, nextStack).catch(() => {});
         }
@@ -272,11 +275,12 @@ export class MeshLinkBase {
           if (resp.status === 200) {
             const cmd = await resp.json();
             if (cmd.type === 'COMMAND') {
+              const sel = { path: cmd.path, parameters: cmd.parameters };
               if (cmd.op === 'READ') {
-                stream = await this.vfs.read(cmd.path, cmd.parameters, { stack: cmd.stack, expiresAt: cmd.expiresAt });
+                stream = await this.vfs.read(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt });
                 replyTo = cmd.id;
               } else if (cmd.op === 'SPY') {
-                stream = await this.vfs.spy(cmd.path, cmd.parameters, { stack: cmd.stack, expiresAt: cmd.expiresAt });
+                stream = await this.vfs.spy(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt });
                 replyTo = cmd.id;
               } else if (cmd.op === 'SUB') {
                 this.addInterest(cmd.stack[0] || 'unknown', cmd.selector, cmd.expiresAt, cmd.stack);
@@ -299,7 +303,7 @@ export class MeshLinkBase {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: this.vfs.id, url: this.localUrl }),
-        signal: this.abortController.signal,
+        signal: this.abortController.signal || AbortSignal.timeout(5000),
       });
       if (resp.ok) {
         const info = await resp.json();
@@ -347,25 +351,33 @@ export class MeshLinkBase {
     res.on('close', () => { const idx = pool.findIndex(item => item.res === res); if (idx !== -1) pool.splice(idx, 1); });
   }
 
-  async read(path, parameters, context = {}) {
+  async read(selector, context = {}) {
+    const s = normalizeSelector(selector);
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    
+    if (stack.includes(this.vfs.id)) return null;
     const nextStack = [...stack, this.vfs.id];
-    const targetConns = [...this.peers.values()].filter(c => !stack.includes(c.neighborId));
+    const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
+    
     if (targetConns.length === 0) return null;
     const fetchPromises = targetConns.map(async (conn) => {
-      const resp = await conn.read(path, parameters, { stack: nextStack, expiresAt });
+      const resp = await conn.read(s, { stack: nextStack, expiresAt });
       if (resp) return resp;
       throw new Error('Conn failed');
     });
     try { return await Promise.any(fetchPromises); } catch (e) { return null; } finally { for (const p of fetchPromises) p.catch(() => {}); }
   }
 
-  async spy(path, parameters, context = {}) {
+  async spy(selector, context = {}) {
+    const s = normalizeSelector(selector);
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    
+    if (stack.includes(this.vfs.id)) return null;
     const nextStack = [...stack, this.vfs.id];
-    const targetConns = [...this.peers.values()].filter(c => !stack.includes(c.neighborId));
+    const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
+    
     if (targetConns.length === 0) return null;
-    const fetchPromises = targetConns.map(async (conn) => { try { return await conn.spy(path, parameters, { stack: nextStack, expiresAt }); } catch (err) { return null; } });
+    const fetchPromises = targetConns.map(async (conn) => { try { return await conn.spy(s, { stack: nextStack, expiresAt }); } catch (err) { return null; } });
     try {
       const results = await Promise.allSettled(fetchPromises);
       const validStreams = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);

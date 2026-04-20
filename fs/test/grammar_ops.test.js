@@ -63,7 +63,7 @@ test('Geometric Grammar Integration', async (t) => {
       // THE EXPRESSION:
       // loop(group(origin, nth(points(hexagon), [0, 1])))
 
-      const hexagon = { path: 'shape/hexagon', parameters: { radius: 100 } };
+      const hexagon = { path: 'shape/hexagon', parameters: { diameter: 200 } };
       const points = { path: 'op/points', parameters: { source: hexagon } };
       const firstTwo = {
         path: 'op/nth',

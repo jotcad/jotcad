@@ -1,4 +1,5 @@
 #include "../include/vfs_node.h"
+#include "../include/cid.h"
 #include "../vendor/httplib.h"
 #include <fstream>
 #include <iostream>
@@ -10,40 +11,16 @@
 #include <iomanip>
 #include <condition_variable>
 #include <queue>
-#include <openssl/sha.h>
 
 namespace fs {
 
-std::string vfs_hash256(const std::vector<uint8_t>& data) {
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    SHA256_Update(&sha256, data.data(), data.size());
-    SHA256_Final(hash, &sha256);
-    std::stringstream ss;
-    for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
-    return ss.str();
-}
-
-std::string vfs_hash256_str(const std::string& input) {
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    SHA256_Update(&sha256, input.c_str(), input.size());
-    SHA256_Final(hash, &sha256);
-    std::stringstream ss;
-    for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
-    return ss.str();
-}
-
 static void normalize_json(json& j) {
     if (j.is_object()) {
-        std::vector<std::string> keys;
-        for (auto it = j.begin(); it != j.end(); ++it) keys.push_back(it.key());
-        std::sort(keys.begin(), keys.end());
         json sorted = json::object();
-        for (const auto& k : keys) {
-            json val = j[k];
+        std::map<std::string, json> m;
+        for (auto it = j.begin(); it != j.end(); ++it) m[it.key()] = it.value();
+        for (auto const& [k, v] : m) {
+            json val = v;
             normalize_json(val);
             sorted[k] = val;
         }
@@ -172,17 +149,33 @@ void VFSNode::listen() {
     svr->Post("/read", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = json::parse(req.body);
+            Selector sel;
+            sel.path = body.at("path").get<std::string>();
+            sel.parameters = body.value("parameters", json::object());
+            
             VFSRequest vfs_req;
-            vfs_req.selector.path = body.at("path").get<std::string>();
-            vfs_req.selector.parameters = body.value("parameters", json::object());
+            vfs_req.selector = sel;
             vfs_req.stack = body.value("stack", std::vector<std::string>());
             vfs_req.expiresAt = body.value("expiresAt", 0LL);
+
+            auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            if (vfs_req.expiresAt > 0 && now > vfs_req.expiresAt) {
+                throw VFSException("VFS Request Expired", 404);
+            }
+
             auto data = read_impl(vfs_req.selector);
+            res.status = 200;
             res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
             res.status = e.code;
             res.set_content(json({{"type", "sys/error"}, {"message", e.what()}, {"code", e.code}}).dump(), "application/json");
-        } catch (...) { res.status = 500; }
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(json({{"type", "sys/error"}, {"message", e.what()}, {"code", 500}}).dump(), "application/json");
+        } catch (...) { 
+            res.status = 500; 
+            res.set_content(json({{"type", "sys/error"}, {"message", "Unknown internal error"}, {"code", 500}}).dump(), "application/json");
+        }
     });
     svr->Post("/listen", [this](const httplib::Request& req, httplib::Response& res) {
         std::string peer_id = req.get_header_value("x-vfs-peer-id");
@@ -266,52 +259,123 @@ bool VFSNode::validate_selector(const VFSRequest& req, std::string& error_out) {
     std::lock_guard<std::mutex> lock(handlers_mutex_);
     if (!schemas_.count(req.selector.path)) return true;
     const json& schema = schemas_[req.selector.path];
+    
     if (schema.contains("required")) {
-        for (const auto& f : schema["required"]) { if (!req.selector.parameters.contains(f.get<std::string>())) { error_out = "Missing required parameter: " + f.get<std::string>(); return false; } }
+        for (const auto& f : schema["required"]) {
+            std::string field = f.get<std::string>();
+            if (!req.selector.parameters.contains(field)) {
+                error_out = "Missing required parameter '" + field + "'";
+                return false;
+            }
+        }
+    }
+
+    if (schema.contains("properties")) {
+        for (auto it = schema["properties"].begin(); it != schema["properties"].end(); ++it) {
+            std::string key = it.key();
+            if (req.selector.parameters.contains(key)) {
+                const auto& prop = it.value();
+                const auto& val = req.selector.parameters[key];
+                if (prop.value("type", "") == "number" && !val.is_number()) {
+                    error_out = "Invalid parameter type for '" + key + "': Expected number";
+                    return false;
+                }
+                if (prop.value("type", "") == "string" && !val.is_string()) {
+                    error_out = "Invalid parameter type for '" + key + "': Expected string";
+                    return false;
+                }
+                if (prop.contains("enum")) {
+                    bool found = false;
+                    for (const auto& e : prop["enum"]) { if (e == val) found = true; }
+                    if (!found) {
+                        error_out = "Invalid enum value for '" + key + "'";
+                        return false;
+                    }
+                }
+            }
+        }
     }
     return true;
 }
 
-std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth) {
-    if (sel.path.empty()) throw VFSException("Selector must have a path", 400);
-    std::cout << "[VFS READ] " << sel.path << " params: " << sel.parameters.dump() << std::endl;
+std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vector<std::string> stack) {
+    if (sel.path.empty() && !sel.parameters.contains("cid")) throw VFSException("Selector must have a path or CID", 400);
     if (depth > 10) throw VFSException("Recursive link depth exceeded", 508);
-    std::string cid = get_cid(sel);
-    if (has_local(cid)) {
+    
+    // 1. Direct CID Check
+    if (sel.parameters.contains("cid")) {
+        std::string cid = sel.parameters["cid"];
+        if (has_local(cid)) return get_local(cid);
+    }
+
+    // 2. Address Lookup
+    std::string addrKey = get_cid(sel);
+    // Cycle Detection
+    for (const auto& key : stack) {
+        if (key == addrKey) throw VFSException("Circular link detected for " + sel.path, 508);
+    }
+    stack.push_back(addrKey);
+
+    if (has_local(addrKey)) {
         try {
-            json meta; { std::lock_guard<std::mutex> lock(storage_mutex_); std::ifstream is((std::filesystem::path(config_.storage_dir) / (cid + ".meta")).string()); meta = json::parse(is); }
+            json meta; { std::lock_guard<std::mutex> lock(storage_mutex_); std::ifstream is((std::filesystem::path(config_.storage_dir) / (addrKey + ".meta")).string()); meta = json::parse(is); }
             if (meta.value("state", "") == "LINKED" && meta.contains("target")) {
                 Selector next_sel = Selector::from_json(meta["target"]);
-                return read_impl(next_sel, depth + 1);
+                return read_impl(next_sel, depth + 1, stack);
             }
-        } catch (const std::exception& e) {
-            std::cerr << "[VFS READ] Meta Error: " << e.what() << std::endl;
-        }
+            if (meta.contains("cid")) return get_local(meta["cid"]);
+        } catch (...) {}
     }
-    if (has_local(cid)) return get_local(cid);
+
     OpHandler handler = nullptr; { std::lock_guard<std::mutex> lock(handlers_mutex_); if (handlers_.count(sel.path)) handler = handlers_[sel.path]; }
     if (handler) {
         VFSRequest req = {sel, {config_.id}, 0};
         auto data = handler(req);
-        if (!data.empty()) { write_local(cid, data, sel.path, sel.parameters); return data; }
+        if (!data.empty()) {
+            write_bytes(sel, data);
+            return data;
+        }
+        if (has_local(addrKey)) {
+             json meta; { std::lock_guard<std::mutex> lock(storage_mutex_); std::ifstream is((std::filesystem::path(config_.storage_dir) / (addrKey + ".meta")).string()); meta = json::parse(is); }
+             if (meta.contains("cid")) return get_local(meta["cid"]);
+        }
     }
+    
+    std::vector<std::string> target_urls; 
+    { std::lock_guard<std::mutex> lock(peer_mutex_); for (const auto& [id, url] : peers_) target_urls.push_back(url); }
+    for (const auto& url : target_urls) {
+        try {
+            httplib::Client cli(url); cli.set_read_timeout(10, 0);
+            json body = {{"path", sel.path}, {"parameters", sel.parameters}, {"stack", {config_.id}}};
+            auto res = cli.Post("/read", body.dump(), "application/json");
+            if (res && res->status == 200) {
+                std::vector<uint8_t> data(res->body.begin(), res->body.end());
+                write_bytes(sel, data); 
+                return data;
+            }
+        } catch (...) {}
+    }
+
     throw VFSException("Artifact not found in mesh: " + sel.path, 404);
 }
 
 void VFSNode::link(const Selector& src, const Selector& tgt) {
-    write_local_link(get_cid(src), src.path, src.parameters, tgt.path, tgt.parameters);
+    std::string srcKey = get_cid(src);
+    write_local_link(srcKey, src.path, src.parameters, tgt.path, tgt.parameters);
 }
 
 std::string VFSNode::get_cid(const Selector& sel) {
-    json s = {{"path", sel.path}, {"parameters", sel.parameters}};
+    json s = {{"parameters", sel.parameters}, {"path", sel.path}};
     normalize_json(s);
-    return vfs_hash256_str(s.dump());
+    std::vector<uint8_t> jcb = encode_jcb(s);
+    return vfs_hash256(jcb);
 }
 
 bool VFSNode::has_local(const std::string& cid) {
     if (config_.storage_dir.empty()) return false;
     std::lock_guard<std::mutex> lock(storage_mutex_);
-    return std::filesystem::exists(std::filesystem::path(config_.storage_dir) / (cid + ".data"));
+    return std::filesystem::exists(std::filesystem::path(config_.storage_dir) / (cid + ".data")) ||
+           std::filesystem::exists(std::filesystem::path(config_.storage_dir) / (cid + ".meta"));
 }
 
 std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
@@ -339,8 +403,10 @@ void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& da
 void VFSNode::write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params) {
     if (config_.storage_dir.empty()) return;
     std::lock_guard<std::mutex> lock(storage_mutex_);
-    std::ofstream ms(std::filesystem::path(config_.storage_dir) / (src_cid + ".meta"));
-    ms << json({ {"path", src_path}, {"parameters", src_params}, {"state", "LINKED"}, {"target", {{"path", tgt_path}, {"parameters", tgt_params}}} }).dump();
+    std::ofstream os(std::filesystem::path(config_.storage_dir) / (src_cid + ".data"));
+    os << "vfs:/" << tgt_path;
+    std::ofstream mos(std::filesystem::path(config_.storage_dir) / (src_cid + ".meta"));
+    mos << json({ {"path", src_path}, {"parameters", src_params}, {"state", "LINKED"}, {"target", {{"path", tgt_path}, {"parameters", tgt_params}}} }).dump();
 }
 
 std::vector<uint8_t> VFSNode::spy(const VFSRequest& req) {
@@ -397,26 +463,45 @@ void VFSNode::notify(const json& selector, const json& payload, const std::vecto
 }
 
 Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& data) {
-    std::string cid = get_cid(sel);
-    write_local(cid, data, sel.path, sel.parameters);
-    return sel;
+    std::string cid = vfs_hash256(data);
+    std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid + ".data");
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        std::ofstream os(p, std::ios::binary);
+        os.write((const char*)data.data(), data.size());
+    }
+    if (!sel.path.empty()) {
+        std::string addrKey = get_cid(sel);
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        std::ofstream ms(std::filesystem::path(config_.storage_dir) / (addrKey + ".meta"));
+        ms << json({{"path", sel.path}, {"parameters", sel.parameters}, {"cid", cid}, {"state", "AVAILABLE"}}).dump();
+    }
+    Selector out = sel;
+    out.parameters["cid"] = cid;
+    return out;
 }
 
-template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) { return read_impl(sel); }
-template<> json VFSNode::read<json>(const Selector& sel) { return json::parse(read_impl(sel)); }
-
-template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data) {
-    if (sel.path.empty()) throw VFSException("Anonymous write of raw bytes is not permitted; provide a Selector.", 400);
-    return write_bytes(sel, data);
+template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) {
+    return read_impl(sel);
 }
+
+template<> json VFSNode::read<json>(const Selector& sel) {
+    auto data = read_impl(sel);
+    std::string text(data.begin(), data.end());
+    try {
+        return decode_safe(text);
+    } catch (...) {
+        return json::parse(text);
+    }
+}
+
+template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data) { return write_bytes(sel, data); }
 template<> Selector VFSNode::write<json>(const Selector& sel, const json& data) {
-    if (sel.path.empty()) throw VFSException("Anonymous write of JSON is not permitted; provide a Selector.", 400);
-    std::string s = data.dump();
-    std::vector<uint8_t> bytes(s.begin(), s.end());
+    std::string safe = encode_safe(data);
+    std::vector<uint8_t> bytes(safe.begin(), safe.end());
     return write_bytes(sel, bytes);
 }
 template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data) {
-    if (sel.path.empty()) throw VFSException("Anonymous write of string is not permitted; provide a Selector.", 400);
     std::vector<uint8_t> bytes(data.begin(), data.end());
     return write_bytes(sel, bytes);
 }

@@ -51,37 +51,34 @@ export class Node {
             sockets[name] = {};
             if (def.mode === 'read') {
               sockets[name].read = async (overrideParams = {}) => {
-                return v.read(
-                  def.path,
-                  {
+                return v.read({
+                  path: def.path,
+                  parameters: {
                     ...def.parameters,
                     ...selector.parameters,
                     ...overrideParams,
-                  },
-                  context
-                );
+                  }
+                }, context);
               };
               sockets[name].readData = async (overrideParams = {}) => {
-                return v.readData(
-                  def.path,
-                  {
+                return v.readData({
+                  path: def.path,
+                  parameters: {
                     ...def.parameters,
                     ...selector.parameters,
                     ...overrideParams,
-                  },
-                  context
-                );
+                  }
+                }, context);
               };
               sockets[name].readText = async (overrideParams = {}) => {
-                return v.readText(
-                  def.path,
-                  {
+                return v.readText({
+                  path: def.path,
+                  parameters: {
                     ...def.parameters,
                     ...selector.parameters,
                     ...overrideParams,
-                  },
-                  context
-                );
+                  }
+                }, context);
               };
             } else if (def.mode === 'write') {
               sockets[name].write = async (stream) => {

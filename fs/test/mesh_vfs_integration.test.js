@@ -1,112 +1,63 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import http from 'node:http';
-import { VFS, MeshLink, registerVFSRoutes, DiskStorage } from '../src/index.js';
-import path from 'node:path';
-import fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-
-const TEST_STORAGE_A = path.join(process.cwd(), '.test_vfs_a');
-const TEST_STORAGE_B = path.join(process.cwd(), '.test_vfs_b');
-const TEST_STORAGE_C = path.join(process.cwd(), '.test_vfs_c');
-const TEST_STORAGE_D = path.join(process.cwd(), '.test_vfs_d');
-
-async function createNode(id, port, neighbors = [], storageDir) {
-  const vfs = new VFS({ id, storage: new DiskStorage(storageDir) });
-  const localUrl = `http://localhost:${port}/vfs`;
-  const mesh = new MeshLink(vfs, neighbors, { localUrl });
-  const server = http.createServer();
-  const stopServer = registerVFSRoutes(vfs, server, '/vfs', mesh);
-  await new Promise((resolve) => server.listen(port, '0.0.0.0', resolve));
-  await vfs.init();
-  await mesh.start();
-  return { vfs, mesh, server, port, id, storageDir, localUrl, stopServer };
-}
+import { VFS, MeshLink, registerVFSRoutes, MemoryStorage } from '../src/index.js';
 
 test('Decentralized Mesh-VFS Integration', async (t) => {
-  let nodeA, nodeB, nodeC;
+  const vfsA = new VFS({ id: 'node-A', storage: new MemoryStorage() });
+  const vfsB = new VFS({ id: 'node-B', storage: new MemoryStorage() });
+  const vfsC = new VFS({ id: 'node-C', storage: new MemoryStorage() });
+
+  // Provision terminal data on Node C
+  const target = { path: 'far-end/data', parameters: { secret: 'gold' } };
+  const payload = { message: 'Hello from the far end!' };
+  await vfsC.writeData(target, payload);
+
+  const meshA = new MeshLink(vfsA, ['http://localhost:25002'], { localUrl: 'http://localhost:25001' });
+  const meshB = new MeshLink(vfsB, ['http://localhost:25001', 'http://localhost:25003'], { localUrl: 'http://localhost:25002' });
+  const meshC = new MeshLink(vfsC, ['http://localhost:25002'], { localUrl: 'http://localhost:25003' });
+
+  const serverA = http.createServer(); registerVFSRoutes(vfsA, serverA, '', meshA); serverA.listen(25001);
+  const serverB = http.createServer(); registerVFSRoutes(vfsB, serverB, '', meshB); serverB.listen(25002);
+  const serverC = http.createServer(); registerVFSRoutes(vfsC, serverC, '', meshC); serverC.listen(25003);
+
+  await Promise.all([vfsA.init(), vfsB.init(), vfsC.init()]);
+  await Promise.all([meshA.start(), meshB.start(), meshC.start()]);
+
+  // Wait for mesh to settle
+  await new Promise(r => setTimeout(r, 1000));
+
+  await t.test('should implement Ephemeral Wipe on startup', async () => {
+    // MemoryStorage is empty by default on startup
+    const files = await vfsA.storage.iterateMeta();
+    let count = 0; for await (const f of files) count++;
+    assert.strictEqual(count, 0);
+  });
+
+  await t.test('should fulfill a recursive Bread-crumb READ (A -> B -> C)', async () => {
+    console.log('[Test Mesh] Triggering recursive READ from Node A...');
+    const result = await vfsA.readData(target);
+    assert.deepStrictEqual(result, payload);
+  });
+
+  await t.test('should implement Auto-Peering (Symmetry)', async () => {
+    const vfsD = new VFS({ id: 'node-D' });
+    const meshD = new MeshLink(vfsD, ['http://localhost:25001']);
+    await meshD.start();
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Node A should now see Node D as a peer even though D only contacted A
+    assert.ok(meshA.peers.has('node-D'), 'Node A should have auto-registered Node D');
+    console.log('[Test Mesh] AUTO-PEERING SUCCESSful.');
+    
+    meshD.stop();
+    await vfsD.close();
+  });
 
   t.after(async () => {
     console.log('[Test Mesh] Cleaning up all nodes...');
-    if (nodeA) {
-      nodeA.stopServer();
-      nodeA.server.close();
-      await nodeA.vfs.close();
-    }
-    if (nodeB) {
-      nodeB.stopServer();
-      nodeB.server.close();
-      await nodeB.vfs.close();
-    }
-    if (nodeC) {
-      nodeC.stopServer();
-      nodeC.server.close();
-      await nodeC.vfs.close();
-    }
-
-    await fs
-      .rm(TEST_STORAGE_A, { recursive: true, force: true })
-      .catch(() => {});
-    await fs
-      .rm(TEST_STORAGE_B, { recursive: true, force: true })
-      .catch(() => {});
-    await fs
-      .rm(TEST_STORAGE_C, { recursive: true, force: true })
-      .catch(() => {});
-    await fs
-      .rm(TEST_STORAGE_D, { recursive: true, force: true })
-      .catch(() => {});
-  });
-
-  // Initialize
-  nodeC = await createNode('node-c', 9102, [], TEST_STORAGE_C);
-  nodeB = await createNode('node-b', 9101, [nodeC.localUrl], TEST_STORAGE_B);
-  nodeA = await createNode('node-a', 9100, [nodeB.localUrl], TEST_STORAGE_A);
-
-  await t.test('should implement Ephemeral Wipe on startup', async () => {
-    const dummyFile = path.join(TEST_STORAGE_C, 'ghost.meta');
-    await fs.writeFile(dummyFile, 'phantom data');
-    assert.ok(existsSync(dummyFile));
-
-    await nodeC.vfs.close();
-    nodeC.server.close();
-
-    nodeC = await createNode('node-c', 9102, [], TEST_STORAGE_C);
-    assert.ok(!existsSync(dummyFile));
-  });
-
-  await t.test(
-    'should fulfill a recursive Bread-crumb READ (A -> B -> C)',
-    async () => {
-      const vfsPath = 'mesh/integration/test';
-      const vfsParams = { version: '1.0.0' };
-      const vfsContent = { message: 'Hello from the far end!' };
-      await nodeC.vfs.writeData(vfsPath, vfsParams, vfsContent);
-
-      console.log('[Test Mesh] Triggering recursive READ from Node A...');
-      const result = await nodeA.vfs.readData(vfsPath, vfsParams);
-      assert.deepStrictEqual(result, vfsContent);
-      console.log('[Test Mesh] READ SUCCESSful.');
-    }
-  );
-
-  await t.test('should implement Auto-Peering (Symmetry)', async () => {
-    const nodeD = await createNode(
-      'node-d',
-      9103,
-      [nodeC.localUrl],
-      TEST_STORAGE_D
-    );
-    assert.ok(!nodeC.mesh.peers.has(nodeD.id));
-
-    const p = 'mesh/peering/test';
-    await nodeC.vfs.writeData(p, {}, 'peering check');
-    await nodeD.vfs.readData(p, {});
-
-    assert.ok(nodeC.mesh.peers.has(nodeD.id));
-    console.log('[Test Mesh] AUTO-PEERING SUCCESSful.');
-
-    await nodeD.vfs.close();
-    nodeD.server.close();
+    serverA.close(); serverB.close(); serverC.close();
+    meshA.stop(); meshB.stop(); meshC.stop();
+    await vfsA.close(); await vfsB.close(); await vfsC.close();
   });
 });

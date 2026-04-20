@@ -8,11 +8,11 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct BoxOp : P {
     static constexpr const char* path = "jot/Box";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<double>& size) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double width, double height, double depth) {
         Geometry res;
-        double w = size.size() > 0 ? size[0] : 10.0;
-        double h = size.size() > 1 ? size[1] : 10.0;
-        double d = size.size() > 2 ? size[2] : 0.0;
+        double w = width;
+        double h = height;
+        double d = depth;
 
         res.vertices.push_back({FT(-w/2), FT(-h/2), FT(-d/2)});
         res.vertices.push_back({FT(w/2), FT(-h/2), FT(-d/2)});
@@ -37,19 +37,23 @@ struct BoxOp : P {
         Shape out = P::make_shape(vfs, res, {{"type", "box"}});
         vfs->write<Shape>(fulfilling, out);
     }
-    static std::vector<std::string> argument_keys() { return {"size"}; }
+    static std::vector<std::string> argument_keys() { return {"width", "height", "depth"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Box"},
             {"description", "Generates a box (rectangle or cuboid)."},
-            {"arguments", {{"size", {{"type", "array"}, {"items", {{"type", "number"}}}, {"default", {10, 10}}}}}},
+            {"arguments", {
+                {"width", {{"type", "number"}, {"default", 10.0}}},
+                {"height", {{"type", "number"}, {"default", 10.0}}},
+                {"depth", {{"type", "number"}, {"default", 0.0}}}
+            }},
             {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
 
 static void box_init() {
-    Processor::register_op<BoxOp<>, std::vector<double>>("jot/Box");
+    Processor::register_op<BoxOp<>, double, double, double>("jot/Box");
 }
 
 } // namespace geo

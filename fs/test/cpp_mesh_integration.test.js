@@ -9,12 +9,12 @@ import {
   MeshLink,
   registerVFSRoutes,
   DiskStorage,
-  getCID,
+  getSelectorKey,
 } from '../src/index.js';
 
 const CPP_OPS_PATH = path.resolve('geo/bin/ops');
-const PORT_CPP = 9501;
-const PORT_JS = 9502;
+const PORT_CPP = 20101;
+const PORT_JS = 20102;
 const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');
 const STORAGE_CPP = path.resolve('.vfs_storage_cpp-test-node');
 
@@ -36,7 +36,7 @@ test('C++ Native Node Integration', async (t) => {
   });
 
   // 1. Start C++ Native Node
-  cppNode = spawn(CPP_OPS_PATH, [PORT_CPP.toString()], {
+  cppNode = spawn(CPP_OPS_PATH, [PORT_CPP.toString(), STORAGE_CPP], {
     env: {
       ...process.env,
       PEER_ID: 'cpp-test-node',
@@ -91,29 +91,41 @@ test('C++ Native Node Integration', async (t) => {
 
   await t.test('CID Consistency', async () => {
     // Note: box op with these params produces a deterministic CID
-    const selector = { path: 'jot/Box', parameters: { width: 10, height: 10, depth: 0 } };
-    const jsCid = await getCID(selector);
-    await jsVfs.readData(selector.path, selector.parameters);
+    const selector = { path: 'jot/Box', parameters: { depth: 0, height: 10, width: 10 } };
+    const jsAddrKey = await getSelectorKey(selector);
+    await jsVfs.readData(selector);
 
-    const dataFile = path.join(STORAGE_CPP, `${jsCid}.data`);
-    await fs.access(dataFile); // Throws if CID doesn't match
+    // In Content-Addressable Mesh:
+    // 1. The selector hash identifies the .meta file (Address Key)
+    const metaFile = path.join(STORAGE_CPP, `${jsAddrKey}.meta`);
+    await fs.access(metaFile); 
+    
+    const meta = JSON.parse(await fs.readFile(metaFile, 'utf8'));
+    assert.ok(meta.cid, 'Meta file should contain a content CID');
+    
+    // 2. The .meta file points to the .data file (Content Identity)
+    const dataFile = path.join(STORAGE_CPP, `${meta.cid}.data`);
+    await fs.access(dataFile);
   });
 
   await t.test('Provisioning: Box', async () => {
-    const result = await jsVfs.readData('jot/Box', {
-      width: 10,
+    const result = await jsVfs.readData({ path: 'jot/Box', parameters: {
+      width: 20,
       height: 20,
-      depth: 5,
-    });
+      depth: 0,
+    } });
+    assert.ok(result, 'Box provisioning should return a Shape');
     assert.strictEqual(result.tags.type, 'box');
     const geo = await jsVfs.readData('geo/mesh', result.geometry.parameters);
-    assert.ok(geo.includes('v 10.000000'), 'Should contain x coordinate');
+    const geoText = new TextDecoder().decode(geo);
+    assert.ok(geoText.includes('v 10.000000'), 'Should contain x coordinate');
   });
 
   await t.test('Provisioning: Triangle', async () => {
-    const result = await jsVfs.readData('jot/Triangle/equilateral', {
-      diameter: 50,
-    });
+    const result = await jsVfs.readData({ path: 'jot/Triangle/equilateral', parameters: {
+      size: [50],
+    } });
+    assert.ok(result, 'Triangle provisioning should return a Shape');
     assert.strictEqual(result.tags.type, 'triangle');
   });
 });

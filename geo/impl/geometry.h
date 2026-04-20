@@ -15,44 +15,40 @@ struct Vertex {
     FT x, y, z;
 };
 
+/**
+ * Geometry: The foundational exact geometric artifact in JOT.
+ */
 struct Geometry {
+    struct Face {
+        std::vector<std::vector<int>> loops; // Outer loop, then holes
+    };
+
     std::vector<Vertex> vertices;
+    std::vector<Face> faces;
     std::vector<int> points;
     std::vector<std::array<int, 2>> segments;
     std::vector<std::array<int, 3>> triangles;
-    
-    struct Face {
-        std::vector<std::vector<int>> loops;
-    };
-    std::vector<Face> faces;
 
     void apply_tf(const std::vector<double>& tf) {
-        if (tf.size() < 16) return;
-        // Construct exact transformation (Mapping Column-Major to CGAL Row-Major)
-        // M00, M01, M02, M03 (Row 0)
-        // M10, M11, M12, M13 (Row 1)
-        // M20, M21, M22, M23 (Row 2)
-        Transformation t(tf[0], tf[4], tf[8],  tf[12],
-                         tf[1], tf[5], tf[9],  tf[13],
-                         tf[2], tf[6], tf[10], tf[14]);
-        
+        if (tf.size() != 16) return;
+        // CGAL Aff_transformation_3 expects row-major (m00, m01, m02, m03, ...)
+        // Our tf is column-major: [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15]
+        Transformation t(tf[0], tf[1], tf[2], tf[3],
+                         tf[4], tf[5], tf[6], tf[7],
+                         tf[8], tf[9], tf[10], tf[11]);
         for (auto& v : vertices) {
             Point_3 p(v.x, v.y, v.z);
-            p = t.transform(p);
-            v.x = p.x(); v.y = p.y(); v.z = p.z();
+            Point_3 tp = t.transform(p);
+            v.x = tp.x(); v.y = tp.y(); v.z = tp.z();
         }
     }
 
     std::string encode_text() const {
         try {
-            std::ostringstream ss;
-            ss << std::fixed << std::setprecision(18);
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(6);
             for (const auto& v : vertices) {
-                double dx = CGAL::to_double(v.x);
-                double dy = CGAL::to_double(v.y);
-                double dz = CGAL::to_double(v.z);
-                ss << "v " << dx << " " << dy << " " << dz 
-                   << " " << dx << " " << dy << " " << dz << "\n";
+                ss << "v " << CGAL::to_double(v.x) << " " << CGAL::to_double(v.y) << " " << CGAL::to_double(v.z) << "\n";
             }
             if (!points.empty()) {
                 ss << "p";
@@ -98,36 +94,35 @@ struct Geometry {
                 if (!(ls >> code)) continue;
 
                 if (code == "v") {
-                    double x1, y1, z1;
-                    if (ls >> x1 >> y1 >> z1) {
-                        vertices.push_back({FT(x1), FT(y1), FT(z1)});
+                    double x, y, z;
+                    if (ls >> x >> y >> z) {
+                        vertices.push_back({FT(x), FT(y), FT(z)});
                     }
-                } else if (code == "p") {
-                    int idx;
-                    while (ls >> idx) points.push_back(idx);
-                } else if (code == "s") {
-                    int v1, v2;
-                    while (ls >> v1 >> v2) segments.push_back({v1, v2});
-                } else if (code == "t") {
-                    int v1, v2, v3;
-                    while (ls >> v1 >> v2 >> v3) triangles.push_back({v1, v2, v3});
                 } else if (code == "f") {
-                    Face face;
+                    Face f;
                     std::vector<int> loop;
                     int idx;
                     while (ls >> idx) loop.push_back(idx);
                     if (!loop.empty()) {
-                        face.loops.push_back(std::move(loop));
-                        faces.push_back(std::move(face));
+                        f.loops.push_back(loop);
+                        faces.push_back(f);
                     }
                 } else if (code == "h") {
-                    if (faces.empty()) continue;
-                    std::vector<int> hole;
-                    int idx;
-                    while (ls >> idx) hole.push_back(idx);
-                    if (!hole.empty()) {
-                        faces.back().loops.push_back(std::move(hole));
+                    if (!faces.empty()) {
+                        std::vector<int> loop;
+                        int idx;
+                        while (ls >> idx) loop.push_back(idx);
+                        if (!loop.empty()) faces.back().loops.push_back(loop);
                     }
+                } else if (code == "s") {
+                    int i1, i2;
+                    while (ls >> i1 >> i2) segments.push_back({i1, i2});
+                } else if (code == "p") {
+                    int idx;
+                    while (ls >> idx) points.push_back(idx);
+                } else if (code == "t") {
+                    int i1, i2, i3;
+                    if (ls >> i1 >> i2 >> i3) triangles.push_back({i1, i2, i3});
                 }
             }
         } catch (const std::exception& e) {

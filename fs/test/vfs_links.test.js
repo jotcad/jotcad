@@ -1,97 +1,81 @@
-import { test, describe, beforeEach, it } from 'node:test';
+import test from 'node:test';
+import assert from 'node:assert';
 import { VFS, MemoryStorage } from '../src/vfs_core.js';
-import assert from 'assert';
 
-describe('VFS Link Following (Formal Metadata Only)', () => {
-  let vfs;
+test('VFS Link Following (Formal Metadata Only)', async (t) => {
+  const vfs = new VFS({ id: 'test-vfs', storage: new MemoryStorage() });
 
-  beforeEach(() => {
-    vfs = new VFS({
-      id: 'test-vfs',
-      storage: new MemoryStorage()
-    });
+  await t.test('should follow formal metadata-based Link Entries (target selector)', async () => {
+    const target = { path: 'real/data', parameters: { id: 123 } };
+    const alias = { path: 'link/to/data', parameters: {} };
+    const payload = { vertices: [0, 0, 0] };
+
+    await vfs.writeData(target, payload);
+    await vfs.link(alias, target);
+
+    const result = await vfs.readData(alias);
+    assert.deepStrictEqual(result, payload);
   });
 
-  // --- FORMAL LINK ENTRIES (The Primary Specification) ---
-
-  it('should follow formal metadata-based Link Entries (target selector)', async () => {
-    const targetPath = 'geo/mesh';
-    const targetParams = { cid: 'abc123' };
-    const targetData = { vertices: [0, 0, 0] };
-
-    // 1. Write the actual target data
-    await vfs.writeData(targetPath, targetParams, targetData);
-
-    // 2. Create a formal Link Entry (Aliasing)
-    // This creates a CID with metadata.target = {path, parameters}
-    await vfs.link('jot/Triangle/geometry', { side: 10 }, targetPath, targetParams);
-
-    // 3. Reading the source should return the target data transparently
-    const result = await vfs.readData('jot/Triangle/geometry', { side: 10 });
-    assert.deepStrictEqual(result, targetData);
+  await t.test('should follow formal links even if data is already in storage', async () => {
+    const target = { path: 'target', parameters: { id: 1 } };
+    const alias = { path: 'alias', parameters: { id: 1 } };
+    
+    await vfs.writeData(target, 'I am the real data');
+    
+    // Create a Link Entry for 'alias'
+    await vfs.link(alias, target);
+    
+    const result = await vfs.readText(alias);
+    assert.strictEqual(result, 'I am the real data');
   });
 
-  it('should follow formal links even if data is already in storage', async () => {
-    const targetPath = 'real/data';
-    const targetData = "I am the real data";
-    await vfs.writeData(targetPath, {}, targetData);
-
-    // Create a formal link
-    await vfs.link('alias/path', {}, targetPath, {});
-
-    // Now reading 'alias/path' should resolve to 'real/data'
-    const result = await vfs.readText('alias/path', {});
-    assert.strictEqual(result, targetData);
+  await t.test('should NOT follow text-based vfs:/ strings in raw data (No Guessing)', async () => {
+    const target = { path: 'secret', parameters: {} };
+    const bait = { path: 'bait', parameters: {} };
+    
+    await vfs.writeData(target, 'top-secret');
+    await vfs.writeData(bait, 'vfs:/secret'); // Just text
+    
+    const result = await vfs.readText(bait);
+    assert.strictEqual(result, 'vfs:/secret');
   });
 
-  it('should NOT follow text-based vfs:/ strings in raw data (No Guessing)', async () => {
-    // A provider returns a raw text string that happens to look like a link
-    vfs.registerProvider('fake/link', async () => {
-      return 'vfs:/should/not/be/followed';
-    });
-
-    const result = await vfs.readText('fake/link', {});
-    assert.strictEqual(result, 'vfs:/should/not/be/followed');
+  await t.test('should NOT follow JSON-based selector strings in raw data (No Guessing)', async () => {
+    const target = { path: 'secret', parameters: {} };
+    const bait = { path: 'bait', parameters: {} };
+    
+    await vfs.writeData(target, 'top-secret');
+    await vfs.writeData(bait, JSON.stringify(target)); // Just JSON
+    
+    const result = await vfs.readText(bait);
+    assert.strictEqual(result, JSON.stringify(target));
   });
 
-  it('should NOT follow JSON-based selector strings in raw data (No Guessing)', async () => {
-    // A provider returns a JSON object that looks like a selector
-    const selectorLike = {
-      path: 'some/path',
-      parameters: { val: 42 }
-    };
-
-    vfs.registerProvider('fake/json-link', async () => {
-      return JSON.stringify(selectorLike);
-    });
-
-    const result = await vfs.readData('fake/json-link', {});
-    // Should return the object itself, not attempt to "follow" it
-    assert.deepStrictEqual(result, selectorLike);
+  await t.test('should NOT follow JSON objects that are actual shapes (have geometry)', async () => {
+    const target = { path: 'secret', parameters: {} };
+    const shape = { path: 'shape', parameters: {} };
+    
+    await vfs.writeData(target, 'top-secret');
+    await vfs.writeData(shape, { geometry: 'vfs:/secret', tags: { type: 'bait' } });
+    
+    const result = await vfs.readData(shape);
+    assert.strictEqual(result.tags.type, 'bait');
+    assert.strictEqual(result.geometry, 'vfs:/secret');
   });
 
-  it('should NOT follow JSON objects that are actual shapes (have geometry)', async () => {
-    const shape = {
-      geometry: { path: 'geo/mesh', parameters: { cid: '123' } },
-      parameters: { size: 10 }
-    };
-
-    vfs.registerProvider('shape/real', async () => {
-      return JSON.stringify(shape);
-    });
-
-    const result = await vfs.readData('shape/real', {});
-    // Should return the shape itself
-    assert.deepStrictEqual(result, shape);
-  });
-
-  it('should respect followLinks: false context for formal links', async () => {
-    await vfs.writeData('target', {}, "DATA");
-    await vfs.link('source', {}, 'target', {});
-
-    const result = await vfs.readData('source', {}, { followLinks: false });
-    // Should return the raw bytes of the source CID (which has a dummy payload)
-    const text = new TextDecoder().decode(result);
+  await t.test('should respect followLinks: false context for formal links', async () => {
+    const target = { path: 'target', parameters: {} };
+    const alias = { path: 'alias', parameters: {} };
+    await vfs.writeData(target, 'real');
+    await vfs.link(alias, target);
+    
+    const result = await vfs.read(alias, { followLinks: false });
+    const reader = result.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
     assert.ok(text.startsWith('vfs:/target'));
   });
+
+  await vfs.close();
 });

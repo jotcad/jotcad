@@ -11,7 +11,7 @@ int main() {
     std::cout << "Testing Box Primitive..." << std::endl;
     
     fs::Selector fulfilling = {"jot/Box", {{"size", {10.0, 10.0, 0.0}}}};
-    BoxOp<>::execute(&vfs, fulfilling, {10.0, 10.0, 0.0});
+    BoxOp<>::execute(&vfs, fulfilling, 10.0, 10.0, 0.0);
     
     Shape s = vfs.read<Shape>(fulfilling);
     if (!s.geometry.has_value()) {

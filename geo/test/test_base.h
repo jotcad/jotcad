@@ -1,37 +1,27 @@
 #pragma once
-#include <iostream>
-#include <cassert>
-#include <vector>
-#include <filesystem>
+#include "../../fs/cpp/include/vfs_node.h"
 #include "../impl/geometry.h"
 #include "../impl/shape.h"
-#include "../impl/processor.h"
-#include "../impl/protocols.h"
-#include "../../fs/cpp/include/vfs_node.h"
+#include <iostream>
+#include <vector>
+#include <cassert>
 
 namespace jotcad {
 namespace geo {
 
-using namespace jotcad::fs;
-
-// External registration function from ops_library
+// Forward declaration of the global registration function
 void register_all_ops();
 
-struct MockVFS : public VFSNode {
-    MockVFS() : VFSNode({"mock", "0.0.1", ".vfs_storage_mock", {}, 0}) {
-        std::filesystem::create_directories(".vfs_storage_mock");
-    }
-    ~MockVFS() {
-        std::filesystem::remove_all(".vfs_storage_mock");
+class MockVFS : public fs::VFSNode {
+public:
+    MockVFS() : fs::VFSNode({"mock", "1.0", ".vfs_storage_mock"}) {
+        jotcad::geo::register_all_ops();
     }
 
-    // Helper to resolve geometry
-    Geometry read_geo(const std::optional<Selector>& s) {
-        if (!s.has_value()) return Geometry();
-        VFSNode::VFSRequest req;
-        req.path = s->path;
-        req.parameters = s->parameters;
-        return read<Geometry>(req);
+    // Helper for tests to read geometry from a shape
+    Geometry read_geo(const std::optional<fs::Selector>& sel) {
+        if (!sel.has_value()) return {};
+        return read<Geometry>(*sel);
     }
 };
 

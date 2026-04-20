@@ -48,9 +48,6 @@ export const JotNode = (props) => {
         },
       },
     });
-
-    // Auto-evaluate on mount
-    evaluateJot();
   });
 
   const evaluateJot = async () => {

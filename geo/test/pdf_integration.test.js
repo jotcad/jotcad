@@ -1,21 +1,21 @@
-import { VFS, MeshLink } from './fs/src/index.js';
+import { VFS, MeshLink } from '../../fs/src/index.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 async function main() {
     const vfs = new VFS({ id: 'pdf-test-client' });
-    const mesh = new MeshLink(vfs, ['http://localhost:9091']);
+    const mesh = new MeshLink(vfs, ['http://localhost:20301']);
     
     await vfs.init();
     await mesh.start();
 
     console.log('[Test] Requesting Green Hexagon PDF...');
 
-    // Pipeline: jot/Hexagon/full -> jot/color(color="green") -> jot/pdf(filename="green_hex.pdf")
+    // Pipeline: jot/Hexagon/full -> jot/color -> jot/pdf
     const pdfSelector = {
         path: 'jot/pdf',
         parameters: {
-            filename: 'green_hex.pdf',
+            path: 'green_hex.pdf',
             $in: {
                 path: 'jot/color',
                 parameters: {
@@ -60,7 +60,7 @@ async function main() {
     console.log(`--------------------------------------------------`);
 
     mesh.stop();
-    vfs.close();
+    await vfs.close();
 }
 
 main().catch(err => {

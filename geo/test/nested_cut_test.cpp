@@ -13,11 +13,11 @@ int main() {
     std::cout << "Testing Nested Cut Operation..." << std::endl;
     
     fs::Selector s1_sel = {"jot/Box/1", {{"size", {50.0, 50.0, 0.0}}}};
-    BoxOp<>::execute(&vfs, s1_sel, {50.0, 50.0, 0.0});
+    BoxOp<>::execute(&vfs, s1_sel, 50.0, 50.0, 0.0);
     Shape s1 = vfs.read<Shape>(s1_sel);
 
     fs::Selector s2_sel = {"jot/Box/2", {{"size", {50.0, 50.0, 0.0}}}};
-    BoxOp<>::execute(&vfs, s2_sel, {50.0, 50.0, 0.0});
+    BoxOp<>::execute(&vfs, s2_sel, 50.0, 50.0, 0.0);
     Shape s2 = vfs.read<Shape>(s2_sel);
     
     fs::Selector group_sel = {"jot/group", {}};
@@ -25,7 +25,7 @@ int main() {
     Shape group = vfs.read<Shape>(group_sel);
 
     fs::Selector hole_sel = {"jot/Box/hole", {{"size", {10.0, 10.0, 0.0}}}};
-    BoxOp<>::execute(&vfs, hole_sel, {10.0, 10.0, 0.0});
+    BoxOp<>::execute(&vfs, hole_sel, 10.0, 10.0, 0.0);
     Shape hole = vfs.read<Shape>(hole_sel);
     
     fs::Selector cut_sel = {"jot/cut", {}};

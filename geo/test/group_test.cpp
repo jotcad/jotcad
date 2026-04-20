@@ -12,11 +12,11 @@ int main() {
     std::cout << "Testing Group Operation..." << std::endl;
     
     fs::Selector s1_sel = {"jot/Box/1", {{"size", {10, 10, 0}}}};
-    BoxOp<>::execute(&vfs, s1_sel, {10, 10, 0});
+    BoxOp<>::execute(&vfs, s1_sel, 10, 10, 0);
     Shape s1 = vfs.read<Shape>(s1_sel);
 
     fs::Selector s2_sel = {"jot/Box/2", {{"size", {20, 20, 0}}}};
-    BoxOp<>::execute(&vfs, s2_sel, {20, 20, 0});
+    BoxOp<>::execute(&vfs, s2_sel, 20, 20, 0);
     Shape s2 = vfs.read<Shape>(s2_sel);
     
     fs::Selector group_sel = {"jot/group", {}};

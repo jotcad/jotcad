@@ -144,21 +144,6 @@ export const blackboard = {
     // Subscribe to Schema Announcements from the mesh
     mesh.subscribe({ path: 'sys/schema', parameters: {} });
 
-    // Periodic Schema Announcement for Browser-Local Ops
-    setInterval(() => {
-      const catalog = {};
-      for (const path of vfs.providers.keys()) {
-        const schema = vfs.schemas.get(path);
-        if (schema) catalog[path] = schema;
-      }
-      if (Object.keys(catalog).length > 0) {
-        mesh.notify(
-          { path: 'sys/schema', parameters: { provider: vfs.id } },
-          { type: 'CATALOG_ANNOUNCEMENT', provider: vfs.id, catalog }
-        );
-      }
-    }, 5000);
-
     setInterval(() => {
       const nodes = new Map();
       nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [] });

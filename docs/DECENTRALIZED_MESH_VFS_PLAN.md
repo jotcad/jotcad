@@ -18,14 +18,33 @@ sovereignty and deterministic identity.
 - **Local-First Writes:** `vfs.write` commits data immediately and only to the
   node's local disk.
 
-### 2.2. Deterministic Identity (Selector-as-Address)
+### 2.2. Literal Identity (Address vs Content)
 
-- **Local CID Calculation:** Every node calculates the CID (SHA-256 hash) of a
-  request locally from its **Selector** (Path + Parameters).
-- **Silent Identity:** CIDs are NEVER sent across the network. Nodes only
-  exchange Selectors.
+The JotCAD mesh distinguishes between **Addressing** (where data is requested)
+and **Content** (what the data actually is).
 
-### 2.3. Demand-Driven Workflow (Silent Mesh)
+- **Selector-as-Address (Key):** Every request is standardizes into a Selector
+  object `{path, parameters}`. We hash this object (using sorted JCB binary
+  traversal) to create a stable **Address Key**.
+- **Data-as-Content (CID):** The binary artifact itself is hashed to produce its
+  **True CID**.
+- **Link-to-CID Architecture:** The Address Key identifies a `.meta` file that
+  points to one or more Content CIDs. This allows multiple ways of asking for
+  data to deduplicate into the same terminal bytes.
+
+### 2.3. No Semantic Magic (Literal Mesh)
+
+Normalization is strictly structural. We do not reorder original objects or fix
+user parameters (e.g., radius to diameter) during the hashing phase.
+- **Literal Hashing:** If a user asks for `radius`, they get a hash for `radius`.
+- **Semantic Aliasing:** Operators (Actors) use **Formal VFS Links** to bridge
+  different request styles (the "remainer") to canonical content.
+- **Deterministic Identity:** Both C++ and JavaScript utilize the **Safe-JCB
+  (Base64-encoded JCB)** format for hashing and storage. This ensures
+  byte-for-byte identity across languages without JSON serialization
+  discrepancies or ASCII escaping issues.
+
+### 2.4. Demand-Driven Workflow (Silent Mesh)
 
 - **No Proactive Gossip:** The mesh remains silent until a `READ` is initiated.
   There are no background state syncs.
@@ -141,15 +160,15 @@ implements a **Hop-by-Hop Pub-Sub** system.
 
 | Feature                  | Status | Details                                                |
 | :----------------------- | :----- | :----------------------------------------------------- |
-| **Fail-Fast Validation** | [DONE] | Synchronous JSON Schema enforcement in JS/C++.         |
+| **Content-Addressing**   | [DONE] | Pure separation between Selector Key and Content CID.  |
+| **JCB Protocol Sync**    | [DONE] | Cross-language identity via Canonical Binary hashing.  |
+| **Actor Fulfillment**    | [DONE] | Operators satisfy addresses via mandatory mesh writes. |
+| **Fail-Fast Validation** | [DONE] | Synchronous Schema enforcement in JS/C++.              |
 | **TTL Enforcement**      | [DONE] | Request expiration verified across mesh nodes.         |
 | **Stream Integrity**     | [DONE] | Partial/Corrupted stream detection via Content-Length. |
-| **Path Specialization**  | [DONE] | Refactored generic shapes into specialized sub-paths.  |
 | **Handshake Protocol**   | [DONE] | Symmetric peer discovery and reachability negotiation. |
 | **Mesh Pulse (Pub-Sub)** | [DONE] | Event-driven notifications with long-poll pooling.    |
-| **Throwing VFS Core**    | [DONE] | Unambiguous error signaling via VFSException.          |
-| **Formal Links**         | [DONE] | Recursive alias resolution for standardization.        |
-| **Typed Port Injection** | [DONE] | C++ operators use formal Shape struct and execute().   |
+| **Formal Links**         | [DONE] | Recursive alias resolution for semantic standardization.|
 
 ## 8. Aspirational Goals
 

@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
     fs::VFSNode::Config config;
     config.id = "geo-ops-node";
     config.port = port;
-    config.storage_dir = ".vfs_storage_geo-ops-node";
+    config.storage_dir = (argc > 2) ? argv[2] : ".vfs_storage_geo-ops-node";
 
     fs::VFSNode node(config);
     

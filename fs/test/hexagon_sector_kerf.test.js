@@ -65,7 +65,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
           source: {
             path: 'op/offset',
             parameters: {
-              radius: 5.0, // The Kerf
+              diameter: 5.0, // The Kerf
               source: {
                 path: 'op/loop',
                 parameters: {
@@ -83,7 +83,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
                               parameters: {
                                 source: {
                                   path: 'shape/hexagon',
-                                  parameters: { radius: 100 },
+                                  parameters: { diameter: 200 },
                                 },
                               },
                             },

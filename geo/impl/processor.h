@@ -36,11 +36,16 @@ struct Processor {
 
     template <typename Op, typename... Args, size_t... Is>
     static std::vector<uint8_t> dispatch(fs::VFSNode* vfs, const fs::VFSNode::VFSRequest& req, const std::vector<std::string>& keys, std::index_sequence<Is...>) {
-        // Operators receive (vfs, fulfilling_selector, ...args)
-        Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
-        
-        // Return the produced artifact data
-        return vfs->read<std::vector<uint8_t>>(req.selector);
+        try {
+            // Operators receive (vfs, fulfilling_selector, ...args)
+            Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
+            
+            // Return the produced artifact data
+            return vfs->read<std::vector<uint8_t>>(req.selector);
+        } catch (const std::exception& e) {
+            std::cerr << "[Processor] Dispatch Error in " << Op::path << ": " << e.what() << std::endl;
+            throw;
+        }
     }
 
     template <typename T>
