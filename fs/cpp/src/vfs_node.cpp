@@ -153,6 +153,8 @@ void VFSNode::listen() {
             sel.path = body.at("path").get<std::string>();
             sel.parameters = body.value("parameters", json::object());
             
+            std::cout << "[VFSNode " << config_.id << "] /read request for " << sel.path << std::endl;
+
             VFSRequest vfs_req;
             vfs_req.selector = sel;
             vfs_req.stack = body.value("stack", std::vector<std::string>());
@@ -300,7 +302,7 @@ bool VFSNode::validate_selector(const VFSRequest& req, std::string& error_out) {
 
 std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vector<std::string> stack) {
     if (sel.path.empty() && !sel.parameters.contains("cid")) throw VFSException("Selector must have a path or CID", 400);
-    if (depth > 10) throw VFSException("Recursive link depth exceeded", 508);
+    if (depth > 20) throw VFSException("Recursive link depth exceeded", 508);
     
     // 1. Direct CID Check
     if (sel.parameters.contains("cid")) {
@@ -310,12 +312,6 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
 
     // 2. Address Lookup
     std::string addrKey = get_cid(sel);
-    // Cycle Detection
-    for (const auto& key : stack) {
-        if (key == addrKey) throw VFSException("Circular link detected for " + sel.path, 508);
-    }
-    stack.push_back(addrKey);
-
     if (has_local(addrKey)) {
         try {
             json meta; { std::lock_guard<std::mutex> lock(storage_mutex_); std::ifstream is((std::filesystem::path(config_.storage_dir) / (addrKey + ".meta")).string()); meta = json::parse(is); }
@@ -341,12 +337,21 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
         }
     }
     
+    // 3. Mesh Scan (Mesh-Routing Protection using Node IDs in stack)
+    for (const auto& id : stack) if (id == config_.id) return {};
+    std::vector<std::string> next_stack = stack; next_stack.push_back(config_.id);
+
     std::vector<std::string> target_urls; 
-    { std::lock_guard<std::mutex> lock(peer_mutex_); for (const auto& [id, url] : peers_) target_urls.push_back(url); }
+    { std::lock_guard<std::mutex> lock(peer_mutex_); for (const auto& [id, url] : peers_) {
+        bool seen = false;
+        for (const auto& sid : stack) if (sid == id) seen = true;
+        if (!seen) target_urls.push_back(url);
+    }}
+
     for (const auto& url : target_urls) {
         try {
-            httplib::Client cli(url); cli.set_read_timeout(10, 0);
-            json body = {{"path", sel.path}, {"parameters", sel.parameters}, {"stack", {config_.id}}};
+            httplib::Client cli(url); cli.set_read_timeout(5, 0);
+            json body = {{"path", sel.path}, {"parameters", sel.parameters}, {"stack", next_stack}};
             auto res = cli.Post("/read", body.dump(), "application/json");
             if (res && res->status == 200) {
                 std::vector<uint8_t> data(res->body.begin(), res->body.end());
@@ -367,8 +372,7 @@ void VFSNode::link(const Selector& src, const Selector& tgt) {
 std::string VFSNode::get_cid(const Selector& sel) {
     json s = {{"parameters", sel.parameters}, {"path", sel.path}};
     normalize_json(s);
-    std::vector<uint8_t> jcb = encode_jcb(s);
-    return vfs_hash256(jcb);
+    return vfs_hash256_str(encode_safe(s));
 }
 
 bool VFSNode::has_local(const std::string& cid) {

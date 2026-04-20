@@ -10,7 +10,8 @@ export {
   MemoryStorage, 
   normalizeSelector, 
   encodeJCB, 
-  decodeJCB 
+  decodeJCB,
+  WebReadableStream
 } from './vfs_core.js';
 
 export { MeshLink } from './mesh_link.js';

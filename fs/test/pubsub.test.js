@@ -25,7 +25,7 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
   // Mock direct peering (bypass HTTP for unit test)
   const connect = (mA, mB) => {
     const peerA = {
-      id: mB.vfs.id,
+      neighborId: mB.vfs.id,
       subscribe: (s, e, st) => {
         mB.addInterest(mA.vfs.id, s, e, st);
         return Promise.resolve();
@@ -36,7 +36,7 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
       },
     };
     const peerB = {
-      id: mA.vfs.id,
+      neighborId: mA.vfs.id,
       subscribe: (s, e, st) => {
         mA.addInterest(mB.vfs.id, s, e, st);
         return Promise.resolve();

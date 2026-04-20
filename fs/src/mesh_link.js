@@ -296,6 +296,7 @@ export class MeshLinkBase {
 
   async addPeer(url) {
     url = url.replace(/\/$/, '');
+    console.log(`[MeshLink ${this.vfs.id}] Attempting to add peer at ${url}`);
     if (this.connecting.has(url)) return;
     this.connecting.add(url);
     try {
@@ -305,19 +306,22 @@ export class MeshLinkBase {
         body: JSON.stringify({ id: this.vfs.id, url: this.localUrl }),
         signal: this.abortController.signal || AbortSignal.timeout(5000),
       });
+      console.log(`[MeshLink ${this.vfs.id}] Register response status: ${resp.status}`);
       if (resp.ok) {
         const info = await resp.json();
+        console.log(`[MeshLink ${this.vfs.id}] Register info:`, info);
         if (info.id && info.id !== this.vfs.id) {
           if (!this.peers.has(info.id)) {
             const conn = new ForwardConnection(info.id, url, this.fetch, { localUrl: this.localUrl, signal: this.abortController.signal });
             this.peers.set(info.id, conn);
+            console.log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id}`);
             this.notify({ path: 'sys/topo' }, { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
           }
           if (info.reachability === 'REVERSE') this.listenLoop(url);
           return info.id;
         }
       }
-    } catch (e) { } finally { this.connecting.delete(url); }
+    } catch (e) { console.error(`[MeshLink ${this.vfs.id}] Handshake failed for ${url}:`, e.message); } finally { this.connecting.delete(url); }
   }
 
   async probeDirectReachability(url) {
@@ -355,12 +359,12 @@ export class MeshLinkBase {
     const s = normalizeSelector(selector);
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     
-    if (stack.includes(this.vfs.id)) return null;
-    const nextStack = [...stack, this.vfs.id];
+    const nextStack = stack.includes(this.vfs.id) ? stack : [...stack, this.vfs.id];
     const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
     
     if (targetConns.length === 0) return null;
     const fetchPromises = targetConns.map(async (conn) => {
+      console.log(`[MeshLink ${this.vfs.id}] Requesting from peer: ${conn.neighborId}`);
       const resp = await conn.read(s, { stack: nextStack, expiresAt });
       if (resp) return resp;
       throw new Error('Conn failed');
@@ -372,8 +376,7 @@ export class MeshLinkBase {
     const s = normalizeSelector(selector);
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
     
-    if (stack.includes(this.vfs.id)) return null;
-    const nextStack = [...stack, this.vfs.id];
+    const nextStack = stack.includes(this.vfs.id) ? stack : [...stack, this.vfs.id];
     const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
     
     if (targetConns.length === 0) return null;

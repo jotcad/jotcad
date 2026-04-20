@@ -16,6 +16,9 @@ instructions. All C++ implementations must link against **`-lcrypto`**.
 - **SAFE IDENTITY (Base64-JCB)**: Structured data is stored as ASCII-safe strings.
   - **The Flow**: `json` -> **JCB (Binary)** -> **Base64 (Safe String)** -> **Hash (CID)** -> **Disk**.
   - **Zero Escaping**: Base64 characters are safe constituents of JSON strings and never require escaping.
+- **PROTOCOL REFINEMENTS**:
+  - **Strict readData**: `readData(selector)` MUST receive a full Selector object (path + parameters). Passing split arguments is a terminal error.
+  - **Stack Protection**: The `stack` property in mesh requests contains Node IDs. Nodes MUST NOT dispatch to neighbors already present in the stack to prevent infinite routing loops.
 - **SELECTOR NORMALIZATION**: Simplified to structural standardization only.
   - **Identity via Traversal**: The JCB encoder walks keys in alphabetical order for hashing. The source object remains untouched.
   - **No Semantic Magic**: Do NOT "fix" or transform user parameters (e.g., `radius` to `diameter`) during normalization.

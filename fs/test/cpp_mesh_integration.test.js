@@ -41,6 +41,7 @@ test('C++ Native Node Integration', async (t) => {
       ...process.env,
       PEER_ID: 'cpp-test-node',
     },
+    stdio: 'inherit',
   });
 
   // Wait for C++ node to be healthy
@@ -116,7 +117,7 @@ test('C++ Native Node Integration', async (t) => {
     } });
     assert.ok(result, 'Box provisioning should return a Shape');
     assert.strictEqual(result.tags.type, 'box');
-    const geo = await jsVfs.readData('geo/mesh', result.geometry.parameters);
+    const geo = await jsVfs.readData(result.geometry);
     const geoText = new TextDecoder().decode(geo);
     assert.ok(geoText.includes('v 10.000000'), 'Should contain x coordinate');
   });

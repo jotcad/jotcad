@@ -5,11 +5,13 @@ import {
   normalizeSelector, 
   getCID, 
   getSelectorKey, 
+  encodeSafe,
+  decodeSafe,
   encodeJCB, 
   decodeJCB 
 } from './cid.js';
 
-export { normalizeSelector, getCID, getSelectorKey, encodeJCB, decodeJCB };
+export { normalizeSelector, getCID, getSelectorKey, encodeSafe, decodeSafe, encodeJCB, decodeJCB };
 
 export const WebReadableStream = globalThis.ReadableStream;
 
@@ -170,7 +172,7 @@ export class VFS {
     return null;
   }
 
-  async write(selector, streamOrBytes, info = {}) {
+  async write(selector, streamOrBytes, context = {}) {
     this._checkClosed();
     
     let bytes;
@@ -199,29 +201,34 @@ export class VFS {
     }
 
     const cid = await getCID(bytes);
-    await this.storage.set(cid, bytes);
-
     const s = normalizeSelector(selector);
     const addrKey = await getSelectorKey(s);
-    
-    await this.storage.set(addrKey, null, {
-        ...info,
+
+    const info = {
         cid,
         path: s.path,
         parameters: s.parameters,
-        state: 'AVAILABLE'
-    });
+        state: 'AVAILABLE',
+        ...context
+    };
+
+    await this.storage.set(cid, bytes, info);
+    await this.storage.set(addrKey, null, info);
 
     this.events.emit('state', { path: s.path, parameters: s.parameters, cid, state: 'AVAILABLE' });
     return { cid };
   }
 
-  async writeData(selector, data) {
-    return await this.write(selector, data);
+  async writeData(selector, data, context = {}) {
+    const bytes = (data instanceof Uint8Array) ? data : new TextEncoder().encode(JSON.stringify(data));
+    return await this.write(selector, bytes, context);
   }
 
   async readData(selector, context = {}) {
+    if (!selector) throw new Error('VFS.readData: Missing required selector');
     const s = normalizeSelector(selector);
+    if (!s.path && !s.parameters?.cid) throw new Error('VFS.readData: Selector must have a path or CID');
+    
     const stream = await this.read(s, context);
     if (!stream) return null;
     const chunks = [];
@@ -343,8 +350,59 @@ export class VFS {
 
   async spy(selector, context = {}) {
     const s = normalizeSelector(selector);
-    if (this.mesh) return await this.mesh.spy(s, context);
-    return null;
+    const results = [];
+    const nodeId = this.id;
+
+    // 1. Local Scan (Contributions from local storage)
+    if (typeof this.storage.iterateMeta === 'function') {
+      const storageResults = [];
+      for await (const entry of this.storage.iterateMeta()) {
+        const info = entry.info || {};
+        if (info.path && (info.path === s.path || (s.path.endsWith('*') && info.path.startsWith(s.path.slice(0, -1))))) {
+           // Create a VFS Bundle-style entry for this found artifact
+           const payload = {
+               ...info,
+               metadata: info,
+               provider: info.provider || nodeId
+           };
+           storageResults.push(new TextEncoder().encode(`\n=${JSON.stringify(payload).length} discovery\n${JSON.stringify(payload)}`));
+        }
+      }
+      if (storageResults.length > 0) {
+          results.push(new ReadableStream({
+              start(controller) {
+                  for (const chunk of storageResults) controller.enqueue(chunk);
+                  controller.close();
+              }
+          }));
+      }
+    }
+
+    // 2. Mesh Scan
+    if (this.mesh) {
+        const meshStream = await this.mesh.spy(s, context);
+        if (meshStream) results.push(meshStream);
+    }
+
+    if (results.length === 0) return null;
+    if (results.length === 1) return results[0];
+
+    // Multiplex all contributors
+    return new ReadableStream({
+        async start(controller) {
+          for (const s of results) {
+            const reader = s.getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } catch (e) {} finally { reader.releaseLock(); }
+          }
+          controller.close();
+        }
+    });
   }
 
   async _getStorageInfo(key) {
