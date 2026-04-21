@@ -28,11 +28,11 @@ vfs.registerProvider('jot/pdf', async (v, selector) => {
 
         // 2. Perform the export (Write to local disk)
         const outPath = path.resolve(pdfPath);
-        await fsPromises.writeFile(outPath, data);
+        const fileContent = typeof data === 'string' ? data : (data instanceof Uint8Array ? data : JSON.stringify(data));
+        await fsPromises.writeFile(outPath, fileContent);
         console.log(`[Export Node] Exported to ${outPath}`);
 
         // 3. Fulfill the request (Tee Pattern: return the input metadata)
-        // We write the status to the mesh and return it
         const status = { 
             type: 'sys/export_status',
             exportedAt: new Date().toISOString(), 
@@ -40,8 +40,7 @@ vfs.registerProvider('jot/pdf', async (v, selector) => {
             size: data.length 
         };
         
-        await v.writeData(selector, status);
-        return null; // writeData already satisfied the address
+        return status;
 
     } catch (err) {
         console.error(`[Export Node ERROR] ${err.message}`);

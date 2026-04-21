@@ -12,7 +12,10 @@ import {
   getSelectorKey,
 } from '../src/index.js';
 
-const CPP_OPS_PATH = path.resolve('../geo/bin/ops');
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CPP_OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
 const PORT_CPP = 20101;
 const PORT_JS = 20102;
 const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');

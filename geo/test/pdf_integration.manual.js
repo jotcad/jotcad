@@ -34,7 +34,7 @@ async function main() {
     console.log('[Test] Reading PDF Selector:', JSON.stringify(pdfSelector, null, 2));
     
     // This triggers the chain
-    const shapeResult = await vfs.readData(pdfSelector.path, pdfSelector.parameters);
+    const shapeResult = await vfs.readData(pdfSelector);
     
     if (!shapeResult) {
         console.error('[Test] FAILED: Could not resolve PDF op chain');

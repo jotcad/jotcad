@@ -126,10 +126,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
       };
 
       console.log('[Test Pipeline] Requesting structured export...');
-      const result = await clientVfs.readData(
-        pipeline.path,
-        pipeline.parameters
-      );
+      const result = await clientVfs.readData(pipeline);
 
       assert.ok(result, 'Export should return metadata');
       
@@ -166,8 +163,10 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        path: 'jot/Hexagon/full',
-        parameters: { diameter: 10 },
+        selector: {
+            path: 'jot/Hexagon/full',
+            parameters: { diameter: 10 },
+        },
         expiresAt: past,
       }),
     });
