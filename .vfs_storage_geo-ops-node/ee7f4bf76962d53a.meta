@@ -1,0 +1,1 @@
+{"parameters":{"$in":{"parameters":{"diameter":32},"path":"jot/Hexagon/full"},"tools":[{"parameters":{"$in":{"parameters":{"diameter":32},"path":"jot/Hexagon/full"},"size":[10]},"path":"jot/Triangle/equilateral"}]},"path":"jot/cut","state":"AVAILABLE"}

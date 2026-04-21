@@ -1,0 +1,11 @@
+{
+  "source": {
+    "type": "selector",
+    "description": "The VFS path or selector to export"
+  },
+  "filename": {
+    "type": "string",
+    "default": "download.bin",
+    "description": "The destination filename"
+  }
+}

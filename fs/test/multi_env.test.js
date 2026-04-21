@@ -47,8 +47,8 @@ test('Multi-Environment Mesh Coordination', async (t) => {
     const p = 'env/sharing/test';
     const data = { msg: 'from node to simulated browser' };
 
-    await vfsNode.writeData(p, data);
-    const result = await browserVfs.readData(p, {});
+    await vfsNode.writeData({ path: p, parameters: {} }, data);
+    const result = await browserVfs.readData({ path: p, parameters: {} }, {});
 
     assert.deepStrictEqual(result, data);
   });

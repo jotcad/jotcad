@@ -174,10 +174,13 @@ export async function getCID(data) {
 
 /**
  * getSelectorKey: Identity of a mesh address.
- * No smart normalization here; encodeJCB handles key ordering.
+ * Uses deterministic JCB to ensure that {path:'a', parameters:{b:1, c:2}}
+ * and {path:'a', parameters:{c:2, b:1}} produce the same key.
  */
 export async function getSelectorKey(selector) {
-  return await jcbHash(selector);
+  const s = normalizeSelector(selector);
+  // Ensure parameters are sorted by using encodeJCB which handles key ordering.
+  return await jcbHash(s);
 }
 
 /**

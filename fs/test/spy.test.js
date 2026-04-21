@@ -79,8 +79,8 @@ test('Discovery Protocol (Spy)', async (t) => {
       combined.includes('"shape/sphere"'),
       'Should contain sphere selector'
     );
-    assert.ok(combined.includes('"from": "A"'), 'Should contain data from A');
-    assert.ok(combined.includes('"from": "B"'), 'Should contain data from B');
+    assert.ok(combined.includes('"from":"A"') || combined.includes('"from": "A"'), 'Should contain data from A');
+    assert.ok(combined.includes('"from":"B"') || combined.includes('"from": "B"'), 'Should contain data from B');
 
     // Verify VFS bundle structure (\n=LEN NAME\nCONTENT)
     assert.ok(combined.startsWith('\n='), 'Should start with VFS header');

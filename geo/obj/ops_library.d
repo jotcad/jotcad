@@ -2145,8 +2145,8 @@ obj/ops_library.o: ops_library.cc hexagon_op.h impl/protocols.h \
  ../geometry/native/include/CGAL/include/CGAL/Boolean_set_operations_2/oriented_side.h \
  ../geometry/native/include/CGAL/include/CGAL/Boolean_set_operations_2/symmetric_difference.h \
  ../geometry/native/include/CGAL/include/CGAL/Polygon_nop_decomposition_2.h \
- outline_op.h points_op.h nth_op.h rotate_op.h impl/matrix.h color_op.h \
- group_op.h path_op.h corners_op.h on_op.h cut_op.h
+ outline_op.h points_op.h impl/matrix.h nth_op.h rotate_op.h color_op.h \
+ group_op.h path_op.h corners_op.h on_op.h cut_op.h pdf_op.h impl/pdf.h
 hexagon_op.h:
 impl/protocols.h:
 ../fs/cpp/vendor/json.hpp:
@@ -4305,12 +4305,14 @@ impl/offset.h:
 ../geometry/native/include/CGAL/include/CGAL/Polygon_nop_decomposition_2.h:
 outline_op.h:
 points_op.h:
+impl/matrix.h:
 nth_op.h:
 rotate_op.h:
-impl/matrix.h:
 color_op.h:
 group_op.h:
 path_op.h:
 corners_op.h:
 on_op.h:
 cut_op.h:
+pdf_op.h:
+impl/pdf.h:

@@ -18,7 +18,8 @@ export class DiskStorage {
 
   async has(cid) {
     const dataFile = path.join(this.root, `${cid}.data`);
-    const exists = fs.existsSync(dataFile);
+    const metaFile = path.join(this.root, `${cid}.meta`);
+    const exists = fs.existsSync(dataFile) || fs.existsSync(metaFile);
     if (exists) console.log(`[DiskStorage ${this.root}] has(${cid.slice(0, 8)}) -> TRUE`);
     return exists;
   }
@@ -52,14 +53,35 @@ export class DiskStorage {
         await fsPromises.writeFile(dataFile, '');
     } else {
         const out = fs.createWriteStream(dataFile);
-        const nodeStream = streamOrBytes.getReader ? Readable.fromWeb(streamOrBytes) : streamOrBytes;
-        nodeStream.on('data', (chunk) => { bytesWritten += chunk.length; });
-        await pipeline(nodeStream, out);
+        try {
+            if (streamOrBytes.getReader) {
+                const reader = streamOrBytes.getReader();
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        if (value) {
+                            bytesWritten += value.length;
+                            out.write(value);
+                        }
+                    }
+                    await new Promise((resolve) => out.end(resolve));
+                } finally { reader.releaseLock(); }
+            } else {
+                // Node stream
+                streamOrBytes.on('data', (chunk) => { bytesWritten += chunk.length; });
+                await pipeline(streamOrBytes, out);
+            }
+        } catch (err) {
+            out.destroy();
+            await fsPromises.unlink(dataFile).catch(() => {});
+            throw err;
+        }
     }
 
-    if (expectedSize !== undefined && bytesWritten !== expectedSize) {
+    if (streamOrBytes !== null && expectedSize !== undefined && bytesWritten !== expectedSize) {
         await fsPromises.unlink(dataFile).catch(() => {});
-        throw new Error(`Disk write aborted or corrupted: Expected ${expectedSize} bytes, got ${bytesWritten}`);
+        throw new Error(`DiskStorage.set: Size mismatch. Expected 100 bytes (got ${bytesWritten})`);
     }
 
     await fsPromises.writeFile(metaFile, JSON.stringify(info));
@@ -78,7 +100,7 @@ export class DiskStorage {
       const files = await fsPromises.readdir(this.root);
       for (const file of files) {
         if (file.endsWith('.meta')) {
-          const cid = file.slice(0, -5);
+          const cid = file.slice(0, -5); // Extract CID from filename (excluding .meta)
           const meta = await fsPromises.readFile(path.join(this.root, file), 'utf8');
           yield { cid, info: JSON.parse(meta) };
         }
@@ -90,17 +112,17 @@ export class DiskStorage {
 export class VFS extends CoreVFS {
   constructor(options = {}) {
     const { storage, id } = options;
+    const vfsId = id || crypto.randomUUID();
     super({
-      id,
-      storage: storage || new DiskStorage(path.resolve('.vfs_storage_' + (id || 'node'))),
+      id: vfsId,
+      storage: storage || new DiskStorage(path.resolve('.vfs_storage_' + vfsId)),
     });
   }
 
   async init() {
     await super.init();
-    const shouldWipe = process.env.VFS_EPHEMERAL_WIPE === 'true' || 
-                       process.env.NODE_ENV === 'test' ||
-                       process.argv.includes('--test');
+    const isTestRunner = process.argv.some(arg => arg.includes('test')) || process.env.NODE_ENV === 'test';
+    const shouldWipe = process.env.VFS_EPHEMERAL_WIPE === 'true' || isTestRunner;
 
     if (shouldWipe) {
       console.log(`[VFS ${this.id}] EPHEMERAL WIPE: Cleaning storage directory: ${this.storage.root}`);

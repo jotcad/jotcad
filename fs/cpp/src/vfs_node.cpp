@@ -499,8 +499,9 @@ template<> json VFSNode::read<json>(const Selector& sel) {
 
 template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data) { return write_bytes(sel, data); }
 template<> Selector VFSNode::write<json>(const Selector& sel, const json& data) {
-    std::string safe = encode_safe(data);
-    std::vector<uint8_t> bytes(safe.begin(), safe.end());
+    std::string raw_json = data.dump();
+    std::vector<uint8_t> bytes(raw_json.begin(), raw_json.end());
+    // write_bytes will automatically hash the JCB binary form for the CID
     return write_bytes(sel, bytes);
 }
 template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data) {

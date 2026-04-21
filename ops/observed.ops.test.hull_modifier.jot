@@ -1,0 +1,26 @@
+
+=79 files/observed.ops.test.hull_modifier.jot
+{"geometry":"c1696b7c4adaf56e80d692346f4795ba2a59fea3994dbbd21d3c3187cddae735"}
+=249 assets/text/c1696b7c4adaf56e80d692346f4795ba2a59fea3994dbbd21d3c3187cddae735
+V 8
+v 1 -1 11 1 -1 11
+v -1 1 -1 -1 1 -1
+v -1 -1 -1 -1 -1 -1
+v -1 -1 11 -1 -1 11
+v 1 1 11 1 1 11
+v 1 1 -1 1 1 -1
+v -1 1 11 -1 1 11
+v 1 -1 -1 1 -1 -1
+T 12
+t 0 7 5
+t 1 2 6
+t 6 3 0
+t 2 3 6
+t 4 0 5
+t 1 6 5
+t 4 6 0
+t 6 4 5
+t 3 2 0
+t 2 7 0
+t 7 2 5
+t 2 1 5

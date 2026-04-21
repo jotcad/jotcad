@@ -116,7 +116,8 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
       depth: 0,
     } });
     assert.ok(result, 'Box provisioning should return a Shape');
-    assert.strictEqual(result.tags.type, 'box');
+    assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
+    assert.strictEqual(result.tags?.type, 'box');
     const geo = await jsVfs.readData(result.geometry);
     const geoText = new TextDecoder().decode(geo);
     assert.ok(geoText.includes('v 10.000000'), 'Should contain x coordinate');
@@ -127,6 +128,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
       size: [50],
     } });
     assert.ok(result, 'Triangle provisioning should return a Shape');
-    assert.strictEqual(result.tags.type, 'triangle');
+    assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
+    assert.strictEqual(result.tags?.type, 'triangle');
   });
 });

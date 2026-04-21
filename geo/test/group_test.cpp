@@ -20,7 +20,7 @@ int main() {
     Shape s2 = vfs.read<Shape>(s2_sel);
     
     fs::Selector group_sel = {"jot/group", {}};
-    GroupOp<>::execute(&vfs, group_sel, {s1, s2});
+    GroupOp<>::execute(&vfs, group_sel, Shape{}, {s1, s2});
     
     Shape out = vfs.read<Shape>(group_sel);
     if (out.components.size() != 2) {

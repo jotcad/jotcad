@@ -1,332 +1,414 @@
-import { EventEmitter } from 'events';
-import crypto from 'crypto';
-import fs from 'fs';
-import fsPromises from 'fs/promises';
-import path from 'path';
-import { pipeline } from 'stream/promises';
-
-/**
- * Normalizes arguments into a standard selector object.
- */
-const normalizeSelector = (pathOrSelector, parameters) => {
-  if (typeof pathOrSelector === 'string') {
-    return { path: pathOrSelector, parameters: parameters || {} };
-  }
-  if (pathOrSelector && typeof pathOrSelector === 'object') {
-    return {
-      path: pathOrSelector.path,
-      parameters: pathOrSelector.parameters || parameters || {},
-    };
-  }
-  throw new Error(`Invalid selector: ${pathOrSelector}`);
-};
-
-/**
- * Generates a unique Content-ID (CID) for a selector.
- */
-const getCID = (selector) => {
-  const { path, parameters = {} } = selector;
-  if (!path) throw new Error('Selector must have a path');
-  const hash = crypto.createHash('sha256');
-  hash.update(path);
-  const sortedParams = Object.keys(parameters)
-    .sort()
-    .reduce((acc, key) => {
-      acc[key] = parameters[key];
-      return acc;
-    }, {});
-  hash.update(JSON.stringify(sortedParams));
-  return hash.digest('hex');
-};
+import { EventEmitter } from './event_emitter.js';
+import { MemoryStorage } from './memory_storage.js';
+import { 
+  normalizeSelector, 
+  getCID, 
+  getSelectorKey, 
+  encodeSafe, 
+  decodeSafe, 
+  encodeJCB, 
+  decodeJCB 
+} from './cid.js';
 
 export class VFSClosedError extends Error {
-  constructor() {
-    super('VFS instance has been closed.');
-    this.name = 'VFSClosedError';
-  }
-}
-
-export class MemoryStorage {
-  constructor() {
-    this.results = new Map();
-  }
-  async get(cid) {
-    const entry = this.results.get(cid);
-    return entry ? entry.stream : null;
-  }
-  async set(cid, stream, info) {
-    this.results.set(cid, { info, stream });
-  }
-  async has(cid) {
-    return this.results.has(cid);
-  }
-  async delete(cid) {
-    this.results.delete(cid);
-  }
-  async close() {
-    this.results.clear();
-  }
-}
-
-export class DiskStorage {
-  constructor(root) {
-    this.root = root;
-    if (!fs.existsSync(this.root)) {
-      fs.mkdirSync(this.root, { recursive: true });
-    }
-  }
-  async get(cid) {
-    const dataFile = path.join(this.root, `${cid}.data`);
-    if (!fs.existsSync(dataFile)) return null;
-    return fs.createReadStream(dataFile);
-  }
-  async set(cid, stream, info) {
-    const metaFile = path.join(this.root, `${cid}.meta`);
-    const dataFile = path.join(this.root, `${cid}.data`);
-    await fsPromises.writeFile(metaFile, JSON.stringify(info, null, 2));
-    const out = fs.createWriteStream(dataFile);
-    await pipeline(stream, out);
-  }
-  async has(cid) {
-    return fs.existsSync(path.join(this.root, `${cid}.data`));
-  }
-  async delete(cid) {
-    const metaFile = path.join(this.root, `${cid}.meta`);
-    const dataFile = path.join(this.root, `${cid}.data`);
-    if (fs.existsSync(metaFile)) await fsPromises.unlink(metaFile);
-    if (fs.existsSync(dataFile)) await fsPromises.unlink(dataFile);
-  }
-  async close() {}
+  constructor() { super('VFS is closed'); this.name = 'VFSClosedError'; }
 }
 
 export class VFS {
-  constructor(options = {}) {
-    this.id = crypto.randomUUID();
-    this.states = new Map();
-    this.storage = options.storage || new MemoryStorage();
+  constructor({ id, storage } = {}) {
+    this.id = id || 'node';
+    this.storage = storage || new MemoryStorage(this.id);
+    this.providers = new Map();
     this.events = new EventEmitter();
-    this.peers = new Set();
+    this.mesh = null;
     this.closed = false;
+    this.activeWait = new Map();
+    this.schemas = new Map();
   }
 
-  async close() {
-    if (this.closed) return;
-    this.closed = true;
-    this.events.emit('state', { state: 'CLOSED' });
-    this.events.removeAllListeners();
-    await this.storage.close();
-  }
+  async init() { await this.storage.init(); }
 
-  _checkClosed() {
-    if (this.closed) throw new VFSClosedError();
-  }
+  _checkClosed() { if (this.closed) throw new VFSClosedError(); }
 
-  connect(other) {
-    this._checkClosed();
-    this.peers.add(other);
-    other.peers.add(this);
-  }
-
-  _emit(event) {
-    if (this.closed) return;
-    if (!event.source) event.source = this.id;
-    this.events.emit('state', event);
-    if (event.source === this.id) {
-      for (const peer of this.peers) {
-        peer.receive(event);
-      }
+  registerProvider(pattern, handler, options = {}) { 
+    this.providers.set(pattern, handler); 
+    if (options.schema) {
+        this.addSchema(pattern, options.schema);
     }
   }
 
-  async receive(event) {
-    if (this.closed) return;
-    const { cid, state, path, parameters } = event;
-    let info = this.states.get(cid);
-    if (!info) {
-      info = { path, parameters: parameters || {} };
-      this.states.set(cid, info);
+  _matches(s, t) {
+    if (!s || !t) return false;
+    if (s.path.endsWith('*')) {
+      if (!t.path.startsWith(s.path.slice(0, -1))) return false;
+    } else if (s.path !== t.path) return false;
+    for (const [k, v] of Object.entries(s.parameters)) {
+      if (JSON.stringify(v) !== JSON.stringify(t.parameters[k])) return false;
     }
-    info.state = state;
-    if (state === 'AVAILABLE' && event.stream) {
-      await this.storage.set(cid, event.stream, info);
-    }
-    this.events.emit('state', event);
-  }
-
-  async status(pathOrSelector, parameters) {
-    this._checkClosed();
-    const s = normalizeSelector(pathOrSelector, parameters);
-    const cid = getCID(s);
-    const info = this.states.get(cid);
-    return info ? info.state : 'MISSING';
-  }
-
-  async tickle(pathOrSelector, parameters) {
-    this._checkClosed();
-    const s = normalizeSelector(pathOrSelector, parameters);
-    const cid = getCID(s);
-    let info = this.states.get(cid);
-    if (!info) {
-      info = { state: 'PENDING', path: s.path, parameters: s.parameters };
-      this.states.set(cid, info);
-      this._emit({
-        cid,
-        path: s.path,
-        parameters: info.parameters,
-        state: 'PENDING',
-      });
-    }
-    return info.state;
-  }
-
-  async read(pathOrSelector, parameters) {
-    this._checkClosed();
-    const s = normalizeSelector(pathOrSelector, parameters);
-    const cid = getCID(s);
-    await this.tickle(s);
-
-    let info = this.states.get(cid);
-    if (info.state === 'AVAILABLE') return this.storage.get(cid);
-
-    return new Promise((resolve, reject) => {
-      const onState = (event) => {
-        if (event.state === 'CLOSED') {
-          this.events.off('state', onState);
-          reject(new VFSClosedError());
-        } else if (event.cid === cid && event.state === 'AVAILABLE') {
-          this.events.off('state', onState);
-          resolve(this.storage.get(cid));
-        }
-      };
-      this.events.on('state', onState);
-    });
-  }
-
-  async lease(pathOrSelector, parameters, duration) {
-    this._checkClosed();
-    let s, d;
-    if (typeof parameters === 'number' && duration === undefined) {
-      s = normalizeSelector(pathOrSelector);
-      d = parameters;
-    } else {
-      s = normalizeSelector(pathOrSelector, parameters);
-      d = duration;
-    }
-    const cid = getCID(s);
-    let info = this.states.get(cid);
-    if (!info || info.state === 'AVAILABLE' || info.state === 'PROVISIONING')
-      return false;
-
-    info.state = 'PROVISIONING';
-    const leaseId = setTimeout(() => {
-      if (!this.closed && info.state === 'PROVISIONING') {
-        info.state = 'PENDING';
-        this._emit({
-          cid,
-          path: info.path,
-          parameters: info.parameters,
-          state: 'PENDING',
-        });
-      }
-    }, d);
-    info.activeLease = leaseId;
-    this._emit({
-      cid,
-      path: info.path,
-      parameters: info.parameters,
-      state: 'PROVISIONING',
-    });
     return true;
   }
 
-  async write(pathOrSelector, parameters, stream) {
-    this._checkClosed();
-    let s, str;
-    if (parameters && (parameters.on || parameters instanceof ReadableStream)) {
-      s = normalizeSelector(pathOrSelector);
-      str = parameters;
-    } else {
-      s = normalizeSelector(pathOrSelector, parameters);
-      str = stream;
-    }
-    const cid = getCID(s);
-    let info = this.states.get(cid);
-    if (!info) {
-      info = { path: s.path, parameters: s.parameters };
-      this.states.set(cid, info);
-    }
-    if (info.activeLease) {
-      clearTimeout(info.activeLease);
-      info.activeLease = null;
-    }
-    info.state = 'AVAILABLE';
-    await this.storage.set(cid, str, info);
-    this._emit({
-      cid,
-      path: info.path,
-      parameters: info.parameters,
-      state: 'AVAILABLE',
-      stream: str,
-    });
+  addSchema(path, schema) {
+    this.schemas.set(path, schema);
   }
 
-  async *watch(selector, options = {}) {
-    this._checkClosed();
-    const s = normalizeSelector(selector);
-    const states = options.states || [];
-    const queue = [];
-    let resolveQueue;
-
-    const onState = (event) => {
-      if (event.state === 'CLOSED') {
-        queue.push(event);
-        if (resolveQueue) {
-          resolveQueue();
-          resolveQueue = null;
+  validateSelector(selector) {
+    if (!selector || typeof selector !== 'object') throw new Error('Invalid selector');
+    if (typeof selector.path !== 'string') throw new Error('Selector path must be a string');
+    
+    const schema = this.schemas.get(selector.path);
+    if (schema) {
+      const params = selector.parameters || {};
+      if (schema.required) {
+        for (const req of schema.required) {
+            if (params[req] === undefined) {
+                throw new Error(`Missing required parameter '${req}'`);
+            }
         }
-        return;
       }
-      let pathMatch =
-        s.path === '*' ||
-        (s.path.endsWith('*')
-          ? event.path.startsWith(s.path.slice(0, -1))
-          : event.path === s.path);
-      if (pathMatch) {
-        let paramsMatch = true;
-        if (s.parameters) {
-          for (const [k, v] of Object.entries(s.parameters)) {
-            if (event.parameters[k] !== v) {
-              paramsMatch = false;
-              break;
+      if (schema.properties) {
+        for (const [name, def] of Object.entries(schema.properties)) {
+          if (params[name] !== undefined) {
+            if (def.type === 'number' && typeof params[name] !== 'number') {
+              throw new Error(`Invalid parameter type for '${name}'`);
+            }
+            if (def.enum && !def.enum.includes(params[name])) {
+              throw new Error(`Invalid enum value for '${name}'`);
             }
           }
         }
-        if (
-          paramsMatch &&
-          (states.length === 0 || states.includes(event.state))
-        ) {
-          queue.push(event);
-          if (resolveQueue) {
-            resolveQueue();
-            resolveQueue = null;
+      }
+    }
+  }
+
+  async getCID(data) { return getCID(data); }
+
+  async read(selector, context = {}) {
+    const s = normalizeSelector(selector);
+    const { expiresAt = Date.now() + 10000 } = context;
+    
+    // VALIDATE EARLY - this throws if invalid
+    try {
+        this.validateSelector(s);
+    } catch (err) {
+        throw err;
+    }
+    
+    if (Date.now() > expiresAt) {
+        console.log(`[VFS] read() already EXPIRED for ${s.path}`);
+        return null;
+    }
+
+    // New packet: clean stack, inherit deadline
+    const packetContext = { ...context, stack: [], expiresAt };
+
+    if (context.followLinks === false) {
+        const addrKey = await getSelectorKey(s);
+        if (await this.storage.has(addrKey)) {
+            return this.storage.get(addrKey);
+        }
+        return null;
+    }
+
+    const result = await this._readResult(s, packetContext);
+    if (result && result.success) return this.storage.get(result.cid);
+    
+    if (result && result.error && !['Expired', 'Backflow'].includes(result.error)) {
+        throw new Error(result.error);
+    }
+    return null;
+  }
+
+  async write(selector, streamOrBytes, context = {}) {
+    this._checkClosed();
+    let bytes, cid, type = 'bytes';
+
+    if (streamOrBytes instanceof Uint8Array) {
+        bytes = streamOrBytes;
+        cid = await getCID(bytes);
+    } else if (typeof streamOrBytes === 'string') {
+        bytes = new TextEncoder().encode(streamOrBytes);
+        cid = await getCID(streamOrBytes);
+        type = 'string';
+    } else if (streamOrBytes === null) {
+        bytes = new Uint8Array();
+        cid = await getCID(bytes);
+        type = 'null';
+    } else if (streamOrBytes && typeof streamOrBytes.getReader === 'function') {
+        const chunks = [];
+        const reader = streamOrBytes.getReader();
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) chunks.push(value);
+            }
+        } finally { reader.releaseLock(); }
+        const len = chunks.reduce((acc, c) => acc + c.length, 0);
+        bytes = new Uint8Array(len);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        cid = await getCID(bytes);
+    } else {
+        cid = await getCID(streamOrBytes);
+        bytes = new TextEncoder().encode(JSON.stringify(streamOrBytes));
+        type = 'json';
+    }
+
+    const s = normalizeSelector(selector);
+    const addrKey = await getSelectorKey(s);
+
+    const info = {
+        type,
+        ...context,
+        path: s.path,
+        parameters: s.parameters,
+        state: 'AVAILABLE',
+        cid
+    };
+    if (type === 'json' && info.type !== 'bytes') info.type = 'json';
+    delete info.expiresAt;
+
+    if (type === 'json' || type === 'string') info.data = streamOrBytes;
+
+    // Extract tags from original data if it's a Shape
+    if (streamOrBytes && typeof streamOrBytes === 'object' && streamOrBytes.tags) {
+        info.tags = { ...info.tags, ...streamOrBytes.tags };
+    }
+
+    // Use consistently computed 'bytes' (drained from stream) for storage
+    await this.storage.set(cid, bytes, info);
+    await this.storage.set(addrKey, null, info);
+
+    this.events.emit('state', { path: s.path, parameters: s.parameters, cid, state: 'AVAILABLE' });
+    return { cid };
+  }
+
+  async writeData(selector, data, context = {}) { return await this.write(selector, data, context); }
+
+  async readData(selector, context = {}) {
+    if (!selector) throw new Error('VFS.readData: Missing required selector');
+    const s = normalizeSelector(selector);
+    const { expiresAt = Date.now() + 10000 } = context;
+
+    const result = await this._readResult(s, { ...context, stack: [], expiresAt });
+    if (!result || !result.success) {
+        if (result?.error === 'Expired' || result?.error === 'Backflow') return null;
+        throw new Error(`VFS.readData: Failed to resolve selector ${JSON.stringify(s)}`);
+    }
+    
+    const stream = await this.storage.get(result.cid);
+    if (!stream) throw new Error(`VFS.readData: Failed to read stream for CID ${result.cid}`);
+
+    const chunks = [];
+    const reader = stream.getReader();
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    const meta = result.metadata || {};
+    if (meta.type === 'null') return null;
+    
+    let parsed;
+    if (meta.type === 'json' && meta.data && typeof meta.data === 'object') {
+        parsed = meta.data;
+    } else if (meta.type === 'string' && typeof meta.data === 'string') {
+        return meta.data;
+    } else {
+        const text = new TextDecoder().decode(bytes);
+        const trimmed = text.trim();
+        try {
+            const decoded = decodeSafe(trimmed);
+            if (decoded !== undefined) parsed = decoded;
+        } catch (e) {}
+        
+        if (parsed === undefined) {
+            try {
+                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+                    parsed = JSON.parse(trimmed);
+                }
+            } catch (e) {}
+        }
+    }
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        // Restore tags from metadata (content identity)
+        if (meta.tags) {
+            parsed.tags = { ...meta.tags, ...parsed.tags };
+        }
+        return parsed;
+    }
+
+    if (meta.type === 'string') return new TextDecoder().decode(bytes);
+    return parsed || bytes;
+  }
+
+  async readText(selector, context = {}) {
+    const data = await this.readData(selector, context);
+    if (data === null || data === undefined) return null;
+    const serializeShape = async (shape) => {
+      if (shape.geometry) return await this.readText(shape.geometry, context);
+      let out = '';
+      if (shape.components && Array.isArray(shape.components)) {
+        for (const child of shape.components) out += await serializeShape(child);
+      }
+      return out;
+    };
+    if (typeof data === 'string') return data;
+    if (data instanceof Uint8Array) return new TextDecoder().decode(data);
+    if (typeof data === 'object' && !Array.isArray(data)) return await serializeShape(data);
+    return JSON.stringify(data);
+  }
+
+  async link(src, tgt) {
+    this._checkClosed();
+    const s_src = normalizeSelector(src);
+    const s_tgt = normalizeSelector(tgt);
+    const addrKey = await getSelectorKey(s_src);
+    const info = { path: s_src.path, parameters: s_src.parameters, target: s_tgt, state: 'LINKED' };
+    const linkText = `vfs:/${s_tgt.path}${Object.keys(s_tgt.parameters).length ? '?' + JSON.stringify(s_tgt.parameters) : ''}`;
+    await this.storage.set(addrKey, new TextEncoder().encode(linkText), info);
+    this.events.emit('state', { path: s_src.path, parameters: s_src.parameters, addrKey, state: 'LINKED', target: s_tgt });
+  }
+
+  async _readResult(selector, context = {}) {
+    const { stack = [], expiresAt = Date.now() + 10000, followLinks = true, depth = 0 } = context;
+    const s = normalizeSelector(selector);
+    if (depth > 20) throw new Error(`Maximum recursion depth exceeded for ${s.path}`);
+    this.validateSelector(s);
+    if (Date.now() > expiresAt) return { success: false, error: 'Expired' };
+
+    const addrKey = await getSelectorKey(s);
+    if (stack.includes(addrKey)) throw new Error(`Circular link detected for ${s.path}`);
+    if (this.activeWait.has(addrKey)) return await this.activeWait.get(addrKey);
+
+    const workPromise = (async () => {
+      try {
+        if (s.parameters.cid) {
+            if (await this.storage.has(s.parameters.cid)) {
+                const info = await this._getStorageInfo(s.parameters.cid);
+                return { success: true, cid: s.parameters.cid, metadata: info || {} };
+            }
+        }
+        if (await this.storage.has(addrKey)) {
+          const info = await this._getStorageInfo(addrKey);
+          if (followLinks && info?.target) return await this._readResult(info.target, { ...context, depth: depth + 1, stack: [...stack, addrKey] });
+          if (info?.cid || info?.target) return { success: true, cid: info.cid || addrKey, metadata: info || {} };
+        }
+
+        // Remote packet logic
+        const isBackflow = stack.includes(this.id);
+        const nextStack = [...stack, this.id, addrKey];
+
+        let provider = this.providers.get(s.path);
+        if (!provider) {
+          for (const [pattern, handler] of this.providers.entries()) {
+            if (pattern.endsWith('*') && s.path.startsWith(pattern.slice(0, -1))) { provider = handler; break; }
           }
         }
-      }
-    };
 
-    this.events.on('state', onState);
-    try {
-      while (!this.closed) {
-        if (queue.length === 0)
-          await new Promise((resolve) => (resolveQueue = resolve));
-        while (queue.length > 0) {
-          const ev = queue.shift();
-          if (ev.state === 'CLOSED') return;
-          yield ev;
+        let resultData = null, meshInfo = {};
+        if (provider) {
+          // Provider execution: independent packet
+          resultData = await provider(this, s, { ...context, expiresAt });
+        } else if (this.mesh && !isBackflow) {
+          const meshResponse = await this.mesh.read(s, { stack: nextStack, expiresAt });
+          if (meshResponse) {
+              resultData = meshResponse.body || meshResponse;
+              if (meshResponse.headers) {
+                  const infoHeader = meshResponse.headers.get('x-vfs-info');
+                  if (infoHeader) { try { meshInfo = decodeSafe(infoHeader); } catch (e) {} }
+              }
+          }
+        } else if (isBackflow) {
+            return { success: false, error: 'Backflow' };
         }
+
+        if (resultData) {
+          const { cid } = await this.write(s, resultData, meshInfo);
+          const meta = await this._getStorageInfo(cid);
+          return { success: true, cid, metadata: meta || {} };
+        }
+        return { success: false };
+      } catch (err) {
+        return { success: false, error: err.message };
+      } finally { this.activeWait.delete(addrKey); }
+    })();
+
+    this.activeWait.set(addrKey, workPromise);
+    return await workPromise;
+  }
+
+  async _readResultDirect(selector, context = {}) {
+      return await this._readResult(selector, { ...context, followLinks: false });
+  }
+
+  async _getStorageInfo(key) {
+    if (typeof this.storage.iterateMeta === 'function') {
+      for await (const entry of this.storage.iterateMeta()) {
+        if (entry.cid === key || entry.info?.cid === key) return entry.info;
       }
-    } finally {
-      this.events.off('state', onState);
     }
+    return null;
+  }
+
+  async spy(selector, context = {}) {
+    const s = normalizeSelector(selector);
+    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    if (stack.includes(this.id)) return null;
+    const nextStack = [...stack, this.id];
+
+    const streams = [];
+    const localMatches = [];
+    if (typeof this.storage.iterateMeta === 'function') {
+        for await (const entry of this.storage.iterateMeta()) {
+            if (this._matches(s, entry.info)) {
+                const bundleEntry = `\n=${JSON.stringify(entry.info).length} ${entry.cid}\n${JSON.stringify(entry.info)}`;
+                localMatches.push(new TextEncoder().encode(bundleEntry));
+            }
+        }
+    }
+    if (localMatches.length > 0) {
+        streams.push(new ReadableStream({
+            start(controller) {
+                for (const m of localMatches) controller.enqueue(m);
+                controller.close();
+            }
+        }));
+    }
+
+    if (this.mesh) {
+        const meshStream = await this.mesh.spy(s, { stack: nextStack, expiresAt });
+        if (meshStream) streams.push(meshStream);
+    }
+
+    if (streams.length === 0) return null;
+    return new ReadableStream({
+      async start(controller) {
+        for (const s of streams) {
+          const reader = s.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+          } finally { reader.releaseLock(); }
+        }
+        controller.close();
+      },
+    });
+  }
+
+  async close() {
+    this.closed = true;
+    this.activeWait.clear();
+    if (this.mesh) this.mesh.stop();
+    await this.storage.close();
   }
 }

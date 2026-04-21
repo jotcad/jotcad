@@ -14,7 +14,8 @@ test('Agent-style Processors (as Providers)', async (t) => {
   await t.test('cascading demand works', async () => {
     const selector = { path: 'compute/sum', parameters: { a: 10, b: 20 } };
     const data = await vfs.readData(selector);
-    assert.strictEqual(data.result, 30);
+    console.log('[AGENTS TEST] data is:', data);
+    assert.strictEqual(data?.result, 30);
   });
 
   await t.test('caching prevents redundant computation', async () => {

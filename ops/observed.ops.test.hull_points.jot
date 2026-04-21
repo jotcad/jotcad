@@ -1,0 +1,14 @@
+
+=79 files/observed.ops.test.hull_points.jot
+{"geometry":"876951d2120f7ba8b1b411efea40acec65764547128b6557aa83c8ac5291329a"}
+=102 assets/text/876951d2120f7ba8b1b411efea40acec65764547128b6557aa83c8ac5291329a
+V 4
+v 0 10 0 0 10 0
+v 10 0 0 10 0 0
+v 0 0 10 0 0 10
+v 0 0 0 0 0 0
+T 4
+t 0 2 1
+t 2 0 3
+t 1 2 3
+t 0 1 3

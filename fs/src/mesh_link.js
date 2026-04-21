@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { normalizeSelector } from './vfs_core.js';
+import { normalizeSelector, decodeSafe } from './vfs_core.js';
 
 /**
  * Connection: Abstract interface for a direct communication pipe to a neighbor.
@@ -200,6 +200,14 @@ export class MeshLinkBase {
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
     const s = normalizeSelector(selector);
     if (stack.includes(this.vfs.id)) return;
+    
+    // Paint the local interest field
+    const topic = JSON.stringify(s);
+    if (!this.interests.has(topic)) {
+        this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null });
+    }
+    
+    // Propagate the interest (Painting the mesh)
     const nextStack = [...stack, this.vfs.id];
     for (const conn of this.peers.values()) {
       if (!nextStack.includes(conn.neighborId)) {
@@ -211,23 +219,28 @@ export class MeshLinkBase {
   addInterest(neighborId, selector, expiresAt, stack = []) {
     const s = normalizeSelector(selector);
     const topic = JSON.stringify(s);
-    if (!this.interests.has(topic))
+    if (!this.interests.has(topic)) {
       this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null });
+    }
     
     const entry = this.interests.get(topic);
-    const isNew = !entry.subs.has(neighborId);
+    const isNewNeighbor = !entry.subs.has(neighborId);
     entry.subs.set(neighborId, expiresAt);
 
-    if (isNew && entry.lastValue) {
+    console.log(`[MeshLink ${this.vfs.id}] Interest added for ${topic} from ${neighborId}`);
+
+    // If we have a cached value, push it immediately to the new interested neighbor
+    if (isNewNeighbor && entry.lastValue) {
       const conn = this.peers.get(neighborId);
       if (conn) conn.notify(s, entry.lastValue, [this.vfs.id]).catch(() => {});
     }
 
-    if (isNew && entry.subs.size === 1) {
-      const subStack = [...stack, neighborId];
+    // Propagate interest further if this is the first time we've seen interest in this topic
+    if (isNewNeighbor && entry.subs.size === 1) {
+      const nextStack = [...stack, this.vfs.id];
       for (const conn of this.peers.values()) {
-        if (!subStack.includes(conn.neighborId)) {
-          conn.subscribe(s, expiresAt, [...subStack, this.vfs.id]).catch(() => {});
+        if (!nextStack.includes(conn.neighborId)) {
+          conn.subscribe(s, expiresAt, nextStack).catch(() => {});
         }
       }
     }
@@ -238,14 +251,22 @@ export class MeshLinkBase {
     const s = normalizeSelector(selector);
     const nextStack = [...stack, this.vfs.id];
 
+    console.log(`[MeshLink ${this.vfs.id}] Received publication for ${s.path} (stack: ${stack})`);
+
+    // Natural spreading through the interest field
     for (const entry of this.interests.values()) {
       if (this._matches(entry.selector, s)) {
         entry.lastValue = payload;
         for (const [neighborId, expiry] of entry.subs.entries()) {
           if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
-          if (nextStack.includes(neighborId)) continue;
+          // Forward to neighbor UNLESS they are in the backflow stack
+          if (stack.includes(neighborId)) continue;
+          
           const conn = this.peers.get(neighborId);
-          if (conn) conn.notify(s, payload, nextStack).catch(() => {});
+          if (conn) {
+              console.log(`[MeshLink ${this.vfs.id}] Forwarding pub for ${s.path} to neighbor ${neighborId}`);
+              conn.notify(s, payload, nextStack).catch(() => {});
+          }
         }
       }
     }
@@ -387,16 +408,15 @@ export class MeshLinkBase {
   }
 
   async read(selector, context = {}) {
-    const s = normalizeSelector(selector);
     const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const s = normalizeSelector(selector);
     
-    const nextStack = stack.includes(this.vfs.id) ? stack : [...stack, this.vfs.id];
-    const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
-    
+    const targetConns = [...this.peers.values()].filter(c => !stack.includes(c.neighborId));
     if (targetConns.length === 0) return null;
+
     const fetchPromises = targetConns.map(async (conn) => {
-      console.log(`[MeshLink ${this.vfs.id}] Requesting from peer: ${conn.neighborId}`);
-      const resp = await conn.read(s, { stack: nextStack, expiresAt });
+      console.log(`[MeshLink ${this.vfs.id}] Requesting ${s.path} from peer: ${conn.neighborId}`);
+      const resp = await conn.read(s, { stack, expiresAt });
       if (resp) return resp;
       throw new Error('Conn failed');
     });

@@ -1,0 +1,7 @@
+{
+  "path": "sys/schema",
+  "parameters": {
+    "provider": "export-node",
+    "target": "op/export"
+  }
+}

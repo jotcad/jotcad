@@ -70,7 +70,8 @@ test('VFS Link Following (Formal Metadata Only)', async (t) => {
     await vfs.writeData(target, 'real');
     await vfs.link(alias, target);
     
-    const result = await vfs.read(alias, { followLinks: false });
+    const result = await vfs.read('alias', { followLinks: false });
+    assert.ok(result, 'Result should not be null even with followLinks: false (should return link text)');
     const reader = result.getReader();
     const { value } = await reader.read();
     const text = new TextDecoder().decode(value);

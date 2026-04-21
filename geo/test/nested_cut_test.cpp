@@ -21,7 +21,7 @@ int main() {
     Shape s2 = vfs.read<Shape>(s2_sel);
     
     fs::Selector group_sel = {"jot/group", {}};
-    GroupOp<>::execute(&vfs, group_sel, {s1, s2});
+    GroupOp<>::execute(&vfs, group_sel, Shape{}, {s1, s2});
     Shape group = vfs.read<Shape>(group_sel);
 
     fs::Selector hole_sel = {"jot/Box/hole", {{"size", {10.0, 10.0, 0.0}}}};

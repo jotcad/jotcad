@@ -1,0 +1,11 @@
+
+=354 files/observed.rz_by.jot
+{"shapes":[{"shapes":[{"geometry":"f66ce05fcf5bbf682705b5e6ae00ed88f3d41075813de0e1fd48f01c1b535909","tf":["z 0 0",["t 1 0 0 1 0 0","t -0.5 -0.5 0 -0.5 -0.5 0"]]}],"tf":"z 0 0"},{"shapes":[{"geometry":"f66ce05fcf5bbf682705b5e6ae00ed88f3d41075813de0e1fd48f01c1b535909","tf":["z 0.5 0.5",["t 1 0 0 1 0 0","t -0.5 -0.5 0 -0.5 -0.5 0"]]}],"tf":"z 0.5 0.5"}]}
+=79 assets/text/f66ce05fcf5bbf682705b5e6ae00ed88f3d41075813de0e1fd48f01c1b535909
+
+V 4
+v 0 0 0 0 0 0
+v 1 0 0 1 0 0
+v 1 1 0 1 1 0
+v 0 1 0 0 1 0
+s 0 1 1 2 2 3 3 0

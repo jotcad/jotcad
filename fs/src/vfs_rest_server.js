@@ -1,6 +1,6 @@
 import { pipeline } from 'stream/promises';
 import { Readable } from 'node:stream';
-import { normalizeSelector } from './vfs_core.js';
+import { normalizeSelector, encodeSafe, getSelectorKey } from './vfs_core.js';
 
 export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const getBody = async (req) => {
@@ -34,13 +34,15 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
             res.writeHead(400);
             return res.end('Missing selector');
         }
-        console.log(`[MeshServer ${vfs.id}] /read request: ${selector.path} ${JSON.stringify(selector.parameters)}`);
         const stream = await vfs.read(selector, { stack, expiresAt });
         if (stream) {
-          console.log(`[MeshServer ${vfs.id}] /read 200: ${selector.path}`);
+          const addrKey = await getSelectorKey(selector);
+          const info = await vfs._getStorageInfo(addrKey);
+          
           res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
             'x-vfs-id': vfs.id,
+            'x-vfs-info': info ? encodeSafe(info) : '',
           });
           return await pump(stream, res);
         }
