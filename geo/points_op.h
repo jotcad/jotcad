@@ -21,7 +21,7 @@ struct PointsOp : P {
         Geometry pt_geo;
         pt_geo.vertices.push_back({FT(0), FT(0), FT(0)});
         pt_geo.faces.push_back({{{0}}});
-        fs::Selector pt_cid = vfs->write<Geometry>(pt_geo);
+        fs::CID pt_cid = vfs->write_anonymous<Geometry>(pt_geo);
 
         // 2. Explode vertices into separate component shapes
         std::vector<Shape> components;

@@ -73,7 +73,7 @@ struct CornersOp : P {
 
                         v_geo.segments.push_back({0, 1});
                         v_geo.segments.push_back({0, 2});
-                        corner.geometry = vfs->write<Geometry>(v_geo);
+                        corner.geometry = vfs->write_anonymous<Geometry>(v_geo);
                     }
                     components.push_back(corner);
                 }

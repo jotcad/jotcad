@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <json.hpp>
-#include "../../fs/cpp/include/vfs_node.h"
+#include "../../fs/cpp/vfs_node.h"
 
 #include "geometry.h"
 #include "shape.h"
@@ -22,13 +22,14 @@ struct JotVfsProtocol {
     }
 
     static Geometry read_shape_geo(fs::VFSNode* vfs, const Shape& s) {
+        if (!s.geometry.has_value()) return Geometry{};
         return vfs->read<Geometry>(s.geometry.value());
     }
 
     static Shape make_shape(fs::VFSNode* vfs, const Geometry& geo, const json& tags) {
         Shape s;
-        // Anonymous materialization (allowed ONLY for Geometry)
-        s.geometry = vfs->write<Geometry>(geo);
+        // Anonymous materialization (returns a CID)
+        s.geometry = vfs->write_anonymous<Geometry>(geo);
         s.tags = tags;
         return s;
     }

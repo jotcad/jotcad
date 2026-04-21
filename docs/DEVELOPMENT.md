@@ -64,27 +64,27 @@ The `Processor` handles the **Universal Sequence Principle** automatically:
 
 ### 1.4 The "Tee" Pattern (Side-Effects)
 
-Some operators, like `jot/pdf` or `jot/stl`, produce side-effects (artifacts) while acting as identity pass-throughs for geometry. These follow the **Port-Based Artifact Pattern**:
+Some operators, like `jot/pdf` or `jot/stl`, produce side-effects (artifacts) while acting as identity pass-throughs for geometry. These follow the **Output Field Artifact Pattern**:
 
 1.  **Identity Preservation:** The `execute` function performs a pure pass-through (`out = in`).
-2.  **On-Demand Generation:** Instead of generating the artifact on every geometry read, the operator's registration logic handles a `$port` parameter.
-3.  **Port Access:** The artifact (e.g., PDF bytes) is only generated and returned when the VFS requests the selector with a specific port (e.g., `parameters: { "$port": "filename" }`).
+2.  **On-Demand Generation:** Instead of generating the artifact on every geometry read, the operator's registration logic handles a specific `output` field in the Selector.
+3.  **Port Access:** The artifact (e.g., PDF bytes) is only generated and returned when the VFS requests the selector with a specific output (e.g., `output: "file"`).
 4.  **Metadata Signaling:** Set `passthrough: true` in the schema metadata to inform the compiler to "lift" the demand into the side-effect list.
 
 ```cpp
-// Schema defines the Port
+// Schema defines available outputs
 "outputs": {
   "$out": { "type": "shape" },
-  "filename": { "type": "file", "mimeType": "application/pdf" }
+  "file": { "type": "file", "mimeType": "application/pdf" }
 }
 ```
 
-### 1.5 Two-Stage Resolution (Lazy Geometry)
+### 1.5 Two-Stage Resolution (Lazy Execution)
 
 For computationally expensive operations (e.g., complex Booleans or heavy mesh processing), JOT supports a **Two-Stage Resolution** pattern to defer math until it is strictly necessary.
 
-1.  **Stage 1: The Logical Operator**: Returns a `Shape` JSON (the "Passport"). This shape contains metadata (tags, transforms) but its `geometry.path` points to a **Geometry Provider** instead of raw data. This stage is extremely fast and CID-stable.
-2.  **Stage 2: The Geometry Provider**: The actual math engine. It is only triggered when a downstream consumer (like a 3D renderer or PDF exporter) calls `vfs.read()` on the geometry selector found in the Passport.
+1.  **Stage 1: The Logical Operator**: Returns a `Shape` JSON (the "Passport"). This shape contains metadata (tags, transforms) and formal `.meta` links, but might defer heavy geometry computation.
+2.  **Stage 2: The Geometry Provider**: The actual math engine. It is only triggered when a downstream consumer (like a 3D renderer or PDF exporter) strictly demands the terminal geometry CID.
 
 ### 1.6 Recursive Reification
 
@@ -95,11 +95,11 @@ To ensure operators always work with valid data, the `Processor` perform **Recur
 
 ### 1.7 Optional Geometry
 
-A `Shape` in JOT is a recursive container. The `geometry` field is **optional**.
+A `Shape` in JOT is a recursive container. The `geometry` field is an **optional CID string**.
 
-- **Geometric Nodes**: Shapes that carry a mesh (e.g., a Box) have a `geometry` selector.
+- **Geometric Nodes**: Shapes that carry a mesh (e.g., a Box) have a `geometry` CID.
 - **Structural Nodes**: Shapes that act as containers (e.g., a Group) have `std::nullopt` for geometry but contain `components`.
-- **Hybrid Nodes**: Shapes can carry both local geometry and nested components.
+- **Hybrid Nodes**: Shapes can carry both a local geometry CID and nested components.
 
 Operators MUST check `shape.geometry.has_value()` before attempting to read geometry bits from the VFS.
 

@@ -25,7 +25,7 @@ struct OutlineOp : P {
             }
         }
         Shape out = in;
-        out.geometry = vfs->write<Geometry>(res);
+        out.geometry = vfs->write_anonymous<Geometry>(res);
         vfs->write<Shape>(fulfilling, out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }

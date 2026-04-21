@@ -1,7 +1,7 @@
 #include <iostream>
 #include "../box_op.h"
 #include "../rotate_op.h"
-#include "../../fs/cpp/include/vfs_node.h"
+#include "../../fs/cpp/vfs_node.h"
 
 using namespace jotcad::geo;
 

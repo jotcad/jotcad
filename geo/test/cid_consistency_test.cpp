@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include "../../fs/cpp/include/cid.h"
+#include "../../fs/cpp/cid.h"
 
 using json = nlohmann::json;
 

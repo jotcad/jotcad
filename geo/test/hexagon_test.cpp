@@ -1,32 +1,25 @@
-#include <iostream>
+#include "test_base.h"
 #include "../hexagon_op.h"
-#include "../../fs/cpp/include/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_hexagon_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs;
     
-    std::cout << "Testing Hexagon Primitive..." << std::endl;
+    std::cout << "Testing Hexagon Primitives..." << std::endl;
     
-    fs::Selector fulfilling = {"jot/Hexagon/full", {{"diameter", 30.0}}};
-    HexagonFullOp<>::execute(&vfs, fulfilling, 30.0);
-    
-    std::cout << "DEBUG: Attempting to read Shape from port $out..." << std::endl;
-    Shape s = vfs.read<Shape>(fulfilling);
-    std::cout << "DEBUG: Read Shape successfully." << std::endl;
-    if (!s.geometry.has_value()) {
-        std::cerr << "❌ Hexagon FAIL: No geometry handle returned" << std::endl;
-        return 1;
-    }
-    
-    Geometry g = vfs.read<Geometry>(s.geometry.value());
-    if (g.vertices.size() != 6) {
-        std::cerr << "❌ Hexagon FAIL: Expected 6 vertices, got " << g.vertices.size() << std::endl;
-        return 1;
-    }
+    // 1. Full Hexagon
+    fs::Selector hex_addr = {"jot/Hexagon/full", {{"radius", 10.0}}};
+    HexagonFullOp<>::execute(&vfs, hex_addr, 10.0);
+    Shape s_full = vfs.read<Shape>(hex_addr);
+    vfs.verify_render(s_full, "hexagon_full", "fa7711eb997fd3b9460bab19e44c717c14767b4f26d748505e053f4771c35048");
 
-    std::cout << "✅ Hexagon PASS" << std::endl;
+    // 2. Hexagon Cap
+    fs::Selector cap_addr = {"jot/Hexagon/cap", {{"radius", 10.0}}};
+    HexagonCapOp<>::execute(&vfs, cap_addr, 10.0);
+    Shape s_cap = vfs.read<Shape>(cap_addr);
+    vfs.verify_render(s_cap, "hexagon_cap", "");
+
+    std::cout << "✅ ALL Hexagon Tests Passed" << std::endl;
     return 0;
 }

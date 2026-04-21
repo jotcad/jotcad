@@ -121,18 +121,18 @@ export class VFS {
 
   async write(selector, streamOrBytes, context = {}) {
     this._checkClosed();
-    let bytes, cid, type = 'bytes';
+    let bytes, dataCID, type = 'bytes';
 
     if (streamOrBytes instanceof Uint8Array) {
         bytes = streamOrBytes;
-        cid = await getCID(bytes);
+        dataCID = await getCID(bytes);
     } else if (typeof streamOrBytes === 'string') {
         bytes = new TextEncoder().encode(streamOrBytes);
-        cid = await getCID(streamOrBytes);
+        dataCID = await getCID(streamOrBytes);
         type = 'string';
     } else if (streamOrBytes === null) {
         bytes = new Uint8Array();
-        cid = await getCID(bytes);
+        dataCID = await getCID(bytes);
         type = 'null';
     } else if (streamOrBytes && typeof streamOrBytes.getReader === 'function') {
         const chunks = [];
@@ -148,21 +148,23 @@ export class VFS {
         bytes = new Uint8Array(len);
         let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-        cid = await getCID(bytes);
+        dataCID = await getCID(bytes);
     } else {
-        cid = await getCID(streamOrBytes);
+        dataCID = await getCID(streamOrBytes);
         bytes = new TextEncoder().encode(JSON.stringify(streamOrBytes));
         type = 'json';
     }
 
     const s = normalizeSelector(selector);
-    const addrKey = await getSelectorKey(s);
+    if (context.output) s.output = context.output;
+    const cid = await getSelectorKey(s);
 
     const info = {
         type,
         ...context,
         path: s.path,
         parameters: s.parameters,
+        output: s.output || '',
         state: 'AVAILABLE',
         cid
     };
@@ -175,24 +177,18 @@ export class VFS {
     if (streamOrBytes && typeof streamOrBytes === 'object' && streamOrBytes.tags) {
         info.tags = { ...info.tags, ...streamOrBytes.tags };
     }
-// Use consistently computed 'bytes' (drained from stream) for storage
-await this.storage.set(cid, bytes, info);
+    
+    // Store by the CID derived from the Selector
+    await this.storage.set(cid, bytes, info);
+    
+    // If it's heavy data (Geometry), also store it by its data hash for deduplication
+    if (type === 'bytes' || type === 'string') {
+        await this.storage.set(dataCID, bytes, { state: 'AVAILABLE', type });
+    }
 
-// Store by addressKey (Mesh key) with Partitioned Ports
-const port = context.output || '$out';
-let addrInfo = { ...info, ports: {} };
-if (await this.storage.has(addrKey)) {
-    const existing = await this._getStorageInfo(addrKey);
-    if (existing && existing.ports) addrInfo.ports = { ...existing.ports };
-}
-addrInfo.ports[port] = cid;
-addrInfo.cid = addrInfo.ports['$out'] || cid;
-
-await this.storage.set(addrKey, null, addrInfo);
-
-this.events.emit('state', { path: s.path, parameters: s.parameters, cid, port, state: 'AVAILABLE' });
-return { cid };
-}
+    this.events.emit('state', { path: s.path, parameters: s.parameters, cid, output: s.output, state: 'AVAILABLE' });
+    return { cid };
+  }
 
   async writeData(selector, data, context = {}) { return await this.write(selector, data, context); }
 
@@ -202,10 +198,7 @@ return { cid };
     const { expiresAt = Date.now() + 10000 } = context;
 
     const result = await this._readResult(s, { ...context, stack: [], expiresAt });
-    if (!result || !result.success) {
-        if (result?.error === 'Expired' || result?.error === 'Backflow' || result?.error === 'Missing Port') return null;
-        throw new Error(`VFS.readData: Failed to resolve selector ${JSON.stringify(s)}`);
-    }
+    if (!result || !result.success) return null;
     
     const stream = await this.storage.get(result.cid);
     if (!stream) throw new Error(`VFS.readData: Failed to read stream for CID ${result.cid}`);
@@ -289,6 +282,8 @@ return { cid };
   async _readResult(selector, context = {}) {
     const { stack = [], expiresAt = Date.now() + 10000, followLinks = true, depth = 0 } = context;
     const s = normalizeSelector(selector);
+    if (context.output) s.output = context.output;
+
     if (depth > 20) throw new Error(`Maximum recursion depth exceeded for ${s.path}`);
     this.validateSelector(s);
     if (Date.now() > expiresAt) return { success: false, error: 'Expired' };
@@ -299,29 +294,21 @@ return { cid };
 
     const workPromise = (async () => {
       try {
+        // Direct CID Check
         if (s.parameters.cid) {
             if (await this.storage.has(s.parameters.cid)) {
                 const info = await this._getStorageInfo(s.parameters.cid);
                 return { success: true, cid: s.parameters.cid, metadata: info || {} };
             }
         }
+
         if (await this.storage.has(addrKey)) {
           const info = await this._getStorageInfo(addrKey);
-          if (followLinks && info?.target) return await this._readResult(info.target, { ...context, depth: depth + 1, stack: [...stack, addrKey] });
+          if (followLinks && info?.state === 'LINKED' && info?.target) {
+            return await this._readResult(info.target, { ...context, depth: depth + 1, stack: [...stack, addrKey] });
+          }
           
-          const port = context.output || '$out';
-          if (info?.ports && info.ports[port]) {
-              const cidInfo = await this._getStorageInfo(info.ports[port]);
-              return { success: true, cid: info.ports[port], metadata: cidInfo || info || {} };
-          }
-          if (info?.ports && port !== '$out' && !info.ports[port]) {
-              return { success: false, error: 'Missing Port' };
-          }
-
-          if (info?.cid || info?.target) {
-              const cidInfo = info.cid ? await this._getStorageInfo(info.cid) : null;
-              return { success: true, cid: info.cid || addrKey, metadata: cidInfo || info || {} };
-          }
+          return { success: true, cid: addrKey, metadata: info || {} };
         }
 
         // Remote packet logic
@@ -337,7 +324,7 @@ return { cid };
 
         let resultData = null, meshInfo = {};
         if (provider) {
-          // Provider execution: independent packet
+          // Provider execution
           resultData = await provider(this, s, { ...context, expiresAt });
         } else if (this.mesh && !isBackflow) {
           const meshResponse = await this.mesh.read(s, { stack: nextStack, expiresAt });
@@ -353,7 +340,8 @@ return { cid };
         }
 
         if (resultData) {
-          const { cid } = await this.write(s, resultData, meshInfo);
+          // write handles adding output and context correctly
+          const { cid } = await this.write(s, resultData, { ...meshInfo, ...context });
           const meta = await this._getStorageInfo(cid);
           return { success: true, cid, metadata: meta || {} };
         }

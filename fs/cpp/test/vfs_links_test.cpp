@@ -1,4 +1,4 @@
-#include "../include/vfs_node.h"
+#include "../vfs_node.h"
 #include <cassert>
 #include <iostream>
 #include <filesystem>

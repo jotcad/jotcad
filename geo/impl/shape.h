@@ -34,7 +34,7 @@ struct Operation : fs::Selector {
  * Shape: The foundational semantic container for JOT.
  */
 struct Shape {
-    std::optional<fs::Selector> geometry;
+    std::optional<fs::CID> geometry;
     std::vector<double> tf = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     nlohmann::json tags = nlohmann::json::object();
     std::vector<Shape> components;
@@ -57,7 +57,7 @@ struct Shape {
         Shape s;
         try {
             if (j.contains("geometry") && !j.at("geometry").is_null()) {
-                s.geometry = fs::Selector::from_json(j.at("geometry"));
+                s.geometry = fs::CID::from_json(j.at("geometry"));
             }
             if (j.contains("tf") && j.at("tf").is_array()) {
                 s.tf = j.at("tf").get<std::vector<double>>();

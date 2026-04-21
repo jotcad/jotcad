@@ -1,6 +1,6 @@
 #pragma once
 #include "protocols.h"
-#include "../../fs/cpp/include/vfs_node.h"
+#include "../../fs/cpp/vfs_node.h"
 #include <string>
 #include <vector>
 #include <map>

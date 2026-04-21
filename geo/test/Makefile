@@ -2,7 +2,7 @@
 
 CXX = g++
 CXXFLAGS = -O3 -std=c++17
-INCLUDES = -I.. -I../impl -I../../fs/cpp/include -I../../fs/cpp/vendor \
+INCLUDES = -I.. -I../impl -I../../fs/cpp -I../../fs/cpp/vendor \
            -I../../geometry/native/include -I../../geometry/boost \
            -I../../geometry/native/include/CGAL/include
 DEFS = -DCGAL_DISABLE_GMP=1
@@ -27,7 +27,7 @@ $(LIB_GEO):
 # Template for building each test
 $(BIN_DIR)/%_test: %_test.cpp $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) $< $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) $< ../obj/rasterizer.o $(LIBS) -o $@
 
 # Target to build and run an individual test
 test-%: $(BIN_DIR)/%_test

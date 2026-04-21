@@ -66,7 +66,7 @@ struct CutOp : P {
             }
 
             Geometry result_geo = gps_to_geometry(subject_set);
-            s.geometry = vfs->write<Geometry>(result_geo);
+            s.geometry = vfs->write_anonymous<Geometry>(result_geo);
         }
 
         for (auto& child : s.components) {

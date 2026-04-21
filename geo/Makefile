@@ -8,15 +8,10 @@ AR = ar
 ARFLAGS = rcs
 
 # Paths
-CID_SRC = ../fs/cpp/src/cid.cpp
-OPS_LIB_SRC = ops_library.cc
-REGISTRY_SRC = impl/registry.cc
-DRIVER_SRC = ops.cc
-
 BIN_DIR = bin
 OBJ_DIR = obj
 
-INCLUDES = -I. -I./impl -I../fs/cpp/include -I../fs/cpp/vendor \
+INCLUDES = -I. -I./impl -I../fs/cpp -I../fs/cpp/vendor \
            -I../geometry/native/include -I../geometry/boost \
            -I../geometry/native/include/CGAL/include
 DEFS = -DCGAL_DISABLE_GMP=1
@@ -25,16 +20,19 @@ LIBS = -lpthread -lcrypto
 # Library and Binary
 LIB_JOTGEO = $(BIN_DIR)/libjotgeo.a
 OPS_BIN = $(BIN_DIR)/ops
+PNG_TEST_BIN = test/bin/png_test
+RENDER_TEST_BIN = test/bin/render_test
 
 # Object files
 OBJS = $(OBJ_DIR)/vfs_core.o $(OBJ_DIR)/vfs_primitives.o $(OBJ_DIR)/vfs_geo_adapter.o \
-       $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o
+       $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o \
+       $(OBJ_DIR)/rasterizer.o
 DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
 DEPS = $(OBJS:.o=.d) $(DRIVER_OBJ:.o=.d)
 
-all: $(OPS_BIN)
+all: $(OPS_BIN) $(PNG_TEST_BIN) $(RENDER_TEST_BIN)
 
 # Create static library
 $(LIB_JOTGEO): $(OBJS)
@@ -45,16 +43,26 @@ $(LIB_JOTGEO): $(OBJS)
 $(OPS_BIN): $(DRIVER_OBJ) $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $(DRIVER_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
 
+# Link PNG test
+$(PNG_TEST_BIN): test/png_test.cpp $(LIB_JOTGEO)
+	@mkdir -p test/bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) test/png_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
+
+# Link Render test
+$(RENDER_TEST_BIN): test/render_test.cpp $(LIB_JOTGEO)
+	@mkdir -p test/bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) test/render_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
+
 # Compile source files
 $(OBJ_DIR)/%.o: %.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/vfs_core.o: ../fs/cpp/src/vfs_core.cpp
+$(OBJ_DIR)/vfs_core.o: ../fs/cpp/vfs_core.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/vfs_primitives.o: ../fs/cpp/src/vfs_primitives.cpp
+$(OBJ_DIR)/vfs_primitives.o: ../fs/cpp/vfs_primitives.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
@@ -62,7 +70,7 @@ $(OBJ_DIR)/vfs_geo_adapter.o: impl/vfs_geo_adapter.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/cid.o: ../fs/cpp/src/cid.cpp
+$(OBJ_DIR)/cid.o: ../fs/cpp/cid.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
@@ -71,6 +79,10 @@ $(OBJ_DIR)/registry.o: impl/registry.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
 $(OBJ_DIR)/png_op.o: impl/png_op.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/rasterizer.o: impl/rasterizer.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

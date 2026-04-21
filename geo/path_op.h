@@ -66,7 +66,7 @@ struct LoopOp : P {
         }
 
         Shape out;
-        out.geometry = vfs->write<Geometry>(res);
+        out.geometry = vfs->write_anonymous<Geometry>(res);
         out.components = all_components;
         out.add_tag("type", "loop");
         vfs->write<Shape>(fulfilling, out);

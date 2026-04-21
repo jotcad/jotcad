@@ -33,8 +33,8 @@ struct PdfOp : P {
         walk(vfs, in, Matrix::identity(), writer);
         auto pdf_bytes = writer.write();
         
-        // 1. Primary Output: Shape Pass-through ($out)
-        vfs->write<Shape>(fulfilling, in, "$out");
+        // 1. Primary Output: Shape Pass-through
+        vfs->write<Shape>(fulfilling, in);
 
         // 2. Secondary Output: PDF bytes in 'file' port
         vfs->write<std::vector<uint8_t>>(fulfilling, pdf_bytes, "file");

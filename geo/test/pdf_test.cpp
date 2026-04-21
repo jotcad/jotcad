@@ -1,7 +1,7 @@
 #include <iostream>
 #include "../hexagon_op.h"
 #include "../pdf_op.h"
-#include "../../fs/cpp/include/vfs_node.h"
+#include "../../fs/cpp/vfs_node.h"
 
 using namespace jotcad::geo;
 

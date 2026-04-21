@@ -19,7 +19,7 @@ struct OffsetOp : P {
         Geometry res = geo;
         applyOffset(res, diameter);
         Shape out = in;
-        out.geometry = vfs->write<Geometry>(res);
+        out.geometry = vfs->write_anonymous<Geometry>(res);
         vfs->write<Shape>(fulfilling, out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter"}; }
@@ -46,7 +46,7 @@ struct OffsetClosureOp : P {
         Geometry closed = expanded;
         applyOffset(closed, -std::abs(diameter));
         Shape out = in;
-        out.geometry = vfs->write<Geometry>(closed);
+        out.geometry = vfs->write_anonymous<Geometry>(closed);
         vfs->write<Shape>(fulfilling, out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter", "closure"}; }

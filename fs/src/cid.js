@@ -179,6 +179,8 @@ export async function getCID(data) {
  */
 export async function getSelectorKey(selector) {
   const s = normalizeSelector(selector);
+  // Match C++ behavior: only include 'output' in hash if it's non-empty
+  if (!s.output) delete s.output;
   // Ensure parameters are sorted by using encodeJCB which handles key ordering.
   return await jcbHash(s);
 }
@@ -188,10 +190,17 @@ export async function getSelectorKey(selector) {
  */
 export function normalizeSelector(pathOrSelector, parameters = {}) {
   if (pathOrSelector && typeof pathOrSelector === 'object' && pathOrSelector.path !== undefined) {
-    return pathOrSelector;
+    return { ...pathOrSelector };
   } else if (typeof pathOrSelector === 'string') {
-    return { path: pathOrSelector, parameters: parameters || {} };
+    return { path: pathOrSelector, parameters: parameters || {}, output: '' };
   } else {
-    return { path: '', parameters: pathOrSelector || {} };
+    // If no path, it's just parameters (anonymous)
+    const s = { path: '', parameters: pathOrSelector || {}, output: '' };
+    // Check if it's already a normalized selector-like object without a path
+    if (pathOrSelector && pathOrSelector.parameters) {
+        s.parameters = pathOrSelector.parameters;
+        if (pathOrSelector.output) s.output = pathOrSelector.output;
+    }
+    return s;
   }
 }

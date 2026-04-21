@@ -8,33 +8,26 @@ storage.
 
 ## 1. Identity & Addressing
 
-The VFS uses a **Symmetric Identity** model where the request itself serves as
-the global address.
+The VFS uses a **Symmetric Identity** model where everything is addressed by a **CID (Content Identifier)**.
 
-### 1.1 The Selector (Wire Identity)
+### 1.1 The CID and The Selector
 
-The global identity of any artifact is its **Selector**: a combination of a
-`path` (e.g., `jot/Hexagon/full`) and a `parameters` object (e.g.,
-`{"diameter": 30}`).
+The global identity of any artifact is its **CID** (a SHA-256 hash). However, how that CID is generated depends on the artifact type:
 
-- **Normalization:** Selectors are deeply and recursively normalized. Parameters
-  are sorted alphabetically by key, and nested objects are themselves
-  normalized.
-- **Parametric Standardization (Critical):** All radial/apothem parameters MUST be 
-  normalized to **`diameter`** before execution. This ensures deterministic 
-  Content-IDs (CIDs) regardless of the original construction method (e.g., 
-  `Hexagon(radius=15)` and `Hexagon(diameter=30)` resolve to the same CID).
-- **Deterministic Identity:** Every node calculates the identity of a request
-  locally by hashing the normalized selector (SHA-256).
-- **Atomic Address:** The Selector is treated as an atomic unit. API methods 
-  consume the entire object (e.g., `vfs.read(selector)`) rather than decomposed 
-  paths and parameters.
+1. **Geometry (Content-Addressed):** The CID is the hash of the raw mathematical bytes.
+2. **Shapes & Artifacts (Computation-Addressed):** The CID is the hash of the **Selector** that produced it.
 
-### 1.2 Identity Secrecy
+A **Selector** is a recomposable request object containing:
+- `path` (e.g., `jot/Hexagon/full`)
+- `parameters` (e.g., `{"diameter": 30}`)
+- `output` (e.g., `"thumb"` or `"$out"`. If omitted, it targets the operation itself).
 
-To prevent "Identity Poisoning," CIDs (Content IDs) are NEVER sent across the
-network. Nodes only exchange Selectors. Each node is the sole authority over its
-local CID mapping.
+- **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact.
+- **Parametric Standardization:** Parameters MUST be normalized (e.g., radial/apothem parameters to `diameter`) before execution to ensure deterministic CIDs.
+
+### 1.2 Network Transmission
+
+CIDs CAN and SHOULD be transmitted safely over the mesh network. Nodes can request data directly by CID, or they can request the execution of a computation by sending a Selector.
 
 ## 2. Actor Fulfillment Protocol
 
@@ -43,118 +36,69 @@ JotCAD operators follow a strict **Actor Model** for mesh fulfillment.
 ### 2.1 The Fulfillment Contract
 
 Every operator call is assigned a unique address (the `fulfilling` Selector). 
-The operator's sole responsibility is to satisfy this address by writing its 
-final result directly to that Selector:
-`vfs->write<Shape>(fulfilling, out_shape)`
+The operator's sole responsibility is to satisfy this address by writing its final result. A single execution may fulfill multiple outputs by modifying the Selector (e.g., `fulfilling.with_output("thumb")`) and writing the respective artifacts.
 
 ### 2.2 Immutable Content (CID Protection)
 
-Input artifacts are strictly read-only. Transformative operators (e.g., `cut`, 
-`offset`) MUST NOT "update" the CID-addressed geometry of their inputs. Instead:
+Input artifacts are strictly read-only. Transformative operators (e.g., `cut`, `offset`) MUST NOT "update" the CID-addressed geometry of their inputs. Instead:
 1.  **Read:** The operator reads the input geometry from its CID.
 2.  **Calculate:** The operator performs the transformation.
-3.  **Materialize:** The operator writes the NEW geometry to the mesh using an 
-    **anonymous write** (e.g., `vfs->write<Geometry>(res_geo)`).
-4.  **Reference:** The final result `Shape` points to this new geometry CID.
-5.  **Fulfill:** The `Shape` is written to the operator's assigned `fulfilling` 
-    address.
+3.  **Materialize:** The operator writes the NEW geometry to the mesh using an **anonymous write** (`vfs->write(res_geo)`), which returns a new CID.
+4.  **Reference:** The final result `Shape` embeds this new geometry CID.
+5.  **Fulfill:** The `Shape` is written to the operator's assigned `fulfilling` address.
 
-### 2.3 Specialization Rules
+### 2.3 Flat Port Architecture
 
-- **`Geometry` Materialization:** Writing geometry always requires an empty 
-  selector. The mesh computes the hash and returns the unique CID. Providing an 
-  explicit path to a geometry write is an error.
-- **`Shape` Fulfillment:** Writing a Shape (metadata) requires an explicit 
-  address. Providing an empty selector to a Shape write is an error.
-
-### 2.4 Partitioned Output Ports (Multi-Artifact Fulfillment)
-
-A single computation (identified by a Selector) may produce multiple 
-distinct artifacts (e.g., a 3D Shape and its PNG thumbnail). These are 
-stored in **Ports**.
-
-- **Address Key:** The `.meta` file at the Selector's Address Key contains a 
-  `ports` map.
-- **Reserved Ports:**
-  - **`$out` (Default):** The primary semantic result (usually a `Shape`).
-  - **`file`:** The primary binary artifact (e.g., `PDF`, `PNG`, `STL`).
-  - **`thumb`:** A low-resolution preview image.
-- **Read-Modify-Write (RMW):** Writing to a specific port MUST NOT destroy 
-  existing ports. The VFS implementation reads the existing `.meta` file, 
-  merges the new port CID into the `ports` map, and writes the updated 
-  metadata back to disk.
+There are NO "Partitioned Output Ports" or `ports` maps in `.meta` files.
+Every distinct output port (e.g., `$out`, `file`, `thumb`) is just a field in the Selector. Because the `output` field is hashed along with the path and parameters, every artifact gets its own unique, deterministic CID and its own discrete `.data` file.
 
 ## 3. Peer-to-Peer Protocol (Routing)
 
 ### 3.1 Identity Introduction (`POST /register`)
 
-The VFS decouples transport connections from peer identities.
-
-- **Handshake:** On connection establishment, a node MUST send a 
-  `POST /register?peerId={UUID}` to its neighbor.
-- **Identity Mapping:** The receiving node records the mapping of `neighborId` 
-  to the specific connection context. This establishes a stable topology.
+The VFS decouples transport connections from peer identities. On connection establishment, a node MUST send a `POST /register?peerId={UUID}` to its neighbor.
 
 ### 3.2 Formal Links (Unambiguous Aliasing)
 
 The VFS supports **Formal Links**, a mechanism for aliasing one Selector to another. 
-
 - **Link Definition:** A Link is a metadata-driven alias (`vfs.link(src, tgt)`).
-- **Recursive Resolution:** Resolution is STRICTLY metadata-driven. The VFS 
-  NEVER "guesses" or sniffs links from raw data content.
+- **Storage:** The VFS writes a `.meta` file at the source CID containing `{"state": "LINK", "target": tgt_selector}`.
 
 ### 3.3 Recursive Bread-crumb READ (`POST /read`)
 
 The `read` operation is the primary mechanism for demand-driven data retrieval.
 
-- **Atomic Selector Wire Format:** Requests MUST wrap the target Selector in a top-level `selector` key. They may optionally specify an `output` port.
+- **Atomic Wire Format:** Requests MUST wrap the target Selector or CID in a top-level key.
   ```json
   {
-    "selector": { "path": "jot/pdf", "parameters": { ... } },
-    "output": "file",
+    "selector": { "path": "jot/Box", "parameters": { "width": 10 }, "output": "file" },
     "expiresAt": 1700000000000,
     "stack": ["node-A"]
   }
   ```
-- **Partitioned Output Ports:** A `read` request is addressed by the Base Selector (which represents the singular computation). The `output` field (defaulting to `$out`) slices a specific facet of the computation's cached result map.
-- **Unambiguous Signaling:** A `read` MUST either return the requested data
-  with a `200 OK` or fail with an explicit HTTP error code.
-## 4. Discovery Protocol (Catalog)
-
-The VFS uses a **Demand-Driven Push** model for discovery.
-
-### 4.1 Catalog Subscription (SUB)
-
-Nodes discover capabilities by subscribing to **`sys/schema`** or **`sys/topo`**.
-
-- **Immediate Push:** A `SUB` on these system paths triggers an immediate 
-  **`CATALOG_ANNOUNCEMENT`** from the neighbor.
-
-### 4.2 Flattened Schema Model
-
-Schemas are self-describing and strictly flattened.
-
-- **Port Mapping:** Logical "Tees" are marked at the port level:
+  Or, for direct CID retrieval:
   ```json
-  "outputs": {
-    "$out": { "type": "shape", "alias": "$in" }
+  {
+    "cid": "deadbeef1234567890...",
+    "expiresAt": 1700000000000,
+    "stack": ["node-A"]
   }
   ```
 
-## 5. Core Type System
+## 4. Core Type System
 
-### 5.1 Geometry Type (`geometry`)
+### 4.1 Geometry Type (`geometry`)
 
-- **Nature:** Raw spatial payload (text/JOT).
-- **Exact Kernel:** All C++ math MUST use the **CGAL Exact Kernel (`FT`)**. 
-- **Linkage:** C++ implementations MUST link against **`-lcrypto`** for SHA-256 
-  support.
+- **Nature:** Raw spatial payload.
+- **Addressing:** Exclusively Content-Addressed (CID = hash(data)).
+- **Kernel:** All C++ math MUST use the **CGAL Exact Kernel (`FT`)**. 
 
-### 5.2 Shape Type (`shape`)
+### 4.2 Shape Type (`shape`)
 
 - **Nature:** Semantic container (JSON).
+- **Addressing:** Computation-Addressed (CID = hash(Selector)).
 - **Structure:**
-  - `geometry`: An optional VFS Selector pointing to a `geometry` artifact.
+  - `geometry`: An optional **CID** (strictly a CID string, *never* a Selector).
   - `tf`: 4x4 Affine transformation matrix (Column-Major).
   - `tags`: Key-value metadata.
   - `components`: Nested `shape` objects.

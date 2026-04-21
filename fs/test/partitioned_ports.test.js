@@ -10,35 +10,30 @@ test('Partitioned Output Ports', async (t) => {
   const baseKey = await getSelectorKey(baseSelector);
 
   await t.test('Writing to partitioned ports', async () => {
-    // Write multiple outputs for a single computation
-    // We expect the VFS write API to handle an outputs map, or we can write them sequentially
-    // Let's assume writeData can take an explicit `output` in context, and groups them under the same base selector.
+    // In the new architecture, every distinct output port hashes to its own unique CID.
     
-    await vfs.writeData(baseSelector, { tags: { type: 'shape' }, geometry: 'cid-geom' }, { output: '$out' });
-    await vfs.writeData(baseSelector, new TextEncoder().encode('raw bytes data'), { output: 'file', type: 'bytes' });
+    await vfs.writeData(baseSelector, { tags: { type: 'shape' }, geometry: 'cid-geom' }); // Primary artifact (no output)
+    await vfs.writeData(baseSelector, new TextEncoder().encode('raw bytes data'), { output: 'file' });
     await vfs.writeData(baseSelector, { status: 'success', size: 14 }, { output: 'status' });
     
-    // Verify all writes share the same Base Selector Identity
+    // Verify that adding an output CHANGES the CID (Identity is the full Selector)
     const key1 = await getSelectorKey({ ...baseSelector });
-    assert.strictEqual(key1, baseKey, 'Identity must remain stable and bound to the base selector');
+    const key2 = await getSelectorKey({ ...baseSelector, output: 'file' });
+    assert.notStrictEqual(key1, key2, 'Adding a port must yield a different CID');
   });
 
   await t.test('Reading from specific ports', async () => {
-    // 1. Default port should be $out
+    // 1. Default read (no output) should return the primary artifact
     const defaultData = await vfs.readData(baseSelector);
     assert.ok(defaultData, 'Default read should return data');
-    assert.strictEqual(defaultData.tags?.type, 'shape', 'Default port should be $out');
+    assert.strictEqual(defaultData.tags?.type, 'shape', 'Primary artifact should be found');
 
-    // 2. Explicit $out port
-    const outData = await vfs.readData(baseSelector, { output: '$out' });
-    assert.deepStrictEqual(outData, defaultData, 'Explicit $out should match default');
-
-    // 3. Explicit file port (bytes)
+    // 2. Explicit file port (bytes)
     const fileData = await vfs.readData(baseSelector, { output: 'file' });
     assert.ok(fileData instanceof Uint8Array, 'File port should return bytes');
     assert.strictEqual(new TextDecoder().decode(fileData), 'raw bytes data');
 
-    // 4. Explicit status port (json)
+    // 3. Explicit status port (json)
     const statusData = await vfs.readData(baseSelector, { output: 'status' });
     assert.strictEqual(statusData.status, 'success');
     assert.strictEqual(statusData.size, 14);

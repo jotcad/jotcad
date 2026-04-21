@@ -1,4 +1,4 @@
-#include "../../fs/cpp/include/vfs_node.h"
+#include "../../fs/cpp/vfs_node.h"
 #include "impl/processor.h"
 #include <iostream>
 #include <thread>

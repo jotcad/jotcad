@@ -18,19 +18,13 @@ sovereignty and deterministic identity.
 - **Local-First Writes:** `vfs.write` commits data immediately and only to the
   node's local disk.
 
-### 2.2. Literal Identity (Address vs Content)
+### 2.2. Literal Identity (The Universal CID)
 
-The JotCAD mesh distinguishes between **Addressing** (where data is requested)
-and **Content** (what the data actually is).
+The JotCAD mesh uses a strict **Content Identifier (CID)** model for all addressing.
 
-- **Selector-as-Address (Key):** Every request is standardizes into a Selector
-  object `{path, parameters}`. We hash this object (using sorted JCB binary
-  traversal) to create a stable **Address Key**.
-- **Data-as-Content (CID):** The binary artifact itself is hashed to produce its
-  **True CID**.
-- **Link-to-CID Architecture:** The Address Key identifies a `.meta` file that
-  points to one or more Content CIDs. This allows multiple ways of asking for
-  data to deduplicate into the same terminal bytes.
+- **Computation-Addressed Shapes:** Every request is standardized into a Selector object `{path, parameters, output}`. We hash this entire object to create the CID for the Shape or artifact.
+- **Content-Addressed Geometry:** The heavy binary geometry itself is hashed directly from its raw bytes to produce its CID. This ensures perfect deduplication.
+- **Flat Architecture:** The VFS acts as a pure key-value store mapping `CID -> .data`. Formal `.meta` links are used to handle semantic aliasing between different Selectors.
 
 ### 2.3. No Semantic Magic (Literal Mesh)
 

@@ -1,6 +1,6 @@
 #include <iostream>
 #include "../triangle_op.h"
-#include "../../fs/cpp/include/vfs_node.h"
+#include "../../fs/cpp/vfs_node.h"
 
 using namespace jotcad::geo;
 
