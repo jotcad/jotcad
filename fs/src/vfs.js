@@ -175,14 +175,24 @@ export class VFS {
     if (streamOrBytes && typeof streamOrBytes === 'object' && streamOrBytes.tags) {
         info.tags = { ...info.tags, ...streamOrBytes.tags };
     }
+// Use consistently computed 'bytes' (drained from stream) for storage
+await this.storage.set(cid, bytes, info);
 
-    // Use consistently computed 'bytes' (drained from stream) for storage
-    await this.storage.set(cid, bytes, info);
-    await this.storage.set(addrKey, null, info);
+// Store by addressKey (Mesh key) with Partitioned Ports
+const port = context.output || '$out';
+let addrInfo = { ...info, ports: {} };
+if (await this.storage.has(addrKey)) {
+    const existing = await this._getStorageInfo(addrKey);
+    if (existing && existing.ports) addrInfo.ports = { ...existing.ports };
+}
+addrInfo.ports[port] = cid;
+addrInfo.cid = addrInfo.ports['$out'] || cid;
 
-    this.events.emit('state', { path: s.path, parameters: s.parameters, cid, state: 'AVAILABLE' });
-    return { cid };
-  }
+await this.storage.set(addrKey, null, addrInfo);
+
+this.events.emit('state', { path: s.path, parameters: s.parameters, cid, port, state: 'AVAILABLE' });
+return { cid };
+}
 
   async writeData(selector, data, context = {}) { return await this.write(selector, data, context); }
 
@@ -193,7 +203,7 @@ export class VFS {
 
     const result = await this._readResult(s, { ...context, stack: [], expiresAt });
     if (!result || !result.success) {
-        if (result?.error === 'Expired' || result?.error === 'Backflow') return null;
+        if (result?.error === 'Expired' || result?.error === 'Backflow' || result?.error === 'Missing Port') return null;
         throw new Error(`VFS.readData: Failed to resolve selector ${JSON.stringify(s)}`);
     }
     
@@ -298,7 +308,20 @@ export class VFS {
         if (await this.storage.has(addrKey)) {
           const info = await this._getStorageInfo(addrKey);
           if (followLinks && info?.target) return await this._readResult(info.target, { ...context, depth: depth + 1, stack: [...stack, addrKey] });
-          if (info?.cid || info?.target) return { success: true, cid: info.cid || addrKey, metadata: info || {} };
+          
+          const port = context.output || '$out';
+          if (info?.ports && info.ports[port]) {
+              const cidInfo = await this._getStorageInfo(info.ports[port]);
+              return { success: true, cid: info.ports[port], metadata: cidInfo || info || {} };
+          }
+          if (info?.ports && port !== '$out' && !info.ports[port]) {
+              return { success: false, error: 'Missing Port' };
+          }
+
+          if (info?.cid || info?.target) {
+              const cidInfo = info.cid ? await this._getStorageInfo(info.cid) : null;
+              return { success: true, cid: info.cid || addrKey, metadata: cidInfo || info || {} };
+          }
         }
 
         // Remote packet logic

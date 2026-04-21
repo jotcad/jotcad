@@ -90,9 +90,18 @@ The VFS supports **Formal Links**, a mechanism for aliasing one Selector to anot
 
 The `read` operation is the primary mechanism for demand-driven data retrieval.
 
-- **Unambiguous Signaling:** A `read` MUST either return the requested data 
-  with a `200 OK` or fail with an explicit HTTP error code. 
-
+- **Atomic Selector Wire Format:** Requests MUST wrap the target Selector in a top-level `selector` key. They may optionally specify an `output` port.
+  ```json
+  {
+    "selector": { "path": "jot/pdf", "parameters": { ... } },
+    "output": "file",
+    "expiresAt": 1700000000000,
+    "stack": ["node-A"]
+  }
+  ```
+- **Partitioned Output Ports:** A `read` request is addressed by the Base Selector (which represents the singular computation). The `output` field (defaulting to `$out`) slices a specific facet of the computation's cached result map.
+- **Unambiguous Signaling:** A `read` MUST either return the requested data
+  with a `200 OK` or fail with an explicit HTTP error code.
 ## 4. Discovery Protocol (Catalog)
 
 The VFS uses a **Demand-Driven Push** model for discovery.
