@@ -33,15 +33,13 @@ struct PdfOp : P {
         walk(vfs, in, Matrix::identity(), writer);
         auto pdf_bytes = writer.write();
         
-        // 1. Primary Output: Shape Pass-through
-        vfs->write<Shape>(fulfilling, in);
+        // 1. Primary Output: Shape Pass-through ($out)
+        vfs->write<Shape>(fulfilling, in, "$out");
 
-        // 2. Secondary Output: PDF bytes at selector + $path parameter
-        fs::Selector side = fulfilling;
-        side.parameters["$path"] = pdf_path;
-        vfs->write<std::vector<uint8_t>>(side, pdf_bytes);
+        // 2. Secondary Output: PDF bytes in 'file' port
+        vfs->write<std::vector<uint8_t>>(fulfilling, pdf_bytes, "file");
         
-        std::cout << "[PdfOp] Fulfilled Shape and side-wrote PDF to $path (" << pdf_bytes.size() << " bytes)." << std::endl;
+        std::cout << "[PdfOp] Fulfilled Shape ($out) and PDF (file port, " << pdf_bytes.size() << " bytes)." << std::endl;
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "path"}; }
@@ -56,7 +54,7 @@ struct PdfOp : P {
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
-                {"$path", {{"type", "mime:pdf"}, {"description", "The generated PDF blob."}}}
+                {"file", {{"type", "mime:application/pdf"}, {"description", "The generated PDF blob."}}}
             }}
         };
     }

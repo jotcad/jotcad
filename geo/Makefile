@@ -1,12 +1,13 @@
 # JotCAD Geometry Ops Makefile
 
+.DELETE_ON_ERROR:
+
 CXX = g++
 CXXFLAGS = -O3 -std=c++17 -fPIC -MMD -MP
 AR = ar
 ARFLAGS = rcs
 
 # Paths
-VFS_SRC = ../fs/cpp/src/vfs_node.cpp
 CID_SRC = ../fs/cpp/src/cid.cpp
 OPS_LIB_SRC = ops_library.cc
 REGISTRY_SRC = impl/registry.cc
@@ -26,7 +27,8 @@ LIB_JOTGEO = $(BIN_DIR)/libjotgeo.a
 OPS_BIN = $(BIN_DIR)/ops
 
 # Object files
-OBJS = $(OBJ_DIR)/vfs_node.o $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o
+OBJS = $(OBJ_DIR)/vfs_core.o $(OBJ_DIR)/vfs_primitives.o $(OBJ_DIR)/vfs_geo_adapter.o \
+       $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o
 DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
@@ -48,11 +50,27 @@ $(OBJ_DIR)/%.o: %.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/%.o: ../fs/cpp/src/%.cpp
+$(OBJ_DIR)/vfs_core.o: ../fs/cpp/src/vfs_core.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/vfs_primitives.o: ../fs/cpp/src/vfs_primitives.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/vfs_geo_adapter.o: impl/vfs_geo_adapter.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/cid.o: ../fs/cpp/src/cid.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
 $(OBJ_DIR)/registry.o: impl/registry.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/png_op.o: impl/png_op.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

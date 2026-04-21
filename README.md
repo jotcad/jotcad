@@ -33,10 +33,17 @@ content-addressable storage.
 
 ### Building C++ Geometry Ops Node
 
-The native geometry kernels (Hexagon, Box, Offset, etc.) are implemented as a unified C++ VFS Node. Compile the source into the `geo/bin/ops` binary:
+The native geometry kernels (Hexagon, Box, Offset, etc.) are implemented as a 
+unified C++ VFS Node. The VFS implementation is split into modular components 
+to ensure build stability:
+- **`vfs_core`**: Core routing and networking logic.
+- **`vfs_primitives`**: Specializations for JSON and binary blobs.
+- **`vfs_geo_adapter`**: High-level specializations for `Shape` and `Geometry`.
+
+Compile the source into the `geo/bin/ops` binary:
 
 ```bash
-cd geo && ./build.sh && cd ..
+cd geo && make && cd ..
 ```
 
 ### Starting the System

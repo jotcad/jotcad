@@ -114,24 +114,31 @@ std::vector<uint8_t> encode_jcb(const json& j) {
 }
 
 json decode_jcb_impl(const std::vector<uint8_t>& buf, size_t& offset) {
-    if (offset >= buf.size()) throw std::runtime_error("JCB Decode: EOF");
+    if (offset >= buf.size()) throw JCBParseException("JCB Decode: EOF");
     uint8_t tag = buf[offset++];
     if (tag == 0x01) return nullptr;
-    if (tag == 0x02) return buf[offset++] == 1;
+    if (tag == 0x02) {
+        if (offset >= buf.size()) throw JCBParseException("JCB Decode: Boolean EOF");
+        return buf[offset++] == 1;
+    }
     if (tag == 0x03) {
+        if (offset + 8 > buf.size()) throw JCBParseException("JCB Decode: Number EOF");
         uint64_t u = 0;
         for (int i = 7; i >= 0; --i) u |= ((uint64_t)buf[offset++] << (i * 8));
         double d; std::memcpy(&d, &u, 8);
         return d;
     }
     if (tag == 0x04) {
+        if (offset + 4 > buf.size()) throw JCBParseException("JCB Decode: String Length EOF");
         uint32_t len = 0;
         for (int i = 3; i >= 0; --i) len |= ((uint32_t)buf[offset++] << (i * 8));
+        if (offset + len > buf.size()) throw JCBParseException("JCB Decode: String Data EOF");
         std::string s((const char*)&buf[offset], len);
         offset += len;
         return s;
     }
     if (tag == 0x05) {
+        if (offset + 4 > buf.size()) throw JCBParseException("JCB Decode: Array Length EOF");
         uint32_t len = 0;
         for (int i = 3; i >= 0; --i) len |= ((uint32_t)buf[offset++] << (i * 8));
         json arr = json::array();
@@ -139,21 +146,26 @@ json decode_jcb_impl(const std::vector<uint8_t>& buf, size_t& offset) {
         return arr;
     }
     if (tag == 0x06) {
+        if (offset + 4 > buf.size()) throw JCBParseException("JCB Decode: Object Length EOF");
         uint32_t len = 0;
         for (int i = 3; i >= 0; --i) len |= ((uint32_t)buf[offset++] << (i * 8));
         json obj = json::object();
         for (uint32_t i = 0; i < len; i++) {
-            std::string k = decode_jcb_impl(buf, offset).get<std::string>();
+            json k_json = decode_jcb_impl(buf, offset);
+            if (!k_json.is_string()) throw JCBParseException("JCB Decode: Non-string key in object");
+            std::string k = k_json.get<std::string>();
             obj[k] = decode_jcb_impl(buf, offset);
         }
         return obj;
     }
-    throw std::runtime_error("JCB Decode: Invalid Tag " + std::to_string(tag));
+    throw JCBParseException("JCB Decode: Invalid Tag " + std::to_string(tag));
 }
 
 json decode_jcb(const std::vector<uint8_t>& buf) {
     size_t offset = 0;
-    return decode_jcb_impl(buf, offset);
+    json j = decode_jcb_impl(buf, offset);
+    if (offset != buf.size()) throw JCBParseException("JCB Decode: Trailing data");
+    return j;
 }
 
 std::string encode_safe(const json& j) {

@@ -13,6 +13,7 @@
 #include "on_op.h"
 #include "cut_op.h"
 #include "pdf_op.h"
+#include "png_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -33,6 +34,7 @@ void register_all_ops() {
     on_init();
     cut_init();
     pdf_init();
+    png_init();
 }
 
 } // namespace geo

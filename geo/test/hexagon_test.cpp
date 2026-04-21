@@ -13,7 +13,9 @@ int main() {
     fs::Selector fulfilling = {"jot/Hexagon/full", {{"diameter", 30.0}}};
     HexagonFullOp<>::execute(&vfs, fulfilling, 30.0);
     
+    std::cout << "DEBUG: Attempting to read Shape from port $out..." << std::endl;
     Shape s = vfs.read<Shape>(fulfilling);
+    std::cout << "DEBUG: Read Shape successfully." << std::endl;
     if (!s.geometry.has_value()) {
         std::cerr << "❌ Hexagon FAIL: No geometry handle returned" << std::endl;
         return 1;

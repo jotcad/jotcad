@@ -80,8 +80,6 @@ struct Processor {
                 }
             }
             return results;
-        } else if constexpr (std::is_same_v<T, fs::Selector>) {
-            return val.get<fs::Selector>();
         } else {
             return val.get<T>();
         }

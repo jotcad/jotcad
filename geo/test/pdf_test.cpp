@@ -18,10 +18,17 @@ int main() {
     fs::Selector pdf_sel = {"jot/pdf", {{"path", "test.pdf"}}};
     PdfOp<>::execute(&vfs, pdf_sel, hex, "test.pdf");
     
-    // PDF Op returns the input shape
+    // 1. Verify $out is the shape
     Shape out = vfs.read<Shape>(pdf_sel);
     if (!out.geometry.has_value()) {
         std::cerr << "❌ PDF FAIL: No input shape returned" << std::endl;
+        return 1;
+    }
+
+    // 2. Verify 'file' port has PDF data
+    std::vector<uint8_t> pdf = vfs.read<std::vector<uint8_t>>(pdf_sel, "file");
+    if (pdf.size() < 10 || pdf[0] != '%' || pdf[1] != 'P' || pdf[2] != 'D' || pdf[3] != 'F') {
+        std::cerr << "❌ PDF FAIL: 'file' port missing or invalid PDF header (" << pdf.size() << " bytes)" << std::endl;
         return 1;
     }
 

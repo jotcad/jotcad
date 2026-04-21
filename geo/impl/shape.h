@@ -3,6 +3,7 @@
 #include <vector>
 #include <array>
 #include <optional>
+#include <iostream>
 #include <json.hpp>
 #include "vfs_node.h"
 

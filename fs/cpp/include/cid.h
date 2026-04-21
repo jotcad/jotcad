@@ -8,6 +8,11 @@ namespace fs {
 
 using json = nlohmann::json;
 
+class JCBParseException : public std::runtime_error {
+public:
+    JCBParseException(const std::string& msg) : std::runtime_error(msg) {}
+};
+
 /**
  * encode_jcb: Deterministic Binary Encoding (JotCAD Canonical Binary)
  */

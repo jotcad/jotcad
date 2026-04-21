@@ -98,10 +98,16 @@ public:
     template<typename T = std::vector<uint8_t>>
     T read(const Selector& sel);
 
+    template<typename T = std::vector<uint8_t>>
+    T read(const Selector& sel, const std::string& output);
+
     std::vector<uint8_t> spy(const VFSRequest& req);
 
     template<typename T = std::vector<uint8_t>>
     Selector write(const Selector& sel, const T& data);
+
+    template<typename T = std::vector<uint8_t>>
+    Selector write(const Selector& sel, const T& data, const std::string& output);
 
     // Anonymous write (only for types that support content-addressing like Geometry)
     template<typename T = std::vector<uint8_t>>
@@ -110,6 +116,7 @@ public:
     }
 
     Selector write_bytes(const Selector& sel, const std::vector<uint8_t>& data);
+    Selector write_bytes(const Selector& sel, const std::vector<uint8_t>& data, const std::string& output);
 
     void link(const Selector& src, const Selector& tgt);
 
@@ -141,7 +148,7 @@ private:
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
 
-    std::vector<uint8_t> read_impl(const Selector& sel, int depth = 0, std::vector<std::string> stack = {});
+    std::vector<uint8_t> read_impl(const Selector& sel, int depth = 0, std::vector<std::string> stack = {}, const std::string& output = "$out");
 
     std::string get_cid(const Selector& sel);
     bool has_local(const std::string& cid);
@@ -150,17 +157,19 @@ private:
     void write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 };
 
-// --- CORE SPECIALIZATION DECLARATIONS ---
+// --- EXPLICIT SPECIALIZATION DECLARATIONS ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel);
 template<> json VFSNode::read<json>(const Selector& sel);
-template<> jotcad::geo::Geometry VFSNode::read<jotcad::geo::Geometry>(const Selector& sel);
-template<> jotcad::geo::Shape VFSNode::read<jotcad::geo::Shape>(const Selector& sel);
+template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel, const std::string& output);
+template<> json VFSNode::read<json>(const Selector& sel, const std::string& output);
 
 template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data);
 template<> Selector VFSNode::write<json>(const Selector& sel, const json& data);
 template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data);
-template<> Selector VFSNode::write<jotcad::geo::Geometry>(const Selector& sel, const jotcad::geo::Geometry& data);
-template<> Selector VFSNode::write<jotcad::geo::Shape>(const Selector& sel, const jotcad::geo::Shape& data);
+
+template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data, const std::string& output);
+template<> Selector VFSNode::write<json>(const Selector& sel, const json& data, const std::string& output);
+template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data, const std::string& output);
 
 } // namespace fs

@@ -67,6 +67,23 @@ Input artifacts are strictly read-only. Transformative operators (e.g., `cut`,
 - **`Shape` Fulfillment:** Writing a Shape (metadata) requires an explicit 
   address. Providing an empty selector to a Shape write is an error.
 
+### 2.4 Partitioned Output Ports (Multi-Artifact Fulfillment)
+
+A single computation (identified by a Selector) may produce multiple 
+distinct artifacts (e.g., a 3D Shape and its PNG thumbnail). These are 
+stored in **Ports**.
+
+- **Address Key:** The `.meta` file at the Selector's Address Key contains a 
+  `ports` map.
+- **Reserved Ports:**
+  - **`$out` (Default):** The primary semantic result (usually a `Shape`).
+  - **`file`:** The primary binary artifact (e.g., `PDF`, `PNG`, `STL`).
+  - **`thumb`:** A low-resolution preview image.
+- **Read-Modify-Write (RMW):** Writing to a specific port MUST NOT destroy 
+  existing ports. The VFS implementation reads the existing `.meta` file, 
+  merges the new port CID into the `ports` map, and writes the updated 
+  metadata back to disk.
+
 ## 3. Peer-to-Peer Protocol (Routing)
 
 ### 3.1 Identity Introduction (`POST /register`)
