@@ -7,6 +7,9 @@ ops/node_modules/
 server/node_modules/
 threejs/node_modules/
 
+# Ignore legacy systems
+legacy/
+
 # Ignore build artifacts
 **/obj/
 **/bin/
