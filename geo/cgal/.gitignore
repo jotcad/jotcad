@@ -1,0 +1,12 @@
+# Ignore libraries and headers downloaded/built by install scripts
+cgal/
+boost/
+Eigen/
+eigen-*/
+glm/
+glpk-*/
+gmp-*/
+mpfr-*/
+*.tar.gz
+*.tar.xz
+CGAL
