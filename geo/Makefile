@@ -23,6 +23,8 @@ OPS_BIN = $(BIN_DIR)/ops
 PNG_TEST_BIN = test/bin/png_test
 RENDER_TEST_BIN = test/bin/render_test
 
+RULE_TEST_BIN = test/bin/rule_test
+
 # Object files
 OBJS = $(OBJ_DIR)/vfs_core.o $(OBJ_DIR)/vfs_primitives.o $(OBJ_DIR)/vfs_geo_adapter.o \
        $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o \
@@ -32,7 +34,7 @@ DRIVER_OBJ = $(OBJ_DIR)/ops.o
 # Include all generated dependency files
 DEPS = $(OBJS:.o=.d) $(DRIVER_OBJ:.o=.d)
 
-all: $(OPS_BIN) $(PNG_TEST_BIN) $(RENDER_TEST_BIN)
+all: $(OPS_BIN) $(PNG_TEST_BIN) $(RENDER_TEST_BIN) $(RULE_TEST_BIN)
 
 # Create static library
 $(LIB_JOTGEO): $(OBJS)
@@ -47,6 +49,16 @@ $(OPS_BIN): $(DRIVER_OBJ) $(LIB_JOTGEO)
 $(PNG_TEST_BIN): test/png_test.cpp $(LIB_JOTGEO)
 	@mkdir -p test/bin
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) test/png_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
+
+# Link Render test
+$(RENDER_TEST_BIN): test/render_test.cpp $(LIB_JOTGEO)
+	@mkdir -p test/bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) test/render_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
+
+# Link Rule test
+$(RULE_TEST_BIN): test/rule_test.cpp $(LIB_JOTGEO)
+	@mkdir -p test/bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) test/rule_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
 
 # Link Render test
 $(RENDER_TEST_BIN): test/render_test.cpp $(LIB_JOTGEO)

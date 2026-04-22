@@ -14,6 +14,7 @@
 #include "cut_op.h"
 #include "pdf_op.h"
 #include "png_op.h"
+#include "rule_op.h"
 
 namespace jotcad {
 namespace geo {
