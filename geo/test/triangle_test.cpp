@@ -1,12 +1,10 @@
-#include <iostream>
+#include "test_base.h"
 #include "../triangle_op.h"
-#include "../../fs/cpp/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_triangle_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs;
     
     std::cout << "Testing Triangle Primitive..." << std::endl;
     
@@ -14,16 +12,7 @@ int main() {
     TriangleEquilateralOp<>::execute(&vfs, fulfilling, {10.0});
     
     Shape s = vfs.read<Shape>(fulfilling);
-    if (!s.geometry.has_value()) {
-        std::cerr << "❌ Triangle FAIL: No geometry handle returned" << std::endl;
-        return 1;
-    }
-    
-    Geometry g = vfs.read<Geometry>(s.geometry.value());
-    if (g.vertices.size() != 3) {
-        std::cerr << "❌ Triangle FAIL: Expected 3 vertices, got " << g.vertices.size() << std::endl;
-        return 1;
-    }
+    vfs.verify_render(s, "triangle_op_equilateral", "dcc5a7ad236cdfcbe1efcebf38dc82fb9190394526ae8bf4158270ca0405569c");
 
     std::cout << "✅ Triangle PASS" << std::endl;
     return 0;

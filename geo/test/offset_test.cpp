@@ -1,13 +1,11 @@
-#include <iostream>
+#include "test_base.h"
 #include "../hexagon_op.h"
 #include "../offset_op.h"
-#include "../../fs/cpp/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_offset_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs;
     
     std::cout << "Testing Offset Operation..." << std::endl;
     
@@ -19,18 +17,7 @@ int main() {
     OffsetOp<>::execute(&vfs, offset_fulfilling, hex, 5.0);
     
     Shape s = vfs.read<Shape>(offset_fulfilling);
-    if (!s.geometry.has_value()) {
-        std::cerr << "❌ Offset FAIL: No geometry handle returned" << std::endl;
-        return 1;
-    }
-    
-    Geometry g = vfs.read<Geometry>(s.geometry.value());
-    // Offset shouldn't change vertex count for a simple polygon in many implementations, 
-    // but here we just check if it exists and can be read back.
-    if (g.vertices.size() < 6) {
-        std::cerr << "❌ Offset FAIL: Unexpected vertex count " << g.vertices.size() << std::endl;
-        return 1;
-    }
+    vfs.verify_render(s, "offset_op_basic", "3f702aa7105058b23a9eaf57fea8372d8f4b5fb8290f458b2785b90d740f472c");
 
     std::cout << "✅ Offset PASS" << std::endl;
     return 0;

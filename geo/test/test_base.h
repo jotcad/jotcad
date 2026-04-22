@@ -35,7 +35,7 @@ public:
     }
 
     // New helper to verify rendering output
-    void verify_render(const Shape& shape, const std::string& name, const std::string& expected_hash) {
+    void verify_render(const Shape& shape, const std::string& name, const std::string& expected_hash = "") {
         if (!shape.geometry.has_value()) {
             throw std::runtime_error("Shape has no geometry for rendering: " + name);
         }
@@ -44,20 +44,31 @@ public:
         std::vector<uint8_t> png_bytes = Rasterizer::render_png(geo, 256, 256);
         std::string actual_hash = fs::vfs_hash256(png_bytes);
 
-        // Always save for manual inspection
+        // 1. Save to 'actual/' for local comparison
         std::filesystem::create_directories("actual");
         std::ofstream out("actual/" + name + ".png", std::ios::binary);
         out.write((char*)png_bytes.data(), png_bytes.size());
         out.close();
 
+        // 2. Check if we match the documentation baseline (in geo/ root)
+        // Tests run in geo/test/bin/, so baseline is in ../../
+        std::string baseline_path = "../../" + name + ".png";
+        
         if (expected_hash != "" && actual_hash != expected_hash) {
             std::cerr << "❌ RENDER FAIL: " << name << std::endl;
             std::cerr << "   Expected: " << expected_hash << std::endl;
             std::cerr << "   Actual:   " << actual_hash << std::endl;
+            if (!std::filesystem::exists(baseline_path)) {
+                std::cerr << "   (Documentation baseline missing at: " << baseline_path << ")" << std::endl;
+            }
             exit(1);
         }
         
-        std::cout << "  ✅ RENDER PASS: " << name << " (" << actual_hash << ")" << std::endl;
+        if (expected_hash == "") {
+            std::cout << "  📸 RENDER (New/Unverified): " << name << " -> " << actual_hash << std::endl;
+        } else {
+            std::cout << "  ✅ RENDER PASS: " << name << " (" << actual_hash.substr(0, 8) << ")" << std::endl;
+        }
     }
 };
 

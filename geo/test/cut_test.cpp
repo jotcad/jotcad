@@ -1,21 +1,19 @@
-#include <iostream>
+#include "test_base.h"
 #include "../box_op.h"
 #include "../cut_op.h"
-#include "../../fs/cpp/vfs_node.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_cut_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs;
     
     std::cout << "Testing Cut Operation..." << std::endl;
     
-    fs::Selector base_sel = {"jot/Box/base", {{"size", {100.0, 100.0, 0.0}}}};
+    fs::Selector base_sel = {"jot/Box/base", {{"width", 100.0}, {"height", 100.0}, {"depth", 0.0}}};
     BoxOp<>::execute(&vfs, base_sel, 100.0, 100.0, 0.0);
     Shape base = vfs.read<Shape>(base_sel);
 
-    fs::Selector hole_sel = {"jot/Box/hole", {{"size", {10.0, 10.0, 0.0}}}};
+    fs::Selector hole_sel = {"jot/Box/hole", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}}};
     BoxOp<>::execute(&vfs, hole_sel, 10.0, 10.0, 0.0);
     Shape hole = vfs.read<Shape>(hole_sel);
     
@@ -24,10 +22,7 @@ int main() {
     CutOp<>::execute(&vfs, cut_sel, base, {hole});
     
     Shape out = vfs.read<Shape>(cut_sel);
-    if (!out.geometry.has_value()) {
-        std::cerr << "❌ Cut FAIL: No result geometry" << std::endl;
-        return 1;
-    }
+    vfs.verify_render(out, "cut_op_basic", "cc93abc575c112b51cd4aa1f1f57cbe555d6eed21f49b3f6d173522dde540921");
 
     std::cout << "✅ Cut PASS" << std::endl;
     return 0;

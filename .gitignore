@@ -30,6 +30,7 @@ geometry/cgal/
 
 # Ignore test output images
 **/actual/
+!geo/*.png
 # observed.*.png
 
 # Ignore temporary files
