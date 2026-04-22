@@ -29,6 +29,7 @@ geometry/glm/
 geometry/cgal/
 
 # Ignore test output images
+**/actual/
 # observed.*.png
 
 # Ignore temporary files
