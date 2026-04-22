@@ -30,7 +30,7 @@ export class JotParser {
     // Ignore single-line comments
     const cleanText = text.replace(/\/\/.*$/gm, '');
     const regex =
-      /\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,)\s*/g;
+      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);

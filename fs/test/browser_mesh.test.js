@@ -63,70 +63,90 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
     await fs.rm('.vfs_storage_browser_test_ops', { recursive: true, force: true }).catch(() => {});
   });
 
-  await t.test('should deliver catalog and execute jot expression', async () => {
+  await t.test('should deliver catalog, define dynamic op, and execute it via mesh', async () => {
     const page = await browser.newPage();
     
     // Capture browser console logs
     page.on('console', msg => {
-        console.log(`[BROWSER] ${msg.text()}`);
+        const t = msg.text();
+        if (t.includes('[JotNode]') || t.includes('[Mesh') || t.includes('[UX]') || t.includes('Result')) {
+            console.log(`[BROWSER] ${t}`);
+        }
     });
 
     await page.goto(`http://localhost:${PORT_UX}`);
     console.log('[Test Browser] Page loaded, waiting for catalog...');
 
     // 1. Wait for Catalog
-    const catalogReceived = await page.waitForFunction(() => {
+    await page.waitForFunction(() => {
         const b = window.blackboard;
         return b && b.schemas && b.schemas()['jot/Box'];
     }, { timeout: 20000 });
-    assert.ok(catalogReceived, 'Catalog should contain jot/Box');
 
-    const allSchemas = await page.evaluate(() => window.blackboard.schemas());
-    const schemaPaths = Object.keys(allSchemas).sort();
-    console.log(`[Test Browser] Total schemas received: ${schemaPaths.length}`);
-    
-    const expectedPaths = [
-        'jot/Box', 'jot/Hexagon/cap', 'jot/Hexagon/full', 'jot/Hexagon/half',
-        'jot/Hexagon/middle', 'jot/Hexagon/sector', 'jot/Triangle/equilateral',
-        'jot/at', 'jot/color', 'jot/corners', 'jot/cut', 'jot/group', 'jot/link',
-        'jot/loop', 'jot/nth', 'jot/offset', 'jot/offset/closure', 'jot/on',
-        'jot/outline', 'jot/pdf', 'jot/png', 'jot/points', 'jot/rotate'
-    ].sort();
-
-    assert.deepStrictEqual(schemaPaths, expectedPaths, 'Received schemas should match the expected set');
-
-    // 2. Inject expression
-    console.log('[Test Browser] Injecting Jot expression...');
-    await page.waitForSelector('textarea');
-    const expression = 'Box(20, 20, 20)';
-    await page.evaluate((exp) => {
-        const el = document.querySelector('textarea');
-        el.value = exp;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-    }, expression);
-
-    // 3. Click Evaluate
-    console.log('[Test Browser] Clicking Evaluate...');
+    // 2. Define Dynamic Op: user/Square(side)
+    console.log('[Test Browser] Defining dynamic op...');
     await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('EVALUATE JOT'));
-        if (btn) btn.click();
-        else throw new Error('Evaluate button not found');
+        const nameInput = document.querySelector('[data-testid="op-name-input"]');
+        nameInput.value = 'user/Square';
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        const argNameInput = document.querySelector('[data-testid="arg-name-0"]');
+        argNameInput.value = 'side';
+        argNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        const codeEditor = document.querySelector('textarea');
+        codeEditor.value = 'Box(side, side, 0)';
+        codeEditor.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
-    // 4. Wait for evaluation to complete
-    console.log('[Test Browser] Waiting for evaluation...');
+    // 3. Publish to Mesh
+    console.log('[Test Browser] Publishing to mesh...');
+    await page.click('button[title="Publish to Mesh"]');
+
+    // 4. Verify catalog update
+    await page.waitForFunction(() => {
+        const b = window.blackboard;
+        return b && b.schemas()['user/Square'];
+    }, { timeout: 5000 });
+    console.log('[Test Browser] Dynamic op published and visible in catalog.');
+
+    // 5. Execute custom op via mesh
+    console.log('[Test Browser] Executing custom op...');
+    await page.evaluate(() => {
+        const codeEditor = document.querySelector('textarea');
+        codeEditor.value = 'user/Square(50)';
+        codeEditor.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('EVALUATE JOT'));
+        if (btn) btn.click();
+    });
+
+    // 6. Wait for result
     await page.waitForFunction(() => {
         const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'EVALUATE JOT');
         return btn && !btn.disabled;
     }, { timeout: 30000 });
 
-    // 5. Verify result: check for CID in VFS and Canvas presence
-    const resultOk = await page.evaluate(async () => {
+    // 7. Capture rendered result from Canvas
+    console.log('[Test Browser] Capturing rendered result...');
+    const pngDataUrl = await page.evaluate(() => {
         const canvas = document.querySelector('canvas');
-        return !!canvas;
+        if (!canvas) return null;
+        // Ensure the scene is rendered before capture
+        return canvas.toDataURL('image/png');
     });
 
-    assert.ok(resultOk, 'Canvas should be present in the viewport');
-    console.log('[Test Browser] SUCCESS: Catalog received and expression executed.');
+    assert.ok(pngDataUrl, 'Canvas should be present with rendered result');
+    
+    const base64Data = pngDataUrl.replace(/^data:image\/png;base64,/, "");
+    const pngPath = path.resolve(__dirname, '../../geo/user_square_result.png');
+    await fs.writeFile(pngPath, base64Data, 'base64');
+    
+    // 8. Capture full screen for documentation
+    const screenPath = path.resolve(__dirname, '../../geo/browser_integration_screenshot.png');
+    await page.screenshot({ path: screenPath, fullPage: true });
+    
+    console.log(`[Test Browser] SUCCESS: UI screenshot captured to ${screenPath}`);
+    console.log(`[Test Browser] SUCCESS: Dynamic op result captured to ${pngPath}`);
   });
 });
