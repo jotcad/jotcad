@@ -82,7 +82,8 @@ struct HexagonMiddleOp : P {
             {"arguments", {
                 {"diameter", {{"type", "number"}, {"default", 30.0}}},
                 {"type", {{"type", "string"}, {"const", "middle"}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
@@ -109,7 +110,8 @@ struct HexagonSectorOp : P {
             {"arguments", {
                 {"diameter", {{"type", "number"}, {"default", 30.0}}},
                 {"type", {{"type", "string"}, {"const", "sector"}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
@@ -136,7 +138,8 @@ struct HexagonHalfOp : P {
             {"arguments", {
                 {"diameter", {{"type", "number"}, {"default", 30.0}}},
                 {"type", {{"type", "string"}, {"const", "half"}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };

@@ -96,7 +96,8 @@ struct CornersOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"proxy", {{"type", "boolean"}, {"default", true}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };

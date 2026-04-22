@@ -152,7 +152,8 @@ struct CutOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };

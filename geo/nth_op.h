@@ -23,7 +23,8 @@ struct NthOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
                 {"index", {{"type", "integer"}, {"default", 0}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };

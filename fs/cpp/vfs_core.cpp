@@ -35,6 +35,16 @@ void VFSNode::listen() {
     auto svr = new httplib::Server();
     server_ptr_ = svr;
 
+    svr->set_default_headers({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
+        {"Access-Control-Allow-Headers", "Content-Type, X-Requested-With, X-VFS-Peer-Id, X-VFS-Reply-To, X-VFS-Id"}
+    });
+
+    svr->Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 200;
+    });
+
     svr->Get("/health", [this](const httplib::Request&, httplib::Response& res) {
         res.set_content(json({{"status", "OK"}, {"id", config_.id}}).dump(), "application/json");
     });
@@ -81,12 +91,17 @@ void VFSNode::listen() {
             if (url.empty()) url = get_param("url");
         }
 
-        if (!peerId.empty() && !url.empty()) {
-            add_peer(url);
-            res.set_content(json({{"id", config_.id}, {"reachability", "DIRECT"}}).dump(), "application/json");
+        if (!peerId.empty()) {
+            if (!url.empty()) {
+                add_peer(url);
+                res.set_content(json({{"id", config_.id}, {"reachability", "DIRECT"}}).dump(), "application/json");
+            } else {
+                // Browser or restricted peer: acknowledge ID, signal they must poll (/listen)
+                res.set_content(json({{"id", config_.id}, {"reachability", "REVERSE"}}).dump(), "application/json");
+            }
         } else {
-            std::cout << "[VFSNode] /register 400: peerId='" << peerId << "' url='" << url << "' Body: '" << req.body << "' Target: '" << req.target << "'" << std::endl;
             res.status = 400;
+            res.set_content("Missing peerId", "text/plain");
         }
     });
 
@@ -109,6 +124,19 @@ void VFSNode::listen() {
         }
     });
 
+    svr->Post("/subscribe", [this](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            std::cout << "[REST " << config_.id << "] POST /subscribe " << body.at("selector").at("path") << std::endl;
+            subscribe(body.at("selector"), body.at("expiresAt"), body.value("stack", std::vector<std::string>{}));
+            res.status = 200;
+        } catch (const std::exception& e) {
+            std::cerr << "[REST " << config_.id << "] /subscribe Error: " << e.what() << std::endl;
+            res.status = 500;
+            res.set_content(e.what(), "text/plain");
+        }
+    });
+
     svr->Post("/notify", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
@@ -118,6 +146,17 @@ void VFSNode::listen() {
             res.status = 500;
             res.set_content(e.what(), "text/plain");
         }
+    });
+
+    svr->Post("/listen", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string peer_id = req.get_header_value("x-vfs-peer-id");
+        if (peer_id.empty()) {
+            res.status = 400;
+            res.set_content("Missing x-vfs-peer-id", "text/plain");
+            return;
+        }
+        // std::cout << "[REST " << config_.id << "] /listen from " << peer_id << std::endl;
+        register_reverse_peer(peer_id, res);
     });
 
     svr->listen("0.0.0.0", config_.port);
@@ -284,27 +323,64 @@ template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& c
 }
 
 void VFSNode::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
+    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
     std::string sel_str = encode_safe(selector);
-    {
-        std::lock_guard<std::mutex> lock(interest_mutex_);
-        if (interests_.count(sel_str)) {
-            auto& peers = interests_[sel_str];
-            auto it = peers.begin();
-            while (it != peers.end()) {
-                std::string peer_url = it->first;
-                std::thread([peer_url, selector, payload, stack, this]() {
-                    std::vector<std::string> next_stack = stack;
-                    next_stack.push_back(config_.id);
-                    httplib::Client cli(peer_url);
-                    cli.Post("/notify", json({{"selector", selector}, {"payload", payload}, {"stack", next_stack}}).dump(), "application/json");
+    
+    std::lock_guard<std::mutex> lock(interest_mutex_);
+    if (interests_.count(sel_str)) {
+        auto& peers = interests_[sel_str];
+        for (auto const& [peer_id, expiresAt] : peers) {
+            if (std::find(stack.begin(), stack.end(), peer_id) != stack.end()) continue;
+
+            std::string url;
+            {
+                std::lock_guard<std::mutex> plock(peer_mutex_);
+                if (peers_.count(peer_id)) url = peers_[peer_id];
+            }
+
+            std::vector<std::string> next_stack = stack;
+            next_stack.push_back(config_.id);
+            json body = {{"selector", selector}, {"payload", payload}, {"stack", next_stack}};
+
+            if (!url.empty()) {
+                std::thread([url, body]() {
+                    httplib::Client cli(url);
+                    cli.Post("/notify", body.dump(), "application/json");
                 }).detach();
-                ++it;
+            } else {
+                std::lock_guard<std::mutex> rlock(reverse_mutex_);
+                reverse_queues_[peer_id].push_back({{"type", "NOTIFY"}, {"selector", selector}, {"payload", payload}, {"stack", next_stack}});
             }
         }
     }
 }
 
-void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Response& res) {}
+void VFSNode::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
+    std::string sel_str = encode_safe(selector);
+    std::string peer_id = stack.empty() ? "unknown" : stack.back();
+    
+    {
+        std::lock_guard<std::mutex> lock(interest_mutex_);
+        interests_[sel_str][peer_id] = expiresAt;
+        interest_selectors_[sel_str] = selector;
+    }
+
+    if (selector.at("path") == "sys/schema") {
+        json catalog = get_catalog();
+        notify(selector, {{"type", "CATALOG_ANNOUNCEMENT"}, {"catalog", catalog["catalog"]}, {"provider", config_.id}}, {});
+    }
+}
+
+void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Response& res) {
+    std::unique_lock<std::mutex> lock(reverse_mutex_);
+    if (!reverse_queues_[peer_id].empty()) {
+        json cmd = reverse_queues_[peer_id].front();
+        reverse_queues_[peer_id].erase(reverse_queues_[peer_id].begin());
+        res.set_content(cmd.dump(), "application/json");
+        return;
+    }
+    res.status = 204;
+}
 
 json VFSNode::get_catalog() {
     std::lock_guard<std::mutex> lock(handlers_mutex_);

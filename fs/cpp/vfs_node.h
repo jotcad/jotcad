@@ -120,6 +120,10 @@ private:
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
 
+    std::map<std::string, std::vector<json>> reverse_queues_;
+    std::map<std::string, httplib::Response*> reverse_listeners_;
+    std::mutex reverse_mutex_;
+
     std::vector<uint8_t> read_impl(const Selector& sel, int depth = 0, std::vector<std::string> stack = {}, const std::string& output = "", long long expiresAt = 0);
 
     std::string get_cid(const Selector& sel);

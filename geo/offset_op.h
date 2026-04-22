@@ -57,7 +57,8 @@ struct OffsetClosureOp : P {
                 {"$in", {{"type", "jot:shape"}}},
                 {"diameter", {{"type", "number"}, {"default", 1.0}}},
                 {"closure", {{"type", "boolean"}, {"const", true}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };

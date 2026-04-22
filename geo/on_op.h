@@ -43,7 +43,8 @@ struct AtOp : P {
                 {"$in", {{"type", "jot:shape"}}},
                 {"target", {{"type", "jot:shape"}}},
                 {"op", {{"type", "jot:selector"}, {"default", nlohmann::json::object()}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
@@ -85,7 +86,8 @@ struct OnOp : P {
                 {"$in", {{"type", "jot:shape"}}},
                 {"target", {{"type", "jot:shape"}}},
                 {"op", {{"type", "jot:selector"}}}
-            }}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
     }
 };
