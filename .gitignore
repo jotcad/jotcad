@@ -8,6 +8,11 @@ server/node_modules/
 threejs/node_modules/
 
 # Ignore build artifacts
+**/obj/
+**/bin/
+*.o
+*.d
+*.a
 geometry/native.node
 geometry/native/
 geometry/wasm.js
@@ -44,3 +49,5 @@ geometry/.orb.js.swp
 server/assets/
 geometry/assets/
 **/.*vfs_storage*
+**/.test_vfs_*
+actual/
