@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 /**
  * toBase64: Standard Base64 encoding for Uint8Array.
  */
@@ -136,7 +134,15 @@ export function decodeJCB(bytes) {
 }
 
 export async function vfs_hash256(bytes) {
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  let cryptoImpl = globalThis.crypto;
+  
+  if (!cryptoImpl?.subtle) {
+    // Dynamic import for Node.js to avoid breaking browser bundles
+    const nodeCrypto = await import('node:crypto');
+    cryptoImpl = nodeCrypto.webcrypto;
+  }
+
+  const hash = await cryptoImpl.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');

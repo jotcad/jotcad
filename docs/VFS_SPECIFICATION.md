@@ -58,9 +58,26 @@ Every distinct output port (e.g., `$out`, `file`, `thumb`) is just a field in th
 
 The VFS decouples transport connections from peer identities. On connection establishment, a node MUST send a `POST /register` to its neighbor.
 - **Format:** Supports both JSON body (`{"id": "peer-id", "url": "http://..."}`) and URL query parameters (`?peerId=...&url=...`).
-- **Response:** `{ "id": "local-id", "reachability": "DIRECT|REVERSE" }`.
+- **Response:** `{ "id": "local-id", "reachability": "DIRECT|REVERSE" }`. 
+  - **REVERSE Signal:** If a node returns `REVERSE`, the requester MUST initiate a polling loop via `POST /listen` to receive incoming mesh commands.
 
-### 3.2 Formal Links (Unambiguous Aliasing)
+### 3.2 Browser Compatibility & CORS
+
+Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sharing (CORS).
+- **Required Headers:** `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`.
+- **Allowed Headers:** MUST include `Content-Type`, `X-VFS-Peer-Id`, `X-VFS-Reply-To`, and `X-VFS-Id`.
+- **Preflight:** Nodes MUST handle `OPTIONS` requests for all mesh routes.
+
+### 3.3 Reverse Link Polling (`POST /listen`)
+
+Peers without a stable incoming URL (e.g., Browsers) receive mesh events by polling the `/listen` endpoint of their neighbors.
+- **Endpoint:** `POST /listen`
+- **Headers:** `x-vfs-peer-id: <local-id>`
+- **Response:** 
+  - `200 OK`: Returns a single JSON Command object (e.g., `NOTIFY`, `READ`).
+  - `204 No Content`: No events pending (client should retry after a short backoff).
+
+### 3.4 Formal Links (Unambiguous Aliasing)
 
 The VFS supports **Formal Links**, a mechanism for aliasing one Selector to another. 
 - **Link Definition:** A Link is a metadata-driven alias (`vfs.link(src, tgt)`).
