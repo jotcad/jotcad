@@ -56,7 +56,9 @@ Every distinct output port (e.g., `$out`, `file`, `thumb`) is just a field in th
 
 ### 3.1 Identity Introduction (`POST /register`)
 
-The VFS decouples transport connections from peer identities. On connection establishment, a node MUST send a `POST /register?peerId={UUID}` to its neighbor.
+The VFS decouples transport connections from peer identities. On connection establishment, a node MUST send a `POST /register` to its neighbor.
+- **Format:** Supports both JSON body (`{"id": "peer-id", "url": "http://..."}`) and URL query parameters (`?peerId=...&url=...`).
+- **Response:** `{ "id": "local-id", "reachability": "DIRECT|REVERSE" }`.
 
 ### 3.2 Formal Links (Unambiguous Aliasing)
 
@@ -76,7 +78,7 @@ The `read` operation is the primary mechanism for demand-driven data retrieval.
     "stack": ["node-A"]
   }
   ```
-  Or, for direct CID retrieval:
+  Or for direct CID retrieval:
   ```json
   {
     "cid": "deadbeef1234567890...",
@@ -84,6 +86,7 @@ The `read` operation is the primary mechanism for demand-driven data retrieval.
     "stack": ["node-A"]
   }
   ```
+- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status.
 
 ## 4. Core Type System
 
