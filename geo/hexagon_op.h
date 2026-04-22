@@ -18,7 +18,7 @@ struct HexagonFullOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3, 4, 5}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"diameter"}; }
     static typename P::json schema() {
@@ -44,7 +44,7 @@ struct HexagonCapOp : P {
         }
         res.faces.push_back({{{0, 1, 2}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {
@@ -73,7 +73,7 @@ struct HexagonMiddleOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {
@@ -101,7 +101,7 @@ struct HexagonSectorOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {
@@ -129,7 +129,7 @@ struct HexagonHalfOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3, 4}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {

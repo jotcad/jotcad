@@ -11,7 +11,7 @@ struct ColorOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& color) {
         Shape out = in;
         out.tags["color"] = color;
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in", "color"}; }
     static typename P::json schema() {

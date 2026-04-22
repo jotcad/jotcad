@@ -48,7 +48,7 @@ export const JotNode = (props) => {
   const downloadFile = async (file) => {
     try {
       console.log(`[JotNode] Downloading artifact: ${file.label} from ${file.selector.path}`);
-      const data = await vfs.readData(file.selector.path, file.selector.parameters);
+      const data = await vfs.readData(file.selector);
       if (data) {
         const blob = new Blob([data], { type: file.mimeType });
         const url = URL.createObjectURL(blob);
@@ -90,7 +90,6 @@ export const JotNode = (props) => {
 
       // 2. Register all discovered schemas with the compiler
       const currentSchemas = blackboard.schemas();
-      console.log(`[JotNode] Discovering operators from ${Object.keys(currentSchemas).length} schemas...`);
       for (const [path, schema] of Object.entries(currentSchemas)) {
         const name = path.startsWith('jot/') ? path.slice(4) : path;
         compiler.registerOperator(name, { path, schema });
@@ -98,11 +97,6 @@ export const JotNode = (props) => {
 
       const ast = parser.parse(code());
       const resolved = await compiler.evaluate(ast, boundVars);
-
-      console.log(
-        '[JotNode] Compiled result:',
-        JSON.stringify(resolved, null, 2)
-      );
 
       // Distinguish Primary Result from Side-Demands
       // compiler.evaluate returns [Primary, ...SideDemands] if passthrough ops were used
@@ -144,7 +138,7 @@ export const JotNode = (props) => {
       setAssociatedFiles(files);
 
       // 2. Resolve Primary Geometry for visualization
-      const data = await vfs.readData(primarySelector.path, primarySelector.parameters);
+      const data = await vfs.readData(primarySelector);
       
       if (data) {
         console.log('[JotNode] Primary Shape Data:', JSON.stringify(data, null, 2));

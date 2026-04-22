@@ -190,7 +190,6 @@ export const blackboard = {
       const { JotParser } = await import('../../../jot/src/parser');
       
       const compiler = new JotCompiler(v);
-      // Ensure all current schemas are known to this compiler instance
       const currentSchemas = this.schemas();
       for (const [p, sch] of Object.entries(currentSchemas)) {
         compiler.registerOperator(p.startsWith('jot/') ? p.slice(4) : p, { path: p, schema: sch });
@@ -199,7 +198,6 @@ export const blackboard = {
       const parser = new JotParser();
       const ast = parser.parse(script);
       
-      // Bind parameters: Merge defaults with requested values
       const params = { ...s.parameters };
       if (schema.arguments) {
         for (const [key, arg] of Object.entries(schema.arguments)) {
@@ -211,9 +209,7 @@ export const blackboard = {
 
       const result = await compiler.evaluate(ast, params);
       const primary = Array.isArray(result) ? result[0] : result;
-      
-      // Resolve the resulting shape
-      const shapeData = await v.readData(primary.path, primary.parameters);
+      const shapeData = await v.readData(primary);
       return new TextEncoder().encode(JSON.stringify(shapeData));
     }, { schema });
 

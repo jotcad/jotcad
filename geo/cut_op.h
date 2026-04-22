@@ -35,7 +35,7 @@ struct CutOp : P {
         }
 
         recursive_subtract(vfs, out, Matrix::identity(), tool_nodes);
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
 
     static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {

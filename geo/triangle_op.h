@@ -20,7 +20,7 @@ struct TriangleEquilateralOp : P {
         res.faces.push_back({{{0, 1, 2}}});
 
         Shape out = P::make_shape(vfs, res, {{"type", "triangle"}});
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"size"}; }
     static typename P::json schema() {

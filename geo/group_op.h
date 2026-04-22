@@ -14,7 +14,7 @@ struct GroupOp : P {
             out.components.push_back(s);
         }
         out.add_tag("type", "group");
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in", "shapes"}; }
     static typename P::json schema() {

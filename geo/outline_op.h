@@ -9,7 +9,7 @@ template <typename P = JotVfsProtocol>
 struct OutlineOp : P {
     static constexpr const char* path = "jot/outline";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        if (!in.geometry.has_value()) { vfs->write<Shape>(fulfilling, in); return; }
+        if (!in.geometry.has_value()) { vfs->write<Shape>(fulfilling, in, "$out"); return; }
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
         Geometry res;
         for (const auto& face : geo.faces) {
@@ -26,7 +26,7 @@ struct OutlineOp : P {
         }
         Shape out = in;
         out.geometry = vfs->write_anonymous<Geometry>(res);
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {

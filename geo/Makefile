@@ -12,8 +12,8 @@ BIN_DIR = bin
 OBJ_DIR = obj
 
 INCLUDES = -I. -I./impl -I../fs/cpp -I../fs/cpp/vendor \
-           -I../geometry/native/include -I../geometry/boost \
-           -I../geometry/native/include/CGAL/include
+           -I./cgal -I./cgal/boost \
+           -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include
 DEFS = -DCGAL_DISABLE_GMP=1
 LIBS = -lpthread -lcrypto
 

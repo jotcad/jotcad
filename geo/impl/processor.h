@@ -43,7 +43,7 @@ struct Processor {
             } else {
                 auto res = Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
                 // Fulfill the primary selector
-                vfs->write<Shape>(req.selector, res);
+                vfs->write<Shape>(req.selector, res, "$out");
             }
             
             // Return the produced artifact data

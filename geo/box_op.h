@@ -35,7 +35,7 @@ struct BoxOp : P {
         }
         
         Shape out = P::make_shape(vfs, res, {{"type", "box"}});
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"width", "height", "depth"}; }
     static typename P::json schema() {

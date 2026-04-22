@@ -192,17 +192,28 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
 
     if (has_local(cid)) {
         // Check if it's a LINK in .meta
-        std::lock_guard<std::mutex> lock(storage_mutex_);
-        std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid + ".meta");
-        if (std::filesystem::exists(mp)) {
-            std::ifstream in(mp);
-            json meta;
-            in >> meta;
-            if (meta.value("state", "") == "LINK" && meta.contains("target")) {
-                return read_impl(Selector::from_json(meta["target"]), depth + 1, stack, "", expiresAt);
+        bool isLink = false;
+        Selector linkTarget;
+
+        {
+            std::lock_guard<std::mutex> lock(storage_mutex_);
+            std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid + ".meta");
+            if (std::filesystem::exists(mp)) {
+                std::ifstream in(mp);
+                json meta;
+                in >> meta;
+                if (meta.value("state", "") == "LINK" && meta.contains("target")) {
+                    isLink = true;
+                    linkTarget = Selector::from_json(meta["target"]);
+                }
             }
         }
+
+        if (isLink) {
+            return read_impl(linkTarget, depth + 1, stack, "", expiresAt);
+        }
         
+        std::lock_guard<std::mutex> lock(storage_mutex_);
         std::filesystem::path dp = std::filesystem::path(config_.storage_dir) / (cid + ".data");
         if (std::filesystem::exists(dp)) {
             return get_local(cid);
@@ -292,6 +303,11 @@ Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& d
         mos << meta.dump();
     }
     
+    // Formal VFS Links: If we fulfill $out, also link the base selector to it
+    if (!output.empty() && output == "$out" && sel.output.empty()) {
+        link(sel, target_sel);
+    }
+
     Selector out = target_sel;
     out.parameters["cid"] = cid;
     return out;

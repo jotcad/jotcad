@@ -62,42 +62,39 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
     if (opsNode) await opsNode.stop();
     await fs.rm('.vfs_storage_browser_test_ops', { recursive: true, force: true }).catch(() => {});
   });
+await t.test('should deliver catalog, define dynamic op, and execute it via mesh', async () => {
+  const page = await browser.newPage();
 
-  await t.test('should deliver catalog, define dynamic op, and execute it via mesh', async () => {
-    const page = await browser.newPage();
-    
-    // Capture browser console logs
-    page.on('console', msg => {
-        const t = msg.text();
-        if (t.includes('[JotNode]') || t.includes('[Mesh') || t.includes('[UX]') || t.includes('Result')) {
-            console.log(`[BROWSER] ${t}`);
-        }
-    });
+  // Capture ALL browser console logs
+  page.on('console', msg => {
+      console.log(`[BROWSER ${msg.type()}] ${msg.text()}`);
+  });
 
-    await page.goto(`http://localhost:${PORT_UX}`);
-    console.log('[Test Browser] Page loaded, waiting for catalog...');
+  await page.goto(`http://localhost:${PORT_UX}`);
+  console.log('[Test Browser] Page loaded, waiting for catalog...');
 
-    // 1. Wait for Catalog
-    await page.waitForFunction(() => {
-        const b = window.blackboard;
-        return b && b.schemas && b.schemas()['jot/Box'];
-    }, { timeout: 20000 });
+  // 1. Wait for Catalog
+  await page.waitForFunction(() => {
+      const b = window.blackboard;
+      return b && b.schemas && b.schemas()['jot/Box'];
+  }, { timeout: 20000 });
 
-    // 2. Define Dynamic Op: user/Square(side)
-    console.log('[Test Browser] Defining dynamic op...');
-    await page.evaluate(() => {
-        const nameInput = document.querySelector('[data-testid="op-name-input"]');
-        nameInput.value = 'user/Square';
-        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+  // 2. Define Dynamic Op: user/Square(side)
+  console.log('[Test Browser] Defining dynamic op...');
+  await page.evaluate(() => {
+      const nameInput = document.querySelector('[data-testid="op-name-input"]');
+      nameInput.value = 'user/Square';
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-        const argNameInput = document.querySelector('[data-testid="arg-name-0"]');
-        argNameInput.value = 'side';
-        argNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      const argNameInput = document.querySelector('[data-testid="arg-name-0"]');
+      argNameInput.value = 'side';
+      argNameInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-        const codeEditor = document.querySelector('textarea');
-        codeEditor.value = 'Box(side, side, 0)';
-        codeEditor.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+      const codeEditor = document.querySelector('textarea');
+      codeEditor.value = 'Box(side, side, side).rotate(45)';
+      codeEditor.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
 
     // 3. Publish to Mesh
     console.log('[Test Browser] Publishing to mesh...');
@@ -139,11 +136,11 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
     assert.ok(pngDataUrl, 'Canvas should be present with rendered result');
     
     const base64Data = pngDataUrl.replace(/^data:image\/png;base64,/, "");
-    const pngPath = path.resolve(__dirname, '../../geo/user_square_result.png');
+    const pngPath = path.resolve(__dirname, '../../ux/user_square_result.png');
     await fs.writeFile(pngPath, base64Data, 'base64');
     
     // 8. Capture full screen for documentation
-    const screenPath = path.resolve(__dirname, '../../geo/browser_integration_screenshot.png');
+    const screenPath = path.resolve(__dirname, '../../ux/browser_integration_screenshot.png');
     await page.screenshot({ path: screenPath, fullPage: true });
     
     console.log(`[Test Browser] SUCCESS: UI screenshot captured to ${screenPath}`);

@@ -198,7 +198,7 @@ export function normalizeSelector(pathOrSelector, parameters = {}) {
   if (pathOrSelector && typeof pathOrSelector === 'object' && pathOrSelector.path !== undefined) {
     return { ...pathOrSelector };
   } else if (typeof pathOrSelector === 'string') {
-    return { path: pathOrSelector, parameters: parameters || {}, output: '' };
+    return { path: pathOrSelector, parameters: parameters || {}, output: '$out' };
   } else {
     // If no path, it's just parameters (anonymous)
     const s = { path: '', parameters: pathOrSelector || {}, output: '' };

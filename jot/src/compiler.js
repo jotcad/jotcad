@@ -295,41 +295,44 @@ export class JotCompiler {
     const path = op.path;
     const schema = op.schema;
 
+    console.log(`[JotCompiler] Mapped arguments for ${node.name}:`, JSON.stringify(args));
     const resolvedParams = this.mapArguments(args, schema, node.name, true);
+    console.log(`[JotCompiler] Resolved params (pre-binding) for ${node.name}:`, JSON.stringify(resolvedParams));
 
     // Contextual Binding: Bind subject to any shape/shapes that are missing their primary input
     const bindSubject = (val) => {
       if (typeof val === 'object' && val !== null && val.path && val.parameters && val.parameters.$in === undefined) {
-         let op = null;
-         for (const config of this.operators.values()) {
-           if (config.path === val.path) { op = config; break; }
-         }
-         if (!op) op = this._resolveOperator(val.path.startsWith('jot/') ? val.path.slice(4) : val.path);
-         
-         const inputKey = this._getInputKey(op?.schema) || '$in';
-         if (inputKey && val.parameters[inputKey] === undefined) {
-           val.parameters[inputKey] = subject;
-         }
+          let op = null;
+          for (const config of this.operators.values()) {
+            if (config.path === val.path) { op = config; break; }
+          }
+          if (!op) op = this._resolveOperator(val.path.startsWith('jot/') ? val.path.slice(4) : val.path);
+
+          const inputKey = this._getInputKey(op?.schema) || '$in';
+          if (inputKey && val.parameters[inputKey] === undefined) {
+            val.parameters[inputKey] = subject;
+          }
       }
     };
 
     const inputKey = this._getInputKey(schema) || '$in';
+    console.log(`[JotCompiler] Method Input Key for ${node.name}: ${inputKey}`);
 
     for (const [name, val] of Object.entries(resolvedParams)) {
-       if (name === inputKey) continue; // don't bind to the main subject input itself again
-       
-       if (typeof val === 'object' && val !== null && val.path) {
-          bindSubject(val);
-       } else if (Array.isArray(val)) {
-          val.forEach(v => {
-            if (typeof v === 'object' && v !== null && v.path) bindSubject(v);
-          });
-       }
+        if (name === inputKey) continue; // don't bind to the main subject input itself again
+
+        if (typeof val === 'object' && val !== null && val.path) {
+           bindSubject(val);
+        } else if (Array.isArray(val)) {
+           val.forEach(v => {
+             if (typeof v === 'object' && v !== null && v.path) bindSubject(v);
+           });
+        }
     }
 
     // Map subject to the primary input of the method itself
     resolvedParams[inputKey] = subject;
-
+    console.log(`[JotCompiler] Final params for ${node.name}:`, JSON.stringify(resolvedParams));
     if (node.name === 'and') {
       resolvedParams.$in = [subject, ...args];
     }

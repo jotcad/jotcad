@@ -14,7 +14,7 @@ struct AtOp : P {
         place_at(vfs, in, target, Matrix::identity(), op, results);
         Shape out;
         out.components = results;
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
 
     static void place_at(fs::VFSNode* vfs, const Shape& in, const Shape& target, const Matrix& parent_frame, const fs::Selector& op, std::vector<Shape>& results) {
@@ -55,7 +55,7 @@ struct OnOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& target, const fs::Selector& op) {
         Shape res = in;
         apply_on(vfs, res, target, Matrix::identity(), op);
-        vfs->write<Shape>(fulfilling, res);
+        vfs->write<Shape>(fulfilling, res, "$out");
     }
 
     static void apply_on(fs::VFSNode* vfs, Shape& subject, const Shape& target, const Matrix& parent_frame, const fs::Selector& op) {

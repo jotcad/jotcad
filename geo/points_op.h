@@ -38,7 +38,7 @@ struct PointsOp : P {
         out.geometry = std::nullopt;
         out.components = components;
         out.add_tag("type", "points");
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {

@@ -13,7 +13,7 @@ struct LinkOp : P {
         out.geometry = std::nullopt;
         out.components = {a, b};
         out.add_tag("type", "link");
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$a", "$b"}; }
     static typename P::json schema() {
@@ -48,7 +48,7 @@ struct LoopOp : P {
         }
 
         if (all_components.size() < 2) {
-            vfs->write<Shape>(fulfilling, in);
+            vfs->write<Shape>(fulfilling, in, "$out");
             return;
         }
 
@@ -69,7 +69,7 @@ struct LoopOp : P {
         out.geometry = vfs->write_anonymous<Geometry>(res);
         out.components = all_components;
         out.add_tag("type", "loop");
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {

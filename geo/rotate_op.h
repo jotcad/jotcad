@@ -14,7 +14,7 @@ struct RotateOp : P {
         double turns = angle / 360.0;
         Matrix r = Matrix::rotationZ(turns);
         out.tf = (r * Matrix::from_vec(in.tf)).to_vec();
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in", "angle"}; }
     static typename P::json schema() {

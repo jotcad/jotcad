@@ -20,7 +20,7 @@ struct OffsetOp : P {
         applyOffset(res, diameter);
         Shape out = in;
         out.geometry = vfs->write_anonymous<Geometry>(res);
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter"}; }
     static typename P::json schema() {
@@ -47,7 +47,7 @@ struct OffsetClosureOp : P {
         applyOffset(closed, -std::abs(diameter));
         Shape out = in;
         out.geometry = vfs->write_anonymous<Geometry>(closed);
-        vfs->write<Shape>(fulfilling, out);
+        vfs->write<Shape>(fulfilling, out, "$out");
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter", "closure"}; }
     static typename P::json schema() {
