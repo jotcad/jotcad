@@ -227,7 +227,7 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
         }
       }
     }
-    if (s.shapes) for (const sub of s.shapes) await walk(sub, worldMat);
+    if (s.components) for (const sub of s.components) await walk(sub, worldMat);
   };
   await walk(shape);
 };
@@ -353,13 +353,12 @@ class JOTAssets {
 
     if (!this.vfs) return null;
     try {
-      if (typeof id === 'object' && id.path) {
-        const data = await this.vfs.readData(id.path, id.parameters);
-        if (data) {
-          const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
-          this.cache.set(cacheKey, text);
-          return text;
-        }
+      // Support both Selector objects and direct CID strings
+      const data = await this.vfs.readData(id);
+      if (data) {
+        const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+        this.cache.set(cacheKey, text);
+        return text;
       }
     } catch (e) { console.warn('[JOTAssets] Resolution failed:', id, e); }
     return null;
@@ -372,21 +371,19 @@ export async function packZFS(vfs, shape) {
     if (!s || typeof s !== 'object') return;
 
     if (s.geometry) {
-      const g = s.geometry;
-      const path = g.path || (typeof g === 'string' ? g : null);
-      const params = g.parameters || {};
-      if (path) {
-        const id = normalizeId({ path, parameters: params });
-        if (!assets.has(id)) {
-          try {
-            const text = await vfs.readText(path, params);
-            if (text) assets.set(id, text);
-          } catch (e) { console.warn('[packZFS] Failed to fetch asset:', id, e); }
-        }
+      const id = normalizeId(s.geometry);
+      if (!assets.has(id)) {
+        try {
+          const data = await vfs.readData(s.geometry);
+          if (data) {
+            const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+            assets.set(id, text);
+          }
+        } catch (e) { console.warn('[packZFS] Failed to fetch asset:', id, e); }
       }
     }
-    if (s.shapes && Array.isArray(s.shapes)) {
-      for (const sub of s.shapes) await walk(sub);
+    if (s.components && Array.isArray(s.components)) {
+      for (const sub of s.components) await walk(sub);
     }
   };
   await walk(shape);

@@ -38,7 +38,13 @@ struct Processor {
     static std::vector<uint8_t> dispatch(fs::VFSNode* vfs, const fs::VFSNode::VFSRequest& req, const std::vector<std::string>& keys, std::index_sequence<Is...>) {
         try {
             // Operators receive (vfs, fulfilling_selector, ...args)
-            Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
+            if constexpr (std::is_same_v<decltype(Op::execute(vfs, req.selector, std::declval<Args>()...)), void>) {
+                Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
+            } else {
+                auto res = Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
+                // Fulfill the primary selector
+                vfs->write<Shape>(req.selector, res);
+            }
             
             // Return the produced artifact data
             return vfs->read<std::vector<uint8_t>>(req.selector);
@@ -60,23 +66,29 @@ struct Processor {
         const auto& val = params[key];
         if constexpr (std::is_same_v<T, Shape>) {
             if (val.is_object() && val.contains("path")) {
-                return vfs->read<Shape>(val.get<fs::Selector>());
+                auto s_addr = val.get<fs::Selector>();
+                std::cout << "[Processor::decode] Reifying Shape argument '" << key << "' from Selector: " << s_addr.path << std::endl;
+                return vfs->read<Shape>(s_addr);
             }
+            std::cout << "[Processor::decode] Decoding inline Shape for argument '" << key << "'" << std::endl;
             Shape s = Shape::from_json(val);
-            if (!s.geometry.has_value()) throw std::runtime_error("Shape argument missing geometry: " + key);
+            if (!s.geometry.has_value() && s.components.empty()) {
+                 std::cerr << "[Processor::decode] WARNING: Shape argument '" << key << "' has no geometry and no components." << std::endl;
+            }
             return s;
         } else if constexpr (std::is_same_v<T, std::vector<Shape>>) {
             std::vector<Shape> results;
             if (!val.is_array()) {
                 throw std::runtime_error("Argument '" + key + "' must be an array for std::vector<Shape>");
             }
+            std::cout << "[Processor::decode] Decoding std::vector<Shape> for argument '" << key << "' (" << val.size() << " items)" << std::endl;
             for (const auto& item : val) {
                 if (item.is_object() && item.contains("path")) {
-                    results.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
+                    auto s_addr = item.get<fs::Selector>();
+                    std::cout << "[Processor::decode]   - Reifying element from Selector: " << s_addr.path << std::endl;
+                    results.push_back(vfs->read<Shape>(s_addr));
                 } else {
-                    Shape s = Shape::from_json(item);
-                    if (!s.geometry.has_value()) throw std::runtime_error("Shape array element missing geometry");
-                    results.push_back(s);
+                    results.push_back(Shape::from_json(item));
                 }
             }
             return results;

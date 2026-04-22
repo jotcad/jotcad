@@ -14,12 +14,19 @@ struct PdfOp : P {
     static void walk(fs::VFSNode* vfs, const Shape& shape, const Matrix& parent_tf, PDFWriter& writer) {
         Matrix current_tf = parent_tf * Matrix::from_vec(shape.tf);
         
+        std::cout << "[PdfOp::walk] Visiting shape. Geometry: " << (shape.geometry.has_value() ? shape.geometry->value : "none") 
+                  << " Components: " << shape.components.size() << std::endl;
+
         if (shape.geometry.has_value()) {
             try {
+                std::cout << "[PdfOp::walk] Reading geometry CID: " << shape.geometry->value << std::endl;
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
+                std::cout << "[PdfOp::walk] Read geometry OK. Vertices: " << geo.vertices.size() << std::endl;
                 geo.apply_tf(current_tf.to_vec());
                 writer.add_geometry(geo);
-            } catch (...) { }
+            } catch (const std::exception& e) {
+                std::cerr << "[PdfOp::walk] Error reading geometry: " << e.what() << std::endl;
+            }
         }
         
         for (const auto& child : shape.components) {
@@ -28,7 +35,7 @@ struct PdfOp : P {
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& pdf_path) {
-        std::cout << "[PdfOp] Generating PDF..." << std::endl;
+        std::cout << "[PdfOp] Starting PDF generation for output port: " << fulfilling.output << std::endl;
         PDFWriter writer;
         walk(vfs, in, Matrix::identity(), writer);
         auto pdf_bytes = writer.write();

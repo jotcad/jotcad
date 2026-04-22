@@ -178,6 +178,7 @@ export class MeshLinkBase {
     this.reverseRegistry = {
       replies: new Map(),
       dispatch: (neighborId, command) => {
+        console.log(`[MeshLink ${this.vfs.id}] Dispatching command ${command.op || command.type} to ${neighborId}`);
         const pool = this.listenerPools.get(neighborId);
         if (pool && pool.length > 0) {
           const { res } = pool.shift();
@@ -303,6 +304,7 @@ export class MeshLinkBase {
           replyTo = null; stream = null;
           if (resp.status === 200) {
             const cmd = await resp.json();
+            console.log(`[MeshLink ${this.vfs.id}] Received COMMAND ${cmd.op || cmd.type} from ${baseUrl}`);
             if (cmd.type === 'COMMAND') {
               const sel = cmd.selector;
               if ((cmd.op === 'READ' || cmd.op === 'SPY') && !sel) {
@@ -389,6 +391,7 @@ export class MeshLinkBase {
   }
 
   registerReversePeer(neighborId, res, replyTo = null, stream = null) {
+    console.log(`[MeshLink ${this.vfs.id}] registerReversePeer: ${neighborId} (replyTo: ${replyTo || 'none'})`);
     if (replyTo && stream) {
       const resolve = this.reverseRegistry.replies.get(replyTo);
       if (resolve) { this.reverseRegistry.replies.delete(replyTo); resolve(stream, new Map(stream.length ? [['Content-Length', stream.length.toString()]] : [])); }

@@ -30,7 +30,6 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const body = await getBody(req);
         const { selector, stack = [], expiresAt } = body;
         if (!selector) {
-            console.log(`[MeshServer ${vfs.id}] /read 400: Missing selector`);
             res.writeHead(400);
             return res.end('Missing selector');
         }
@@ -108,6 +107,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/listen') {
         const peerId = req.headers['x-vfs-peer-id'];
         const replyTo = req.headers['x-vfs-reply-to'];
+        console.log(`[MeshServer ${vfs.id}] POST /listen from ${peerId} (replyTo: ${replyTo || 'none'})`);
         if (!peerId) {
           res.writeHead(400);
           return res.end('Missing x-vfs-peer-id');

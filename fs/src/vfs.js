@@ -194,7 +194,14 @@ export class VFS {
 
   async readData(selector, context = {}) {
     if (!selector) throw new Error('VFS.readData: Missing required selector');
-    const s = normalizeSelector(selector);
+    
+    let s;
+    if (typeof selector === 'string' && /^[0-9a-f]{64}$/i.test(selector)) {
+        s = { path: '', parameters: { cid: selector }, output: '' };
+    } else {
+        s = normalizeSelector(selector);
+    }
+    
     const { expiresAt = Date.now() + 10000 } = context;
 
     const result = await this._readResult(s, { ...context, stack: [], expiresAt });
@@ -217,6 +224,15 @@ export class VFS {
     const meta = result.metadata || {};
     if (meta.type === 'null') return null;
     
+    // Check for raw JCB binary first
+    if (bytes[0] === 6 || bytes[0] === 5) {
+        try {
+            return decodeJCB(bytes);
+        } catch (e) {
+            console.error('[VFS] decodeJCB failed:', e.message, 'First 10 bytes:', bytes.slice(0, 10));
+        }
+    }
+
     let parsed;
     if (meta.type === 'json' && meta.data && typeof meta.data === 'object') {
         parsed = meta.data;

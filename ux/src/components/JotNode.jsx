@@ -134,7 +134,7 @@ export const JotNode = (props) => {
       if (data) {
         console.log('[JotNode] Primary Shape Data:', JSON.stringify(data, null, 2));
         
-        if (typeof data === 'object' && (data.geometry || data.shapes)) {
+        if (typeof data === 'object' && (data.geometry || data.components)) {
           const unified = await packZFS(vfs, data);
           setResultData(unified);
         } else {

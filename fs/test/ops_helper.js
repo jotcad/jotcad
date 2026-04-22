@@ -101,7 +101,7 @@ export async function spawnOpsNode(opsPath, args, healthPort, options = {}) {
  */
 export async function launchOpsNode(opsPath, port, storageDir) {
   const child = await spawnOpsNode(opsPath, [port.toString(), storageDir], port, {
-    stdio: 'pipe'
+    stdio: 'inherit'
   });
 
   return {

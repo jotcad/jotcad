@@ -44,10 +44,48 @@ void VFSNode::listen() {
     });
 
     svr->Post("/register", [this](const httplib::Request& req, httplib::Response& res) {
-        if (req.has_param("peerId") && req.has_param("url")) {
-            add_peer(req.get_param_value("url"));
-            res.status = 200;
+        std::string peerId;
+        std::string url;
+
+        // 1. Try parsing JSON body
+        if (!req.body.empty()) {
+            try {
+                json body = json::parse(req.body);
+                if (body.contains("id")) peerId = body["id"];
+                else if (body.contains("peerId")) peerId = body["peerId"];
+                if (body.contains("url")) url = body["url"];
+            } catch (...) {}
+        }
+
+        // 2. Try query parameters if JSON failed
+        if (peerId.empty() || url.empty()) {
+            auto get_param = [&](const std::string& key) {
+                if (req.has_param(key)) return req.get_param_value(key);
+                size_t pos = req.target.find("?");
+                if (pos != std::string::npos) {
+                    std::string query = req.target.substr(pos + 1);
+                    size_t kpos = query.find(key + "=");
+                    if (kpos != std::string::npos) {
+                        size_t vpos = kpos + key.length() + 1;
+                        size_t vend = query.find("&", vpos);
+                        std::string val = query.substr(vpos, vend != std::string::npos ? vend - vpos : std::string::npos);
+                        return val;
+                    }
+                }
+                return std::string("");
+            };
+            if (peerId.empty()) {
+                peerId = get_param("peerId");
+                if (peerId.empty()) peerId = get_param("id");
+            }
+            if (url.empty()) url = get_param("url");
+        }
+
+        if (!peerId.empty() && !url.empty()) {
+            add_peer(url);
+            res.set_content(json({{"id", config_.id}, {"reachability", "DIRECT"}}).dump(), "application/json");
         } else {
+            std::cout << "[VFSNode] /register 400: peerId='" << peerId << "' url='" << url << "' Body: '" << req.body << "' Target: '" << req.target << "'" << std::endl;
             res.status = 400;
         }
     });
@@ -58,8 +96,9 @@ void VFSNode::listen() {
             Selector sel = Selector::from_json(body.at("selector"));
             std::string output = body.value("output", "");
             std::vector<std::string> stack = body.value("stack", std::vector<std::string>{});
+            long long expiresAt = body.value("expiresAt", 0LL);
             
-            auto data = read_impl(sel, 0, stack, output);
+            auto data = read_impl(sel, 0, stack, output, expiresAt);
             res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
             res.status = e.code;
@@ -93,7 +132,14 @@ void VFSNode::stop() {
     }
 }
 
-std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vector<std::string> stack, const std::string& output) {
+std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vector<std::string> stack, const std::string& output, long long expiresAt) {
+    if (expiresAt > 0) {
+        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        if (now > expiresAt) {
+            throw VFSException("Request expired", 404);
+        }
+    }
+
     // If output is provided in call, override the selector's output
     Selector target_sel = sel;
     if (!output.empty()) target_sel.output = output;
@@ -114,7 +160,7 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
             json meta;
             in >> meta;
             if (meta.value("state", "") == "LINK" && meta.contains("target")) {
-                return read_impl(Selector::from_json(meta["target"]), depth + 1, stack, "");
+                return read_impl(Selector::from_json(meta["target"]), depth + 1, stack, "", expiresAt);
             }
         }
         
@@ -134,7 +180,7 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
             next_stack.push_back(config_.id);
 
             httplib::Client cli(neighbor);
-            json body = {{"selector", target_sel}, {"stack", next_stack}};
+            json body = {{"selector", target_sel}, {"stack", next_stack}, {"expiresAt", expiresAt}};
             auto res = cli.Post("/read", body.dump(), "application/json");
             if (res && res->status == 200) {
                 std::vector<uint8_t> data(res->body.begin(), res->body.end());
@@ -143,16 +189,21 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
         }
     }
 
+    std::function<std::vector<uint8_t>(const VFSRequest&)> handler;
     {
         std::lock_guard<std::mutex> lock(handlers_mutex_);
         if (handlers_.count(target_sel.path)) {
-            VFSRequest req = {target_sel, stack};
-            auto data = handlers_[target_sel.path](req);
-            // By convention, operators fulfill their assigned selector.
-            // If they were called with a specific output, they write to that.
-            write_bytes(target_sel, data);
-            return data;
+            handler = handlers_[target_sel.path];
         }
+    }
+
+    if (handler) {
+        VFSRequest req = {target_sel, stack};
+        auto data = handler(req);
+        // By convention, operators fulfill their assigned selector.
+        // If they were called with a specific output, they write to that.
+        write_bytes(target_sel, data);
+        return data;
     }
 
     throw VFSException("Content not found for CID: " + cid, 404);

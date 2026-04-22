@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, DiskStorage, MeshLink } from '../src/index.js';
+import http from 'node:http';
+import { VFS, DiskStorage, MeshLink, registerVFSRoutes } from '../src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,8 @@ const STORAGE_OPS = path.resolve('.vfs_storage_sector_ops');
 const STORAGE_CLIENT = path.resolve('.vfs_storage_sector_client');
 
 test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
-  let opsNode, vfs, mesh;
+  const PORT_CLIENT = 9302;
+  let opsNode, vfs, mesh, server;
 
   t.before(async () => {
     await fs.rm(STORAGE_OPS, { recursive: true, force: true }).catch(() => {});
@@ -29,7 +31,14 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
     });
     await vfs.init();
     
-    mesh = new MeshLink(vfs, [`http://localhost:${PORT_OPS}`]);
+    mesh = new MeshLink(vfs, [`http://localhost:${PORT_OPS}`], {
+        localUrl: `http://localhost:${PORT_CLIENT}`
+    });
+
+    server = http.createServer();
+    registerVFSRoutes(vfs, server, '', mesh);
+    await new Promise(resolve => server.listen(PORT_CLIENT, '0.0.0.0', resolve));
+
     await mesh.start();
   });
 
@@ -37,6 +46,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
     console.log('[Test Sector] Cleaning up...');
     if (opsNode) await opsNode.stop();
     if (mesh) await mesh.stop();
+    if (server) await new Promise(resolve => server.close(resolve));
     await vfs.close();
     await fs.rm(STORAGE_OPS, { recursive: true, force: true }).catch(() => {});
     await fs.rm(STORAGE_CLIENT, { recursive: true, force: true }).catch(() => {});
@@ -59,10 +69,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       const pdf = { path: 'jot/pdf', parameters: { $in: offset, path: 'sector.pdf' } };
 
       console.log('[Test Sector] Requesting complex expression...');
-      const pdfData = await vfs.readData({
-        ...pdf,
-        parameters: { ...pdf.parameters, $path: 'sector.pdf' },
-      });
+      const pdfData = await vfs.readData(pdf, { output: 'file' });
 
       assert.ok(pdfData, 'Should return PDF data');
       

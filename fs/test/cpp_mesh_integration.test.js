@@ -99,17 +99,16 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
     const jsAddrKey = await getSelectorKey(selector);
     await jsVfs.readData(selector);
 
-    // In Content-Addressable Mesh:
-    // 1. The selector hash identifies the .meta file (Address Key)
+    // In the new architecture:
+    // The selector hash identifies BOTH the .meta and .data files
     const metaFile = path.join(STORAGE_CPP, `${jsAddrKey}.meta`);
+    const dataFile = path.join(STORAGE_CPP, `${jsAddrKey}.data`);
+    
     await fs.access(metaFile); 
+    await fs.access(dataFile);
     
     const meta = JSON.parse(await fs.readFile(metaFile, 'utf8'));
-    assert.ok(meta.cid, 'Meta file should contain a content CID');
-    
-    // 2. The .meta file points to the .data file (Content Identity)
-    const dataFile = path.join(STORAGE_CPP, `${meta.cid}.data`);
-    await fs.access(dataFile);
+    assert.strictEqual(meta.state, 'AVAILABLE');
   });
 
   await t.test('Provisioning: Box', async () => {
@@ -118,10 +117,12 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
       height: 20,
       depth: 0,
     } });
+    console.log('[Test] Box provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Box provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
     assert.strictEqual(result.tags?.type, 'box');
     const geo = await jsVfs.readData(result.geometry);
+    assert.ok(geo, 'Should be able to read geometry by CID');
     const geoText = new TextDecoder().decode(geo);
     assert.ok(geoText.includes('v 10.000000'), 'Should contain x coordinate');
   });
@@ -130,6 +131,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
     const result = await jsVfs.readData({ path: 'jot/Triangle/equilateral', parameters: {
       size: [50],
     } });
+    console.log('[Test] Triangle provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Triangle provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
     assert.strictEqual(result.tags?.type, 'triangle');
