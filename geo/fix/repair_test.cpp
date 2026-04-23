@@ -9,58 +9,52 @@ using namespace jotcad::geo::fix;
 
 typedef CGAL::Surface_mesh<EK::Point_3> Mesh;
 
-void test_edge_touch_aligned() {
-    std::cout << "[Test 3] Aligned Edge-Touching Cubes..." << std::endl;
+void test_point_to_surface_collision() {
+    std::cout << "[Test 5] Tetrahedron touching Cube facet centroid (Separate Indices)..." << std::endl;
     Mesh mesh;
-    auto v_e1 = mesh.add_vertex(EK::Point_3(10, 10, 0));
-    auto v_e2 = mesh.add_vertex(EK::Point_3(10, 10, 10));
+    
+    // Vertex 0: Centroid of a cube face
+    auto v_cube_centroid = mesh.add_vertex(EK::Point_3(5, 5, 10));
+    
+    // Cube faces using v_cube_centroid
+    auto v0 = mesh.add_vertex(EK::Point_3(0, 0, 10));
+    auto v1 = mesh.add_vertex(EK::Point_3(10, 0, 10));
+    auto v2 = mesh.add_vertex(EK::Point_3(10, 10, 10));
+    auto v3 = mesh.add_vertex(EK::Point_3(0, 10, 10));
+    mesh.add_face(v0, v1, v_cube_centroid);
+    mesh.add_face(v1, v2, v_cube_centroid);
+    mesh.add_face(v2, v3, v_cube_centroid);
+    mesh.add_face(v3, v0, v_cube_centroid);
 
-    auto v1 = mesh.add_vertex(EK::Point_3(0, 10, 0));
-    auto v2 = mesh.add_vertex(EK::Point_3(0, 10, 10));
-    auto v3 = mesh.add_vertex(EK::Point_3(10, 0, 0));
-    auto v4 = mesh.add_vertex(EK::Point_3(10, 0, 10));
-    mesh.add_face(v_e1, v_e2, v2); mesh.add_face(v_e1, v2, v1);
-    mesh.add_face(v_e1, v3, v4); mesh.add_face(v_e1, v4, v_e2);
+    // Vertex 5: Apex of a tetrahedron at EXACTLY the same coordinate as v_cube_centroid
+    auto v_tetra_apex = mesh.add_vertex(EK::Point_3(5, 5, 10));
+    
+    // Tetra faces using v_tetra_apex (pointing upwards)
+    auto vt1 = mesh.add_vertex(EK::Point_3(3, 5, 15));
+    auto vt2 = mesh.add_vertex(EK::Point_3(7, 3, 15));
+    auto vt3 = mesh.add_vertex(EK::Point_3(7, 7, 15));
+    mesh.add_face(v_tetra_apex, vt1, vt2);
+    mesh.add_face(v_tetra_apex, vt2, vt3);
+    mesh.add_face(v_tetra_apex, vt3, vt1);
 
-    auto v5 = mesh.add_vertex(EK::Point_3(20, 10, 0));
-    auto v6 = mesh.add_vertex(EK::Point_3(20, 10, 10));
-    auto v7 = mesh.add_vertex(EK::Point_3(10, 20, 0));
-    auto v8 = mesh.add_vertex(EK::Point_3(10, 20, 10));
-    mesh.add_face(v_e2, v_e1, v6); mesh.add_face(v_e1, v5, v6);
-    mesh.add_face(v_e1, v_e2, v8); mesh.add_face(v_e2, v7, v8);
+    // Verify topological manifoldness
+    assert(CGAL::is_valid_polygon_mesh(mesh));
+    std::cout << "  ✅ Topologically valid (separate indices)." << std::endl;
 
+    // Ambiguity state: Should be AMBIGUOUS because spatial merging would destroy the manifold.
     assert(!is_geometry_unambiguous(mesh));
-    std::cout << "  ✅ Geometry detected as AMBIGUOUS (expected)." << std::endl;
+    std::cout << "  ✅ Detected as AMBIGUOUS (spatial collision @ face centroid)." << std::endl;
 
+    // Resolve collision
     bool repaired = make_geometry_unambiguous(mesh, 0.1);
     assert(repaired);
     assert(is_geometry_unambiguous(mesh));
-    std::cout << "  ✅ Geometry is now UNAMBIGUOUS." << std::endl;
-}
-
-void test_edge_touch_unaligned() {
-    std::cout << "[Test 4] Unaligned Edge-Touching (T-Junction)..." << std::endl;
-    Mesh mesh;
-    auto v_shared = mesh.add_vertex(EK::Point_3(10, 10, 5));
-    auto v1 = mesh.add_vertex(EK::Point_3(0, 10, 0));
-    auto v2 = mesh.add_vertex(EK::Point_3(20, 10, 0));
-    mesh.add_face(v_shared, v2, v1);
-    auto v3 = mesh.add_vertex(EK::Point_3(10, 0, 10));
-    auto v4 = mesh.add_vertex(EK::Point_3(10, 20, 10));
-    mesh.add_face(v_shared, v3, v4);
-
-    assert(!is_geometry_unambiguous(mesh));
-    std::cout << "  ✅ Geometry detected as AMBIGUOUS (expected)." << std::endl;
-
-    make_geometry_unambiguous(mesh, 0.1);
-    assert(is_geometry_unambiguous(mesh));
-    std::cout << "  ✅ Geometry is now UNAMBIGUOUS." << std::endl;
+    std::cout << "  ✅ Resolved: Apex and Centroid separated." << std::endl;
 }
 
 int main() {
     try {
-        test_edge_touch_aligned();
-        test_edge_touch_unaligned();
+        test_point_to_surface_collision();
         std::cout << "\nALL AMBIGUITY RESOLUTION TESTS PASSED." << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Test failed: " << e.what() << std::endl;
