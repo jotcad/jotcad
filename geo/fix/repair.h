@@ -14,21 +14,41 @@ namespace geo {
 namespace fix {
 
 /**
- * repair_self_touches: Implements Umbrella Splitting & Geometric Locking.
- * 
- * This function identifies non-manifold vertices (bowties), splits the combinatorial
- * umbrellas into separate vertices, subdivides the local neighborhood to preserve
- * planarity, and displaces the resulting apices to ensure geometric separation.
+ * is_geometry_unambiguous: Predicate to check if the mesh is free of 
+ * non-manifold singularities (pinched vertices/edges).
  */
 template <typename K = EK>
-bool repair_self_touches(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename K::FT delta = 0.0001) {
+bool is_geometry_unambiguous(const CGAL::Surface_mesh<typename K::Point_3>& mesh) {
+    typedef CGAL::Surface_mesh<typename K::Point_3> Surface_mesh;
+    typedef typename Surface_mesh::Vertex_index Vertex_index;
+    
+    // Check for non-manifold vertices (bowties/hinge-points)
+    for (Vertex_index v : mesh.vertices()) {
+        if (CGAL::Polygon_mesh_processing::is_non_manifold_vertex(v, mesh)) {
+            return false;
+        }
+    }
+    
+    // Surface_mesh::add_face prevents non-manifold edges by default (returns null_face),
+    // but if we were using a lower-level graph we'd check them here.
+    return true;
+}
+
+/**
+ * make_geometry_unambiguous: Resolves non-manifold singularities.
+ * 
+ * Implements Umbrella Splitting & Geometric Locking.
+ * Returns true if any changes were made.
+ */
+template <typename K = EK>
+bool make_geometry_unambiguous(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename K::FT delta = 0.0001) {
     typedef CGAL::Surface_mesh<typename K::Point_3> Surface_mesh;
     typedef typename Surface_mesh::Vertex_index Vertex_index;
     typedef typename Surface_mesh::Halfedge_index Halfedge_index;
     typedef typename K::Point_3 Point_3;
     typedef typename K::Vector_3 Vector_3;
 
-    // Step 1 & 2: Combinatorial Splitting
+    // Combinatorial Splitting
     std::vector<std::vector<Vertex_index>> vertex_groups;
     CGAL::Polygon_mesh_processing::duplicate_non_manifold_vertices(
         mesh,
@@ -39,19 +59,17 @@ bool repair_self_touches(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename
 
     for (auto& group : vertex_groups) {
         for (Vertex_index v : group) {
-            // Step 3: Local Subdivision
+            // Local Subdivision
             std::vector<Halfedge_index> outgoing_halfedges;
             Halfedge_index h = mesh.halfedge(v);
             if (h == Surface_mesh::null_halfedge()) continue;
 
-            // Collect all outgoing halfedges around the vertex
             Halfedge_index start = h;
             do {
                 outgoing_halfedges.push_back(h);
                 h = mesh.next_around_target(h);
             } while (h != start);
 
-            // Calculate local subdivision scale (safety clamp)
             double local_delta = CGAL::to_double(delta);
             for (Halfedge_index eh : outgoing_halfedges) {
                 double len = std::sqrt(CGAL::to_double(CGAL::squared_distance(mesh.point(mesh.source(eh)), mesh.point(mesh.target(eh)))));
@@ -64,15 +82,13 @@ bool repair_self_touches(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename
             for (Halfedge_index eh : outgoing_halfedges) {
                 Point_3 p_source = mesh.point(mesh.source(eh));
                 Point_3 p_target = mesh.point(mesh.target(eh));
-                Vector_3 vec = p_source - p_target; // Vector pointing towards V
+                Vector_3 vec = p_source - p_target; 
                 
                 double dist = std::sqrt(CGAL::to_double(vec.squared_length()));
                 if (dist < 1e-12) continue;
 
-                // Subdivide the edge close to V
                 Halfedge_index new_h = CGAL::Euler::split_edge(eh, mesh);
                 
-                // Vector scaling in double then convert back to FT
                 double scale = local_delta / dist;
                 Vector_3 offset(typename K::FT(CGAL::to_double(vec.x()) * scale),
                                 typename K::FT(CGAL::to_double(vec.y()) * scale),
@@ -83,7 +99,6 @@ bool repair_self_touches(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename
                 split_halfedges.push_back(new_h);
             }
 
-            // Patch the faces between split points
             for (size_t i = 0; i < split_halfedges.size(); ++i) {
                 Halfedge_index h1 = split_halfedges[i];
                 Halfedge_index h2 = split_halfedges[(i + 1) % split_halfedges.size()];
@@ -92,7 +107,7 @@ bool repair_self_touches(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename
                 }
             }
 
-            // Step 4: Geometric Perturbation (Locking)
+            // Geometric Locking
             Vector_3 average_offset = umbrella_sum / typename K::FT(split_halfedges.size());
             mesh.point(v) += average_offset / 2.0;
         }

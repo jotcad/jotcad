@@ -5,6 +5,16 @@
 ## 1. Objective
 Implement a robust manifold recovery pass in the JotCAD native kernel to resolve **Zero-Volume Contacts** (Topological Singularities). The goal is to ensure that all geometric results are strictly manifold and immune to inadvertent spatial merging.
 
+## 2. API Design
+
+### `is_geometry_unambiguous<K>(mesh)`
+- **Predicate**: Returns `true` if the mesh is strictly manifold and free of "pinched" vertices or edges.
+- **Usage**: Use this to determine if a geometry requires resolution before downstream operations.
+
+### `make_geometry_unambiguous<K>(mesh, delta)`
+- **Action**: Resolves non-manifold singularities using **Umbrella Splitting & Geometric Locking**.
+- **Transformation**: Localizes distortion via subdivision and applies coordinate displacement to ensure topological shells have distinct geometric points.
+
 ## 2. Core 3D Algorithm: Umbrella Splitting & Geometric Locking
 This algorithm targets "bowtie" vertices and "hinge" edges by localizing geometric distortion through subdivision.
 
