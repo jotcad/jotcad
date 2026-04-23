@@ -29,18 +29,46 @@ struct Geometry {
     std::vector<std::array<int, 2>> segments;
     std::vector<std::array<int, 3>> triangles;
 
-    void apply_tf(const std::vector<double>& tf) {
-        if (tf.size() != 16) return;
-        // CGAL Aff_transformation_3 expects row-major (m00, m01, m02, m03, ...)
-        // Our tf is column-major: [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15]
-        Transformation t(tf[0], tf[1], tf[2], tf[3],
-                         tf[4], tf[5], tf[6], tf[7],
-                         tf[8], tf[9], tf[10], tf[11]);
+    void apply_tf(const std::vector<std::string>& tf) {
+        if (tf.size() < 16) return;
+        auto parse = [](const std::string& s) {
+            size_t slash = s.find('/');
+            if (slash == std::string::npos) return FT(std::stod(s));
+            return FT(std::stod(s.substr(0, slash))) / FT(std::stod(s.substr(slash + 1)));
+        };
+        Transformation t(parse(tf[0]), parse(tf[1]), parse(tf[2]), parse(tf[3]),
+                         parse(tf[4]), parse(tf[5]), parse(tf[6]), parse(tf[7]),
+                         parse(tf[8]), parse(tf[9]), parse(tf[10]), parse(tf[11]),
+                         parse(tf[15]));
         for (auto& v : vertices) {
             Point_3 p(v.x, v.y, v.z);
             Point_3 tp = t.transform(p);
             v.x = tp.x(); v.y = tp.y(); v.z = tp.z();
         }
+    }
+
+    std::optional<EK::Plane_3> find_plane() const {
+        if (vertices.size() < 3) return std::nullopt;
+        // Simple 3-point plane for now (assuming clean input)
+        for (size_t i = 0; i < vertices.size() - 2; ++i) {
+            EK::Point_3 p1(vertices[i].x, vertices[i].y, vertices[i].z);
+            EK::Point_3 p2(vertices[i+1].x, vertices[i+1].y, vertices[i+1].z);
+            EK::Point_3 p3(vertices[i+2].x, vertices[i+2].y, vertices[i+2].z);
+            if (!CGAL::collinear(p1, p2, p3)) {
+                return EK::Plane_3(p1, p2, p3);
+            }
+        }
+        return std::nullopt;
+    }
+
+    bool is_coplanar_with(const EK::Plane_3& plane, double epsilon = 1e-6) const {
+        for (const auto& v : vertices) {
+            EK::Point_3 p(v.x, v.y, v.z);
+            if (CGAL::to_double(CGAL::squared_distance(plane, p)) > epsilon) {
+                return false;
+            }
+        }
+        return true;
     }
 
     std::string encode_text() const {

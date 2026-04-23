@@ -35,7 +35,13 @@ struct Operation : fs::Selector {
  */
 struct Shape {
     std::optional<fs::CID> geometry;
-    std::vector<double> tf = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    // Transformation matrix stored as 16 exact ratio strings ("n/d")
+    std::vector<std::string> tf = {
+        "1/1", "0/1", "0/1", "0/1",
+        "0/1", "1/1", "0/1", "0/1",
+        "0/1", "0/1", "1/1", "0/1",
+        "0/1", "0/1", "0/1", "1/1"
+    };
     nlohmann::json tags = nlohmann::json::object();
     std::vector<Shape> components;
 
@@ -60,7 +66,27 @@ struct Shape {
                 s.geometry = fs::CID::from_json(j.at("geometry"));
             }
             if (j.contains("tf") && j.at("tf").is_array()) {
-                s.tf = j.at("tf").get<std::vector<double>>();
+                auto raw_tf = j.at("tf");
+                s.tf.clear();
+                for (const auto& val : raw_tf) {
+                    if (val.is_string()) {
+                        s.tf.push_back(val.get<std::string>());
+                    } else if (val.is_number()) {
+                        // Compatibility: convert double to ratio string
+                        double dval = val.get<double>();
+                        long long precision = 1000000000LL;
+                        long long n = (long long)std::round(std::abs(dval) * precision);
+                        long long d = precision;
+                        long long common = std::gcd(n, d);
+                        std::string ratio = std::to_string((dval < 0 ? -1 : 1) * (n / common)) + "/" + std::to_string(d / common);
+                        s.tf.push_back(ratio);
+                    }
+                }
+                if (s.tf.size() < 16) {
+                    // Fill remaining with identity
+                    static const std::vector<std::string> id = {"1/1","0/1","0/1","0/1","0/1","1/1","0/1","0/1","0/1","0/1","1/1","0/1","0/1","0/1","0/1","1/1"};
+                    for (size_t i = s.tf.size(); i < 16; ++i) s.tf.push_back(id[i]);
+                }
             }
             if (j.contains("tags") && j.at("tags").is_object()) {
                 s.tags = j.at("tags");

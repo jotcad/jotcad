@@ -55,7 +55,7 @@ struct Engine {
     static bool cut_mesh_by_plane(Surface_mesh& target, const EK::Plane_3& plane) {
         bool success = CGAL::Polygon_mesh_processing::clip(
             target, plane,
-            CGAL::parameters::use_compact_clipper(true)
+            CGAL::parameters::use_compact_clipper(true).clip_volume(true)
         );
         fix::make_geometry_unambiguous(target);
         return success;

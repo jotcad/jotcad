@@ -50,6 +50,14 @@ A Plane tool represents an infinite half-space boundary. The "cut" side is defin
   2. The result of the slice is a set of `Polygon_with_holes_2`.
   3. Perform a 2D GPS `difference` between the Target and the Slice-Polygons.
 
+### 2D Target (Polygons/Facets) vs. 2D Tool
+- **Algorithm**: Planar 2D Boolean (Exact GPS).
+  1. Detect if Target and Tool are coplanar (share a common 3D plane).
+  2. Project both onto their common plane's $XY$ space.
+  3. Perform 2D `difference` using `General_polygon_set_2`.
+  4. Project the result back to 3D.
+- **Benefit**: Resolves all numerical instability (gaps/singularities) inherent in 3D-on-3D Booleans for flat objects.
+
 ### 1D Target (Segments) vs. 3D Tool
 - **Algorithm**: Ray-Mesh intersection using AABB Trees.
   1. Construct an `AABB_tree` of the 3D tool faces.
@@ -65,13 +73,28 @@ A Plane tool represents an infinite half-space boundary. The "cut" side is defin
 - **Operators**: 
   - `jot/Point`: Single vertex cloud.
   - `jot/Points`: Multi-vertex cloud.
+## 5. Representation & Identity
 
-## 5. Architectural Updates
-1. **`geo/boolean/engine.h`**: Stateless geometric functions for each matrix cell.
-2. **`geo/cut_op.h`**: Refactored to perform "Dimensionality Analysis" on the input `Geometry` and dispatch to the engine.
-3. **Point Cloud Storage**: Ensure `Geometry` preserves un-indexed vertices for 0D operations.
+### Exact Ratio Transformation (`tf`)
+To ensure absolute stability of the Mesh-VFS identity (CID), transformation matrices are stored as **Exact Ratio Strings** (`"n/d"`).
+- **Stability**: Unlike `double` floating-point values, which can have microscopic drift depending on the architecture or platform, ratio strings provide a bit-exact representation for the CID.
+- **Precision**: Handled natively by CGAL `FT` on the C++ side and decoded using `BigInt` scaling on the JavaScript side (`ux/src/lib/ft.js`).
+- **Compatibility**: The system supports reading legacy `double` arrays but always materializes as ratio strings.
 
-## 6. Verification Plan
+### Visual Documentation (The Gallery)
+The system includes a dedicated visual verification suite (`geo/test/boolean_gallery_test.cpp`) that generates "Story" view images.
+- **Story View**: A single image showing the `[Target] | [Tool] -> [Result]` sequence.
+- **Transparency**: The tool interaction is visualized using an upgraded **RGBA Rasterizer** with alpha-blending, allowing the "Tool" to be rendered as a translucent ghost over the "Target".
+
+## 6. Architectural Updates
+1. **`geo/impl/rasterizer.h/cc`**: Upgraded to 4-channel RGBA with back-to-front triangle sorting for transparency support.
+2. **`geo/boolean/engine.h`**: Stateless geometric functions for each matrix cell.
+3. **`geo/cut_op.h`**: Refactored to perform "Dimensionality Analysis" on the input `Geometry` and dispatch to the engine.
+4. **Point Cloud Storage**: Ensure `Geometry` preserves un-indexed vertices for 0D operations.
+
+## 7. Verification Plan
+...
+
 - **Test Case 1**: Cut a 3D Cube by a 3D Sphere (Volume-Volume).
 - **Test Case 2**: Cut a 2D Square by a 3D Cylinder (Planar-Volume).
 - **Test Case 3**: Cut 1D Polylines by a 2D Circle (Segment-Planar).

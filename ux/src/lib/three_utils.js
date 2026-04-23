@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import earcut from 'earcut';
+import { ratioToNumber } from './ft.js';
 
 let renderer = null;
 const viewports = new Map(); // id -> {canvas, scene, camera}
@@ -89,13 +90,57 @@ export const decodeGeometry = (text) => {
 };
 
 const identity = new THREE.Matrix4();
+
+/**
+ * Converts an exact ratio string "n/d" to a JavaScript Number.
+ * Handles components too large for standard Number parsing by using BigInt.
+ */
+const ratioToNumber = (s) => {
+  if (typeof s === 'number') return s;
+  if (typeof s !== 'string') return 0;
+  const slash = s.indexOf('/');
+  if (slash === -1) return parseFloat(s);
+
+  const nStr = s.substring(0, slash);
+  const dStr = s.substring(slash + 1);
+
+  try {
+    const n = BigInt(nStr);
+    const d = BigInt(dStr);
+    
+    if (d === 0n) return 0;
+
+    // Direct conversion to Number then division is usually sufficient.
+    // Number(BigInt) will correctly round to the nearest double, or return Infinity.
+    const num = Number(n);
+    const den = Number(d);
+
+    if (isFinite(num) && isFinite(den)) {
+      return num / den;
+    }
+
+    // If components are too large for Number ( > 1.8e308 ), 
+    // we need to scale them down to representable range.
+    const nLen = nStr.length;
+    const dLen = dStr.length;
+    const shift = BigInt(Math.max(0, Math.max(nLen, dLen) - 15));
+    const factor = 10n ** shift;
+    
+    return Number(n / factor) / Number(d / factor);
+  } catch (e) {
+    return parseFloat(s); // Fallback
+  }
+};
+
 export const decodeTf = (tf) => {
   if (!tf) return identity;
   const m = new THREE.Matrix4();
   if (Array.isArray(tf)) {
-    m.fromArray(tf);
-  } else if (typeof tf === 'object') {
-    // Handle specific tf object if needed
+    const flat = tf.map(ratioToNumber).flat();
+    m.fromArray(flat);
+  } else if (typeof tf === 'string') {
+    const flat = ratioToNumber(tf);
+    if (Array.isArray(flat)) m.fromArray(flat);
   }
   return m;
 };

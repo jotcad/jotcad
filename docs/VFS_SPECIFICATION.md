@@ -119,6 +119,6 @@ The `read` operation is the primary mechanism for demand-driven data retrieval.
 - **Addressing:** Computation-Addressed (CID = hash(Selector)).
 - **Structure:**
   - `geometry`: An optional **CID** (strictly a CID string, *never* a Selector).
-  - `tf`: 4x4 Affine transformation matrix (Column-Major).
+  - `tf`: 4x4 Affine transformation matrix. Stored as an array of 16 **Exact Ratio Strings** (`"n/d"`) to ensure bit-exact identity stability across platforms.
   - `tags`: Key-value metadata.
   - `components`: Nested `shape` objects.
