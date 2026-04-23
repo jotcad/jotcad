@@ -51,17 +51,20 @@ A Plane tool represents an infinite half-space boundary. The "cut" side is defin
   3. Perform a 2D GPS `difference` between the Target and the Slice-Polygons.
 
 ### 1D Target (Segments) vs. 3D Tool
-- **Algorithm**: Ray-Mesh intersection. 
-  1. Use an AABB tree for the 3D Tool.
-  2. For each segment in the Target, find intersections with the Tool.
-  3. Discard segments (or portions) that fall `INSIDE` the tool volume.
+- **Algorithm**: Ray-Mesh intersection using AABB Trees.
+  1. Construct an `AABB_tree` of the 3D tool faces.
+  2. Intersect each segment with the tree to find split points.
+  3. Discard sub-segments where the midpoint is `ON_BOUNDED_SIDE` of the tool.
+- **Operators**: 
+  - `jot/link`: Creates an open chain of segments.
+  - `jot/loop`: Creates a closed loop of segments.
 
 ### 0D Target (Points) vs. Any Tool
 - **Algorithm**: Spatial membership.
-  - Point-in-Volume (3D).
-  - Point-on-Surface (3D Open) - requires epsilon distance.
-  - Point-in-Polygon (2D).
-  - Point-on-Line (1D) - requires epsilon distance.
+  - Point-in-Volume (3D): `Side_of_triangle_mesh`.
+- **Operators**: 
+  - `jot/Point`: Single vertex cloud.
+  - `jot/Points`: Multi-vertex cloud.
 
 ## 5. Architectural Updates
 1. **`geo/boolean/engine.h`**: Stateless geometric functions for each matrix cell.

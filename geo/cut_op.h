@@ -53,9 +53,11 @@ struct CutOp : P {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
             
             bool has_faces = !target_geo.faces.empty();
-            bool has_only_points = target_geo.faces.empty() && !target_geo.vertices.empty();
+            bool has_segments = !target_geo.segments.empty();
+            bool has_only_points = target_geo.faces.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
 
             if (has_faces) {
+                // ... (existing 3D/2D face logic)
                 bool is_3d = false;
                 for (const auto& v : target_geo.vertices) {
                     if (CGAL::to_double(CGAL::abs(v.z)) > 1e-6) { is_3d = true; break; }
@@ -67,6 +69,7 @@ struct CutOp : P {
                         boolean::Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
+                        if (tool.is_volume) assert(fix::is_geometry_solid(tool_mesh));
                         boolean::Engine::cut_mesh_by_mesh(target_mesh, tool_mesh);
                     }
                     target_geo = mesh_to_geometry(target_mesh);
@@ -80,6 +83,32 @@ struct CutOp : P {
                         boolean::Engine::cut_gps_by_gps(subject_set, tool_set);
                     }
                     target_geo = gps_to_geometry(subject_set);
+                }
+            } else if (has_segments) {
+                std::vector<std::pair<EK::Point_3, EK::Point_3>> segs;
+                for (const auto& s : target_geo.segments) {
+                    segs.push_back({
+                        EK::Point_3(target_geo.vertices[s[0]].x, target_geo.vertices[s[0]].y, target_geo.vertices[s[0]].z),
+                        EK::Point_3(target_geo.vertices[s[1]].x, target_geo.vertices[s[1]].y, target_geo.vertices[s[1]].z)
+                    });
+                }
+                
+                for (const auto& tool : tool_nodes) {
+                    boolean::Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                    Matrix rel_tf = subject_world_inv * tool.world_tf;
+                    transform_mesh(tool_mesh, rel_tf);
+                    if (tool.is_volume) assert(fix::is_geometry_solid(tool_mesh));
+                    boolean::Engine::cut_segments_by_mesh(segs, tool_mesh);
+                }
+                
+                target_geo.vertices.clear();
+                target_geo.segments.clear();
+                for (const auto& s : segs) {
+                    int i1 = (int)target_geo.vertices.size();
+                    target_geo.vertices.push_back({s.first.x(), s.first.y(), s.first.z()});
+                    int i2 = (int)target_geo.vertices.size();
+                    target_geo.vertices.push_back({s.second.x(), s.second.y(), s.second.z()});
+                    target_geo.segments.push_back({i1, i2});
                 }
             } else if (has_only_points) {
                 std::cout << "[CUT DEBUG] Target has " << target_geo.vertices.size() << " points." << std::endl;
