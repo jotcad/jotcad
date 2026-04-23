@@ -13,9 +13,9 @@ test('VFS Fail-Fast Validation', async (t) => {
     {
       schema: {
         type: 'object',
-        required: ['radius'],
+        required: ['diameter'],
         properties: {
-          radius: { type: 'number' },
+          diameter: { type: 'number' },
           variant: { type: 'string', enum: ['a', 'b'] },
         },
       },
@@ -26,7 +26,7 @@ test('VFS Fail-Fast Validation', async (t) => {
     'should reject request with missing required parameter',
     async () => {
       try {
-        await vfs.read('test/op', {});
+        await vfs.read({ path: 'test/op', parameters: {} });
         assert.fail('Should have thrown an error');
       } catch (err) {
         assert.ok(err.message.includes('Missing required parameter'));
@@ -38,25 +38,25 @@ test('VFS Fail-Fast Validation', async (t) => {
     'should reject request with invalid parameter type',
     async () => {
       try {
-        await vfs.read('test/op', { radius: 'not-a-number' });
+        await vfs.read({ path: 'test/op', parameters: { diameter: 'not-a-number' } });
         assert.fail('Should have thrown an error');
       } catch (err) {
-        assert.ok(err.message.includes('Expected number'));
+        assert.ok(err.message.includes('Invalid parameter type'));
       }
     }
   );
 
   await t.test('should reject request with invalid enum value', async () => {
     try {
-      await vfs.read('test/op', { radius: 10, variant: 'invalid' });
+      await vfs.read({ path: 'test/op', parameters: { diameter: 20, variant: 'invalid' } });
       assert.fail('Should have thrown an error');
     } catch (err) {
-      assert.ok(err.message.includes('Expected one of [a, b]'));
+      assert.ok(err.message.includes('Invalid enum value'));
     }
   });
 
   await t.test('should allow valid request', async () => {
-    const stream = await vfs.read('test/op', { radius: 10, variant: 'a' });
+    const stream = await vfs.read({ path: 'test/op', parameters: { diameter: 20, variant: 'a' } });
     assert.ok(stream !== null);
     const reader = stream.getReader();
     const { value } = await reader.read();
@@ -70,10 +70,12 @@ test('VFS Fail-Fast Validation', async (t) => {
     });
 
     try {
-      await vfs.read('remote/op', {});
+      await vfs.read({ path: 'remote/op', parameters: {} });
       assert.fail('Should have thrown an error');
     } catch (err) {
       assert.ok(err.message.includes("Missing required parameter 'id'"));
     }
   });
+
+  await vfs.close();
 });

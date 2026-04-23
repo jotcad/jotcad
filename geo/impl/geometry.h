@@ -15,41 +15,68 @@ struct Vertex {
     FT x, y, z;
 };
 
+/**
+ * Geometry: The foundational exact geometric artifact in JOT.
+ */
 struct Geometry {
+    struct Face {
+        std::vector<std::vector<int>> loops; // Outer loop, then holes
+    };
+
     std::vector<Vertex> vertices;
+    std::vector<Face> faces;
     std::vector<int> points;
     std::vector<std::array<int, 2>> segments;
     std::vector<std::array<int, 3>> triangles;
-    
-    struct Face {
-        std::vector<std::vector<int>> loops;
-    };
-    std::vector<Face> faces;
 
-    void apply_tf(const std::vector<double>& tf) {
+    void apply_tf(const std::vector<std::string>& tf) {
         if (tf.size() < 16) return;
-        // Construct exact transformation
-        Transformation t(tf[0], tf[1], tf[2], tf[3],
-                         tf[4], tf[5], tf[6], tf[7],
-                         tf[8], tf[9], tf[10], tf[11]);
-        
+        auto parse = [](const std::string& s) {
+            size_t slash = s.find('/');
+            if (slash == std::string::npos) return FT(std::stod(s));
+            return FT(std::stod(s.substr(0, slash))) / FT(std::stod(s.substr(slash + 1)));
+        };
+        Transformation t(parse(tf[0]), parse(tf[1]), parse(tf[2]), parse(tf[3]),
+                         parse(tf[4]), parse(tf[5]), parse(tf[6]), parse(tf[7]),
+                         parse(tf[8]), parse(tf[9]), parse(tf[10]), parse(tf[11]),
+                         parse(tf[15]));
         for (auto& v : vertices) {
             Point_3 p(v.x, v.y, v.z);
-            p = t.transform(p);
-            v.x = p.x(); v.y = p.y(); v.z = p.z();
+            Point_3 tp = t.transform(p);
+            v.x = tp.x(); v.y = tp.y(); v.z = tp.z();
         }
+    }
+
+    std::optional<EK::Plane_3> find_plane() const {
+        if (vertices.size() < 3) return std::nullopt;
+        // Simple 3-point plane for now (assuming clean input)
+        for (size_t i = 0; i < vertices.size() - 2; ++i) {
+            EK::Point_3 p1(vertices[i].x, vertices[i].y, vertices[i].z);
+            EK::Point_3 p2(vertices[i+1].x, vertices[i+1].y, vertices[i+1].z);
+            EK::Point_3 p3(vertices[i+2].x, vertices[i+2].y, vertices[i+2].z);
+            if (!CGAL::collinear(p1, p2, p3)) {
+                return EK::Plane_3(p1, p2, p3);
+            }
+        }
+        return std::nullopt;
+    }
+
+    bool is_coplanar_with(const EK::Plane_3& plane, double epsilon = 1e-6) const {
+        for (const auto& v : vertices) {
+            EK::Point_3 p(v.x, v.y, v.z);
+            if (CGAL::to_double(CGAL::squared_distance(plane, p)) > epsilon) {
+                return false;
+            }
+        }
+        return true;
     }
 
     std::string encode_text() const {
         try {
-            std::ostringstream ss;
-            ss << std::fixed << std::setprecision(18);
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(6);
             for (const auto& v : vertices) {
-                double dx = CGAL::to_double(v.x);
-                double dy = CGAL::to_double(v.y);
-                double dz = CGAL::to_double(v.z);
-                ss << "v " << dx << " " << dy << " " << dz 
-                   << " " << dx << " " << dy << " " << dz << "\n";
+                ss << "v " << CGAL::to_double(v.x) << " " << CGAL::to_double(v.y) << " " << CGAL::to_double(v.z) << "\n";
             }
             if (!points.empty()) {
                 ss << "p";
@@ -95,36 +122,35 @@ struct Geometry {
                 if (!(ls >> code)) continue;
 
                 if (code == "v") {
-                    double x1, y1, z1;
-                    if (ls >> x1 >> y1 >> z1) {
-                        vertices.push_back({FT(x1), FT(y1), FT(z1)});
+                    double x, y, z;
+                    if (ls >> x >> y >> z) {
+                        vertices.push_back({FT(x), FT(y), FT(z)});
                     }
-                } else if (code == "p") {
-                    int idx;
-                    while (ls >> idx) points.push_back(idx);
-                } else if (code == "s") {
-                    int v1, v2;
-                    while (ls >> v1 >> v2) segments.push_back({v1, v2});
-                } else if (code == "t") {
-                    int v1, v2, v3;
-                    while (ls >> v1 >> v2 >> v3) triangles.push_back({v1, v2, v3});
                 } else if (code == "f") {
-                    Face face;
+                    Face f;
                     std::vector<int> loop;
                     int idx;
                     while (ls >> idx) loop.push_back(idx);
                     if (!loop.empty()) {
-                        face.loops.push_back(std::move(loop));
-                        faces.push_back(std::move(face));
+                        f.loops.push_back(loop);
+                        faces.push_back(f);
                     }
                 } else if (code == "h") {
-                    if (faces.empty()) continue;
-                    std::vector<int> hole;
-                    int idx;
-                    while (ls >> idx) hole.push_back(idx);
-                    if (!hole.empty()) {
-                        faces.back().loops.push_back(std::move(hole));
+                    if (!faces.empty()) {
+                        std::vector<int> loop;
+                        int idx;
+                        while (ls >> idx) loop.push_back(idx);
+                        if (!loop.empty()) faces.back().loops.push_back(loop);
                     }
+                } else if (code == "s") {
+                    int i1, i2;
+                    while (ls >> i1 >> i2) segments.push_back({i1, i2});
+                } else if (code == "p") {
+                    int idx;
+                    while (ls >> idx) points.push_back(idx);
+                } else if (code == "t") {
+                    int i1, i2, i3;
+                    if (ls >> i1 >> i2 >> i3) triangles.push_back({i1, i2, i3});
                 }
             }
         } catch (const std::exception& e) {

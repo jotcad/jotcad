@@ -30,7 +30,7 @@ export class JotParser {
     // Ignore single-line comments
     const cleanText = text.replace(/\/\/.*$/gm, '');
     const regex =
-      /\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|:|\[|\]|,)\s*/g;
+      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);
@@ -137,7 +137,29 @@ export class JotParser {
     this._consume('(');
     const args = [];
     while (this._peek() && this._peek() !== ')') {
-      args.push(this._parseExpression());
+      let typeHint = null;
+      let nameHint = null;
+
+      // 1. Check for Type Annotation (identifier :)
+      if (/^[a-zA-Z_]/.test(this._peek()) && this.tokens[this.pos + 1] === ':') {
+        typeHint = this._consume();
+        this._consume(':');
+      }
+
+      // 2. Check for Named Argument (identifier =)
+      if (/^[a-zA-Z_]/.test(this._peek()) && this.tokens[this.pos + 1] === '=') {
+        nameHint = this._consume();
+        this._consume('=');
+      }
+
+      const value = this._parseExpression();
+      
+      if (typeHint || nameHint) {
+        args.push({ type: 'ANNOTATED_ARG', typeHint, nameHint, value });
+      } else {
+        args.push(value);
+      }
+
       if (this._peek() === ',') this._consume(',');
     }
     this._consume(')');

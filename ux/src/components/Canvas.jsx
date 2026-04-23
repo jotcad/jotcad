@@ -186,10 +186,7 @@ const PathNode = (props) => {
 
           // If it's a shape, also fetch its geometry for the expandable section
           if (typeof data === 'object' && data.geometry) {
-            const gd = await vfs.readData(
-              data.geometry.path,
-              data.geometry.parameters
-            );
+            const gd = await vfs.readData(data.geometry);
             if (gd) {
               const text =
                 typeof gd === 'string' ? gd : new TextDecoder().decode(gd);
@@ -237,7 +234,7 @@ const PathNode = (props) => {
             img = await captureThumbnail(vfs, rawData);
           } else if (
             typeof rawData === 'object' &&
-            (rawData.geometry || rawData.shapes)
+            (rawData.geometry || rawData.components)
           ) {
             const jot = `\n=${
               JSON.stringify(rawData).length

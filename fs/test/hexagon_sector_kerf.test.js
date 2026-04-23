@@ -1,122 +1,83 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
-import { VFS, MeshLink, registerVFSRoutes, DiskStorage } from '../src/index.js';
+import http from 'node:http';
+import { VFS, DiskStorage, MeshLink, registerVFSRoutes } from '../src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import http from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { launchOpsNode } from './ops_helper.js';
 
-const PORT_OPS = 9901;
-const PORT_CLIENT = 9902;
-const STORAGE_JS = path.resolve('.vfs_storage_sector_test');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
+const PORT_OPS = 9301;
+const STORAGE_OPS = path.resolve('.vfs_storage_sector_ops');
+const STORAGE_CLIENT = path.resolve('.vfs_storage_sector_client');
 
 test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
-  let opsProcess, clientServer, clientVfs, stopServer;
+  const PORT_CLIENT = 9302;
+  let opsNode, vfs, mesh, server;
+
+  t.before(async () => {
+    await fs.rm(STORAGE_OPS, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(STORAGE_CLIENT, { recursive: true, force: true }).catch(() => {});
+    
+    console.log('[Test Sector] Launching C++ Native Node...');
+    opsNode = await launchOpsNode(OPS_PATH, PORT_OPS, STORAGE_OPS);
+    
+    console.log('[Test Sector] Starting Node.js Test Client...');
+    vfs = new VFS({
+      id: 'sector-js-node',
+      storage: new DiskStorage(STORAGE_CLIENT)
+    });
+    await vfs.init();
+    
+    mesh = new MeshLink(vfs, [`http://localhost:${PORT_OPS}`], {
+        localUrl: `http://localhost:${PORT_CLIENT}`
+    });
+
+    server = http.createServer();
+    registerVFSRoutes(vfs, server, '', mesh);
+    await new Promise(resolve => server.listen(PORT_CLIENT, '0.0.0.0', resolve));
+
+    await mesh.start();
+  });
 
   t.after(async () => {
     console.log('[Test Sector] Cleaning up...');
-    if (opsProcess) opsProcess.kill();
-    if (stopServer) stopServer();
-    if (clientServer) clientServer.close();
-    if (clientVfs) await clientVfs.close();
-    await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
-    await fs
-      .rm(path.resolve('.vfs_storage_sector-ops'), {
-        recursive: true,
-        force: true,
-      })
-      .catch(() => {});
+    if (opsNode) await opsNode.stop();
+    if (mesh) await mesh.stop();
+    if (server) await new Promise(resolve => server.close(resolve));
+    await vfs.close();
+    await fs.rm(STORAGE_OPS, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(STORAGE_CLIENT, { recursive: true, force: true }).catch(() => {});
   });
-
-  // 1. Start C++ Ops Node
-  console.log('[Test Sector] Launching C++ Ops Node...');
-  opsProcess = spawn(path.resolve('geo/bin/ops'), [], {
-    env: { ...process.env, PORT: PORT_OPS.toString(), PEER_ID: 'sector-ops' },
-  });
-
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  // 2. Start JS Client Node
-  console.log('[Test Sector] Starting JS Client...');
-  clientVfs = new VFS({
-    id: 'sector-client',
-    storage: new DiskStorage(STORAGE_JS),
-  });
-  const mesh = new MeshLink(clientVfs, [`http://localhost:${PORT_OPS}`], {
-    localUrl: `http://localhost:${PORT_CLIENT}`,
-  });
-  clientServer = http.createServer();
-  stopServer = registerVFSRoutes(clientVfs, clientServer, '', mesh);
-  await new Promise((resolve) =>
-    clientServer.listen(PORT_CLIENT, '0.0.0.0', resolve)
-  );
-  await clientVfs.init();
-  await mesh.start();
 
   await t.test(
     'should resolve nested mesh expression for kerfed sector',
     async () => {
-      // THE COMPLEX SELECTOR
-      // pdf(offset(loop(group(origin, nth(points(hexagon), [0, 1]))), kerf=5))
+      // THE EXPRESSION:
+      // pdf(offset(loop(group(origin, nth(points(hexagon), 0), nth(points(hexagon), 1))), diameter=5))
 
-      const expression = {
-        path: 'op/pdf',
-        parameters: {
-          source: {
-            path: 'op/offset',
-            parameters: {
-              radius: 5.0, // The Kerf
-              source: {
-                path: 'op/loop',
-                parameters: {
-                  source: {
-                    path: 'op/group',
-                    parameters: {
-                      sources: [
-                        { path: 'shape/origin', parameters: {} },
-                        {
-                          path: 'op/nth',
-                          parameters: {
-                            indices: [0, 1],
-                            source: {
-                              path: 'op/points',
-                              parameters: {
-                                source: {
-                                  path: 'shape/hexagon',
-                                  parameters: { radius: 100 },
-                                },
-                              },
-                            },
-                          },
-                        },
-                      ],
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      };
+      const hexagon = { path: 'jot/Hexagon/full', parameters: { diameter: 200 } };
+      const points = { path: 'jot/points', parameters: { $in: hexagon } };
+      const point0 = { path: 'jot/nth', parameters: { $in: points, index: 0 } };
+      const point1 = { path: 'jot/nth', parameters: { $in: points, index: 1 } };
+      const origin = { path: 'jot/nth', parameters: { $in: { path: 'jot/points', parameters: { $in: { path: 'jot/Box', parameters: { width: 1, height: 1, depth: 1 } } } }, index: 0 } };
+      const group = { path: 'jot/group', parameters: { $in: origin, shapes: [point0, point1] } };
+      const loop = { path: 'jot/loop', parameters: { $in: group } };
+      const offset = { path: 'jot/offset', parameters: { $in: loop, diameter: 5.0 } };
+      const pdf = { path: 'jot/pdf', parameters: { $in: offset, path: 'sector.pdf' } };
 
       console.log('[Test Sector] Requesting complex expression...');
-      const pdfData = await clientVfs.readData(
-        expression.path,
-        expression.parameters
-      );
+      const pdfData = await vfs.readData(pdf, { output: 'file' });
 
       assert.ok(pdfData, 'Should return PDF data');
-      console.log(
-        `[Test Sector] Received data type: ${pdfData.constructor.name}, length: ${pdfData.length}`
-      );
-
-      // pdfData should be a Uint8Array
+      
+      // Check for PDF magic number
       const header = new TextDecoder().decode(pdfData.slice(0, 4));
       assert.strictEqual(header, '%PDF', 'Result should be a valid PDF buffer');
 
-      console.log(
-        `[Test Sector] SUCCESS: Generated ${pdfData.length} byte kerfed sector PDF.`
-      );
+      console.log(`[Test Sector] SUCCESS: Generated ${pdfData.length} byte kerfed sector PDF.`);
     }
   );
 });

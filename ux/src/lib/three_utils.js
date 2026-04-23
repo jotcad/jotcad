@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import earcut from 'earcut';
+import { ratioToNumber } from './ft.js';
 
 let renderer = null;
 const viewports = new Map(); // id -> {canvas, scene, camera}
@@ -89,13 +90,57 @@ export const decodeGeometry = (text) => {
 };
 
 const identity = new THREE.Matrix4();
+
+/**
+ * Converts an exact ratio string "n/d" to a JavaScript Number.
+ * Handles components too large for standard Number parsing by using BigInt.
+ */
+const ratioToNumber = (s) => {
+  if (typeof s === 'number') return s;
+  if (typeof s !== 'string') return 0;
+  const slash = s.indexOf('/');
+  if (slash === -1) return parseFloat(s);
+
+  const nStr = s.substring(0, slash);
+  const dStr = s.substring(slash + 1);
+
+  try {
+    const n = BigInt(nStr);
+    const d = BigInt(dStr);
+    
+    if (d === 0n) return 0;
+
+    // Direct conversion to Number then division is usually sufficient.
+    // Number(BigInt) will correctly round to the nearest double, or return Infinity.
+    const num = Number(n);
+    const den = Number(d);
+
+    if (isFinite(num) && isFinite(den)) {
+      return num / den;
+    }
+
+    // If components are too large for Number ( > 1.8e308 ), 
+    // we need to scale them down to representable range.
+    const nLen = nStr.length;
+    const dLen = dStr.length;
+    const shift = BigInt(Math.max(0, Math.max(nLen, dLen) - 15));
+    const factor = 10n ** shift;
+    
+    return Number(n / factor) / Number(d / factor);
+  } catch (e) {
+    return parseFloat(s); // Fallback
+  }
+};
+
 export const decodeTf = (tf) => {
   if (!tf) return identity;
   const m = new THREE.Matrix4();
   if (Array.isArray(tf)) {
-    m.fromArray(tf);
-  } else if (typeof tf === 'object') {
-    // Handle specific tf object if needed
+    const flat = tf.map(ratioToNumber).flat();
+    m.fromArray(flat);
+  } else if (typeof tf === 'string') {
+    const flat = ratioToNumber(tf);
+    if (Array.isArray(flat)) m.fromArray(flat);
   }
   return m;
 };
@@ -227,14 +272,18 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
         }
       }
     }
-    if (s.shapes) for (const sub of s.shapes) await walk(sub, worldMat);
+    if (s.components) for (const sub of s.components) await walk(sub, worldMat);
   };
   await walk(shape);
 };
 
 export function initSharedRenderer() {
   if (renderer) return renderer;
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer = new THREE.WebGLRenderer({ 
+    antialias: true, 
+    alpha: true,
+    preserveDrawingBuffer: true
+  });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
@@ -353,13 +402,12 @@ class JOTAssets {
 
     if (!this.vfs) return null;
     try {
-      if (typeof id === 'object' && id.path) {
-        const data = await this.vfs.readData(id.path, id.parameters);
-        if (data) {
-          const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
-          this.cache.set(cacheKey, text);
-          return text;
-        }
+      // Support both Selector objects and direct CID strings
+      const data = await this.vfs.readData(id);
+      if (data) {
+        const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+        this.cache.set(cacheKey, text);
+        return text;
       }
     } catch (e) { console.warn('[JOTAssets] Resolution failed:', id, e); }
     return null;
@@ -372,21 +420,19 @@ export async function packZFS(vfs, shape) {
     if (!s || typeof s !== 'object') return;
 
     if (s.geometry) {
-      const g = s.geometry;
-      const path = g.path || (typeof g === 'string' ? g : null);
-      const params = g.parameters || {};
-      if (path) {
-        const id = normalizeId({ path, parameters: params });
-        if (!assets.has(id)) {
-          try {
-            const text = await vfs.readText(path, params);
-            if (text) assets.set(id, text);
-          } catch (e) { console.warn('[packZFS] Failed to fetch asset:', id, e); }
-        }
+      const id = normalizeId(s.geometry);
+      if (!assets.has(id)) {
+        try {
+          const data = await vfs.readData(s.geometry);
+          if (data) {
+            const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+            assets.set(id, text);
+          }
+        } catch (e) { console.warn('[packZFS] Failed to fetch asset:', id, e); }
       }
     }
-    if (s.shapes && Array.isArray(s.shapes)) {
-      for (const sub of s.shapes) await walk(sub);
+    if (s.components && Array.isArray(s.components)) {
+      for (const sub of s.components) await walk(sub);
     }
   };
   await walk(shape);

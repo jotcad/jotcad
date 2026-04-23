@@ -1,4 +1,5 @@
 #include "test_base.h"
+#include "../impl/processor.h"
 #include <iostream>
 #include <cassert>
 
@@ -30,7 +31,7 @@ void verify_schema(const std::string& path, const nlohmann::json& schema) {
 int main() {
     register_all_ops();
     
-    const auto& registry = Processor::registry();
+    const auto& registry = Processor::registry_instance();
     assert(!registry.empty() && "Registry is empty!");
 
     for (const auto& [path, op] : registry) {

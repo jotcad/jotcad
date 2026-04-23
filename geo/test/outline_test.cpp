@@ -5,19 +5,20 @@
 using namespace jotcad::geo;
 
 int main() {
-    std::cout << "Testing Outline Segments..." << std::endl;
     MockVFS vfs;
     
-    Shape box;
-    BoxOp<>::execute(&vfs, {10.0}, {10.0}, {10.0}, box);
+    std::cout << "Testing Outline Operation..." << std::endl;
     
-    Shape outline;
-    OutlineOp<>::execute(&vfs, box, outline);
+    fs::Selector box_fulfilling = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}};
+    BoxOp<>::execute(&vfs, box_fulfilling, 10.0, 10.0, 10.0);
+    Shape box = vfs.read<Shape>(box_fulfilling);
     
-    Geometry geo = vfs.read_geo(outline.geometry);
-    assert(geo.segments.size() > 0);
-    assert(geo.triangles.empty());
+    fs::Selector outline_fulfilling = {"jot/outline", {}};
+    OutlineOp<>::execute(&vfs, outline_fulfilling, box);
     
+    Shape s = vfs.read<Shape>(outline_fulfilling);
+    vfs.verify_render(s, "outline_op_basic", "26e192feee2a0153684ec08cb5fd51d38a69e1cc8676064675efabd297c5ea0a");
+
     std::cout << "✅ Outline PASS" << std::endl;
     return 0;
 }

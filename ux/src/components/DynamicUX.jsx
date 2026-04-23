@@ -20,7 +20,7 @@ export const DynamicUX = (props) => {
       const path = schema.ux.replace('vfs:/', '');
       console.log(`[DynamicUX] Fetching UI script from: ${path}`);
 
-      const jsText = await vfs.readData(path, {});
+      const jsText = await vfs.readData({ path, parameters: {} });
       if (!jsText || typeof jsText !== 'string') {
         console.error(
           '[DynamicUX] Script content is empty or invalid:',

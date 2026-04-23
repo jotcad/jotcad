@@ -13,9 +13,10 @@
     "prettier": "prettier --write .",
     "cli": "node cli/cli.js",
     "rollup": "npm run rollup --workspaces --if-present",
-    "test": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test fs/test/*.test.js geo/test/*.test.js",
-    "test:unit": "cd geo/test && chmod +x run_unit_tests.sh && ./run_unit_tests.sh",
-    "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test '*/*.test.js'",
+    "unit_test": "cd geo/test && ./run_unit_tests.sh && cd ../../fs && npm test",
+    "integration_test": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test --test-timeout=30000 --test-force-exit fs/test/*.test.js geo/test/*.test.js",
+    "test": "npm run unit_test && npm run integration_test",
+    "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test --test-timeout=30000 --test-force-exit '*/*.test.js'",
     "lintfix_one": "npx eslint --fix $1",
     "debug": "http-server . -p 9090"
   },

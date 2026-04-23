@@ -2,10 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, WebReadableStream } from '@jotcad/fs';
 import { registerJotProvider } from '../src/provider.js';
+import { JotCompiler } from '../src/compiler.js';
 
 test('JotCAD VFS Provider: Integration', async (t) => {
   const vfs = new VFS({ storage: new MemoryStorage() });
-  registerJotProvider(vfs);
+  const compiler = new JotCompiler(vfs);
+  registerJotProvider(vfs, { compiler });
+
+  // Register mock schemas with the compiler
+  compiler.registerOperator('box', { path: 'shape/box', schema: { arguments: { width: { type: 'jot:number' } } } });
+  compiler.registerOperator('rx', { path: 'op/rotateX', schema: { arguments: { source: { type: 'jot:shape' }, turns: { type: 'jot:number' } } } });
+  compiler.registerOperator('A', { path: 'op/A', schema: { arguments: { value: { type: 'jot:number' } } } });
+  compiler.registerOperator('B', { path: 'op/B', schema: { arguments: { $in: { type: 'jot:shape' }, arg: { type: 'any' } } } });
+  compiler.registerOperator('C', { path: 'op/C', schema: { arguments: { $in: { type: 'jot:shape' }, arg: { type: 'any' } } } });
 
   // Register a mock shape provider
   vfs.registerProvider('shape/box', async (v, selector) => {
@@ -65,8 +74,16 @@ test('JotCAD VFS Provider: Integration', async (t) => {
       return new TextEncoder().encode(`${input} + ${arg}`);
     });
     vfs.registerProvider('op/C', async (v, s) => {
-      const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
-      return new TextEncoder().encode(`${input} * ${s.parameters.arg}`);
+      console.log('--- op/C called ---');
+      console.log('selector:', JSON.stringify(s, null, 2));
+      try {
+        const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
+        console.log('op/C input:', input);
+        return new TextEncoder().encode(`${input} * ${s.parameters.arg}`);
+      } catch (err) {
+        console.log('op/C ERROR:', err);
+        throw err;
+      }
     });
 
     await st.test('Scenario 1: Box() - no subject', async () => {

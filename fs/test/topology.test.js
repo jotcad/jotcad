@@ -33,7 +33,7 @@ test('Mesh Topology Discovery', async (t) => {
         return Promise.resolve();
       },
       notify: (s, p, st) => {
-        return Promise.resolve(mA.notify(s, p, st));
+        return Promise.resolve(mB.notify(s, p, st));
       },
     };
     const peerB = {
@@ -44,7 +44,7 @@ test('Mesh Topology Discovery', async (t) => {
         return Promise.resolve();
       },
       notify: (s, p, st) => {
-        return Promise.resolve(mB.notify(s, p, st));
+        return Promise.resolve(mA.notify(s, p, st));
       },
     };
     mA.peers.set(mB.vfs.id, peerA);
@@ -88,7 +88,7 @@ test('Mesh Topology Discovery', async (t) => {
           id: p.id,
           reachability: p.reachability,
         }));
-        const sel = { path: 'sys/topo', parameters: { id: m.vfs.id } };
+        const sel = { path: 'sys/topo', parameters: {} }; // No ID in selector, keep it in payload
         console.log(
           `[Test] Triggering heartbeat from ${name} (${m.vfs.id})...`
         );

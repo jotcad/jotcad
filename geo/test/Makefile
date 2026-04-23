@@ -1,61 +1,50 @@
-# JotCAD Independent Operator Tests Makefile
+# JotCAD Operator Tests Makefile
 
 CXX = g++
-CXXFLAGS = -O3 -std=c++17 -fPIC
-INCLUDES = -I.. -I../impl -I../../fs/cpp/include -I../../fs/cpp/vendor \
+CXXFLAGS = -O3 -std=c++17
+INCLUDES = -I.. -I../impl -I../../fs/cpp -I../../fs/cpp/vendor \
            -I../../geometry/native/include -I../../geometry/boost \
            -I../../geometry/native/include/CGAL/include
-
-# Core dependencies (VFS, shared logic, and operator catalog)
-CORE_SOURCES = ../../fs/cpp/src/vfs_node.cpp ../ops_library.cc
-CORE_OBJS = bin/vfs_node.o bin/ops_library.o
-
 DEFS = -DCGAL_DISABLE_GMP=1
-LIBS = -lpthread
+LIBS = -L../bin -ljotgeo -lpthread -lcrypto
 
 BIN_DIR = bin
+LIB_GEO = ../bin/libjotgeo.a
 
-TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp offset_test.cpp outline_test.cpp \
-               group_test.cpp rotate_test.cpp pdf_test.cpp corners_test.cpp on_test.cpp \
-               cut_test.cpp nested_cut_test.cpp cut_hexagon_test.cpp accumulator_test.cpp \
-               schema_test.cpp offset_closure_test.cpp
-TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
+TEST_SOURCES = cid_consistency_test.cpp hexagon_test.cpp box_test.cpp triangle_test.cpp \
+               offset_test.cpp outline_test.cpp group_test.cpp rotate_test.cpp \
+               pdf_test.cpp corners_test.cpp on_test.cpp cut_test.cpp \
+               nested_cut_test.cpp cut_hexagon_test.cpp accumulator_test.cpp \
+               schema_test.cpp offset_closure_test.cpp png_test.cpp
+TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:_test.cpp=_test))
 
-all: $(TEST_BINS)
+all: $(LIB_GEO) $(TEST_BINS)
 
-# Compile shared VFS core once
-bin/vfs_node.o: ../../fs/cpp/src/vfs_node.cpp
+# Ensure the library is built first
+$(LIB_GEO):
+	$(MAKE) -C ..
+
+# Template for building each test
+$(BIN_DIR)/%_test: %_test.cpp $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) $< ../obj/rasterizer.o $(LIBS) -o $@
 
-# Compile shared Op Registry once
-bin/ops_library.o: ../ops_library.cc
-	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
-
-# Build each test independently
-$(BIN_DIR)/%_test: %_test.cpp test_base.h $(CORE_OBJS)
-	@mkdir -p $(BIN_DIR)
-	@echo "[Build] $@"
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) $< $(CORE_OBJS) $(LIBS) -o $@
-
-# Run all tests
-test: $(TEST_BINS)
-	@echo "Starting JotCAD Operator Unit Tests..."
-	@echo "--------------------------------------"
-	@for t in $(TEST_BINS); do \
-		echo "[Run] $$t"; \
-		./$$t || exit 1; \
-	done
-	@echo "--------------------------------------"
-	@echo "✨ ALL UNIT TESTS PASSED"
-
-# Run a specific test (e.g. make test-hexagon)
+# Target to build and run an individual test
 test-%: $(BIN_DIR)/%_test
 	@echo "[Run] $<"
 	@./$<
 
+# Run all tests sequentially with fail-fast behavior
+unit_test: $(LIB_GEO)
+	@for bin in $(TEST_BINS); do \
+		echo "--- [$$bin] ---"; \
+		$(MAKE) $$bin || exit 1; \
+		./$$bin || exit 1; \
+	done
+	@echo "--------------------------------------"
+	@echo "✨ ALL UNIT TESTS PASSED"
+
 clean:
 	rm -rf $(BIN_DIR)
 
-.PHONY: all clean test
+.PHONY: all clean test-% unit_test

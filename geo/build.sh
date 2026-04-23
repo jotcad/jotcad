@@ -1,2 +1,2 @@
 #!/bin/bash
-make -C $(dirname "$0")
+make -C $(dirname "$0") all

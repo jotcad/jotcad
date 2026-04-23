@@ -8,11 +8,13 @@
 #include "rotate_op.h"
 #include "color_op.h"
 #include "group_op.h"
-#include "pdf_op.h"
 #include "path_op.h"
 #include "corners_op.h"
 #include "on_op.h"
 #include "cut_op.h"
+#include "pdf_op.h"
+#include "png_op.h"
+#include "rule_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -25,14 +27,15 @@ void register_all_ops() {
     outline_init();
     points_init();
     nth_init();
+    rotate_init();
     color_init();
     group_init();
-    pdf_init();
     path_init();
-    rotate_init();
     corners_init();
     on_init();
     cut_init();
+    pdf_init();
+    png_init();
 }
 
 } // namespace geo

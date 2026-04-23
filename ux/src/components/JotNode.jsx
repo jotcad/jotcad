@@ -1,7 +1,7 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
 import interact from 'interactjs';
 import { vfs, blackboard } from '../lib/blackboard';
-import { Database, Minus, Maximize2, Layers } from 'lucide-solid';
+import { Database, Minus, Maximize2, Layers, Plus, X, Globe } from 'lucide-solid';
 import { JotParser } from '../../../jot/src/parser';
 import { JotCompiler } from '../../../jot/src/compiler';
 import { Viewport } from './Viewport';
@@ -9,22 +9,46 @@ import { packZFS } from '../lib/three_utils';
 
 const DEFAULT_CODE = `
 // JotCAD Expressions
-Hexagon(30)
+Box(width, 10, 0)
 `.trim();
 
 export const JotNode = (props) => {
   let nodeRef;
   const [pos, setPos] = createSignal({ x: 400, y: 400 });
+  const [opName, setOpName] = createSignal('user/MyOp');
+  const [args, setArgs] = createSignal([
+    { name: 'width', type: 'number', testValue: 20 }
+  ]);
   const [code, setCode] = createSignal(DEFAULT_CODE);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
   const [resultData, setResultData] = createSignal(null);
   const [associatedFiles, setAssociatedFiles] = createSignal([]);
 
+  const addArg = () => setArgs([...args(), { name: 'arg' + args().length, type: 'number', testValue: 10 }]);
+  const removeArg = (index) => setArgs(args().filter((_, i) => i !== index));
+  const updateArg = (index, field, value) => {
+    const next = [...args()];
+    next[index] = { ...next[index], [field]: value };
+    setArgs(next);
+  };
+
+  const publishToMesh = () => {
+     const schema = {
+       path: opName(),
+       arguments: args().reduce((acc, arg) => {
+         acc[arg.name] = { type: arg.type, default: arg.testValue };
+         return acc;
+       }, {}),
+       outputs: { "$out": { type: "shape" } }
+     };
+     blackboard.publishDynamicOp(opName(), schema, code());
+  };
+
   const downloadFile = async (file) => {
     try {
       console.log(`[JotNode] Downloading artifact: ${file.label} from ${file.selector.path}`);
-      const data = await vfs.readData(file.selector.path, file.selector.parameters);
+      const data = await vfs.readData(file.selector);
       if (data) {
         const blob = new Blob([data], { type: file.mimeType });
         const url = URL.createObjectURL(blob);
@@ -48,9 +72,6 @@ export const JotNode = (props) => {
         },
       },
     });
-
-    // Auto-evaluate on mount
-    evaluateJot();
   });
 
   const evaluateJot = async () => {
@@ -61,36 +82,21 @@ export const JotNode = (props) => {
       const parser = new JotParser();
       const compiler = new JotCompiler(vfs);
 
-      // Register all discovered schemas with the compiler
+      // 1. Bind UI arguments as variables
+      const boundVars = args().reduce((acc, arg) => {
+        acc[arg.name] = arg.testValue;
+        return acc;
+      }, {});
+
+      // 2. Register all discovered schemas with the compiler
       const currentSchemas = blackboard.schemas();
-      console.log(`[JotNode] Discovering operators from ${Object.keys(currentSchemas).length} schemas...`);
       for (const [path, schema] of Object.entries(currentSchemas)) {
-        // 1. Canonical Name (e.g. jot/Box -> Box)
-        if (path.startsWith('jot/')) {
-          const name = path.slice(4);
-          console.log(`  Registering Operator: ${name} -> ${path}`);
-          compiler.registerOperator(name, { path, schema });
-        }
-        
-        // 2. Multiple Aliases (e.g. jot/on -> aliases: ["jot/at"])
-        if (Array.isArray(schema.aliases)) {
-          for (const alias of schema.aliases) {
-            if (alias.startsWith('jot/')) {
-              const name = alias.slice(4);
-              console.log(`  Registering Alias: ${name} -> ${path}`);
-              compiler.registerOperator(name, { path, schema });
-            }
-          }
-        }
+        const name = path.startsWith('jot/') ? path.slice(4) : path;
+        compiler.registerOperator(name, { path, schema });
       }
 
       const ast = parser.parse(code());
-      const resolved = await compiler.evaluate(ast);
-
-      console.log(
-        '[JotNode] Compiled result:',
-        JSON.stringify(resolved, null, 2)
-      );
+      const resolved = await compiler.evaluate(ast, boundVars);
 
       // Distinguish Primary Result from Side-Demands
       // compiler.evaluate returns [Primary, ...SideDemands] if passthrough ops were used
@@ -132,12 +138,12 @@ export const JotNode = (props) => {
       setAssociatedFiles(files);
 
       // 2. Resolve Primary Geometry for visualization
-      const data = await vfs.readData(primarySelector.path, primarySelector.parameters);
+      const data = await vfs.readData(primarySelector);
       
       if (data) {
         console.log('[JotNode] Primary Shape Data:', JSON.stringify(data, null, 2));
         
-        if (typeof data === 'object' && (data.geometry || data.shapes)) {
+        if (typeof data === 'object' && (data.geometry || data.components)) {
           const unified = await packZFS(vfs, data);
           setResultData(unified);
         } else {
@@ -170,8 +176,13 @@ export const JotNode = (props) => {
         class="flex justify-between items-center cursor-move"
         onDblClick={() => setIsMinimized(!isMinimized())}
       >
-        <div class="text-xs font-black uppercase tracking-tighter text-white/40">
-          Jot Engine Expression
+        <div class="flex items-center gap-2">
+           <input 
+             data-testid="op-name-input"
+             class="bg-transparent border-none text-xs font-black uppercase tracking-tighter text-cyan-400 focus:outline-none w-32"
+             value={opName()}
+             onInput={e => setOpName(e.target.value)}
+           />
         </div>
         <div class="flex items-center gap-2">
           <div
@@ -189,6 +200,34 @@ export const JotNode = (props) => {
       </div>
 
       <Show when={!isMinimized()}>
+        {/* Argument Editor */}
+        <div class="bg-white/5 rounded-lg p-2 flex flex-col gap-2">
+           <div class="flex justify-between items-center px-1">
+             <span class="text-[9px] font-black uppercase tracking-widest text-white/40">Arguments</span>
+             <button onClick={addArg} class="text-cyan-400 hover:text-cyan-300"><Plus size={12}/></button>
+           </div>
+           <For each={args()}>
+             {(arg, i) => (
+               <div class="flex gap-2 items-center">
+                 <input 
+                   data-testid={`arg-name-${i()}`}
+                   class="bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white w-20 focus:outline-none focus:border-cyan-400/40"
+                   value={arg.name}
+                   onInput={e => updateArg(i(), 'name', e.target.value)}
+                 />
+                 <input 
+                   data-testid={`arg-value-${i()}`}
+                   type="number"
+                   class="bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-cyan-400 w-16 focus:outline-none focus:border-cyan-400/40"
+                   value={arg.testValue}
+                   onInput={e => updateArg(i(), 'testValue', parseFloat(e.target.value))}
+                 />
+                 <button onClick={() => removeArg(i())} class="text-white/20 hover:text-red-400 ml-auto"><X size={10}/></button>
+               </div>
+             )}
+           </For>
+        </div>
+
         <textarea
           class="bg-black/40 border border-white/5 rounded-lg p-3 font-mono text-[11px] h-32 focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar"
           value={code()}
@@ -213,6 +252,13 @@ export const JotNode = (props) => {
             }`}
           >
             {isEvaluating() ? 'EVALUATING...' : 'EVALUATE JOT'}
+          </button>
+          <button
+            onClick={publishToMesh}
+            class="px-3 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-all flex items-center justify-center"
+            title="Publish to Mesh"
+          >
+            <Globe size={16} />
           </button>
         </div>
 

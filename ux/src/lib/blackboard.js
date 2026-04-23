@@ -23,6 +23,7 @@ const [meshTopology, setMeshTopology] = createStore({ peers: [] });
 const [meshPositions, setMeshPositions] = createSignal({}); // PeerID -> {x, y}
 const [isConnected, setIsConnected] = createSignal(false);
 const [discoveryStatus, setDiscoveryStatus] = createSignal('idle');
+const [dynamicOps, setDynamicOps] = createSignal({}); // Path -> { schema, script }
 
 let isStarted = false;
 const meshMap = new Map();
@@ -37,6 +38,7 @@ export const blackboard = {
   setMeshPositions,
   isConnected,
   discoveryStatus,
+  dynamicOps,
 
   async start() {
     if (isStarted) return;
@@ -45,6 +47,22 @@ export const blackboard = {
     await vfs.init();
 
     console.log(`[UX] Mesh-VFS initialized. Connecting to: ${vfsUrl}`);
+
+    // Load Local Dynamic Ops from localStorage
+    const saved = localStorage.getItem('jot_dynamic_ops');
+    if (saved) {
+      try {
+        const ops = JSON.parse(saved);
+        setDynamicOps(ops);
+        console.log(`[UX] Loaded ${Object.keys(ops).length} dynamic operations.`);
+        // We will publish them after utility ops are registered
+        for (const [path, op] of Object.entries(ops)) {
+          this.publishDynamicOp(path, op.schema, op.script, false);
+        }
+      } catch (e) {
+        console.error('[UX] Failed to load dynamic ops:', e);
+      }
+    }
 
     // Register Utility Ops (Generators)
     vfs.registerProvider(
@@ -144,21 +162,6 @@ export const blackboard = {
     // Subscribe to Schema Announcements from the mesh
     mesh.subscribe({ path: 'sys/schema', parameters: {} });
 
-    // Periodic Schema Announcement for Browser-Local Ops
-    setInterval(() => {
-      const catalog = {};
-      for (const path of vfs.providers.keys()) {
-        const schema = vfs.schemas.get(path);
-        if (schema) catalog[path] = schema;
-      }
-      if (Object.keys(catalog).length > 0) {
-        mesh.notify(
-          { path: 'sys/schema', parameters: { provider: vfs.id } },
-          { type: 'CATALOG_ANNOUNCEMENT', provider: vfs.id, catalog }
-        );
-      }
-    }, 5000);
-
     setInterval(() => {
       const nodes = new Map();
       nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [] });
@@ -176,6 +179,60 @@ export const blackboard = {
       }
       setMeshTopology('peers', reconcile([...nodes.values()]));
     }, 1000);
+  },
+
+  publishDynamicOp(path, schema, script, persist = true) {
+    console.log(`[UX] Publishing Dynamic Op: ${path}`);
+
+    // 1. Register VFS Provider
+    vfs.registerProvider(path, async (v, s) => {
+      const { JotCompiler } = await import('../../../jot/src/compiler');
+      const { JotParser } = await import('../../../jot/src/parser');
+      
+      const compiler = new JotCompiler(v);
+      const currentSchemas = this.schemas();
+      for (const [p, sch] of Object.entries(currentSchemas)) {
+        compiler.registerOperator(p.startsWith('jot/') ? p.slice(4) : p, { path: p, schema: sch });
+      }
+
+      const parser = new JotParser();
+      const ast = parser.parse(script);
+      
+      const params = { ...s.parameters };
+      if (schema.arguments) {
+        for (const [key, arg] of Object.entries(schema.arguments)) {
+           if (params[key] === undefined && arg.default !== undefined) {
+             params[key] = arg.default;
+           }
+        }
+      }
+
+      const result = await compiler.evaluate(ast, params);
+      const primary = Array.isArray(result) ? result[0] : result;
+      const shapeData = await v.readData(primary);
+      return new TextEncoder().encode(JSON.stringify(shapeData));
+    }, { schema });
+
+    // 2. Update reactive schemas
+    const schemaWithOrigin = { ...schema, _origin: vfs.id };
+    setSchemas(prev => ({ ...prev, [path]: schemaWithOrigin }));
+    vfs.addSchema(path, schemaWithOrigin);
+
+    // 3. Update dynamicOps state
+    setDynamicOps(prev => {
+      const next = { ...prev, [path]: { schema, script } };
+      if (persist) {
+        localStorage.setItem('jot_dynamic_ops', JSON.stringify(next));
+      }
+      return next;
+    });
+
+    // 4. Announce to mesh
+    mesh.notify({ path: 'sys/schema' }, {
+      type: 'CATALOG_ANNOUNCEMENT',
+      provider: vfs.id,
+      catalog: { [path]: schemaWithOrigin }
+    });
   },
 
   stop() {

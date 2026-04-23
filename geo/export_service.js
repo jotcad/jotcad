@@ -11,46 +11,40 @@ const storageDir = path.resolve(`.vfs_storage_${id}`);
 console.log(`[Export Node ${id}] Starting Native Mesh Node...`);
 
 const vfs = new VFS({ id, storage: new DiskStorage(storageDir) });
-await vfs.init(); // Initialize storage first
+await vfs.init();
 
 const meshLink = new MeshLink(vfs, neighbors, { localUrl: `http://localhost:${port}` });
 
 // Register the Export Op as a VFS Provider
-vfs.registerProvider('op/export', async (v, selector) => {
-    console.log(`[Export Node] Provisioning Export: ${selector.path}`);
+vfs.registerProvider('jot/pdf', async (v, selector) => {
+    console.log(`[Export Node] Provisioning PDF Export: ${selector.path}`);
     try {
-        const { source, filename = 'download.bin' } = selector.parameters;
-        if (!source) throw new Error('No source provided for export');
+        const { $in, path: pdfPath = 'export.pdf' } = selector.parameters;
+        if (!$in) throw new Error('No input provided for PDF export');
 
-        // 1. Resolve the source bytes from the mesh
-        // Note: v.readData will use meshLink to find it if it's not local!
-        const data = await v.readData(source);
-        if (!data) throw new Error(`Could not find source: ${JSON.stringify(source)}`);
+        // 1. Resolve the source bytes from the mesh (matches C++ decode behavior)
+        const data = await v.readData($in);
+        if (!data) throw new Error(`Could not find input: ${JSON.stringify($in)}`);
 
         // 2. Perform the export (Write to local disk)
-        const outPath = path.resolve(filename);
-        await fsPromises.writeFile(outPath, data);
+        const outPath = path.resolve(pdfPath);
+        const fileContent = typeof data === 'string' ? data : (data instanceof Uint8Array ? data : JSON.stringify(data));
+        await fsPromises.writeFile(outPath, fileContent);
         console.log(`[Export Node] Exported to ${outPath}`);
 
-        // 3. Return the status object as the "file" content
+        // 3. Fulfill the request (Tee Pattern: return the input metadata)
         const status = { 
+            type: 'sys/export_status',
             exportedAt: new Date().toISOString(), 
             filename: outPath, 
             size: data.length 
         };
-        const statusBytes = new TextEncoder().encode(JSON.stringify(status, null, 2));
-        return new ReadableStream({
-            start(c) { c.enqueue(statusBytes); c.close(); }
-        });
+        
+        return status;
 
     } catch (err) {
         console.error(`[Export Node ERROR] ${err.message}`);
         return null;
-    }
-}, {
-    schema: {
-        source: { type: 'selector', description: 'The VFS path or selector to export' },
-        filename: { type: 'string', default: 'download.bin', description: 'The destination filename' }
     }
 });
 
@@ -59,6 +53,5 @@ registerVFSRoutes(vfs, server, '', meshLink);
 
 server.listen(port, '0.0.0.0', async () => {
     console.log(`[Export Node ${id}] Listening on http://localhost:${port}`);
-    await vfs.init();
     await meshLink.start();
 });

@@ -80,6 +80,10 @@ export class JotCompiler {
     } else if (node.type === 'METHOD') {
       // 4. Handle METHOD Nodes (e.g., subject.offset(2))
       result = await this._evaluateMethod(node, parameters, currentSubject);
+    } else if (node.type === 'ANNOTATED_ARG') {
+      // Handle annotated arguments (Type:Name=Expression)
+      const val = await this._evaluateRecursive(node.value, parameters, currentSubject);
+      return { __annotated: true, typeHint: node.typeHint, nameHint: node.nameHint, value: val };
     } else if (node.path && node.parameters) {
       // 5. Handle already-resolved Selectors or Objects
       const resolvedParams = {};
@@ -113,19 +117,80 @@ export class JotCompiler {
     return null;
   }
 
-  async _evaluateCall(node, parameters, currentSubject = null) {
-    let op = this.operators.get(node.name);
-    if (!op) {
-      throw new Error(`Unregistered operator: ${node.name}. Please ensure it is registered in the JotProvider.`);
+  _resolveOperator(name) {
+    // 1. Try exact match
+    let op = this.operators.get(name);
+    if (op) return op;
+
+    // 2. Hierarchical resolution: find all candidates
+    const targetPrefix = name + '/';
+    const candidates = [];
+
+    for (const [opKey, config] of this.operators.entries()) {
+      if (opKey.startsWith(targetPrefix)) {
+        candidates.push(config);
+      }
     }
-    const path = op.path;
-    const schema = op ? op.schema : null;
-    const returns = op ? op.returns : null;
+    
+    return candidates;
+  }
+
+  async _evaluateCall(node, parameters, currentSubject = null) {
+    let candidates = this._resolveOperator(node.name);
+    if (!candidates || (Array.isArray(candidates) && candidates.length === 0)) {
+      throw new Error(`Unregistered operator: ${node.name}.`);
+    }
 
     // Propagate context to arguments: Box(diameter()) -> Box(subject.diameter())
     const args = [];
     for (const arg of node.args)
       args.push(await this._evaluateRecursive(arg, parameters, currentSubject));
+
+    // Resolve variant based on schema matching if multiple candidates exist
+    let op = null;
+    if (Array.isArray(candidates)) {
+      let bestMatch = null;
+      let maxConstraints = -1;
+      let ambiguous = false;
+
+      for (const candidate of candidates) {
+        const mapped = this.mapArguments(args, candidate.schema, node.name, false);
+        let match = true;
+        let constraintCount = 0;
+        const argDefs = candidate.schema?.arguments || {};
+        
+        for (const [name, config] of Object.entries(argDefs)) {
+          if (config.const !== undefined) {
+            constraintCount++;
+            if (mapped[name] !== config.const) {
+              match = false;
+              break;
+            }
+          }
+        }
+        
+        if (match) {
+          if (constraintCount > maxConstraints) {
+            maxConstraints = constraintCount;
+            bestMatch = candidate;
+            ambiguous = false;
+          } else if (constraintCount === maxConstraints) {
+            ambiguous = true;
+          }
+        }
+      }
+      
+      if (ambiguous || !bestMatch) {
+        throw new Error(`Ambiguous or unregistered operator call: ${node.name}. Please provide parameters to disambiguate.`);
+      }
+      op = bestMatch;
+    } else {
+      op = candidates;
+    }
+
+    const path = op.path;
+    const schema = op.schema;
+    const returns = op.returns;
 
     const inputKey = this._getInputKey(schema);
     const hasActiveInput = currentSubject !== null && inputKey !== null;
@@ -173,34 +238,101 @@ export class JotCompiler {
       return this.flatten(results);
     }
 
-    let op = this.operators.get(node.name);
-    if (!op) {
-      for (const [name, config] of this.operators.entries()) {
-        if (name.toLowerCase() === node.name.toLowerCase()) {
-          op = config;
-          break;
-        }
-      }
+    let candidates = this._resolveOperator(node.name);
+
+    if (!candidates || (Array.isArray(candidates) && candidates.length === 0)) {
+      // Dynamic fallback
+      candidates = { path: this.options.defaultPrefix + node.name, schema: {} };
     }
 
-    if (!op) {
-      throw new Error(`Unregistered method: ${node.name}. Please ensure it is registered in the JotProvider.`);
+    // A method provides its subject as context to its arguments ONLY for non-operation types
+    const args = [];
+    for (const arg of node.args)
+      args.push(await this._evaluateRecursive(arg, parameters, null)); // Evaluated naked
+
+    // Resolve variant based on schema matching
+    let op = null;
+    if (Array.isArray(candidates)) {
+      let bestMatch = null;
+      let maxConstraints = -1;
+      let ambiguous = false;
+
+      for (const candidate of candidates) {
+        const mapped = this.mapArguments(args, candidate.schema, node.name, true);
+        let match = true;
+        let constraintCount = 0;
+        const argDefs = candidate.schema?.arguments || {};
+
+        for (const [name, config] of Object.entries(argDefs)) {
+          if (config.const !== undefined) {
+            constraintCount++;
+            if (mapped[name] !== config.const) {
+              match = false;
+              break;
+            }
+          }
+        }
+
+        if (match) {
+          if (constraintCount > maxConstraints) {
+            maxConstraints = constraintCount;
+            bestMatch = candidate;
+            ambiguous = false;
+          } else if (constraintCount === maxConstraints) {
+            ambiguous = true;
+          }
+        }
+      }
+
+      if (ambiguous || !bestMatch) {
+        throw new Error(`Ambiguous or unregistered method call: ${node.name}. Please provide parameters to disambiguate.`);
+      }
+      op = bestMatch;
+    } else {
+      op = candidates;
     }
 
     const path = op.path;
     const schema = op.schema;
 
-    // A method ALWAYS provides its subject as context to its arguments
-    const args = [];
-    for (const arg of node.args)
-      args.push(await this._evaluateRecursive(arg, parameters, subject));
+    console.log(`[JotCompiler] Mapped arguments for ${node.name}:`, JSON.stringify(args));
+    const resolvedParams = this.mapArguments(args, schema, node.name, true);
+    console.log(`[JotCompiler] Resolved params (pre-binding) for ${node.name}:`, JSON.stringify(resolvedParams));
+
+    // Contextual Binding: Bind subject to any shape/shapes that are missing their primary input
+    const bindSubject = (val) => {
+      if (typeof val === 'object' && val !== null && val.path && val.parameters && val.parameters.$in === undefined) {
+          let op = null;
+          for (const config of this.operators.values()) {
+            if (config.path === val.path) { op = config; break; }
+          }
+          if (!op) op = this._resolveOperator(val.path.startsWith('jot/') ? val.path.slice(4) : val.path);
+
+          const inputKey = this._getInputKey(op?.schema) || '$in';
+          if (inputKey && val.parameters[inputKey] === undefined) {
+            val.parameters[inputKey] = subject;
+          }
+      }
+    };
 
     const inputKey = this._getInputKey(schema) || '$in';
-    const resolvedParams = this.mapArguments(args, schema, node.name, true);
+    console.log(`[JotCompiler] Method Input Key for ${node.name}: ${inputKey}`);
 
-    // Map subject to the primary input
+    for (const [name, val] of Object.entries(resolvedParams)) {
+        if (name === inputKey) continue; // don't bind to the main subject input itself again
+
+        if (typeof val === 'object' && val !== null && val.path) {
+           bindSubject(val);
+        } else if (Array.isArray(val)) {
+           val.forEach(v => {
+             if (typeof v === 'object' && v !== null && v.path) bindSubject(v);
+           });
+        }
+    }
+
+    // Map subject to the primary input of the method itself
     resolvedParams[inputKey] = subject;
-
+    console.log(`[JotCompiler] Final params for ${node.name}:`, JSON.stringify(resolvedParams));
     if (node.name === 'and') {
       resolvedParams.$in = [subject, ...args];
     }
@@ -224,23 +356,38 @@ export class JotCompiler {
   /**
    * Namespaced Type Matching (jot:number, jot:shape, etc.)
    */
-  _matchType(val, type) {
+  _matchType(val, type, hint = null) {
     if (!type) return true;
     const t = type.toLowerCase();
 
-    // 1. Scalar Matchers (Consume 1)
+    // 1. Strict Hint Check: If a hint exists, it MUST match the target type family
+    if (hint) {
+      const h = hint.toLowerCase();
+      if (h === 'op' || h === 'operation') {
+        if (t !== 'jot:operation') return false;
+      } else if (h === 'shape' || h === 'shapes') {
+        if (t !== 'jot:shape' && t !== 'jot:shapes') return false;
+      } else if (h === 'num' || h === 'number' || h === 'n') {
+        if (t !== 'jot:number' && t !== 'jot:numbers') return false;
+      } else if (h === 'str' || h === 'string' || h === 's') {
+        if (t !== 'jot:string' && t !== 'jot:strings') return false;
+      }
+    }
+
+    // 2. Structural Matchers (Consume 1)
     if (t === 'jot:number') return typeof val === 'number';
     if (t === 'jot:string') return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
     if (t === 'jot:boolean') return typeof val === 'boolean';
     if (t === 'jot:shape') return typeof val === 'object' && val !== null && val.path;
+    if (t === 'jot:operation') return typeof val === 'object' && val !== null && val.path;
 
-    // 2. Plural Matchers (Consume All - matching element-wise)
+    // 3. Plural Matchers (Consume All - matching element-wise)
     if (t === 'jot:numbers') return typeof val === 'number';
     if (t === 'jot:strings') return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
     if (t === 'jot:booleans') return typeof val === 'boolean';
     if (t === 'jot:shapes') return typeof val === 'object' && val !== null && val.path;
 
-    // 3. Legacy / Internal types (can be namespaced later if needed)
+    // 4. Legacy / Internal types
     if (t === 'vec3') return Array.isArray(val) && val.length === 3 && val.every(v => typeof v === 'number');
     if (t === 'intv') return typeof val === 'number' || (Array.isArray(val) && val.length === 2);
     if (t === 'array') return Array.isArray(val);
@@ -249,78 +396,89 @@ export class JotCompiler {
   }
 
   /**
-   * Map positional arguments to property names based on JSON Schema.
-   * Logic: Scalar-takes-1, Greedy-Plural-takes-All.
+   * Map positional and named arguments to property names based on JSON Schema.
    */
   mapArguments(args, schema, opName, hasSubject = false) {
-    let parameters = {};
-    const argDefs = schema ? schema.arguments || schema.properties : null;
+    const parameters = {};
+    const argDefs = schema ? schema.arguments || schema.properties || {} : {};
+    const propNames = Object.keys(argDefs);
 
-    if (
-      args.length === 1 &&
-      typeof args[0] === 'object' &&
-      args[0] !== null &&
-      !Array.isArray(args[0]) &&
-      args[0].type !== 'SYMBOL' &&
-      !args[0].path
-    ) {
-      parameters = { ...args[0] };
-    } else if (argDefs) {
-      const propNames = Object.keys(argDefs);
-      const propConfigs = Object.values(argDefs);
-      
-      let argIndex = 0;
-      let subjectSkipped = !hasSubject;
+    // Object Spreading: If a single object is passed, map it directly.
+    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0]) && !args[0].path && !args[0].__annotated) {
+      Object.assign(parameters, args[0]);
+    }
+    
+    // Preparation: Wrap un-annotated args to simplify logic
+    const wrappedArgs = args.map(a => (a && a.__annotated ? a : { value: a }));
+    const unassignedArgs = new Set(wrappedArgs.keys());
 
-      for (let i = 0; i < propNames.length; i++) {
-        const name = propNames[i];
-        const config = propConfigs[i];
-        const t = config.type ? config.type.toLowerCase() : '';
+    // Phase 1: Named Assignment (Highest Priority)
+    for (let i = 0; i < wrappedArgs.length; i++) {
+       const arg = wrappedArgs[i];
+       if (arg.nameHint && argDefs[arg.nameHint]) {
+          parameters[arg.nameHint] = arg.value;
+          unassignedArgs.delete(i);
+       }
+    }
 
-        // If method call, skip the first 'jot:shape' slot for subject
-        if (!subjectSkipped && (t === 'jot:shape' || t === 'jot:shapes')) {
-          subjectSkipped = true;
-          continue;
+    // Phase 2 & 3: Type-Aware Positional Sweep
+    let argPointer = 0;
+    let subjectSkipped = !hasSubject;
+
+    for (let i = 0; i < propNames.length; i++) {
+      const name = propNames[i];
+      const config = argDefs[name];
+      const t = config.type ? config.type.toLowerCase() : '';
+
+      // Skip the first 'jot:shape' slot if method call (subject mapping handled by caller)
+      if (!subjectSkipped && (t === 'jot:shape' || t === 'jot:shapes')) {
+        subjectSkipped = true;
+        continue;
+      }
+
+      // Skip if already assigned by name
+      if (parameters[name] !== undefined) continue;
+
+      // Find the next unassigned argument that matches this slot's type
+      while (argPointer < wrappedArgs.length && !unassignedArgs.has(argPointer)) {
+        argPointer++;
+      }
+
+      if (argPointer >= wrappedArgs.length) continue;
+
+      const arg = wrappedArgs[argPointer];
+      const isGreedy = t.endsWith('s') && t.startsWith('jot:');
+
+      if (isGreedy) {
+        const matching = [];
+        // Greedy consume until we hit a mismatch
+        while (argPointer < wrappedArgs.length) {
+          if (!unassignedArgs.has(argPointer)) { argPointer++; continue; }
+          
+          const a = wrappedArgs[argPointer];
+          if (this._matchType(a.value, t, a.typeHint)) {
+            matching.push(a.value);
+            unassignedArgs.delete(argPointer);
+            argPointer++;
+          } else {
+            break; // Stop plural on mismatch
+          }
         }
-
-        if (argIndex >= args.length) continue;
-
-        const isGreedy = t.endsWith('s') && t.startsWith('jot:');
-        
-        if (isGreedy) {
-          const matching = [];
-          // Consume all contiguous arguments that match the element type
-          while (argIndex < args.length && this._matchType(args[argIndex], t)) {
-            matching.push(args[argIndex]);
-            argIndex++;
-          }
-          if (matching.length > 0) {
-            parameters[name] = matching;
-          }
-        } else {
-          // Scalar slot: Match 1
-          const val = args[argIndex];
-          if (this._matchType(val, t)) {
-            if (t === 'intv' && typeof val === 'number') {
-              parameters[name] = [-val / 2, val / 2];
-            } else {
-              parameters[name] = val;
-            }
-            argIndex++;
-          }
+        if (matching.length > 0) parameters[name] = matching;
+      } else {
+        // Scalar slot: Match 1
+        if (this._matchType(arg.value, t, arg.typeHint)) {
+           parameters[name] = arg.value;
+           unassignedArgs.delete(argPointer);
+           argPointer++;
         }
       }
-    } else {
-      if (args.length === 1) parameters.arg = args[0];
-      else if (args.length > 1) parameters.args = args;
     }
 
     // Apply Defaults
-    if (argDefs) {
-      for (const [name, config] of Object.entries(argDefs)) {
-        if (parameters[name] === undefined && config.default !== undefined) {
-          parameters[name] = config.default;
-        }
+    for (const [name, config] of Object.entries(argDefs)) {
+      if (parameters[name] === undefined && config.default !== undefined) {
+        parameters[name] = config.default;
       }
     }
 

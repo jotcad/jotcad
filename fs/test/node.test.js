@@ -3,20 +3,19 @@ import assert from 'node:assert';
 import { VFS } from '../src/vfs_node.js';
 import { Node, In, Out } from '../src/node.js';
 
-test('AgentNode abstraction', async (t) => {
+test('Node Core Functionality', async (t) => {
   const vfs = new VFS();
   await vfs.init();
 
   const boxNode = new Node(vfs, {
     sockets: {
-      params: {},
       config: In('config/box'),
       mesh: Out('geometry/box'),
     },
-    async execute({ _params, config, mesh }) {
-      const { id } = await _params();
-      const { size } = await config.readData();
-      await mesh.writeData(`Box(${size})`);
+    async execute({ config, mesh }) {
+      const data = await config.readData();
+      if (!data) return;
+      await mesh.writeData(`Box(${data.size})`);
     },
   });
 
@@ -34,22 +33,17 @@ test('AgentNode abstraction', async (t) => {
   await boxNode.start();
   await processNode.start();
 
-  await t.test(
-    'Node resolves inputs from other blackboard locations',
-    async () => {
-      await vfs.writeData('config/box', { id: 'b1' }, { size: 10 });
-      const result = await vfs.readText('process/status', { id: 'b1' });
-      assert.strictEqual(result, 'Completed');
-    }
-  );
-
-  await t.test('Node can reparameterize output writes', async () => {
-    await vfs.writeData('config/box', { id: 'b2' }, { size: 20 });
-    const result = await vfs.readText('process/status', { id: 'b2' });
+  await t.test('Node resolves inputs from other blackboard locations', async () => {
+    await vfs.writeData({ path: 'config/box', parameters: { id: 'test' } }, { size: 10 });
+    const result = await vfs.readText({ path: 'process/status', parameters: { id: 'test' } });
     assert.strictEqual(result, 'Completed');
   });
 
-  boxNode.stop();
-  processNode.stop();
+  await t.test('Node can reparameterize output writes', async () => {
+    await vfs.writeData({ path: 'config/box', parameters: { id: 'other' } }, { size: 5 });
+    const result = await vfs.readText({ path: 'process/status', parameters: { id: 'other' } });
+    assert.strictEqual(result, 'Completed');
+  });
+
   await vfs.close();
 });

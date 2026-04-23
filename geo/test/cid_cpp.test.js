@@ -6,29 +6,15 @@ import fs from 'node:fs';
 
 test('C++ CID Consistency (Native)', (t) => {
   const testDir = path.resolve('geo/test');
-  const cppSrc = path.join(testDir, 'cid_consistency_test.cpp');
-  const cppBin = path.join(testDir, 'cid_consistency_test');
-  const vendorDir = path.resolve('fs/cpp/vendor');
+  const cppBin = path.join(testDir, 'bin', 'cid_consistency_test');
 
-  // 1. Compile if needed (or always to be safe in tests)
-  console.log('[C++ Test] Compiling CID consistency test...');
-  const compile = spawnSync(
-    'g++',
-    ['-O3', '-std=c++17', cppSrc, '-I' + vendorDir, '-o', cppBin],
-    { stdio: 'inherit' }
-  );
-
-  if (compile.status !== 0) {
-    throw new Error('Failed to compile C++ CID consistency test');
-  }
-
-  // 2. Run the binary
+  // 1. Run the binary (Assumes built by build.sh or make)
   console.log('[C++ Test] Running CID consistency test...');
   const run = spawnSync(cppBin, [], { stdio: 'inherit' });
 
   assert.strictEqual(
     run.status,
     0,
-    'C++ CID consistency test failed (see output above)'
+    'C++ CID consistency test failed (see output above). Run ./build.sh to rebuild.'
   );
 });

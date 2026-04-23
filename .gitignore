@@ -7,7 +7,15 @@ ops/node_modules/
 server/node_modules/
 threejs/node_modules/
 
+# Ignore legacy systems
+legacy/
+
 # Ignore build artifacts
+**/obj/
+**/bin/
+*.o
+*.d
+*.a
 geometry/native.node
 geometry/native/
 geometry/wasm.js
@@ -29,6 +37,8 @@ geometry/glm/
 geometry/cgal/
 
 # Ignore test output images
+**/actual/
+!geo/*.png
 # observed.*.png
 
 # Ignore temporary files
@@ -41,3 +51,6 @@ geometry/.orb.js.swp
 # Ignore generated assets
 server/assets/
 geometry/assets/
+**/.*vfs_storage*
+**/.test_vfs_*
+actual/

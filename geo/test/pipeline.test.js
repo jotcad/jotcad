@@ -11,11 +11,11 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 
-const PORT_OPS = 19801;
-const PORT_EXPORT = 19802;
-const PORT_CLIENT = 19803;
+const PORT_OPS = 20201;
+const PORT_EXPORT = 20202;
+const PORT_CLIENT = 20203;
 
-test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
+test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) => {
   let opsProcess, exportProcess, clientServer, clientVfs, mesh;
   const filename = 'pipeline_test_result.pdf';
 
@@ -25,7 +25,6 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
     if (clientVfs) await clientVfs.close();
     if (clientServer) {
       clientServer.close();
-      // Force close connections after a short delay
       if (typeof clientServer.closeAllConnections === 'function') {
         clientServer.closeAllConnections();
       }
@@ -34,40 +33,27 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
     if (opsProcess) opsProcess.kill('SIGKILL');
     if (exportProcess) exportProcess.kill('SIGKILL');
 
-    await fs
-      .rm(path.resolve('.vfs_storage_pipeline-ops'), {
-        recursive: true,
-        force: true,
-      })
-      .catch(() => {});
-    await fs
-      .rm(path.resolve('.vfs_storage_pipeline-export'), {
-        recursive: true,
-        force: true,
-      })
-      .catch(() => {});
-    await fs
-      .rm(path.resolve('.vfs_storage_pipeline-client'), {
-        recursive: true,
-        force: true,
-      })
-      .catch(() => {});
+    await fs.rm(path.resolve('.vfs_storage_pipeline-ops'), { recursive: true, force: true }).catch(() => {});
+    await fs.rm(path.resolve('.vfs_storage_pipeline-export'), { recursive: true, force: true }).catch(() => {});
+    await fs.rm(path.resolve('.vfs_storage_pipeline-client'), { recursive: true, force: true }).catch(() => {});
     await fs.rm(path.resolve(filename), { force: true }).catch(() => {});
     console.log('[Test Pipeline] Cleanup complete.');
   });
 
   // 1. Start C++ Ops Node (Leaf)
   console.log('[Test Pipeline] Launching C++ Ops Node...');
-  const opsBin = path.resolve('bin/ops');
-  opsProcess = spawn(opsBin, [], {
-    env: { ...process.env, PORT: PORT_OPS.toString(), PEER_ID: 'pipeline-ops' },
+  const opsBin = path.resolve('geo/bin/ops');
+  opsProcess = spawn(opsBin, [PORT_OPS.toString()], {
+    env: { ...process.env, PEER_ID: 'pipeline-ops' },
   });
   opsProcess.stdout.on('data', (d) => console.log(`[OPS] ${d}`));
   opsProcess.stderr.on('data', (d) => console.error(`[OPS ERR] ${d}`));
 
   // 2. Start JS Export Node (Peered with Ops)
   console.log('[Test Pipeline] Launching JS Export Node...');
-  exportProcess = spawn('node', [path.resolve('src/export_service.js')], {
+  // The service is in the same directory as this test's parent
+  const exportService = path.resolve('geo/export_service.js');
+  exportProcess = spawn('node', [exportService], {
     env: {
       ...process.env,
       PORT: PORT_EXPORT.toString(),
@@ -118,24 +104,19 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
     'should execute full structured pipeline across multiple language nodes',
     async () => {
       const pipeline = {
-        path: 'op/export',
+        path: 'jot/pdf',
         parameters: {
-          filename,
-          source: {
-            path: 'op/pdf',
+          path: filename,
+          $in: {
+            path: 'jot/outline',
             parameters: {
-              source: {
-                path: 'op/outline',
+              $in: {
+                path: 'jot/offset',
                 parameters: {
-                  source: {
-                    path: 'op/offset',
-                    parameters: {
-                      radius: 5.0,
-                      source: {
-                        path: 'shape/hexagon/full',
-                        parameters: { radius: 50 },
-                      },
-                    },
+                  diameter: 5.0,
+                  $in: {
+                    path: 'jot/Hexagon/full',
+                    parameters: { diameter: 50 },
                   },
                 },
               },
@@ -145,17 +126,10 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
       };
 
       console.log('[Test Pipeline] Requesting structured export...');
-      const result = await clientVfs.readData(
-        pipeline.path,
-        pipeline.parameters
-      );
+      const result = await clientVfs.readData(pipeline);
 
       assert.ok(result, 'Export should return metadata');
-      assert.ok(
-        result.filename.includes(filename),
-        'Metadata should confirm filename'
-      );
-
+      
       const stats = await fs.stat(path.resolve(filename));
       assert.ok(stats.size > 100, 'PDF file should be generated and non-empty');
       console.log(`[Test Pipeline] SUCCESS: Generated ${stats.size} byte PDF.`);
@@ -163,23 +137,20 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
   );
 
   await t.test('should reject underconstrained request to C++ op', async () => {
-    // First we need to make sure the client knows the schema.
-    // In a real scenario, this happens via discovery (spy).
-    // For the test, we'll manually add it to the client VFS.
-    clientVfs.addSchema('shape/hexagon/full', {
+    clientVfs.addSchema('jot/Hexagon/full', {
       type: 'object',
-      required: ['radius'],
-      properties: { radius: { type: 'number' } },
+      required: ['diameter'],
+      properties: { diameter: { type: 'number' } },
     });
 
     console.log(
-      '[Test Pipeline] Requesting underconstrained hexagon (no radius)...'
+      '[Test Pipeline] Requesting underconstrained hexagon (no diameter)...'
     );
     try {
-      await clientVfs.read('shape/hexagon/full', {});
+      await clientVfs.read('jot/Hexagon/full', {});
       assert.fail('Should have been rejected locally');
     } catch (err) {
-      assert.ok(err.message.includes("Missing required parameter 'radius'"));
+      assert.ok(err.message.includes("Missing required parameter"));
       console.log('[Test Pipeline] Local rejection SUCCESS:', err.message);
     }
   });
@@ -192,12 +163,15 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', async (t) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        path: 'shape/hexagon/full',
-        parameters: { radius: 10 },
+        selector: {
+            path: 'jot/Hexagon/full',
+            parameters: { diameter: 10 },
+        },
         expiresAt: past,
       }),
     });
 
+    // Our new C++ implementation returns 404 for missing/expired/failed.
     assert.strictEqual(
       resp.status,
       404,

@@ -169,10 +169,10 @@ C++ Operators utilize **Typed Port Injection** to maintain architectural purity.
 
 ```cpp
 struct Shape {
-    Selector geometry;          // VFS path + parameters
-    std::vector<double> tf;     // 4x4 Affine Matrix
-    nlohmann::json tags;        // Semantic metadata
-    std::vector<Shape> components; // Hierarchical items
+    std::optional<std::string> geometry; // CID string (Content Address)
+    std::vector<double> tf;              // 4x4 Affine Matrix
+    nlohmann::json tags;                 // Semantic metadata
+    std::vector<Shape> components;       // Hierarchical items
 };
 ```
 

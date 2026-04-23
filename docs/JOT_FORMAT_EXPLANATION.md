@@ -108,28 +108,18 @@ When `fromJot` processes this:
 
 #### 7. VFS-Linked Geometry
 
-In addition to bundled assets, a `Shape` can reference geometry stored at a
-different VFS coordinate using a structured **VFS Selector** (a JSON object
-containing `path` and `parameters`). This is particularly useful for
-distributed workflows where a shape is defined on one peer but the raw geometry
-is computed by a specialized agent (like a C++ dispatcher) and stored elsewhere
-on the blackboard.
+In modern JotCAD workflows, the `Shape` object rarely embeds its own geometry or uses complex Selectors for it. Instead, the `geometry` field is strictly a **Content Identifier (CID) string**. This CID points directly to the terminal `.data` blob containing the raw mesh on the decentralized VFS.
 
 **Example:**
 
 ```json
 {
-  "geometry": {
-    "path": "geo/mesh",
-    "parameters": { "cid": "abc...xyz" }
-  },
+  "geometry": "deadbeef1234567890abcdef...",
   "tags": { "type": "remote-linked" }
 }
 ```
 
-When the VFS-aware renderer encounters such a selector, it performs a
-`vfs.readData()` call to resolve the geometry dynamically across the distributed
-blackboard.
+When a VFS-aware consumer (like a renderer) needs the raw geometry, it performs a direct CID lookup (`vfs.read(cid)`) rather than resolving a computation selector. This guarantees perfect deduplication and flat, O(1) resolution across the mesh.
 
 This explanatory documentation should provide a clearer understanding for
 someone looking to use or implement the JOT format.

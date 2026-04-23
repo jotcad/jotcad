@@ -26,10 +26,10 @@ test('Node with Parameter Composition', async (t) => {
     'read and write sockets correctly compose parameters',
     async () => {
       // Write data with a 'trigger' parameter
-      await vfs.writeData('test/in', { base: 100, trigger: 2 }, 'data');
+      await vfs.writeData({ path: 'test/in', parameters: { base: 100, trigger: 2 } }, 'data');
 
       // Read with the same 'trigger' parameter
-      const result = await vfs.readText('test/out', { trigger: 2 });
+      const result = await vfs.readText({ path: 'test/out', parameters: { trigger: 2 } });
       assert.strictEqual(result, 'composed-data');
     }
   );
