@@ -52,4 +52,7 @@ Targets results from `jot/cut` and `jot/join` where separate boundaries "kiss" a
 
 ## 5. Numerical Constraints
 - **Exactness**: Identify coincident points using **Exact Predicates** (`EK`).
-- **Scale**: `delta` should be relative to the bounding box diagonal (e.g., $10^{-5}$) to prevent self-intersections in very small models.
+## 6. Status
+- **Implementation**: [COMPLETED] Core logic added in `geo/fix/repair.h`.
+- **Verification**: [VERIFIED] All tests in `geo/fix/repair_test.cpp` passed.
+- **Integration**: [READY] The pass is available for integration into Boolean and Rule operators.
