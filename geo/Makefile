@@ -56,9 +56,9 @@ $(RENDER_TEST_BIN): test/render_test.cpp $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) test/render_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
 
 # Link Rule test
-$(RULE_TEST_BIN): test/rule_test.cpp $(LIB_JOTGEO)
+$(RULE_TEST_BIN): rule_op_test.cpp $(LIB_JOTGEO)
 	@mkdir -p test/bin
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) test/rule_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) rule_op_test.cpp $(LIB_JOTGEO) $(LIBS) -o $@
 
 # Link Render test
 $(RENDER_TEST_BIN): test/render_test.cpp $(LIB_JOTGEO)
