@@ -2,16 +2,10 @@
 #include "impl/protocols.h"
 #include "impl/processor.h"
 #include "impl/matrix.h"
-#include <CGAL/General_polygon_set_2.h>
-#include <CGAL/Gps_segment_traits_2.h>
+#include "boolean/engine.h"
 
 namespace jotcad {
 namespace geo {
-
-typedef CGAL::Gps_segment_traits_2<EK> Gps_traits_2;
-typedef CGAL::General_polygon_set_2<Gps_traits_2> General_polygon_set_2;
-typedef CGAL::Polygon_2<EK> Polygon_2;
-typedef CGAL::Polygon_with_holes_2<EK> Polygon_with_holes_2;
 
 template <typename P = JotVfsProtocol>
 struct CutOp : P {
@@ -20,9 +14,10 @@ struct CutOp : P {
     struct ToolNode {
         Geometry geo;
         Matrix world_tf;
+        bool is_volume;
     };
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, bool open = false) {
         Shape out = in;
         if (tools.empty()) {
             vfs->write<Shape>(fulfilling, out);
@@ -34,7 +29,7 @@ struct CutOp : P {
             collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
         }
 
-        recursive_subtract(vfs, out, Matrix::identity(), tool_nodes);
+        recursive_subtract(vfs, out, Matrix::identity(), tool_nodes, open);
         vfs->write<Shape>(fulfilling, out, "$out");
     }
 
@@ -42,86 +37,151 @@ struct CutOp : P {
         Matrix current_tf = parent_tf * Matrix::from_vec(s.tf);
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            tool_nodes.push_back({geo, current_tf});
+            bool is_vol = !geo.faces.empty(); 
+            tool_nodes.push_back({geo, current_tf, is_vol});
         }
         for (const auto& child : s.components) {
             collect_tool_geometry(vfs, child, current_tf, tool_nodes);
         }
     }
 
-    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
+    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open) {
         Matrix subject_world_tf = parent_tf * Matrix::from_vec(s.tf);
         Matrix subject_world_inv = subject_world_tf.inverse();
 
         if (s.geometry.has_value()) {
-            Geometry local_geo = vfs->read<Geometry>(s.geometry.value());
-            General_polygon_set_2 subject_set;
-            add_geometry_to_gps(local_geo, Matrix::identity(), subject_set);
+            Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
+            
+            bool has_faces = !target_geo.faces.empty();
+            bool has_only_points = target_geo.faces.empty() && !target_geo.vertices.empty();
 
-            for (const auto& tool : tool_nodes) {
-                Matrix relative_tf = subject_world_inv * tool.world_tf;
-                General_polygon_set_2 tool_set;
-                add_geometry_to_gps(tool.geo, relative_tf, tool_set);
-                subject_set.difference(tool_set);
+            if (has_faces) {
+                bool is_3d = false;
+                for (const auto& v : target_geo.vertices) {
+                    if (CGAL::to_double(CGAL::abs(v.z)) > 1e-6) { is_3d = true; break; }
+                }
+
+                if (is_3d) {
+                    boolean::Surface_mesh target_mesh = geometry_to_mesh(target_geo);
+                    for (const auto& tool : tool_nodes) {
+                        boolean::Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        transform_mesh(tool_mesh, rel_tf);
+                        boolean::Engine::cut_mesh_by_mesh(target_mesh, tool_mesh);
+                    }
+                    target_geo = mesh_to_geometry(target_mesh);
+                } else {
+                    boolean::General_polygon_set_2 subject_set;
+                    add_geometry_to_gps(target_geo, Matrix::identity(), subject_set);
+                    for (const auto& tool : tool_nodes) {
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        boolean::General_polygon_set_2 tool_set;
+                        add_geometry_to_gps(tool.geo, rel_tf, tool_set);
+                        boolean::Engine::cut_gps_by_gps(subject_set, tool_set);
+                    }
+                    target_geo = gps_to_geometry(subject_set);
+                }
+            } else if (has_only_points) {
+                std::cout << "[CUT DEBUG] Target has " << target_geo.vertices.size() << " points." << std::endl;
+                std::vector<EK::Point_3> pts;
+                for (const auto& v : target_geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
+                
+                for (const auto& tool : tool_nodes) {
+                    boolean::Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                    Matrix rel_tf = subject_world_inv * tool.world_tf;
+                    transform_mesh(tool_mesh, rel_tf);
+                    std::cout << "[CUT DEBUG] Applying Tool Mesh. Closed: " << CGAL::is_closed(tool_mesh) << std::endl;
+                    boolean::Engine::cut_points_by_mesh(pts, tool_mesh);
+                }
+                
+                std::cout << "[CUT DEBUG] Points remaining after cut: " << pts.size() << std::endl;
+                target_geo.vertices.clear();
+                for (const auto& p : pts) target_geo.vertices.push_back({p.x(), p.y(), p.z()});
             }
 
-            Geometry result_geo = gps_to_geometry(subject_set);
-            s.geometry = vfs->write_anonymous<Geometry>(result_geo);
+            s.geometry = vfs->write_anonymous<Geometry>(target_geo);
         }
 
         for (auto& child : s.components) {
-            recursive_subtract(vfs, child, subject_world_tf, tool_nodes);
+            recursive_subtract(vfs, child, subject_world_tf, tool_nodes, open);
         }
     }
 
-    static void add_geometry_to_gps(const Geometry& geo, const Matrix& tf, General_polygon_set_2& gps) {
-        Geometry transformed = geo;
-        transformed.apply_tf(tf.to_vec());
-        for (const auto& face : transformed.faces) {
-            if (face.loops.empty()) continue;
-            Polygon_2 boundary;
-            for (int idx : face.loops[0]) {
-                if (idx >= 0 && idx < (int)transformed.vertices.size()) {
-                    Point_2 p(transformed.vertices[idx].x, transformed.vertices[idx].y);
-                    if (boundary.is_empty() || p != boundary.vertices().back())
-                        boundary.push_back(p);
-                }
-            }
-            if (boundary.size() > 1 && boundary.vertices().front() == boundary.vertices().back())
-                boundary.erase(boundary.vertices_end() - 1);
+    static boolean::Surface_mesh geometry_to_mesh(const Geometry& geo) {
+        std::vector<EK::Point_3> pts;
+        std::vector<std::vector<std::size_t>> faces;
+        for (const auto& v : geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
+        for (const auto& f : geo.faces) {
+            if (f.loops.empty()) continue;
+            std::vector<std::size_t> face;
+            for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
+            faces.push_back(face);
+        }
 
-            if (boundary.size() < 3 || !boundary.is_simple()) continue;
+        CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
+        CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
+
+        boolean::Surface_mesh mesh;
+        std::vector<boolean::Surface_mesh::Vertex_index> v_indices;
+        for (const auto& p : pts) v_indices.push_back(mesh.add_vertex(p));
+        for (const auto& f : faces) {
+            std::vector<boolean::Surface_mesh::Vertex_index> face_vs;
+            for (auto idx : f) face_vs.push_back(v_indices[idx]);
+            mesh.add_face(face_vs);
+        }
+        
+        CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+        return mesh;
+    }
+
+    static Geometry mesh_to_geometry(const boolean::Surface_mesh& mesh) {
+        Geometry geo;
+        std::map<boolean::Surface_mesh::Vertex_index, int> v_map;
+        for (auto v : mesh.vertices()) {
+            v_map[v] = (int)geo.vertices.size();
+            auto p = mesh.point(v);
+            geo.vertices.push_back({p.x(), p.y(), p.z()});
+        }
+        for (auto f : mesh.faces()) {
+            Geometry::Face face;
+            std::vector<int> loop;
+            for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) loop.push_back(v_map[v]);
+            face.loops.push_back(loop);
+            geo.faces.push_back(face);
+        }
+        return geo;
+    }
+
+    static void transform_mesh(boolean::Surface_mesh& mesh, const Matrix& tf) {
+        for (auto v : mesh.vertices()) {
+            mesh.point(v) = tf.transform(mesh.point(v));
+        }
+    }
+
+    static void add_geometry_to_gps(const Geometry& geo, const Matrix& tf, boolean::General_polygon_set_2& gps) {
+        Geometry t = geo;
+        t.apply_tf(tf.to_vec());
+        for (const auto& face : t.faces) {
+            if (face.loops.empty()) continue;
+            boolean::Polygon_2 boundary;
+            for (int idx : face.loops[0]) boundary.push_back(EK::Point_2(t.vertices[idx].x, t.vertices[idx].y));
             if (boundary.is_clockwise_oriented()) boundary.reverse_orientation();
-            
             if (!boundary.is_simple()) continue;
 
-            std::vector<Polygon_2> holes;
+            std::vector<boolean::Polygon_2> holes;
             for (size_t i = 1; i < face.loops.size(); ++i) {
-                Polygon_2 h;
-                for (int idx : face.loops[i]) {
-                    if (idx >= 0 && idx < (int)transformed.vertices.size()) {
-                        Point_2 p(transformed.vertices[idx].x, transformed.vertices[idx].y);
-                        if (h.is_empty() || p != h.vertices().back())
-                            h.push_back(p);
-                    }
-                }
-                if (h.size() > 1 && h.vertices().front() == h.vertices().back())
-                    h.erase(h.vertices_end() - 1);
-
-                if (h.size() < 3 || !h.is_simple()) continue;
+                boolean::Polygon_2 h;
+                for (int idx : face.loops[i]) h.push_back(EK::Point_2(t.vertices[idx].x, t.vertices[idx].y));
                 if (h.is_counterclockwise_oriented()) h.reverse_orientation();
                 if (h.is_simple()) holes.push_back(h);
             }
-
-            try {
-                gps.join(Polygon_with_holes_2(boundary, holes.begin(), holes.end()));
-            } catch (...) { }
+            try { gps.join(boolean::Polygon_with_holes_2(boundary, holes.begin(), holes.end())); } catch (...) {}
         }
     }
 
-    static Geometry gps_to_geometry(const General_polygon_set_2& gps) {
+    static Geometry gps_to_geometry(const boolean::General_polygon_set_2& gps) {
         Geometry g;
-        std::vector<Polygon_with_holes_2> pwhs;
+        std::vector<boolean::Polygon_with_holes_2> pwhs;
         gps.polygons_with_holes(std::back_inserter(pwhs));
         for (const auto& pwh : pwhs) {
             Geometry::Face face;
@@ -144,14 +204,15 @@ struct CutOp : P {
         return g;
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "tools", "open"}; }
 
     static typename P::json schema() {
         return {
             {"path", "jot/cut"},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}}},
-                {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}
+                {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}},
+                {"open", {{"type", "boolean"}, {"default", false}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}}}}}
         };
@@ -159,7 +220,7 @@ struct CutOp : P {
 };
 
 static void cut_init() {
-    Processor::register_op<CutOp<>, Shape, std::vector<Shape>>("jot/cut");
+    Processor::register_op<CutOp<>, Shape, std::vector<Shape>, bool>("jot/cut");
 }
 
 } // namespace geo

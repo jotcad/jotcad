@@ -6,6 +6,7 @@
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/boost/graph/Euler_operations.h>
+#include <CGAL/boost/graph/helpers.h>
 #include <vector>
 #include <algorithm>
 #include <map>
@@ -64,6 +65,18 @@ bool is_geometry_unambiguous(const CGAL::Surface_mesh<typename K::Point_3>& mesh
     std::vector<typename Surface_mesh::Halfedge_index> h_nm_merged;
     CGAL::Polygon_mesh_processing::non_manifold_vertices(merged_mesh, std::back_inserter(h_nm_merged));
     return h_nm_merged.empty();
+}
+
+/**
+ * is_geometry_solid: 
+ * Returns true if the mesh is strictly manifold, closed (defines a volume),
+ * and triangulated (required for most boolean/spatial algorithms).
+ */
+template <typename K = EK>
+bool is_geometry_solid(const CGAL::Surface_mesh<typename K::Point_3>& mesh) {
+    return is_geometry_unambiguous<K>(mesh) && 
+           CGAL::is_closed(mesh) && 
+           CGAL::is_triangle_mesh(mesh);
 }
 
 /**
