@@ -189,6 +189,7 @@ std::vector<uint8_t> VFSNode::read_impl(const Selector& sel, int depth, std::vec
     } else {
         cid = get_cid(target_sel);
     }
+    std::cout << "[VFS DEBUG] read_impl cid: " << cid << " path: " << target_sel.path << std::endl;
 
     if (has_local(cid)) {
         // Check if it's a LINK in .meta
@@ -285,6 +286,7 @@ Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& d
     if (!output.empty()) target_sel.output = output;
 
     std::string cid = get_cid(target_sel);
+    std::cout << "[VFS DEBUG] write_bytes cid: " << cid << " path: " << target_sel.path << std::endl;
     std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid + ".data");
     std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid + ".meta");
 

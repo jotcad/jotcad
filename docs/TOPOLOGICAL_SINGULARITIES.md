@@ -52,3 +52,40 @@ Since we assume that **any vertices sharing a coordinate will eventually be merg
 ## 4. Scope of Implementation
 - **2D (GPS)**: Handling the results of `jot/cut` and `jot/join`.
 - **3D (Rule/Boolean)**: Handling apex-to-apex and edge-to-edge contacts in the native kernel.
+
+## 5. Research Findings: CGAL Implementation Path
+
+### A. Combinatorial Vertex Splitting (3D)
+The `CGAL/Polygon_mesh_processing/manifoldness.h` library provides the primary tool for resolving bowtie singularities in 3D:
+- **`duplicate_non_manifold_vertices()`**: This function identifies "pinched" vertices (where the incident faces form multiple disjoint cycles/umbrellas) and duplicates the vertex for each cycle.
+- **Workflow**:
+  1. Perform the operation (e.g., `jot/Rule`).
+  2. Call `duplicate_non_manifold_vertices(mesh, np::output_iterator(duplicated_groups))`.
+  3. The `duplicated_groups` provides a list of `[original_v, new_v1, new_v2, ...]`.
+  4. **Geometric Lock**: For each group, displace `new_v_i` by $\epsilon \cdot \vec{N}_i$ (where $\vec{N}_i$ is the average normal of faces incident to that specific vertex copy).
+
+### B. 2D Boolean Singularities
+For 2D operations using `General_polygon_set_2` (which uses `Arrangement_2` internally):
+- **Coincident Vertices**: `General_polygon_set_2` results may contain multiple `Polygon_with_holes_2` where vertices from different boundaries share a coordinate.
+- **Resolution**:
+  1. Detect coincident vertices across different polygons in the result set.
+  2. For each coincident pair, displace them along the bisector of their incident edges, "shrinking" or "expanding" the polygon slightly to create a gap.
+
+### C. Numerical Robustness
+- **Exact Predicates**: Using `EK` (Exact Kernel) allows us to identify *exact* coordinate identity before any floating-point noise is introduced.
+- **Subdivision Locality**: To maintain exact planarity, we should split the incident edges at a small distance $\delta$ from the singularity before perturbing the apex. This creates a "transition triangle" that absorbs the non-planarity.
+
+## 6. Legacy Reference (Implementation Guide)
+
+The `legacy/geometry/repair_util.h` file contains a mature implementation of these strategies:
+
+### `repair_self_touches_xx`
+- **Algorithm**:
+  1. `duplicate_non_manifold_vertices()` to isolate topological shells.
+  2. `CGAL::Euler::split_edge()` to create a local $\delta$-neighborhood.
+  3. `CGAL::Euler::split_face()` to maintain valid triangulation of the transition zone.
+  4. `vertex_point(v) += average_offset / 2` to geometrically lock the separation.
+- **Parameters**: Uses `kIota = 0.0001` as the default subdivision distance.
+
+### `self_touch_util.h`
+- **Algorithm**: Provides `make_segment_envelope` and `make_point_envelope` to "promote" zero-volume singularities to non-zero-volume manifold bridges.
