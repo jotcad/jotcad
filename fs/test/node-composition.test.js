@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { VFS } from '../src/vfs_node.js';
+import { VFS, Selector } from '../src/vfs_node.js';
 import { Node, In, Out } from '../src/node.js';
 
 test('Node with Parameter Composition', async (t) => {
   const vfs = new VFS();
   await vfs.init();
 
-  const compositionNode = new Node(vfs, {
+  const compositionNode = new Node({
+    vfs,
     sockets: {
       params: {},
       input: In('test/in', { base: 100 }),
@@ -26,14 +27,13 @@ test('Node with Parameter Composition', async (t) => {
     'read and write sockets correctly compose parameters',
     async () => {
       // Write data with a 'trigger' parameter
-      await vfs.writeData({ path: 'test/in', parameters: { base: 100, trigger: 2 } }, 'data');
+      await vfs.writeData(new Selector('test/in', { base: 100, trigger: 2 }), 'data');
 
       // Read with the same 'trigger' parameter
-      const result = await vfs.readText({ path: 'test/out', parameters: { trigger: 2 } });
+      const result = await vfs.readText(new Selector('test/out', { trigger: 2 }));
       assert.strictEqual(result, 'composed-data');
     }
   );
 
-  compositionNode.stop();
   await vfs.close();
 });

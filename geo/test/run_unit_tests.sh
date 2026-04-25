@@ -1,14 +1,10 @@
 #!/bin/bash
-# Ensure the directory is correct
-cd "$(dirname "$0")"
+set -e
 
-# Build and run all unit tests using the Makefile
-echo "Executing C++ Operator Unit Tests..."
-make -j$(nproc) unit_test
+# Build the main library and all tests in parallel
+echo "Building all tests..."
+make -j4 all
 
-if [ $? -ne 0 ]; then
-    echo "❌ Unit tests failed"
-    exit 1
-fi
-
-exit 0
+# Run all tests in parallel using the unit_test target
+echo "Running all unit tests..."
+make -j4 unit_test

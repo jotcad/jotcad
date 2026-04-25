@@ -1,4 +1,4 @@
-import { normalizeSelector } from '../../fs/src/vfs_core.js';
+import { normalizeSelector, Selector } from '../../fs/src/vfs_core.js';
 
 /**
  * JotCAD Next-Gen Compiler
@@ -94,7 +94,7 @@ export class JotCompiler {
           currentSubject
         );
       }
-      result = normalizeSelector(node.path, resolvedParams);
+      result = new Selector(node.path, resolvedParams, node.output);
     } else {
       result = {};
       for (const [k, v] of Object.entries(node)) {
@@ -207,10 +207,30 @@ export class JotCompiler {
       resolvedParams[inputKey] = currentSubject;
     }
 
-    const result = normalizeSelector(path, resolvedParams);
+    const result = new Selector(path, resolvedParams);
+
+    // Schema-Driven Port Affiliation: 
+    // If the schema specifies an affiliate port for an argument, ensure the target selector uses it.
+    const affiliate = (params, schema) => {
+        if (!schema?.arguments) return;
+        for (const [name, config] of Object.entries(schema.arguments)) {
+            const port = config.affiliate;
+            if (!port || params[name] === undefined) continue;
+
+            const apply = (val) => {
+                if (val instanceof Selector) {
+                    if (!val.output) val.output = port;
+                } else if (Array.isArray(val)) {
+                    val.forEach(item => apply(item));
+                }
+            };
+            apply(params[name]);
+        }
+    };
+    affiliate(result.parameters, schema);
 
     if (this.vfs && !Array.isArray(result) && returns?.type === 'array') {
-      const data = await this.vfs.readData(result.path, result.parameters);
+      const data = await this.vfs.readData(result);
       if (Array.isArray(data)) return data;
     }
 
@@ -337,7 +357,7 @@ export class JotCompiler {
       resolvedParams.$in = [subject, ...args];
     }
 
-    const result = normalizeSelector(path, resolvedParams);
+    const result = new Selector(path, resolvedParams);
 
     const isTee = op?.schema?.metadata?.passthrough === true || op?.metadata?.passthrough === true || op?.metadata?.aliases?.['$out'] === '$in';
     

@@ -1,22 +1,19 @@
-#include <iostream>
-#include "../hexagon_op.h"
-#include "../pdf_op.h"
-#include "../../fs/cpp/vfs_node.h"
+#include "test_base.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_pdf_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs("pdf");
+    register_all_ops(&vfs);
     
     std::cout << "Testing PDF Export..." << std::endl;
     
     fs::Selector hex_sel = {"jot/Hexagon/full", {{"diameter", 30.0}}};
-    HexagonFullOp<>::execute(&vfs, hex_sel, 30.0);
+    Processor::execute(&vfs, hex_sel);
     Shape hex = vfs.read<Shape>(hex_sel);
     
-    fs::Selector pdf_sel = {"jot/pdf", {{"path", "test.pdf"}}};
-    PdfOp<>::execute(&vfs, pdf_sel, hex, "test.pdf");
+    fs::Selector pdf_sel = {"jot/pdf", {{"$in", hex_sel}, {"path", "test.pdf"}}};
+    Processor::execute(&vfs, pdf_sel);
     
     // 1. Verify $out is the shape
     Shape out = vfs.read<Shape>(pdf_sel);

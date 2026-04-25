@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { getCID, encodeSafe } from '../src/cid.js';
 
-test('JS CID Reference Values (Safe-JCB/Base64)', async (t) => {
+test('JS CID Reference Values (JCB Binary)', async (t) => {
   await t.test('empty', async () => {
     const val = {};
     const cid = await getCID(val);
     const safe = encodeSafe(val);
-    assert.strictEqual(cid, '49c5feb68d8bef00a7634384c15d91911981d4e65d01687b169b95e28a7ebcc5');
+    // Hash of the raw JCB binary BgAAAAA=
+    assert.strictEqual(cid, 'b45482224b439a3d548c65378929b7dcc16a42288530b7b20d5c8103cc879d10');
     assert.strictEqual(safe, 'BgAAAAA=');
   });
 
@@ -15,7 +16,7 @@ test('JS CID Reference Values (Safe-JCB/Base64)', async (t) => {
     const val = { a: 1, b: 2 };
     const cid = await getCID(val);
     const safe = encodeSafe(val);
-    assert.strictEqual(cid, 'd3d36ade80394108d6a7464314c163c2145cf147968b30920efabd51ea688977');
+    assert.strictEqual(cid, '1ba286df53f7c8304c92cc505d3c6f0eb3b16bd13b66e0e09b2a3bf621b9624c');
     assert.strictEqual(safe, 'BgAAAAIEAAAAAWEDP/AAAAAAAAAEAAAAAWIDQAAAAAAAAAA=');
   });
 
@@ -23,7 +24,7 @@ test('JS CID Reference Values (Safe-JCB/Base64)', async (t) => {
     const val = { a: 1.5, b: 2.5 };
     const cid = await getCID(val);
     const safe = encodeSafe(val);
-    assert.strictEqual(cid, '4d74c61eceea590c5348f7dcff288f805665c66a97c226714cb4beb3ad300787');
+    assert.strictEqual(cid, '3022824d1e31f82c434149d9891deeb765b7c0b8fce8972d961caa5344ddfe5c');
     assert.strictEqual(safe, 'BgAAAAIEAAAAAWEDP/gAAAAAAAAEAAAAAWIDQAQAAAAAAAA=');
   });
 
@@ -31,7 +32,7 @@ test('JS CID Reference Values (Safe-JCB/Base64)', async (t) => {
     const val = { a: { b: 1 } };
     const cid = await getCID(val);
     const safe = encodeSafe(val);
-    assert.strictEqual(cid, '4bae03292e31ff8318ffe356e4ca9797049cc919072f7d2d11ea722539d69206');
+    assert.strictEqual(cid, '0bcf69b5300724a671d5b7737c2c66252fadfa0bfa4a0e5c87af70acbb36fc7f');
     assert.strictEqual(safe, 'BgAAAAEEAAAAAWEGAAAAAQQAAAABYgM/8AAAAAAAAA==');
   });
 
@@ -39,7 +40,7 @@ test('JS CID Reference Values (Safe-JCB/Base64)', async (t) => {
     const val = { a: 1.0, b: 2.0 };
     const cid = await getCID(val);
     const safe = encodeSafe(val);
-    assert.strictEqual(cid, 'd3d36ade80394108d6a7464314c163c2145cf147968b30920efabd51ea688977');
+    assert.strictEqual(cid, '1ba286df53f7c8304c92cc505d3c6f0eb3b16bd13b66e0e09b2a3bf621b9624c');
     assert.strictEqual(safe, 'BgAAAAIEAAAAAWEDP/AAAAAAAAAEAAAAAWIDQAAAAAAAAAA=');
   });
 });

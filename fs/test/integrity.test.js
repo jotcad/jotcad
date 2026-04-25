@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage, WebReadableStream } from '../src/vfs_core.js';
+import { VFS, MemoryStorage, WebReadableStream, Selector } from '../src/index.js';
 
 test('VFS Aborted Stream Detection', async (t) => {
   const vfs = new VFS({ id: 'integrity-vfs', storage: new MemoryStorage() });
+  await vfs.init();
 
   await t.test('should reject stream that ends before expected length', async () => {
-    const selector = { path: 'corrupted/data', parameters: {} };
+    const selector = new Selector('corrupted/data');
     const bytes = new Uint8Array([1, 2, 3]);
     
     // We simulate a stream that claims 100 bytes but only sends 3
@@ -29,7 +30,7 @@ test('VFS Aborted Stream Detection', async (t) => {
   });
 
   await t.test('should allow stream that matches expected length', async () => {
-    const selector = { path: 'valid/data', parameters: {} };
+    const selector = new Selector('valid/data');
     const bytes = new Uint8Array([1, 2, 3, 4, 5]);
     
     const stream = new WebReadableStream({

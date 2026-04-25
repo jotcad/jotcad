@@ -1,22 +1,19 @@
-#include <iostream>
-#include "../hexagon_op.h"
-#include "../corners_op.h"
-#include "../../fs/cpp/vfs_node.h"
+#include "test_base.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_corners_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs("corners");
+    register_all_ops(&vfs);
     
     std::cout << "Testing Corners Operation..." << std::endl;
     
     fs::Selector hex_sel = {"jot/Hexagon/full", {{"diameter", 30.0}}};
-    HexagonFullOp<>::execute(&vfs, hex_sel, 30.0);
+    Processor::execute(&vfs, hex_sel);
     Shape hex = vfs.read<Shape>(hex_sel);
     
-    fs::Selector corners_sel = {"jot/corners", {{"proxy", true}}};
-    CornersOp<>::execute(&vfs, corners_sel, hex, true);
+    fs::Selector corners_sel = {"jot/corners", {{"$in", hex_sel}, {"proxy", true}}};
+    Processor::execute(&vfs, corners_sel);
     
     Shape out = vfs.read<Shape>(corners_sel);
     if (out.components.size() != 6) {

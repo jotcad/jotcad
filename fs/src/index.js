@@ -9,6 +9,7 @@ export {
 export { 
   MemoryStorage, 
   normalizeSelector, 
+  Selector,
   encodeJCB, 
   decodeJCB,
   WebReadableStream

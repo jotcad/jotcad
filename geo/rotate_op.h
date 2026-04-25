@@ -22,7 +22,7 @@ struct RotateOp : P {
             {"path", "jot/rotate"},
             {"description", "Rotates the input shape around the Z-axis."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"description", "The shape to rotate."}}},
+                {"$in", {{"type", "jot:shape"}, {"description", "The shape to rotate."}, {"affiliate", "$out"}}},
                 {"angle", {{"type", "number"}, {"default", 0.0}, {"description", "The rotation angle in degrees."}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}, {"description", "The rotated shape."}}}}}
@@ -30,8 +30,8 @@ struct RotateOp : P {
     }
 };
 
-static void rotate_init() {
-    Processor::register_op<RotateOp<>, Shape, double>("jot/rotate");
+static void rotate_init(fs::VFSNode* vfs) {
+    Processor::register_op<RotateOp<>, Shape, double>(vfs, "jot/rotate");
 }
 
 } // namespace geo

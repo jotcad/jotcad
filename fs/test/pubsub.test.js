@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage, normalizeSelector } from '../src/vfs_core.js';
+import { VFS, MemoryStorage, Selector } from '../src/index.js';
 import { MeshLink } from '../src/mesh_link.js';
 
 test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
@@ -8,6 +8,10 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
   const vfsA = new VFS({ id: 'node-A', storage: new MemoryStorage() });
   const vfsB = new VFS({ id: 'node-B', storage: new MemoryStorage() });
   const vfsC = new VFS({ id: 'node-C', storage: new MemoryStorage() });
+
+  await vfsA.init();
+  await vfsB.init();
+  await vfsC.init();
 
   const meshA = new MeshLink(vfsA);
   const meshB = new MeshLink(vfsB);
@@ -54,8 +58,8 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
   connect(meshB, meshC);
 
   await t.test('subscription should propagate through the chain', async () => {
-    const selector = { path: 'test/topic', parameters: {} };
-    const topicString = JSON.stringify(normalizeSelector(selector));
+    const selector = new Selector('test/topic');
+    const topicString = JSON.stringify(selector);
     const expiry = Date.now() + 10000;
 
     // A subscribes
@@ -80,7 +84,7 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
   });
 
   await t.test('notifications should route back to subscribers', async () => {
-    const selector = { path: 'test/topic', parameters: {} };
+    const selector = new Selector('test/topic');
     let receivedByA = null;
 
     // A listens for pulses
@@ -116,7 +120,7 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
   });
 
   await t.test('backflow prevention should stop infinite loops', async () => {
-    const selector = { path: 'loop/topic', parameters: {} };
+    const selector = new Selector('loop/topic');
     // Create a cycle: C -> A
     connect(meshC, meshA);
 

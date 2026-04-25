@@ -1,6 +1,7 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
 import interact from 'interactjs';
 import { vfs, blackboard } from '../lib/blackboard';
+import { Selector } from '../../../fs/src/vfs_browser.js';
 import { Database, Minus, Maximize2, Layers, Plus, X, Globe } from 'lucide-solid';
 import { JotParser } from '../../../jot/src/parser';
 import { JotCompiler } from '../../../jot/src/compiler';
@@ -119,10 +120,7 @@ export const JotNode = (props) => {
                 const label = node.parameters?.[key] || key;
                 files.push({
                   label,
-                  selector: {
-                    ...node,
-                    parameters: { ...node.parameters, $port: key }
-                  },
+                  selector: Selector.fromObject(node).withOutput(key),
                   mimeType: out.mimeType || 'application/octet-stream'
                 });
               }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage } from '../src/vfs_core.js';
+import { VFS, MemoryStorage, Selector } from '../src/index.js';
 import { MeshLink } from '../src/mesh_link.js';
 
 test('Mesh Topology Discovery', async (t) => {
@@ -8,6 +8,10 @@ test('Mesh Topology Discovery', async (t) => {
   const vfsA = new VFS({ id: 'node-A', storage: new MemoryStorage() });
   const vfsB = new VFS({ id: 'node-B', storage: new MemoryStorage() });
   const vfsC = new VFS({ id: 'node-C', storage: new MemoryStorage() });
+
+  await vfsA.init();
+  await vfsB.init();
+  await vfsC.init();
 
   const meshA = new MeshLink(vfsA);
   const meshB = new MeshLink(vfsB);
@@ -26,7 +30,7 @@ test('Mesh Topology Discovery', async (t) => {
   const connect = (mA, mB) => {
     // Peer A represents Node B as seen by Node A
     const peerA = {
-      id: mB.vfs.id,
+      neighborId: mB.vfs.id,
       reachability: 'DIRECT',
       subscribe: (s, e, st) => {
         mB.addInterest(mA.vfs.id, s, e, st);
@@ -37,7 +41,7 @@ test('Mesh Topology Discovery', async (t) => {
       },
     };
     const peerB = {
-      id: mA.vfs.id,
+      neighborId: mA.vfs.id,
       reachability: 'DIRECT',
       subscribe: (s, e, st) => {
         mA.addInterest(mB.vfs.id, s, e, st);
@@ -72,23 +76,20 @@ test('Mesh Topology Discovery', async (t) => {
       };
 
       // 1. Node A expresses interest in the mesh structure
-      const topoSelector = { path: 'sys/topo', parameters: {} };
+      const topoSelector = new Selector('sys/topo');
       console.log('[Test] Node A subscribing to sys/topo...');
       await meshA.subscribe(topoSelector, Date.now() + 10000);
 
       // Wait for async propagation A -> B -> C
       await new Promise((r) => setTimeout(r, 100));
 
-      console.log('[Test] Node B Interests:', [...meshB.interests.keys()]);
-      console.log('[Test] Node C Interests:', [...meshC.interests.keys()]);
-
       // 2. Manually trigger heartbeats
       const triggerHeartbeat = (m, name) => {
         const neighbors = [...m.peers.values()].map((p) => ({
-          id: p.id,
+          id: p.neighborId,
           reachability: p.reachability,
         }));
-        const sel = { path: 'sys/topo', parameters: {} }; // No ID in selector, keep it in payload
+        const sel = new Selector('sys/topo'); 
         console.log(
           `[Test] Triggering heartbeat from ${name} (${m.vfs.id})...`
         );

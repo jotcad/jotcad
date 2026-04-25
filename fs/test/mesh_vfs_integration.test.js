@@ -1,15 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import http from 'node:http';
-import { VFS, MeshLink, registerVFSRoutes, MemoryStorage } from '../src/index.js';
+import { VFS, MeshLink, registerVFSRoutes, MemoryStorage, Selector } from '../src/index.js';
 
 test('Decentralized Mesh-VFS Integration', async (t) => {
   const vfsA = new VFS({ id: 'node-A', storage: new MemoryStorage() });
   const vfsB = new VFS({ id: 'node-B', storage: new MemoryStorage() });
   const vfsC = new VFS({ id: 'node-C', storage: new MemoryStorage() });
 
+  await vfsA.init();
+  await vfsB.init();
+  await vfsC.init();
+
   // Provision terminal data on Node C
-  const target = { path: 'far-end/data', parameters: { secret: 'gold' } };
+  const target = new Selector('far-end/data', { secret: 'gold' });
   const payload = { message: 'Hello from the far end!' };
   await vfsC.writeData(target, payload);
 

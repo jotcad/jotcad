@@ -1,22 +1,22 @@
 #include "test_base.h"
-#include "../hexagon_op.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    MockVFS vfs;
+    MockVFS vfs("hexagon");
+    register_all_ops(&vfs);
     
     std::cout << "Testing Hexagon Primitives..." << std::endl;
     
     // 1. Full Hexagon
     fs::Selector hex_addr = {"jot/Hexagon/full", {{"radius", 10.0}}};
-    HexagonFullOp<>::execute(&vfs, hex_addr, 10.0);
+    Processor::execute(&vfs, hex_addr);
     Shape s_full = vfs.read<Shape>(hex_addr);
     vfs.verify_render(s_full, "hexagon_op_full", "fa7711eb997fd3b9460bab19e44c717c14767b4f26d748505e053f4771c35048");
 
     // 2. Hexagon Cap
     fs::Selector cap_addr = {"jot/Hexagon/cap", {{"radius", 10.0}}};
-    HexagonCapOp<>::execute(&vfs, cap_addr, 10.0);
+    Processor::execute(&vfs, cap_addr);
     Shape s_cap = vfs.read<Shape>(cap_addr);
     vfs.verify_render(s_cap, "hexagon_op_cap", "dcc5a7ad236cdfcbe1efcebf38dc82fb9190394526ae8bf4158270ca0405569c");
 

@@ -19,23 +19,23 @@
 namespace jotcad {
 namespace geo {
 
-void register_all_ops() {
-    hexagon_init();
-    box_init();
-    triangle_init();
-    offset_init();
-    outline_init();
-    points_init();
-    nth_init();
-    rotate_init();
-    color_init();
-    group_init();
-    path_init();
-    corners_init();
-    on_init();
-    cut_init();
-    pdf_init();
-    png_init();
+void register_all_ops(fs::VFSNode* vfs) {
+    hexagon_init(vfs);
+    box_init(vfs);
+    triangle_init(vfs);
+    offset_init(vfs);
+    outline_init(vfs);
+    points_init(vfs);
+    nth_init(vfs);
+    rotate_init(vfs);
+    color_init(vfs);
+    group_init(vfs);
+    path_init(vfs);
+    corners_init(vfs);
+    on_init(vfs);
+    cut_init(vfs);
+    pdf_init(vfs);
+    png_init(vfs);
 }
 
 } // namespace geo

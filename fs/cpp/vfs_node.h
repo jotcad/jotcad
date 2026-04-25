@@ -45,9 +45,13 @@ public:
     };
 
     struct VFSRequest {
-        Selector selector;
+        std::string cid;   // Direct content identity
+        Selector selector; // Computational identity
         std::vector<std::string> stack;
         long long expiresAt = 0;
+        bool followLinks = true;
+
+        bool is_cid() const { return !cid.empty(); }
     };
 
     using OpHandler = std::function<std::vector<uint8_t>(const VFSRequest& req)>;
@@ -67,8 +71,12 @@ public:
     T read(const Selector& sel, const std::string& output);
 
     template<typename T = std::vector<uint8_t>>
+    T read(const VFSRequest& req);
+
+    template<typename T = std::vector<uint8_t>>
     T read(const CID& cid);
 
+    std::string get_cid(const Selector& sel);
     std::vector<uint8_t> spy(const VFSRequest& req);
 
     template<typename T = std::vector<uint8_t>>
@@ -124,9 +132,8 @@ private:
     std::map<std::string, httplib::Response*> reverse_listeners_;
     std::mutex reverse_mutex_;
 
-    std::vector<uint8_t> read_impl(const Selector& sel, int depth = 0, std::vector<std::string> stack = {}, const std::string& output = "", long long expiresAt = 0);
+    std::vector<uint8_t> read_impl(const VFSRequest& req);
 
-    std::string get_cid(const Selector& sel);
     bool has_local(const std::string& cid);
     std::vector<uint8_t> get_local(const std::string& cid);
     void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
@@ -139,6 +146,8 @@ template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Select
 template<> json VFSNode::read<json>(const Selector& sel);
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel, const std::string& output);
 template<> json VFSNode::read<json>(const Selector& sel, const std::string& output);
+template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req);
+template<> json VFSNode::read<json>(const VFSRequest& req);
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& cid);
 template<> json VFSNode::read<json>(const CID& cid);
 

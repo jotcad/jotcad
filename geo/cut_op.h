@@ -234,12 +234,12 @@ struct CutOp : P {
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools", "open"}; }
     static typename P::json schema() {
-        return { {"path", "jot/cut"}, {"arguments", { {"$in", {{"type", "jot:shape"}}}, {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}, {"open", {{"type", "boolean"}, {"default", false}}} }}, {"outputs", {{"$out", {{"type", "shape"}}}}} };
+        return { {"path", "jot/cut"}, {"arguments", { {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}, {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"affiliate", "$out"}}}, {"open", {{"type", "boolean"}, {"default", false}}} }}, {"outputs", {{"$out", {{"type", "shape"}}}}} };
     }
 };
 
-static void cut_init() {
-    Processor::register_op<CutOp<>, Shape, std::vector<Shape>, bool>("jot/cut");
+static void cut_init(fs::VFSNode* vfs) {
+    Processor::register_op<CutOp<>, Shape, std::vector<Shape>, bool>(vfs, "jot/cut");
 }
 
 } // namespace geo

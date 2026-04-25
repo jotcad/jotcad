@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { normalizeSelector, decodeSafe } from './vfs_core.js';
+import { normalizeSelector, Selector, decodeSafe } from './vfs_core.js';
 
 /**
  * Connection: Abstract interface for a direct communication pipe to a neighbor.
@@ -37,12 +37,19 @@ class ForwardConnection extends Connection {
     this.reachability = 'DIRECT';
   }
 
-  async read(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+  async read(target, context = {}) {
+    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
     const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
-    const body = JSON.stringify({ selector, stack, expiresAt });
+    const bodyObj = { stack, resolutionStack, expiresAt };
+    if (typeof target === 'string') {
+        bodyObj.cid = target;
+    } else {
+        bodyObj.selector = target;
+    }
+
+    const body = JSON.stringify(bodyObj);
     try {
         const resp = await this.fetch(`${this.url}/read`, {
           method: 'POST',
@@ -62,7 +69,7 @@ class ForwardConnection extends Connection {
   }
 
   async spy(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
     const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
@@ -70,7 +77,7 @@ class ForwardConnection extends Connection {
       method: 'POST',
       headers,
       signal: this.signal || AbortSignal.timeout(5000),
-      body: JSON.stringify({ selector, stack, expiresAt }),
+      body: JSON.stringify({ selector, stack, resolutionStack, expiresAt }),
     });
 
     if (resp.ok && resp.body) return resp.body;
@@ -78,22 +85,24 @@ class ForwardConnection extends Connection {
   }
 
   async subscribe(selector, expiresAt, stack) {
+    const s = normalizeSelector(selector);
     await this.fetch(`${this.url}/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-vfs-id': stack[stack.length - 1] },
       signal: this.signal || AbortSignal.timeout(5000),
-      body: JSON.stringify({ selector, expiresAt, stack }),
+      body: JSON.stringify({ selector: s, expiresAt, stack }),
     }).catch(() => {});
   }
 
   async notify(selector, payload, stack = []) {
+    const s = normalizeSelector(selector);
     this._pulseCount++;
     this.lastPulse = Date.now();
     await this.fetch(`${this.url}/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: this.signal || AbortSignal.timeout(5000),
-      body: JSON.stringify({ selector, payload, stack }),
+      body: JSON.stringify({ selector: s, payload, stack }),
     }).catch(() => {});
   }
 }
@@ -109,7 +118,7 @@ class ReverseConnection extends Connection {
   }
 
   async read(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
     const requestId = globalThis.crypto.randomUUID();
     const replyPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -123,12 +132,20 @@ class ReverseConnection extends Connection {
       });
     });
 
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'READ', id: requestId, selector, stack, expiresAt });
+    this.registry.dispatch(this.neighborId, { 
+        type: 'COMMAND', 
+        op: 'READ', 
+        id: requestId, 
+        selector, 
+        stack, 
+        resolutionStack: context.resolutionStack || [],
+        expiresAt 
+    });
     return replyPromise.catch(() => null);
   }
 
   async spy(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
     const requestId = globalThis.crypto.randomUUID();
     const replyPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -142,7 +159,15 @@ class ReverseConnection extends Connection {
       });
     });
 
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SPY', id: requestId, selector, stack, expiresAt });
+    this.registry.dispatch(this.neighborId, { 
+        type: 'COMMAND', 
+        op: 'SPY', 
+        id: requestId, 
+        selector, 
+        stack, 
+        resolutionStack,
+        expiresAt 
+    });
     return replyPromise.catch(() => null);
   }
 
@@ -314,12 +339,14 @@ export class MeshLinkBase {
               if (cmd.op === 'READ') {
                 stream = await this.vfs.read(sel, {
                   stack: cmd.stack,
+                  resolutionStack: cmd.resolutionStack,
                   expiresAt: cmd.expiresAt,
                 });
                 replyTo = cmd.id;
               } else if (cmd.op === 'SPY') {
                 stream = await this.vfs.spy(sel, {
                   stack: cmd.stack,
+                  resolutionStack: cmd.resolutionStack,
                   expiresAt: cmd.expiresAt,
                 });
                 replyTo = cmd.id;
@@ -369,7 +396,7 @@ export class MeshLinkBase {
             const conn = new ForwardConnection(info.id, url, this.fetch, { localUrl: this.localUrl, signal: this.abortController.signal });
             this.peers.set(info.id, conn);
             console.log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id}`);
-            this.notify({ path: 'sys/topo' }, { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+            this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
           }
           if (info.reachability === 'REVERSE') this.listenLoop(url);
           return info.id;
@@ -399,7 +426,7 @@ export class MeshLinkBase {
     if (!this.peers.has(neighborId)) {
       const conn = new ReverseConnection(neighborId, this.reverseRegistry);
       this.peers.set(neighborId, conn);
-      this.notify({ path: 'sys/topo' }, { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+      this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
     }
     if (!this.listenerPools.has(neighborId)) this.listenerPools.set(neighborId, []);
     const pool = this.listenerPools.get(neighborId);
@@ -410,16 +437,15 @@ export class MeshLinkBase {
     res.on('close', () => { const idx = pool.findIndex(item => item.res === res); if (idx !== -1) pool.splice(idx, 1); });
   }
 
-  async read(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
-    const s = normalizeSelector(selector);
+  async read(target, context = {}) {
+    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
     
     const targetConns = [...this.peers.values()].filter(c => !stack.includes(c.neighborId));
     if (targetConns.length === 0) return null;
 
     const fetchPromises = targetConns.map(async (conn) => {
-      console.log(`[MeshLink ${this.vfs.id}] Requesting ${s.path} from peer: ${conn.neighborId}`);
-      const resp = await conn.read(s, { stack, expiresAt });
+      console.log(`[MeshLink ${this.vfs.id}] Requesting ${target.path || target} from peer: ${conn.neighborId}`);
+      const resp = await conn.read(target, { ...context, stack, resolutionStack, expiresAt });
       if (resp) return resp;
       throw new Error('Conn failed');
     });
@@ -433,13 +459,13 @@ export class MeshLinkBase {
 
   async spy(selector, context = {}) {
     const s = normalizeSelector(selector);
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
     
     const nextStack = stack.includes(this.vfs.id) ? stack : [...stack, this.vfs.id];
     const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
     
     if (targetConns.length === 0) return null;
-    const fetchPromises = targetConns.map(async (conn) => { try { return await conn.spy(s, { stack: nextStack, expiresAt }); } catch (err) { return null; } });
+    const fetchPromises = targetConns.map(async (conn) => { try { return await conn.spy(s, { ...context, stack: nextStack, expiresAt }); } catch (err) { return null; } });
     try {
       const results = await Promise.allSettled(fetchPromises);
       const validStreams = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);

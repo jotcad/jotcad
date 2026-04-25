@@ -4,9 +4,9 @@ import fsPromises from 'fs/promises';
 import path from 'path';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'node:stream';
-import { VFS as CoreVFS, normalizeSelector, VFSClosedError, getCID, getSelectorKey } from './vfs_core.js';
+import { VFS as CoreVFS, normalizeSelector, Selector, VFSClosedError, getCID, getSelectorKey } from './vfs_core.js';
 
-export { VFSClosedError, getCID, getSelectorKey };
+export { VFSClosedError, getCID, getSelectorKey, Selector };
 
 export class DiskStorage {
   constructor(root) {

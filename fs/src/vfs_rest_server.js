@@ -1,6 +1,6 @@
 import { pipeline } from 'stream/promises';
 import { Readable } from 'node:stream';
-import { normalizeSelector, encodeSafe, getSelectorKey } from './vfs_core.js';
+import { normalizeSelector, Selector, encodeSafe, getSelectorKey } from './vfs_core.js';
 
 export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const getBody = async (req) => {
@@ -28,14 +28,17 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       if (req.method === 'POST' && vfsPath === '/read') {
         const body = await getBody(req);
-        const { selector, stack = [], expiresAt } = body;
-        if (!selector) {
+        const { selector: selObj, cid, stack = [], resolutionStack = [], expiresAt } = body;
+        if (!selObj && !cid) {
             res.writeHead(400);
-            return res.end('Missing selector');
+            return res.end('Missing selector or cid');
         }
-        const stream = await vfs.read(selector, { stack, expiresAt });
+        const selector = selObj ? Selector.fromObject(selObj) : null;
+        if (selector) vfs.validateSelector(selector); // CRITICAL: FAIL VISIBLY
+        const target = selector || cid;
+        const stream = await vfs.read(target, { stack, resolutionStack, expiresAt });
         if (stream) {
-          const addrKey = await getSelectorKey(selector);
+          const addrKey = typeof target === 'string' ? target : await getSelectorKey(target);
           const info = await vfs._getStorageInfo(addrKey);
           
           res.writeHead(200, {
@@ -45,19 +48,21 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
           });
           return await pump(stream, res);
         }
-        console.log(`[MeshServer ${vfs.id}] /read 404: ${selector.path}`);
+        console.log(`[MeshServer ${vfs.id}] /read 404: ${target.path || target}`);
         res.writeHead(404);
         return res.end();
       }
 
       if (req.method === 'POST' && vfsPath === '/spy') {
         const body = await getBody(req);
-        const { selector, stack = [], expiresAt } = body;
-        if (!selector) {
+        const { selector: selObj, stack = [], resolutionStack = [], expiresAt } = body;
+        if (!selObj) {
             res.writeHead(400);
             return res.end('Missing selector');
         }
-        const stream = await vfs.spy(selector, { stack, expiresAt });
+        const selector = Selector.fromObject(selObj);
+        vfs.validateSelector(selector); // CRITICAL: FAIL VISIBLY
+        const stream = await vfs.spy(selector, { stack, resolutionStack, expiresAt });
         if (stream) {
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'x-vfs-id': vfs.id });
           return await pump(stream, res);
@@ -85,11 +90,13 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       if (req.method === 'POST' && vfsPath === '/subscribe') {
         const body = await getBody(req);
-        const { selector, expiresAt, stack } = body;
-        if (!selector) {
+        const { selector: selObj, expiresAt, stack } = body;
+        if (!selObj) {
             res.writeHead(400);
             return res.end('Missing selector');
         }
+        const selector = Selector.fromObject(selObj);
+        vfs.validateSelector(selector); // CRITICAL: FAIL VISIBLY
         const peerId = req.headers['x-vfs-id'] || 'unknown';
         meshLink?.addInterest(peerId, selector, expiresAt, stack || []);
         res.writeHead(200);
@@ -98,7 +105,9 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       if (req.method === 'POST' && vfsPath === '/notify') {
         const body = await getBody(req);
-        const { selector, payload, stack } = body;
+        const { selector: selObj, payload, stack } = body;
+        const selector = selObj ? Selector.fromObject(selObj) : null;
+        if (selector) vfs.validateSelector(selector); // CRITICAL: FAIL VISIBLY
         meshLink?.notify(selector, payload, stack || []);
         res.writeHead(200);
         return res.end();

@@ -19,7 +19,7 @@ struct ColorOp : P {
             {"path", "jot/color"},
             {"description", "Applies a color tag to the input shape."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"description", "The shape to color."}}},
+                {"$in", {{"type", "jot:shape"}, {"description", "The shape to color."}, {"affiliate", "$out"}}},
                 {"color", {{"type", "string"}, {"default", "red"}, {"description", "The color name or CSS hex value."}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}, {"description", "The colored shape."}}}}}
@@ -27,8 +27,8 @@ struct ColorOp : P {
     }
 };
 
-static void color_init() {
-    Processor::register_op<ColorOp<>, Shape, std::string>("jot/color");
+static void color_init(fs::VFSNode* vfs) {
+    Processor::register_op<ColorOp<>, Shape, std::string>(vfs, "jot/color");
 }
 
 } // namespace geo

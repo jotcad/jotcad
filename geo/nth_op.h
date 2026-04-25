@@ -21,7 +21,7 @@ struct NthOp : P {
             {"path", "jot/nth"},
             {"description", "Selects the N-th component shape from a group."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
                 {"index", {{"type", "integer"}, {"default", 0}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}}}}}
@@ -29,8 +29,8 @@ struct NthOp : P {
     }
 };
 
-static void nth_init() {
-    Processor::register_op<NthOp<>, Shape, int>("jot/nth");
+static void nth_init(fs::VFSNode* vfs) {
+    Processor::register_op<NthOp<>, Shape, int>(vfs, "jot/nth");
 }
 
 } // namespace geo

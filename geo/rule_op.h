@@ -179,8 +179,8 @@ struct RuleOp : P {
             {"path", "jot/Rule"},
             {"description", "Generates a ruled surface triangulating between two sets of boundary loops, supporting holes."},
             {"arguments", {
-                {"$a", {{"type", "shape"}}},
-                {"$b", {{"type", "shape"}}}
+                {"$a", {{"type", "shape"}, {"affiliate", "$out"}}},
+                {"$b", {{"type", "shape"}, {"affiliate", "$out"}}}
             }},
             {"outputs", {
                 {"$out", {{"type", "shape"}}}
@@ -189,8 +189,8 @@ struct RuleOp : P {
     }
 };
 
-static void rule_init() {
-    Processor::register_op<RuleOp<>, Shape, Shape>("jot/Rule");
+static void rule_init(fs::VFSNode* vfs) {
+    Processor::register_op<RuleOp<>, Shape, Shape>(vfs, "jot/Rule");
 }
 
 } // namespace geo

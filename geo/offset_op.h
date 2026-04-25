@@ -13,9 +13,7 @@ struct OffsetOp : P {
         if (!in.geometry.has_value()) {
             throw std::runtime_error("jot/offset: Input shape has no geometry");
         }
-        std::cout << "[OffsetOp] Reading geometry for offset..." << std::endl;
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
-        std::cout << "[OffsetOp] Applying offset of " << diameter << " to " << geo.vertices.size() << " vertices" << std::endl;
         Geometry res = geo;
         applyOffset(res, diameter);
         Shape out = in;
@@ -28,7 +26,7 @@ struct OffsetOp : P {
             {"path", "jot/offset"},
             {"description", "Creates a Minkowski offset."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
                 {"diameter", {{"type", "number"}, {"default", 1.0}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}}}}}
@@ -54,7 +52,7 @@ struct OffsetClosureOp : P {
         return {
             {"path", "jot/offset/closure"},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
                 {"diameter", {{"type", "number"}, {"default", 1.0}}},
                 {"closure", {{"type", "boolean"}, {"const", true}}}
             }},
@@ -63,9 +61,9 @@ struct OffsetClosureOp : P {
     }
 };
 
-static void offset_init() {
-    Processor::register_op<OffsetOp<>, Shape, double>("jot/offset");
-    Processor::register_op<OffsetClosureOp<>, Shape, double, bool>("jot/offset/closure");
+static void offset_init(fs::VFSNode* vfs) {
+    Processor::register_op<OffsetOp<>, Shape, double>(vfs, "jot/offset");
+    Processor::register_op<OffsetClosureOp<>, Shape, double, bool>(vfs, "jot/offset/closure");
 }
 
 } // namespace geo

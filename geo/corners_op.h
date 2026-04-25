@@ -94,7 +94,7 @@ struct CornersOp : P {
             {"path", "jot/corners"},
             {"description", "Extracts the corners (vertices) of a shape as a group of coordinate frames oriented along the edges."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
                 {"proxy", {{"type", "boolean"}, {"default", true}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}}}}}
@@ -102,8 +102,8 @@ struct CornersOp : P {
     }
 };
 
-static void corners_init() {
-    Processor::register_op<CornersOp<>, Shape, bool>("jot/corners");
+static void corners_init(fs::VFSNode* vfs) {
+    Processor::register_op<CornersOp<>, Shape, bool>(vfs, "jot/corners");
 }
 
 } // namespace geo

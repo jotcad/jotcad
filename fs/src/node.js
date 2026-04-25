@@ -1,47 +1,46 @@
 import { VFSClosedError } from './vfs_core.js';
+import { Selector } from './cid.js';
 
 /**
  * Socket Helpers (DSL)
  */
-export const In = (path, parameters = {}) => ({
+export const In = (path, parameters = {}, port) => ({
   mode: 'read',
-  path,
-  parameters,
+  selector: new Selector(path, parameters, port)
 });
-export const Out = (path, parameters = {}) => ({
+export const Out = (path, parameters = {}, port) => ({
   mode: 'write',
-  path,
-  parameters,
+  selector: new Selector(path, parameters, port)
 });
 export const Watch = (path, parameters = {}) => ({
   mode: 'watch',
-  path,
-  parameters,
+  selector: new Selector(path, parameters)
 });
 
 /**
- * Node abstraction for agent-style processors.
- * Refactored for Mesh-VFS: Uses registerProvider instead of watch.
+ * Node: An atomic computational unit that reacts to mesh events.
  */
 export class Node {
-  constructor(vfs, { sockets = {}, execute }) {
+  constructor({ id, vfs, sockets = {}, execute = null }) {
+    this.id = id || `node-${Math.random().toString(36).slice(2, 6)}`;
     this.vfs = vfs;
     this.socketsDef = sockets;
-    this.execute = execute;
-    this._fulfilled = new Map(); // path -> data
+    this._fulfilled = new Map();
+    if (execute) this.execute = execute;
   }
 
-  stop() {
-    // registerProvider is active until VFS closes or overwritten
+  async execute(sockets) {
+    throw new Error('Node.execute: Not implemented');
   }
 
-  async start() {
-    const outputs = Object.entries(this.socketsDef).filter(
-      ([name, def]) => def.mode === 'write'
-    );
+  start() {
+    const v = this.vfs;
+    for (const [outName, outDef] of Object.entries(this.socketsDef)) {
+      if (outDef.mode !== 'write') continue;
 
-    for (const [outName, outDef] of outputs) {
-      this.vfs.registerProvider(outDef.path, async (v, selector, context) => {
+      const baseSelector = outDef.selector;
+
+      v.registerProvider(baseSelector.path, async (vfs, selector, context) => {
         try {
           const sockets = {};
           // Internal helpers prefixed with _ to avoid collision with user sockets
@@ -51,56 +50,62 @@ export class Node {
             sockets[name] = {};
             if (def.mode === 'read') {
               sockets[name].read = async (overrideParams = {}) => {
-                return v.read({
-                  path: def.path,
-                  parameters: {
-                    ...def.parameters,
-                    ...selector.parameters,
-                    ...overrideParams,
-                  }
-                }, context);
+                const s = new Selector(
+                  def.selector.path,
+                  { ...def.selector.parameters, ...selector.parameters, ...overrideParams },
+                  def.selector.output
+                );
+                return v.read(s, context);
               };
               sockets[name].readData = async (overrideParams = {}) => {
-                return v.readData({
-                  path: def.path,
-                  parameters: {
-                    ...def.parameters,
-                    ...selector.parameters,
-                    ...overrideParams,
-                  }
-                }, context);
+                const s = new Selector(
+                  def.selector.path,
+                  { ...def.selector.parameters, ...selector.parameters, ...overrideParams },
+                  def.selector.output
+                );
+                return v.readData(s, context);
               };
               sockets[name].readText = async (overrideParams = {}) => {
-                return v.readText({
-                  path: def.path,
-                  parameters: {
-                    ...def.parameters,
-                    ...selector.parameters,
-                    ...overrideParams,
-                  }
-                }, context);
+                const s = new Selector(
+                  def.selector.path,
+                  { ...def.selector.parameters, ...selector.parameters, ...overrideParams },
+                  def.selector.output
+                );
+                return v.readText(s, context);
               };
             } else if (def.mode === 'write') {
               sockets[name].write = async (stream) => {
-                this._fulfilled.set(outDef.path, stream);
+                const s = new Selector(
+                    def.selector.path,
+                    { ...def.selector.parameters, ...selector.parameters },
+                    def.selector.output
+                );
+                this._fulfilled.set(def.selector.path, stream);
+                return v.write(s, stream);
               };
               sockets[name].writeData = async (data) => {
-                this._fulfilled.set(outDef.path, data);
+                const s = new Selector(
+                    def.selector.path,
+                    { ...def.selector.parameters, ...selector.parameters },
+                    def.selector.output
+                );
+                this._fulfilled.set(def.selector.path, data);
+                return v.writeData(s, data);
               };
             }
           }
 
           await this.execute(sockets);
 
-          const result = this._fulfilled.get(outDef.path);
-          this._fulfilled.delete(outDef.path);
+          const result = this._fulfilled.get(baseSelector.path);
+          this._fulfilled.delete(baseSelector.path);
           return result;
         } catch (err) {
           console.error(
             `[Node ${v.id}] Execution error for ${selector.path}:`,
             err
           );
-          return null;
+          throw err; // Fail loudly
         }
       });
     }

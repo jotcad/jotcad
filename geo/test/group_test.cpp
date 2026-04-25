@@ -1,26 +1,24 @@
-#include <iostream>
-#include "../box_op.h"
-#include "../group_op.h"
-#include "../../fs/cpp/vfs_node.h"
+#include "test_base.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_group_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs("group");
+    register_all_ops(&vfs);
     
     std::cout << "Testing Group Operation..." << std::endl;
     
-    fs::Selector s1_sel = {"jot/Box/1", {{"size", {10, 10, 0}}}};
-    BoxOp<>::execute(&vfs, s1_sel, 10, 10, 0);
+    fs::Selector s1_sel = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}, {"id", 1}}};
+    Processor::execute(&vfs, s1_sel);
     Shape s1 = vfs.read<Shape>(s1_sel);
 
-    fs::Selector s2_sel = {"jot/Box/2", {{"size", {20, 20, 0}}}};
-    BoxOp<>::execute(&vfs, s2_sel, 20, 20, 0);
+    fs::Selector s2_sel = {"jot/Box", {{"width", 20.0}, {"height", 20.0}, {"depth", 0.0}, {"id", 2}}};
+    Processor::execute(&vfs, s2_sel);
     Shape s2 = vfs.read<Shape>(s2_sel);
     
-    fs::Selector group_sel = {"jot/group", {}};
-    GroupOp<>::execute(&vfs, group_sel, Shape{}, {s1, s2});
+    // Group (uppercase) has no $in, just shapes
+    fs::Selector group_sel = {"jot/Group", {{"shapes", {s1_sel, s2_sel}}}};
+    Processor::execute(&vfs, group_sel);
     
     Shape out = vfs.read<Shape>(group_sel);
     if (out.components.size() != 2) {

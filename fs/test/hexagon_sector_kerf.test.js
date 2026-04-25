@@ -58,19 +58,23 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       // THE EXPRESSION:
       // pdf(offset(loop(group(origin, nth(points(hexagon), 0), nth(points(hexagon), 1))), diameter=5))
 
-      const hexagon = { path: 'jot/Hexagon/full', parameters: { diameter: 200 } };
-      const points = { path: 'jot/points', parameters: { $in: hexagon } };
-      const point0 = { path: 'jot/nth', parameters: { $in: points, index: 0 } };
-      const point1 = { path: 'jot/nth', parameters: { $in: points, index: 1 } };
-      const origin = { path: 'jot/nth', parameters: { $in: { path: 'jot/points', parameters: { $in: { path: 'jot/Box', parameters: { width: 1, height: 1, depth: 1 } } } }, index: 0 } };
-      const group = { path: 'jot/group', parameters: { $in: origin, shapes: [point0, point1] } };
-      const loop = { path: 'jot/loop', parameters: { $in: group } };
-      const offset = { path: 'jot/offset', parameters: { $in: loop, diameter: 5.0 } };
-      const pdf = { path: 'jot/pdf', parameters: { $in: offset, path: 'sector.pdf' } };
+      const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }, '$out');
+      const points = new Selector('jot/eachPoint', { $in: hexagon }, '$out');
+      const point0 = new Selector('jot/nth', { $in: points, index: 0 }, '$out');
+      const point1 = new Selector('jot/nth', { $in: points, index: 1 }, '$out');
+      const origin = new Selector('jot/nth', { 
+        $in: new Selector('jot/eachPoint', { 
+          $in: new Selector('jot/Box', { width: 1, height: 1, depth: 1 }, '$out') 
+        }, '$out'), 
+        index: 0 
+      }, '$out');
+      const group = new Selector('jot/group', { $in: origin, shapes: [point0, point1] }, '$out');
+      const loop = new Selector('jot/loop', { $in: group }, '$out');
+      const offset = new Selector('jot/offset', { $in: loop, diameter: 5.0 }, '$out');
+      const pdf = new Selector('jot/pdf', { $in: offset, path: 'sector.pdf' }, '$out');
 
       console.log('[Test Sector] Requesting complex expression...');
-      const pdfData = await vfs.readData(pdf, { output: 'file' });
-
+      const pdfData = await vfs.readData(pdf.withOutput('file'));
       assert.ok(pdfData, 'Should return PDF data');
       
       // Check for PDF magic number

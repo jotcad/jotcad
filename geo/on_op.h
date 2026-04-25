@@ -40,8 +40,8 @@ struct AtOp : P {
             {"path", "jot/at"},
             {"description", "Places copies of the input shape at every location defined by the target shape."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
-                {"target", {{"type", "jot:shape"}}},
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
+                {"target", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
                 {"op", {{"type", "jot:selector"}, {"default", nlohmann::json::object()}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}}}}}
@@ -83,8 +83,8 @@ struct OnOp : P {
             {"path", "jot/on"},
             {"description", "Sequentially applies an operation to the input shape at every location defined by the target shape (Reduce)."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
-                {"target", {{"type", "jot:shape"}}},
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
+                {"target", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
                 {"op", {{"type", "jot:selector"}}}
             }},
             {"outputs", {{"$out", {{"type", "shape"}}}}}
@@ -92,9 +92,9 @@ struct OnOp : P {
     }
 };
 
-static void on_init() {
-    Processor::register_op<AtOp<>, Shape, Shape, fs::Selector>("jot/at");
-    Processor::register_op<OnOp<>, Shape, Shape, fs::Selector>("jot/on");
+static void on_init(fs::VFSNode* vfs) {
+    Processor::register_op<AtOp<>, Shape, Shape, fs::Selector>(vfs, "jot/at");
+    Processor::register_op<OnOp<>, Shape, Shape, fs::Selector>(vfs, "jot/on");
 }
 
 } // namespace geo

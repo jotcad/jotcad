@@ -144,12 +144,12 @@ struct HexagonHalfOp : P {
     }
 };
 
-static void hexagon_init() {
-    Processor::register_op<HexagonFullOp<>, double>("jot/Hexagon/full");
-    Processor::register_op<HexagonCapOp<>, double>("jot/Hexagon/cap");
-    Processor::register_op<HexagonMiddleOp<>, double>("jot/Hexagon/middle");
-    Processor::register_op<HexagonSectorOp<>, double>("jot/Hexagon/sector");
-    Processor::register_op<HexagonHalfOp<>, double>("jot/Hexagon/half");
+static void hexagon_init(fs::VFSNode* vfs) {
+    Processor::register_op<HexagonFullOp<>, double>(vfs, "jot/Hexagon/full");
+    Processor::register_op<HexagonCapOp<>, double>(vfs, "jot/Hexagon/cap");
+    Processor::register_op<HexagonMiddleOp<>, double>(vfs, "jot/Hexagon/middle");
+    Processor::register_op<HexagonSectorOp<>, double>(vfs, "jot/Hexagon/sector");
+    Processor::register_op<HexagonHalfOp<>, double>(vfs, "jot/Hexagon/half");
 }
 
 } // namespace geo

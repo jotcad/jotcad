@@ -148,9 +148,11 @@ export async function vfs_hash256(bytes) {
     .join('');
 }
 
+export const isString = (val) => typeof val === 'string' || Object.prototype.toString.call(val) === '[object String]';
+
 export async function jcbHash(val) {
-  const safe = encodeSafe(val);
-  return vfs_hash256(new TextEncoder().encode(safe));
+  // Protocol Rule: Hash the canonical binary representation (JCB) directly.
+  return vfs_hash256(encodeJCB(val));
 }
 
 /**
@@ -159,7 +161,7 @@ export async function jcbHash(val) {
  * JCB (JotCAD Canonical Binary) is used to produce a stable, 
  * deterministic representation of structured data across JS and C++.
  * 
- * - Identity (CID): Derived by hashing the Safe-JCB string (Base64-encoded JCB).
+ * - Identity (CID): Derived by hashing the raw JCB binary.
  * - Storage: Disk content remains raw (e.g., human-readable JSON).
  * - Transport: Safe-JCB carrier strings are used when JSON-safety is required.
  */
@@ -170,10 +172,8 @@ export async function getCID(data) {
   } else if (typeof data === 'string') {
       bytes = new TextEncoder().encode(data);
   } else {
-      // For structured data, the CID is the hash of the Safe-JCB string.
-      // Safe-JCB = Base64(JCB binary).
-      const safe = encodeSafe(data);
-      bytes = new TextEncoder().encode(safe);
+      // For structured data, the CID is the hash of the raw JCB binary.
+      bytes = encodeJCB(data);
   }
   return vfs_hash256(bytes);
 }
@@ -192,21 +192,36 @@ export async function getSelectorKey(selector) {
 }
 
 /**
- * normalizeSelector: Internal helper to ensure API inputs are objects.
+ * Selector: The universal address for mesh content.
  */
-export function normalizeSelector(pathOrSelector, parameters = {}) {
-  if (pathOrSelector && typeof pathOrSelector === 'object' && pathOrSelector.path !== undefined) {
-    return { ...pathOrSelector };
-  } else if (typeof pathOrSelector === 'string') {
-    return { path: pathOrSelector, parameters: parameters || {}, output: '$out' };
-  } else {
-    // If no path, it's just parameters (anonymous)
-    const s = { path: '', parameters: pathOrSelector || {}, output: '' };
-    // Check if it's already a normalized selector-like object without a path
-    if (pathOrSelector && pathOrSelector.parameters) {
-        s.parameters = pathOrSelector.parameters;
-        if (pathOrSelector.output) s.output = pathOrSelector.output;
-    }
-    return s;
+export class Selector {
+  constructor(path, parameters = {}, output) {
+    this.path = path;
+    this.parameters = parameters;
+    this.output = output;
   }
+
+  withOutput(output) {
+    return new Selector(this.path, this.parameters, output);
+  }
+
+  toJSON() {
+    const res = { path: this.path, parameters: this.parameters };
+    if (this.output) res.output = this.output;
+    return res;
+  }
+
+  static fromObject(obj) {
+    return new Selector(obj.path, obj.parameters, obj.output);
+  }
+}
+
+/**
+ * normalizeSelector: Enforces strict Selector type.
+ */
+export function normalizeSelector(s) {
+  if (!(s instanceof Selector)) {
+    throw new Error(`Protocol Violation: Expected Selector instance, got ${s?.constructor?.name || typeof s}`);
+  }
+  return s;
 }

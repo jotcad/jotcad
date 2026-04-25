@@ -9,7 +9,9 @@ void PngOpImpl::execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const 
     if (in_shape.geometry.has_value()) {
         try {
             Geometry geo = vfs->read<Geometry>(in_shape.geometry.value());
-            std::vector<uint8_t> bytes = Rasterizer::render_png(geo, 256, 256);
+            double ax = fulfilling.parameters.value("ax", 0.0);
+            double ay = fulfilling.parameters.value("ay", 0.0);
+            std::vector<uint8_t> bytes = Rasterizer::render_png(geo, 256, 256, ax, ay);
             if (!bytes.empty()) {
                 vfs->write<std::vector<uint8_t>>(fulfilling, bytes, "file");
             }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { spawnOpsNode } from './ops_helper.js';
-import { VFS, MeshLink, registerVFSRoutes, DiskStorage } from '../src/index.js';
+import { VFS, MeshLink, registerVFSRoutes, DiskStorage, Selector } from '../src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -23,13 +23,10 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
   let server;
 
   t.after(async () => {
-    console.log('[Test Grammar] Cleaning up...');
+    console.log('[Test Grammar] Cleaning up (PROCESS ONLY)...');
     if (opsProcess) opsProcess.kill();
     if (server) server.close();
     if (vfs) await vfs.close();
-
-    await fs.rm(STORAGE_OPS, { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
   });
 
   // 1. Start Native C++ Node
@@ -63,42 +60,21 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
     async () => {
       // THE EXPRESSION:
       // loop(group(origin, nth(points(hexagon), index=0), nth(points(hexagon), index=1)))
-      // Note: Our nth only takes one index, so we group them manually.
+      
+      const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }, '$out');
+      const points = new Selector('jot/eachPoint', { $in: hexagon }, '$out');
+      const point0 = new Selector('jot/nth', { $in: points, index: 0 }, '$out');
+      const point1 = new Selector('jot/nth', { $in: points, index: 1 }, '$out');
+      const origin = new Selector('jot/eachPoint', {
+        $in: new Selector('jot/Box', { width: 0, height: 0, depth: 0 }, '$out'),
+      }, '$out'); 
+      const origin0 = new Selector('jot/at', { $in: origin, target: point0, op: new Selector('jot/Box', { width: 1, height: 1, depth: 1 }) }, '$out');
 
-      const hexagon = {
-        path: 'jot/Hexagon/full',
-        parameters: { diameter: 200 },
-      };
-      const points = { path: 'jot/points', parameters: { $in: hexagon } };
-      const point0 = {
-        path: 'jot/nth',
-        parameters: { $in: points, index: 0 },
-      };
-      const point1 = {
-        path: 'jot/nth',
-        parameters: { $in: points, index: 1 },
-      };
-      const origin = {
-        path: 'jot/points',
-        parameters: {
-          $in: {
-            path: 'jot/Box',
-            parameters: { width: 0, height: 0, depth: 0 },
-          },
-        },
-      }; // Grouping a single point as origin
-      const origin0 = {
-        path: 'jot/nth',
-        parameters: { $in: origin, index: 0 },
-      };
-      const group = {
-        path: 'jot/group',
-        parameters: { $in: origin0, shapes: [point0, point1] },
-      };
-      const sector = { path: 'jot/loop', parameters: { $in: group } };
+      const group = new Selector('jot/group', { $in: origin0, shapes: [point0, point1] }, '$out');
+      const sector = new Selector('jot/loop', { $in: group }, '$out');
 
       console.log('[Test Grammar] Requesting complex grammar sector...');
-      const geoText = await vfs.readText(sector);
+      const geoText = await vfs.readText(sector.withOutput('$out'));
 
       assert.ok(geoText, 'Result should be defined');
 

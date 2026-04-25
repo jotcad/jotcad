@@ -56,8 +56,8 @@ struct BoxOp : P {
     }
 };
 
-static void box_init() {
-    Processor::register_op<BoxOp<>, double, double, double>("jot/Box");
+static void box_init(fs::VFSNode* vfs) {
+    Processor::register_op<BoxOp<>, double, double, double>(vfs, "jot/Box");
 }
 
 } // namespace geo

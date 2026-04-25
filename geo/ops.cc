@@ -3,7 +3,7 @@
 #include <iostream>
 #include <thread>
 
-namespace jotcad { namespace geo { void register_all_ops(); } }
+namespace jotcad { namespace geo { void register_all_ops(fs::VFSNode* vfs); } }
 
 using namespace jotcad::geo;
 
@@ -16,15 +16,8 @@ int main(int argc, char** argv) {
 
     fs::VFSNode node(config);
     
-    // 1. Register everything from the compiled library
-    register_all_ops();
-
-    // 2. Map Processor Registry to VFS Node
-    for (auto const& [path, op] : Processor::registry_instance()) {
-        node.register_op(path, [&node, path](const fs::VFSNode::VFSRequest& req) {
-            return Processor::registry_instance()[path].handler(&node, req);
-        }, op.schema);
-    }
+    // 1. Register everything from the compiled library onto this specific node instance
+    register_all_ops(&node);
 
     std::cout << "[Ops Node] Starting Native VFS Node on port " << port << "..." << std::endl;
     node.listen();

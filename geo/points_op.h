@@ -1,6 +1,7 @@
 #pragma once
 #include "impl/protocols.h"
 #include "impl/processor.h"
+#include "impl/matrix.h"
 
 namespace jotcad {
 namespace geo {
@@ -57,9 +58,79 @@ struct PointsOp : P {
     }
 };
 
-static void points_init() {
-    Processor::register_op<PointOp<>, double, double, double>("jot/Point");
-    Processor::register_op<PointsOp<>, std::vector<std::vector<double>>>("jot/Points");
+template <typename P = JotVfsProtocol>
+struct PointsExtractOp : P {
+    static constexpr const char* path = "jot/points";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        if (!in.geometry.has_value()) {
+            vfs->write<Shape>(fulfilling, in, "$out");
+            return;
+        }
+        Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        Geometry res;
+        res.vertices = geo.vertices;
+        Shape out = P::make_shape(vfs, res, {{"type", "points"}});
+        vfs->write<Shape>(fulfilling, out, "$out");
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/points"},
+            {"description", "Extracts vertices from a shape as a point cloud."},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct EachPointOp : P {
+    static constexpr const char* path = "jot/eachPoint";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        if (!in.geometry.has_value()) {
+            vfs->write<Shape>(fulfilling, in, "$out");
+            return;
+        }
+        Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        
+        Shape out;
+        out.tags = {{"type", "points"}};
+        
+        for (const auto& v : geo.vertices) {
+            Shape p;
+            p.tags = {{"type", "point"}};
+            p.tf = Matrix::translate(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)).to_vec();
+            
+            // Give each point a terminal geometry (origin) so it's reifiable as a vertex
+            Geometry p_geo;
+            p_geo.vertices.push_back({FT(0), FT(0), FT(0)});
+            p.geometry = vfs->write_anonymous<Geometry>(p_geo);
+            
+            out.components.push_back(p);
+        }
+        
+        vfs->write<Shape>(fulfilling, out, "$out");
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/eachPoint"},
+            {"description", "Extracts vertices from a shape as individual child components."},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+            }},
+            {"outputs", {{"$out", {{"type", "shape"}}}}}
+        };
+    }
+};
+
+static void points_init(fs::VFSNode* vfs) {
+    Processor::register_op<PointOp<>, double, double, double>(vfs, "jot/Point");
+    Processor::register_op<PointsOp<>, std::vector<std::vector<double>>>(vfs, "jot/Points");
+    Processor::register_op<PointsExtractOp<>, Shape>(vfs, "jot/points");
+    Processor::register_op<EachPointOp<>, Shape>(vfs, "jot/eachPoint");
 }
 
 } // namespace geo

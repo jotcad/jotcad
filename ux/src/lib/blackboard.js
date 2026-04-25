@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { VFS, IndexedDBStorage } from '../../../fs/src/vfs_browser.js';
+import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js';
 import { MeshLink } from '../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../jot/src/index.js';
 
@@ -107,7 +107,7 @@ export const blackboard = {
     );
 
     vfs.events.on('state', async (event) => {
-      if (!event.path) return;
+      if (!event.selector) return;
       setGraph((prev) => ({
         ...prev,
         [event.cid]: { ...prev[event.cid], ...event },
@@ -157,10 +157,10 @@ export const blackboard = {
     await mesh.start();
     setIsConnected(true);
 
-    vfs.read('sys/topo', {}, { followLinks: false }).catch(() => {});
+    vfs.read(new Selector('sys/topo'), { followLinks: false }).catch(() => {});
 
     // Subscribe to Schema Announcements from the mesh
-    mesh.subscribe({ path: 'sys/schema', parameters: {} });
+    mesh.subscribe(new Selector('sys/schema'));
 
     setInterval(() => {
       const nodes = new Map();
@@ -228,7 +228,7 @@ export const blackboard = {
     });
 
     // 4. Announce to mesh
-    mesh.notify({ path: 'sys/schema' }, {
+    mesh.notify(new Selector('sys/schema'), {
       type: 'CATALOG_ANNOUNCEMENT',
       provider: vfs.id,
       catalog: { [path]: schemaWithOrigin }
@@ -241,11 +241,11 @@ export const blackboard = {
   },
 
   async read(path, parameters = {}) {
-    return vfs.read(path, parameters);
+    return vfs.read(new Selector(path, parameters));
   },
 
   async write(path, parameters = {}, data) {
-    return vfs.writeData(path, parameters, data);
+    return vfs.writeData(new Selector(path, parameters), data);
   },
 };
 

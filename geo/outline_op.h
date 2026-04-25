@@ -33,14 +33,14 @@ struct OutlineOp : P {
         return {
             {"path", "jot/outline"},
             {"description", "Extracts the boundary edges of the input shape as line segments."},
-            {"arguments", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to outline."}}}}},
+            {"arguments", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to outline."}, {"affiliate", "$out"}}}}},
             {"outputs", {{"$out", {{"type", "shape"}, {"description", "The resulting wireframe/outline shape."}}}}}
         };
     }
 };
 
-static void outline_init() {
-    Processor::register_op<OutlineOp<>, Shape>("jot/outline");
+static void outline_init(fs::VFSNode* vfs) {
+    Processor::register_op<OutlineOp<>, Shape>(vfs, "jot/outline");
 }
 
 } // namespace geo

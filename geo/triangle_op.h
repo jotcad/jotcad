@@ -33,8 +33,8 @@ struct TriangleEquilateralOp : P {
     }
 };
 
-static void triangle_init() {
-    Processor::register_op<TriangleEquilateralOp<>, std::vector<double>>("jot/Triangle/equilateral");
+static void triangle_init(fs::VFSNode* vfs) {
+    Processor::register_op<TriangleEquilateralOp<>, std::vector<double>>(vfs, "jot/Triangle/equilateral");
 }
 
 } // namespace geo
