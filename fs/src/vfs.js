@@ -318,6 +318,11 @@ export class VFS {
     if (depth > 20) throw new Error(`Maximum recursion depth exceeded for ${targetCID}`);
     if (Date.now() > expiresAt) return { success: false, error: 'Expired' };
 
+    // Protocol Cycle Protection: resolutionStack contains target CIDs to detect circular links.
+    if (resolutionStack.includes(targetCID)) {
+         throw new Error(`Circular link detected for ${targetCID}`);
+    }
+    
     if (this.activeWait.has(targetCID)) return await this.activeWait.get(targetCID);
 
     const workPromise = (async () => {
@@ -325,10 +330,6 @@ export class VFS {
         if (await this.storage.has(targetCID)) {
           const info = await this._getStorageInfo(targetCID);
           if (followLinks && info?.state === 'LINKED' && info?.target) {
-            // Local Cycle Protection: Only check resolutionStack when FOLLOWING a link
-            if (resolutionStack.includes(targetCID)) {
-                throw new Error(`Circular link detected for ${targetCID}`);
-            }
             // Resolve Link: Pass updated resolutionStack to the recursion
             return await this._readResult(info.target, { 
                 ...context, 

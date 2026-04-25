@@ -22,12 +22,16 @@ A **Selector** is a recomposable request object containing:
 - `parameters` (e.g., `{"diameter": 30}`)
 - `output` (e.g., `"thumb"` or `"$out"`. If omitted, it targets the operation itself).
 
-- **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact.
+- **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact. **Deconstructing a Selector into top-level keys in metadata or network messages is strictly prohibited.**
 - **Parametric Standardization:** Parameters MUST be normalized (e.g., radial/apothem parameters to `diameter`) before execution to ensure deterministic CIDs.
+- **Strict readData Protocol:** `vfs.readData(selector)` MUST receive a full Selector instance. Passing plain object literals or split arguments is a protocol violation.
 
-### 1.2 Network Transmission
+### 1.2 Network Transmission & Hydration
 
 CIDs CAN and SHOULD be transmitted safely over the mesh network. Nodes can request data directly by CID, or they can request the execution of a computation by sending a Selector.
+
+- **Boundary Hydration:** Network handlers (REST, WebSockets) and UI entry points MUST explicitly hydrate incoming JSON representations into formal `Selector` instances using `Selector.fromObject()` before passing them to the VFS core.
+- **Context-Safe Identification:** To prevent "identity drift" across bundlers (Vite) or cross-window contexts (Puppeteer), string-like CIDs MUST be identified using robust detection (e.g., `Object.prototype.toString.call(val) === '[object String]'`).
 
 ## 2. Actor Fulfillment Protocol
 

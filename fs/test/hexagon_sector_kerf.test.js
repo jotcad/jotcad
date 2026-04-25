@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import http from 'node:http';
-import { VFS, DiskStorage, MeshLink, registerVFSRoutes } from '../src/index.js';
+import { VFS, DiskStorage, MeshLink, registerVFSRoutes, Selector } from '../src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';

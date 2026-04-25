@@ -29,8 +29,13 @@ instructions. All C++ implementations must link against **`-lcrypto`**.
 
 ## Universal Protocol Rules
 
-- **PROTOCOL INTEGRITY**: Do NOT modify core VFS Mesh protocols (`read`, `listen`, `register`, `notify`, `subscribe`, `spy`) without explicit discussion.
+- **STABILITY MANDATE (CRITICAL)**: JS unit tests MUST be executed sequentially (`--test-concurrency=1`) to prevent port deadlocks and race conditions in mesh-heavy tests.
+- **PROTOCOL INTEGRITY (CRITICAL)**: Every structured address MUST be a formal `Selector` instance. "String-path guessing" or deconstructing Selectors into top-level keys in metadata or network messages is strictly prohibited.
+- **BOUNDARY HYDRATION**: All REST handlers, mesh ingress points, and UI entry points MUST explicitly hydrate incoming JSON into formal `Selector` instances using `Selector.fromObject()`.
+- **CONTEXT-SAFE IDENTIFICATION**: Use robust string detection (`Object.prototype.toString.call(val) === '[object String]'`) to identify CID strings and bypass normalization, ensuring stability across bundlers (Vite) and test environments (Puppeteer).
+- **ATOMIC STATE EVENTS**: The VFS MUST emit entire `Selector` objects in its events, adhering to the atomic addressing model.
 - **JOTCAD CANONICAL BINARY (JCB)**: Tag-prefixed binary format used EXCLUSIVELY to generate stable hashes (CIDs).
 - **SAFE IDENTITY (Base64-JCB)**: Base64-encoded JCB used as an ASCII-safe carrier string for JSON transport.
 - **SELECTOR WIRE FORMAT**: Network requests MUST wrap the identity in a top-level key: `{"selector": {...}}` OR `{"cid": "..."}`.
 - **STACK PROTECTION**: Nodes MUST NOT dispatch to neighbors already present in the `stack` property to prevent infinite loops.
+- **FORMAL VFS LINKS**: Use `vfs.link(src, tgt)` for semantic aliasing (the "remainer"). Aliases are strictly metadata-driven and MUST store the full target `Selector`.
