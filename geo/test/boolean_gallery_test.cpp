@@ -2,10 +2,10 @@
 #include <vector>
 #include <string>
 #include <fstream>
-#include "impl/protocols.h"
+#include "protocols.h"
 #include "vfs_node.h"
-#include "impl/processor.h"
-#include "impl/rasterizer.h"
+#include "processor.h"
+#include "rasterizer.h"
 #include "box_op.h"
 #include "plane_op.h"
 #include "cut_op.h"

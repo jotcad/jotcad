@@ -1,6 +1,6 @@
 #pragma once
-#include "impl/protocols.h"
-#include "impl/processor.h"
+#include "protocols.h"
+#include "processor.h"
 #include <cmath>
 
 namespace jotcad {

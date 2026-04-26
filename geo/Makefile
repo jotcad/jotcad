@@ -11,7 +11,8 @@ ARFLAGS = rcs
 BIN_DIR = bin
 OBJ_DIR = obj
 
-INCLUDES = -I. -I./impl -I../fs/cpp -I../fs/cpp/vendor \
+INCLUDES = -I. -I./ops -I./core -I./data -I./math -I./algorithms -I./render -I./infra \
+           -I../fs/cpp -I../fs/cpp/vendor \
            -I./cgal -I./cgal/boost \
            -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include
 DEFS = -DCGAL_DISABLE_GMP=1
@@ -41,11 +42,7 @@ $(LIB_JOTGEO): $(OBJS)
 $(OPS_BIN): $(DRIVER_OBJ) $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $(DRIVER_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
 
-# Compile source files
-$(OBJ_DIR)/%.o: %.cc
-	@mkdir -p $(OBJ_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
-
+# Explicit compilation rules
 $(OBJ_DIR)/vfs_core.o: ../fs/cpp/vfs_core.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
@@ -54,7 +51,7 @@ $(OBJ_DIR)/vfs_primitives.o: ../fs/cpp/vfs_primitives.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/vfs_geo_adapter.o: impl/vfs_geo_adapter.cc
+$(OBJ_DIR)/vfs_geo_adapter.o: core/vfs_geo_adapter.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
@@ -62,15 +59,23 @@ $(OBJ_DIR)/cid.o: ../fs/cpp/cid.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/registry.o: impl/registry.cc
+$(OBJ_DIR)/registry.o: core/registry.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/png_op.o: impl/png_op.cc
+$(OBJ_DIR)/png_op.o: render/png_op.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/rasterizer.o: impl/rasterizer.cc
+$(OBJ_DIR)/rasterizer.o: render/rasterizer.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/ops_library.o: infra/ops_library.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/ops.o: infra/ops.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

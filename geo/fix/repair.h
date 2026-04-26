@@ -10,7 +10,7 @@
 #include <vector>
 #include <algorithm>
 #include <map>
-#include "../impl/kernel.h"
+#include "kernel.h"
 
 namespace jotcad {
 namespace geo {

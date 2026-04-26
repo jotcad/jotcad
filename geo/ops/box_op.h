@@ -1,6 +1,6 @@
 #pragma once
-#include "impl/protocols.h"
-#include "impl/processor.h"
+#include "protocols.h"
+#include "processor.h"
 
 namespace jotcad {
 namespace geo {

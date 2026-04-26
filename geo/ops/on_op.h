@@ -1,7 +1,7 @@
 #pragma once
-#include "impl/protocols.h"
-#include "impl/processor.h"
-#include "impl/matrix.h"
+#include "protocols.h"
+#include "processor.h"
+#include "matrix.h"
 
 namespace jotcad {
 namespace geo {
@@ -73,9 +73,25 @@ struct OnOp : P {
         bool match = (target.geometry.has_value() && current.geometry == target.geometry);
         
         if (match) {
+            // Conjugation Pattern: 
+            // 1. Store the original attachment transform.
+            Matrix attachment = Matrix::from_vec(current.tf);
+            
+            // 2. Normalize the component to its local origin.
+            Shape local_comp = current;
+            local_comp.tf = Matrix::identity().to_vec();
+            
+            // 3. Apply the operation to the normalized component.
             fs::Selector call = op;
-            call.parameters["$in"] = vfs->materialize(current).value;
-            current = vfs->read<Shape>(call);
+            call.parameters["$in"] = vfs->materialize(local_comp).value;
+            Shape transformed = vfs->read<Shape>(call);
+            
+            // 4. Re-apply the original attachment to the transformed result.
+            // (attachment * transformed.tf) preserves any transformation 
+            // introduced by 'op' while maintaining the original placement.
+            transformed.tf = (attachment * Matrix::from_vec(transformed.tf)).to_vec();
+            
+            current = transformed;
             return true; 
         }
 

@@ -1,7 +1,7 @@
 #pragma once
-#include "impl/protocols.h"
-#include "impl/processor.h"
-#include "impl/offset.h"
+#include "protocols.h"
+#include "processor.h"
+#include "offset.h"
 
 namespace jotcad {
 namespace geo {

@@ -5,8 +5,8 @@
 #include <string>
 #include <cassert>
 #include <filesystem>
-#include "../impl/protocols.h"
-#include "../impl/processor.h"
+#include "protocols.h"
+#include "processor.h"
 #include "../../fs/cpp/vfs_node.h"
 
 namespace jotcad {

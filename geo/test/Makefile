@@ -2,7 +2,8 @@
 
 CXX = g++
 CXXFLAGS = -O3 -std=c++17
-INCLUDES = -I.. -I../impl -I../../fs/cpp -I../../fs/cpp/vendor \
+INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../render -I../infra \
+           -I../../fs/cpp -I../../fs/cpp/vendor \
            -I../cgal -I../cgal/boost \
            -I../cgal/cgal/include -I../cgal/cgal/include/CGAL/include
 DEFS = -DCGAL_DISABLE_GMP=1

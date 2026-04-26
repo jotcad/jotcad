@@ -1,8 +1,8 @@
 #pragma once
-#include "impl/protocols.h"
-#include "impl/processor.h"
-#include "impl/pdf.h"
-#include "impl/matrix.h"
+#include "protocols.h"
+#include "processor.h"
+#include "pdf.h"
+#include "matrix.h"
 
 namespace jotcad {
 namespace geo {

@@ -1,7 +1,7 @@
 #pragma once
-#include "impl/protocols.h"
-#include "impl/processor.h"
-#include "impl/matrix.h"
+#include "protocols.h"
+#include "processor.h"
+#include "matrix.h"
 #include "boolean/engine.h"
 
 namespace jotcad {

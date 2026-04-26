@@ -1,8 +1,8 @@
 #pragma once
 
-#include "impl/protocols.h"
-#include "impl/processor.h"
-#include "impl/matrix.h"
+#include "protocols.h"
+#include "processor.h"
+#include "matrix.h"
 #include "rs/ruled_surfaces_base.h"
 #include "rs/ruled_surfaces_objective_min_area.h"
 #include "rs/ruled_surfaces_strategy_linear_slg.h"
