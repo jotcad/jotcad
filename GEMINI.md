@@ -39,3 +39,9 @@ instructions. All C++ implementations must link against **`-lcrypto`**.
 - **SELECTOR WIRE FORMAT**: Network requests MUST wrap the identity in a top-level key: `{"selector": {...}}` OR `{"cid": "..."}`.
 - **STACK PROTECTION**: Nodes MUST NOT dispatch to neighbors already present in the `stack` property to prevent infinite loops.
 - **FORMAL VFS LINKS**: Use `vfs.link(src, tgt)` for semantic aliasing (the "remainer"). Aliases are strictly metadata-driven and MUST store the full target `Selector`.
+
+## Refined Language Semantics
+
+- **ANCHOR PATTERN (at)**: Implements **Sequential Subject Reduction**. It transforms the entire subject into the inverse frame of each anchor, applies the operation, and projects it back. Multiple anchors result in a single shape modified sequentially.
+- **INJECTION PATTERN (on)**: Implements **Targeted Search & Replace**. It performs a non-sequential traversal of the subject hierarchy, replacing sub-components matching a target with the results of an operation applied to them.
+- **ROBUST RENDERING**: The `Rasterizer` must support both **Segment rendering** (for wireframes/frames) and **CDT (Constrained Delaunay Triangulation)** for non-convex faces to prevent visual fragmentation.
