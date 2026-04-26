@@ -14,7 +14,7 @@ struct GroupOp : P {
             out.components.push_back(s);
         }
         out.add_tag("type", "group");
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "shapes"}; }
     static typename P::json schema() {
@@ -22,16 +22,40 @@ struct GroupOp : P {
             {"path", "jot/group"},
             {"description", "Combines multiple shapes into a single hierarchical group."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"description", "The base shape for the group."}}},
-                {"shapes", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "Additional shapes to group together."}}}
+                {"$in", {{"type", "jot:shape"}, {"description", "The base shape for the group."}, {"affiliate", "$out"}}},
+                {"shapes", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "Additional shapes to group together."}, {"affiliate", "$out"}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}, {"description", "The resulting group shape."}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting group shape."}}}}}
         };
     }
 };
 
-static void group_init() {
-    Processor::register_op<GroupOp<>, Shape, std::vector<Shape>>("jot/group");
+template <typename P = JotVfsProtocol>
+struct GroupPrimitiveOp : P {
+    static constexpr const char* path = "jot/Group";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes) {
+        Shape out;
+        out.components = shapes;
+        out.add_tag("type", "group");
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"shapes"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/Group"},
+            {"description", "Creates a new group from a list of shapes."},
+            {"arguments", {
+                {"shapes", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+static void group_init(fs::VFSNode* vfs) {
+    Processor::register_op<GroupOp<>, Shape, std::vector<Shape>>(vfs, "jot/group");
+    Processor::register_op<GroupOp<>, Shape, std::vector<Shape>>(vfs, "jot/and");
+    Processor::register_op<GroupPrimitiveOp<>, std::vector<Shape>>(vfs, "jot/Group");
 }
 
 } // namespace geo

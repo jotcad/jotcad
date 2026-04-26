@@ -3,6 +3,7 @@
  */
 export { 
   normalizeSelector, 
+  Selector,
   getCID, 
   getSelectorKey, 
   encodeSafe, 

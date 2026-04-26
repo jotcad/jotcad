@@ -39,7 +39,7 @@ struct BoxOp : P {
         }
         
         Shape out = P::make_shape(vfs, res, {{"type", "box"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"width", "height", "depth"}; }
     static typename P::json schema() {
@@ -47,17 +47,17 @@ struct BoxOp : P {
             {"path", "jot/Box"},
             {"description", "Generates a box (rectangle or cuboid)."},
             {"arguments", {
-                {"width", {{"type", "number"}, {"default", 10.0}}},
-                {"height", {{"type", "number"}, {"default", 10.0}}},
-                {"depth", {{"type", "number"}, {"default", 0.0}}}
+                {"width", {{"type", "jot:number"}, {"default", 10.0}}},
+                {"height", {{"type", "jot:number"}, {"default", 10.0}}},
+                {"depth", {{"type", "jot:number"}, {"default", 0.0}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
-static void box_init() {
-    Processor::register_op<BoxOp<>, double, double, double>("jot/Box");
+static void box_init(fs::VFSNode* vfs) {
+    Processor::register_op<BoxOp<>, double, double, double>(vfs, "jot/Box");
 }
 
 } // namespace geo

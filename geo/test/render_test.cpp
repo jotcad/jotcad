@@ -73,9 +73,9 @@ int main() {
     tests["hexagon"] = {vfs.read<Shape>(hex_addr), ""}; // Needs initial baseline
 
     // 3. Triangle
-    Selector tri_addr = {"jot/Triangle/equilateral", {{"side", 10.0}}};
-    TriangleEquilateralOp<>::execute(&vfs, tri_addr, {10.0, 10.0, 10.0});
-    tests["triangle"] = {vfs.read<Shape>(tri_addr), ""}; // Needs initial baseline
+    Selector tri_addr.with_output("$out") = {"jot/Triangle/equilateral", {{"side", 10.0}}};
+    TriangleEquilateralOp<>::execute(&vfs, tri_addr.with_output("$out"), {10.0, 10.0, 10.0});
+    tests["triangle"] = {vfs.read<Shape>(tri_addr.with_output("$out")), ""}; // Needs initial baseline
 
     bool all_passed = true;
     for (auto const& [name, data] : tests) {

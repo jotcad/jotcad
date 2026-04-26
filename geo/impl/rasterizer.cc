@@ -60,7 +60,7 @@ void Rasterizer::rasterize_triangle(
     }
 }
 
-std::vector<uint8_t> Rasterizer::render_png(const Geometry& geo, int width, int height) {
+std::vector<uint8_t> Rasterizer::render_png(const Geometry& geo, int width, int height, double ax, double ay) {
     // 4 channels (RGBA), background is dark gray
     std::vector<unsigned char> pixels(width * height * 4, 30);
     for (int i = 3; i < pixels.size(); i += 4) pixels[i] = 255; // Solid Alpha
@@ -68,10 +68,6 @@ std::vector<uint8_t> Rasterizer::render_png(const Geometry& geo, int width, int 
 
     if (geo.vertices.empty()) return {};
 
-    // Isometric rotation
-    double ax = 0.61547;
-    double ay = 0.78539;
-    
     auto project = [&](const Vertex& v) {
         double x = CGAL::to_double(v.x), y = CGAL::to_double(v.y), z = CGAL::to_double(v.z);
         double x1 = x * std::cos(ay) + z * std::sin(ay);
@@ -80,7 +76,6 @@ std::vector<uint8_t> Rasterizer::render_png(const Geometry& geo, int width, int 
         double z2 = y * std::sin(ax) + z1 * std::cos(ax);
         return Vec3{x1, y2, z2};
     };
-
     std::vector<Vec3> pts;
     double min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
     for (const auto& v : geo.vertices) {

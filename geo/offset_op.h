@@ -13,14 +13,12 @@ struct OffsetOp : P {
         if (!in.geometry.has_value()) {
             throw std::runtime_error("jot/offset: Input shape has no geometry");
         }
-        std::cout << "[OffsetOp] Reading geometry for offset..." << std::endl;
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
-        std::cout << "[OffsetOp] Applying offset of " << diameter << " to " << geo.vertices.size() << " vertices" << std::endl;
         Geometry res = geo;
         applyOffset(res, diameter);
         Shape out = in;
-        out.geometry = vfs->write_anonymous<Geometry>(res);
-        vfs->write<Shape>(fulfilling, out, "$out");
+        out.geometry = vfs->materialize<Geometry>(res);
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter"}; }
     static typename P::json schema() {
@@ -28,10 +26,10 @@ struct OffsetOp : P {
             {"path", "jot/offset"},
             {"description", "Creates a Minkowski offset."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
-                {"diameter", {{"type", "number"}, {"default", 1.0}}}
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
+                {"diameter", {{"type", "jot:number"}, {"default", 1.0}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -46,26 +44,26 @@ struct OffsetClosureOp : P {
         Geometry closed = expanded;
         applyOffset(closed, -std::abs(diameter));
         Shape out = in;
-        out.geometry = vfs->write_anonymous<Geometry>(closed);
-        vfs->write<Shape>(fulfilling, out, "$out");
+        out.geometry = vfs->materialize<Geometry>(closed);
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter", "closure"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/offset/closure"},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
-                {"diameter", {{"type", "number"}, {"default", 1.0}}},
-                {"closure", {{"type", "boolean"}, {"const", true}}}
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
+                {"diameter", {{"type", "jot:number"}, {"default", 1.0}}},
+                {"closure", {{"type", "jot:boolean"}, {"const", true}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
-static void offset_init() {
-    Processor::register_op<OffsetOp<>, Shape, double>("jot/offset");
-    Processor::register_op<OffsetClosureOp<>, Shape, double, bool>("jot/offset/closure");
+static void offset_init(fs::VFSNode* vfs) {
+    Processor::register_op<OffsetOp<>, Shape, double>(vfs, "jot/offset");
+    Processor::register_op<OffsetClosureOp<>, Shape, double, bool>(vfs, "jot/offset/closure");
 }
 
 } // namespace geo

@@ -5,9 +5,9 @@ name: Node.js CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, fs-v2]
   pull_request:
-    branches: [main]
+    branches: [main, fs-v2]
 
 jobs:
   build:
@@ -15,8 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [21.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+        node-version: [24.x]
 
     steps:
       - uses: actions/checkout@v3
@@ -24,16 +23,14 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
-      - run: (sudo apt-get install libboost-all-dev)
-      - run:
-          (sudo apt-get install -y build-essential libxi-dev libglu1-mesa-dev
-          libglew-dev pkg-config xvfb)
-      # - run: (sudo apt install cmake)
-      - run: npm ci
-      - run: (cd geometry; ./install_native.sh)
-      - run: npm run depcheck
-      - run: npm run lint
-      - run: npm run tests
+      - name: Setup & Build Native Ops
+        run: |
+          npm run install_deps
+          npm run setup
+      - name: Install JS Deps
+        run: npm ci
+      - name: Run CI Suite
+        run: npm run ci
         env:
           NODE_OPTIONS: --max_old_space_size=4096
       - name: Make wasm available

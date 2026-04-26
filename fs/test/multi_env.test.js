@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MeshLink, registerVFSRoutes, DiskStorage, MemoryStorage } from '../src/index.js';
+import { VFS, MeshLink, registerVFSRoutes, DiskStorage, MemoryStorage, Selector } from '../src/index.js';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -47,8 +47,8 @@ test('Multi-Environment Mesh Coordination', async (t) => {
     const p = 'env/sharing/test';
     const data = { msg: 'from node to simulated browser' };
 
-    await vfsNode.writeData({ path: p, parameters: {} }, data);
-    const result = await browserVfs.readData({ path: p, parameters: {} }, {});
+    await vfsNode.writeData(new Selector(p), data);
+    const result = await browserVfs.readData(new Selector(p), {});
 
     assert.deepStrictEqual(result, data);
   });

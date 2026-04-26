@@ -1,28 +1,21 @@
-#include <iostream>
-#include "../box_op.h"
-#include "../rotate_op.h"
-#include "../../fs/cpp/vfs_node.h"
+#include "test_base.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_rotate_test"};
-    fs::VFSNode vfs(config);
+    MockVFS vfs("rotate");
+    register_all_ops(&vfs);
     
     std::cout << "Testing Rotate Operation..." << std::endl;
     
-    fs::Selector s1_sel = {"jot/Box/1", {{"size", {10, 10, 0}}}};
-    BoxOp<>::execute(&vfs, s1_sel, 10, 10, 0);
-    Shape s1 = vfs.read<Shape>(s1_sel);
-
-    fs::Selector rotate_sel = {"jot/rotate", {{"angle", 90.0}}};
-    RotateOp<>::execute(&vfs, rotate_sel, s1, 90.0);
+    fs::Selector box_addr = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}}}.with_output("$out");
+    Processor::execute(&vfs, box_addr);
     
-    Shape out = vfs.read<Shape>(rotate_sel);
-    if (out.tf.size() != 16) {
-        std::cerr << "❌ Rotate FAIL: Invalid transform matrix" << std::endl;
-        return 1;
-    }
+    fs::Selector rot_addr = fs::Selector{"jot/rotate", {{"$in", box_addr}, {"angle", 45.0}}}.with_output("$out");
+    Processor::execute(&vfs, rot_addr);
+    
+    Shape s = vfs.read<Shape>(rot_addr);
+    vfs.verify_render(s, "rotate_op_45", "5f702aa7105058b23a9eaf57fea8372d8f4b5fb8290f458b2785b90d740f472e");
 
     std::cout << "✅ Rotate PASS" << std::endl;
     return 0;

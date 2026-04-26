@@ -1,6 +1,7 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
 import interact from 'interactjs';
 import { vfs, blackboard } from '../lib/blackboard';
+import { Selector } from '../../../fs/src/vfs_browser.js';
 import { Database, Minus, Maximize2, Layers, Plus, X, Globe } from 'lucide-solid';
 import { JotParser } from '../../../jot/src/parser';
 import { JotCompiler } from '../../../jot/src/compiler';
@@ -17,7 +18,7 @@ export const JotNode = (props) => {
   const [pos, setPos] = createSignal({ x: 400, y: 400 });
   const [opName, setOpName] = createSignal('user/MyOp');
   const [args, setArgs] = createSignal([
-    { name: 'width', type: 'number', testValue: 20 }
+    { name: 'width', type: 'jot:number', testValue: 20 }
   ]);
   const [code, setCode] = createSignal(DEFAULT_CODE);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
@@ -25,7 +26,7 @@ export const JotNode = (props) => {
   const [resultData, setResultData] = createSignal(null);
   const [associatedFiles, setAssociatedFiles] = createSignal([]);
 
-  const addArg = () => setArgs([...args(), { name: 'arg' + args().length, type: 'number', testValue: 10 }]);
+  const addArg = () => setArgs([...args(), { name: 'arg' + args().length, type: 'jot:number', testValue: 10 }]);
   const removeArg = (index) => setArgs(args().filter((_, i) => i !== index));
   const updateArg = (index, field, value) => {
     const next = [...args()];
@@ -119,10 +120,7 @@ export const JotNode = (props) => {
                 const label = node.parameters?.[key] || key;
                 files.push({
                   label,
-                  selector: {
-                    ...node,
-                    parameters: { ...node.parameters, $port: key }
-                  },
+                  selector: Selector.fromObject(node).withOutput(key),
                   mimeType: out.mimeType || 'application/octet-stream'
                 });
               }
@@ -154,7 +152,7 @@ export const JotNode = (props) => {
       }
     } catch (err) {
       console.error('[JotNode] Compilation/Evaluation failed:', err);
-      alert('Error: ' + err.message);
+      blackboard.setError(err);
     } finally {
       setIsEvaluating(false);
     }
@@ -217,7 +215,7 @@ export const JotNode = (props) => {
                  />
                  <input 
                    data-testid={`arg-value-${i()}`}
-                   type="number"
+                   type="jot:number"
                    class="bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-cyan-400 w-16 focus:outline-none focus:border-cyan-400/40"
                    value={arg.testValue}
                    onInput={e => updateArg(i(), 'testValue', parseFloat(e.target.value))}

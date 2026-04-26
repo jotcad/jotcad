@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-timeout=30000 --test-force-exit test/*.test.js"
+    "test": "node --test --test-concurrency=4 --test-timeout=30000 --test-force-exit test/*.test.js"
   },
   "devDependencies": {
     "puppeteer": "^24.40.0",

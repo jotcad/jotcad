@@ -1,15 +1,9 @@
-#include <iostream>
-#include <vector>
-#include <string>
-#include <chrono>
-#include <fstream>
-#include "impl/protocols.h"
-#include "vfs_node.h"
-#include "impl/processor.h"
-#include "rule_op.h"
-#include "rs/ruled_surfaces_base.h"
+#include "test/test_base.h"
 #include "impl/rasterizer.h"
+#include "impl/matrix.h"
+#include "rs/ruled_surfaces_base.h"
 #include "../../fs/cpp/cid.h"
+#include <chrono>
 
 using namespace jotcad;
 using namespace jotcad::geo;
@@ -33,12 +27,12 @@ ruled_surfaces::Mesh geometry_to_mesh(const Geometry& geo) {
     return ruled_surfaces::internal::soup_to_mesh(soup);
 }
 
-bool verify_and_save(const Geometry& geo, const std::string& label, const std::string& expected_hash = "") {
+bool verify_and_save(const Geometry& geo, const std::string& label, const std::string& expected_hash = "", double ax = 0.0, double ay = 0.0) {
     ruled_surfaces::Mesh mesh = geometry_to_mesh(geo);
     bool manifold = ruled_surfaces::internal::is_manifold(mesh);
     bool self_intersecting = ruled_surfaces::internal::has_self_intersections(mesh);
     
-    std::vector<uint8_t> png_bytes = Rasterizer::render_png(geo, 256, 256);
+    std::vector<uint8_t> png_bytes = Rasterizer::render_png(geo, 256, 256, ax, ay);
     std::string actual_hash = vfs_hash256(png_bytes);
     
     std::cout << "  🔍 " << label << " Results:" << std::endl;
@@ -65,14 +59,9 @@ bool verify_and_save(const Geometry& geo, const std::string& label, const std::s
 }
 
 int main() {
-    VFSNode::Config cfg;
-    cfg.id = "rule-test-node";
-    cfg.storage_dir = ".vfs_storage_rule_test";
-    std::filesystem::remove_all(cfg.storage_dir);
-    VFSNode vfs(cfg);
+    MockVFS vfs("rule");
+    register_all_ops(&vfs);
     
-    Processor::register_op<RuleOp<>, Shape, Shape>("jot/Rule");
-
     auto make_polyline_3d = [&](double y_offset, double z_offset) {
         Geometry geo;
         geo.vertices.push_back({FT(0.0), FT(y_offset), FT(z_offset)});
@@ -81,7 +70,7 @@ int main() {
         geo.segments.push_back({0, 1});
         geo.segments.push_back({1, 2});
         Shape s;
-        s.geometry = vfs.write_anonymous<Geometry>(geo);
+        s.geometry = vfs.materialize<Geometry>(geo);
         return s;
     };
 
@@ -95,7 +84,7 @@ int main() {
         f.loops.push_back({0, 1, 2, 3});
         geo.faces.push_back(f);
         Shape s;
-        s.geometry = vfs.write_anonymous<Geometry>(geo);
+        s.geometry = vfs.materialize<Geometry>(geo);
         return s;
     };
 
@@ -108,10 +97,10 @@ int main() {
     Shape p2 = make_polyline_3d(10.0, 10.0);
     Selector sel1{"jot/Rule", {{"$a", p1}, {"$b", p2}}, "$out"};
     try {
-        RuleOp<>::execute(&vfs, sel1, p1, p2); 
+        vfs.read<std::vector<uint8_t>>(sel1); // Trigger RuleOp
         Geometry geo = vfs.read<Geometry>(vfs.read<Shape>(sel1).geometry.value());
         if (!verify_and_save(geo, "polyline", "f80b2ae0a2895783b9678e72d07aa6a8a32895b5033daad335860ca278301a35")) all_passed = false;
-    } catch (...) { all_passed = false; }
+    } catch (const std::exception& e) { std::cerr << "Test 1 Failed: " << e.what() << std::endl; all_passed = false; }
 
     // Test 2: Loop
     std::cout << "[Test 2] Loop to Loop..." << std::endl;
@@ -119,10 +108,10 @@ int main() {
     Shape l2 = make_loop(10.0, 15.0);
     Selector sel2{"jot/Rule", {{"$a", l1}, {"$b", l2}}, "$out"};
     try {
-        RuleOp<>::execute(&vfs, sel2, l1, l2);
+        vfs.read<std::vector<uint8_t>>(sel2);
         Geometry geo = vfs.read<Geometry>(vfs.read<Shape>(sel2).geometry.value());
         if (!verify_and_save(geo, "loop", "f68b7d05a36bf5f25ad095011ca25634f5c91d0acb66f9e090227e75c34a298f")) all_passed = false;
-    } catch (...) { all_passed = false; }
+    } catch (const std::exception& e) { std::cerr << "Test 2 Failed: " << e.what() << std::endl; all_passed = false; }
 
     // Test 3: Holes
     std::cout << "[Test 3] Holes..." << std::endl;
@@ -139,14 +128,14 @@ int main() {
     frame_face.loops.push_back({0, 1, 2, 3});
     frame_face.loops.push_back({4, 5, 6, 7});
     frame_geo.faces.push_back(frame_face);
-    Shape s_h1; s_h1.geometry = vfs.write_anonymous<Geometry>(frame_geo);
+    Shape s_h1; s_h1.geometry = vfs.materialize<Geometry>(frame_geo);
     Shape s_h2 = s_h1; s_h2.tf = Matrix::translate(0, 0, 50).to_vec();
     Selector sel3{"jot/Rule", {{"$a", s_h1}, {"$b", s_h2}}, "$out"};
     try {
-        RuleOp<>::execute(&vfs, sel3, s_h1, s_h2);
+        vfs.read<std::vector<uint8_t>>(sel3);
         Geometry geo = vfs.read<Geometry>(vfs.read<Shape>(sel3).geometry.value());
         if (!verify_and_save(geo, "holes", "bf2c6ddb6336f00c5409df89c95c97b9e21f9801dc37cb5a806ac579554f425a")) all_passed = false;
-    } catch (...) { all_passed = false; }
+    } catch (const std::exception& e) { std::cerr << "Test 3 Failed: " << e.what() << std::endl; all_passed = false; }
 
     // Test 4: Stress
     std::cout << "[Test 4] Stress..." << std::endl;
@@ -160,14 +149,14 @@ int main() {
     Geometry::Face f_st; f_st.loops.push_back(l_st);
     g_st1.faces.push_back(f_st); g_st2.faces.push_back(f_st);
     Shape s_st1, s_st2;
-    s_st1.geometry = vfs.write_anonymous<Geometry>(g_st1);
-    s_st2.geometry = vfs.write_anonymous<Geometry>(g_st2);
+    s_st1.geometry = vfs.materialize<Geometry>(g_st1);
+    s_st2.geometry = vfs.materialize<Geometry>(g_st2);
     Selector sel4{"jot/Rule", {{"$a", s_st1}, {"$b", s_st2}}, "$out"};
     try {
-        RuleOp<>::execute(&vfs, sel4, s_st1, s_st2);
+        vfs.read<std::vector<uint8_t>>(sel4);
         Geometry geo = vfs.read<Geometry>(vfs.read<Shape>(sel4).geometry.value());
         if (!verify_and_save(geo, "stress", "70227caef6349a395359ad63e93d55a7b8e1f05e4b64478a2b4d7f37d97721ec")) all_passed = false;
-    } catch (...) { all_passed = false; }
+    } catch (const std::exception& e) { std::cerr << "Test 4 Failed: " << e.what() << std::endl; all_passed = false; }
 
     // Test 5: Skewed
     std::cout << "[Test 5] Skewed..." << std::endl;
@@ -176,10 +165,10 @@ int main() {
     l_top.tf = Matrix::translate(150.0, 50.0, 100.0).to_vec();
     Selector sel5{"jot/Rule", {{"$a", l_bottom}, {"$b", l_top}}, "$out"};
     try {
-        RuleOp<>::execute(&vfs, sel5, l_bottom, l_top);
+        vfs.read<std::vector<uint8_t>>(sel5);
         Geometry geo = vfs.read<Geometry>(vfs.read<Shape>(sel5).geometry.value());
         if (!verify_and_save(geo, "skewed", "aa9b18be2e4bad3417e71e97d53d7322e19b10120b9b9cf769a236b4d6b9ed0f")) all_passed = false;
-    } catch (...) { all_passed = false; }
+    } catch (const std::exception& e) { std::cerr << "Test 5 Failed: " << e.what() << std::endl; all_passed = false; }
 
     auto end = std::chrono::high_resolution_clock::now();
     std::cout << "Tests completed in " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms." << std::endl;

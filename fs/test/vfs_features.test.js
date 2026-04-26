@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage } from '../src/vfs_core.js';
+import { VFS, MemoryStorage, Selector } from '../src/index.js';
 
 test('VFS Core Features', async (t) => {
   const vfs = new VFS({ id: 'test-vfs', storage: new MemoryStorage() });
+  await vfs.init();
 
   await t.test('writeData() and readData() handle JSON automatically', async () => {
-    const selector = { path: 'test/json', parameters: { id: 1 } };
+    const selector = new Selector('test/json', { id: 1 });
     const data = { foo: 'bar', nums: [1, 2, 3] };
 
     await vfs.writeData(selector, data);
@@ -22,7 +23,7 @@ test('VFS Core Features', async (t) => {
       return new TextEncoder().encode('fulfilled');
     });
 
-    const sel = { path: 'test/dedup', parameters: { id: 1 } };
+    const sel = new Selector('test/dedup', { id: 1 });
     const [r1, r2] = await Promise.all([
       vfs.readText(sel),
       vfs.readText(sel)

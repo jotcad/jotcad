@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage } from '../src/vfs_core.js';
+import { VFS, MemoryStorage, Selector } from '../src/index.js';
 
 test('Agent-style Processors (as Providers)', async (t) => {
   const vfs = new VFS({ id: 'agent-vfs', storage: new MemoryStorage() });
+  await vfs.init();
 
   vfs.registerProvider('compute/sum', async (v, s) => {
     const { a, b } = s.parameters;
     const sum = a + b;
-    return new TextEncoder().encode(JSON.stringify({ result: sum }));
+    return { result: sum };
   });
 
   await t.test('cascading demand works', async () => {
-    const selector = { path: 'compute/sum', parameters: { a: 10, b: 20 } };
+    const selector = new Selector('compute/sum', { a: 10, b: 20 });
     const data = await vfs.readData(selector);
-    console.log('[AGENTS TEST] data is:', data);
     assert.strictEqual(data?.result, 30);
   });
 
@@ -25,7 +25,7 @@ test('Agent-style Processors (as Providers)', async (t) => {
       return new TextEncoder().encode('done');
     });
 
-    const sel = { path: 'compute/once', parameters: { id: 1 } };
+    const sel = new Selector('compute/once', { id: 1 });
     await vfs.readData(sel);
     await vfs.readData(sel);
 

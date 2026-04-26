@@ -15,39 +15,31 @@ namespace geo {
 struct Processor {
     using json = nlohmann::json;
 
-    struct Entry {
-        std::string path;
-        json schema;
-        std::function<std::vector<uint8_t>(fs::VFSNode*, const fs::VFSNode::VFSRequest&)> handler;
-    };
-
-    static std::map<std::string, Entry>& registry_instance();
-
     template <typename Op, typename... Args>
-    static void register_op(const std::string& path) {
-        Entry e;
-        e.path = path;
-        e.schema = Op::schema();
-        e.handler = [](fs::VFSNode* vfs, const fs::VFSNode::VFSRequest& req) -> std::vector<uint8_t> {
-            return dispatch<Op, Args...>(vfs, req, Op::argument_keys(), std::make_index_sequence<sizeof...(Args)>{});
+    static void register_op(fs::VFSNode* vfs, const std::string& path) {
+        auto handler = [vfs](const fs::VFSNode::VFSRequest& req) {
+            dispatch<Op, Args...>(vfs, req, Op::argument_keys(), std::make_index_sequence<sizeof...(Args)>{});
         };
-        registry_instance()[path] = e;
+        vfs->register_op(path, handler, Op::schema());
+    }
+
+    /**
+     * Executes an operator by path using the registered handler on the provided VFS.
+     * This avoids needing the template headers at the call site.
+     */
+    static void execute(fs::VFSNode* vfs, const fs::Selector& selector, const std::vector<std::string>& stack = {}) {
+        fs::VFSNode::VFSRequest req;
+        fs::Selector s = selector;
+        req.selector = s;
+        req.stack = stack;
+        vfs->read<std::vector<uint8_t>>(req);
     }
 
     template <typename Op, typename... Args, size_t... Is>
-    static std::vector<uint8_t> dispatch(fs::VFSNode* vfs, const fs::VFSNode::VFSRequest& req, const std::vector<std::string>& keys, std::index_sequence<Is...>) {
+    static void dispatch(fs::VFSNode* vfs, const fs::VFSNode::VFSRequest& req, const std::vector<std::string>& keys, std::index_sequence<Is...>) {
         try {
-            // Operators receive (vfs, fulfilling_selector, ...args)
-            if constexpr (std::is_same_v<decltype(Op::execute(vfs, req.selector, std::declval<Args>()...)), void>) {
-                Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
-            } else {
-                auto res = Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
-                // Fulfill the primary selector
-                vfs->write<Shape>(req.selector, res, "$out");
-            }
-            
-            // Return the produced artifact data
-            return vfs->read<std::vector<uint8_t>>(req.selector);
+            // Execute Operator (fulfills its own ports)
+            Op::execute(vfs, req.selector, decode<Args>(vfs, keys[Is], req.selector.parameters, Op::schema(), req.stack)...);
         } catch (const std::exception& e) {
             std::cerr << "[Processor] Dispatch Error in " << Op::path << ": " << e.what() << std::endl;
             throw;
@@ -64,47 +56,35 @@ struct Processor {
         }
 
         const auto& val = params[key];
+        const auto& arg_schema = schema.at("arguments").at(key);
+
         if constexpr (std::is_same_v<T, Shape>) {
+            if (val.is_string() && val.get<std::string>().size() == 64) {
+                return vfs->read<Shape>(fs::CID{val.get<std::string>()});
+            }
             if (val.is_object() && val.contains("path")) {
-                auto s_addr = val.get<fs::Selector>();
-                std::cout << "[Processor::decode] Reifying Shape argument '" << key << "' from Selector: " << s_addr.path << std::endl;
-                return vfs->read<Shape>(s_addr);
+                return vfs->read<Shape>(val.get<fs::Selector>());
             }
-            std::cout << "[Processor::decode] Decoding inline Shape for argument '" << key << "'" << std::endl;
-            Shape s = Shape::from_json(val);
-            if (!s.geometry.has_value() && s.components.empty()) {
-                 std::cerr << "[Processor::decode] WARNING: Shape argument '" << key << "' has no geometry and no components." << std::endl;
-            }
-            return s;
+            return Shape::from_json(val);
         } else if constexpr (std::is_same_v<T, std::vector<Shape>>) {
             std::vector<Shape> results;
-            if (!val.is_array()) {
-                throw std::runtime_error("Argument '" + key + "' must be an array for std::vector<Shape>");
-            }
-            std::cout << "[Processor::decode] Decoding std::vector<Shape> for argument '" << key << "' (" << val.size() << " items)" << std::endl;
+            if (!val.is_array()) throw std::runtime_error("Argument '" + key + "' must be an array for std::vector<Shape>");
             for (const auto& item : val) {
                 if (item.is_object() && item.contains("path")) {
-                    auto s_addr = item.get<fs::Selector>();
-                    std::cout << "[Processor::decode]   - Reifying element from Selector: " << s_addr.path << std::endl;
-                    results.push_back(vfs->read<Shape>(s_addr));
+                    results.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
                 } else {
                     results.push_back(Shape::from_json(item));
                 }
             }
             return results;
+        } else if constexpr (std::is_same_v<T, fs::Selector>) {
+            if (val.is_object() && val.contains("path")) {
+                return val.get<fs::Selector>();
+            }
+            throw std::runtime_error("Argument '" + key + "' must be a Selector");
         } else {
             return val.get<T>();
         }
-    }
-
-    static json hydrate(const json& selector, const Shape& in) {
-        json out = selector;
-        if (out.contains("parameters") && out["parameters"].is_object()) {
-            for (auto& [key, value] : out["parameters"].items()) {
-                if (value == "$in") out["parameters"][key] = in.to_json();
-            }
-        }
-        return out;
     }
 };
 

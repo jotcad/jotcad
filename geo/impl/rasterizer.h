@@ -29,7 +29,7 @@ struct ColorRGBA {
 
 class Rasterizer {
 public:
-    static std::vector<uint8_t> render_png(const Geometry& geo, int width = 256, int height = 256);
+    static std::vector<uint8_t> render_png(const Geometry& geo, int width = 256, int height = 256, double ax = 0.0, double ay = 0.0);
 
 private:
     struct RenderTriangle {

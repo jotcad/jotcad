@@ -118,18 +118,23 @@ await t.test('should deliver catalog, define dynamic op, and execute it via mesh
         if (btn) btn.click();
     });
 
-    // 6. Wait for result
+    // 6. Wait for result and render stability
     await page.waitForFunction(() => {
         const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'EVALUATE JOT');
         return btn && !btn.disabled;
     }, { timeout: 30000 });
+    
+    // Give Three.js a moment to upload geometry and render a frame
+    await new Promise(r => setTimeout(r, 1000));
 
     // 7. Capture rendered result from Canvas
     console.log('[Test Browser] Capturing rendered result...');
-    const pngDataUrl = await page.evaluate(() => {
+    const pngDataUrl = await page.evaluate(async () => {
         const canvas = document.querySelector('canvas');
         if (!canvas) return null;
-        // Ensure the scene is rendered before capture
+        
+        // Force a synchronous render loop completion if possible
+        // but since we are external, we'll just capture.
         return canvas.toDataURL('image/png');
     });
 

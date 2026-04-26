@@ -11,6 +11,7 @@
 #include <set>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 
 namespace httplib {
     class Response;
@@ -45,12 +46,17 @@ public:
     };
 
     struct VFSRequest {
-        Selector selector;
+        std::string cid;   // Direct content identity
+        Selector selector; // Computational identity
         std::vector<std::string> stack;
+        std::vector<std::string> resolutionStack;
         long long expiresAt = 0;
+        bool followLinks = true;
+
+        bool is_cid() const { return !cid.empty(); }
     };
 
-    using OpHandler = std::function<std::vector<uint8_t>(const VFSRequest& req)>;
+    using OpHandler = std::function<void(const VFSRequest& req)>;
 
     VFSNode(const Config& config);
     ~VFSNode();
@@ -64,31 +70,25 @@ public:
     T read(const Selector& sel);
 
     template<typename T = std::vector<uint8_t>>
-    T read(const Selector& sel, const std::string& output);
+    T read(const VFSRequest& req);
 
     template<typename T = std::vector<uint8_t>>
     T read(const CID& cid);
 
+    std::string get_cid(const Selector& sel);
+    std::vector<uint8_t> get_local(const std::string& cid);
     std::vector<uint8_t> spy(const VFSRequest& req);
 
-    template<typename T = std::vector<uint8_t>>
-    Selector write(const Selector& sel, const T& data);
+    Selector write(const Selector& sel, const json& data);
+    Selector write(const Selector& sel, const std::vector<uint8_t>& data);
+    Selector write(const Selector& sel, const std::string& data);
+    Selector write(const Selector& sel, const jotcad::geo::Geometry& data);
+    Selector write(const Selector& sel, const jotcad::geo::Shape& data);
 
-    template<typename T = std::vector<uint8_t>>
-    Selector write(const Selector& sel, const T& data, const std::string& output);
-
-    template<typename T = std::vector<uint8_t>>
-    CID write_anonymous(const T& data);
-
-    // Anonymous write (returns a CID string for backward compatibility until all consumers are updated)
-    template<typename T = std::vector<uint8_t>>
-    Selector write(const T& data) {
-        CID cid = write_anonymous(data);
-        return Selector::from_json(json{{"parameters", {{"cid", cid.value}}}});
-    }
+    template<typename T>
+    CID materialize(const T& data);
 
     Selector write_bytes(const Selector& sel, const std::vector<uint8_t>& data);
-    Selector write_bytes(const Selector& sel, const std::vector<uint8_t>& data, const std::string& output);
 
     void link(const Selector& src, const Selector& tgt);
 
@@ -103,13 +103,40 @@ public:
     json get_catalog();
     json get_neighbors();
 
+    // Mesh Connection Abstraction
+    struct Connection {
+        std::string neighbor_id;
+        virtual ~Connection() = default;
+        virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
+        virtual std::vector<uint8_t> read(const VFSRequest& req) = 0;
+        virtual bool is_reverse() const = 0;
+    };
+
 private:
+    struct ForwardConnection : public Connection {
+        std::string url;
+        ForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
+        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        std::vector<uint8_t> read(const VFSRequest& req) override;
+        bool is_reverse() const override { return false; }
+    };
+
+    struct ReverseConnection : public Connection {
+        std::vector<json> queue;
+        std::mutex mutex;
+        std::condition_variable cv;
+        ReverseConnection(std::string id) { neighbor_id = std::move(id); }
+        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        std::vector<uint8_t> read(const VFSRequest& req) override;
+        bool is_reverse() const override { return true; }
+    };
+
     Config config_;
     std::map<std::string, OpHandler> handlers_;
     std::map<std::string, json> schemas_;
     void* server_ptr_; 
     
-    std::map<std::string, std::string> peers_; 
+    std::map<std::string, std::shared_ptr<Connection>> peers_; 
     std::set<std::string> connecting_;
     std::mutex peer_mutex_;
 
@@ -120,15 +147,9 @@ private:
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
 
-    std::map<std::string, std::vector<json>> reverse_queues_;
-    std::map<std::string, httplib::Response*> reverse_listeners_;
-    std::mutex reverse_mutex_;
+    std::vector<uint8_t> read_impl(const VFSRequest& req);
 
-    std::vector<uint8_t> read_impl(const Selector& sel, int depth = 0, std::vector<std::string> stack = {}, const std::string& output = "", long long expiresAt = 0);
-
-    std::string get_cid(const Selector& sel);
     bool has_local(const std::string& cid);
-    std::vector<uint8_t> get_local(const std::string& cid);
     void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
     void write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 };
@@ -137,21 +158,14 @@ private:
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel);
 template<> json VFSNode::read<json>(const Selector& sel);
-template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel, const std::string& output);
-template<> json VFSNode::read<json>(const Selector& sel, const std::string& output);
+template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req);
+template<> json VFSNode::read<json>(const VFSRequest& req);
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& cid);
 template<> json VFSNode::read<json>(const CID& cid);
 
-template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data);
-template<> Selector VFSNode::write<json>(const Selector& sel, const json& data);
-template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data);
-
-template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data, const std::string& output);
-template<> Selector VFSNode::write<json>(const Selector& sel, const json& data, const std::string& output);
-template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data, const std::string& output);
-
-template<> CID VFSNode::write_anonymous<std::vector<uint8_t>>(const std::vector<uint8_t>& data);
-template<> CID VFSNode::write_anonymous<json>(const json& data);
-template<> CID VFSNode::write_anonymous<std::string>(const std::string& data);
+template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint8_t>& data);
+template<> CID VFSNode::materialize<json>(const json& data);
+template<> CID VFSNode::materialize<std::string>(const std::string& data);
+template<> CID VFSNode::materialize<jotcad::geo::Shape>(const jotcad::geo::Shape& data);
 
 } // namespace fs

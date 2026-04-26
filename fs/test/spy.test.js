@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage } from '../src/vfs_core.js';
+import { VFS, MemoryStorage, Selector } from '../src/index.js';
 import { MeshLink } from '../src/mesh_link.js';
 import { registerVFSRoutes } from '../src/vfs_rest_server.js';
 import http from 'node:http';
@@ -22,6 +22,9 @@ test('Discovery Protocol (Spy)', async (t) => {
   await t.test('setup network', async () => {
     vfsA = new VFS({ id: 'node-a', storage: new MemoryStorage() });
     vfsB = new VFS({ id: 'node-b', storage: new MemoryStorage() });
+
+    await vfsA.init();
+    await vfsB.init();
 
     serverA = http.createServer();
     serverB = http.createServer();
@@ -45,13 +48,13 @@ test('Discovery Protocol (Spy)', async (t) => {
 
   await t.test('spy returns multiplexed VFS bundle', async () => {
     // Proactively provision data on both nodes
-    await vfsA.writeData({ path: 'shape/box', parameters: { w: 10 } }, { from: 'A' });
+    await vfsA.writeData(new Selector('shape/box', { w: 10 }), { from: 'A' });
 
-    await vfsB.writeData({ path: 'shape/box', parameters: { w: 20 } }, { from: 'B' });
-    await vfsB.writeData({ path: 'shape/sphere', parameters: { r: 5 } }, { from: 'B' });
+    await vfsB.writeData(new Selector('shape/box', { w: 20 }), { from: 'B' });
+    await vfsB.writeData(new Selector('shape/sphere', { r: 5 }), { from: 'B' });
 
     // Query Node A. It should gather from A and B using passive storage scanning.
-    const stream = await vfsA.spy('shape/*', {});
+    const stream = await vfsA.spy(new Selector('shape/*'), {});
     assert.ok(stream, 'Spy should return a stream');
 
     // Read the stream and verify the chunks

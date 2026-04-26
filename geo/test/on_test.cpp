@@ -1,48 +1,38 @@
-#include <iostream>
-#include "../hexagon_op.h"
-#include "../corners_op.h"
-#include "../on_op.h"
-#include "../offset_op.h"
-#include "../../fs/cpp/vfs_node.h"
+#include "test_base.h"
 
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config = {"test-node", "1.0.0", ".vfs_storage_on_test"};
-    fs::VFSNode vfs(config);
-
-    // Register ops
-    hexagon_init();
-    corners_init();
-    offset_init();
-    on_init();
-
-    // Map Processor Registry to VFS Node
-    for (auto const& [path, op] : Processor::registry_instance()) {
-        vfs.register_op(path, [&vfs, path](const fs::VFSNode::VFSRequest& req) {
-            return Processor::registry_instance()[path].handler(&vfs, req);
-        }, op.schema);
-    }
+    MockVFS vfs("on");
+    register_all_ops(&vfs);
     
     std::cout << "Testing On (Conjugation) Operation..." << std::endl;
     
-    fs::Selector hex_sel = {"jot/Hexagon/full", {{"diameter", 30.0}}};
-    HexagonFullOp<>::execute(&vfs, hex_sel, 30.0);
-    Shape hex = vfs.read<Shape>(hex_sel);
+    fs::Selector hex_addr = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    Processor::execute(&vfs, hex_addr);
     
-    fs::Selector corners_sel = {"jot/corners", {{"proxy", false}}};
-    CornersOp<>::execute(&vfs, corners_sel, hex, false);
-    Shape corners = vfs.read<Shape>(corners_sel);
+    fs::Selector box_addr = fs::Selector{"jot/Box", {{"width", 5.0}, {"height", 5.0}, {"depth", 0.0}}}.with_output("$out");
+    Processor::execute(&vfs, box_addr);
     
-    // Operation to apply: offset(2) with explicit $in
-    fs::Selector op = {"jot/offset", {{"$in", "$in"}, {"diameter", 2.0}}};
+    // 1. Get the corners of the box
+    fs::Selector corners_sel = fs::Selector{"jot/corners", {{"$in", box_addr}}}.with_output("$out");
+    Processor::execute(&vfs, corners_sel);
+
+    // 2. On: [Hex] on [Box Corners] using [Rotate 45]
+    // The 'op' template MUST explicitly target its output port ($out)
+    fs::Selector op_template = fs::Selector{"jot/rotate", {{"angle", 45.0}}}.with_output("$out");
     
-    fs::Selector on_sel = {"jot/on", {}};
-    OnOp<>::execute(&vfs, on_sel, hex, corners, op);
+    fs::Selector on_addr = fs::Selector{"jot/on", {
+        {"$in", hex_addr}, 
+        {"target", corners_sel}, 
+        {"op", op_template}
+    }}.with_output("$out");
     
-    Shape out = vfs.read<Shape>(on_sel);
-    if (!out.geometry.has_value()) {
-        std::cerr << "❌ On FAIL: No result geometry" << std::endl;
+    Processor::execute(&vfs, on_addr);
+    
+    Shape s = vfs.read<Shape>(on_addr);
+    if (s.components.empty()) {
+        std::cerr << "❌ On FAIL: No components produced" << std::endl;
         return 1;
     }
 

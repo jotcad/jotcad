@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { VFS, DiskStorage } from '../src/index.js';
+import { VFS, DiskStorage, Selector } from '../src/index.js';
 import { Readable } from 'stream';
 import fs from 'fs';
 import path from 'path';
@@ -20,14 +20,14 @@ test('VFS DiskStorage and Sessions', async (t) => {
     await vfs.init();
 
     const content = 'large-data-on-disk';
-    await vfs.writeData({ path: 'big-file', parameters: {} }, content);
+    await vfs.writeData(new Selector('big-file'), content);
 
     // Verify files exist on disk (.meta and .data)
     const files = fs.readdirSync(root);
     assert.ok(files.length >= 2, 'Should have at least meta and data files');
 
     // Read it back
-    const result = await vfs.readText({ path: 'big-file', parameters: {} });
+    const result = await vfs.readText(new Selector('big-file'));
     assert.strictEqual(result, content);
 
     await vfs.close();
@@ -42,13 +42,13 @@ test('VFS DiskStorage and Sessions', async (t) => {
     await vfsA.init();
     await vfsB.init();
 
-    await vfsA.writeData({ path: 'shared-path', parameters: {} }, 'data-A');
-    await vfsB.writeData({ path: 'shared-path', parameters: {} }, 'data-B');
+    await vfsA.writeData(new Selector('shared-path'), 'data-A');
+    await vfsB.writeData(new Selector('shared-path'), 'data-B');
 
-    const resA = await vfsA.readText({ path: 'shared-path', parameters: {} });
+    const resA = await vfsA.readText(new Selector('shared-path'));
     assert.strictEqual(resA, 'data-A');
 
-    const resB = await vfsB.readText({ path: 'shared-path', parameters: {} });
+    const resB = await vfsB.readText(new Selector('shared-path'));
     assert.strictEqual(resB, 'data-B');
 
     await vfsA.close();

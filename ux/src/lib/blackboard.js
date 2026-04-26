@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { VFS, IndexedDBStorage } from '../../../fs/src/vfs_browser.js';
+import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js';
 import { MeshLink } from '../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../jot/src/index.js';
 
@@ -24,6 +24,7 @@ const [meshPositions, setMeshPositions] = createSignal({}); // PeerID -> {x, y}
 const [isConnected, setIsConnected] = createSignal(false);
 const [discoveryStatus, setDiscoveryStatus] = createSignal('idle');
 const [dynamicOps, setDynamicOps] = createSignal({}); // Path -> { schema, script }
+const [error, setError] = createSignal(null);
 
 let isStarted = false;
 const meshMap = new Map();
@@ -39,6 +40,8 @@ export const blackboard = {
   isConnected,
   discoveryStatus,
   dynamicOps,
+  error,
+  setError,
 
   async start() {
     if (isStarted) return;
@@ -107,7 +110,7 @@ export const blackboard = {
     );
 
     vfs.events.on('state', async (event) => {
-      if (!event.path) return;
+      if (!event.selector) return;
       setGraph((prev) => ({
         ...prev,
         [event.cid]: { ...prev[event.cid], ...event },
@@ -123,12 +126,12 @@ export const blackboard = {
 
       if (payload.type === 'CATALOG_ANNOUNCEMENT') {
         const { catalog, provider } = payload;
-        console.log(`[UX] Received Catalog Announcement from ${provider}:`, Object.keys(catalog || {}));
+        console.log(`[UX] Received Catalog Announcement from ${provider}:`, Object.keys(catalog || {}).join(', '));
         if (catalog) {
           setSchemas((prev) => {
             const next = { ...prev };
             for (const [path, schema] of Object.entries(catalog)) {
-              console.log(`  - ${path} (aliases: ${JSON.stringify(schema.aliases || [])})`);
+              console.log(`[UX]   - Updating Schema: ${path}`);
               const schemaWithOrigin = { ...schema, _origin: provider };
               vfs.addSchema(path, schemaWithOrigin);
               next[path] = schemaWithOrigin;
@@ -148,19 +151,16 @@ export const blackboard = {
     };
 
     try {
-      await mesh.fetch(`${vfsUrl}/health`);
+      await mesh.start();
       setIsConnected(true);
     } catch (e) {
+      console.error('[UX] Mesh start failed:', e);
+      blackboard.setError(e);
       setIsConnected(false);
     }
 
-    await mesh.start();
-    setIsConnected(true);
-
-    vfs.read('sys/topo', {}, { followLinks: false }).catch(() => {});
-
     // Subscribe to Schema Announcements from the mesh
-    mesh.subscribe({ path: 'sys/schema', parameters: {} });
+    mesh.subscribe(new Selector('sys/schema'));
 
     setInterval(() => {
       const nodes = new Map();
@@ -228,7 +228,7 @@ export const blackboard = {
     });
 
     // 4. Announce to mesh
-    mesh.notify({ path: 'sys/schema' }, {
+    mesh.notify(new Selector('sys/schema'), {
       type: 'CATALOG_ANNOUNCEMENT',
       provider: vfs.id,
       catalog: { [path]: schemaWithOrigin }
@@ -241,11 +241,11 @@ export const blackboard = {
   },
 
   async read(path, parameters = {}) {
-    return vfs.read(path, parameters);
+    return vfs.read(new Selector(path, parameters));
   },
 
   async write(path, parameters = {}, data) {
-    return vfs.writeData(path, parameters, data);
+    return vfs.writeData(new Selector(path, parameters), data);
   },
 };
 

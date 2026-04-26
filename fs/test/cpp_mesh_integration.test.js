@@ -10,6 +10,7 @@ import {
   registerVFSRoutes,
   DiskStorage,
   getSelectorKey,
+  Selector,
 } from '../src/index.js';
 
 import { fileURLToPath } from 'node:url';
@@ -95,7 +96,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
 
   await t.test('CID Consistency', async () => {
     // Note: box op with these params produces a deterministic CID
-    const selector = { path: 'jot/Box', parameters: { depth: 0, height: 10, width: 10 } };
+    const selector = new Selector('jot/Box', { depth: 0, height: 10, width: 10 }, '$out');
     const jsAddrKey = await getSelectorKey(selector);
     await jsVfs.readData(selector);
 
@@ -112,25 +113,26 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
   });
 
   await t.test('Provisioning: Box', async () => {
-    const result = await jsVfs.readData({ path: 'jot/Box', parameters: {
+    const result = await jsVfs.readData(new Selector('jot/Box', {
       width: 20,
       height: 20,
       depth: 0,
-    } });
+    }, '$out'));
     console.log('[Test] Box provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Box provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
     assert.strictEqual(result.tags?.type, 'box');
     const geo = await jsVfs.readData(result.geometry);
+    console.log('[Test] Geometry result type:', typeof geo, 'instanceof Uint8Array:', geo instanceof Uint8Array);
     assert.ok(geo, 'Should be able to read geometry by CID');
     const geoText = new TextDecoder().decode(geo);
     assert.ok(geoText.includes('v 10.000000'), 'Should contain x coordinate');
   });
 
   await t.test('Provisioning: Triangle', async () => {
-    const result = await jsVfs.readData({ path: 'jot/Triangle/equilateral', parameters: {
+    const result = await jsVfs.readData(new Selector('jot/Triangle/equilateral', {
       size: [50],
-    } });
+    }, '$out'));
     console.log('[Test] Triangle provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Triangle provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');

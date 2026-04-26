@@ -18,15 +18,15 @@ struct HexagonFullOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3, 4, 5}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"diameter"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Hexagon/full"},
             {"description", "Generates a full hexagon."},
-            {"arguments", {{"diameter", {{"type", "number"}, {"default", 30.0}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"arguments", {{"diameter", {{"type", "jot:number"}, {"default", 30.0}}}}},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -44,7 +44,7 @@ struct HexagonCapOp : P {
         }
         res.faces.push_back({{{0, 1, 2}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {
@@ -52,10 +52,10 @@ struct HexagonCapOp : P {
             {"path", "jot/Hexagon/cap"},
             {"description", "Generates a triangular sector (cap) of a hexagon."},
             {"arguments", {
-                {"diameter", {{"type", "number"}, {"default", 30.0}}},
-                {"type", {{"type", "string"}, {"const", "cap"}}}
+                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
+                {"type", {{"type", "jot:string"}, {"const", "cap"}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -73,17 +73,17 @@ struct HexagonMiddleOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Hexagon/middle"},
             {"arguments", {
-                {"diameter", {{"type", "number"}, {"default", 30.0}}},
-                {"type", {{"type", "string"}, {"const", "middle"}}}
+                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
+                {"type", {{"type", "jot:string"}, {"const", "middle"}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -101,17 +101,17 @@ struct HexagonSectorOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Hexagon/sector"},
             {"arguments", {
-                {"diameter", {{"type", "number"}, {"default", 30.0}}},
-                {"type", {{"type", "string"}, {"const", "sector"}}}
+                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
+                {"type", {{"type", "jot:string"}, {"const", "sector"}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -129,27 +129,27 @@ struct HexagonHalfOp : P {
         }
         res.faces.push_back({{{0, 1, 2, 3, 4}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "type"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Hexagon/half"},
             {"arguments", {
-                {"diameter", {{"type", "number"}, {"default", 30.0}}},
-                {"type", {{"type", "string"}, {"const", "half"}}}
+                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
+                {"type", {{"type", "jot:string"}, {"const", "half"}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
-static void hexagon_init() {
-    Processor::register_op<HexagonFullOp<>, double>("jot/Hexagon/full");
-    Processor::register_op<HexagonCapOp<>, double>("jot/Hexagon/cap");
-    Processor::register_op<HexagonMiddleOp<>, double>("jot/Hexagon/middle");
-    Processor::register_op<HexagonSectorOp<>, double>("jot/Hexagon/sector");
-    Processor::register_op<HexagonHalfOp<>, double>("jot/Hexagon/half");
+static void hexagon_init(fs::VFSNode* vfs) {
+    Processor::register_op<HexagonFullOp<>, double>(vfs, "jot/Hexagon/full");
+    Processor::register_op<HexagonCapOp<>, double>(vfs, "jot/Hexagon/cap");
+    Processor::register_op<HexagonMiddleOp<>, double>(vfs, "jot/Hexagon/middle");
+    Processor::register_op<HexagonSectorOp<>, double>(vfs, "jot/Hexagon/sector");
+    Processor::register_op<HexagonHalfOp<>, double>(vfs, "jot/Hexagon/half");
 }
 
 } // namespace geo

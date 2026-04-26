@@ -16,7 +16,7 @@ struct PlaneOpBase : P {
         Shape out = P::make_shape(vfs, res, tags);
         out.tf = orientation.to_vec();
         
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 };
 
@@ -29,7 +29,7 @@ struct XOp : PlaneOpBase<P> {
     }
     static std::vector<std::string> argument_keys() { return {}; }
     static typename P::json schema() {
-        return { {"path", "jot/X"}, {"description", "Infinite plane on the YZ axis (normal +X)."}, {"outputs", {{"$out", {{"type", "shape"}}}}} };
+        return { {"path", "jot/X"}, {"description", "Infinite plane on the YZ axis (normal +X)."}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
     }
 };
 
@@ -42,7 +42,7 @@ struct YOp : PlaneOpBase<P> {
     }
     static std::vector<std::string> argument_keys() { return {}; }
     static typename P::json schema() {
-        return { {"path", "jot/Y"}, {"description", "Infinite plane on the XZ axis (normal +Y)."}, {"outputs", {{"$out", {{"type", "shape"}}}}} };
+        return { {"path", "jot/Y"}, {"description", "Infinite plane on the XZ axis (normal +Y)."}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
     }
 };
 
@@ -54,7 +54,7 @@ struct ZOp : PlaneOpBase<P> {
     }
     static std::vector<std::string> argument_keys() { return {}; }
     static typename P::json schema() {
-        return { {"path", "jot/Z"}, {"description", "Infinite plane on the XY axis (normal +Z)."}, {"outputs", {{"$out", {{"type", "shape"}}}}} };
+        return { {"path", "jot/Z"}, {"description", "Infinite plane on the XY axis (normal +Z)."}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
     }
 };
 

@@ -22,28 +22,43 @@ A **Selector** is a recomposable request object containing:
 - `parameters` (e.g., `{"diameter": 30}`)
 - `output` (e.g., `"thumb"` or `"$out"`. If omitted, it targets the operation itself).
 
-- **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact.
-- **Parametric Standardization:** Parameters MUST be normalized (e.g., radial/apothem parameters to `diameter`) before execution to ensure deterministic CIDs.
+- **Formal Addressing Mandate:** 
+  - **No Implicit Linkage:** A base Selector (without an `output` port) represents the **Operation Identity**, not its result. It is a terminal error for the VFS to automatically resolve a base selector to its `$out` port.
+  - **Explicit Port Targeting:** Callers (Compilers, Tests, other Operators) MUST explicitly append the target port (e.g., `:$out`) to retrieve computational results.
 
-### 1.2 Network Transmission
+- **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact. **Deconstructing a Selector into top-level keys in metadata or network messages is strictly prohibited.**
+- **Parametric Standardization:** Parameters MUST be normalized (e.g., radial/apothem parameters to `diameter`) before execution to ensure deterministic CIDs.
+- **Strict readData Protocol:** `vfs.readData(selector)` MUST receive a full Selector instance. Passing plain object literals or split arguments is a protocol violation.
+
+### 1.2 Network Transmission & Hydration
 
 CIDs CAN and SHOULD be transmitted safely over the mesh network. Nodes can request data directly by CID, or they can request the execution of a computation by sending a Selector.
+
+- **Strict Structural Normalization:** To ensure deterministic CIDs across environments, Selectors MUST be normalized before hashing.
+  - `parameters` MUST always be present (defaulting to `{}`).
+  - `output` MUST be omitted if empty.
+  - Object keys MUST be sorted alphabetically during binary encoding (JCB).
+- **Boundary Hydration:** Network handlers (REST, WebSockets) and UI entry points MUST explicitly hydrate incoming JSON representations into formal `Selector` instances using `Selector.fromObject()` (JS) or `Selector::from_json()` (C++) before passing them to the VFS core.
+- **Context-Safe Identification:** To prevent "identity drift" across bundlers (Vite) or cross-window contexts (Puppeteer), string-like CIDs MUST be identified using robust detection (e.g., `Object.prototype.toString.call(val) === '[object String]'`).
 
 ## 2. Actor Fulfillment Protocol
 
 JotCAD operators follow a strict **Actor Model** for mesh fulfillment.
 
-### 2.1 The Fulfillment Contract
+### 2.1 The Fulfillment Contract (Void Fulfillment)
 
 Every operator call is assigned a unique address (the `fulfilling` Selector). 
-The operator's sole responsibility is to satisfy this address by writing its final result. A single execution may fulfill multiple outputs by modifying the Selector (e.g., `fulfilling.with_output("thumb")`) and writing the respective artifacts.
+The operator's sole responsibility is to **Fulfill** this address by ensuring the data exists in local storage at the requested identity.
+
+- **Non-Returning Handlers:** Handlers in the VFS MUST return `void`. They signify success by finishing execution and failure by throwing an exception.
+- **Fulfillment over Data-Piping:** Operators write their results directly to the VFS. The VFS core then handles the terminal data retrieval. This eliminates redundant byte-copying and ensures the VFS remains the sole arbiter of data state.
 
 ### 2.2 Immutable Content (CID Protection)
 
 Input artifacts are strictly read-only. Transformative operators (e.g., `cut`, `offset`) MUST NOT "update" the CID-addressed geometry of their inputs. Instead:
 1.  **Read:** The operator reads the input geometry from its CID.
 2.  **Calculate:** The operator performs the transformation.
-3.  **Materialize:** The operator writes the NEW geometry to the mesh using an **anonymous write** (`vfs->write(res_geo)`), which returns a new CID.
+3.  **Materialize:** The operator writes the NEW geometry to the mesh using **Content Addressing** (`vfs->materialize(res_geo)`), which returns a new CID.
 4.  **Reference:** The final result `Shape` embeds this new geometry CID.
 5.  **Fulfill:** The `Shape` is written to the operator's assigned `fulfilling` address.
 
@@ -61,29 +76,37 @@ The VFS decouples transport connections from peer identities. On connection esta
 - **Response:** `{ "id": "local-id", "reachability": "DIRECT|REVERSE" }`. 
   - **REVERSE Signal:** If a node returns `REVERSE`, the requester MUST initiate a polling loop via `POST /listen` to receive incoming mesh commands.
 
-### 3.2 Browser Compatibility & CORS
+### 3.2 Peer Connection Abstraction
+
+All peer interactions are managed through a unified **Connection** abstraction.
+- **ForwardConnection:** Used for `DIRECT` reachability. Delivers publications and requests immediately via outbound HTTP `POST` calls.
+- **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers). Queues publications and uses a **Condition Variable** (C++) or **Listener Pool** (JS) to block `/listen` polls until data is available, ensuring reliable delivery.
+
+### 3.3 Browser Compatibility & CORS
 
 Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sharing (CORS).
 - **Required Headers:** `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`.
 - **Allowed Headers:** MUST include `Content-Type`, `X-VFS-Peer-Id`, `X-VFS-Reply-To`, and `X-VFS-Id`.
 - **Preflight:** Nodes MUST handle `OPTIONS` requests for all mesh routes.
 
-### 3.3 Reverse Link Polling (`POST /listen`)
+### 3.4 Reverse Link Polling (`POST /listen`)
 
 Peers without a stable incoming URL (e.g., Browsers) receive mesh events by polling the `/listen` endpoint of their neighbors.
 - **Endpoint:** `POST /listen`
 - **Headers:** `x-vfs-peer-id: <local-id>`
 - **Response:** 
   - `200 OK`: Returns a single JSON Command object (e.g., `NOTIFY`, `READ`).
-  - `204 No Content`: No events pending (client should retry after a short backoff).
+  - `204 No Content`: No events pending (returned ONLY after a timeout).
+- **Long-Polling Contract:** Servers MUST NOT return `204` immediately if the queue is empty. They must wait for a publication or a timeout (e.g., 30s).
 
-### 3.4 Formal Links (Unambiguous Aliasing)
+### 3.5 Formal Links (Unambiguous Aliasing)
 
 The VFS supports **Formal Links**, a mechanism for aliasing one Selector to another. 
 - **Link Definition:** A Link is a metadata-driven alias (`vfs.link(src, tgt)`).
 - **Storage:** The VFS writes a `.meta` file at the source CID containing `{"state": "LINK", "target": tgt_selector}`.
+- **Cycle Protection:** Nodes MUST maintain a `resolutionStack` of CIDs followed. If a CID is requested that is already in the stack, the node MUST throw a "Link Cycle" exception.
 
-### 3.3 Recursive Bread-crumb READ (`POST /read`)
+### 3.6 Recursive Bread-crumb READ (`POST /read`)
 
 The `read` operation is the primary mechanism for demand-driven data retrieval.
 

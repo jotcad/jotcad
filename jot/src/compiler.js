@@ -1,4 +1,4 @@
-import { normalizeSelector } from '../../fs/src/vfs_core.js';
+import { normalizeSelector, Selector } from '../../fs/src/vfs_core.js';
 
 /**
  * JotCAD Next-Gen Compiler
@@ -94,7 +94,7 @@ export class JotCompiler {
           currentSubject
         );
       }
-      result = normalizeSelector(node.path, resolvedParams);
+      result = new Selector(node.path, resolvedParams, node.output);
     } else {
       result = {};
       for (const [k, v] of Object.entries(node)) {
@@ -207,10 +207,30 @@ export class JotCompiler {
       resolvedParams[inputKey] = currentSubject;
     }
 
-    const result = normalizeSelector(path, resolvedParams);
+    const result = new Selector(path, resolvedParams).withOutput('$out');
+
+    // Schema-Driven Port Affiliation: 
+    // If the schema specifies an affiliate port for an argument, ensure the target selector uses it.
+    const affiliate = (params, schema) => {
+        if (!schema?.arguments) return;
+        for (const [name, config] of Object.entries(schema.arguments)) {
+            const port = config.affiliate;
+            if (!port || params[name] === undefined) continue;
+
+            const apply = (val) => {
+                if (val instanceof Selector) {
+                    if (!val.output) val.output = port;
+                } else if (Array.isArray(val)) {
+                    val.forEach(item => apply(item));
+                }
+            };
+            apply(params[name]);
+        }
+    };
+    affiliate(result.parameters, schema);
 
     if (this.vfs && !Array.isArray(result) && returns?.type === 'array') {
-      const data = await this.vfs.readData(result.path, result.parameters);
+      const data = await this.vfs.readData(result);
       if (Array.isArray(data)) return data;
     }
 
@@ -337,7 +357,7 @@ export class JotCompiler {
       resolvedParams.$in = [subject, ...args];
     }
 
-    const result = normalizeSelector(path, resolvedParams);
+    const result = new Selector(path, resolvedParams).withOutput('$out');
 
     const isTee = op?.schema?.metadata?.passthrough === true || op?.metadata?.passthrough === true || op?.metadata?.aliases?.['$out'] === '$in';
     
@@ -356,9 +376,11 @@ export class JotCompiler {
   /**
    * Namespaced Type Matching (jot:number, jot:shape, etc.)
    */
-  _matchType(val, type, hint = null) {
+  _matchType(val, type, hint = null, context = {}) {
     if (!type) return true;
     const t = type.toLowerCase();
+    const { opName, argName } = context;
+    const ctxMsg = opName ? ` (in ${opName}.${argName})` : '';
 
     // 1. Strict Hint Check: If a hint exists, it MUST match the target type family
     if (hint) {
@@ -376,9 +398,11 @@ export class JotCompiler {
 
     // 2. Structural Matchers (Consume 1)
     if (t === 'jot:number') return typeof val === 'number';
+    if (t === 'jot:integer') return Number.isInteger(val);
     if (t === 'jot:string') return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
     if (t === 'jot:boolean') return typeof val === 'boolean';
     if (t === 'jot:shape') return typeof val === 'object' && val !== null && val.path;
+    if (t === 'jot:selector') return typeof val === 'object' && val !== null && val.path;
     if (t === 'jot:operation') return typeof val === 'object' && val !== null && val.path;
 
     // 3. Plural Matchers (Consume All - matching element-wise)
@@ -392,7 +416,7 @@ export class JotCompiler {
     if (t === 'intv') return typeof val === 'number' || (Array.isArray(val) && val.length === 2);
     if (t === 'array') return Array.isArray(val);
 
-    return true;
+    throw new Error(`Compiler Error: Unknown or unsupported type constraint '${type}'${ctxMsg} encountered during evaluation.`);
   }
 
   /**
@@ -456,7 +480,7 @@ export class JotCompiler {
           if (!unassignedArgs.has(argPointer)) { argPointer++; continue; }
           
           const a = wrappedArgs[argPointer];
-          if (this._matchType(a.value, t, a.typeHint)) {
+          if (this._matchType(a.value, t, a.typeHint, { opName, argName: name })) {
             matching.push(a.value);
             unassignedArgs.delete(argPointer);
             argPointer++;
@@ -467,12 +491,20 @@ export class JotCompiler {
         if (matching.length > 0) parameters[name] = matching;
       } else {
         // Scalar slot: Match 1
-        if (this._matchType(arg.value, t, arg.typeHint)) {
+        if (this._matchType(arg.value, t, arg.typeHint, { opName, argName: name })) {
            parameters[name] = arg.value;
            unassignedArgs.delete(argPointer);
            argPointer++;
         }
       }
+    }
+
+    // Final Validation: Ensure all positional arguments were consumed
+    if (unassignedArgs.size > 0) {
+        const firstIdx = Array.from(unassignedArgs)[0];
+        const val = wrappedArgs[firstIdx].value;
+        const desc = typeof val === 'object' ? (val.path || 'object') : val;
+        throw new Error(`Compiler Error: Could not map argument '${desc}' (at index ${firstIdx}) to any parameter of '${opName}'. Please check the operator's schema.`);
     }
 
     // Apply Defaults

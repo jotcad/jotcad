@@ -35,18 +35,15 @@ struct PdfOp : P {
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& pdf_path) {
-        std::cout << "[PdfOp] Starting PDF generation for output port: " << fulfilling.output << std::endl;
         PDFWriter writer;
         walk(vfs, in, Matrix::identity(), writer);
         auto pdf_bytes = writer.write();
         
         // 1. Primary Output: Shape Pass-through
-        vfs->write<Shape>(fulfilling, in, "$out");
+        vfs->write(fulfilling.with_output("$out"), in);
 
         // 2. Secondary Output: PDF bytes in 'file' port
-        vfs->write<std::vector<uint8_t>>(fulfilling, pdf_bytes, "file");
-        
-        std::cout << "[PdfOp] Fulfilled Shape ($out) and PDF (file port, " << pdf_bytes.size() << " bytes)." << std::endl;
+        vfs->write(fulfilling.with_output("file"), pdf_bytes);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "path"}; }
@@ -56,8 +53,8 @@ struct PdfOp : P {
             {"path", "jot/pdf"},
             {"description", "Generates a PDF document from the spatial representation of the input shape."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}}},
-                {"path", {{"type", "string"}, {"default", "export.pdf"}}}
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
+                {"path", {{"type", "jot:string"}, {"default", "export.pdf"}}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
@@ -67,8 +64,8 @@ struct PdfOp : P {
     }
 };
 
-static void pdf_init() {
-    Processor::register_op<PdfOp<>, Shape, std::string>("jot/pdf");
+static void pdf_init(fs::VFSNode* vfs) {
+    Processor::register_op<PdfOp<>, Shape, std::string>(vfs, "jot/pdf");
 }
 
 } // namespace geo

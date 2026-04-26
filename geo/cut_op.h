@@ -22,7 +22,7 @@ struct CutOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, bool open = false) {
         Shape out = in;
         if (tools.empty()) {
-            vfs->write<Shape>(fulfilling, out);
+            vfs->write(fulfilling.with_output("$out"), out);
             return;
         }
 
@@ -32,7 +32,7 @@ struct CutOp : P {
         }
 
         recursive_subtract(vfs, out, Matrix::identity(), tool_nodes, open);
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 
     static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
@@ -124,7 +124,7 @@ struct CutOp : P {
             } else if (has_only_points) {
                 // ... (previous point logic)
             }
-            s.geometry = vfs->write_anonymous<Geometry>(target_geo);
+            s.geometry = vfs->materialize<Geometry>(target_geo);
         }
 
         for (auto& child : s.components) {
@@ -234,12 +234,20 @@ struct CutOp : P {
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools", "open"}; }
     static typename P::json schema() {
-        return { {"path", "jot/cut"}, {"arguments", { {"$in", {{"type", "jot:shape"}}}, {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}, {"open", {{"type", "boolean"}, {"default", false}}} }}, {"outputs", {{"$out", {{"type", "shape"}}}}} };
+        return { 
+            {"path", "jot/cut"}, 
+            {"arguments", { 
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}, 
+                {"tools", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"affiliate", "$out"}}}, 
+                {"open", {{"type", "jot:boolean"}, {"default", false}}} 
+            }}, 
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
+        };
     }
 };
 
-static void cut_init() {
-    Processor::register_op<CutOp<>, Shape, std::vector<Shape>, bool>("jot/cut");
+static void cut_init(fs::VFSNode* vfs) {
+    Processor::register_op<CutOp<>, Shape, std::vector<Shape>, bool>(vfs, "jot/cut");
 }
 
 } // namespace geo

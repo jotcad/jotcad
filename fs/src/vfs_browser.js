@@ -1,4 +1,6 @@
-import { VFS as CoreVFS, normalizeSelector } from './vfs_core.js';
+import { VFS as CoreVFS, normalizeSelector, Selector } from './vfs_core.js';
+
+export { Selector };
 
 export const getCID = async (selector) => {
   const s = normalizeSelector(selector.path, selector.parameters);

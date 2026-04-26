@@ -28,7 +28,7 @@ struct SegmentOpBase : P {
         }
 
         if (all_pts.size() < 2) {
-            vfs->write<Shape>(fulfilling, P::make_shape(vfs, Geometry(), {{"type", "segments"}}));
+            vfs->write(fulfilling.with_output("$out"), P::make_shape(vfs, Geometry(), {{"type", "segments"}}));
             return;
         }
 
@@ -46,7 +46,7 @@ struct SegmentOpBase : P {
         }
 
         Shape out = P::make_shape(vfs, res, {{"type", "segments"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 };
 
@@ -62,7 +62,7 @@ struct LinkOp : SegmentOpBase<P> {
             {"path", "jot/link"},
             {"description", "Creates an open chain of segments connecting points."},
             {"arguments", {{"shapes", {{"type", "jot:shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -79,7 +79,7 @@ struct LoopOp : SegmentOpBase<P> {
             {"path", "jot/loop"},
             {"description", "Creates a closed loop of segments connecting points."},
             {"arguments", {{"shapes", {{"type", "jot:shapes"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
