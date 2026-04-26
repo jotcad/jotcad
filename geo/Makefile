@@ -25,7 +25,7 @@ OPS_BIN = $(BIN_DIR)/ops
 # Object files
 OBJS = $(OBJ_DIR)/vfs_core.o $(OBJ_DIR)/vfs_primitives.o $(OBJ_DIR)/vfs_geo_adapter.o \
        $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o \
-       $(OBJ_DIR)/rasterizer.o
+       $(OBJ_DIR)/rasterizer.o $(OBJ_DIR)/triangulation.o
 DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
@@ -68,6 +68,10 @@ $(OBJ_DIR)/png_op.o: render/png_op.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
 $(OBJ_DIR)/rasterizer.o: render/rasterizer.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(OBJ_DIR)/triangulation.o: render/triangulation.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

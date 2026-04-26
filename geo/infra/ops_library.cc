@@ -11,6 +11,7 @@
 #include "path_op.h"
 #include "corners_op.h"
 #include "on_op.h"
+#include "at_op.h"
 #include "cut_op.h"
 #include "pdf_op.h"
 #include "png_op.h"
@@ -33,6 +34,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     path_init(vfs);
     corners_init(vfs);
     on_init(vfs);
+    at_init(vfs);
     cut_init(vfs);
     pdf_init(vfs);
     png_init(vfs);
