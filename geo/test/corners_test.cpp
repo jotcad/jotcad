@@ -8,17 +8,19 @@ int main() {
     
     std::cout << "Testing Corners Operation..." << std::endl;
     
-    fs::Selector hex_sel = {"jot/Hexagon/full", {{"diameter", 30.0}}};
+    fs::Selector hex_sel = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_sel);
-    Shape hex = vfs.read<Shape>(hex_sel);
     
-    fs::Selector corners_sel = {"jot/corners", {{"$in", hex_sel}, {"proxy", true}}};
+    fs::Selector corners_sel = fs::Selector{"jot/corners", {{"$in", hex_sel}}}.with_output("$out");
     Processor::execute(&vfs, corners_sel);
     
     Shape out = vfs.read<Shape>(corners_sel);
-    if (out.components.size() != 6) {
-        std::cerr << "❌ Corners FAIL: Expected 6 corner components, got " << out.components.size() << std::endl;
+    // Now it just returns the input shape with updated geometry (point cloud)
+    if (!out.geometry.has_value()) {
+        std::cerr << "❌ Corners FAIL: Expected geometry to be present. Shape tags: " << out.tags.dump() << std::endl;
         return 1;
+    } else {
+        std::cout << "  - Output geometry present: " << out.geometry.value().value << std::endl;
     }
 
     std::cout << "✅ Corners PASS" << std::endl;

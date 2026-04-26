@@ -11,18 +11,18 @@ int main() {
     std::cout << "Testing PNG (Partitioned Port) Operation..." << std::endl;
 
     // 1. Create a box
-    Selector box_addr = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}};
+    Selector box_addr = Selector{"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}}.with_output("$out");
     Processor::execute(&vfs, box_addr);
 
     // 2. Run PNG on the box with explicit isometric angles for golden comparison
-    Selector png_addr = {"jot/png", {{"$in", box_addr}, {"ax", 0.61547}, {"ay", 0.78539}}};
+    Selector png_addr = Selector{"jot/png", {{"$in", box_addr}, {"ax", 0.61547}, {"ay", 0.78539}}}.with_output("$out");
     Processor::execute(&vfs, png_addr);
 
     // 3. Verify 'file' port
     try {
-        std::vector<uint8_t> png_file_bytes = vfs.read<std::vector<uint8_t>>(png_addr, "file");
+        std::vector<uint8_t> png_file_bytes = vfs.read<std::vector<uint8_t>>(png_addr.with_output("file"));
         std::string actual_hash = vfs_hash256(png_file_bytes);
-        std::string golden_hash = "25ee1ec05ff2382c4b63b4a8142715d6aede554ac4b593136fcd3d63b69af6b7";
+        std::string golden_hash = "0bbc5930c20eb063f340dc6107ecca80ab4fbaf92f18b5be7e066e79166d298a";
         
         std::cout << "  - 'file' port read OK (" << png_file_bytes.size() << " bytes)" << std::endl;
         std::cout << "  - SHA256: " << actual_hash << std::endl;

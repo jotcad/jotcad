@@ -24,7 +24,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Setup & Build Native Ops
-        run: npm run setup
+        run: |
+          npm run install_deps
+          npm run setup
       - name: Install JS Deps
         run: npm ci
       - name: Run CI Suite

@@ -9,7 +9,7 @@ template <typename P = JotVfsProtocol>
 struct OutlineOp : P {
     static constexpr const char* path = "jot/outline";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        if (!in.geometry.has_value()) { vfs->write<Shape>(fulfilling, in, "$out"); return; }
+        if (!in.geometry.has_value()) { vfs->write(fulfilling.with_output("$out"), in); return; }
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
         Geometry res;
         for (const auto& face : geo.faces) {
@@ -25,8 +25,8 @@ struct OutlineOp : P {
             }
         }
         Shape out = in;
-        out.geometry = vfs->write_anonymous<Geometry>(res);
-        vfs->write<Shape>(fulfilling, out, "$out");
+        out.geometry = vfs->materialize<Geometry>(res);
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
@@ -34,7 +34,7 @@ struct OutlineOp : P {
             {"path", "jot/outline"},
             {"description", "Extracts the boundary edges of the input shape as line segments."},
             {"arguments", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to outline."}, {"affiliate", "$out"}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}, {"description", "The resulting wireframe/outline shape."}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting wireframe/outline shape."}}}}}
         };
     }
 };

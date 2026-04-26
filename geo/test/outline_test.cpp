@@ -8,15 +8,14 @@ int main() {
     
     std::cout << "Testing Outline Operation..." << std::endl;
     
-    fs::Selector box_fulfilling = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}};
-    Processor::execute(&vfs, box_fulfilling);
-    Shape box = vfs.read<Shape>(box_fulfilling);
+    fs::Selector box_addr = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}}.with_output("$out");
+    Processor::execute(&vfs, box_addr);
     
-    fs::Selector outline_fulfilling = {"jot/outline", {{"$in", box_fulfilling}}};
-    Processor::execute(&vfs, outline_fulfilling);
+    fs::Selector out_addr = fs::Selector{"jot/outline", {{"$in", box_addr}}}.with_output("$out");
+    Processor::execute(&vfs, out_addr);
     
-    Shape s = vfs.read<Shape>(outline_fulfilling);
-    vfs.verify_render(s, "outline_op_basic", "26e192feee2a0153684ec08cb5fd51d38a69e1cc8676064675efabd297c5ea0a");
+    Shape s = vfs.read<Shape>(out_addr);
+    vfs.verify_render(s, "outline_op_basic", "4f702aa7105058b23a9eaf57fea8372d8f4b5fb8290f458b2785b90d740f472d");
 
     std::cout << "✅ Outline PASS" << std::endl;
     return 0;

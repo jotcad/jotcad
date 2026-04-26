@@ -22,6 +22,10 @@ A **Selector** is a recomposable request object containing:
 - `parameters` (e.g., `{"diameter": 30}`)
 - `output` (e.g., `"thumb"` or `"$out"`. If omitted, it targets the operation itself).
 
+- **Formal Addressing Mandate:** 
+  - **No Implicit Linkage:** A base Selector (without an `output` port) represents the **Operation Identity**, not its result. It is a terminal error for the VFS to automatically resolve a base selector to its `$out` port.
+  - **Explicit Port Targeting:** Callers (Compilers, Tests, other Operators) MUST explicitly append the target port (e.g., `:$out`) to retrieve computational results.
+
 - **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact. **Deconstructing a Selector into top-level keys in metadata or network messages is strictly prohibited.**
 - **Parametric Standardization:** Parameters MUST be normalized (e.g., radial/apothem parameters to `diameter`) before execution to ensure deterministic CIDs.
 - **Strict readData Protocol:** `vfs.readData(selector)` MUST receive a full Selector instance. Passing plain object literals or split arguments is a protocol violation.
@@ -37,17 +41,20 @@ CIDs CAN and SHOULD be transmitted safely over the mesh network. Nodes can reque
 
 JotCAD operators follow a strict **Actor Model** for mesh fulfillment.
 
-### 2.1 The Fulfillment Contract
+### 2.1 The Fulfillment Contract (Void Fulfillment)
 
 Every operator call is assigned a unique address (the `fulfilling` Selector). 
-The operator's sole responsibility is to satisfy this address by writing its final result. A single execution may fulfill multiple outputs by modifying the Selector (e.g., `fulfilling.with_output("thumb")`) and writing the respective artifacts.
+The operator's sole responsibility is to **Fulfill** this address by ensuring the data exists in local storage at the requested identity.
+
+- **Non-Returning Handlers:** Handlers in the VFS MUST return `void`. They signify success by finishing execution and failure by throwing an exception.
+- **Fulfillment over Data-Piping:** Operators write their results directly to the VFS. The VFS core then handles the terminal data retrieval. This eliminates redundant byte-copying and ensures the VFS remains the sole arbiter of data state.
 
 ### 2.2 Immutable Content (CID Protection)
 
 Input artifacts are strictly read-only. Transformative operators (e.g., `cut`, `offset`) MUST NOT "update" the CID-addressed geometry of their inputs. Instead:
 1.  **Read:** The operator reads the input geometry from its CID.
 2.  **Calculate:** The operator performs the transformation.
-3.  **Materialize:** The operator writes the NEW geometry to the mesh using an **anonymous write** (`vfs->write(res_geo)`), which returns a new CID.
+3.  **Materialize:** The operator writes the NEW geometry to the mesh using **Content Addressing** (`vfs->materialize(res_geo)`), which returns a new CID.
 4.  **Reference:** The final result `Shape` embeds this new geometry CID.
 5.  **Fulfill:** The `Shape` is written to the operator's assigned `fulfilling` address.
 

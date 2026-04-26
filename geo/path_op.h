@@ -13,7 +13,7 @@ struct LinkOp : P {
         out.geometry = std::nullopt;
         out.components = {a, b};
         out.add_tag("type", "link");
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$a", "$b"}; }
     static typename P::json schema() {
@@ -25,10 +25,10 @@ struct LinkOp : P {
                 {"$b", {{"type", "jot:shape"}, {"description", "The second shape to be linked."}}}
             }},
             {"inputs", {
-                {"$a", {{"type", "shape"}, {"description", "The first shape."}}}, 
-                {"$b", {{"type", "shape"}, {"description", "The second shape."}}}
+                {"$a", {{"type", "jot:shape"}, {"description", "The first shape."}}}, 
+                {"$b", {{"type", "jot:shape"}, {"description", "The second shape."}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}, {"description", "A group containing both linked shapes."}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "A group containing both linked shapes."}}}}}
         };
     }
 };
@@ -53,7 +53,7 @@ struct LoopOp : P {
         std::cout << "[LoopOp] Total candidate components: " << all_components.size() << std::endl;
 
         if (all_components.size() < 2) {
-            vfs->write<Shape>(fulfilling, in, "$out");
+            vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
 
@@ -73,10 +73,10 @@ struct LoopOp : P {
         }
 
         Shape out;
-        out.geometry = vfs->write_anonymous<Geometry>(res);
+        out.geometry = vfs->materialize<Geometry>(res);
         out.components = all_components;
         out.add_tag("type", "loop");
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
@@ -86,8 +86,8 @@ struct LoopOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}, {"description", "The shape (usually a group) to form into a loop."}, {"affiliate", "$out"}}}
             }},
-            {"inputs", {{"$in", {{"type", "shape"}, {"description", "The input shape."}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}, {"description", "The resulting loop shape."}}}}}
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The input shape."}}}}},
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting loop shape."}}}}}
         };
     }
 };

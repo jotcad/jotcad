@@ -13,7 +13,7 @@ struct PointOp : P {
         Geometry res;
         res.vertices.push_back({FT(x), FT(y), FT(z)});
         Shape out = P::make_shape(vfs, res, {{"type", "point"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"x", "y", "z"}; }
     static typename P::json schema() {
@@ -21,11 +21,11 @@ struct PointOp : P {
             {"path", "jot/Point"},
             {"description", "Generates a single point."},
             {"arguments", {
-                {"x", {{"type", "number"}, {"default", 0.0}}},
-                {"y", {{"type", "number"}, {"default", 0.0}}},
-                {"z", {{"type", "number"}, {"default", 0.0}}}
+                {"x", {{"type", "jot:number"}, {"default", 0.0}}},
+                {"y", {{"type", "jot:number"}, {"default", 0.0}}},
+                {"z", {{"type", "jot:number"}, {"default", 0.0}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -43,7 +43,7 @@ struct PointsOp : P {
             }
         }
         Shape out = P::make_shape(vfs, res, {{"type", "points"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"points"}; }
     static typename P::json schema() {
@@ -51,9 +51,9 @@ struct PointsOp : P {
             {"path", "jot/Points"},
             {"description", "Generates a point cloud from a list of coordinates."},
             {"arguments", {
-                {"points", {{"type", "array"}, {"items", {{"type", "array"}, {"items", {{"type", "number"}}}}}}}
+                {"points", {{"type", "array"}, {"items", {{"type", "array"}, {"items", {{"type", "jot:number"}}}}}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -63,14 +63,14 @@ struct PointsExtractOp : P {
     static constexpr const char* path = "jot/points";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         if (!in.geometry.has_value()) {
-            vfs->write<Shape>(fulfilling, in, "$out");
+            vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
         Geometry res;
         res.vertices = geo.vertices;
         Shape out = P::make_shape(vfs, res, {{"type", "points"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
@@ -80,7 +80,7 @@ struct PointsExtractOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -90,7 +90,7 @@ struct EachPointOp : P {
     static constexpr const char* path = "jot/eachPoint";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         if (!in.geometry.has_value()) {
-            vfs->write<Shape>(fulfilling, in, "$out");
+            vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
@@ -106,12 +106,12 @@ struct EachPointOp : P {
             // Give each point a terminal geometry (origin) so it's reifiable as a vertex
             Geometry p_geo;
             p_geo.vertices.push_back({FT(0), FT(0), FT(0)});
-            p.geometry = vfs->write_anonymous<Geometry>(p_geo);
+            p.geometry = vfs->materialize<Geometry>(p_geo);
             
             out.components.push_back(p);
         }
         
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
@@ -121,7 +121,7 @@ struct EachPointOp : P {
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };

@@ -10,7 +10,7 @@ struct NthOp : P {
     static constexpr const char* path = "jot/nth";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, int index) {
         if (index >= 0 && index < (int)in.components.size()) {
-            vfs->write<Shape>(fulfilling, in.components[index], "$out");
+            vfs->write(fulfilling.with_output("$out"), in.components[index]);
         } else {
             throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds (size " + std::to_string(in.components.size()) + ")");
         }
@@ -24,7 +24,7 @@ struct NthOp : P {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
                 {"index", {{"type", "integer"}, {"default", 0}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };

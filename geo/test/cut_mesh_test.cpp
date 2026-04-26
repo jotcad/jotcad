@@ -20,7 +20,7 @@ int main() {
     BoxOp<>::execute(&vfs, tool_sel, 10.0, 10.0, 10.0);
     Shape tool_shape = vfs.read<Shape>(tool_sel);
     tool_shape.tf = Matrix::translate(10, 10, 10).to_vec();
-    vfs.write<Shape>(tool_sel, tool_shape);
+    vfs.write(tool_sel, tool_shape);
     
     // 3. Perform Cut
     fs::Selector cut_sel = {"jot/cut/mesh", {}};

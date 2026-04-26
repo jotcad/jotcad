@@ -22,23 +22,6 @@ template<> json VFSNode::read<json>(const Selector& sel) {
     }
 }
 
-// --- read(Selector, output) ---
-
-template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel, const std::string& output) {
-    VFSRequest req; req.selector = sel.with_output(output);
-    return read_impl(req);
-}
-
-template<> json VFSNode::read<json>(const Selector& sel, const std::string& output) {
-    auto data = read<std::vector<uint8_t>>(sel, output);
-    if (data.empty()) return json::object();
-    try {
-        return json::parse(data);
-    } catch (...) {
-        return json::object();
-    }
-}
-
 // --- read(VFSRequest) ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req) {
@@ -74,37 +57,25 @@ template<> json VFSNode::read<json>(const CID& cid) {
 
 // --- write implementations ---
 
-template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data, const std::string& output) { 
-    return write_bytes(sel, data, output); 
+Selector VFSNode::write(const Selector& sel, const std::vector<uint8_t>& data) { 
+    write_bytes(sel, data); 
+    return sel;
 }
 
-template<> Selector VFSNode::write<json>(const Selector& sel, const json& data, const std::string& output) {
+Selector VFSNode::write(const Selector& sel, const json& data) {
     std::string text = data.dump();
     std::vector<uint8_t> bytes(text.begin(), text.end());
-    return write_bytes(sel, bytes, output);
+    write_bytes(sel, bytes);
+    return sel;
 }
 
-template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data, const std::string& output) {
+Selector VFSNode::write(const Selector& sel, const std::string& data) {
     std::vector<uint8_t> bytes(data.begin(), data.end());
-    return write_bytes(sel, bytes, output);
+    write_bytes(sel, bytes);
+    return sel;
 }
 
-template<> Selector VFSNode::write<std::vector<uint8_t>>(const Selector& sel, const std::vector<uint8_t>& data) { 
-    return write_bytes(sel, data); 
-}
-
-template<> Selector VFSNode::write<json>(const Selector& sel, const json& data) {
-    std::string text = data.dump();
-    std::vector<uint8_t> bytes(text.begin(), text.end());
-    return write_bytes(sel, bytes);
-}
-
-template<> Selector VFSNode::write<std::string>(const Selector& sel, const std::string& data) {
-    std::vector<uint8_t> bytes(data.begin(), data.end());
-    return write_bytes(sel, bytes);
-}
-
-template<> CID VFSNode::write_anonymous<json>(const json& data) {
+template<> CID VFSNode::materialize<json>(const json& data) {
     std::string cid_str = vfs_hash256(encode_jcb(data));
     std::string text = data.dump();
     std::vector<uint8_t> bytes(text.begin(), text.end());
@@ -125,9 +96,9 @@ template<> CID VFSNode::write_anonymous<json>(const json& data) {
     return CID{cid_str};
 }
 
-template<> CID VFSNode::write_anonymous<std::string>(const std::string& data) {
+template<> CID VFSNode::materialize<std::string>(const std::string& data) {
     std::vector<uint8_t> bytes(data.begin(), data.end());
-    return write_anonymous(bytes);
+    return materialize(bytes);
 }
 
 } // namespace fs

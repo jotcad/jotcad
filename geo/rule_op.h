@@ -28,7 +28,7 @@ struct RuleOp : P {
         std::vector<ruled_surfaces::PolygonalChain> q_chains = extract_chains(vfs, b);
 
         if (p_chains.empty() || q_chains.empty()) {
-            vfs->write<Shape>(fulfilling, a, "$out");
+            vfs->write(fulfilling.with_output("$out"), a);
             return;
         }
 
@@ -58,15 +58,15 @@ struct RuleOp : P {
         }
 
         if (status != ruled_surfaces::SolutionStats::OK) {
-            vfs->write<Shape>(fulfilling, a, "$out");
+            vfs->write(fulfilling.with_output("$out"), a);
             return;
         }
 
         Geometry res = mesh_to_geometry(result_mesh);
         Shape out;
-        out.geometry = vfs->write_anonymous<Geometry>(res);
+        out.geometry = vfs->materialize<Geometry>(res);
         out.add_tag("type", "ruled_surface");
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 
     static std::vector<ruled_surfaces::PolygonalChain> extract_chains(fs::VFSNode* vfs, const Shape& s) {
@@ -179,11 +179,11 @@ struct RuleOp : P {
             {"path", "jot/Rule"},
             {"description", "Generates a ruled surface triangulating between two sets of boundary loops, supporting holes."},
             {"arguments", {
-                {"$a", {{"type", "shape"}, {"affiliate", "$out"}}},
-                {"$b", {{"type", "shape"}, {"affiliate", "$out"}}}
+                {"$a", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
+                {"$b", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
             }},
             {"outputs", {
-                {"$out", {{"type", "shape"}}}
+                {"$out", {{"type", "jot:shape"}}}
             }}
         };
     }

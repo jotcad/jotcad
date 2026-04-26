@@ -40,10 +40,10 @@ struct PdfOp : P {
         auto pdf_bytes = writer.write();
         
         // 1. Primary Output: Shape Pass-through
-        vfs->write<Shape>(fulfilling, in, "$out");
+        vfs->write(fulfilling.with_output("$out"), in);
 
         // 2. Secondary Output: PDF bytes in 'file' port
-        vfs->write<std::vector<uint8_t>>(fulfilling, pdf_bytes, "file");
+        vfs->write(fulfilling.with_output("file"), pdf_bytes);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "path"}; }
@@ -54,7 +54,7 @@ struct PdfOp : P {
             {"description", "Generates a PDF document from the spatial representation of the input shape."},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"path", {{"type", "string"}, {"default", "export.pdf"}}}
+                {"path", {{"type", "jot:string"}, {"default", "export.pdf"}}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},

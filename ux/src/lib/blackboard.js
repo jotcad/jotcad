@@ -24,6 +24,7 @@ const [meshPositions, setMeshPositions] = createSignal({}); // PeerID -> {x, y}
 const [isConnected, setIsConnected] = createSignal(false);
 const [discoveryStatus, setDiscoveryStatus] = createSignal('idle');
 const [dynamicOps, setDynamicOps] = createSignal({}); // Path -> { schema, script }
+const [error, setError] = createSignal(null);
 
 let isStarted = false;
 const meshMap = new Map();
@@ -39,6 +40,8 @@ export const blackboard = {
   isConnected,
   discoveryStatus,
   dynamicOps,
+  error,
+  setError,
 
   async start() {
     if (isStarted) return;
@@ -148,16 +151,13 @@ export const blackboard = {
     };
 
     try {
-      await mesh.fetch(`${vfsUrl}/health`);
+      await mesh.start();
       setIsConnected(true);
     } catch (e) {
+      console.error('[UX] Mesh start failed:', e);
+      blackboard.setError(e);
       setIsConnected(false);
     }
-
-    await mesh.start();
-    setIsConnected(true);
-
-    vfs.read(new Selector('sys/topo'), { followLinks: false }).catch(() => {});
 
     // Subscribe to Schema Announcements from the mesh
     mesh.subscribe(new Selector('sys/schema'));

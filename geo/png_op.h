@@ -12,7 +12,7 @@ struct PngOp : P {
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         // Pass-through the shape (primary result)
-        vfs->write<Shape>(fulfilling, in, "$out");
+        vfs->write(fulfilling.with_output("$out"), in);
         
         // Generate the PNG (secondary result into the 'file' port)
         PngOpImpl::execute(vfs, fulfilling, in);

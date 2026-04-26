@@ -20,15 +20,15 @@ struct TriangleEquilateralOp : P {
         res.faces.push_back({{{0, 1, 2}}});
 
         Shape out = P::make_shape(vfs, res, {{"type", "triangle"}});
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"size"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Triangle/equilateral"},
             {"description", "Generates an equilateral triangle."},
-            {"arguments", {{"size", {{"type", "array"}, {"items", {{"type", "number"}}}, {"default", {10}}}}}},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"arguments", {{"size", {{"type", "jot:numbers"}, {"default", {10}}}}}},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };

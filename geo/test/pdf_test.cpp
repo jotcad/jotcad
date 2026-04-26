@@ -8,11 +8,10 @@ int main() {
     
     std::cout << "Testing PDF Export..." << std::endl;
     
-    fs::Selector hex_sel = {"jot/Hexagon/full", {{"diameter", 30.0}}};
+    fs::Selector hex_sel = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_sel);
-    Shape hex = vfs.read<Shape>(hex_sel);
     
-    fs::Selector pdf_sel = {"jot/pdf", {{"$in", hex_sel}, {"path", "test.pdf"}}};
+    fs::Selector pdf_sel = fs::Selector{"jot/pdf", {{"$in", hex_sel}, {"path", "test.pdf"}}}.with_output("$out");
     Processor::execute(&vfs, pdf_sel);
     
     // 1. Verify $out is the shape
@@ -23,7 +22,7 @@ int main() {
     }
 
     // 2. Verify 'file' port has PDF data
-    std::vector<uint8_t> pdf = vfs.read<std::vector<uint8_t>>(pdf_sel, "file");
+    std::vector<uint8_t> pdf = vfs.read<std::vector<uint8_t>>(pdf_sel.with_output("file"));
     if (pdf.size() < 10 || pdf[0] != '%' || pdf[1] != 'P' || pdf[2] != 'D' || pdf[3] != 'F') {
         std::cerr << "❌ PDF FAIL: 'file' port missing or invalid PDF header (" << pdf.size() << " bytes)" << std::endl;
         return 1;

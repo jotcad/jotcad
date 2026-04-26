@@ -36,9 +36,6 @@ export class VFS {
     console.log(`[VFS ${this.id}] Registering provider for: ${pattern}`);
     this.providers.set(pattern, handler);
     if (options.schema) {
-        if (!options.schema.primaryOutput && options.schema.outputs?.['$out']) {
-            options.schema.primaryOutput = '$out';
-        }
         this.schemas.set(pattern, options.schema);
     }
   }

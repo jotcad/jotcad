@@ -17,8 +17,8 @@ struct OffsetOp : P {
         Geometry res = geo;
         applyOffset(res, diameter);
         Shape out = in;
-        out.geometry = vfs->write_anonymous<Geometry>(res);
-        vfs->write<Shape>(fulfilling, out, "$out");
+        out.geometry = vfs->materialize<Geometry>(res);
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter"}; }
     static typename P::json schema() {
@@ -27,9 +27,9 @@ struct OffsetOp : P {
             {"description", "Creates a Minkowski offset."},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"diameter", {{"type", "number"}, {"default", 1.0}}}
+                {"diameter", {{"type", "jot:number"}, {"default", 1.0}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -44,8 +44,8 @@ struct OffsetClosureOp : P {
         Geometry closed = expanded;
         applyOffset(closed, -std::abs(diameter));
         Shape out = in;
-        out.geometry = vfs->write_anonymous<Geometry>(closed);
-        vfs->write<Shape>(fulfilling, out, "$out");
+        out.geometry = vfs->materialize<Geometry>(closed);
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter", "closure"}; }
     static typename P::json schema() {
@@ -53,10 +53,10 @@ struct OffsetClosureOp : P {
             {"path", "jot/offset/closure"},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"diameter", {{"type", "number"}, {"default", 1.0}}},
-                {"closure", {{"type", "boolean"}, {"const", true}}}
+                {"diameter", {{"type", "jot:number"}, {"default", 1.0}}},
+                {"closure", {{"type", "jot:boolean"}, {"const", true}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };

@@ -70,7 +70,7 @@ int main() {
         geo.segments.push_back({0, 1});
         geo.segments.push_back({1, 2});
         Shape s;
-        s.geometry = vfs.write_anonymous<Geometry>(geo);
+        s.geometry = vfs.materialize<Geometry>(geo);
         return s;
     };
 
@@ -84,7 +84,7 @@ int main() {
         f.loops.push_back({0, 1, 2, 3});
         geo.faces.push_back(f);
         Shape s;
-        s.geometry = vfs.write_anonymous<Geometry>(geo);
+        s.geometry = vfs.materialize<Geometry>(geo);
         return s;
     };
 
@@ -128,7 +128,7 @@ int main() {
     frame_face.loops.push_back({0, 1, 2, 3});
     frame_face.loops.push_back({4, 5, 6, 7});
     frame_geo.faces.push_back(frame_face);
-    Shape s_h1; s_h1.geometry = vfs.write_anonymous<Geometry>(frame_geo);
+    Shape s_h1; s_h1.geometry = vfs.materialize<Geometry>(frame_geo);
     Shape s_h2 = s_h1; s_h2.tf = Matrix::translate(0, 0, 50).to_vec();
     Selector sel3{"jot/Rule", {{"$a", s_h1}, {"$b", s_h2}}, "$out"};
     try {
@@ -149,8 +149,8 @@ int main() {
     Geometry::Face f_st; f_st.loops.push_back(l_st);
     g_st1.faces.push_back(f_st); g_st2.faces.push_back(f_st);
     Shape s_st1, s_st2;
-    s_st1.geometry = vfs.write_anonymous<Geometry>(g_st1);
-    s_st2.geometry = vfs.write_anonymous<Geometry>(g_st2);
+    s_st1.geometry = vfs.materialize<Geometry>(g_st1);
+    s_st2.geometry = vfs.materialize<Geometry>(g_st2);
     Selector sel4{"jot/Rule", {{"$a", s_st1}, {"$b", s_st2}}, "$out"};
     try {
         vfs.read<std::vector<uint8_t>>(sel4);

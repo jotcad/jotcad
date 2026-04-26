@@ -402,7 +402,11 @@ export class MeshLinkBase {
           return info.id;
         }
       }
-    } catch (e) { console.error(`[MeshLink ${this.vfs.id}] Handshake failed for ${url}:`, e.message); } finally { this.connecting.delete(url); }
+    } catch (e) { 
+        const msg = `Handshake failed for ${url}: ${e.message}`;
+        console.error(`[MeshLink ${this.vfs.id}] ${msg}`);
+        throw new Error(msg);
+    } finally { this.connecting.delete(url); }
   }
 
   async probeDirectReachability(url) {
@@ -452,8 +456,9 @@ export class MeshLinkBase {
     try { 
         return await Promise.any(fetchPromises); 
     } catch (e) { 
-        console.log(`[MeshLink ${this.vfs.id}] read failed for all peers: ${e.message}`);
-        return null; 
+        const msg = `Mesh-wide Read Failure for ${target.path || target}: ${e.message}`;
+        console.error(`[MeshLink ${this.vfs.id}] ${msg}`);
+        throw new Error(msg);
     } finally { for (const p of fetchPromises) p.catch(() => {}); }
   }
 

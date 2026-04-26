@@ -38,7 +38,8 @@ void VFSNode::listen() {
     svr->set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, X-Requested-With, X-VFS-Peer-Id, X-VFS-Reply-To, X-VFS-Id"}
+        {"Access-Control-Allow-Headers", "Content-Type, X-Requested-With, X-VFS-Peer-Id, X-VFS-Reply-To, X-VFS-Id"},
+        {"Access-Control-Expose-Headers", "X-VFS-Info, X-VFS-Id, X-VFS-Peer-Id"}
     });
 
     svr->Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
@@ -266,7 +267,7 @@ std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req) {
     // --- Computational Fulfillment (Handlers) ---
     // Only triggered if request is a Selector
     if (!req.is_cid()) {
-        std::function<std::vector<uint8_t>(const VFSRequest&)> handler;
+        OpHandler handler;
         {
             std::lock_guard<std::mutex> lock(handlers_mutex_);
             if (handlers_.count(req.selector.path)) {
@@ -275,10 +276,16 @@ std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req) {
         }
 
         if (handler) {
-            auto data = handler(req);
-            // Ensure result is written to the computational identity CID
-            write_bytes(req.selector, data);
-            return data;
+            handler(req);
+            // After handler executes, the data MUST be in local storage
+            std::string target_cid = get_cid(req.selector);
+            if (has_local(target_cid)) {
+                return get_local(target_cid);
+            }
+            std::cerr << "[VFS] Fulfillment Failure for path: " << req.selector.path << " output: " << req.selector.output << std::endl;
+            std::cerr << "      Expected CID: " << target_cid << std::endl;
+            std::cerr << "      Selector JSON: " << req.selector.to_json().dump() << std::endl;
+            throw VFSException("Handler failed to fulfill identity: " + target_cid + " for path: " + req.selector.path);
         }
     }
 
@@ -338,14 +345,7 @@ std::vector<uint8_t> VFSNode::get_local(const std::string& cid) {
 }
 
 Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& data) {
-    return write_bytes(sel, data, "");
-}
-
-Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& data, const std::string& output) {
-    Selector target_sel = sel;
-    if (!output.empty()) target_sel.output = output;
-
-    std::string cid = get_cid(target_sel);
+    std::string cid = get_cid(sel);
     std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid + ".data");
     std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid + ".meta");
 
@@ -357,24 +357,17 @@ Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& d
         json meta = {
             {"state", "AVAILABLE"},
             {"type", "json"},
-            {"path", target_sel.path},
-            {"parameters", target_sel.parameters},
-            {"output", target_sel.output}
+            {"selector", sel.to_json()}
         };
         std::ofstream mos(mp);
         mos << meta.dump();
     }
-    
-    // Formal VFS Links: If we fulfill $out, also link the base selector to it
-    if (!output.empty() && output == "$out" && sel.output.empty()) {
-        link(sel, target_sel);
-    }
 
-    notify(target_sel.to_json(), {{"state", "AVAILABLE"}});
-    return target_sel;
+    notify(sel.to_json(), {{"state", "AVAILABLE"}});
+    return sel;
 }
 
-template<> CID VFSNode::write_anonymous<std::vector<uint8_t>>(const std::vector<uint8_t>& data) {
+template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint8_t>& data) {
     // For terminal mathematical artifacts (raw bytes), always use direct binary hash.
     // This ensures consistency with the Processor and global identity rules.
     std::string cid_str = vfs_hash256(data);
@@ -503,7 +496,7 @@ void VFSNode::link(const Selector& src, const Selector& tgt) {
     
     std::lock_guard<std::mutex> lock(storage_mutex_);
     std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (srcKey + ".meta");
-    json meta = {{"path", src.path}, {"parameters", src.parameters}, {"state", "LINK"}, {"target", tgt.to_json()}};
+    json meta = {{"selector", src.to_json()}, {"state", "LINK"}, {"target", tgt.to_json()}};
     std::ofstream os(mp);
     os << meta.dump();
 }

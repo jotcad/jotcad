@@ -23,7 +23,7 @@ public:
         std::filesystem::remove_all(m_storage_dir);
         std::filesystem::create_directories(m_storage_dir);
         // Pre-provision standard empty geometry CID
-        this->write_anonymous(std::vector<uint8_t>{});
+        this->materialize(std::vector<uint8_t>{});
     }
 
     ~MockVFS() {

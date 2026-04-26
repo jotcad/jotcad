@@ -15,7 +15,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                offset_test.cpp outline_test.cpp group_test.cpp rotate_test.cpp \
                pdf_test.cpp corners_test.cpp on_test.cpp cut_test.cpp \
                nested_cut_test.cpp cut_hexagon_test.cpp accumulator_test.cpp \
-               offset_closure_test.cpp png_test.cpp
+               offset_closure_test.cpp png_test.cpp corners_visual_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 
 TEST_RUNS = $(addprefix run-, $(TEST_SOURCES:.cpp=))

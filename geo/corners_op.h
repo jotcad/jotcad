@@ -10,17 +10,56 @@ template <typename P = JotVfsProtocol>
 struct CornersOp : P {
     static constexpr const char* path = "jot/corners";
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, bool proxy) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         if (!in.geometry.has_value()) {
-            vfs->write<Shape>(fulfilling, in);
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+
+        // 1. Read input geometry
+        Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        Geometry res;
+        res.vertices = geo.vertices;
+        res.segments = geo.segments;
+
+        Shape out = in;
+        out.geometry = vfs->materialize<Geometry>(res);
+        out.add_tag("type", "corners");
+        
+        // Final fulfillment
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+
+    static typename P::json schema() {
+        return {
+            {"path", "jot/corners"},
+            {"description", "Extracts vertices from a shape as a point cloud oriented for joinery."},
+            {"arguments", {
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct EachCornerOp : P {
+    static constexpr const char* path = "jot/eachCorner";
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, bool proxy = true) {
+        if (!in.geometry.has_value()) {
+            vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
 
         // 1. Read input geometry
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
 
-        std::vector<Shape> components;
-        
+        Shape out;
+        out.add_tag("type", "corners");
+
         for (const auto& face : geo.faces) {
             for (const auto& loop : face.loops) {
                 if (loop.size() < 2) continue;
@@ -37,7 +76,7 @@ struct CornersOp : P {
                     FT dy = v_next.y - v_curr.y;
                     FT dz = v_next.z - v_curr.z;
                     FT sql_next = dx*dx + dy*dy + dz*dz;
-                    
+
                     if (sql_next < 1e-18) continue;
                     FT len_next = FT(std::sqrt(CGAL::to_double(sql_next)));
 
@@ -63,47 +102,44 @@ struct CornersOp : P {
                         Geometry v_geo;
                         v_geo.vertices.push_back({FT(0), FT(0), FT(0)}); 
                         v_geo.vertices.push_back({len_next, FT(0), FT(0)}); 
-                        
+
                         FT p_dx = v_prev.x - v_curr.x;
                         FT p_dy = v_prev.y - v_curr.y;
                         FT p_dz = v_prev.z - v_curr.z;
-                        
+
                         Point_3 local_p = m.inverse().t.transform(Point_3(p_dx, p_dy, p_dz));
                         v_geo.vertices.push_back({local_p.x(), local_p.y(), local_p.z()});
 
                         v_geo.segments.push_back({0, 1});
                         v_geo.segments.push_back({0, 2});
-                        corner.geometry = vfs->write_anonymous<Geometry>(v_geo);
+                        corner.geometry = vfs->materialize<Geometry>(v_geo);
                     }
-                    components.push_back(corner);
+                    out.components.push_back(corner);
                 }
             }
         }
 
-        Shape out;
-        out.geometry = std::nullopt;
-        out.components = components;
-        out.add_tag("type", "corners");
-        vfs->write<Shape>(fulfilling, out, "$out");
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "proxy"}; }
 
     static typename P::json schema() {
         return {
-            {"path", "jot/corners"},
-            {"description", "Extracts the corners (vertices) of a shape as a group of coordinate frames oriented along the edges."},
+            {"path", "jot/eachCorner"},
+            {"description", "Extracts vertices from a shape as individual oriented child components."},
             {"arguments", {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"proxy", {{"type", "boolean"}, {"default", true}}}
+                {"proxy", {{"type", "jot:boolean"}, {"default", true}}}
             }},
-            {"outputs", {{"$out", {{"type", "shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
 static void corners_init(fs::VFSNode* vfs) {
-    Processor::register_op<CornersOp<>, Shape, bool>(vfs, "jot/corners");
+    Processor::register_op<CornersOp<>, Shape>(vfs, "jot/corners");
+    Processor::register_op<EachCornerOp<>, Shape, bool>(vfs, "jot/eachCorner");
 }
 
 } // namespace geo

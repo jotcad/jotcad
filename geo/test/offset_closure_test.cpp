@@ -10,16 +10,16 @@ int main() {
 
     {
         std::cout << "  - Testing Hole Filling (Positive Offset)..." << std::endl;
-        fs::Selector base_sel = {"jot/Box", {{"width", 50.0}, {"height", 50.0}, {"depth", 0.0}, {"id", "base"}}};
+        fs::Selector base_sel = fs::Selector{"jot/Box", {{"width", 50.0}, {"height", 50.0}, {"depth", 0.0}, {"id", "base"}}}.with_output("$out");
         Processor::execute(&vfs, base_sel);
 
-        fs::Selector hole_sel = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}, {"id", "hole"}}};
+        fs::Selector hole_sel = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}, {"id", "hole"}}}.with_output("$out");
         Processor::execute(&vfs, hole_sel);
 
-        fs::Selector cut_sel = {"jot/cut", {{"$in", base_sel}, {"tools", {hole_sel}}}};
+        fs::Selector cut_sel = fs::Selector{"jot/cut", {{"$in", base_sel}, {"tools", {hole_sel}}}}.with_output("$out");
         Processor::execute(&vfs, cut_sel);
 
-        fs::Selector offset_sel = {"jot/offset", {{"$in", cut_sel}, {"diameter", 6.0}}};
+        fs::Selector offset_sel = fs::Selector{"jot/offset", {{"$in", cut_sel}, {"diameter", 6.0}}}.with_output("$out");
         Processor::execute(&vfs, offset_sel);
 
         Shape s = vfs.read<Shape>(offset_sel);
@@ -32,10 +32,10 @@ int main() {
 
     {
         std::cout << "  - Testing Part Collapse (Negative Offset)..." << std::endl;
-        fs::Selector small_sel = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}, {"id", "small"}}};
+        fs::Selector small_sel = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}, {"id", "small"}}}.with_output("$out");
         Processor::execute(&vfs, small_sel);
 
-        fs::Selector collapsed_sel = {"jot/offset", {{"$in", small_sel}, {"diameter", -6.0}}};
+        fs::Selector collapsed_sel = fs::Selector{"jot/offset", {{"$in", small_sel}, {"diameter", -6.0}}}.with_output("$out");
         Processor::execute(&vfs, collapsed_sel);
 
         Shape s = vfs.read<Shape>(collapsed_sel);

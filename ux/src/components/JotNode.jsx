@@ -152,7 +152,7 @@ export const JotNode = (props) => {
       }
     } catch (err) {
       console.error('[JotNode] Compilation/Evaluation failed:', err);
-      alert('Error: ' + err.message);
+      blackboard.setError(err);
     } finally {
       setIsEvaluating(false);
     }

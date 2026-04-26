@@ -8,21 +8,18 @@ int main() {
     
     std::cout << "Testing Group Operation..." << std::endl;
     
-    fs::Selector s1_sel = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}, {"id", 1}}};
-    Processor::execute(&vfs, s1_sel);
-    Shape s1 = vfs.read<Shape>(s1_sel);
-
-    fs::Selector s2_sel = {"jot/Box", {{"width", 20.0}, {"height", 20.0}, {"depth", 0.0}, {"id", 2}}};
-    Processor::execute(&vfs, s2_sel);
-    Shape s2 = vfs.read<Shape>(s2_sel);
+    fs::Selector s1_addr = fs::Selector{"jot/Box", {{"width", 5.0}, {"height", 5.0}, {"depth", 0.0}}}.with_output("$out");
+    fs::Selector s2_addr = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 0.0}}}.with_output("$out");
     
-    // Group (uppercase) has no $in, just shapes
-    fs::Selector group_sel = {"jot/Group", {{"shapes", {s1_sel, s2_sel}}}};
-    Processor::execute(&vfs, group_sel);
+    Processor::execute(&vfs, s1_addr);
+    Processor::execute(&vfs, s2_addr);
     
-    Shape out = vfs.read<Shape>(group_sel);
-    if (out.components.size() != 2) {
-        std::cerr << "❌ Group FAIL: Expected 2 components, got " << out.components.size() << std::endl;
+    fs::Selector group_addr = fs::Selector{"jot/and", {{"$in", s1_addr}, {"shapes", {s1_addr, s2_addr}}}}.with_output("$out");
+    Processor::execute(&vfs, group_addr);
+    
+    Shape g = vfs.read<Shape>(group_addr);
+    if (g.components.size() != 2) {
+        std::cerr << "❌ Group FAIL: Expected 2 components, got " << g.components.size() << std::endl;
         return 1;
     }
 
