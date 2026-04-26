@@ -1,5 +1,5 @@
 #include "test_base.h"
-#include "../impl/processor.h"
+#include "processor.h"
 #include <iostream>
 #include <cassert>
 

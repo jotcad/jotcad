@@ -37,7 +37,7 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
     OPS_PORT,
     {
       env: { PEER_ID: 'grammar-ops-node' },
-      stdio: 'pipe', // Pipe output to avoid noise but let helper monitor
+      stdio: 'inherit', // See native node output
     }
   );
 
@@ -61,17 +61,17 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
       // THE EXPRESSION:
       // loop(group(origin, nth(points(hexagon), index=0), nth(points(hexagon), index=1)))
       
-      const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }, '$out');
-      const points = new Selector('jot/eachPoint', { $in: hexagon }, '$out');
-      const point0 = new Selector('jot/nth', { $in: points, index: 0 }, '$out');
-      const point1 = new Selector('jot/nth', { $in: points, index: 1 }, '$out');
+      const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }).withOutput('$out');
+      const points = new Selector('jot/eachPoint', { $in: hexagon }).withOutput('$out');
+      const point0 = new Selector('jot/nth', { $in: points, index: 0 }).withOutput('$out');
+      const point1 = new Selector('jot/nth', { $in: points, index: 1 }).withOutput('$out');
       const origin = new Selector('jot/eachPoint', {
-        $in: new Selector('jot/Box', { width: 0, height: 0, depth: 0 }, '$out'),
-      }, '$out'); 
-      const origin0 = new Selector('jot/at', { $in: origin, target: point0, op: new Selector('jot/Box', { width: 1, height: 1, depth: 1 }) }, '$out');
+        $in: new Selector('jot/Box', { width: 0, height: 0, depth: 0 }).withOutput('$out'),
+      }).withOutput('$out'); 
+      const origin0 = new Selector('jot/at', { $in: origin, target: point0, op: new Selector('jot/Box', { width: 1, height: 1, depth: 1 }).withOutput('$out') }).withOutput('$out');
 
-      const group = new Selector('jot/group', { $in: origin0, shapes: [point0, point1] }, '$out');
-      const sector = new Selector('jot/loop', { $in: group }, '$out');
+      const group = new Selector('jot/group', { $in: origin0, shapes: [point0, point1] }).withOutput('$out');
+      const sector = new Selector('jot/loop', { $in: group });
 
       console.log('[Test Grammar] Requesting complex grammar sector...');
       const geoText = await vfs.readText(sector.withOutput('$out'));

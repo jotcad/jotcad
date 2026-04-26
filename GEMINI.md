@@ -16,6 +16,11 @@ instructions. All C++ implementations must link against **`-lcrypto`**.
 - **STABLE HASHING**: The CID of a Selector is `hash(Safe-JCB(Selector_JSON))`. NEVER alter the Selector's structure (keys/paths) during hashing. Standardization (normalization) must happen *before* the Selector reaches the VFS.
 - **IMMUTABILITY**: Input artifacts are strictly read-only. Transformation results must be written as NEW anonymous geometry CIDs.
 - **VERTICAL DEFAULT**: Standard camera/rendering is top-down vertical (`ax=0, ay=0`).
+- **DIRECTORY INDEXING (MANDATORY)**: EVERY directory MUST contain a `README.md` file that describes the directory's core responsibility and provides a high-level summary of its sub-directories. Before researching or modifying a new directory, the AI MUST read its `README.md` to minimize blind state reading and prevent regressions.
+- **ATOMIC FILE MANDATORY (SINGLE RESPONSIBILITY)**: To minimize regressions and maximize attention precision, every file MUST have a single, atomic domain of responsibility.
+  1. **Cognitive Limit**: If a file's purpose cannot be described in a single sentence, or if it exceeds ~300 lines, it MUST be refactored.
+  2. **Subdirectory Conversion**: "Fat" files MUST be converted into a subdirectory. The new directory must contain a `README.md` index and finer-grained files for discrete tasks.
+  3. **Explicit Dependencies**: Logic must be moved into these discrete units to ensure all dependencies are explicitly visible via `include` or `import` statements, rather than hidden by proximity in a large file.
 
 ## Documentation Index
 

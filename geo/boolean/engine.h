@@ -15,7 +15,7 @@
 #include <vector>
 #include <algorithm>
 #include <variant>
-#include "../impl/kernel.h"
+#include "kernel.h"
 #include "../fix/repair.h"
 
 namespace jotcad {

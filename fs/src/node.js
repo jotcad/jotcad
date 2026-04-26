@@ -6,11 +6,11 @@ import { Selector } from './cid.js';
  */
 export const In = (path, parameters = {}, port) => ({
   mode: 'read',
-  selector: new Selector(path, parameters, port)
+  selector: port ? new Selector(path, parameters).withOutput(port) : new Selector(path, parameters)
 });
 export const Out = (path, parameters = {}, port) => ({
   mode: 'write',
-  selector: new Selector(path, parameters, port)
+  selector: port ? new Selector(path, parameters).withOutput(port) : new Selector(path, parameters)
 });
 export const Watch = (path, parameters = {}) => ({
   mode: 'watch',
@@ -20,7 +20,7 @@ export const Watch = (path, parameters = {}) => ({
 /**
  * Node: An atomic computational unit that reacts to mesh events.
  */
-export class Node {
+export class LegacyNode {
   constructor({ id, vfs, sockets = {}, execute = null }) {
     this.id = id || `node-${Math.random().toString(36).slice(2, 6)}`;
     this.vfs = vfs;

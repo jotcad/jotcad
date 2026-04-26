@@ -17,4 +17,4 @@ export {
 
 export { MeshLink } from './mesh_link.js';
 export { registerVFSRoutes } from './vfs_rest_server.js';
-export { Node, In, Out, Watch } from './node.js';
+export { LegacyNode as Node, In, Out, Watch } from './node.js';

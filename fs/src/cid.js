@@ -195,14 +195,18 @@ export async function getSelectorKey(selector) {
  * Selector: The universal address for mesh content.
  */
 export class Selector {
-  constructor(path, parameters = {}, output) {
+  constructor(path, parameters = {}) {
+    if (arguments.length > 2) {
+      throw new Error('Selector constructor only accepts (path, parameters). Use .withOutput(out) for output ports.');
+    }
     this.path = path;
     this.parameters = parameters;
-    this.output = output;
   }
 
   withOutput(output) {
-    return new Selector(this.path, this.parameters, output);
+    const s = new Selector(this.path, this.parameters);
+    s.output = output;
+    return s;
   }
 
   toJSON() {
@@ -212,7 +216,9 @@ export class Selector {
   }
 
   static fromObject(obj) {
-    return new Selector(obj.path, obj.parameters, obj.output);
+    const s = new Selector(obj.path, obj.parameters);
+    if (obj.output) s.output = obj.output;
+    return s;
   }
 }
 
