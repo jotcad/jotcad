@@ -5,9 +5,8 @@ namespace jotcad {
 namespace geo {
 
 void Triangulation::triangulate_face(
-    const Face& f, 
-    const std::vector<Vec3>& pts,
-    std::function<void(int, int, int)> on_triangle) {
+    const Geometry::Face& f,
+    const std::vector<Vec3>& pts,    std::function<void(int, int, int)> on_triangle) {
     
     if (f.loops.empty()) return;
     

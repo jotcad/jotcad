@@ -96,7 +96,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
 
   await t.test('CID Consistency', async () => {
     // Note: box op with these params produces a deterministic CID
-    const selector = new Selector('jot/Box', { depth: 0, height: 10, width: 10 }, '$out');
+    const selector = new Selector('jot/Box', { depth: 0, height: 10, width: 10 }).withOutput('$out');
     const jsAddrKey = await getSelectorKey(selector);
     await jsVfs.readData(selector);
 
@@ -117,7 +117,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
       width: 20,
       height: 20,
       depth: 0,
-    }, '$out'));
+    }).withOutput('$out'));
     console.log('[Test] Box provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Box provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
@@ -132,7 +132,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
   await t.test('Provisioning: Triangle', async () => {
     const result = await jsVfs.readData(new Selector('jot/Triangle/equilateral', {
       size: [50],
-    }, '$out'));
+    }).withOutput('$out'));
     console.log('[Test] Triangle provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Triangle provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');

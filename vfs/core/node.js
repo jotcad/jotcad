@@ -1,16 +1,16 @@
 import { VFSClosedError } from './vfs_core.js';
-import { Selector } from './cid.js';
+import { Selector } from '../data/cid.js';
 
 /**
  * Socket Helpers (DSL)
  */
 export const In = (path, parameters = {}, port) => ({
   mode: 'read',
-  selector: port ? new Selector(path, parameters).withOutput(port) : new Selector(path, parameters)
+  selector: new Selector(path, parameters, port)
 });
 export const Out = (path, parameters = {}, port) => ({
   mode: 'write',
-  selector: port ? new Selector(path, parameters).withOutput(port) : new Selector(path, parameters)
+  selector: new Selector(path, parameters, port)
 });
 export const Watch = (path, parameters = {}) => ({
   mode: 'watch',
@@ -20,7 +20,7 @@ export const Watch = (path, parameters = {}) => ({
 /**
  * Node: An atomic computational unit that reacts to mesh events.
  */
-export class LegacyNode {
+export class Node {
   constructor({ id, vfs, sockets = {}, execute = null }) {
     this.id = id || `node-${Math.random().toString(36).slice(2, 6)}`;
     this.vfs = vfs;

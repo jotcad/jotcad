@@ -1,36 +1,33 @@
 import { createSignal, onMount, onCleanup } from 'solid-js';
 import interact from 'interactjs';
 import { vfs } from '../lib/blackboard';
-import { Node, In, Out, Watch } from '../../../fs/src/node';
+import { Selector } from '../../../fs/src/cid';
 
 const DEFAULT_CODE = `
-// Define your agent here
-// Note: In, Out, and Watch are injected globally for your sockets.
+// Define your agent here using standard VFS registration
+// Note: Selector is injected globally for you to use.
 
 export const agent = {
-  sockets: {
-    // 1. Demand a specific hexagon (25 units radius)
-    input: In('shape/hexagon', { radius: 25, variant: 'full' }),
-    
-    // 2. Output to a plain, easy-to-find result path
-    output: Out('ui/result/hexagon')
+  register(vfs) {
+    // Register as the provider for this specific UI output path
+    this.unsubscribe = vfs.registerProvider('ui/result/hexagon', async (v, selector) => {
+      console.log('[HexagonPipeline] Waking up to fulfill result...');
+      
+      // Request the required geometry from the mesh
+      const hexagon = await vfs.readData(new Selector('jot/Hexagon/full', { diameter: 50 }).withOutput('$out'));
+      console.log('[HexagonPipeline] Received C++ geometry:', hexagon);
+      
+      // Return the final result to whoever requested ui/result/hexagon
+      return {
+          ...hexagon,
+          processedBy: 'Jot Engine',
+          timestamp: new Date().toISOString()
+      };
+    });
   },
   
-  async execute({ input, output, params }) {
-    console.log('[HexagonPipeline] Waking up to fulfill result...');
-    
-    // This will trigger the C++ Hexagon Agent automatically
-    const hexagon = await input.readData();
-    console.log('[HexagonPipeline] Received C++ geometry:', hexagon);
-    
-    // Pass the geometry through to our plain output path
-    await output.writeData({
-        ...hexagon,
-        processedBy: 'Jot Engine',
-        timestamp: new Date().toISOString()
-    });
-    
-    console.log('[HexagonPipeline] Published to ui/result/hexagon');
+  stop() {
+    if (this.unsubscribe) this.unsubscribe();
   }
 };
 `;
@@ -60,10 +57,8 @@ export const ScriptNode = (props) => {
       setIsRunning(false);
     } else {
       try {
-        // Inject socket helpers into global scope so the script can use them
-        globalThis.In = In;
-        globalThis.Out = Out;
-        globalThis.Watch = Watch;
+        // Inject Selector into global scope so the script can use it
+        globalThis.Selector = Selector;
 
         // Evaluate the code
         // Note: For a real app, use a safer sandbox or a proper module loader.
@@ -76,21 +71,8 @@ export const ScriptNode = (props) => {
           throw new Error('Exported "agent" object not found.');
 
         // Instantiate and start the agent
-        const agentDef = module.agent;
-        activeAgent = new Node(vfs, agentDef);
-        activeAgent.start();
-
-        // Announce sockets as LISTENING states
-        for (const [name, socket] of Object.entries(agentDef.sockets || {})) {
-          const cid = await vfs.getCID({ path: socket.path, parameters: {} });
-          await vfs.receive({
-            cid,
-            path: socket.path,
-            parameters: {},
-            state: 'LISTENING',
-            source: `ui-agent:${name}`,
-          });
-        }
+        activeAgent = module.agent;
+        activeAgent.register(vfs);
 
         setIsRunning(true);
       } catch (err) {

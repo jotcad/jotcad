@@ -74,14 +74,8 @@ struct Selector {
     }
 
     Selector with_output(const std::string& out) const {
-        if (!out.empty()) {
-            Selector s = *this;
-            s.output = out;
-            return s;
-        }
-        // If we want the base selector, return with "" (which will be omitted in to_json)
         Selector s = *this;
-        s.output = "";
+        s.output = out;
         return s;
     }
 };

@@ -26,7 +26,7 @@ struct Triangulation {
      * triangulate_face: Robustly decomposes a complex face into triangles using CDT.
      */
     static void triangulate_face(
-        const Face& f, 
+        const Geometry::Face& f, 
         const std::vector<Vec3>& projected_pts,
         std::function<void(int, int, int)> on_triangle);
 };
