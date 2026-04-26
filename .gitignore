@@ -54,3 +54,4 @@ geometry/assets/
 **/.*vfs_storage*
 **/.test_vfs_*
 actual/
+.vfs_test_storage_*

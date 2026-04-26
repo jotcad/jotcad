@@ -25,7 +25,7 @@ struct HexagonFullOp : P {
         return {
             {"path", "jot/Hexagon/full"},
             {"description", "Generates a full hexagon."},
-            {"arguments", {{"diameter", {{"type", "jot:number"}, {"default", 30.0}}}}},
+            {"arguments", {{{"name", "diameter"}, {"type", "jot:number"}, {"default", 30.0}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -52,8 +52,8 @@ struct HexagonCapOp : P {
             {"path", "jot/Hexagon/cap"},
             {"description", "Generates a triangular sector (cap) of a hexagon."},
             {"arguments", {
-                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
-                {"type", {{"type", "jot:string"}, {"const", "cap"}}}
+                {{"name", "diameter"}, {"type", "jot:number"}, {"default", 30.0}},
+                {{"name", "type"}, {"type", "jot:string"}, {"const", "cap"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -80,8 +80,8 @@ struct HexagonMiddleOp : P {
         return {
             {"path", "jot/Hexagon/middle"},
             {"arguments", {
-                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
-                {"type", {{"type", "jot:string"}, {"const", "middle"}}}
+                {{"name", "diameter"}, {"type", "jot:number"}, {"default", 30.0}},
+                {{"name", "type"}, {"type", "jot:string"}, {"const", "middle"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -108,8 +108,8 @@ struct HexagonSectorOp : P {
         return {
             {"path", "jot/Hexagon/sector"},
             {"arguments", {
-                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
-                {"type", {{"type", "jot:string"}, {"const", "sector"}}}
+                {{"name", "diameter"}, {"type", "jot:number"}, {"default", 30.0}},
+                {{"name", "type"}, {"type", "jot:string"}, {"const", "sector"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -136,8 +136,8 @@ struct HexagonHalfOp : P {
         return {
             {"path", "jot/Hexagon/half"},
             {"arguments", {
-                {"diameter", {{"type", "jot:number"}, {"default", 30.0}}},
-                {"type", {{"type", "jot:string"}, {"const", "half"}}}
+                {{"name", "diameter"}, {"type", "jot:number"}, {"default", 30.0}},
+                {{"name", "type"}, {"type", "jot:string"}, {"const", "half"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

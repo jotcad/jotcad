@@ -424,8 +424,19 @@ export class JotCompiler {
    */
   mapArguments(args, schema, opName, hasSubject = false) {
     const parameters = {};
-    const argDefs = schema ? schema.arguments || schema.properties || {} : {};
-    const propNames = Object.keys(argDefs);
+    const argList = schema?.arguments || [];
+    if (!Array.isArray(argList)) {
+        throw new Error(`Compiler Error: Arguments for operator '${opName}' must be defined as an array in the schema to preserve order.`);
+    }
+
+    const argDefs = {};
+    const propNames = [];
+    for (const arg of argList) {
+        if (arg.name) {
+            argDefs[arg.name] = arg;
+            propNames.push(arg.name);
+        }
+    }
 
     // Object Spreading: If a single object is passed, map it directly.
     if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0]) && !args[0].path && !args[0].__annotated) {

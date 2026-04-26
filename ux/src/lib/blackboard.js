@@ -82,11 +82,11 @@ export const blackboard = {
       },
       {
         schema: {
-          properties: {
-            start: { type: 'number', default: 0 },
-            stop: { type: 'number' },
-            step: { type: 'number', default: 1 },
-          },
+          arguments: [
+            { name: 'start', type: 'number', default: 0 },
+            { name: 'stop', type: 'number' },
+            { name: 'step', type: 'number', default: 1 },
+          ],
         },
         returns: { type: 'array', items: { type: 'number' } },
       }
@@ -101,9 +101,9 @@ export const blackboard = {
       },
       {
         schema: {
-          properties: {
-            count: { type: 'number' },
-          },
+          arguments: [
+            { name: 'count', type: 'number' },
+          ],
         },
         returns: { type: 'array', items: { type: 'number' } },
       }
@@ -184,6 +184,10 @@ export const blackboard = {
   publishDynamicOp(path, schema, script, persist = true) {
     console.log(`[UX] Publishing Dynamic Op: ${path}`);
 
+    if (schema.arguments && !Array.isArray(schema.arguments)) {
+      throw new Error(`Catalog Error: Arguments for operator '${path}' must be an array to preserve positional order.`);
+    }
+
     // 1. Register VFS Provider
     vfs.registerProvider(path, async (v, s) => {
       const { JotCompiler } = await import('../../../jot/src/compiler');
@@ -199,10 +203,10 @@ export const blackboard = {
       const ast = parser.parse(script);
       
       const params = { ...s.parameters };
-      if (schema.arguments) {
-        for (const [key, arg] of Object.entries(schema.arguments)) {
-           if (params[key] === undefined && arg.default !== undefined) {
-             params[key] = arg.default;
+      if (schema.arguments && Array.isArray(schema.arguments)) {
+        for (const arg of schema.arguments) {
+           if (params[arg.name] === undefined && arg.default !== undefined) {
+             params[arg.name] = arg.default;
            }
         }
       }

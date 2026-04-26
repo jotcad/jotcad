@@ -11,11 +11,11 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('Test', {
       path: 'jot/Test',
       schema: {
-        arguments: {
-          n: { type: 'num' },
-          s: { type: 'str' },
-          b: { type: 'bool' }
-        }
+        arguments: [
+          { name: 'n', type: 'num' },
+          { name: 's', type: 'str' },
+          { name: 'b', type: 'bool' }
+        ]
       }
     });
     const resolved = await compiler.evaluate(parser.parse('Test(10, "hello", true)'));
@@ -26,10 +26,10 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('Poly', {
       path: 'jot/Poly',
       schema: {
-        arguments: {
-          points: { type: 'nums' },
-          closed: { type: 'bool', default: true }
-        }
+        arguments: [
+          { name: 'points', type: 'nums' },
+          { name: 'closed', type: 'bool', default: true }
+        ]
       }
     });
     const resolved = await compiler.evaluate(parser.parse('Poly(1, 2, 3, 4, false)'));
@@ -40,11 +40,11 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('Style', {
       path: 'jot/Style',
       schema: {
-        arguments: {
-          id: { type: 'num' },
-          traits: { type: 'tags' },
-          active: { type: 'bool' }
-        }
+        arguments: [
+          { name: 'id', type: 'num' },
+          { name: 'traits', type: 'tags' },
+          { name: 'active', type: 'bool' }
+        ]
       }
     });
     const resolved = await compiler.evaluate(parser.parse('Style(42, "bold", "italic", true)'));
@@ -60,11 +60,11 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('offset', {
       path: 'jot/offset',
       schema: {
-        arguments: {
-          $in: { type: 'shape' },
-          $out: { type: 'shape' },
-          radius: { type: 'num' }
-        }
+        arguments: [
+          { name: '$in', type: 'shape' },
+          { name: '$out', type: 'shape' },
+          { name: 'radius', type: 'num' }
+        ]
       }
     });
     
@@ -88,10 +88,10 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('Move', {
       path: 'jot/Move',
       schema: {
-        arguments: {
-          pos: { type: 'vec3' },
-          range: { type: 'intv' }
-        }
+        arguments: [
+          { name: 'pos', type: 'vec3' },
+          { name: 'range', type: 'intv' }
+        ]
       }
     });
 
@@ -107,10 +107,10 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('Assemble', {
       path: 'jot/Assemble',
       schema: {
-        arguments: {
-          children: { type: 'jots' },
-          name: { type: 'str' }
-        }
+        arguments: [
+          { name: 'children', type: 'jots' },
+          { name: 'name', type: 'str' }
+        ]
       }
     });
 
@@ -129,10 +129,10 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('Mixed', {
       path: 'jot/Mixed',
       schema: {
-        arguments: {
-          numbers: { type: 'nums' },
-          other: { type: 'num' }
-        }
+        arguments: [
+          { name: 'numbers', type: 'nums' },
+          { name: 'other', type: 'num' }
+        ]
       }
     });
 

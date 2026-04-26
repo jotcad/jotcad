@@ -27,7 +27,7 @@ struct TriangleEquilateralOp : P {
         return {
             {"path", "jot/Triangle/equilateral"},
             {"description", "Generates an equilateral triangle."},
-            {"arguments", {{"size", {{"type", "jot:numbers"}, {"default", {10}}}}}},
+            {"arguments", {{{"name", "size"}, {"type", "jot:numbers"}, {"default", {10}}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

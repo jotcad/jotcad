@@ -129,8 +129,8 @@ struct EachCornerOp : P {
             {"path", "jot/eachCorner"},
             {"description", "Extracts vertices from a shape as individual oriented child components."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"proxy", {{"type", "jot:boolean"}, {"default", true}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

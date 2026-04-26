@@ -11,41 +11,41 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
   compiler.registerOperator('Box', {
     path: 'jot/Box',
     schema: {
-      arguments: {
-        width: { type: 'jot:number', default: 10 },
-        height: { type: 'jot:number', default: 10 },
-        depth: { type: 'jot:number', default: 0 },
-        radius: { type: 'jot:number' },
-        diameter: { type: 'jot:number' }
-      }
+      arguments: [
+        { name: 'width', type: 'jot:number', default: 10 },
+        { name: 'height', type: 'jot:number', default: 10 },
+        { name: 'depth', type: 'jot:number', default: 0 },
+        { name: 'radius', type: 'jot:number' },
+        { name: 'diameter', type: 'jot:number' }
+      ]
     }
   });
 
   compiler.registerOperator('at', {
     path: 'jot/at',
     schema: {
-      arguments: {
-        $in: { type: 'jot:shape' },
-        target: { type: 'jot:shape' },
-        op: { type: 'jot:operation' }
-      }
+      arguments: [
+        { name: '$in', type: 'jot:shape' },
+        { name: 'target', type: 'jot:shape' },
+        { name: 'op', type: 'jot:operation' }
+      ]
     }
   });
 
   compiler.registerOperator('corners', {
     path: 'jot/corners',
     schema: {
-      arguments: { $in: { type: 'jot:shape' } }
+      arguments: [ { name: '$in', type: 'jot:shape' } ]
     }
   });
 
   compiler.registerOperator('cut', {
     path: 'jot/cut',
     schema: {
-      arguments: {
-        $in: { type: 'jot:shape' },
-        tools: { type: 'jot:shapes' }
-      }
+      arguments: [
+        { name: '$in', type: 'jot:shape' },
+        { name: 'tools', type: 'jot:shapes' }
+      ]
     }
   });
 

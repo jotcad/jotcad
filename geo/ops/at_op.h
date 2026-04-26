@@ -49,9 +49,9 @@ struct AtOp : P {
             {"path", "jot/at"},
             {"description", "Applies an operation to the subject relative to one or more anchor locations (The Anchor Pattern)."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"target", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"op", {{"type", "jot:selector"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "target"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "op"}, {"type", "jot:selector"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

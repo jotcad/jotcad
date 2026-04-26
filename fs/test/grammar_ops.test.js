@@ -37,7 +37,7 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
     OPS_PORT,
     {
       env: { PEER_ID: 'grammar-ops-node' },
-      stdio: 'inherit', // See native node output
+      stdio: 'pipe', // Pipe output to avoid noise but let helper monitor
     }
   );
 

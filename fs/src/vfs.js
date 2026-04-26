@@ -34,6 +34,9 @@ export class VFS {
 
   registerProvider(pattern, handler, options = {}) {
     console.log(`[VFS ${this.id}] Registering provider for: ${pattern}`);
+    if (options.schema?.arguments && !Array.isArray(options.schema.arguments)) {
+      throw new Error(`VFS Error: Arguments for provider '${pattern}' must be an array to preserve positional order.`);
+    }
     this.providers.set(pattern, handler);
     if (options.schema) {
         this.schemas.set(pattern, options.schema);

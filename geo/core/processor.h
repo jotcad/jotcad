@@ -49,14 +49,19 @@ struct Processor {
     template <typename T>
     static T decode(fs::VFSNode* vfs, const std::string& key, const json& params, const json& schema, const std::vector<std::string>& stack) {
         if (!params.contains(key)) {
-             if (schema.at("arguments").contains(key) && schema.at("arguments").at(key).contains("default")) {
-                 return schema.at("arguments").at(key).at("default").get<T>();
+             // Find default in array-based arguments
+             if (schema.contains("arguments") && schema.at("arguments").is_array()) {
+                 for (const auto& arg : schema.at("arguments")) {
+                     if (arg.contains("name") && arg.at("name") == key && arg.contains("default")) {
+                         return arg.at("default").get<T>();
+                     }
+                 }
              }
              throw std::runtime_error("Missing required argument: " + key);
         }
 
         const auto& val = params[key];
-        const auto& arg_schema = schema.at("arguments").at(key);
+
 
         if constexpr (std::is_same_v<T, Shape>) {
             if (val.is_string() && val.get<std::string>().size() == 64) {

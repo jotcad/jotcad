@@ -10,11 +10,11 @@ test('JotCAD VFS Provider: Integration', async (t) => {
   registerJotProvider(vfs, { compiler });
 
   // Register mock schemas with the compiler
-  compiler.registerOperator('box', { path: 'shape/box', schema: { arguments: { width: { type: 'jot:number' } } } });
-  compiler.registerOperator('rx', { path: 'op/rotateX', schema: { arguments: { source: { type: 'jot:shape' }, turns: { type: 'jot:number' } } } });
-  compiler.registerOperator('A', { path: 'op/A', schema: { arguments: { value: { type: 'jot:number' } } } });
-  compiler.registerOperator('B', { path: 'op/B', schema: { arguments: { $in: { type: 'jot:shape' }, arg: { type: 'any' } } } });
-  compiler.registerOperator('C', { path: 'op/C', schema: { arguments: { $in: { type: 'jot:shape' }, arg: { type: 'any' } } } });
+  compiler.registerOperator('box', { path: 'shape/box', schema: { arguments: [{ name: 'width', type: 'jot:number' }] } });
+  compiler.registerOperator('rx', { path: 'op/rotateX', schema: { arguments: [{ name: 'source', type: 'jot:shape' }, { name: 'turns', type: 'jot:number' }] } });
+  compiler.registerOperator('A', { path: 'op/A', schema: { arguments: [{ name: 'value', type: 'jot:number' }] } });
+  compiler.registerOperator('B', { path: 'op/B', schema: { arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'arg', type: 'any' }] } });
+  compiler.registerOperator('C', { path: 'op/C', schema: { arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'arg', type: 'any' }] } });
 
   // Register a mock shape provider
   vfs.registerProvider('shape/box', async (v, selector) => {
@@ -26,6 +26,8 @@ test('JotCAD VFS Provider: Integration', async (t) => {
         c.close();
       },
     });
+  }, {
+    schema: { arguments: [{ name: 'width', type: 'jot:number' }] }
   });
 
   await t.test('evaluates a .jot file with parameters', async () => {
@@ -54,6 +56,8 @@ test('JotCAD VFS Provider: Integration', async (t) => {
           c.close();
         },
       });
+    }, {
+      schema: { arguments: [{ name: 'source', type: 'jot:shape' }, { name: 'turns', type: 'jot:number' }] }
     });
 
     const result = await vfs.readText('jot/eval', {
@@ -67,12 +71,12 @@ test('JotCAD VFS Provider: Integration', async (t) => {
     // Mock operators for A, B, C logic
     vfs.registerProvider('op/A', async (v, s) => {
       return new TextEncoder().encode(`${s.parameters.value}`);
-    });
+    }, { schema: { arguments: [{ name: 'value', type: 'jot:number' }] } });
     vfs.registerProvider('op/B', async (v, s) => {
       const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
       const arg = await v.readText(s.parameters.arg.path, s.parameters.arg.parameters);
       return new TextEncoder().encode(`${input} + ${arg}`);
-    });
+    }, { schema: { arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'arg', type: 'any' }] } });
     vfs.registerProvider('op/C', async (v, s) => {
       console.log('--- op/C called ---');
       console.log('selector:', JSON.stringify(s, null, 2));
@@ -84,7 +88,7 @@ test('JotCAD VFS Provider: Integration', async (t) => {
         console.log('op/C ERROR:', err);
         throw err;
       }
-    });
+    }, { schema: { arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'arg', type: 'any' }] } });
 
     await st.test('Scenario 1: Box() - no subject', async () => {
       const result = await vfs.readText('jot/eval', { expression: 'box(10)' });
@@ -97,7 +101,7 @@ test('JotCAD VFS Provider: Integration', async (t) => {
       vfs.registerProvider('op/B_literal', async (v, s) => {
         const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
         return new TextEncoder().encode(`${input} + ${s.parameters.arg}`);
-      });
+      }, { schema: { arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'arg', type: 'any' }] } });
       // We'll update the compiler registration for B to use this one just for this subtest
       // or just use the existing B and handle the literal.
       
@@ -109,7 +113,7 @@ test('JotCAD VFS Provider: Integration', async (t) => {
           arg = await v.readText(arg.path, arg.parameters);
         }
         return new TextEncoder().encode(`${input} + ${arg}`);
-      });
+      }, { schema: { arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'arg', type: 'any' }] } });
 
       const result = await vfs.readText('jot/eval', { expression: 'A(10).B(2)' });
       assert.strictEqual(result, '10 + 2');
@@ -121,12 +125,12 @@ test('JotCAD VFS Provider: Integration', async (t) => {
         const input = await v.readText(s.parameters.$in);
         const arg = await v.readText(s.parameters.arg);
         return new TextEncoder().encode(`B(input=${input}, arg=${arg})`);
-      });
+      }, { schema: { arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'arg', type: 'any' }] } });
       // Mock Box that reports its $in
       vfs.registerProvider('op/Box_check', async (v, s) => {
         const input = await v.readText(s.parameters.$in);
         return new TextEncoder().encode(`Box(in=${input})`);
-      });
+      }, { schema: { arguments: [{ name: '$in', type: 'jot:shape' }] } });
 
       // Map them in the compiler (jot/eval uses the singleton compiler we setup in provider.js)
       // This is slightly tricky because jot/eval uses a shared compiler.

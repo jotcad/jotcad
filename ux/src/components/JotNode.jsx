@@ -37,10 +37,11 @@ export const JotNode = (props) => {
   const publishToMesh = () => {
      const schema = {
        path: opName(),
-       arguments: args().reduce((acc, arg) => {
-         acc[arg.name] = { type: arg.type, default: arg.testValue };
-         return acc;
-       }, {}),
+       arguments: args().map(arg => ({
+         name: arg.name,
+         type: arg.type,
+         default: arg.testValue
+       })),
        outputs: { "$out": { type: "shape" } }
      };
      blackboard.publishDynamicOp(opName(), schema, code());

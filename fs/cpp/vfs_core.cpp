@@ -229,8 +229,6 @@ std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req) {
         target_cid = req.cid;
     } else {
         target_cid = get_cid(req.selector);
-        std::cout << "[DEBUG] VFSNode::read_impl requested CID: " << target_cid << " for path: " << req.selector.path << std::endl;
-        std::cout << "[DEBUG] JSON used for hashing: " << req.selector.to_json().dump() << std::endl;
     }
 
     if (has_local(target_cid)) {
