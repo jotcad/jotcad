@@ -31,6 +31,12 @@ A **Selector** describes a specific computation and the exact facet of the resul
   - `path` (string): The operator or resource (e.g., `"jot/Box"`).
   - `parameters` (map): The input arguments (e.g., `{"width": 10}`).
   - `output` (string, optional): The specific artifact requested.
+
+- **Strict Structural Normalization:** To ensure deterministic CIDs across environments (C++, JS, Node), Selectors MUST be normalized before hashing:
+  1. `parameters` MUST always be present (default to `{}`).
+  2. `output` MUST be omitted if empty.
+  3. Object keys MUST be sorted alphabetically during binary encoding (JCB).
+
 - **Formal Addressing Mandate:** 
   - **No Implicit Linkage:** A base Selector (without an `output` port) represents the **Operation Identity**, not its result. It is a terminal error for the VFS to automatically resolve a base selector to its `$out` port.
   - **Explicit Port Targeting:** Callers (Compilers, Tests, other Operators) MUST explicitly append the target port (e.g., `:$out`) to retrieve computational results.
@@ -57,8 +63,10 @@ Arguments in a Selector (like `$in`) MUST be stable identities (**CIDs** or **Se
 
 ---
 
-## 6. Future Work: Identity Ambiguity
-We must define a standard, unambiguous representation for "Selector or CID" when they appear as argument values. Currently, a 64-character hex string is assumed to be a CID, and an object with a `path` is assumed to be a Selector. This creates potential collisions with literal strings or data objects that accidentally match these patterns. A more robust, tag-prefixed, or schema-enforced distinction is required.
+## 6. Cycle Protection (The resolutionStack)
+To prevent infinite recursion when following **Formal Links** or recursive mesh requests:
+- **Stack Mandate:** Every `read` request MUST carry a `stack` (routing hops) and a `resolutionStack` (link identities).
+- **Enforcement:** If a node encounters a CID in the `resolutionStack` that matches the current target, it MUST throw a "Link Cycle" exception.
 
 ---
 

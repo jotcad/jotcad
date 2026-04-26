@@ -11,6 +11,7 @@
 #include <set>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 
 namespace httplib {
     class Response;
@@ -48,6 +49,7 @@ public:
         std::string cid;   // Direct content identity
         Selector selector; // Computational identity
         std::vector<std::string> stack;
+        std::vector<std::string> resolutionStack;
         long long expiresAt = 0;
         bool followLinks = true;
 
@@ -101,13 +103,40 @@ public:
     json get_catalog();
     json get_neighbors();
 
+    // Mesh Connection Abstraction
+    struct Connection {
+        std::string neighbor_id;
+        virtual ~Connection() = default;
+        virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
+        virtual std::vector<uint8_t> read(const VFSRequest& req) = 0;
+        virtual bool is_reverse() const = 0;
+    };
+
 private:
+    struct ForwardConnection : public Connection {
+        std::string url;
+        ForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
+        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        std::vector<uint8_t> read(const VFSRequest& req) override;
+        bool is_reverse() const override { return false; }
+    };
+
+    struct ReverseConnection : public Connection {
+        std::vector<json> queue;
+        std::mutex mutex;
+        std::condition_variable cv;
+        ReverseConnection(std::string id) { neighbor_id = std::move(id); }
+        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        std::vector<uint8_t> read(const VFSRequest& req) override;
+        bool is_reverse() const override { return true; }
+    };
+
     Config config_;
     std::map<std::string, OpHandler> handlers_;
     std::map<std::string, json> schemas_;
     void* server_ptr_; 
     
-    std::map<std::string, std::string> peers_; 
+    std::map<std::string, std::shared_ptr<Connection>> peers_; 
     std::set<std::string> connecting_;
     std::mutex peer_mutex_;
 
@@ -117,10 +146,6 @@ private:
 
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
-
-    std::map<std::string, std::vector<json>> reverse_queues_;
-    std::map<std::string, httplib::Response*> reverse_listeners_;
-    std::mutex reverse_mutex_;
 
     std::vector<uint8_t> read_impl(const VFSRequest& req);
 

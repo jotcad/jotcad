@@ -18,7 +18,7 @@ export const JotNode = (props) => {
   const [pos, setPos] = createSignal({ x: 400, y: 400 });
   const [opName, setOpName] = createSignal('user/MyOp');
   const [args, setArgs] = createSignal([
-    { name: 'width', type: 'number', testValue: 20 }
+    { name: 'width', type: 'jot:number', testValue: 20 }
   ]);
   const [code, setCode] = createSignal(DEFAULT_CODE);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
@@ -26,7 +26,7 @@ export const JotNode = (props) => {
   const [resultData, setResultData] = createSignal(null);
   const [associatedFiles, setAssociatedFiles] = createSignal([]);
 
-  const addArg = () => setArgs([...args(), { name: 'arg' + args().length, type: 'number', testValue: 10 }]);
+  const addArg = () => setArgs([...args(), { name: 'arg' + args().length, type: 'jot:number', testValue: 10 }]);
   const removeArg = (index) => setArgs(args().filter((_, i) => i !== index));
   const updateArg = (index, field, value) => {
     const next = [...args()];
@@ -215,7 +215,7 @@ export const JotNode = (props) => {
                  />
                  <input 
                    data-testid={`arg-value-${i()}`}
-                   type="number"
+                   type="jot:number"
                    class="bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-cyan-400 w-16 focus:outline-none focus:border-cyan-400/40"
                    value={arg.testValue}
                    onInput={e => updateArg(i(), 'testValue', parseFloat(e.target.value))}

@@ -34,7 +34,11 @@ A **Selector** is a recomposable request object containing:
 
 CIDs CAN and SHOULD be transmitted safely over the mesh network. Nodes can request data directly by CID, or they can request the execution of a computation by sending a Selector.
 
-- **Boundary Hydration:** Network handlers (REST, WebSockets) and UI entry points MUST explicitly hydrate incoming JSON representations into formal `Selector` instances using `Selector.fromObject()` before passing them to the VFS core.
+- **Strict Structural Normalization:** To ensure deterministic CIDs across environments, Selectors MUST be normalized before hashing.
+  - `parameters` MUST always be present (defaulting to `{}`).
+  - `output` MUST be omitted if empty.
+  - Object keys MUST be sorted alphabetically during binary encoding (JCB).
+- **Boundary Hydration:** Network handlers (REST, WebSockets) and UI entry points MUST explicitly hydrate incoming JSON representations into formal `Selector` instances using `Selector.fromObject()` (JS) or `Selector::from_json()` (C++) before passing them to the VFS core.
 - **Context-Safe Identification:** To prevent "identity drift" across bundlers (Vite) or cross-window contexts (Puppeteer), string-like CIDs MUST be identified using robust detection (e.g., `Object.prototype.toString.call(val) === '[object String]'`).
 
 ## 2. Actor Fulfillment Protocol
@@ -72,29 +76,37 @@ The VFS decouples transport connections from peer identities. On connection esta
 - **Response:** `{ "id": "local-id", "reachability": "DIRECT|REVERSE" }`. 
   - **REVERSE Signal:** If a node returns `REVERSE`, the requester MUST initiate a polling loop via `POST /listen` to receive incoming mesh commands.
 
-### 3.2 Browser Compatibility & CORS
+### 3.2 Peer Connection Abstraction
+
+All peer interactions are managed through a unified **Connection** abstraction.
+- **ForwardConnection:** Used for `DIRECT` reachability. Delivers publications and requests immediately via outbound HTTP `POST` calls.
+- **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers). Queues publications and uses a **Condition Variable** (C++) or **Listener Pool** (JS) to block `/listen` polls until data is available, ensuring reliable delivery.
+
+### 3.3 Browser Compatibility & CORS
 
 Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sharing (CORS).
 - **Required Headers:** `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`.
 - **Allowed Headers:** MUST include `Content-Type`, `X-VFS-Peer-Id`, `X-VFS-Reply-To`, and `X-VFS-Id`.
 - **Preflight:** Nodes MUST handle `OPTIONS` requests for all mesh routes.
 
-### 3.3 Reverse Link Polling (`POST /listen`)
+### 3.4 Reverse Link Polling (`POST /listen`)
 
 Peers without a stable incoming URL (e.g., Browsers) receive mesh events by polling the `/listen` endpoint of their neighbors.
 - **Endpoint:** `POST /listen`
 - **Headers:** `x-vfs-peer-id: <local-id>`
 - **Response:** 
   - `200 OK`: Returns a single JSON Command object (e.g., `NOTIFY`, `READ`).
-  - `204 No Content`: No events pending (client should retry after a short backoff).
+  - `204 No Content`: No events pending (returned ONLY after a timeout).
+- **Long-Polling Contract:** Servers MUST NOT return `204` immediately if the queue is empty. They must wait for a publication or a timeout (e.g., 30s).
 
-### 3.4 Formal Links (Unambiguous Aliasing)
+### 3.5 Formal Links (Unambiguous Aliasing)
 
 The VFS supports **Formal Links**, a mechanism for aliasing one Selector to another. 
 - **Link Definition:** A Link is a metadata-driven alias (`vfs.link(src, tgt)`).
 - **Storage:** The VFS writes a `.meta` file at the source CID containing `{"state": "LINK", "target": tgt_selector}`.
+- **Cycle Protection:** Nodes MUST maintain a `resolutionStack` of CIDs followed. If a CID is requested that is already in the stack, the node MUST throw a "Link Cycle" exception.
 
-### 3.3 Recursive Bread-crumb READ (`POST /read`)
+### 3.6 Recursive Bread-crumb READ (`POST /read`)
 
 The `read` operation is the primary mechanism for demand-driven data retrieval.
 
