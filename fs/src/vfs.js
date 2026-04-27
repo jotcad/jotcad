@@ -204,10 +204,18 @@ export class VFS {
     return { cid };
   }
 
-  async writeData(selector, data, context = {}) { return await this.write(selector, data, context); }
+  async writeData(selector, data, context = {}) { 
+    if (typeof selector === 'string' && !/^[0-9a-f]{64}$/i.test(selector)) {
+        throw new Error(`Protocol Violation: writeData requires a Selector for paths. Got string: "${selector}"`);
+    }
+    return await this.write(selector, data, context); 
+  }
 
   async readData(target, context = {}) {
-    if (!target) throw new Error('VFS.readData: Missing required target (CID or Selector)');
+    if (target === undefined || target === null) throw new Error('VFS.readData: Missing required target (CID or Selector)');
+    if (typeof target === 'string' && !/^[0-9a-f]{64}$/i.test(target)) {
+        throw new Error(`Protocol Violation: readData requires a Selector for paths. Got string: "${target}"`);
+    }
     const result = await this._readResult(target, { ...context, stack: [], resolutionStack: context.resolutionStack || [] });
     if (!result || !result.success) {
         throw new Error(`VFS ReadData Failure: ${result?.error || 'Content not found'}`);
@@ -268,8 +276,11 @@ export class VFS {
   }
 
   async readText(target, context = {}) {
+    if (typeof target === 'string' && !/^[0-9a-f]{64}$/i.test(target)) {
+        throw new Error(`Protocol Violation: readText requires a Selector for paths. Got string: "${target}"`);
+    }
     const data = await this.readData(target, context);
-    if (!data) return null;
+    if (data === undefined || data === null) return null;
     const serializeShape = async (shape) => {
       if (shape.geometry) return await this.readText(shape.geometry, context);
       let out = '';
@@ -327,6 +338,19 @@ export class VFS {
 
     const workPromise = (async () => {
       try {
+        if (s && s.path.endsWith('.jot') && s.path !== 'jot/eval') {
+            const hasParams = Object.keys(s.parameters).length > 0;
+            if (hasParams) {
+                const expression = await this.readText(new Selector(s.path), { ...context, followLinks: false });
+                if (expression) {
+                    return await this._readResult(new Selector('jot/eval', { 
+                        expression, 
+                        params: s.parameters 
+                    }), context);
+                }
+            }
+        }
+
         if (await this.storage.has(targetCID)) {
           const info = await this._getStorageInfo(targetCID);
           if (followLinks && info?.state === 'LINKED' && info?.target) {
@@ -354,7 +378,7 @@ export class VFS {
             }
         }
 
-        if (!resultData && this.mesh && (!isBackflow || s)) {
+        if (resultData === null && this.mesh && (!isBackflow || s)) {
           const meshResponse = await this.mesh.read(s || targetCID, { 
               ...context, 
               stack: nextStack, 
@@ -387,7 +411,7 @@ export class VFS {
             return { success: false, error: 'Backflow' };
         }
 
-        if (resultData) {
+        if (resultData !== null && resultData !== undefined) {
           // If we have a selector, write it properly to its computational CID
           if (s) {
               const { cid } = await this.write(s, resultData, { ...meshInfo, ...context });

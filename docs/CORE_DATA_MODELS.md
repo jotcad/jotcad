@@ -37,6 +37,8 @@ A **Selector** describes a specific computation and the exact facet of the resul
   2. `output` MUST be omitted if empty.
   3. Object keys MUST be sorted alphabetically during binary encoding (JCB).
 
+- **Strict read/write Protocol:** VFS methods `read`, `write`, `readData`, and `writeData` strictly require a `Selector` instance or a 64-character hex CID. Standard string paths are prohibited to ensure that every address is a formal, hashable identity.
+
 - **Formal Addressing Mandate:** 
   - **No Implicit Linkage:** A base Selector (without an `output` port) represents the **Operation Identity**, not its result. It is a terminal error for the VFS to automatically resolve a base selector to its `$out` port.
   - **Explicit Port Targeting:** Callers (Compilers, Tests, other Operators) MUST explicitly append the target port (e.g., `:$out`) to retrieve computational results.
@@ -59,6 +61,7 @@ A **Shape** is a lightweight, JSON-serializable container that carries the seman
 ## 5. Identity-First Binding (Ordinary Arguments)
 Arguments in a Selector (like `$in`) MUST be stable identities (**CIDs** or **Selectors**), never raw JSON data (like full `Shape` or `Geometry` objects).
 - **Why:** This ensures that the Selector's own Identity remains stable and independent of the size or complexity of its inputs. It also enables efficient mesh-wide deduplication and caching.
+- **Holes & Late-Binding:** In Template Mode (e.g., higher-order operations like `.at(anchor, op)`), the compiler allows affiliate slots (marked `$in` or `$out`) to remain unbound. These unprovided arguments are left as `undefined` (holes) in the Selector, signaling to the runtime provider that they must be filled by the current processing context.
 - **Ephemeral Instances:** If an operator generates an intermediate or transformed object (like an oriented corner), it MUST **materialize** that object to get a stable CID before using it as an argument for a subsequent operation.
 
 ---

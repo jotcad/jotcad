@@ -99,11 +99,9 @@ coordinate system or parent geometry is inherited implicitly.
 - **Root Constructor:** `Box()` at the top level has no implicit input.
 - **Method Call:** In `a.Box()`, the subject `a` is automatically passed as the
   implicit input to `Box`.
-- **Nested Context:** In `a.b(Box())`, the subject `a` is propagated into the
-  arguments of `b`. Thus, `Box()` is evaluated with `a` as its active context.
+- **Nested Context (Subject Non-Propagation):** To ensure clean interface boundaries, the active subject does NOT propagate into the evaluation of nested arguments. In `a.b(Box())`, the nested `Box()` call is evaluated with a `null` subject. This prevents inner operations from accidentally inheriting high-order subjects and ensures they remain as valid "holes" in templates.
 - **Explicit Override:** If an operation is provided with an explicit input
-  (e.g., `a.b(Box({ $in: c }))`), the implicit context is ignored for that
-  input slot.
+  (e.g., `a.b(Box({ $in: c }))`), that input is used regardless of context.
 
 ### 2.2. Implicit Mapping
 
@@ -148,6 +146,7 @@ the argument stack.
 - **`str`**: First string value.
 - **`bool`**: First boolean value.
 - **`jot`**: First VFS Selector or nested expression.
+- **`jot:op<$in:type, $out:type>`**: Generic Operation Signature. Performs strict interface validation on the provided template argument, ensuring its `$in` and `$out` ports match the requested types.
 - **`vec3`**: First array of 3 numbers `[x, y, z]`.
 - **`intv`**: Normalizes ranges (e.g., `10` -> `[-5, 5]`).
 

@@ -27,7 +27,6 @@ export class JotParser {
 
   _tokenize(text) {
     const tokens = [];
-    // Ignore single-line comments
     const cleanText = text.replace(/\/\/.*$/gm, '');
     const regex =
       /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,)\s*/g;
@@ -73,14 +72,8 @@ export class JotParser {
     const token = this._peek();
     if (!token) throw new Error('Unexpected end of input');
 
-    if (token === '[') {
-      return this._parseArray();
-    }
-
-    if (token === '{') {
-      return this._parseObject();
-    }
-
+    if (token === '[') return this._parseArray();
+    if (token === '{') return this._parseObject();
     if (token === '(') {
       this._consume('(');
       const expr = this._parseExpression();
@@ -88,13 +81,8 @@ export class JotParser {
       return expr;
     }
 
-    if (/^[0-9]/.test(token)) {
-      return parseFloat(this._consume());
-    }
-
-    if (/^["']/.test(token)) {
-      return this._consume().slice(1, -1);
-    }
+    if (/^[0-9]/.test(token)) return parseFloat(this._consume());
+    if (/^["']/.test(token)) return this._consume().slice(1, -1);
 
     if (/^[a-zA-Z_]/.test(token)) {
       const name = this._consume();
@@ -140,14 +128,21 @@ export class JotParser {
       let typeHint = null;
       let nameHint = null;
 
-      // 1. Check for Type Annotation (identifier :)
-      if (/^[a-zA-Z_]/.test(this._peek()) && this.tokens[this.pos + 1] === ':') {
-        typeHint = this._consume();
-        this._consume(':');
+      // 1. Check for Type Hint (Greedy identifier:identifier:... sequence)
+      let p = this.pos;
+      let hintParts = [];
+      while (p + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[p]) && this.tokens[p+1] === ':') {
+          if (p + 2 < this.tokens.length && this.tokens[p+2] === '=') break;
+          hintParts.push(this.tokens[p]);
+          p += 2;
+      }
+      if (hintParts.length > 0) {
+          typeHint = hintParts.join(':');
+          this.pos = p;
       }
 
       // 2. Check for Named Argument (identifier =)
-      if (/^[a-zA-Z_]/.test(this._peek()) && this.tokens[this.pos + 1] === '=') {
+      if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
         nameHint = this._consume();
         this._consume('=');
       }
