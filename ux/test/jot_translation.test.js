@@ -18,31 +18,31 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
   const setupOperators = (c) => {
     c.registerOperator('Box', {
       path: 'shape/box',
-      schema: { arguments: { width: { type: 'number', default: 10 } } },
+      schema: { arguments: [{ name: 'width', type: 'number', default: 10 }] },
     });
     c.registerOperator('Orb', {
       path: 'shape/orb',
-      schema: { arguments: { diameter: { type: 'number', default: 10 } } },
+      schema: { arguments: [{ name: 'diameter', type: 'number', default: 10 }] },
     });
     c.registerOperator('Hexagon', {
       path: 'shape/hexagon/full',
-      schema: { arguments: { diameter: { type: 'number' } } },
+      schema: { arguments: [{ name: 'diameter', type: 'number' }] },
     });
     c.registerOperator('offset', {
       path: 'op/offset',
-      schema: { arguments: { radius: { type: 'number', default: 1 } } },
+      schema: { arguments: [{ name: 'radius', type: 'number', default: 1 }] },
     });
     c.registerOperator('outline', {
       path: 'op/outline',
       schema: {
-        arguments: { $in: { type: 'shape' } },
+        arguments: [{ name: '$in', type: 'shape', affiliate: '$out' }],
         outputs: { $out: { type: 'shape' } },
       },
     });
     c.registerOperator('pdf', {
       path: 'op/pdf',
       schema: {
-        arguments: { $in: { type: 'shape' }, path: { type: 'string' } },
+        arguments: [{ name: '$in', type: 'shape', affiliate: '$out' }, { name: 'path', type: 'string' }],
       },
       metadata: { aliases: { $out: '$in' } },
     });

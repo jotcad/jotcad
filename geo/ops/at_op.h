@@ -50,8 +50,8 @@ struct AtOp : P {
             {"description", "Applies an operation to the subject relative to one or more anchor locations (The Anchor Pattern)."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "target"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "op"}, {"type", "jot:selector"}}
+                {{"name", "target"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Anchor provider (e.g., eachCorner())"}},
+                {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply at each anchor"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
