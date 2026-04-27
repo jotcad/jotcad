@@ -21,8 +21,8 @@ struct LinkOp : P {
             {"path", "jot/link"},
             {"description", "Creates a semantic link between two shapes, establishing a topological connection."},
             {"arguments", {
-                {"$a", {{"type", "jot:shape"}, {"description", "The first shape to be linked."}}},
-                {"$b", {{"type", "jot:shape"}, {"description", "The second shape to be linked."}}}
+                {{"name", "$a"}, {"type", "jot:shape"}, {"description", "The first shape to be linked."}},
+                {{"name", "$b"}, {"type", "jot:shape"}, {"description", "The second shape to be linked."}}
             }},
             {"inputs", {
                 {"$a", {{"type", "jot:shape"}, {"description", "The first shape."}}}, 
@@ -84,7 +84,7 @@ struct LoopOp : P {
             {"path", "jot/loop"},
             {"description", "Closes a sequence of connected segments into a topological loop."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"description", "The shape (usually a group) to form into a loop."}, {"affiliate", "$out"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The shape (usually a group) to form into a loop."}, {"affiliate", "$out"}}
             }},
             {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The input shape."}}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting loop shape."}}}}}

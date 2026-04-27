@@ -26,8 +26,8 @@ struct OffsetOp : P {
             {"path", "jot/offset"},
             {"description", "Creates a Minkowski offset."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"diameter", {{"type", "jot:number"}, {"default", 1.0}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "diameter"}, {"type", "jot:number"}, {"default", 1.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -52,9 +52,9 @@ struct OffsetClosureOp : P {
         return {
             {"path", "jot/offset/closure"},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"diameter", {{"type", "jot:number"}, {"default", 1.0}}},
-                {"closure", {{"type", "jot:boolean"}, {"const", true}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "diameter"}, {"type", "jot:number"}, {"default", 1.0}},
+                {{"name", "closure"}, {"type", "jot:boolean"}, {"const", true}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

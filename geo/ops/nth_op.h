@@ -21,8 +21,8 @@ struct NthOp : P {
             {"path", "jot/nth"},
             {"description", "Selects the N-th component shape from a group."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"index", {{"type", "integer"}, {"default", 0}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "index"}, {"type", "integer"}, {"default", 0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

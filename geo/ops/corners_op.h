@@ -37,7 +37,7 @@ struct CornersOp : P {
             {"path", "jot/corners"},
             {"description", "Extracts vertices from a shape as a point cloud oriented for joinery."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

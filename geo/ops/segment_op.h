@@ -61,7 +61,7 @@ struct LinkOp : SegmentOpBase<P> {
         return {
             {"path", "jot/link"},
             {"description", "Creates an open chain of segments connecting points."},
-            {"arguments", {{"shapes", {{"type", "jot:shapes"}}}}},
+            {"arguments", {{{"name", "shapes"}, {"type", "jot:shapes"}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -78,7 +78,7 @@ struct LoopOp : SegmentOpBase<P> {
         return {
             {"path", "jot/loop"},
             {"description", "Creates a closed loop of segments connecting points."},
-            {"arguments", {{"shapes", {{"type", "jot:shapes"}}}}},
+            {"arguments", {{{"name", "shapes"}, {"type", "jot:shapes"}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

@@ -22,8 +22,8 @@ struct RotateOp : P {
             {"path", "jot/rotate"},
             {"description", "Rotates the input shape around the Z-axis."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"description", "The shape to rotate."}, {"affiliate", "$out"}}},
-                {"angle", {{"type", "jot:number"}, {"default", 0.0}, {"description", "The rotation angle in degrees."}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The shape to rotate."}, {"affiliate", "$out"}},
+                {{"name", "angle"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "The rotation angle in degrees."}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The rotated shape."}}}}}
         };

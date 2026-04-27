@@ -47,9 +47,9 @@ struct BoxOp : P {
             {"path", "jot/Box"},
             {"description", "Generates a box (rectangle or cuboid)."},
             {"arguments", {
-                {"width", {{"type", "jot:number"}, {"default", 10.0}}},
-                {"height", {{"type", "jot:number"}, {"default", 10.0}}},
-                {"depth", {{"type", "jot:number"}, {"default", 0.0}}}
+                {{"name", "width"}, {"type", "jot:number"}, {"default", 10.0}},
+                {{"name", "height"}, {"type", "jot:number"}, {"default", 10.0}},
+                {{"name", "depth"}, {"type", "jot:number"}, {"default", 0.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

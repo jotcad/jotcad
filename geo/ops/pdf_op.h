@@ -53,8 +53,8 @@ struct PdfOp : P {
             {"path", "jot/pdf"},
             {"description", "Generates a PDF document from the spatial representation of the input shape."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"path", {{"type", "jot:string"}, {"default", "export.pdf"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "path"}, {"type", "jot:string"}, {"default", "export.pdf"}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
