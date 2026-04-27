@@ -84,6 +84,39 @@ export class VFS {
     const schema = this.schemas.get(selector.path);
     if (schema) {
       const params = selector.parameters || {};
+
+      // 1. Support new array-based arguments format
+      if (Array.isArray(schema.arguments)) {
+          for (const argDef of schema.arguments) {
+              const val = params[argDef.name];
+              const isMissing = val === undefined || val === null;
+              
+              if (isMissing && argDef.default === undefined) {
+                  // If it's an affiliate, it might be a hole, but for VFS-level 
+                  // fail-fast, we usually expect them to be bound or have a default.
+                  // However, jot/eval might pass holes.
+                  // For now, let's only throw if it's NOT an affiliate and NOT optional.
+                  const isAffiliate = argDef.affiliate === '$in' || argDef.affiliate === '$out';
+                  if (!isAffiliate) {
+                      throw new Error(`Missing required parameter '${argDef.name}'`);
+                  }
+              }
+
+              if (!isMissing) {
+                  if (argDef.type === 'jot:number' && typeof val !== 'number') {
+                      throw new Error(`Invalid parameter type for '${argDef.name}': expected number, got ${typeof val}`);
+                  }
+                  if (argDef.type === 'jot:string' && typeof val !== 'string') {
+                      throw new Error(`Invalid parameter type for '${argDef.name}': expected string, got ${typeof val}`);
+                  }
+                  if (argDef.type === 'jot:boolean' && typeof val !== 'boolean') {
+                      throw new Error(`Invalid parameter type for '${argDef.name}': expected boolean, got ${typeof val}`);
+                  }
+              }
+          }
+      }
+
+      // 2. Support legacy JSON-schema style (used in some tests)
       if (schema.required) {
         for (const req of schema.required) {
             if (params[req] === undefined) {
