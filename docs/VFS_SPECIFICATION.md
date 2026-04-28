@@ -86,9 +86,32 @@ All peer interactions are managed through a unified **Connection** abstraction.
 - **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers).
   - **Encapsulated Responsibility:** The `ReverseConnection` class manages BOTH the server-side listener pool and the client-side active polling loop.
   - **409 Conflict Protection:** Servers MUST reject a `POST /listen` with a **409 Conflict** if a poll is already active for that peer ID. Clients MUST treat a 409 as a critical failure (zombie process detection).
-  - **Independent Lifecycles:** Each connection operates its own `AbortController`, ensuring that stopping a MeshLink cleanly terminates all active poll loops.
 
-### 3.3 Browser Compatibility & CORS
+### 3.3 Discovery & Lifecycle (`sys/`)
+
+The VFS uses specialized system paths for mesh management.
+
+- **Topology Updates (`sys/topo`):** Nodes notify neighbors of topology changes.
+  - Payload Type: `TOPOLOGY_UPDATE`
+  - Content: `{ peer: "id", neighbors: { "id": "url" } }`
+- **Schema Discovery (`sys/schema`):** Providers announce their available operators.
+  - Payload Type: `CATALOG_ANNOUNCEMENT`
+  - Content: `{ provider: "id", catalog: { "path": schema } }`
+  - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
+
+### 3.4 Interest Forwarding (`POST /subscribe`)
+
+To support reactive workflows (e.g., interactive boolean previews), nodes propagate "Interests" across the mesh.
+
+- **Subscription Request:** `POST /subscribe`
+  - Content: `{ selector, expiresAt, stack }`
+- **Mesh Painting:** When a node receives a subscription, it MUST:
+  1.  Record the interest locally.
+  2.  Forward the subscription to all OTHER connected peers (omitting any peer in the `stack` to prevent cycles).
+  3.  Immediately `NOTIFY` the subscriber if the data already exists locally.
+- **Clean Cleanup:** Subscriptions expire automatically after `expiresAt`.
+
+### 3.5 Browser Compatibility & CORS
 
 Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sharing (CORS).
 - **Required Headers:** `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`.

@@ -19,85 +19,85 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('Box', {
       path: 'shape/box',
       schema: { 
-        arguments: [{ name: 'width', type: 'number', default: 10 }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: 'width', type: 'jot:number', default: 10 }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('Orb', {
       path: 'shape/orb',
       schema: { 
-        arguments: [{ name: 'diameter', type: 'number', default: 10 }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: 'diameter', type: 'jot:number', default: 10 }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('Hexagon', {
       path: 'shape/hexagon/full',
       schema: { 
-        arguments: [{ name: 'diameter', type: 'number' }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: 'diameter', type: 'jot:number' }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('offset', {
       path: 'op/offset',
       schema: { 
         arguments: [
-            { name: '$in', type: 'shape', affiliate: '$out' },
-            { name: 'radius', type: 'number', default: 1 }
+            { name: '$in', type: 'jot:shape', affiliate: '$out' },
+            { name: 'radius', type: 'jot:number', default: 1 }
         ],
-        outputs: { $out: { type: 'shape' } }
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('rotateZ', {
       path: 'op/rotate',
       schema: { 
         arguments: [
-            { name: '$in', type: 'shape', affiliate: '$out' },
+            { name: '$in', type: 'jot:shape', affiliate: '$out' },
             { name: 'angle', type: 'jot:numbers', default: [0] }
         ],
-        outputs: { $out: { type: 'shape' } }
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('outline', {
       path: 'op/outline',
       schema: {
-        arguments: [{ name: '$in', type: 'shape', affiliate: '$out' }],
-        outputs: { $out: { type: 'shape' } },
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        outputs: { $out: { type: 'jot:shape' } },
       },
     });
     c.registerOperator('pdf', {
       path: 'op/pdf',
       schema: {
-        arguments: [{ name: '$in', type: 'shape', affiliate: '$out' }, { name: 'path', type: 'string' }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'path', type: 'jot:string' }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
       metadata: { aliases: { $out: '$in' } },
     });
     c.registerOperator('box', {
       path: 'shape/box',
       schema: { 
-        arguments: [{ name: 'width', type: 'number', default: 10 }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: 'width', type: 'jot:number', default: 10 }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('arc', {
       path: 'shape/arc',
       schema: { 
-        arguments: [{ name: 'diameter', type: 'number', default: 10 }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: 'diameter', type: 'jot:number', default: 10 }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('X', {
       path: 'shape/axis',
       schema: { 
-        arguments: [{ name: 'pos', type: 'number', default: 0 }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: 'pos', type: 'jot:number', default: 0 }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('eachCorner', {
       path: 'op/corners',
       schema: { 
-        arguments: [{ name: '$in', type: 'shape', affiliate: '$out' }],
-        outputs: { $out: { type: 'shape' } }
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('range', {

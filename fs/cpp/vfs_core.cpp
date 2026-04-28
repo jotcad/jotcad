@@ -50,10 +50,6 @@ void VFSNode::listen() {
         res.set_content(json({{"status", "OK"}, {"id", config_.id}}).dump(), "application/json");
     });
 
-    svr->Get("/catalog", [this](const httplib::Request&, httplib::Response& res) {
-        res.set_content(get_catalog().dump(), "application/json");
-    });
-
     svr->Post("/register", [this](const httplib::Request& req, httplib::Response& res) {
         std::string peerId;
         std::string url;
@@ -611,7 +607,7 @@ void VFSNode::add_peer(const std::string& url) {
                 }
                 std::cout << "[VFSNode " << config_.id << "] Peer Added: " << id << " (" << url << ")" << std::endl;
                 
-                // Forward existing interests to the new peer
+                // 1. Forward existing interests to the new peer
                 {
                     std::lock_guard<std::mutex> lock(interest_mutex_);
                     long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -624,6 +620,11 @@ void VFSNode::add_peer(const std::string& url) {
                     }
                 }
 
+                // 2. Announce Catalog to the new peer
+                json catalog = get_catalog();
+                conn->notify({{"path", "sys/schema"}}, {{"type", "CATALOG_ANNOUNCEMENT"}, {"provider", config_.id}, {"catalog", catalog["catalog"]}}, {});
+
+                // 3. Update Topology
                 notify({{"path", "sys/topo"}}, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}}, {});
             } catch (...) {}
         }
