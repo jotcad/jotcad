@@ -77,7 +77,6 @@ public:
 
     std::string get_cid(const Selector& sel);
     std::vector<uint8_t> get_local(const std::string& cid);
-    std::vector<uint8_t> spy(const VFSRequest& req);
 
     Selector write(const Selector& sel, const json& data);
     Selector write(const Selector& sel, const std::vector<uint8_t>& data);
@@ -127,6 +126,7 @@ private:
         std::vector<json> queue;
         std::mutex mutex;
         std::condition_variable cv;
+        bool is_polling = false;
         ReverseConnection(std::string id) { neighbor_id = std::move(id); }
         void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
         void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;

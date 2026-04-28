@@ -549,11 +549,23 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
     }
 
     std::unique_lock<std::mutex> lock(conn->mutex);
+    
+    // Zombie Trap: Reject if already polling
+    if (conn->is_polling) {
+        res.status = 409;
+        res.set_content("CRITICAL MESH VIOLATION: Duplicate /listen received for peer. Previous poll is still active.", "text/plain");
+        return;
+    }
+
+    conn->is_polling = true;
+
     if (conn->queue.empty()) {
         conn->cv.wait_for(lock, std::chrono::seconds(30), [&conn] {
             return !conn->queue.empty();
         });
     }
+
+    conn->is_polling = false;
 
     if (!conn->queue.empty()) {
         json cmd = conn->queue.front();
