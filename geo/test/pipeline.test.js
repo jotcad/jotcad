@@ -42,8 +42,8 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
   });
 
   // 1. Start C++ Ops Node (Leaf)
-  console.log('[Test Pipeline] Launching C++ Ops Node...');
-  const opsBin = path.resolve('geo/bin/ops');
+  const __dirname = path.dirname(new URL(import.meta.url).pathname);
+  const opsBin = path.resolve(__dirname, '../bin/ops');
   opsProcess = spawn(opsBin, [PORT_OPS.toString()], {
     env: { ...process.env, PEER_ID: 'pipeline-ops' },
   });
@@ -52,8 +52,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
 
   // 2. Start JS Export Node (Peered with Ops)
   console.log('[Test Pipeline] Launching JS Export Node...');
-  // The service is in the same directory as this test's parent
-  const exportService = path.resolve('geo/export_service.js');
+  const exportService = path.resolve(__dirname, '../export_service.js');
   exportProcess = spawn('node', [exportService], {
     env: {
       ...process.env,
