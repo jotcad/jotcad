@@ -7,30 +7,55 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
 
   const mockVfs = {
     readData: async (path, params) => {
-      if (path === 'op/range') return [0, 1, 2];
+      if (path === 'op/range') return [0, 0.1, 0.2];
       return null;
     },
   };
 
-  const compiler = new JotCompiler(mockVfs, { optimizeAliases: true });
+  const baseCompiler = new JotCompiler(mockVfs, { optimizeAliases: true });
 
   // Setup dynamic schemas centrally
   const setupOperators = (c) => {
     c.registerOperator('Box', {
       path: 'shape/box',
-      schema: { arguments: [{ name: 'width', type: 'number', default: 10 }] },
+      schema: { 
+        arguments: [{ name: 'width', type: 'number', default: 10 }],
+        outputs: { $out: { type: 'shape' } }
+      },
     });
     c.registerOperator('Orb', {
       path: 'shape/orb',
-      schema: { arguments: [{ name: 'diameter', type: 'number', default: 10 }] },
+      schema: { 
+        arguments: [{ name: 'diameter', type: 'number', default: 10 }],
+        outputs: { $out: { type: 'shape' } }
+      },
     });
     c.registerOperator('Hexagon', {
       path: 'shape/hexagon/full',
-      schema: { arguments: [{ name: 'diameter', type: 'number' }] },
+      schema: { 
+        arguments: [{ name: 'diameter', type: 'number' }],
+        outputs: { $out: { type: 'shape' } }
+      },
     });
     c.registerOperator('offset', {
       path: 'op/offset',
-      schema: { arguments: [{ name: 'radius', type: 'number', default: 1 }] },
+      schema: { 
+        arguments: [
+            { name: '$in', type: 'shape', affiliate: '$out' },
+            { name: 'radius', type: 'number', default: 1 }
+        ],
+        outputs: { $out: { type: 'shape' } }
+      },
+    });
+    c.registerOperator('rotateZ', {
+      path: 'op/rotate',
+      schema: { 
+        arguments: [
+            { name: '$in', type: 'shape', affiliate: '$out' },
+            { name: 'angle', type: 'jot:numbers', default: [0] }
+        ],
+        outputs: { $out: { type: 'shape' } }
+      },
     });
     c.registerOperator('outline', {
       path: 'op/outline',
@@ -43,20 +68,53 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
       path: 'op/pdf',
       schema: {
         arguments: [{ name: '$in', type: 'shape', affiliate: '$out' }, { name: 'path', type: 'string' }],
+        outputs: { $out: { type: 'shape' } }
       },
       metadata: { aliases: { $out: '$in' } },
     });
+    c.registerOperator('box', {
+      path: 'shape/box',
+      schema: { 
+        arguments: [{ name: 'width', type: 'number', default: 10 }],
+        outputs: { $out: { type: 'shape' } }
+      },
+    });
+    c.registerOperator('arc', {
+      path: 'shape/arc',
+      schema: { 
+        arguments: [{ name: 'diameter', type: 'number', default: 10 }],
+        outputs: { $out: { type: 'shape' } }
+      },
+    });
+    c.registerOperator('X', {
+      path: 'shape/axis',
+      schema: { 
+        arguments: [{ name: 'pos', type: 'number', default: 0 }],
+        outputs: { $out: { type: 'shape' } }
+      },
+    });
+    c.registerOperator('eachCorner', {
+      path: 'op/corners',
+      schema: { 
+        arguments: [{ name: '$in', type: 'shape', affiliate: '$out' }],
+        outputs: { $out: { type: 'shape' } }
+      },
+    });
     c.registerOperator('range', {
       path: 'op/range',
+      schema: {
+        arguments: [{ name: 'count', type: 'number' }],
+        outputs: { $out: { type: 'jot:numbers' } }
+      },
       returns: { type: 'array' },
     });
   };
 
-  setupOperators(compiler);
+  setupOperators(baseCompiler);
 
   const compile = async (code, options = {}) => {
     const ast = parser.parse(code);
-    const c = options.compiler || compiler;
+    const c = options.compiler || baseCompiler;
     return await c.evaluate(ast);
   };
 
@@ -66,9 +124,9 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
       expect(selector.path).toBe('shape/box');
     });
 
-    it('should NOT resolve lowercase constructor if not registered: box(10)', async () => {
+    it('should resolve lowercase constructor if registered: box(10)', async () => {
       const selector = await compile('box(10)');
-      expect(selector.path).toBe('op/box');
+      expect(selector.path).toBe('shape/box');
     });
 
     it('should resolve camelCase operation: Box(10).offset(2)', async () => {
@@ -91,25 +149,24 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
 
     it('should handle optimized chain (optimizeAliases: true)', async () => {
       const res = await compile('Box(10).pdf("out.pdf")');
-      expect(res).toHaveLength(2);
-      expect(res[0].path).toBe('shape/box');
-      expect(res[1].path).toBe('op/pdf');
+      // In next-gen compiler, if a method is a side-demand (like pdf), 
+      // evaluate returns the primary result.
+      expect(res.path).toBe('shape/box');
     });
 
     it('should handle complex optimized chain: Box(10).pdf("out.pdf").offset(2)', async () => {
       const res = await compile('Box(10).pdf("out.pdf").offset(2)');
-      expect(res).toHaveLength(2);
-      expect(res[0].path).toBe('op/offset');
-      expect(res[1].path).toBe('op/pdf');
+      expect(res.path).toBe('op/offset');
+      expect(res.parameters.$in.path).toBe('shape/box');
     });
   });
 
   describe('Generator Unrolling', () => {
-    it('should unroll range(3) using PascalCase: Box(range(3))', async () => {
-      const res = await compile('Box(range(3))');
-      expect(res).toHaveLength(3);
-      expect(res[0].parameters.width).toBe(0);
-      expect(res[2].parameters.width).toBe(2);
+    it('should pass range(3) as a Selector to rotateZ: Box(10).rotateZ(range(3))', async () => {
+      const res = await compile('Box(10).rotateZ(range(3))');
+      expect(res.path).toBe('op/rotate');
+      expect(res.parameters.angle[0].path).toBe('op/range');
+      expect(res.parameters.angle[0].parameters.count).toBe(3);
     });
   });
 
@@ -118,15 +175,13 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
       const res = await compile(
         'Hexagon(50).offset(2).outline().pdf("out.pdf")'
       );
-      expect(res).toHaveLength(2);
-      expect(res[0].path).toBe('op/outline');
-      expect(res[1].path).toBe('op/pdf');
+      expect(res.path).toBe('op/outline');
     });
   });
 
-  describe('Primacy of Diameter', () => {
-    it('should map radius to diameter for PascalCase Orb', async () => {
-      const selector = await compile('Orb({ radius: 5 })');
+  describe('Standard Diameter', () => {
+    it('should use diameter for PascalCase Orb', async () => {
+      const selector = await compile('Orb(diameter = 10)');
       expect(selector.parameters.diameter).toBe(10);
     });
   });

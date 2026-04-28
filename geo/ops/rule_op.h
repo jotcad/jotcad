@@ -180,7 +180,7 @@ struct RuleOp : P {
             {"description", "Generates a ruled surface triangulating between two sets of boundary loops, supporting holes."},
             {"arguments", {
                 {{"name", "$a"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "$b"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
+                {{"name", "$b"}, {"type", "jot:shape"}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}}}

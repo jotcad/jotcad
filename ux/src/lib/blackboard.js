@@ -4,8 +4,21 @@ import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js'
 import { MeshLink } from '../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../jot/src/index.js';
 
+// Generate a unique ID for this tab/session to prevent mesh conflicts
+const getSessionId = () => {
+  const key = 'jotcad_peer_id';
+  let id = sessionStorage.getItem(key);
+  if (!id) {
+    id = `ui-${Math.random().toString(36).slice(2, 8)}`;
+    sessionStorage.setItem(key, id);
+  }
+  return id;
+};
+
+const peerId = getSessionId();
+
 export const vfs = new VFS({
-  id: 'ui-main',
+  id: peerId,
   storage: new IndexedDBStorage(),
 });
 
@@ -42,6 +55,17 @@ export const blackboard = {
   dynamicOps,
   error,
   setError,
+
+  async discoverSchemas() {
+    setDiscoveryStatus('loading');
+    try {
+      await mesh.subscribe(new Selector('sys/schema'), Date.now() + 60000);
+      setDiscoveryStatus('success');
+    } catch (err) {
+      console.error('[UX] Catalog discovery failed:', err);
+      setDiscoveryStatus('error');
+    }
+  },
 
   async start() {
     if (isStarted) return;
@@ -213,6 +237,7 @@ export const blackboard = {
 
       const result = await compiler.evaluate(ast, params);
       const primary = Array.isArray(result) ? result[0] : result;
+      // CRITICAL: Must pass the formal Selector instance to readData to preserve its output port
       const shapeData = await v.readData(primary);
       return new TextEncoder().encode(JSON.stringify(shapeData));
     }, { schema });

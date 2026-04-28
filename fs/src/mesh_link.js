@@ -117,12 +117,78 @@ class ForwardConnection extends Connection {
 
 /**
  * ReverseConnection: A pipe reached by replying to a neighbor's pending /listen poll.
+ * Encapsulates BOTH the server-side pool management and the client-side poll loop.
  */
 class ReverseConnection extends Connection {
-  constructor(neighborId, registry) {
+  constructor(neighborId, mesh, options = {}) {
     super(neighborId);
-    this.registry = registry;
+    this.mesh = mesh;
+    this.vfs = mesh.vfs;
+    this.instanceId = options.instanceId || Math.random().toString(36).slice(2, 8);
     this.reachability = 'REVERSE';
+    
+    // Server-side state
+    this.pool = [];
+    this.queue = [];
+    this.replies = new Map();
+    
+    // Client-side state
+    this.abortController = new AbortController();
+  }
+
+  /**
+   * SERVER SIDE: Handle an incoming /listen poll.
+   */
+  addScanner(res, replyTo = null, stream = null) {
+    // CRITICAL ASSERTION: No hidden errors. 
+    // If a node tries to open a second poll line, it's a protocol violation or zombie.
+    if (this.pool.length > 0) {
+      const msg = `CRITICAL MESH VIOLATION: Duplicate /listen received for peer ${this.neighborId}. Previous poll is still active. This indicates a 'Zombie' process or multiple tabs sharing the same ID.`;
+      console.error(msg);
+      res.writeHead(409, { 'Content-Type': 'text/plain' });
+      res.end(msg);
+      throw new Error(msg);
+    }
+
+    // Handle asynchronous read/spy replies via the tunnel
+    if (replyTo && stream) {
+      const resolve = this.replies.get(replyTo);
+      if (resolve) {
+        this.replies.delete(replyTo);
+        resolve(stream, new Map(stream.length ? [['Content-Length', stream.length.toString()]] : []));
+      }
+    }
+
+    // Flush any pending commands immediately
+    if (this.queue.length > 0) {
+      const cmd = this.queue.shift();
+      console.log(`[ReverseConn ${this.neighborId}] Delivering queued command ${cmd.op || cmd.type} immediately.`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(cmd));
+      return;
+    }
+
+    // Otherwise, park the response in the pool
+    this.pool.push({ res });
+    res.on('close', () => {
+      const idx = this.pool.findIndex((item) => item.res === res);
+      if (idx !== -1) this.pool.splice(idx, 1);
+    });
+  }
+
+  /**
+   * SERVER SIDE: Send a command or notification by consuming a pooled /listen response.
+   */
+  _dispatch(command) {
+    console.log(`[ReverseConn ${this.neighborId}] Dispatching command ${command.op || command.type}`);
+    if (this.pool.length > 0) {
+      const { res } = this.pool.shift();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(command));
+      return true;
+    }
+    this.queue.push(command);
+    return false;
   }
 
   async read(selector, context = {}) {
@@ -130,17 +196,17 @@ class ReverseConnection extends Connection {
     const requestId = globalThis.crypto.randomUUID();
     const replyPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.registry.replies.delete(requestId);
-        reject(new Error(`Reverse read timeout for ${selector.path}`));
+        this.replies.delete(requestId);
+        reject(new Error(`Reverse read timeout for ${selector.path || selector}`));
       }, Math.max(0, expiresAt - Date.now()));
 
-      this.registry.replies.set(requestId, (stream, headers = new Map()) => {
+      this.replies.set(requestId, (stream, headers = new Map()) => {
         clearTimeout(timeout);
         resolve({ body: stream, headers });
       });
     });
 
-    this.registry.dispatch(this.neighborId, { 
+    this._dispatch({ 
         type: 'COMMAND', 
         op: 'READ', 
         id: requestId, 
@@ -157,17 +223,17 @@ class ReverseConnection extends Connection {
     const requestId = globalThis.crypto.randomUUID();
     const replyPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.registry.replies.delete(requestId);
+        this.replies.delete(requestId);
         reject(new Error(`Reverse spy timeout for ${selector.path}`));
       }, expiresAt - Date.now());
 
-      this.registry.replies.set(requestId, (stream, headers = new Map()) => {
+      this.replies.set(requestId, (stream, headers = new Map()) => {
         clearTimeout(timeout);
         resolve({ body: stream, headers });
       });
     });
 
-    this.registry.dispatch(this.neighborId, { 
+    this._dispatch({ 
         type: 'COMMAND', 
         op: 'SPY', 
         id: requestId, 
@@ -180,13 +246,81 @@ class ReverseConnection extends Connection {
   }
 
   async subscribe(selector, expiresAt, stack) {
-    this.registry.dispatch(this.neighborId, { type: 'COMMAND', op: 'SUB', selector, expiresAt, stack });
+    this._dispatch({ type: 'COMMAND', op: 'SUB', selector, expiresAt, stack });
   }
 
   async notify(selector, payload, stack = []) {
     this._pulseCount++;
     this.lastPulse = Date.now();
-    this.registry.dispatch(this.neighborId, { type: 'NOTIFY', selector, payload, stack });
+    this._dispatch({ type: 'NOTIFY', selector, payload, stack });
+  }
+
+  /**
+   * CLIENT SIDE: Actively poll a visible neighbor to receive mesh commands.
+   */
+  async startPolling(baseUrl, fetch) {
+    console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} starting Poll-based Receiver for ${baseUrl}`);
+    let replyTo = null, stream = null;
+    
+    while (!this.abortController.signal.aborted) {
+      console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- ENTERING LOOP ITERATION ---`);
+      try {
+        const headers = { 'x-vfs-peer-id': this.vfs.id };
+        if (replyTo) headers['x-vfs-reply-to'] = replyTo;
+        
+        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
+        const resp = await fetch(`${baseUrl}/listen`, { 
+            method: 'POST', 
+            headers, 
+            signal: this.abortController.signal, 
+            body: stream 
+        });
+        replyTo = null; stream = null;
+        
+        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} <- GOT SOMETHING (status ${resp.status}) from ${baseUrl}`);
+        if (resp.status === 200) {
+          const cmdText = await resp.text();
+          const cmd = JSON.parse(cmdText);
+          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - STARTING execution of ${cmd.op || cmd.type}`);
+          
+          if (cmd.type === 'COMMAND') {
+            const sel = cmd.selector;
+            if (cmd.op === 'READ') {
+              stream = await this.vfs.read(sel, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
+              replyTo = cmd.id;
+            } else if (cmd.op === 'SPY') {
+              stream = await this.vfs.spy(sel, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
+              replyTo = cmd.id;
+            } else if (cmd.op === 'SUB') {
+              this.mesh.addInterest(cmd.stack[0] || 'unknown', sel, cmd.expiresAt, cmd.stack);
+            }
+          } else if (cmd.type === 'NOTIFY') {
+            const s = Selector.fromObject(cmd.selector);
+            this.mesh.notify(s, cmd.payload, cmd.stack);
+          }
+          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- FINISHED command. Looping. ---`);
+        } else if (resp.status === 409) {
+            const errText = await resp.text();
+            throw new Error(`CRITICAL: Remote node rejected our poll: ${errText}`);
+        } else { 
+          if (resp.status !== 204) console.log(`[ReverseConn ${this.neighborId}] poll non-200 response: ${resp.status}`);
+          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- IDLE. Looping. ---`);
+          await new Promise(r => setTimeout(r, 1000)); 
+        }
+      } catch (err) { 
+        if (this.abortController.signal.aborted) break; 
+        console.error(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} !!! POLL LOOP CRASHED !!!`, err.message);
+        throw err; // Visible Error Requirement
+      }
+    }
+  }
+
+  stop() {
+    this.abortController.abort();
+    for (const { res } of this.pool) {
+      try { res.end(); } catch (e) {}
+    }
+    this.pool = [];
   }
 }
 
@@ -196,39 +330,32 @@ class ReverseConnection extends Connection {
 export class MeshLinkBase {
   constructor(vfs, neighborUrls = [], options = {}) {
     this.vfs = vfs;
+    this.instanceId = Math.random().toString(36).slice(2, 8);
     this.fetch = options.fetch || globalThis.fetch.bind(globalThis);
     this.localUrl = options.localUrl;
+    console.log(`[MeshLink ${this.vfs.id}] Instance ${this.instanceId} created.`);
     this.peers = new Map(); // neighborId -> Connection
     this.connecting = new Set();
-    this.listeningTo = new Set();
     this.neighborUrls = neighborUrls.map((u) => u.replace(/\/$/, ''));
     this.abortController = new AbortController();
 
     this.interests = new Map();
-    this.commandQueues = new Map(); // neighborId -> Array<Command>
-    this.listenerPools = new Map(); // neighborId -> Array<{res, req}>
-
-    this.reverseRegistry = {
-      replies: new Map(),
-      dispatch: (neighborId, command) => {
-        console.log(`[MeshLink ${this.vfs.id}] Dispatching command ${command.op || command.type} to ${neighborId}`);
-        const pool = this.listenerPools.get(neighborId);
-        if (pool && pool.length > 0) {
-          const { res } = pool.shift();
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(command));
-          return true;
-        }
-        if (!this.commandQueues.has(neighborId)) this.commandQueues.set(neighborId, []);
-        this.commandQueues.get(neighborId).push(command);
-        return false;
-      },
-    };
 
     this._ppsInterval = setInterval(() => {
       for (const conn of this.peers.values()) conn._tickPPS();
     }, 1000);
     if (this._ppsInterval.unref) this._ppsInterval.unref();
+  }
+
+  /**
+   * INTERNAL: Enforce strictly one Connection per peer.
+   */
+  _setPeer(id, conn) {
+    if (this.peers.has(id)) {
+      const existing = this.peers.get(id);
+      throw new Error(`CRITICAL PROTOCOL VIOLATION: Peer ${id} already has an active connection (${existing.reachability}). Refusing to create duplicate.`);
+    }
+    this.peers.set(id, conn);
   }
 
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
@@ -238,13 +365,17 @@ export class MeshLinkBase {
     // Paint the local interest field
     const topic = JSON.stringify(s);
     if (!this.interests.has(topic)) {
-        this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null });
+        this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null, localExpiresAt: 0 });
     }
+    const entry = this.interests.get(topic);
+    entry.localExpiresAt = Math.max(entry.localExpiresAt, expiresAt);
+    console.log(`[MeshLink ${this.vfs.id}] Local interest in ${s.path} recorded (expiresAt: ${expiresAt})`);
     
     // Propagate the interest (Painting the mesh)
     const nextStack = [...stack, this.vfs.id];
     for (const conn of this.peers.values()) {
       if (!nextStack.includes(conn.neighborId)) {
+        console.log(`[MeshLink ${this.vfs.id}] -> Propagating local interest in ${s.path} to peer ${conn.neighborId}`);
         conn.subscribe(s, expiresAt, nextStack).catch(() => {});
       }
     }
@@ -254,26 +385,42 @@ export class MeshLinkBase {
     const s = normalizeSelector(selector);
     const topic = JSON.stringify(s);
     if (!this.interests.has(topic)) {
-      this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null });
+      this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null, localExpiresAt: 0 });
     }
     
     const entry = this.interests.get(topic);
     const isNewNeighbor = !entry.subs.has(neighborId);
     entry.subs.set(neighborId, expiresAt);
 
-    console.log(`[MeshLink ${this.vfs.id}] Interest added for ${topic} from ${neighborId}`);
+    console.log(`[MeshLink ${this.vfs.id}] Interest added for ${s.path} from neighbor ${neighborId}`);
 
-    // If we have a cached value, push it immediately to the new interested neighbor
+    // IMMEDIATE REPLY PHASE: 
+    // 1. If we have a cached last value from the mesh, push it.
     if (isNewNeighbor && entry.lastValue) {
       const conn = this.peers.get(neighborId);
-      if (conn) conn.notify(s, entry.lastValue, [this.vfs.id]).catch(() => {});
+      if (conn) {
+          console.log(`[MeshLink ${this.vfs.id}] Pushing cached lastValue for ${s.path} to neighbor ${neighborId}`);
+          conn.notify(s, entry.lastValue, [this.vfs.id]).catch(() => {});
+      }
     }
 
-    // Propagate interest further if this is the first time we've seen interest in this topic
-    if (isNewNeighbor && entry.subs.size === 1) {
+    // 2. If it's sys/schema, we MUST also contribute our own local catalog (The C++ Parity Rule)
+    if (isNewNeighbor && s.path === 'sys/schema') {
+        const conn = this.peers.get(neighborId);
+        if (conn) {
+            console.log(`[MeshLink ${this.vfs.id}] Replying to sys/schema sub from ${neighborId} with local catalog`);
+            const catalog = this.vfs.getCatalog();
+            conn.notify(s, { type: 'CATALOG_ANNOUNCEMENT', ...catalog }, [this.vfs.id]).catch(() => {});
+        }
+    }
+
+    // PROPAGATION PHASE:
+    // If this is a new neighbor, we forward their interest to all OTHER directions.
+    if (isNewNeighbor) {
       const nextStack = [...stack, this.vfs.id];
       for (const conn of this.peers.values()) {
-        if (!nextStack.includes(conn.neighborId)) {
+        if (!nextStack.includes(conn.neighborId) && conn.neighborId !== neighborId) {
+          console.log(`[MeshLink ${this.vfs.id}] -> Propagating neighbor ${neighborId}'s interest in ${s.path} to peer ${conn.neighborId}`);
           conn.subscribe(s, expiresAt, nextStack).catch(() => {});
         }
       }
@@ -281,11 +428,15 @@ export class MeshLinkBase {
   }
 
   notify(selector, payload, stack = []) {
-    if (stack.includes(this.vfs.id)) return;
     const s = normalizeSelector(selector);
+    console.log(`[MeshLink ${this.vfs.id}] notify() called for ${s.path} (stack: ${stack})`);
+    if (stack.includes(this.vfs.id)) {
+        console.log(`[MeshLink ${this.vfs.id}]   - Dropping publication (cycle detected)`);
+        return;
+    }
     const nextStack = [...stack, this.vfs.id];
 
-    console.log(`[MeshLink ${this.vfs.id}] Received publication for ${s.path} (stack: ${stack})`);
+    console.log(`[MeshLink ${this.vfs.id}] Processing publication for ${s.path}`);
 
     // Natural spreading through the interest field
     for (const entry of this.interests.values()) {
@@ -324,80 +475,6 @@ export class MeshLinkBase {
     for (const url of this.neighborUrls) await this.addPeer(url);
   }
 
-  async listenLoop(baseUrl) {
-    if (this.listeningTo.has(baseUrl)) return;
-    this.listeningTo.add(baseUrl);
-    console.log(`[MeshLink ${this.vfs.id}] Starting listenLoop for ${baseUrl}`);
-    let replyTo = null, stream = null;
-    try {
-      while (!this.abortController.signal.aborted) {
-        try {
-          const headers = { 'x-vfs-peer-id': this.vfs.id };
-          if (replyTo) headers['x-vfs-reply-to'] = replyTo;
-          
-          console.log(`[MeshLink ${this.vfs.id}] -> POST ${baseUrl}/listen (replyTo: ${replyTo || 'none'})`);
-          const resp = await this.fetch(`${baseUrl}/listen`, { method: 'POST', headers, signal: this.abortController.signal, body: stream });
-          replyTo = null; stream = null;
-          
-          console.log(`[MeshLink ${this.vfs.id}] <- ${resp.status} ${baseUrl}/listen`);
-          if (resp.status === 200) {
-            const cmdText = await resp.text();
-            console.log(`[MeshLink ${this.vfs.id}]   - Raw Body:`, cmdText);
-            const cmd = JSON.parse(cmdText);
-            console.log(`[MeshLink ${this.vfs.id}] Received COMMAND ${cmd.op || cmd.type} from ${baseUrl}`);
-            if (cmd.type === 'COMMAND') {
-              const sel = cmd.selector;
-              if ((cmd.op === 'READ' || cmd.op === 'SPY') && !sel) {
-                console.error(`[MeshLink ${this.vfs.id}] Received COMMAND ${cmd.op} without selector`);
-                continue;
-              }
-              if (cmd.op === 'READ') {
-                stream = await this.vfs.read(sel, {
-                  stack: cmd.stack,
-                  resolutionStack: cmd.resolutionStack,
-                  expiresAt: cmd.expiresAt,
-                });
-                replyTo = cmd.id;
-              } else if (cmd.op === 'SPY') {
-                stream = await this.vfs.spy(sel, {
-                  stack: cmd.stack,
-                  resolutionStack: cmd.resolutionStack,
-                  expiresAt: cmd.expiresAt,
-                });
-                replyTo = cmd.id;
-              } else if (cmd.op === 'SUB') {
-                if (!sel) {
-                    console.error(`[MeshLink ${this.vfs.id}] Received SUB without selector`);
-                    continue;
-                }
-                this.addInterest(
-                  cmd.stack[0] || 'unknown',
-                  sel,
-                  cmd.expiresAt,
-                  cmd.stack
-                );
-              }
-            } else if (cmd.type === 'NOTIFY') {
-              if (!cmd.selector) {
-                  console.error(`[MeshLink ${this.vfs.id}] Received NOTIFY without selector`);
-                  continue;
-              }
-              const s = Selector.fromObject(cmd.selector);
-              this.notify(s, cmd.payload, cmd.stack);
-            }
-          } else { 
-            if (resp.status !== 204) console.log(`[MeshLink ${this.vfs.id}] listenLoop non-200 response: ${resp.status}`);
-            await new Promise(r => setTimeout(r, 5000)); 
-          }
-        } catch (err) { 
-          if (this.abortController.signal.aborted) break; 
-          console.error(`[MeshLink ${this.vfs.id}] listenLoop error:`, err.message);
-          await new Promise(r => setTimeout(r, 5000)); 
-        }
-      }
-    } finally { this.listeningTo.delete(baseUrl); }
-  }
-
   async addPeer(url) {
     url = url.replace(/\/$/, '');
     console.log(`[MeshLink ${this.vfs.id}] Attempting to add peer at ${url}`);
@@ -412,7 +489,6 @@ export class MeshLinkBase {
         signal: this.abortController.signal || AbortSignal.timeout(5000),
       });
       console.log(`[MeshLink ${this.vfs.id}] <- ${resp.status} ${url}/register`);
-      console.log(`[MeshLink ${this.vfs.id}] Register response status: ${resp.status}`);
       if (resp.ok) {
         const info = await resp.json();
         console.log(`[MeshLink ${this.vfs.id}] Register info:`, info);
@@ -423,13 +499,26 @@ export class MeshLinkBase {
                 signal: this.abortController.signal,
                 reachability: info.reachability
             });
-            this.peers.set(info.id, conn);
+            this._setPeer(info.id, conn);
             console.log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id}`);
             this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+            for (const entry of this.interests.values()) {
+              let maxExp = entry.localExpiresAt || 0;
+              for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+              if (maxExp > Date.now()) {
+                conn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
+              }
+            }
           }
           // Browser Rule: If we have no local URL, we MUST poll for mesh events
           if (info.reachability === 'REVERSE' || !this.localUrl) {
-            this.listenLoop(url);
+            // Unify: Create a ReverseConnection for the poll link
+            const pollerId = `${info.id}-poller`;
+            if (!this.peers.has(pollerId)) {
+                const poller = new ReverseConnection(pollerId, this, { instanceId: this.instanceId });
+                this._setPeer(pollerId, poller);
+                poller.startPolling(url, this.fetch);
+            }
           }
           return info.id;
         }
@@ -438,7 +527,6 @@ export class MeshLinkBase {
         if (e.name === 'AbortError' || e.name === 'TimeoutError' || e.message?.includes('aborted')) return null;
         const msg = `Handshake failed for ${url}: ${e.message}`;
         console.warn(`[MeshLink ${this.vfs.id}] ${msg}`);
-        // Do not throw; handshaking is opportunistic and backgrounded
     } finally { this.connecting.delete(url); }
     return null;
   }
@@ -459,24 +547,28 @@ export class MeshLinkBase {
     }
   }
 
+  /**
+   * SERVER SIDE: Entry point for a hidden peer calling /listen.
+   */
   registerReversePeer(neighborId, res, replyTo = null, stream = null) {
     console.log(`[MeshLink ${this.vfs.id}] registerReversePeer: ${neighborId} (replyTo: ${replyTo || 'none'})`);
-    if (replyTo && stream) {
-      const resolve = this.reverseRegistry.replies.get(replyTo);
-      if (resolve) { this.reverseRegistry.replies.delete(replyTo); resolve(stream, new Map(stream.length ? [['Content-Length', stream.length.toString()]] : [])); }
-    }
     if (!this.peers.has(neighborId)) {
-      const conn = new ReverseConnection(neighborId, this.reverseRegistry);
-      this.peers.set(neighborId, conn);
+      const conn = new ReverseConnection(neighborId, this, { instanceId: this.instanceId });
+      this._setPeer(neighborId, conn);
       this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+      for (const entry of this.interests.values()) {
+        let maxExp = entry.localExpiresAt || 0;
+        for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+        if (maxExp > Date.now()) {
+          conn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
+        }
+      }
     }
-    if (!this.listenerPools.has(neighborId)) this.listenerPools.set(neighborId, []);
-    const pool = this.listenerPools.get(neighborId);
-    if (pool.length >= 10) { res.writeHead(429); res.end('Pool Saturated'); return; }
-    const queue = this.commandQueues.get(neighborId);
-    if (queue && queue.length > 0) { const cmd = queue.shift(); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(cmd)); return; }
-    pool.push({ res });
-    res.on('close', () => { const idx = pool.findIndex(item => item.res === res); if (idx !== -1) pool.splice(idx, 1); });
+    const conn = this.peers.get(neighborId);
+    if (!(conn instanceof ReverseConnection)) {
+        throw new Error(`CRITICAL PROTOCOL VIOLATION: registerReversePeer called for ${neighborId} but connection is ${conn.constructor.name}`);
+    }
+    conn.addScanner(res, replyTo, stream);
   }
 
   async read(target, context = {}) {
@@ -525,7 +617,14 @@ export class MeshLinkBase {
     } finally { for (const p of fetchPromises) p.catch(() => {}); }
   }
 
-  stop() { this.abortController.abort(); clearInterval(this._ppsInterval); for (const pool of this.listenerPools.values()) { for (const { res } of pool) { try { res.end(); } catch(e){} } } this.listenerPools.clear(); }
+  stop() { 
+    this.abortController.abort(); 
+    clearInterval(this._ppsInterval); 
+    for (const conn of this.peers.values()) {
+        if (conn instanceof ReverseConnection) conn.stop();
+    }
+    this.peers.clear(); 
+  }
 }
 
 export class MeshLink extends MeshLinkBase {}

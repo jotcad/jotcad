@@ -63,8 +63,8 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
       
       const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }).withOutput('$out');
       const points = new Selector('jot/eachPoint', { $in: hexagon }).withOutput('$out');
-      const point0 = new Selector('jot/nth', { $in: points, index: 0 }).withOutput('$out');
-      const point1 = new Selector('jot/nth', { $in: points, index: 1 }).withOutput('$out');
+      const point0 = new Selector('jot/nth', { $in: points, index: [0] }).withOutput('$out');
+      const point1 = new Selector('jot/nth', { $in: points, index: [1] }).withOutput('$out');
       const origin = new Selector('jot/eachPoint', {
         $in: new Selector('jot/Box', { width: 0, height: 0, depth: 0 }).withOutput('$out'),
       }).withOutput('$out'); 

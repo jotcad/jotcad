@@ -75,6 +75,14 @@ test('JotCompiler Argument Mapping', async (t) => {
     });
     
     const subject = new Selector('jot/Hexagon', { diameter: 30 }).withOutput('$out');
+    compiler.registerOperator('Hexagon', {
+        path: 'jot/Hexagon',
+        schema: {
+            arguments: [{ name: 'diameter', type: 'jot:number' }],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
     const ast = {
       type: 'METHOD',
       subject: subject,
@@ -84,7 +92,8 @@ test('JotCompiler Argument Mapping', async (t) => {
     
     const resolved = await compiler.evaluate(ast);
     assert.equal(resolved.path, 'jot/offset');
-    assert.deepEqual(resolved.parameters.$in, subject);
+    assert.equal(resolved.parameters.$in.path, subject.path);
+    assert.deepEqual(resolved.parameters.$in.parameters, subject.parameters);
     assert.equal(resolved.parameters.radius, 10);
     assert.strictEqual(resolved.output, '$out');
   });
@@ -126,8 +135,8 @@ test('JotCompiler Argument Mapping', async (t) => {
     });
 
     // Mock sub-operators
-    compiler.registerOperator('A', { path: 'jot/A', schema: { outputs: {"$out":{}} } });
-    compiler.registerOperator('B', { path: 'jot/B', schema: { outputs: {"$out":{}} } });
+    compiler.registerOperator('A', { path: 'jot/A', schema: { arguments: [], outputs: {"$out":{ type: 'jot:shape' }} } });
+    compiler.registerOperator('B', { path: 'jot/B', schema: { arguments: [], outputs: {"$out":{ type: 'jot:shape' }} } });
 
     const resolved = await compiler.evaluate(parser.parse('Assemble(A(), B(), "my-assembly")'));
     assert.equal(resolved.parameters.children.length, 2);

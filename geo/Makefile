@@ -42,6 +42,20 @@ $(LIB_JOTGEO): $(OBJS)
 $(OPS_BIN): $(DRIVER_OBJ) $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $(DRIVER_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
 
+# Test binaries
+TEST_LOGIC_BIN = $(BIN_DIR)/logic_verification
+TEST_LOGIC_OBJ = $(OBJ_DIR)/logic_verification.o
+
+$(OBJ_DIR)/logic_verification.o: test/logic_verification.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(TEST_LOGIC_BIN): $(TEST_LOGIC_OBJ) $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $(TEST_LOGIC_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
+
+test: $(OPS_BIN) $(TEST_LOGIC_BIN)
+	$(TEST_LOGIC_BIN)
+
 # Explicit compilation rules
 $(OBJ_DIR)/vfs_core.o: ../fs/cpp/vfs_core.cpp
 	@mkdir -p $(OBJ_DIR)

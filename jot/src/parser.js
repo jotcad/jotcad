@@ -86,6 +86,9 @@ export class JotParser {
 
     if (/^[a-zA-Z_]/.test(token)) {
       const name = this._consume();
+      if (name === 'true') return true;
+      if (name === 'false') return false;
+      if (name === 'null') return null;
       if (this._peek() === '(') {
         const args = this._parseArguments();
         return { type: 'CALL', name, args };

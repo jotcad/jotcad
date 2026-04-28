@@ -226,8 +226,15 @@ export class Selector {
  * normalizeSelector: Enforces strict Selector type.
  */
 export function normalizeSelector(s) {
-  if (!(s instanceof Selector)) {
-    throw new Error(`Protocol Violation: Expected Selector instance, got ${s?.constructor?.name || typeof s}`);
+  if (s instanceof Selector) return s;
+  
+  // Robustness: If it's a plain object that looks like a Selector, accept it but warn.
+  if (s && typeof s === 'object' && typeof s.path === 'string' && s.parameters && typeof s.parameters === 'object') {
+    console.warn('Protocol Warning: Received plain object as Selector. Coercing to Selector instance.');
+    return Selector.fromObject(s);
   }
-  return s;
+
+  const errorMsg = `Protocol Violation: Expected Selector instance or valid selector object, got ${s?.constructor?.name || typeof s}`;
+  console.error(errorMsg, s);
+  throw new Error(errorMsg);
 }

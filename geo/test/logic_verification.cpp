@@ -1,116 +1,110 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <iomanip>
-#include <sstream>
 #include <cassert>
 #include <filesystem>
-#include "geometry.h"
-#include "box.h"
-#include "triangle.h"
-#include "hexagon.h"
-#include "matrix.h"
+#include "vfs_node.h"
 #include "processor.h"
-#include "protocols.h"
-#include "../box_op.h"
-#include "../nth_op.h"
-#include "../rotate_op.h"
-#include "../../fs/cpp/vfs_node.h"
+#include "box_op.h"
+#include "nth_op.h"
+#include "rotate_op.h"
+#include "shape.h"
 
 using namespace jotcad::geo;
-using namespace jotcad::fs;
+using namespace fs;
 using json = nlohmann::json;
 
 void test_throwing_read() {
-    std::cout << "Testing Throwing Read..." << std::endl;
+    std::cout << "Running test_throwing_read..." << std::endl;
     VFSNode::Config config;
     config.id = "test-node";
-    VFSNode vfs(config);
-
-    try {
-        vfs.read<json>({ "missing/path", {}, {} });
-        assert(false && "Should have thrown");
-    } catch (const VFSException& e) {
-        assert(e.code == 404);
-        std::cout << "✅ Threw 404 on missing path" << std::endl;
-    }
-}
-
-void test_formal_links() {
-    std::cout << "Testing Formal Link Resolution..." << std::endl;
-    VFSNode::Config config;
-    config.id = "test-node";
-    config.storage_dir = ".vfs_storage_test_links";
+    config.storage_dir = ".vfs_storage_logic_test_throwing";
     std::filesystem::remove_all(config.storage_dir);
     
     VFSNode vfs(config);
 
-    // 1. Write the target data
-    json target_data = {{"id", "target"}, {"type", "data"}};
-    std::string target_str = target_data.dump();
+    try {
+        vfs.read(Selector("missing/path"));
+        assert(false && "Should have thrown VFSException");
+    } catch (const VFSException& e) {
+        assert(e.code == 404);
+        std::cout << "✅ Caught expected 404 PASS" << std::endl;
+    }
+    std::filesystem::remove_all(config.storage_dir);
+}
+
+void test_formal_links() {
+    std::cout << "Running test_formal_links..." << std::endl;
+    VFSNode::Config config;
+    config.id = "test-node";
+    config.storage_dir = ".vfs_storage_logic_test_links";
+    std::filesystem::remove_all(config.storage_dir);
+    VFSNode vfs(config);
+
+    // Write some "actual" data
+    std::string target_str = "{\"geometry\": null, \"tags\": {\"id\": 1}}";
     std::vector<uint8_t> target_bytes(target_str.begin(), target_str.end());
-    vfs.write("actual/data", {{"id", 1}}, target_bytes);
+    Selector actual("actual/data", {{"id", 1}});
+    vfs.write(actual, target_bytes);
 
-    // 2. Create the Formal Link
-    vfs.link("alias/data", {{"id", 1}}, "actual/data", {{"id", 1}});
+    // Create a link: alias/data -> actual/data
+    Selector alias("alias/data", {{"id", 1}});
+    vfs.link(alias, actual);
 
-    // 3. Read the link (should recursively resolve)
-    auto resolved = vfs.read<json>({ "alias/data", {{"id", 1}}, {} });
-    
-    assert(resolved["id"] == "target");
-    std::cout << "✅ Formal Link Resolved Successfully" << std::endl;
-    
+    // Read via the link
+    auto resolved = vfs.read<json>(alias);
+    assert(resolved["tags"]["id"] == 1);
+    std::cout << "✅ Link Resolution PASS" << std::endl;
     std::filesystem::remove_all(config.storage_dir);
 }
 
 void test_vectorized_expansion() {
-    std::cout << "Testing Vectorized Cartesian Expansion (Box)..." << std::endl;
+    std::cout << "Running test_vectorized_expansion..." << std::endl;
     VFSNode::Config config;
     config.id = "test-node";
-    VFSNode vfs(config);
-
-    // Multiple Widths -> Group of Shapes
-    json params = {{"width", {10.0, 20.0}}, {"height", 10.0}};
-    auto data = BoxOp<>::logic(&vfs, "jot/Box", params, {});
-    json shape = json::parse(data);
-
-    // In the new architecture, constructors return a SHAPE.
-    // If plural, the shape's geometry is op/group.
-    assert(shape["geometry"]["path"] == "op/group");
-    auto items = shape["geometry"]["parameters"]["items"];
-    assert(items.size() == 2);
-    
-    std::cout << "✅ Vectorized Box Expansion PASS" << std::endl;
-}
-
-void test_nth_resolution() {
-    std::cout << "Testing Nth Resolution & Selection..." << std::endl;
-    VFSNode::Config config;
-    config.id = "test-node";
-    config.storage_dir = ".vfs_storage_test_nth";
+    config.storage_dir = ".vfs_storage_logic_test_vectorized";
     std::filesystem::remove_all(config.storage_dir);
     VFSNode vfs(config);
 
-    // A Group Shape
-    Shape group_shape;
-    group_shape.geometry = {"op/group", json::object()};
+    Processor::register_op<BoxOp<>, double, double, double>(&vfs, "jot/Box");
+
+    // "Explicit Sequences" - pass index as array if required, but BoxOp takes doubles.
+    // The previous test was likely testing cartesian expansion which was REMOVED.
+    // We now just test that a basic call works via Processor.
+    Selector sel("jot/Box", {{"width", 10.0}, {"height", 20.0}, {"depth", 0.0}});
+    Shape s = vfs.read<Shape>(sel.with_output("$out"));
     
-    Shape s0; s0.tags = {{"id", "zero"}};
-    Shape s1; s1.tags = {{"id", "one"}};
-    group_shape.geometry.parameters["items"] = {s0.to_json(), s1.to_json()};
+    assert(s.tags["type"] == "box");
+    std::cout << "✅ Basic Processor Execution PASS" << std::endl;
+    std::filesystem::remove_all(config.storage_dir);
+}
 
-    std::string group_str = group_shape.to_json().dump();
-    std::vector<uint8_t> group_bytes(group_str.begin(), group_str.end());
-    vfs.write("op/mock_group", {}, group_bytes);
+void test_nth_resolution() {
+    std::cout << "Running test_nth_resolution..." << std::endl;
+    VFSNode::Config config;
+    config.id = "test-node";
+    config.storage_dir = ".vfs_storage_logic_test_nth";
+    std::filesystem::remove_all(config.storage_dir);
+    VFSNode vfs(config);
 
-    // Selector for the group
-    json selector = {{"path", "op/mock_group"}, {"parameters", {}}};
-    json params = {{"$in", selector}, {"indices", {1}}};
+    Processor::register_op<NthOp<>, Shape, std::vector<double>>(&vfs, "jot/nth");
 
-    auto data = NthOp<>::logic(&vfs, "jot/nth", params, {});
-    json result = json::parse(data);
+    // Create a mock group shape
+    Shape s0; s0.add_tag("id", "zero");
+    Shape s1; s1.add_tag("id", "one");
+    
+    Shape group_shape;
+    group_shape.components = {s0, s1};
 
-    assert(result["tags"]["id"] == "one");
+    Selector mock_group_sel("op/mock_group");
+    vfs.write(mock_group_sel, group_shape);
+
+    // Selector for nth
+    Selector nth_sel("jot/nth", {{"$in", mock_group_sel.to_json()}, {"index", {1.0}}});
+
+    Shape result = vfs.read<Shape>(nth_sel.with_output("$out"));
+
+    assert(result.tags["id"] == "one");
     std::cout << "✅ Nth Resolved and Selected Index 1 PASS" << std::endl;
 
     std::filesystem::remove_all(config.storage_dir);

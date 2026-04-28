@@ -108,6 +108,7 @@ public:
         std::string neighbor_id;
         virtual ~Connection() = default;
         virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
+        virtual void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) = 0;
         virtual std::vector<uint8_t> read(const VFSRequest& req) = 0;
         virtual bool is_reverse() const = 0;
     };
@@ -117,6 +118,7 @@ private:
         std::string url;
         ForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
         void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
         std::vector<uint8_t> read(const VFSRequest& req) override;
         bool is_reverse() const override { return false; }
     };
@@ -127,6 +129,7 @@ private:
         std::condition_variable cv;
         ReverseConnection(std::string id) { neighbor_id = std::move(id); }
         void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
         std::vector<uint8_t> read(const VFSRequest& req) override;
         bool is_reverse() const override { return true; }
     };

@@ -31,21 +31,21 @@ test('JotCAD VFS Provider: Integration', async (t) => {
     path: 'jot/A', 
     schema: { 
         arguments: [{ name: 'value', type: 'jot:number' }],
-        outputs: anyOutputs
+        outputs: baseOutputs
     } 
   });
   compiler.registerOperator('B', { 
     path: 'jot/B', 
     schema: { 
         arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'arg', type: 'jot:any' }],
-        outputs: anyOutputs
+        outputs: baseOutputs
     } 
   });
   compiler.registerOperator('C', { 
     path: 'jot/C', 
     schema: { 
         arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'arg', type: 'jot:any' }],
-        outputs: anyOutputs
+        outputs: baseOutputs
     } 
   });
 
@@ -142,14 +142,13 @@ test('JotCAD VFS Provider: Integration', async (t) => {
       assert.strictEqual(result, '10 + 2');
     });
 
-    // Scenario 3: a.B(C(2)) - a is subject of B, but NOT of C (due to Non-Propagation)
-    // C(2) will fail because it's evaluated as a standard argument (not jot:op<>) 
-    // and it's missing its required $in affiliate.
-    await st.test('Scenario 3: a.B(C()) - a is NOT subject of C', async () => {
-      await assert.rejects(
-          vfs.readText(new Selector('jot/eval', { expression: 'A(10).B(C(2))' })),
-          /Missing required argument '\$in' for 'C'/
-      );
+    // Scenario 3: a.B(C(2)) - a is subject of B AND propagated to C
+    await st.test('Scenario 3: a.B(C()) - a is subject of C (Propagation)', async () => {
+      const result = await vfs.readText(new Selector('jot/eval', { expression: 'A(10).B(C(2))' }));
+      // C(2) gets A(10) as subject -> Result: 10 * 2 = 20
+      // B(20) gets A(10) as subject -> Result: 10 + 20 = 30
+      // NOTE: Provider returns these as strings "10 * 2", etc.
+      assert.strictEqual(result, '10 + 10 * 2');
     });
   });
 });

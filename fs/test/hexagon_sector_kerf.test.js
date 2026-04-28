@@ -60,13 +60,13 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
 
       const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }).withOutput('$out');
       const points = new Selector('jot/eachPoint', { $in: hexagon }).withOutput('$out');
-      const point0 = new Selector('jot/nth', { $in: points, index: 0 }).withOutput('$out');
-      const point1 = new Selector('jot/nth', { $in: points, index: 1 }).withOutput('$out');
+      const point0 = new Selector('jot/nth', { $in: points, index: [0] }).withOutput('$out');
+      const point1 = new Selector('jot/nth', { $in: points, index: [1] }).withOutput('$out');
       const origin = new Selector('jot/nth', { 
         $in: new Selector('jot/eachPoint', { 
           $in: new Selector('jot/Box', { width: 1, height: 1, depth: 1 }).withOutput('$out') 
         }).withOutput('$out'), 
-        index: 0 
+        index: [0] 
       }).withOutput('$out');
       const group = new Selector('jot/group', { $in: origin, shapes: [point0, point1] }).withOutput('$out');
       const loop = new Selector('jot/loop', { $in: group }).withOutput('$out');

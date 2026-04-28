@@ -22,7 +22,9 @@ A **Selector** is a recomposable request object containing:
 - `parameters` (e.g., `{"diameter": 30}`)
 - `output` (e.g., `"thumb"` or `"$out"`. If omitted, it targets the operation itself).
 
-- **Formal Addressing Mandate:** 
+- **Formal Identity & Sovereignty Mandate:** 
+  - **Unique Per-Session IDs:** Every mesh participant (including browser tabs) MUST maintain a unique Peer ID. Sharing IDs between concurrent instances (zombies, multiple tabs) is a protocol violation.
+  - **Identity Stability:** Clients SHOULD use `sessionStorage` to maintain ID stability across soft-refreshes (Vite HMR) while ensuring ID uniqueness across distinct tabs.
   - **No Implicit Linkage:** A base Selector (without an `output` port) represents the **Operation Identity**, not its result. It is a terminal error for the VFS to automatically resolve a base selector to its `$out` port.
   - **Explicit Port Targeting:** Callers (Compilers, Tests, other Operators) MUST explicitly append the target port (e.g., `:$out`) to retrieve computational results.
 
@@ -81,7 +83,10 @@ The VFS decouples transport connections from peer identities. On connection esta
 
 All peer interactions are managed through a unified **Connection** abstraction.
 - **ForwardConnection:** Used for `DIRECT` reachability. Delivers publications and requests immediately via outbound HTTP `POST` calls.
-- **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers). Queues publications and uses a **Condition Variable** (C++) or **Listener Pool** (JS) to block `/listen` polls until data is available, ensuring reliable delivery.
+- **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers).
+  - **Encapsulated Responsibility:** The `ReverseConnection` class manages BOTH the server-side listener pool and the client-side active polling loop.
+  - **409 Conflict Protection:** Servers MUST reject a `POST /listen` with a **409 Conflict** if a poll is already active for that peer ID. Clients MUST treat a 409 as a critical failure (zombie process detection).
+  - **Independent Lifecycles:** Each connection operates its own `AbortController`, ensuring that stopping a MeshLink cleanly terminates all active poll loops.
 
 ### 3.3 Browser Compatibility & CORS
 

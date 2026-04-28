@@ -238,7 +238,7 @@ struct CutOp : P {
             {"path", "jot/cut"}, 
             {"arguments", { 
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, 
-                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"affiliate", "$out"}}, 
+                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}, 
                 {{"name", "open"}, {"type", "jot:boolean"}, {"default", false}} 
             }}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 

@@ -8,11 +8,25 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct NthOp : P {
     static constexpr const char* path = "jot/nth";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, int index) {
-        if (index >= 0 && index < (int)in.components.size()) {
-            vfs->write(fulfilling.with_output("$out"), in.components[index]);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& indices) {
+        if (indices.size() == 1) {
+            int index = (int)indices[0];
+            if (index >= 0 && index < (int)in.components.size()) {
+                vfs->write(fulfilling.with_output("$out"), in.components[index]);
+            } else {
+                throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds (size " + std::to_string(in.components.size()) + ")");
+            }
         } else {
-            throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds (size " + std::to_string(in.components.size()) + ")");
+            Shape out;
+            for (double d : indices) {
+                int index = (int)d;
+                if (index >= 0 && index < (int)in.components.size()) {
+                    out.components.push_back(in.components[index]);
+                } else {
+                    throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds (size " + std::to_string(in.components.size()) + ")");
+                }
+            }
+            vfs->write(fulfilling.with_output("$out"), out);
         }
     }
     static std::vector<std::string> argument_keys() { return {"$in", "index"}; }
@@ -22,7 +36,7 @@ struct NthOp : P {
             {"description", "Selects the N-th component shape from a group."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "index"}, {"type", "integer"}, {"default", 0}}
+                {{"name", "index"}, {"type", "jot:numbers"}, {"default", {0}}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -30,7 +44,7 @@ struct NthOp : P {
 };
 
 static void nth_init(fs::VFSNode* vfs) {
-    Processor::register_op<NthOp<>, Shape, int>(vfs, "jot/nth");
+    Processor::register_op<NthOp<>, Shape, std::vector<double>>(vfs, "jot/nth");
 }
 
 } // namespace geo

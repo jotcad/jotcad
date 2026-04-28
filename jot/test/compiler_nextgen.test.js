@@ -38,16 +38,15 @@ test('JotCAD Next-Gen: Template Modes', async (t) => {
         }
     });
 
-    // FAIL: Fails with TypeError because HOLE constant was removed and unprovided
-    // arguments are now undefined.
-    await t.test('evaluates template arguments with subject HOLE', async () => {
+    await t.test('evaluates template arguments with subject propagation', async () => {
         const ast = parser.parse('Hexagon(30).at([0,0,0], cut(Hexagon(5)))');
         const res = await compiler.evaluate(ast);
         
         const cutOp = res.parameters.op;
         assert.strictEqual(cutOp.path, 'op/cut');
-        // The $in for cut() should be undefined (a hole)
-        assert.strictEqual(cutOp.parameters.$in, undefined);
+        // The $in for cut() should be inherited from Hexagon(30)
+        assert.strictEqual(cutOp.parameters.$in.path, 'op/hexagon');
+        assert.strictEqual(cutOp.parameters.$in.parameters.size, 30);
         assert.strictEqual(cutOp.parameters.tools[0].parameters.size, 5);
     });
 });

@@ -67,6 +67,14 @@ export class VFS {
     this.schemas.set(path, schema);
   }
 
+  getCatalog() {
+    const catalog = {};
+    for (const [path, schema] of this.schemas.entries()) {
+        catalog[path] = schema;
+    }
+    return { catalog, provider: this.id };
+  }
+
   validateSelector(selector) {
     if (typeof selector === 'string' && /^[0-9a-f]{64}$/i.test(selector)) return;
     if (!selector || typeof selector !== 'object') throw new Error('Invalid selector object');

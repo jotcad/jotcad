@@ -63,10 +63,13 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   assert.strictEqual(at.path, 'jot/at');
   assert.strictEqual(at.parameters.target.path, 'jot/eachCorner');
   
+  // eachCorner should have inherited the Hexagon(30) subject
+  assert.strictEqual(at.parameters.target.parameters.$in.path, 'jot/Hexagon/full');
+
   const cut = at.parameters.op;
   assert.strictEqual(cut.path, 'jot/cut');
-  // Pass 1: tools (non-affiliate) takes Triangle(2)
-  // Pass 2: $in (affiliate) is left as a hole (undefined) because pool is empty and subject is null.
   assert.strictEqual(cut.parameters.tools[0].path, 'jot/Triangle/equilateral');
-  assert.strictEqual(cut.parameters.$in, undefined);
+
+  // cut should also have inherited the Hexagon(30) subject
+  assert.strictEqual(cut.parameters.$in.path, 'jot/Hexagon/full');
 });

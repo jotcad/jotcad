@@ -12,7 +12,7 @@ const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
 const UX_ROOT = path.resolve(__dirname, '../../ux');
 const VITE_BIN = path.resolve(__dirname, '../../node_modules/.bin/vite');
 const PORT_OPS = parseInt(process.env.TEST_OPS_PORT || '9092');
-const PORT_UX = parseInt(process.env.TEST_UX_PORT || '3030');
+const PORT_UX = parseInt(process.env.TEST_UX_PORT || '3033');
 
 test('Browser Mesh Integration: Catalog & Execution', async (t) => {
   let opsNode, uxServer, browser;
