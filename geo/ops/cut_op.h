@@ -64,12 +64,11 @@ struct CutOp : P {
             bool has_only_points = target_geo.faces.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
 
             if (has_faces) {
-                auto target_plane_opt = target_geo.find_plane();
-                bool is_target_pwh = target_plane_opt.has_value();
+                bool is_target_flat = target_geo.is_plane();
 
-                if (is_target_pwh) {
+                if (is_target_flat) {
                     // Try PWH-to-PWH coplanar path first
-                    EK::Plane_3 target_plane = *target_plane_opt;
+                    EK::Plane_3 target_plane = *target_geo.find_plane();
                     Matrix project_tf = Matrix::lookAt(target_plane.point(), target_plane.orthogonal_vector());
                     Matrix rehydrate_tf = project_tf.inverse();
 
@@ -96,11 +95,11 @@ struct CutOp : P {
                         target_geo = gps_to_geometry(subject_set);
                         target_geo.apply_tf(rehydrate_tf);
                     } else {
-                        is_target_pwh = false; // Fall through to 3D
+                        is_target_flat = false; // Fall through to 3D
                     }
                 }
 
-                if (!is_target_pwh) {
+                if (!is_target_flat) {
                     boolean::Surface_mesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
                         if (tool.is_plane) {

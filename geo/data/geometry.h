@@ -122,7 +122,9 @@ struct Geometry {
     }
 
     bool is_plane() const {
-        return find_plane().has_value();
+        auto plane_opt = find_plane();
+        if (!plane_opt) return false;
+        return is_coplanar_with(*plane_opt);
     }
 
     bool is_coplanar_with(const EK::Plane_3& plane, double epsilon = 1e-6) const {
