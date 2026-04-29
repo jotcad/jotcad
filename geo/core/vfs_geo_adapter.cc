@@ -1,6 +1,21 @@
 #include "vfs_node.h"
 #include "geometry.h"
 #include "shape.h"
+#include "../math/matrix.h"
+
+namespace jotcad {
+namespace geo {
+
+void Geometry::apply_tf(const Matrix& m) {
+    for (auto& v : vertices) {
+        EK::Point_3 p(v.x, v.y, v.z);
+        EK::Point_3 tp = m.transform(p);
+        v.x = tp.x(); v.y = tp.y(); v.z = tp.z();
+    }
+}
+
+} // namespace geo
+} // namespace jotcad
 
 namespace fs {
 

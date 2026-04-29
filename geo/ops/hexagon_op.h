@@ -6,16 +6,30 @@
 namespace jotcad {
 namespace geo {
 
+// Exact rational approximations for hexagon coordinates to ensure stability in boolean ops.
+// cos(60) = 1/2
+// sin(60) = sqrt(3)/2 approx 0.86602540378
+static const FT HEX_COS_60 = FT(1) / FT(2);
+static const FT HEX_SIN_60 = FT(86602540378LL) / FT(100000000000LL);
+
+static std::vector<Vertex> get_hexagon_vertices(FT r) {
+    return {
+        {r, FT(0), FT(0)},                       // 0 deg
+        {r * HEX_COS_60, r * HEX_SIN_60, FT(0)}, // 60 deg
+        {-r * HEX_COS_60, r * HEX_SIN_60, FT(0)}, // 120 deg
+        {-r, FT(0), FT(0)},                      // 180 deg
+        {-r * HEX_COS_60, -r * HEX_SIN_60, FT(0)}, // 240 deg
+        {r * HEX_COS_60, -r * HEX_SIN_60, FT(0)}  // 300 deg
+    };
+}
+
 template <typename P = JotVfsProtocol>
 struct HexagonFullOp : P {
     static constexpr const char* path = "jot/Hexagon/full";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double diameter) {
         Geometry res;
-        double r = diameter / 2.0;
-        for (int i = 0; i < 6; ++i) {
-            double angle = (i * 60.0) * M_PI / 180.0;
-            res.vertices.push_back({FT(r * std::cos(angle)), FT(r * std::sin(angle)), FT(0)});
-        }
+        FT r = FT(diameter) / FT(2);
+        res.vertices = get_hexagon_vertices(r);
         res.faces.push_back({{{0, 1, 2, 3, 4, 5}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
         vfs->write(fulfilling.with_output("$out"), out);
@@ -36,12 +50,9 @@ struct HexagonCapOp : P {
     static constexpr const char* path = "jot/Hexagon/cap";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double diameter) {
         Geometry res;
-        double r = diameter / 2.0;
-        res.vertices.push_back({FT(0), FT(0), FT(0)});
-        for (int i = 0; i < 2; ++i) {
-            double angle = (i * 60.0) * M_PI / 180.0;
-            res.vertices.push_back({FT(r * std::cos(angle)), FT(r * std::sin(angle)), FT(0)});
-        }
+        FT r = FT(diameter) / FT(2);
+        auto hex = get_hexagon_vertices(r);
+        res.vertices = {{FT(0), FT(0), FT(0)}, hex[0], hex[1]};
         res.faces.push_back({{{0, 1, 2}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
         vfs->write(fulfilling.with_output("$out"), out);
@@ -65,12 +76,9 @@ struct HexagonMiddleOp : P {
     static constexpr const char* path = "jot/Hexagon/middle";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double diameter) {
         Geometry res;
-        double r = diameter / 2.0;
-        res.vertices.push_back({FT(0), FT(0), FT(0)});
-        for (int i = 1; i < 4; ++i) {
-            double angle = (i * 60.0) * M_PI / 180.0;
-            res.vertices.push_back({FT(r * std::cos(angle)), FT(r * std::sin(angle)), FT(0)});
-        }
+        FT r = FT(diameter) / FT(2);
+        auto hex = get_hexagon_vertices(r);
+        res.vertices = {{FT(0), FT(0), FT(0)}, hex[1], hex[2], hex[3]};
         res.faces.push_back({{{0, 1, 2, 3}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
         vfs->write(fulfilling.with_output("$out"), out);
@@ -93,12 +101,9 @@ struct HexagonSectorOp : P {
     static constexpr const char* path = "jot/Hexagon/sector";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double diameter) {
         Geometry res;
-        double r = diameter / 2.0;
-        res.vertices.push_back({FT(0), FT(0), FT(0)});
-        for (int i = 0; i < 3; ++i) {
-            double angle = (i * 60.0) * M_PI / 180.0;
-            res.vertices.push_back({FT(r * std::cos(angle)), FT(r * std::sin(angle)), FT(0)});
-        }
+        FT r = FT(diameter) / FT(2);
+        auto hex = get_hexagon_vertices(r);
+        res.vertices = {{FT(0), FT(0), FT(0)}, hex[0], hex[1], hex[2]};
         res.faces.push_back({{{0, 1, 2, 3}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
         vfs->write(fulfilling.with_output("$out"), out);
@@ -121,12 +126,9 @@ struct HexagonHalfOp : P {
     static constexpr const char* path = "jot/Hexagon/half";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double diameter) {
         Geometry res;
-        double r = diameter / 2.0;
-        res.vertices.push_back({FT(0), FT(0), FT(0)});
-        for (int i = 0; i < 4; ++i) {
-            double angle = (i * 60.0) * M_PI / 180.0;
-            res.vertices.push_back({FT(r * std::cos(angle)), FT(r * std::sin(angle)), FT(0)});
-        }
+        FT r = FT(diameter) / FT(2);
+        auto hex = get_hexagon_vertices(r);
+        res.vertices = {{FT(0), FT(0), FT(0)}, hex[0], hex[1], hex[2], hex[3]};
         res.faces.push_back({{{0, 1, 2, 3, 4}}});
         Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
         vfs->write(fulfilling.with_output("$out"), out);

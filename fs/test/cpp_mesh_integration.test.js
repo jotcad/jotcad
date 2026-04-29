@@ -126,7 +126,10 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
     console.log('[Test] Geometry result type:', typeof geo, 'instanceof Uint8Array:', geo instanceof Uint8Array);
     assert.ok(geo, 'Should be able to read geometry by CID');
     const geoText = new TextDecoder().decode(geo);
-    assert.ok(geoText.includes('v 10.000000'), 'Should contain x coordinate');
+    // New format is: V <count>\n<x> <y> <z>...
+    // 2D Box (depth=0) has 4 vertices.
+    assert.ok(geoText.includes('V 4'), 'Should contain vertex count header');
+    assert.ok(geoText.includes('10'), 'Should contain x coordinate (10)');
   });
 
   await t.test('Provisioning: Triangle', async () => {

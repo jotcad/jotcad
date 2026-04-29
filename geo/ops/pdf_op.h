@@ -12,17 +12,12 @@ struct PdfOp : P {
     static constexpr const char* path = "jot/pdf";
 
     static void walk(fs::VFSNode* vfs, const Shape& shape, const Matrix& parent_tf, PDFWriter& writer) {
-        Matrix current_tf = parent_tf * Matrix::from_vec(shape.tf);
+        Matrix current_tf = parent_tf * shape.tf;
         
-        std::cout << "[PdfOp::walk] Visiting shape. Geometry: " << (shape.geometry.has_value() ? shape.geometry->value : "none") 
-                  << " Components: " << shape.components.size() << std::endl;
-
         if (shape.geometry.has_value()) {
             try {
-                std::cout << "[PdfOp::walk] Reading geometry CID: " << shape.geometry->value << std::endl;
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
-                std::cout << "[PdfOp::walk] Read geometry OK. Vertices: " << geo.vertices.size() << std::endl;
-                geo.apply_tf(current_tf.to_vec());
+                geo.apply_tf(current_tf);
                 writer.add_geometry(geo);
             } catch (const std::exception& e) {
                 std::cerr << "[PdfOp::walk] Error reading geometry: " << e.what() << std::endl;

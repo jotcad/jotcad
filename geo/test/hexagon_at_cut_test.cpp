@@ -36,25 +36,34 @@ int main() {
     Processor::execute(&vfs, corners_addr);
     render_to(&vfs, corners_addr, "step2_corners");
 
-    // 3. Triangle(2)
-    fs::Selector tri_addr = fs::Selector{"jot/Triangle/equilateral", {{"size", std::vector<double>{2.0}}}} .with_output("$out");
+    // 3. Triangle(5) - Larger for visibility
+    fs::Selector tri_addr = fs::Selector{"jot/Triangle/equilateral", {{"size", std::vector<double>{5.0}}}} .with_output("$out");
     Processor::execute(&vfs, tri_addr);
     render_to(&vfs, tri_addr, "step3_triangle");
 
-    // 4. op: cut(Triangle(2))
-    // We want to cut the thing being placed ($in) by the Triangle(2).
+    // 4. op: cut(Triangle(5))
+    // We want to cut the thing being placed ($in) by the Triangle(5).
     fs::Selector cut_template = fs::Selector{"jot/cut", {
         {"tools", std::vector<fs::Selector>{tri_addr}}
     }}.with_output("$out");
 
-    // 5. Hexagon.at(eachCorner(), cut(Triangle(2)))
+    // 5. Hexagon.at(eachCorner(), cut(Triangle(5)))
     fs::Selector at_addr = fs::Selector{"jot/at", {
         {"$in", hex_addr}, 
         {"target", corners_addr},
         {"op", cut_template}
     }}.with_output("$out");
 
+    std::cout << "  - Executing AtOp..." << std::endl;
     Processor::execute(&vfs, at_addr);
+    
+    // Check if result has geometry before rendering
+    Shape result = vfs.read<Shape>(at_addr);
+    if (!result.geometry.has_value()) {
+        std::cerr << "  ❌ FAIL: Resulting shape has NO geometry." << std::endl;
+        return 1;
+    }
+    
     render_to(&vfs, at_addr, "step5_final_at");
 
     return 0;

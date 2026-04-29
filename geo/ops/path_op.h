@@ -60,9 +60,8 @@ struct LoopOp : P {
         Geometry res;
         for (size_t i = 0; i < all_components.size(); ++i) {
             const auto& c = all_components[i];
-            Matrix m = Matrix::from_vec(c.tf);
+            Matrix m = c.tf;
             Point_3 p = m.t.transform(Point_3(0, 0, 0));
-            std::cout << "[LoopOp] Component " << i << ": tf_size=" << c.tf.size() << ", p=(" << CGAL::to_double(p.x()) << ", " << CGAL::to_double(p.y()) << ", " << CGAL::to_double(p.z()) << ")" << std::endl;
             res.vertices.push_back({p.x(), p.y(), p.z()});
         }
 

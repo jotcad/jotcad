@@ -101,7 +101,7 @@ struct EachPointOp : P {
         for (const auto& v : geo.vertices) {
             Shape p;
             p.tags = {{"type", "point"}};
-            p.tf = Matrix::translate(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)).to_vec();
+            p.tf = Matrix::translate(v.x, v.y, v.z);
             
             // Give each point a terminal geometry (origin) so it's reifiable as a vertex
             Geometry p_geo;

@@ -63,15 +63,10 @@ then the content.
 - **`<FILENAME>`:** A logical path/name for the content. This is crucial for
   `fromJot` to understand what kind of data it's reading.
 - **`<FILE_CONTENT>`:** The raw data. Geometry data entries (`assets/text/...`)
-  use a specialized line-based format:
-  - **`v <x_inexact> <y_inexact> <z_inexact> [<x_exact> <y_exact> <z_exact>]`**
-    - **Inexact (First 3):** Mandatory floating-point values for visualization
-      (consumed by JS/Three.js).
-    - **Exact (Optional 4-6):** Indefinite precision strings (e.g., `1/3` or
-      `0.33333333333333333333`) for high-precision C++ kernels. If missing,
-      agents fallback to the inexact representation.
-  - **`f`, `t`, `s`, `p`**: Use **0-based vertex indexing** for high-performance
-    direct memory mapping.
+  use a specialized line-based format (V F P S T):
+  - **`V <count>`**: Exact rational vertices. Each line following the header contains `x y z` as exact rational strings (e.g., `10/1` or `0.33333333333333333333`). Precision is never lost.
+  - **`F <count>`**: Atomic face definitions. Each line following the header starts with `num_loops`, then for each loop: `loop_len idx1 idx2...`. This explicitly groups holes with their boundary loops.
+  - **`P`, `S`, `T`**: Use **0-based vertex indexing** for Points, Segments, and Triangles. Each starts with a `<count>` header.
 
 #### 5. Interacting with JOT: `toJot` and `fromJot`
 

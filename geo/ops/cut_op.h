@@ -36,7 +36,7 @@ struct CutOp : P {
     }
 
     static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
-        Matrix current_tf = parent_tf * Matrix::from_vec(s.tf);
+        Matrix current_tf = parent_tf * s.tf;
         bool is_plane = s.tags.contains("is_plane") && s.tags["is_plane"].get<bool>();
         bool is_pwh = s.tags.contains("is_pwh") && s.tags["is_pwh"].get<bool>();
         
@@ -54,7 +54,7 @@ struct CutOp : P {
     }
 
     static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open) {
-        Matrix subject_world_tf = parent_tf * Matrix::from_vec(s.tf);
+        Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
         if (s.geometry.has_value()) {
@@ -80,7 +80,7 @@ struct CutOp : P {
                     for (const auto& tool : tool_nodes) {
                         Geometry local_tool_geo = tool.geo;
                         Matrix tool_rel_tf = subject_world_inv * tool.world_tf;
-                        local_tool_geo.apply_tf(tool_rel_tf.to_vec());
+                        local_tool_geo.apply_tf(tool_rel_tf);
 
                         if (local_tool_geo.is_coplanar_with(target_plane)) {
                             boolean::General_polygon_set_2 tool_set;
@@ -88,15 +88,13 @@ struct CutOp : P {
                             boolean::Engine::cut_gps_by_gps(subject_set, tool_set);
                             used_pwh_path = true;
                         } else if (!tool.is_plane) {
-                            // Non-coplanar tool: Use 3D mesh clipping on the projected surface?
-                            // For now, fall back to 3D mesh processing for the whole target.
                             used_pwh_path = false; break;
                         }
                     }
 
                     if (used_pwh_path) {
                         target_geo = gps_to_geometry(subject_set);
-                        target_geo.apply_tf(rehydrate_tf.to_vec());
+                        target_geo.apply_tf(rehydrate_tf);
                     } else {
                         is_target_pwh = false; // Fall through to 3D
                     }
@@ -181,7 +179,7 @@ struct CutOp : P {
 
     static void add_geometry_to_gps(const Geometry& geo, const Matrix& tf, boolean::General_polygon_set_2& gps) {
         Geometry t = geo;
-        t.apply_tf(tf.to_vec());
+        t.apply_tf(tf);
         for (const auto& face : t.faces) {
             if (face.loops.empty()) continue;
             boolean::Polygon_2 boundary;

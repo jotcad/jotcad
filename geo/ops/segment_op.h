@@ -9,7 +9,7 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct SegmentOpBase : P {
     static void collect_points(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<EK::Point_3>& pts) {
-        Matrix current_tf = parent_tf * Matrix::from_vec(s.tf);
+        Matrix current_tf = parent_tf * s.tf;
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             for (const auto& v : geo.vertices) {

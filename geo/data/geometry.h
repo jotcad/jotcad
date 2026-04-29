@@ -1,22 +1,25 @@
 #pragma once
-
 #include <vector>
-#include <string>
 #include <array>
-#include <sstream>
-#include <iomanip>
-#include <iostream>
+#include <string>
+#include <optional>
+#include <cmath>
+#include <numeric>
+#include <algorithm>
+#include <map>
 #include "kernel.h"
 
 namespace jotcad {
 namespace geo {
+
+struct Matrix; // Forward declaration
 
 struct Vertex {
     FT x, y, z;
 };
 
 /**
- * Geometry: The foundational exact geometric artifact in JOT.
+ * Geometry: The foundational geometry container.
  */
 struct Geometry {
     struct Face {
@@ -29,133 +32,109 @@ struct Geometry {
     std::vector<std::array<int, 2>> segments;
     std::vector<std::array<int, 3>> triangles;
 
-    void apply_tf(const std::vector<std::string>& tf) {
-        if (tf.size() < 16) return;
-        auto parse = [](const std::string& s) {
-            size_t slash = s.find('/');
-            if (slash == std::string::npos) return FT(std::stod(s));
-            return FT(std::stod(s.substr(0, slash))) / FT(std::stod(s.substr(slash + 1)));
-        };
-        Transformation t(parse(tf[0]), parse(tf[1]), parse(tf[2]), parse(tf[3]),
-                         parse(tf[4]), parse(tf[5]), parse(tf[6]), parse(tf[7]),
-                         parse(tf[8]), parse(tf[9]), parse(tf[10]), parse(tf[11]),
-                         parse(tf[15]));
-        for (auto& v : vertices) {
-            Point_3 p(v.x, v.y, v.z);
-            Point_3 tp = t.transform(p);
-            v.x = tp.x(); v.y = tp.y(); v.z = tp.z();
+    void apply_tf(const Matrix& m);
+
+    // Exact rational serialization
+    void encode_text(std::string& out) const {
+        std::stringstream ss;
+        ss << "V " << vertices.size() << "\n";
+        for (const auto& v : vertices) {
+            ss << v.x << " " << v.y << " " << v.z << "\n";
+        }
+        ss << "F " << faces.size() << "\n";
+        for (const auto& f : faces) {
+            ss << f.loops.size() << " ";
+            for (const auto& loop : f.loops) {
+                ss << loop.size() << " ";
+                for (int idx : loop) ss << idx << " ";
+            }
+            ss << "\n";
+        }
+        ss << "P " << points.size() << "\n";
+        for (int p : points) ss << p << " ";
+        if (!points.empty()) ss << "\n";
+
+        ss << "S " << segments.size() << "\n";
+        for (const auto& s : segments) ss << s[0] << " " << s[1] << "\n";
+
+        ss << "T " << triangles.size() << "\n";
+        for (const auto& t : triangles) ss << t[0] << " " << t[1] << " " << t[2] << "\n";
+        out = ss.str();
+    }
+
+    std::string encode_text() const {
+        std::string out;
+        encode_text(out);
+        return out;
+    }
+
+    void decode_text(const std::string& in) {
+        std::stringstream ss(in);
+        std::string tag;
+        while (ss >> tag) {
+            if (tag == "V") {
+                size_t count; ss >> count;
+                vertices.resize(count);
+                for (size_t i = 0; i < count; ++i) {
+                    ss >> vertices[i].x >> vertices[i].y >> vertices[i].z;
+                }
+            } else if (tag == "F") {
+                size_t count; ss >> count;
+                faces.resize(count);
+                for (size_t i = 0; i < count; ++i) {
+                    size_t loops; ss >> loops;
+                    faces[i].loops.resize(loops);
+                    for (size_t j = 0; j < loops; ++j) {
+                        size_t len; ss >> len;
+                        faces[i].loops[j].resize(len);
+                        for (size_t k = 0; k < len; ++k) ss >> faces[i].loops[j][k];
+                    }
+                }
+            } else if (tag == "P") {
+                size_t count; ss >> count;
+                points.resize(count);
+                for (size_t i = 0; i < count; ++i) ss >> points[i];
+            } else if (tag == "S") {
+                size_t count; ss >> count;
+                segments.resize(count);
+                for (size_t i = 0; i < count; ++i) ss >> segments[i][0] >> segments[i][1];
+            } else if (tag == "T") {
+                size_t count; ss >> count;
+                triangles.resize(count);
+                for (size_t i = 0; i < count; ++i) ss >> triangles[i][0] >> triangles[i][1] >> triangles[i][2];
+            }
         }
     }
 
     std::optional<EK::Plane_3> find_plane() const {
         if (vertices.size() < 3) return std::nullopt;
-        // Simple 3-point plane for now (assuming clean input)
-        for (size_t i = 0; i < vertices.size() - 2; ++i) {
-            EK::Point_3 p1(vertices[i].x, vertices[i].y, vertices[i].z);
-            EK::Point_3 p2(vertices[i+1].x, vertices[i+1].y, vertices[i+1].z);
-            EK::Point_3 p3(vertices[i+2].x, vertices[i+2].y, vertices[i+2].z);
-            if (!CGAL::collinear(p1, p2, p3)) {
-                return EK::Plane_3(p1, p2, p3);
-            }
+        for (const auto& f : faces) {
+            if (f.loops.empty() || f.loops[0].size() < 3) continue;
+            auto v0 = vertices[f.loops[0][0]];
+            auto v1 = vertices[f.loops[0][1]];
+            auto v2 = vertices[f.loops[0][2]];
+            EK::Plane_3 p(EK::Point_3(v0.x, v0.y, v0.z),
+                          EK::Point_3(v1.x, v1.y, v1.z),
+                          EK::Point_3(v2.x, v2.y, v2.z));
+            if (!p.is_degenerate()) return p;
         }
         return std::nullopt;
+    }
+
+    bool is_plane() const {
+        return find_plane().has_value();
     }
 
     bool is_coplanar_with(const EK::Plane_3& plane, double epsilon = 1e-6) const {
         for (const auto& v : vertices) {
             EK::Point_3 p(v.x, v.y, v.z);
-            if (CGAL::to_double(CGAL::squared_distance(plane, p)) > epsilon) {
-                return false;
+            if (!plane.has_on(p)) {
+                if (std::abs(CGAL::to_double(CGAL::squared_distance(plane, p))) > epsilon) {
+                    return false;
+                }
             }
         }
         return true;
-    }
-
-    std::string encode_text() const {
-        try {
-            std::stringstream ss;
-            ss << std::fixed << std::setprecision(6);
-            for (const auto& v : vertices) {
-                ss << "v " << CGAL::to_double(v.x) << " " << CGAL::to_double(v.y) << " " << CGAL::to_double(v.z) << "\n";
-            }
-            if (!points.empty()) {
-                ss << "p";
-                for (int idx : points) ss << " " << idx;
-                ss << "\n";
-            }
-            if (!segments.empty()) {
-                ss << "s";
-                for (const auto& seg : segments) {
-                    ss << " " << seg[0] << " " << seg[1];
-                }
-                ss << "\n";
-            }
-            for (const auto& tri : triangles) {
-                ss << "t " << tri[0] << " " << tri[1] << " " << tri[2] << "\n";
-            }
-            for (const auto& face : faces) {
-                if (face.loops.empty()) continue;
-                ss << "f";
-                for (int idx : face.loops[0]) ss << " " << idx;
-                ss << "\n";
-                for (size_t i = 1; i < face.loops.size(); ++i) {
-                    ss << "h";
-                    for (int idx : face.loops[i]) ss << " " << idx;
-                    ss << "\n";
-                }
-            }
-            return ss.str();
-        } catch (const std::exception& e) {
-            std::cerr << "[Geometry] Error encoding text: " << e.what() << std::endl;
-            return "";
-        }
-    }
-
-    void decode_text(const std::string& text) {
-        try {
-            std::istringstream ss(text);
-            std::string line;
-            while (std::getline(ss, line)) {
-                if (line.empty()) continue;
-                std::istringstream ls(line);
-                std::string code;
-                if (!(ls >> code)) continue;
-
-                if (code == "v") {
-                    double x, y, z;
-                    if (ls >> x >> y >> z) {
-                        vertices.push_back({FT(x), FT(y), FT(z)});
-                    }
-                } else if (code == "f") {
-                    Face f;
-                    std::vector<int> loop;
-                    int idx;
-                    while (ls >> idx) loop.push_back(idx);
-                    if (!loop.empty()) {
-                        f.loops.push_back(loop);
-                        faces.push_back(f);
-                    }
-                } else if (code == "h") {
-                    if (!faces.empty()) {
-                        std::vector<int> loop;
-                        int idx;
-                        while (ls >> idx) loop.push_back(idx);
-                        if (!loop.empty()) faces.back().loops.push_back(loop);
-                    }
-                } else if (code == "s") {
-                    int i1, i2;
-                    while (ls >> i1 >> i2) segments.push_back({i1, i2});
-                } else if (code == "p") {
-                    int idx;
-                    while (ls >> idx) points.push_back(idx);
-                } else if (code == "t") {
-                    int i1, i2, i3;
-                    if (ls >> i1 >> i2 >> i3) triangles.push_back({i1, i2, i3});
-                }
-            }
-        } catch (const std::exception& e) {
-             std::cerr << "[Geometry] Error decoding text: " << e.what() << std::endl;
-        }
     }
 };
 

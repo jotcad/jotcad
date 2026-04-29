@@ -32,24 +32,33 @@ export const decodeGeometry = (text) => {
     if (!code) continue;
 
     switch (code) {
+      case 'V':
       case 'v':
-        // JOT format: v <inexact_x> <inexact_y> <inexact_z> [<exact_x> <exact_y> <exact_z>]
-        // JS always uses the first triplet (inexact) for visualization.
+        // JOT format: V <count>\n<x> <y> <z>...
+        // Supporting both legacy lowercase 'v' and new uppercase 'V'
+        if (code === 'V') {
+           // Header line, skip
+           break;
+        }
         if (pieces.length >= 3) {
           vertices.push([
-            parseFloat(pieces[0]),
-            parseFloat(pieces[1]),
-            parseFloat(pieces[2]),
+            ratioToNumber(pieces[0]),
+            ratioToNumber(pieces[1]),
+            ratioToNumber(pieces[2]),
           ]);
         }
         break;
+      case 'P':
       case 'p':
+        if (code === 'P') pieces.shift(); // Skip count
         for (const p of pieces) {
           const idx = parseInt(p);
           if (!isNaN(idx)) points.push(idx);
         }
         break;
+      case 'S':
       case 's':
+        if (code === 'S') pieces.shift(); // Skip count
         for (let i = 0; i + 1 < pieces.length; i += 2) {
           segments.push([
             parseInt(pieces[i]),
@@ -57,7 +66,9 @@ export const decodeGeometry = (text) => {
           ]);
         }
         break;
+      case 'T':
       case 't':
+        if (code === 'T') pieces.shift(); // Skip count
         for (let i = 0; i + 2 < pieces.length; i += 3) {
           triangles.push([
             parseInt(pieces[i]),
@@ -66,13 +77,22 @@ export const decodeGeometry = (text) => {
           ]);
         }
         break;
+      case 'F':
       case 'f': {
-        const loop = [];
-        for (const p of pieces) {
-          const idx = parseInt(p);
-          if (!isNaN(idx)) loop.push(idx);
+        if (code === 'F') pieces.shift(); // Skip face count
+        const numLoops = parseInt(pieces.shift() || '1');
+        for (let l = 0; l < numLoops; l++) {
+           const loopLen = parseInt(pieces.shift() || '0');
+           const loop = [];
+           for (let i = 0; i < loopLen; i++) {
+              const idx = parseInt(pieces.shift() || '-1');
+              if (!isNaN(idx) && idx >= 0) loop.push(idx);
+           }
+           if (loop.length > 0) {
+              if (l === 0) faces.push([loop]);
+              else faces.at(-1).push(loop);
+           }
         }
-        if (loop.length > 0) faces.push([loop]);
         break;
       }
       case 'h': {

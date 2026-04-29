@@ -12,7 +12,7 @@ void PngOpImpl::execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const 
         bool has_data = false;
 
         auto collect_geo = [&](auto self, const Shape& s, const Matrix& tf) -> void {
-            Matrix current_tf = tf * Matrix::from_vec(s.tf);
+            Matrix current_tf = tf * s.tf;
             if (s.geometry.has_value()) {
                 Geometry child_geo = vfs->read<Geometry>(s.geometry.value());
                 int base = (int)geo.vertices.size();

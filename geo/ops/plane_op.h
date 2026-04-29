@@ -14,7 +14,7 @@ struct PlaneOpBase : P {
         
         typename P::json tags = {{"is_plane", true}, {"type", "plane"}};
         Shape out = P::make_shape(vfs, res, tags);
-        out.tf = orientation.to_vec();
+        out.tf = orientation;
         
         vfs->write(fulfilling.with_output("$out"), out);
     }

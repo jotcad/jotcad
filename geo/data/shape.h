@@ -6,6 +6,7 @@
 #include <iostream>
 #include <json.hpp>
 #include "vfs_node.h"
+#include "../math/matrix.h"
 
 namespace jotcad {
 namespace geo {
@@ -35,13 +36,7 @@ struct Operation : fs::Selector {
  */
 struct Shape {
     std::optional<fs::CID> geometry;
-    // Transformation matrix stored as 16 exact ratio strings ("n/d")
-    std::vector<std::string> tf = {
-        "1/1", "0/1", "0/1", "0/1",
-        "0/1", "1/1", "0/1", "0/1",
-        "0/1", "0/1", "1/1", "0/1",
-        "0/1", "0/1", "0/1", "1/1"
-    };
+    Matrix tf;
     nlohmann::json tags = nlohmann::json::object();
     std::vector<Shape> components;
 
@@ -50,7 +45,7 @@ struct Shape {
     }
 
     nlohmann::json to_json() const {
-        nlohmann::json j = {{"tf", tf}, {"tags", tags}};
+        nlohmann::json j = {{"tf", tf.to_vec()}, {"tags", tags}};
         if (geometry.has_value()) j["geometry"] = geometry->to_json();
         if (!components.empty()) {
             j["components"] = nlohmann::json::array();
@@ -65,27 +60,17 @@ struct Shape {
             if (j.contains("geometry") && !j.at("geometry").is_null()) {
                 s.geometry = fs::CID::from_json(j.at("geometry"));
             }
-            if (j.contains("tf") && j.at("tf").is_array()) {
-                auto raw_tf = j.at("tf");
-                s.tf.clear();
-                for (const auto& val : raw_tf) {
-                    if (val.is_string()) {
-                        s.tf.push_back(val.get<std::string>());
-                    } else if (val.is_number()) {
-                        // Compatibility: convert double to ratio string
-                        double dval = val.get<double>();
-                        long long precision = 1000000000LL;
-                        long long n = (long long)std::round(std::abs(dval) * precision);
-                        long long d = precision;
-                        long long common = std::gcd(n, d);
-                        std::string ratio = std::to_string((dval < 0 ? -1 : 1) * (n / common)) + "/" + std::to_string(d / common);
-                        s.tf.push_back(ratio);
+            if (j.contains("tf")) {
+                if (j.at("tf").is_string()) {
+                    s.tf = Matrix::from_vec(j.at("tf").get<std::string>());
+                } else if (j.at("tf").is_array()) {
+                    // Compatibility: Convert legacy array
+                    std::stringstream ss;
+                    for (const auto& val : j.at("tf")) {
+                        if (val.is_string()) ss << val.get<std::string>() << " ";
+                        else if (val.is_number()) ss << val.get<double>() << "/1 ";
                     }
-                }
-                if (s.tf.size() < 16) {
-                    // Fill remaining with identity
-                    static const std::vector<std::string> id = {"1/1","0/1","0/1","0/1","0/1","1/1","0/1","0/1","0/1","0/1","1/1","0/1","0/1","0/1","0/1","1/1"};
-                    for (size_t i = s.tf.size(); i < 16; ++i) s.tf.push_back(id[i]);
+                    s.tf = Matrix::from_vec(ss.str());
                 }
             }
             if (j.contains("tags") && j.at("tags").is_object()) {

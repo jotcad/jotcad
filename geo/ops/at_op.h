@@ -16,7 +16,7 @@ struct AtOp : P {
     }
 
     static void apply_at_recursive(fs::VFSNode* vfs, Shape& subject, const Shape& target, const Matrix& parent_frame, const fs::Selector& op) {
-        Matrix world_frame = parent_frame * Matrix::from_vec(target.tf);
+        Matrix world_frame = parent_frame * target.tf;
         if (target.geometry.has_value()) {
             // Anchor Pattern:
             // 1. Invert the anchor's matrix to reach its local origin.
@@ -24,7 +24,7 @@ struct AtOp : P {
             
             // 2. Move the subject into this local origin.
             Shape local_subject = subject;
-            local_subject.tf = (world_inv * Matrix::from_vec(subject.tf)).to_vec();
+            local_subject.tf = world_inv * subject.tf;
             
             // 3. Apply the operation at the local origin.
             fs::Selector call = op;
@@ -32,7 +32,7 @@ struct AtOp : P {
             Shape local_result = vfs->read<Shape>(call);
             
             // 4. Project the result back to the original world frame.
-            local_result.tf = (world_frame * Matrix::from_vec(local_result.tf)).to_vec();
+            local_result.tf = world_frame * local_result.tf;
             
             // 5. Update the subject for the next anchor (Sequential Reduction).
             subject = local_result;
