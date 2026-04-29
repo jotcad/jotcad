@@ -8,8 +8,8 @@ namespace jotcad {
 namespace geo {
 
 template <typename P = JotVfsProtocol>
-struct CutOp : P {
-    static constexpr const char* path = "jot/cut";
+struct ClipOp : P {
+    static constexpr const char* path = "jot/clip";
 
     struct ToolNode {
         Geometry geo;
@@ -19,9 +19,14 @@ struct CutOp : P {
         bool is_pwh;
     };
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, bool open = false) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
         Shape out = in;
         if (tools.empty()) {
+            // Intersection with nothing is either everything or nothing? 
+            // In OpenSCAD, intersection of A with nothing is nothing if there are tools.
+            // But if tools is empty, we just return 'in' to be safe, or should we return empty?
+            // Actually, intersection() { Box(); } in OpenSCAD is Box().
+            // So if there's only one item, it's that item.
             vfs->write(fulfilling.with_output("$out"), out);
             return;
         }
@@ -31,7 +36,7 @@ struct CutOp : P {
             collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
         }
 
-        recursive_subtract(vfs, out, Matrix::identity(), tool_nodes, open);
+        recursive_intersect(vfs, out, Matrix::identity(), tool_nodes);
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
@@ -44,8 +49,6 @@ struct CutOp : P {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             bool is_vol = !geo.faces.empty() && !is_plane && !is_pwh; 
             tool_nodes.push_back({geo, current_tf, is_vol, is_plane, is_pwh});
-        } else if (is_plane) {
-            tool_nodes.push_back({Geometry(), current_tf, false, true, false});
         }
 
         for (const auto& child : s.components) {
@@ -53,7 +56,7 @@ struct CutOp : P {
         }
     }
 
-    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open) {
+    static void recursive_intersect(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
@@ -67,7 +70,6 @@ struct CutOp : P {
                 bool is_target_flat = target_geo.is_plane();
 
                 if (is_target_flat) {
-                    // Try PWH-to-PWH coplanar path first
                     EK::Plane_3 target_plane = *target_geo.find_plane();
                     Matrix project_tf = Matrix::lookAt(target_plane.point(), target_plane.orthogonal_vector());
                     Matrix rehydrate_tf = project_tf.inverse();
@@ -75,7 +77,7 @@ struct CutOp : P {
                     boolean::General_polygon_set_2 subject_set;
                     add_geometry_to_gps(target_geo, project_tf, subject_set);
                     
-                    bool used_pwh_path = false;
+                    bool used_pwh_path = true;
                     for (const auto& tool : tool_nodes) {
                         Geometry local_tool_geo = tool.geo;
                         Matrix tool_rel_tf = subject_world_inv * tool.world_tf;
@@ -84,9 +86,8 @@ struct CutOp : P {
                         if (local_tool_geo.is_coplanar_with(target_plane)) {
                             boolean::General_polygon_set_2 tool_set;
                             add_geometry_to_gps(local_tool_geo, project_tf, tool_set);
-                            boolean::Engine::cut_gps_by_gps(subject_set, tool_set);
-                            used_pwh_path = true;
-                        } else if (!tool.is_plane) {
+                            boolean::Engine::clip_gps_by_gps(subject_set, tool_set);
+                        } else {
                             used_pwh_path = false; break;
                         }
                     }
@@ -102,16 +103,14 @@ struct CutOp : P {
                 if (!is_target_flat) {
                     boolean::Surface_mesh target_mesh = boolean::Engine::geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
-                        if (tool.is_plane) {
-                            Matrix rel_tf = subject_world_inv * tool.world_tf;
-                            EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
-                            boolean::Engine::cut_mesh_by_plane(target_mesh, local_plane);
+                        boolean::Surface_mesh tool_mesh = boolean::Engine::geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        boolean::Engine::transform_mesh(tool_mesh, rel_tf);
+                        
+                        if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
+                            boolean::Engine::clip_mesh_by_mesh(target_mesh, tool_mesh);
                         } else {
-                            boolean::Surface_mesh tool_mesh = boolean::Engine::geometry_to_mesh(tool.geo);
-                            Matrix rel_tf = subject_world_inv * tool.world_tf;
-                            boolean::Engine::transform_mesh(tool_mesh, rel_tf);
-                            if (tool.is_volume) assert(fix::is_geometry_solid(tool_mesh));
-                            boolean::Engine::cut_mesh_by_mesh(target_mesh, tool_mesh);
+                            // Non-closed or mixed dimensionality clipping is not supported yet
                         }
                     }
                     target_geo = boolean::Engine::mesh_to_geometry(target_mesh);
@@ -130,7 +129,7 @@ struct CutOp : P {
                         boolean::Surface_mesh tool_mesh = boolean::Engine::geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         boolean::Engine::transform_mesh(tool_mesh, rel_tf);
-                        boolean::Engine::cut_segments_by_mesh(local_segments, tool_mesh);
+                        boolean::Engine::clip_segments_by_mesh(local_segments, tool_mesh);
                     }
                 }
 
@@ -152,7 +151,7 @@ struct CutOp : P {
                         boolean::Surface_mesh tool_mesh = boolean::Engine::geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         boolean::Engine::transform_mesh(tool_mesh, rel_tf);
-                        boolean::Engine::cut_points_by_mesh(pts, tool_mesh);
+                        boolean::Engine::clip_points_by_mesh(pts, tool_mesh);
                     }
                 }
 
@@ -164,26 +163,25 @@ struct CutOp : P {
         }
 
         for (auto& child : s.components) {
-            recursive_subtract(vfs, child, subject_world_tf, tool_nodes, open);
+            recursive_intersect(vfs, child, subject_world_tf, tool_nodes);
         }
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "tools", "open"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }
     static typename P::json schema() {
         return { 
-            {"path", "jot/cut"}, 
+            {"path", "jot/clip"}, 
             {"arguments", { 
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, 
-                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}, 
-                {{"name", "open"}, {"type", "jot:boolean"}, {"default", false}} 
+                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
             }}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }
 };
 
-static void cut_init(fs::VFSNode* vfs) {
-    Processor::register_op<CutOp<>, Shape, std::vector<Shape>, bool>(vfs, "jot/cut");
+static void clip_init(fs::VFSNode* vfs) {
+    Processor::register_op<ClipOp<>, Shape, std::vector<Shape>>(vfs, "jot/clip");
 }
 
 } // namespace geo

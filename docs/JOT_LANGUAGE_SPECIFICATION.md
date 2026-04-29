@@ -169,7 +169,43 @@ Every object maintains its **Birth Orientation**. The `.origin()` operator uses
 the inverted transformation matrix to return the shape to its birth frame at
 (0,0,0).
 
-## 7. Comprehensive Operation Reference
+## 7. Boolean Operations
+
+Boolean operations are foundational for CSG (Constructive Solid Geometry) and
+hierarchical assembly logic in JotCAD. All boolean operators use the
+**Exact Rational Kernel** to ensure zero-drift, topologically perfect results.
+
+### 7.1. Basic Operators
+
+- **`cut(tools)`**: Subtraction. Removes the volume (or area) of the `tools`
+  from the subject.
+- **`join(tools)`**: Addition. Unions the subject and `tools`, preserving 
+  assembly hierarchy but merging overlapping geometry.
+- **`clip(tools)`**: Intersection. Keeps only the portion of the subject that
+  is *inside* the `tools`.
+
+### 7.2. Consolidating Fusion (`fuse`)
+
+The `fuse(tools)` operator is a **Flattening Union**. Unlike `join`, which
+preserves hierarchy (parent and child shapes), `fuse` merges all geometry into
+a single, flat `Geometry` object.
+
+- **3D Result**: Overlapping solids are merged into a single manifold shell; 
+  interior faces are deleted.
+- **2D Result**: Coplanar faces are merged into a single area.
+- **Dimensionality**: Fusing a 3D box and a 2D rectangle results in a single 
+  geometry containing both types of primitives.
+
+### 7.3. Cross-Dimensional Logic
+
+JotCAD's boolean engine is **Dimensionally Aware**:
+- **Solid Tool vs. Path**: Trims the path to the part outside the solid.
+- **Solid Tool vs. Points**: Removes points that fall inside the solid volume.
+- **Coplanar Optimization**: If the subject and tool are both flat and lie on
+  the same plane, the engine uses 2D PWH (Polygon With Holes) logic for 
+  maximum performance and exactness.
+
+## 8. Comprehensive Operation Reference
 
 (Standard operators: Arc, Box, Orb, Tri, Part, rotate, move, size, etc.)
 
