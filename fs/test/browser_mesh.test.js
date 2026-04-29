@@ -57,11 +57,23 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
 
   t.after(async () => {
     console.log('[Test Browser] Cleaning up...');
-    if (browser) await browser.close();
-    if (uxServer) uxServer.kill();
-    if (opsNode) await opsNode.stop();
+    if (browser) {
+      console.log('[Test Browser] Closing browser...');
+      await browser.close();
+    }
+    if (uxServer) {
+      console.log('[Test Browser] Killing UX server...');
+      uxServer.kill();
+    }
+    if (opsNode) {
+      console.log('[Test Browser] Stopping Ops node...');
+      await opsNode.stop();
+    }
+    console.log('[Test Browser] Removing temporary storage...');
     await fs.rm('.vfs_storage_browser_test_ops', { recursive: true, force: true }).catch(() => {});
+    console.log('[Test Browser] Cleanup complete.');
   });
+
 await t.test('should deliver catalog, define dynamic op, and execute it via mesh', async () => {
   const page = await browser.newPage();
 

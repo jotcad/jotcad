@@ -162,15 +162,21 @@ export const JotNode = (props) => {
   return (
     <div
       ref={nodeRef}
-      class="absolute select-none p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden flex flex-col gap-3"
+      class="fixed bottom-4 left-[2.5vw] w-[95vw] md:absolute md:bottom-auto md:left-auto p-3 md:p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden flex flex-col gap-2 md:gap-3 transition-all duration-200"
+      classList={{
+        'z-50': true,
+        'select-none': true,
+        'md:w-96': isMinimized(),
+        'md:w-[500px]': !isMinimized(),
+      }}
       style={{
-        left: `${pos().x}px`,
-        top: `${pos().y}px`,
-        width: isMinimized() ? '200px' : '500px',
-        'z-index': 20,
-        transition: 'width 0.2s, height 0.2s',
+        left: window.innerWidth >= 768 ? `${pos().x}px` : undefined,
+        top: window.innerWidth >= 768 ? `${pos().y}px` : undefined,
+        width: isMinimized() ? (window.innerWidth < 768 ? '150px' : '200px') : undefined,
       }}
     >
+
+
       <div
         class="flex justify-between items-center cursor-move"
         onDblClick={() => setIsMinimized(!isMinimized())}

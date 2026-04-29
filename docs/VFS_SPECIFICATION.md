@@ -30,7 +30,8 @@ A **Selector** is a recomposable request object containing:
 
 - **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact. **Deconstructing a Selector into top-level keys in metadata or network messages is strictly prohibited.**
 - **Parametric Standardization:** Parameters MUST be normalized (e.g., radial/apothem parameters to `diameter`) before execution to ensure deterministic CIDs.
-- **Strict readData Protocol:** `vfs.readData(selector)` and `vfs.writeData(selector, data)` MUST receive a full Selector instance or a 64-character hex CID. Passing plain string paths or object literals is a protocol violation and will throw an error.
+- **Strict readData Protocol:** `vfs.readData(selector)` and `vfs.writeData(selector, data)` MUST receive a full Selector instance or a 64-character hex CID. Passing plain string paths or object literals is a protocol violation and will throw a **`CRITICAL PROTOCOL VIOLATION`** error. **Coercion is strictly prohibited.**
+- **Secure Context (WebCrypto):** The VFS requires the WebCrypto API for hashing. Because browsers restrict `crypto.subtle` to Secure Contexts, the VFS MUST throw a descriptive error if `crypto.subtle` is undefined, notifying the user that HTTPS is required for non-localhost environments.
 - **Script Evaluation Sniffing:** In `_readResult`, the VFS automatically sniffs for `.jot` file extensions. If a Selector's path ends in `.jot`, the VFS delegates execution to the `jot/eval` provider, passing the original Selector as the evaluation context. This ensures that parameterized scripts are treated as first-class computational artifacts.
 
 ### 1.2 Network Transmission & Hydration

@@ -46,10 +46,10 @@ const components = [
     command: 'npm',
     args: ['run', 'dev', '--', '--port', '3030'],
     cwd: path.join(__dirname, 'ux'),
-    env: { 
-        ...process.env,
-        VITE_VFS_URL: 'http://localhost:9092'
+    env: {
+        ...process.env
     }
+
   }
 ];
 

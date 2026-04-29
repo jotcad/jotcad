@@ -137,9 +137,20 @@ export async function vfs_hash256(bytes) {
   let cryptoImpl = globalThis.crypto;
   
   if (!cryptoImpl?.subtle) {
-    // Dynamic import for Node.js to avoid breaking browser bundles
-    const nodeCrypto = await import('node:crypto');
-    cryptoImpl = nodeCrypto.webcrypto;
+    try {
+        // Dynamic import for Node.js to avoid breaking browser bundles
+        const nodeCrypto = await import('node:crypto');
+        cryptoImpl = nodeCrypto.webcrypto;
+    } catch (e) {
+        // If import fails, we are likely in a browser
+    }
+  }
+
+  if (!cryptoImpl?.subtle) {
+    throw new Error(
+      "WebCrypto 'subtle' API is unavailable. This usually means the browser is blocking it because the connection is not secure (not HTTPS or localhost). " +
+      "Mobile browsers REQUIRE HTTPS to access cryptographic features."
+    );
   }
 
   const hash = await cryptoImpl.subtle.digest('SHA-256', bytes);
@@ -227,14 +238,11 @@ export class Selector {
  */
 export function normalizeSelector(s) {
   if (s instanceof Selector) return s;
-  
-  // Robustness: If it's a plain object that looks like a Selector, accept it but warn.
-  if (s && typeof s === 'object' && typeof s.path === 'string' && s.parameters && typeof s.parameters === 'object') {
-    console.warn('Protocol Warning: Received plain object as Selector. Coercing to Selector instance.');
-    return Selector.fromObject(s);
-  }
 
-  const errorMsg = `Protocol Violation: Expected Selector instance or valid selector object, got ${s?.constructor?.name || typeof s}`;
+  const errorMsg = `CRITICAL PROTOCOL VIOLATION: Received raw object where a formal Selector instance was required. ` +
+                   `This indicates a boundary hydration leak (Selector.fromObject() was missed). ` +
+                   `Input type: ${s?.constructor?.name || typeof s}`;
+  
   console.error(errorMsg, s);
   throw new Error(errorMsg);
 }

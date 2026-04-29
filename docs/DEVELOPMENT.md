@@ -136,26 +136,28 @@ Operators should throw `VFSException` (defined in `geo/impl/vfs_node.h`) for una
 - `508`: Loop detected (handled by MeshLink).
 - `429`: Rate limited/Resource exhausted.
 
-## 4. Build System
+## 5. HTTPS & Mobile Debugging
 
-JotCAD uses a tiered **Makefile** build system for high-performance incremental compilation.
+To support the **WebCrypto API** (required for CID generation and mesh handshakes) on mobile devices, the development environment must run over **HTTPS**.
 
-### 4.1 Core Library
-The VFS core and all operator logic are compiled into a static library: `geo/bin/libjotgeo.a`. This allows both the production binary and unit tests to share the exact same compiled logic.
+### 5.1 Certificate Generation
 
-### 4.2 Mandatory Testing
-Unit tests are **integrated into the build process**. A build is only considered successful if all operator tests pass.
-
+Use the provided script to generate self-signed certificates for your local network IP:
 ```bash
-# Build everything and run all unit tests
-cd geo && ./build.sh
-
-# Run tests independently
-npm run test:unit
+# Generates .ssl/localhost-key.pem and .ssl/localhost-cert.pem
+./scripts/generate_dev_cert.sh
 ```
 
-### 4.3 Clean Builds
-To perform a full clean and rebuild:
-```bash
-cd geo && make clean && make
-```
+### 5.2 Secure Context Requirement
+
+Browsers (Chrome, Safari) disable `crypto.subtle` on insecure HTTP IPs.
+- **Localhost:** Always counts as a Secure Context (HTTP is fine).
+- **Network IPs:** REQUIRES HTTPS.
+- **Handshake Rule:** When using self-signed certs, you MUST manually visit BOTH the UX port (3030) and the VFS port (9092) in your mobile browser and click "Advanced -> Proceed" for each.
+
+### 5.3 C++ SSL Support
+
+The C++ nodes (`geo/bin/ops`) must be compiled with OpenSSL support to communicate with HTTPS neighbors.
+- **Header:** `#define CPPHTTPLIB_OPENSSL_SUPPORT` must be set before including `httplib.h`.
+- **Linking:** Link against `-lcrypto` and `-lssl`.
+- **Verification:** For development, certificate verification is disabled in the C++ core to accommodate self-signed local certs.

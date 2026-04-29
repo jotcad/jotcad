@@ -25,21 +25,33 @@ export const decodeGeometry = (text) => {
     faces = [];
   if (!text) return { vertices, points, triangles, segments, faces };
 
-  for (const line of text.split('\n')) {
-    const pieces = line.trim().split(/\s+/);
-    if (pieces.length === 0) continue;
-    const code = pieces.shift();
-    if (!code) continue;
+  const lines = text.split('\n');
+  let i = 0;
 
-    switch (code) {
-      case 'V':
-      case 'v':
-        // JOT format: V <count>\n<x> <y> <z>...
-        // Supporting both legacy lowercase 'v' and new uppercase 'V'
-        if (code === 'V') {
-           // Header line, skip
-           break;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+    
+    const pieces = line.split(/\s+/);
+    const code = pieces.shift();
+    
+    if (code === 'V' || code === 'v') {
+      const count = parseInt(pieces[0]);
+      if (!isNaN(count)) {
+        // Header-based: read next 'count' lines
+        i++;
+        for (let j = 0; j < count && i < lines.length; j++, i++) {
+          const vLine = lines[i].trim().split(/\s+/);
+          if (vLine.length >= 3) {
+            vertices.push([
+              ratioToNumber(vLine[0]),
+              ratioToNumber(vLine[1]),
+              ratioToNumber(vLine[2]),
+            ]);
+          }
         }
+      } else {
+        // Legacy: prefix-based single line
         if (pieces.length >= 3) {
           vertices.push([
             ratioToNumber(pieces[0]),
@@ -47,67 +59,89 @@ export const decodeGeometry = (text) => {
             ratioToNumber(pieces[2]),
           ]);
         }
-        break;
-      case 'P':
-      case 'p':
-        if (code === 'P') pieces.shift(); // Skip count
+        i++;
+      }
+    } else if (code === 'F' || code === 'f') {
+      const count = parseInt(pieces[0]);
+      if (!isNaN(count)) {
+        i++;
+        for (let j = 0; j < count && i < lines.length; j++, i++) {
+          const fLine = lines[i].trim().split(/\s+/);
+          if (fLine.length === 0) continue;
+          const numLoops = parseInt(fLine.shift() || '1');
+          for (let l = 0; l < numLoops; l++) {
+             const loopLen = parseInt(fLine.shift() || '0');
+             const loop = [];
+             for (let k = 0; k < loopLen; k++) {
+                const idx = parseInt(fLine.shift() || '-1');
+                if (!isNaN(idx) && idx >= 0) loop.push(idx);
+             }
+             if (loop.length > 0) {
+                if (l === 0) faces.push([loop]);
+                else faces.at(-1).push(loop);
+             }
+          }
+        }
+      } else {
+        // Legacy or single face logic could go here
+        i++;
+      }
+    } else if (code === 'P' || code === 'p') {
+      const count = parseInt(pieces[0]);
+      if (!isNaN(count)) {
+        // P <count>\n<v1> <v2>...
+        i++;
+        const pLine = lines[i].trim().split(/\s+/);
+        for (const p of pLine) {
+          const idx = parseInt(p);
+          if (!isNaN(idx)) points.push(idx);
+        }
+      } else {
         for (const p of pieces) {
           const idx = parseInt(p);
           if (!isNaN(idx)) points.push(idx);
         }
-        break;
-      case 'S':
-      case 's':
-        if (code === 'S') pieces.shift(); // Skip count
-        for (let i = 0; i + 1 < pieces.length; i += 2) {
-          segments.push([
-            parseInt(pieces[i]),
-            parseInt(pieces[i+1])
-          ]);
-        }
-        break;
-      case 'T':
-      case 't':
-        if (code === 'T') pieces.shift(); // Skip count
-        for (let i = 0; i + 2 < pieces.length; i += 3) {
-          triangles.push([
-            parseInt(pieces[i]),
-            parseInt(pieces[i+1]),
-            parseInt(pieces[i+2]),
-          ]);
-        }
-        break;
-      case 'F':
-      case 'f': {
-        if (code === 'F') pieces.shift(); // Skip face count
-        const numLoops = parseInt(pieces.shift() || '1');
-        for (let l = 0; l < numLoops; l++) {
-           const loopLen = parseInt(pieces.shift() || '0');
-           const loop = [];
-           for (let i = 0; i < loopLen; i++) {
-              const idx = parseInt(pieces.shift() || '-1');
-              if (!isNaN(idx) && idx >= 0) loop.push(idx);
-           }
-           if (loop.length > 0) {
-              if (l === 0) faces.push([loop]);
-              else faces.at(-1).push(loop);
-           }
-        }
-        break;
       }
-      case 'h': {
-        const loop = [];
-        for (const p of pieces) {
-          const idx = parseInt(p);
-          if (!isNaN(idx)) loop.push(idx);
+      i++;
+    } else if (code === 'S' || code === 's') {
+      const count = parseInt(pieces[0]);
+      if (!isNaN(count)) {
+        i++;
+        for (let j = 0; j < count && i < lines.length; j++, i++) {
+          const sLine = lines[i].trim().split(/\s+/);
+          if (sLine.length >= 2) {
+            segments.push([parseInt(sLine[0]), parseInt(sLine[1])]);
+          }
         }
-        if (faces.length > 0 && loop.length > 0) faces.at(-1).push(loop);
-        break;
+      } else {
+        for (let j = 0; j + 1 < pieces.length; j += 2) {
+          segments.push([parseInt(pieces[j]), parseInt(pieces[j+1])]);
+        }
+        i++;
       }
+    } else if (code === 'T' || code === 't') {
+      const count = parseInt(pieces[0]);
+      if (!isNaN(count)) {
+        i++;
+        for (let j = 0; j < count && i < lines.length; j++, i++) {
+          const tLine = lines[i].trim().split(/\s+/);
+          if (tLine.length >= 3) {
+            triangles.push([parseInt(tLine[0]), parseInt(tLine[1]), parseInt(tLine[2])]);
+          }
+        }
+      } else {
+        for (let j = 0; j + 2 < pieces.length; j += 3) {
+          triangles.push([parseInt(pieces[j]), parseInt(pieces[j+1]), parseInt(pieces[j+2])]);
+        }
+        i++;
+      }
+    } else {
+      i++;
     }
   }
   return { vertices, points, triangles, segments, faces };
 };
+
 
 const identity = new THREE.Matrix4();
 

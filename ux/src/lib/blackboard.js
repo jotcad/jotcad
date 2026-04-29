@@ -25,7 +25,8 @@ export const vfs = new VFS({
 registerJotProvider(vfs);
 
 const vfsUrl =
-  import.meta.env.VITE_VFS_URL || `http://${window.location.hostname}:9092`;
+  import.meta.env.VITE_VFS_URL || `${window.location.protocol}//${window.location.hostname}:9092`;
+console.log(`[UX] Target VFS URL: ${vfsUrl} (Protocol: ${window.location.protocol})`);
 const mesh = new MeshLink(vfs, [vfsUrl]);
 
 // Reactive State
@@ -34,6 +35,28 @@ const [schemas, setSchemas] = createSignal({});
 const [pulse, setPulse] = createSignal([]);
 const [meshTopology, setMeshTopology] = createStore({ peers: [] });
 const [meshPositions, setMeshPositions] = createSignal({}); // PeerID -> {x, y}
+const [logs, setLogs] = createSignal([]);
+
+// Capture logs for on-screen console
+const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
+
+const addLog = (type, args) => {
+  const msg = args.map(a => 
+    typeof a === 'object' ? JSON.stringify(a, (key, value) => 
+      typeof value === 'bigint' ? value.toString() : value, 2) : String(a)
+  ).join(' ');
+  
+  setLogs(prev => [{ type, msg, t: Date.now(), id: Math.random() }, ...prev].slice(0, 100));
+};
+
+console.log = (...args) => { originalLog(...args); addLog('log', args); };
+console.warn = (...args) => { originalWarn(...args); addLog('warn', args); };
+console.error = (...args) => { originalError(...args); addLog('error', args); };
+
+console.log("[UX] Console redirection active. Peer ID:", peerId);
+
 const [isConnected, setIsConnected] = createSignal(false);
 const [discoveryStatus, setDiscoveryStatus] = createSignal('idle');
 const [dynamicOps, setDynamicOps] = createSignal({}); // Path -> { schema, script }
@@ -44,12 +67,14 @@ const meshMap = new Map();
 
 export const blackboard = {
   vfs,
+  peerId,
   graph,
   schemas,
   pulse,
   meshTopology: () => meshTopology,
   meshPositions,
   setMeshPositions,
+  logs,
   isConnected,
   discoveryStatus,
   dynamicOps,

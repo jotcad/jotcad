@@ -482,7 +482,9 @@ export class VFS {
 
   async _getStorageInfo(key) {
     let info = null;
-    if (typeof this.storage.iterateMeta === 'function') {
+    if (typeof this.storage.getMeta === 'function') {
+      info = await this.storage.getMeta(key);
+    } else if (typeof this.storage.iterateMeta === 'function') {
       for await (const entry of this.storage.iterateMeta()) {
         if (entry.cid === key || entry.info?.cid === key) {
             info = entry.info;
@@ -490,8 +492,14 @@ export class VFS {
         }
       }
     }
-    if (info && info.target && !(info.target instanceof Selector)) {
-        info.target = new Selector(info.target.path, info.target.parameters, info.target.output);
+    
+    if (info) {
+        if (info.target && !(info.target instanceof Selector)) {
+            info.target = Selector.fromObject(info.target);
+        }
+        if (info.selector && !(info.selector instanceof Selector)) {
+            info.selector = Selector.fromObject(info.selector);
+        }
     }
     return info;
   }

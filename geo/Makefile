@@ -16,7 +16,7 @@ INCLUDES = -I. -I./ops -I./core -I./data -I./math -I./algorithms -I./render -I./
            -I./cgal -I./cgal/boost \
            -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include
 DEFS = -DCGAL_DISABLE_GMP=1
-LIBS = -lpthread -lcrypto
+LIBS = -lpthread -lcrypto -lssl
 
 # Library and Binary
 LIB_JOTGEO = $(BIN_DIR)/libjotgeo.a

@@ -16,6 +16,9 @@ export class MemoryStorage {
     else console.log(`[MemoryStorage ${this.vfsId}] get(${cid.slice(0, 8)}) -> MISS`);
     return bytes ? new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }) : null;
   }
+  async getMeta(cid) {
+    return this.info.get(cid) || null;
+  }
   async set(cid, streamOrBytes, info = {}) {
     let bytes;
     console.log(`[MemoryStorage ${this.vfsId}] set(${cid.slice(0, 8)}) called with type: ${typeof streamOrBytes}, isUint8: ${streamOrBytes instanceof Uint8Array}`);

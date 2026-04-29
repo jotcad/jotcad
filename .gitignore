@@ -53,5 +53,8 @@ server/assets/
 geometry/assets/
 **/.*vfs_storage*
 **/.test_vfs_*
+**/.test_*_storage*
+**/.test_catalog_ops
 actual/
 .vfs_test_storage_*
+.ssl/
