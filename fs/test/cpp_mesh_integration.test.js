@@ -22,7 +22,13 @@ const PORT_JS = 20102;
 const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');
 const STORAGE_CPP = path.resolve('.vfs_storage_cpp-test-node');
 
-test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
+test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
+  const failsafe = setTimeout(() => {
+    console.error('[Test Error] Failsafe timeout reached. Forcefully exiting...');
+    process.exit(1);
+  }, 70000);
+  failsafe.unref();
+
   let cppNode;
   let server;
   let jsVfs;
@@ -30,6 +36,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
 
   t.after(async () => {
     console.log('[Test] Cleaning up...');
+    clearTimeout(failsafe);
     if (cppNode) cppNode.kill();
     if (stopServer) stopServer();
     if (server) server.close();

@@ -1,34 +1,119 @@
 #pragma once
 #include "protocols.h"
 #include "processor.h"
+#include "math/catmull_rom.h"
+#include "math/zag.h"
+#include <iostream>
 
 namespace jotcad {
 namespace geo {
 
+namespace detail {
+    inline void collect_points_recursive(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<EK::Point_3>& pts) {
+        Matrix current_tf = parent_tf * s.tf;
+        
+        if (s.geometry.has_value()) {
+            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+            if (!geo.vertices.empty()) {
+                for (const auto& v : geo.vertices) {
+                    pts.push_back(current_tf.transform(EK::Point_3(v.x, v.y, v.z)));
+                }
+            } else {
+                pts.push_back(current_tf.transform(EK::Point_3(0, 0, 0)));
+            }
+        } else if (s.components.empty()) {
+            pts.push_back(current_tf.transform(EK::Point_3(0, 0, 0)));
+        }
+
+        for (const auto& child : s.components) {
+            collect_points_recursive(vfs, child, current_tf, pts);
+        }
+    }
+
+    inline Geometry generate_path_geometry(const std::vector<EK::Point_3>& points, bool closed, bool smooth, double zag_val) {
+        Geometry res;
+        if (points.size() < 2) return res;
+
+        std::vector<EK::Point_3> curve_points;
+
+        if (smooth) {
+            // Determine steps per segment. 
+            // Default to 10 steps if zag is 0 but smooth is true.
+            int steps = (zag_val <= 0) ? 10 : (int)std::ceil(1.0 / zag_val);
+            if (steps < 1) steps = 1;
+
+            std::vector<EK::Point_3> padded = points;
+            if (closed) {
+                padded.insert(padded.begin(), points.back());
+                padded.push_back(points.front());
+                padded.push_back(points[1]);
+            } else {
+                padded.insert(padded.begin(), points.front());
+                padded.push_back(points.back());
+            }
+
+            for (size_t i = 0; i < padded.size() - 3; ++i) {
+                const auto& p0 = padded[i];
+                const auto& p1 = padded[i + 1];
+                const auto& p2 = padded[i + 2];
+                const auto& p3 = padded[i + 3];
+
+                for (int j = 0; j < steps; ++j) {
+                    double t = (double)j / steps;
+                    curve_points.push_back(math::catmull_rom<EK>(p0, p1, p2, p3, t));
+                }
+            }
+            if (!closed) {
+                curve_points.push_back(points.back());
+            }
+        } else {
+            curve_points = points;
+        }
+
+        for (size_t i = 0; i < curve_points.size(); ++i) {
+            res.vertices.push_back({curve_points[i].x(), curve_points[i].y(), curve_points[i].z()});
+            if (i > 0) {
+                res.segments.push_back({(int)i - 1, (int)i});
+            }
+        }
+
+        if (closed && curve_points.size() > 2) {
+            res.segments.push_back({(int)res.vertices.size() - 1, 0});
+        }
+
+        return res;
+    }
+}
+
 template <typename P = JotVfsProtocol>
 struct LinkOp : P {
     static constexpr const char* path = "jot/link";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& a, const Shape& b) {
-        Shape out;
-        out.geometry = std::nullopt;
-        out.components = {a, b};
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, bool smooth = false, double zag = 0) {
+        std::vector<EK::Point_3> pts;
+        detail::collect_points_recursive(vfs, in, Matrix::identity(), pts);
+        for (const auto& t : tools) {
+            detail::collect_points_recursive(vfs, t, Matrix::identity(), pts);
+        }
+
+        Geometry res = detail::generate_path_geometry(pts, false, smooth, zag);
+
+        Shape out = in; 
+        out.geometry = vfs->materialize<Geometry>(res);
         out.add_tag("type", "link");
         vfs->write(fulfilling.with_output("$out"), out);
     }
-    static std::vector<std::string> argument_keys() { return {"$a", "$b"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "tools", "smooth", "zag"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/link"},
-            {"description", "Creates a semantic link between two shapes, establishing a topological connection."},
+            {"description", "Connects points into an open path, optionally with Catmull-Rom smoothing."},
             {"arguments", {
-                {{"name", "$a"}, {"type", "jot:shape"}, {"description", "The first shape to be linked."}},
-                {{"name", "$b"}, {"type", "jot:shape"}, {"description", "The second shape to be linked."}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
+                {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             }},
-            {"inputs", {
-                {"$a", {{"type", "jot:shape"}, {"description", "The first shape."}}}, 
-                {"$b", {{"type", "jot:shape"}, {"description", "The second shape."}}}
-            }},
-            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "A group containing both linked shapes."}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
@@ -36,64 +121,39 @@ struct LinkOp : P {
 template <typename P = JotVfsProtocol>
 struct LoopOp : P {
     static constexpr const char* path = "jot/loop";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        std::cout << "[LoopOp] Executing for path: " << fulfilling.path << std::endl;
-        std::cout << "[LoopOp] Input shape: has_geo=" << in.geometry.has_value() << ", components=" << in.components.size() << std::endl;
-
-        std::vector<Shape> all_components;
-        if (in.geometry.has_value()) {
-            Shape first = in;
-            first.components.clear();
-            all_components.push_back(first);
-        }
-        for (const auto& c : in.components) {
-            all_components.push_back(c);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, bool smooth = false, double zag = 0) {
+        std::vector<EK::Point_3> pts;
+        detail::collect_points_recursive(vfs, in, Matrix::identity(), pts);
+        for (const auto& t : tools) {
+            detail::collect_points_recursive(vfs, t, Matrix::identity(), pts);
         }
 
-        std::cout << "[LoopOp] Total candidate components: " << all_components.size() << std::endl;
+        Geometry res = detail::generate_path_geometry(pts, true, smooth, zag);
 
-        if (all_components.size() < 2) {
-            vfs->write(fulfilling.with_output("$out"), in);
-            return;
-        }
-
-        Geometry res;
-        for (size_t i = 0; i < all_components.size(); ++i) {
-            const auto& c = all_components[i];
-            Matrix m = c.tf;
-            Point_3 p = m.t.transform(Point_3(0, 0, 0));
-            res.vertices.push_back({p.x(), p.y(), p.z()});
-        }
-
-        for (size_t i = 0; i < res.vertices.size(); ++i) {
-            int v1 = (int)i;
-            int v2 = (int)((i + 1) % res.vertices.size());
-            res.segments.push_back({v1, v2});
-        }
-
-        Shape out;
+        Shape out = in;
         out.geometry = vfs->materialize<Geometry>(res);
-        out.components = all_components;
         out.add_tag("type", "loop");
         vfs->write(fulfilling.with_output("$out"), out);
     }
-    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "tools", "smooth", "zag"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/loop"},
-            {"description", "Closes a sequence of connected segments into a topological loop."},
+            {"description", "Connects points into a closed loop, optionally with Catmull-Rom smoothing."},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The shape (usually a group) to form into a loop."}, {"affiliate", "$out"}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
+                {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             }},
-            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The input shape."}}}}},
-            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting loop shape."}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
 static void path_init(fs::VFSNode* vfs) {
-    Processor::register_op<LinkOp<>, Shape, Shape>(vfs, "jot/link");
-    Processor::register_op<LoopOp<>, Shape>(vfs, "jot/loop");
+    Processor::register_op<LinkOp<>, Shape, std::vector<Shape>, bool, double>(vfs, "jot/link");
+    Processor::register_op<LoopOp<>, Shape, std::vector<Shape>, bool, double>(vfs, "jot/loop");
 }
 
 } // namespace geo

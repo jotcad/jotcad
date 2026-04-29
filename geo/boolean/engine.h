@@ -366,6 +366,351 @@ struct Engine {
         }
         return g;
     }
+
+    struct ToolNode {
+        Geometry geo;
+        Matrix world_tf;
+        bool is_volume;
+        bool is_plane;
+        bool is_pwh;
+    };
+
+    static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
+        Matrix current_tf = parent_tf * s.tf;
+        bool is_plane = s.tags.contains("is_plane") && s.tags["is_plane"].get<bool>();
+        bool is_pwh = s.tags.contains("is_pwh") && s.tags["is_pwh"].get<bool>();
+        
+        if (s.geometry.has_value()) {
+            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+            bool is_vol = !geo.faces.empty() && !is_plane && !is_pwh; 
+            tool_nodes.push_back({geo, current_tf, is_vol, is_plane, is_pwh});
+        } else if (is_plane) {
+            tool_nodes.push_back({Geometry(), current_tf, false, true, false});
+        }
+
+        for (const auto& child : s.components) {
+            collect_tool_geometry(vfs, child, current_tf, tool_nodes);
+        }
+    }
+
+    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open) {
+        Matrix subject_world_tf = parent_tf * s.tf;
+        Matrix subject_world_inv = subject_world_tf.inverse();
+
+        if (s.geometry.has_value()) {
+            Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
+            bool has_faces = !target_geo.faces.empty();
+            bool has_segments = !target_geo.segments.empty();
+            bool has_only_points = target_geo.faces.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
+
+            if (has_faces) {
+                bool is_target_flat = target_geo.is_plane();
+
+                if (is_target_flat) {
+                    // Try PWH-to-PWH coplanar path first
+                    EK::Plane_3 target_plane = *target_geo.find_plane();
+                    Matrix project_tf = Matrix::lookAt(target_plane.point(), target_plane.orthogonal_vector());
+                    Matrix rehydrate_tf = project_tf.inverse();
+
+                    General_polygon_set_2 subject_set;
+                    add_geometry_to_gps(target_geo, project_tf, subject_set);
+                    
+                    bool used_pwh_path = false;
+                    for (const auto& tool : tool_nodes) {
+                        Geometry local_tool_geo = tool.geo;
+                        Matrix tool_rel_tf = subject_world_inv * tool.world_tf;
+                        local_tool_geo.apply_tf(tool_rel_tf);
+
+                        if (local_tool_geo.is_coplanar_with(target_plane)) {
+                            General_polygon_set_2 tool_set;
+                            add_geometry_to_gps(local_tool_geo, project_tf, tool_set);
+                            cut_gps_by_gps(subject_set, tool_set);
+                            used_pwh_path = true;
+                        } else if (!tool.is_plane) {
+                            used_pwh_path = false; break;
+                        }
+                    }
+
+                    if (used_pwh_path) {
+                        target_geo = gps_to_geometry(subject_set);
+                        target_geo.apply_tf(rehydrate_tf);
+                    } else {
+                        is_target_flat = false; // Fall through to 3D
+                    }
+                }
+
+                if (!is_target_flat) {
+                    Surface_mesh target_mesh = geometry_to_mesh(target_geo);
+                    for (const auto& tool : tool_nodes) {
+                        if (tool.is_plane) {
+                            Matrix rel_tf = subject_world_inv * tool.world_tf;
+                            EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
+                            cut_mesh_by_plane(target_mesh, local_plane);
+                        } else {
+                            Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                            Matrix rel_tf = subject_world_inv * tool.world_tf;
+                            transform_mesh(tool_mesh, rel_tf);
+                            if (tool.is_volume) assert(fix::is_geometry_solid(tool_mesh));
+                            cut_mesh_by_mesh(target_mesh, tool_mesh);
+                        }
+                    }
+                    target_geo = mesh_to_geometry(target_mesh);
+                }
+            } else if (has_segments) {
+                std::vector<std::pair<EK::Point_3, EK::Point_3>> local_segments;
+                for (const auto& seg : target_geo.segments) {
+                    local_segments.push_back({
+                        EK::Point_3(target_geo.vertices[seg[0]].x, target_geo.vertices[seg[0]].y, target_geo.vertices[seg[0]].z),
+                        EK::Point_3(target_geo.vertices[seg[1]].x, target_geo.vertices[seg[1]].y, target_geo.vertices[seg[1]].z)
+                    });
+                }
+
+                for (const auto& tool : tool_nodes) {
+                    if (tool.is_volume) {
+                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        transform_mesh(tool_mesh, rel_tf);
+                        cut_segments_by_mesh(local_segments, tool_mesh);
+                    }
+                }
+
+                Geometry res;
+                for (const auto& seg : local_segments) {
+                    int v1 = (int)res.vertices.size();
+                    res.vertices.push_back({seg.first.x(), seg.first.y(), seg.first.z()});
+                    int v2 = (int)res.vertices.size();
+                    res.vertices.push_back({seg.second.x(), seg.second.y(), seg.second.z()});
+                    res.segments.push_back({v1, v2});
+                }
+                target_geo = res;
+            } else if (has_only_points) {
+                std::vector<EK::Point_3> pts;
+                for (const auto& v : target_geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
+
+                for (const auto& tool : tool_nodes) {
+                    if (tool.is_volume) {
+                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        transform_mesh(tool_mesh, rel_tf);
+                        cut_points_by_mesh(pts, tool_mesh);
+                    }
+                }
+
+                Geometry res;
+                for (const auto& p : pts) res.vertices.push_back({p.x(), p.y(), p.z()});
+                target_geo = res;
+            }
+            s.geometry = vfs->materialize<Geometry>(target_geo);
+        }
+
+        for (auto& child : s.components) {
+            recursive_subtract(vfs, child, subject_world_tf, tool_nodes, open);
+        }
+    }
+
+    static void recursive_union(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
+        Matrix subject_world_tf = parent_tf * s.tf;
+        Matrix subject_world_inv = subject_world_tf.inverse();
+
+        if (s.geometry.has_value()) {
+            Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
+            bool has_faces = !target_geo.faces.empty();
+
+            if (has_faces) {
+                bool is_target_flat = target_geo.is_plane();
+
+                if (is_target_flat) {
+                    EK::Plane_3 target_plane = *target_geo.find_plane();
+                    Matrix project_tf = Matrix::lookAt(target_plane.point(), target_plane.orthogonal_vector());
+                    Matrix rehydrate_tf = project_tf.inverse();
+
+                    General_polygon_set_2 subject_set;
+                    add_geometry_to_gps(target_geo, project_tf, subject_set);
+                    
+                    bool used_pwh_path = true;
+                    for (const auto& tool : tool_nodes) {
+                        Geometry local_tool_geo = tool.geo;
+                        Matrix tool_rel_tf = subject_world_inv * tool.world_tf;
+                        local_tool_geo.apply_tf(tool_rel_tf);
+
+                        if (local_tool_geo.is_coplanar_with(target_plane)) {
+                            General_polygon_set_2 tool_set;
+                            add_geometry_to_gps(local_tool_geo, project_tf, tool_set);
+                            join_gps_by_gps(subject_set, tool_set);
+                        } else {
+                            used_pwh_path = false; break;
+                        }
+                    }
+
+                    if (used_pwh_path) {
+                        target_geo = gps_to_geometry(subject_set);
+                        target_geo.apply_tf(rehydrate_tf);
+                    } else {
+                        is_target_flat = false; // Fall through to 3D
+                    }
+                }
+
+                if (!is_target_flat) {
+                    Surface_mesh target_mesh = geometry_to_mesh(target_geo);
+                    for (const auto& tool : tool_nodes) {
+                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        transform_mesh(tool_mesh, rel_tf);
+                        
+                        if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
+                            join_mesh_by_mesh(target_mesh, tool_mesh);
+                        }
+                    }
+                    target_geo = mesh_to_geometry(target_mesh);
+                }
+            }
+            s.geometry = vfs->materialize<Geometry>(target_geo);
+        }
+
+        for (auto& child : s.components) {
+            recursive_union(vfs, child, subject_world_tf, tool_nodes);
+        }
+    }
+
+    static void recursive_intersect(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
+        Matrix subject_world_tf = parent_tf * s.tf;
+        Matrix subject_world_inv = subject_world_tf.inverse();
+
+        if (s.geometry.has_value()) {
+            Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
+            bool has_faces = !target_geo.faces.empty();
+            bool has_segments = !target_geo.segments.empty();
+            bool has_only_points = target_geo.faces.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
+
+            if (has_faces) {
+                bool is_target_flat = target_geo.is_plane();
+
+                if (is_target_flat) {
+                    EK::Plane_3 target_plane = *target_geo.find_plane();
+                    Matrix project_tf = Matrix::lookAt(target_plane.point(), target_plane.orthogonal_vector());
+                    Matrix rehydrate_tf = project_tf.inverse();
+
+                    General_polygon_set_2 subject_set;
+                    add_geometry_to_gps(target_geo, project_tf, subject_set);
+                    
+                    bool used_pwh_path = true;
+                    for (const auto& tool : tool_nodes) {
+                        Geometry local_tool_geo = tool.geo;
+                        Matrix tool_rel_tf = subject_world_inv * tool.world_tf;
+                        local_tool_geo.apply_tf(tool_rel_tf);
+
+                        if (local_tool_geo.is_coplanar_with(target_plane)) {
+                            General_polygon_set_2 tool_set;
+                            add_geometry_to_gps(local_tool_geo, project_tf, tool_set);
+                            clip_gps_by_gps(subject_set, tool_set);
+                        } else {
+                            used_pwh_path = false; break;
+                        }
+                    }
+
+                    if (used_pwh_path) {
+                        target_geo = gps_to_geometry(subject_set);
+                        target_geo.apply_tf(rehydrate_tf);
+                    } else {
+                        is_target_flat = false; // Fall through to 3D
+                    }
+                }
+
+                if (!is_target_flat) {
+                    Surface_mesh target_mesh = geometry_to_mesh(target_geo);
+                    for (const auto& tool : tool_nodes) {
+                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        transform_mesh(tool_mesh, rel_tf);
+                        
+                        if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
+                            clip_mesh_by_mesh(target_mesh, tool_mesh);
+                        }
+                    }
+                    target_geo = mesh_to_geometry(target_mesh);
+                }
+            } else if (has_segments) {
+                std::vector<std::pair<EK::Point_3, EK::Point_3>> local_segments;
+                for (const auto& seg : target_geo.segments) {
+                    local_segments.push_back({
+                        EK::Point_3(target_geo.vertices[seg[0]].x, target_geo.vertices[seg[0]].y, target_geo.vertices[seg[0]].z),
+                        EK::Point_3(target_geo.vertices[seg[1]].x, target_geo.vertices[seg[1]].y, target_geo.vertices[seg[1]].z)
+                    });
+                }
+
+                for (const auto& tool : tool_nodes) {
+                    if (tool.is_volume) {
+                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        transform_mesh(tool_mesh, rel_tf);
+                        clip_segments_by_mesh(local_segments, tool_mesh);
+                    }
+                }
+
+                Geometry res;
+                for (const auto& seg : local_segments) {
+                    int v1 = (int)res.vertices.size();
+                    res.vertices.push_back({seg.first.x(), seg.first.y(), seg.first.z()});
+                    int v2 = (int)res.vertices.size();
+                    res.vertices.push_back({seg.second.x(), seg.second.y(), seg.second.z()});
+                    res.segments.push_back({v1, v2});
+                }
+                target_geo = res;
+            } else if (has_only_points) {
+                std::vector<EK::Point_3> pts;
+                for (const auto& v : target_geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
+
+                for (const auto& tool : tool_nodes) {
+                    if (tool.is_volume) {
+                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        transform_mesh(tool_mesh, rel_tf);
+                        clip_points_by_mesh(pts, tool_mesh);
+                    }
+                }
+
+                Geometry res;
+                for (const auto& p : pts) res.vertices.push_back({p.x(), p.y(), p.z()});
+                target_geo = res;
+            }
+            s.geometry = vfs->materialize<Geometry>(target_geo);
+        }
+
+        for (auto& child : s.components) {
+            recursive_intersect(vfs, child, subject_world_tf, tool_nodes);
+        }
+    }
+
+    static void deep_disjoint(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf) {
+        Matrix world_tf = parent_tf * s.tf;
+        
+        // 1. Process this level
+        
+        // Step A: Primary geometry cut by all components
+        if (s.geometry.has_value() && !s.components.empty()) {
+            std::vector<ToolNode> tool_nodes;
+            for (const auto& child : s.components) {
+                collect_tool_geometry(vfs, child, world_tf, tool_nodes);
+            }
+            recursive_subtract(vfs, s, parent_tf, tool_nodes, false);
+        }
+
+        // Step B: Each component cut by subsequent sibling components
+        for (size_t i = 0; i < s.components.size(); ++i) {
+            if (i + 1 < s.components.size()) {
+                std::vector<ToolNode> tool_nodes;
+                for (size_t j = i + 1; j < s.components.size(); ++j) {
+                    collect_tool_geometry(vfs, s.components[j], world_tf, tool_nodes);
+                }
+                recursive_subtract(vfs, s.components[i], world_tf, tool_nodes, false);
+            }
+        }
+
+        // 2. Recurse into children
+        for (auto& child : s.components) {
+            deep_disjoint(vfs, child, world_tf);
+        }
+    }
 };
 
 } // namespace boolean

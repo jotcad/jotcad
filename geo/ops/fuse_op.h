@@ -12,41 +12,36 @@ template <typename P = JotVfsProtocol>
 struct FuseOp : P {
     static constexpr const char* path = "jot/fuse";
 
-    struct Node {
-        Geometry geo;
-        Matrix world_tf;
-    };
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        std::vector<Node> nodes;
-        collect_recursive(vfs, in, Matrix::identity(), nodes);
+        std::vector<boolean::Engine::ToolNode> all_nodes;
+        
+        // 1. Collect all geometry from subject and tools into world space
+        boolean::Engine::collect_tool_geometry(vfs, in, Matrix::identity(), all_nodes);
         for (const auto& tool : tools) {
-            collect_recursive(vfs, tool, Matrix::identity(), nodes);
+            boolean::Engine::collect_tool_geometry(vfs, tool, Matrix::identity(), all_nodes);
         }
 
-        if (nodes.empty()) {
+        if (all_nodes.empty()) {
             vfs->write(fulfilling.with_output("$out"), Shape());
             return;
         }
 
-        // Cumulative results
+        // 2. Cumulative results for flattening
         boolean::Surface_mesh combined_solids;
         std::map<std::string, boolean::General_polygon_set_2> plane_groups;
         Geometry remainder;
 
-        for (const auto& node : nodes) {
+        for (const auto& node : all_nodes) {
             if (node.geo.vertices.empty()) continue;
 
-            if (node.geo.is_plane()) {
+            if (node.is_plane) {
                 auto plane_opt = node.geo.find_plane();
                 EK::Plane_3 world_plane = node.world_tf.transform(*plane_opt);
                 
-                // Use a normalized string representation of the plane as a key
                 std::stringstream ss;
                 ss << world_plane.a() << "," << world_plane.b() << "," << world_plane.c() << "," << world_plane.d();
                 std::string plane_key = ss.str();
 
-                // Project to 2D
                 Matrix project_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector());
                 boolean::Engine::add_geometry_to_gps(node.geo, project_tf * node.world_tf, plane_groups[plane_key]);
             } else {
@@ -60,7 +55,6 @@ struct FuseOp : P {
                         boolean::Engine::join_mesh_by_mesh(combined_solids, mesh);
                     }
                 } else {
-                    // For non-closed, non-planar geometry, just merge into soup
                     int base = (int)remainder.vertices.size();
                     for (const auto& v : node.geo.vertices) {
                         Point_3 p = node.world_tf.transform(Point_3(v.x, v.y, v.z));
@@ -79,10 +73,9 @@ struct FuseOp : P {
             }
         }
 
-        // Flatten all into one Geometry
+        // 3. Merge everything into one Geometry
         Geometry final_geo = remainder;
         
-        // 1. Add solids
         if (combined_solids.number_of_vertices() > 0) {
             Geometry solid_geo = boolean::Engine::mesh_to_geometry(combined_solids);
             int base = (int)final_geo.vertices.size();
@@ -93,9 +86,7 @@ struct FuseOp : P {
             }
         }
 
-        // 2. Add planes
         for (auto& [key, gps] : plane_groups) {
-            // Key is "a,b,c,d"
             std::vector<FT> p_coeffs;
             std::stringstream ss_key(key);
             std::string val_str;
@@ -122,16 +113,6 @@ struct FuseOp : P {
         Shape out;
         out.geometry = vfs->materialize<Geometry>(final_geo);
         vfs->write(fulfilling.with_output("$out"), out);
-    }
-
-    static void collect_recursive(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<Node>& nodes) {
-        Matrix world_tf = parent_tf * s.tf;
-        if (s.geometry.has_value()) {
-            nodes.push_back({vfs->read<Geometry>(s.geometry.value()), world_tf});
-        }
-        for (const auto& child : s.components) {
-            collect_recursive(vfs, child, world_tf, nodes);
-        }
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }

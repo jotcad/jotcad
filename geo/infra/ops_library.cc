@@ -1,5 +1,8 @@
 #include "hexagon_op.h"
 #include "box_op.h"
+#include "disk_op.h"
+#include "arc_op.h"
+#include "orb_op.h"
 #include "triangle_op.h"
 #include "offset_op.h"
 #include "outline_op.h"
@@ -16,6 +19,7 @@
 #include "join_op.h"
 #include "clip_op.h"
 #include "fuse_op.h"
+#include "disjoint_op.h"
 #include "pdf_op.h"
 #include "png_op.h"
 #include "rule_op.h"
@@ -27,6 +31,9 @@ namespace geo {
 void register_all_ops(fs::VFSNode* vfs) {
     hexagon_init(vfs);
     box_init(vfs);
+    disk_init(vfs);
+    arc_init(vfs);
+    orb_init(vfs);
     triangle_init(vfs);
     offset_init(vfs);
     outline_init(vfs);
@@ -43,6 +50,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     join_init(vfs);
     clip_init(vfs);
     fuse_init(vfs);
+    disjoint_init(vfs);
     pdf_init(vfs);
     png_init(vfs);
     rule_init(vfs);

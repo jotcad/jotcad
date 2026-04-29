@@ -19,14 +19,51 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('Box', {
       path: 'jot/Box',
       schema: { 
-        arguments: [{ name: 'width', type: 'jot:number', default: 10 }],
+        arguments: [
+          { name: 'width', type: 'jot:number', default: 10 },
+          { name: 'height', type: 'jot:number', default: 10 },
+          { name: 'depth', type: 'jot:number', default: 0 }
+        ],
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
-    c.registerOperator('Orb', {
+    c.registerOperator('Disk', {
+      path: 'jot/Disk',
+      schema: { 
+        arguments: [
+          { name: 'diameter', type: 'jot:number', default: 10 },
+          { name: 'width', type: 'jot:number', default: 0 },
+          { name: 'height', type: 'jot:number', default: 0 },
+          { name: 'start', type: 'jot:number', default: 0 },
+          { name: 'end', type: 'jot:number', default: 1 },
+          { name: 'zag', type: 'jot:number', default: 0.1 }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('Arc', {
+      path: 'jot/Arc',
+      schema: { 
+        arguments: [
+          { name: 'diameter', type: 'jot:number', default: 10 },
+          { name: 'width', type: 'jot:number', default: 0 },
+          { name: 'height', type: 'jot:number', default: 0 },
+          { name: 'start', type: 'jot:number', default: 0 },
+          { name: 'end', type: 'jot:number', default: 1 },
+          { name: 'zag', type: 'jot:number', default: 0.1 }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });    c.registerOperator('Orb', {
       path: 'jot/Orb',
       schema: { 
-        arguments: [{ name: 'diameter', type: 'jot:number', default: 10 }],
+        arguments: [
+          { name: 'diameter', type: 'jot:number', default: 10 },
+          { name: 'width', type: 'jot:number', default: 0 },
+          { name: 'height', type: 'jot:number', default: 0 },
+          { name: 'depth', type: 'jot:number', default: 0 },
+          { name: 'zag', type: 'jot:number', default: 0.1 }
+        ],
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
@@ -163,6 +200,13 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
           { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'tools', type: 'jot:shapes', default: [] }
         ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('disjoint', {
+      path: 'jot/disjoint',
+      schema: { 
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
