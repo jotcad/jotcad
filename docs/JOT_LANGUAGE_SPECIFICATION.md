@@ -63,17 +63,32 @@ structures.
 - **No Recursion:** Functions cannot call themselves.
 - **No Conditionals:** Logic is applied via **Selectors** and **Explicit Mapping** over data sets.
 
-### 1.4. Logical Pass-Throughs (Optimized Aliases)
+### 1.4. Graph-based Terminal Analysis (Leaf Discovery)
 
-Some operations (like `.pdf()` or `.stl()`) perform side-effects but should not
-"pollute" the functional chain of geometric selectors.
+JotCAD avoids manual "passthrough" hacks or side-effect "lifting." Instead, the compiler implements **Graph-based Terminal Analysis**.
 
-- **Alias Assertion:** These operations use `metadata.aliases` to declare that
-  their functional result (`$out`) is logically identical to their input
-  (`$in`).
-- **Optimization Mode (`optimizeAliases: true`):**
-  - The compiler identifies these "Tee" operations and returns the primary subject while recording the side-effect.
-  - `Box(10).pdf("out.pdf").offset(2)` resolves to an `offset` selector pointing directly to `Box`.
+- **Consumption Tracking:** Every time a `Selector` (and its specific output port) is used as an argument to another operator, it is marked as **Consumed**.
+- **Terminal Discovery:** After evaluation, the compiler identifies every `(Selector, Port)` pair that remains **Unconsumed**.
+- **User Presentation:**
+  - Unconsumed ports with type `jot:shape` are routed to the 3D Viewer.
+  - Unconsumed ports with type `file` (e.g., from `.pdf()` or `.stl()`) are routed to the Download List.
+- **Example:** `Box(10).pdf("out.pdf")`
+  - `Box:$out` is consumed by `pdf`.
+  - `pdf:$out` is unconsumed (Shape) -> Viewer.
+  - `pdf:file` is unconsumed (File) -> Download Button.
+
+### 1.5. Multi-Expression Support
+
+The JOT parser supports scripts containing one or more top-level expressions, optionally separated by semicolons or newlines.
+
+```js
+// Two independent terminals
+Box(10)
+Sphere(5)
+
+// Semicolon support
+Box(20); Cylinder(10)
+```
 
 ## 2. The Universal Sequence Principle
 

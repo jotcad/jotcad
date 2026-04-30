@@ -17,19 +17,25 @@ export class JotParser {
     this.tokens = this._tokenize(text);
     console.log('[JotParser] Tokens:', this.tokens);
     this.pos = 0;
-    const expr = this._parseExpression();
-    console.log('[JotParser] AST:', JSON.stringify(expr, null, 2));
-    if (this.pos < this.tokens.length) {
-      throw new Error(`Unexpected token at end: ${this.tokens[this.pos]}`);
+    const results = [];
+    while (this.pos < this.tokens.length) {
+      // Skip semicolons between expressions
+      if (this._peek() === ';') {
+        this._consume(';');
+        continue;
+      }
+      const expr = this._parseExpression();
+      console.log('[JotParser] AST Chunk:', JSON.stringify(expr, null, 2));
+      results.push(expr);
     }
-    return expr;
+    return results.length === 1 ? results[0] : results;
   }
 
   _tokenize(text) {
     const tokens = [];
     const cleanText = text.replace(/\/\/.*$/gm, '');
     const regex =
-      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,)\s*/g;
+      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);

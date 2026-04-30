@@ -5,7 +5,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { VFS, DiskStorage, MeshLink, registerVFSRoutes } from '../fs/src/index.js';
 
-const id = process.env.PEER_ID || 'export-node';
+const id = process.env.VFS_ID || 'export-node';
 const port = parseInt(process.env.PORT || '9092');
 const neighbors = (process.env.NEIGHBORS || '').split(',').filter(Boolean);
 const storageDir = path.resolve(`.vfs_storage_${id}`);
@@ -41,30 +41,33 @@ const meshLink = new MeshLink(vfs, neighbors, { localUrl: `${protocol}://localho
 
 // Register the Export Op as a VFS Provider
 vfs.registerProvider('jot/pdf', async (v, selector) => {
-    console.log(`[Export Node] Provisioning PDF Export: ${selector.path}`);
     try {
         const { $in, path: pdfPath = 'export.pdf' } = selector.parameters;
-        if (!$in) throw new Error('No input provided for PDF export');
+        const output = selector.output || '$out';
 
-        // 1. Resolve the source bytes from the mesh (matches C++ decode behavior)
+        if (!$in) throw new Error('Missing input $in');
+
+        // 1. Fetch input data
         const data = await v.readData($in);
         if (!data) throw new Error(`Could not find input: ${JSON.stringify($in)}`);
 
-        // 2. Perform the export (Write to local disk)
+        // 2. Perform the export (Side-effect on server)
         const outPath = path.resolve(pdfPath);
-        const fileContent = typeof data === 'string' ? data : (data instanceof Uint8Array ? data : JSON.stringify(data));
+        // NOTE: In a real implementation, this would involve actual PDF generation logic.
+        // For now, we simulate by writing the data representation.
+        const fileContent = data instanceof Uint8Array ? data : 
+                           (typeof data === 'string' ? data : JSON.stringify(data));
+        
         await fsPromises.writeFile(outPath, fileContent);
         console.log(`[Export Node] Exported to ${outPath}`);
 
-        // 3. Fulfill the request (Tee Pattern: return the input metadata)
-        const status = { 
-            type: 'sys/export_status',
-            exportedAt: new Date().toISOString(), 
-            filename: outPath, 
-            size: data.length 
-        };
-        
-        return status;
+        // 3. Fulfill based on requested port
+        if (output === 'file') {
+            return fileContent;
+        }
+
+        // Default: Pass through the input shape (The Tee Pattern)
+        return data;
 
     } catch (err) {
         console.error(`[Export Node ERROR] ${err.message}`);
@@ -73,12 +76,15 @@ vfs.registerProvider('jot/pdf', async (v, selector) => {
 }, {
     schema: {
         path: 'jot/pdf',
-        description: 'Exports a shape to a PDF file on the server.',
+        description: 'Exports a shape to a PDF file on the server and provides it for download.',
         arguments: [
             { name: '$in', type: 'jot:shape', affiliate: '$in' },
             { name: 'path', type: 'jot:string', default: 'export.pdf' }
         ],
-        outputs: { '$out': { type: 'sys/export_status' } }
+        outputs: { 
+            '$out': { type: 'jot:shape' },
+            'file': { type: 'file', mimeType: 'application/pdf' }
+        }
     }
 });
 

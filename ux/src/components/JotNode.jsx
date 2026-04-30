@@ -90,53 +90,63 @@ export const JotNode = (props) => {
         return acc;
       }, {});
 
-      // 2. Register all discovered schemas with the compiler
       const currentSchemas = blackboard.schemas();
+      console.log(`[JotNode] Current Schemas:`, Object.keys(currentSchemas));
+
+      // 2. Register all discovered schemas with the compiler
       for (const [path, schema] of Object.entries(currentSchemas)) {
         const name = path.startsWith('jot/') ? path.slice(4) : path;
         compiler.registerOperator(name, { path, schema });
       }
 
       const ast = parser.parse(code());
-      const resolved = await compiler.evaluate(ast, boundVars);
+      const terminals = await compiler.evaluate(ast, boundVars);
+      console.log(`[JotNode] Terminals discovered:`, terminals.map(t => `${t.path}:${t.output || '$out'}`));
 
-      // Distinguish Primary Result from Side-Demands
-      // compiler.evaluate returns [Primary, ...SideDemands] if passthrough ops were used
-      const allSelectors = Array.isArray(resolved) ? resolved : [resolved];
-      const primarySelector = allSelectors[0];
-
-      // 1. Identify Associated Files (Side-Demands) from ALL selectors
+      // 1. Route Terminals: Shapes to Viewer, Files to Downloads
+      const shapes = [];
       const files = [];
-      const findFiles = (node) => {
-        if (!node || typeof node !== 'object') return;
-        if (Array.isArray(node)) {
-          node.forEach(findFiles);
-          return;
+
+      for (const sel of terminals) {
+        const schema = currentSchemas[sel.path];
+        if (!schema) {
+            console.warn(`[JotNode] NO SCHEMA FOUND for path: "${sel.path}". Available:`, Object.keys(currentSchemas));
         }
-        if (node.path && currentSchemas[node.path]) {
-          const schema = currentSchemas[node.path];
-          if (schema.outputs) {
-            for (const [key, out] of Object.entries(schema.outputs)) {
-              if (out.type === 'file') {
-                const label = node.parameters?.[key] || key;
-                files.push({
-                  label,
-                  selector: Selector.fromObject(node).withOutput(key),
-                  mimeType: out.mimeType || 'application/octet-stream'
-                });
-              }
-            }
-          }
+        
+        const output = schema?.outputs?.[sel.output || '$out'];
+        const type = output?.type || 'jot:shape';
+
+        console.log(`[JotNode] Routing terminal ${sel.path}:${sel.output || '$out'}`);
+        console.log(`[JotNode]   - Schema found: ${!!schema}`);
+        console.log(`[JotNode]   - Output info:`, JSON.stringify(output));
+        console.log(`[JotNode]   - Derived Type: ${type}`);
+
+        if (type === 'jot:shape' || type === 'shape') {
+          console.log(`[JotNode]   -> Adding to SHAPES`);
+          shapes.push(sel);
+        } else if (type === 'file') {
+          console.log(`[JotNode]   -> Adding to FILES`);
+          // Use 'path' parameter as label if available
+          const label = sel.parameters.path || sel.output;
+          files.push({
+            label,
+            selector: sel,
+            mimeType: output?.mimeType || 'application/octet-stream'
+          });
         }
-        if (node.parameters) {
-          Object.values(node.parameters).forEach(findFiles);
-        }
-      };
-      
-      allSelectors.forEach(findFiles);
+      }
+
+      console.log(`[JotNode] Final Routing Result: ${shapes.length} shapes, ${files.length} files`);
       setAssociatedFiles(files);
+      const primarySelector = shapes[shapes.length - 1]; // Use last unconsumed shape as primary
 
       // 2. Resolve Primary Geometry for visualization
+      if (!primarySelector) {
+          setResultData(null);
+          setIsEvaluating(false);
+          return;
+      }
+
       const data = await vfs.readData(primarySelector);
       
       if (data) {

@@ -1,4 +1,4 @@
-import { normalizeSelector, Selector } from '../../fs/src/vfs_core.js';
+import { normalizeSelector, Selector, getSelectorKey } from '../../fs/src/vfs_core.js';
 
 /**
  * JotCAD Next-Gen Compiler
@@ -8,8 +8,13 @@ export class JotCompiler {
     this.operators = new Map();
     this.vfs = vfs;
     this.options = { optimizeAliases: true, defaultPrefix: 'jot/', ...options };
-    this.sideDemands = new Map();
     this.symbolTypes = {};
+
+    // Terminal Tracking
+    this.candidates = new Map(); // Group-CID -> Set of ports
+    this.consumed = new Set();   // "Port-CID"
+    this.selectorInstances = new Map(); // Group-CID -> Base Selector
+
 
     this.consumers = {
       'jot:number': (p, a, c, s) => this.JotNumberConsumer(p, a, c, s),
@@ -40,33 +45,47 @@ export class JotCompiler {
     return true;
   }
 
+  _getSelectorOutputType(sel) {
+    if (!sel.output) {
+      throw new Error(`Protocol Violation: Cannot determine type of port-less selector for "${sel.path}". Use .withOutput(port) to specify a value source.`);
+    }
 
-  _getSelectorType(sel) {
     const schema = this._getSchemaForPath(sel.path);
-    return schema?.outputs?.[sel.output || '$out']?.type;
+    if (!schema) {
+      throw new Error(`Compiler Error: Unregistered operator path "${sel.path}" during type resolution.`);
+    }
+
+    const outDef = schema.outputs?.[sel.output];
+    if (!outDef) {
+      throw new Error(`Compiler Error: Port "${sel.output}" not found in schema for "${sel.path}". Available: ${Object.keys(schema.outputs || {}).join(', ')}`);
+    }
+
+    // Normalize: Treat 'shape' as 'jot:shape'
+    const type = outDef.type || 'jot:any';
+    return type.startsWith('jot:') ? type : 'jot:' + type;
   }
 
   _isJotNumber(v, a, c) {
     if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:number', a, c);
-    if (v instanceof Selector) return this._getSelectorType(v) === 'jot:number';
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:number';
     return typeof v === 'number';
   }
 
   _isJotString(v, a, c) {
     if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:string', a, c);
-    if (v instanceof Selector) return this._getSelectorType(v) === 'jot:string';
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:string';
     return typeof v === 'string';
   }
 
   _isJotBoolean(v, a, c) {
     if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:boolean', a, c);
-    if (v instanceof Selector) return this._getSelectorType(v) === 'jot:boolean';
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:boolean';
     return typeof v === 'boolean';
   }
 
   _isJotShape(v, a, c) {
     if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:shape', a, c);
-    if (v instanceof Selector) return this._getSelectorType(v) === 'jot:shape';
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:shape';
     return typeof v === 'object' && v !== null && v.path;
   }
 
@@ -84,6 +103,48 @@ export class JotCompiler {
     return typeof v === 'number' || (Array.isArray(v) && (v.length === 1 || v.length === 2));
   }
 
+  // --- Terminal Tracking ---
+
+  async _trackSelector(sel) {
+    if (!(sel instanceof Selector)) return;
+    // Protocol Rule: Use base identity (path + parameters) for grouping all its ports
+    const base = new Selector(sel.path, sel.parameters);
+    const key = await getSelectorKey(base);
+    
+    if (!this.candidates.has(key)) {
+      this.candidates.set(key, new Set());
+      this.selectorInstances.set(key, base);
+      
+      const schema = this._getSchemaForPath(sel.path);
+      if (schema?.outputs) {
+        for (const port of Object.keys(schema.outputs)) {
+          this.candidates.get(key).add(port);
+        }
+      } else {
+        this.candidates.get(key).add('$out');
+      }
+      console.log(`[JotCompiler] Tracking: ${sel.path} (CID: ${key.slice(0, 8)}...)`);
+    }
+  }
+
+  async _consumeSelector(sel) {
+    if (!(sel instanceof Selector)) return;
+    // Mark specific Port-CID as consumed
+    const key = await getSelectorKey(sel);
+    this.consumed.add(key);
+    console.log(`[JotCompiler] Consumed: ${sel.path}:${sel.output || '$out'} (CID: ${key.slice(0, 8)}...)`);
+  }
+
+  async _consume(val) {
+    if (val instanceof Selector) {
+      await this._consumeSelector(val);
+    } else if (Array.isArray(val)) {
+      for (const item of val) {
+        if (item instanceof Selector) await this._consumeSelector(item);
+      }
+    }
+  }
+
   // --- Helper Methods ---
 
   _findCandidates(pool, name) {
@@ -98,33 +159,21 @@ export class JotCompiler {
     return null;
   }
 
-  _parseSignature(typeStr) {
-    const match = typeStr.match(/<(.+)>$/);
-    if (!match) return null;
-    const parts = match[1].split(',').map(s => s.trim());
-    const signature = { inputs: {}, output: 'jot:any' };
-    for (const part of parts) {
-      const pair = part.split(':').map(s => s.trim());
-      if (pair.length === 2) {
-          const [key, val] = pair;
-          const fullVal = val.startsWith('jot:') ? val : 'jot:' + val;
-          if (key === '$out') signature.output = fullVal;
-          else signature.inputs[key] = fullVal;
-      }
-    }
-    return signature;
-  }
-
   // --- Consumers ---
 
   async JotNumberConsumer(pool, argDef, ctx, subject) {
     const candidates = this._findCandidates(pool, argDef.name);
     for (const p of candidates) {
         const val = await ctx.evaluate(p.node, false);
-        if (this._isJotNumber(val, argDef, ctx)) { p.consumed = true; return val; }
+        if (this._isJotNumber(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
         if (p.nameHint === argDef.name) return undefined;
     }
-    if (subject !== null && this._isJotNumber(subject, argDef, ctx)) return subject;
+    if (subject !== null && this._isJotNumber(subject, argDef, ctx)) {
+        return subject;
+    }
     return undefined;
   }
 
@@ -135,7 +184,7 @@ export class JotCompiler {
         const val = await ctx.evaluate(p.node, false);
 
         if (val instanceof Selector) {
-            const type = this._getSelectorType(val);
+            const type = this._getSelectorOutputType(val);
             if (type === 'jot:number' || type === 'jot:numbers') {
                 results.push(val);
                 p.consumed = true;
@@ -152,8 +201,11 @@ export class JotCompiler {
         } else break;
     }
     if (results.length === 0 && subject !== null) {
-        if (this._isJotNumber(subject, argDef, ctx)) results.push(subject);
-        else if (Array.isArray(subject) && subject.every(v => this._isJotNumber(v, argDef, ctx))) results.push(...subject);
+        if (this._isJotNumber(subject, argDef, ctx)) {
+            results.push(subject);
+        } else if (Array.isArray(subject) && subject.every(v => this._isJotNumber(v, argDef, ctx))) {
+            results.push(...subject);
+        }
     }
     return results.length > 0 ? results : undefined;
   }
@@ -162,10 +214,15 @@ export class JotCompiler {
     const candidates = this._findCandidates(pool, argDef.name);
     for (const p of candidates) {
         const val = await ctx.evaluate(p.node, false);
-        if (this._isJotString(val, argDef, ctx)) { p.consumed = true; return val; }
+        if (this._isJotString(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
         if (p.nameHint === argDef.name) return undefined;
     }
-    if (subject !== null && this._isJotString(subject, argDef, ctx)) return subject;
+    if (subject !== null && this._isJotString(subject, argDef, ctx)) {
+        return subject;
+    }
     return undefined;
   }
 
@@ -189,10 +246,15 @@ export class JotCompiler {
     const candidates = this._findCandidates(pool, argDef.name);
     for (const p of candidates) {
         const val = await ctx.evaluate(p.node, false);
-        if (this._isJotBoolean(val, argDef, ctx)) { p.consumed = true; return val; }
+        if (this._isJotBoolean(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
         if (p.nameHint === argDef.name) return undefined;
     }
-    if (subject !== null && this._isJotBoolean(subject, argDef, ctx)) return subject;
+    if (subject !== null && this._isJotBoolean(subject, argDef, ctx)) {
+        return subject;
+    }
     return undefined;
   }
 
@@ -200,10 +262,15 @@ export class JotCompiler {
     const candidates = this._findCandidates(pool, argDef.name);
     for (const p of candidates) {
         const val = await ctx.evaluate(p.node, false);
-        if (this._isJotShape(val, argDef, ctx)) { p.consumed = true; return val; }
+        if (this._isJotShape(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
         if (p.nameHint === argDef.name) return undefined;
     }
-    if (subject !== null && this._isJotShape(subject, argDef, ctx)) return subject;
+    if (subject !== null && this._isJotShape(subject, argDef, ctx)) {
+        return subject;
+    }
     return undefined;
   }
 
@@ -221,8 +288,11 @@ export class JotCompiler {
         } else break;
     }
     if (results.length === 0 && subject !== null) {
-        if (this._isJotShape(subject, argDef, ctx)) results.push(subject);
-        else if (this._isJotShapeList(subject, argDef, ctx)) results.push(...subject);
+        if (this._isJotShape(subject, argDef, ctx)) {
+            results.push(subject);
+        } else if (this._isJotShapeList(subject, argDef, ctx)) {
+            results.push(...subject);
+        }
     }
     return results.length > 0 ? results : undefined;
   }
@@ -247,7 +317,10 @@ export class JotCompiler {
     const candidates = this._findCandidates(pool, argDef.name);
     for (const p of candidates) {
         const val = await ctx.evaluate(p.node, false);
-        if (this._isJotVec3(val, argDef, ctx)) { p.consumed = true; return val; }
+        if (this._isJotVec3(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
         if (p.nameHint === argDef.name) return undefined;
     }
     if (subject !== null && this._isJotVec3(subject, argDef, ctx)) return subject;
@@ -282,7 +355,10 @@ export class JotCompiler {
         p.consumed = true;
         return val;
     }
-    return subject !== null ? subject : undefined;
+    if (subject !== null) {
+        return subject;
+    }
+    return undefined;
   }
 
   // --- Core API ---
@@ -311,15 +387,33 @@ export class JotCompiler {
 
   async evaluate(ast, parameters = {}, symbolTypes = {}) {
     this.symbolTypes = symbolTypes;
+    this.candidates.clear();
+    this.consumed.clear();
+    this.selectorInstances.clear();
+
     try {
       if (Array.isArray(ast)) {
-        const results = [];
         for (const node of ast) {
-          results.push(await this._evaluateRecursive(node, parameters, null));
+          await this._evaluateRecursive(node, parameters, null);
         }
-        return results;
+      } else {
+        await this._evaluateRecursive(ast, parameters, null);
       }
-      return await this._evaluateRecursive(ast, parameters, null);
+
+      // Collect all terminals
+      const terminals = [];
+      for (const [groupKey, ports] of this.candidates.entries()) {
+        const base = this.selectorInstances.get(groupKey);
+        for (const port of ports) {
+          const term = Selector.fromObject(base).withOutput(port);
+          const portKey = await getSelectorKey(term);
+          if (!this.consumed.has(portKey)) {
+            terminals.push(term);
+            console.log(`[JotCompiler] Terminal discovered: ${term.path}:${port} (CID: ${portKey.slice(0, 8)}...)`);
+          }
+        }
+      }
+      return terminals;
     } finally {
       this.symbolTypes = {};
     }
@@ -355,26 +449,10 @@ export class JotCompiler {
       for (const item of s) {
         results.push(await this._dispatchCall(node, parameters, item));
       }
-      return results.flat();
+      return results;
     }
 
-    const result = await this._dispatchCall(node, parameters, s);
-
-    // Optimized Aliases (Side Demands)
-    if (this.options.optimizeAliases) {
-      const candidates = this._resolveOperator(node.name);
-      const op = candidates.find(c => c.metadata?.aliases?.[result.output || '$out']);
-      if (op) {
-        const aliasTarget = op.metadata.aliases[result.output || '$out'];
-        const inputKey = (op.schema.arguments || []).find(a => a.name === aliasTarget || (aliasTarget === '$in' && (a.affiliate === '$in' || a.affiliate === '$out')))?.name;
-        if (inputKey && result.parameters[inputKey]) {
-            this.sideDemands.set(result.toString(), result);
-            return result.parameters[inputKey];
-        }
-      }
-    }
-
-    return result;
+    return await this._dispatchCall(node, parameters, s);
   }
 
   async _dispatchCall(node, parameters, subject) {
@@ -390,7 +468,9 @@ export class JotCompiler {
         }));
         const params = await this._satisfySchema(op.schema, pool, parameters, subject, node.name);
         const port = op.schema.outputs ? Object.keys(op.schema.outputs)[0] : '$out';
-        return new Selector(op.path, params).withOutput(port);
+        const sel = new Selector(op.path, params).withOutput(port);
+        await this._trackSelector(sel);
+        return sel;
       } catch (e) {
         if (candidates.length === 1) throw e;
         continue;
@@ -425,6 +505,7 @@ export class JotCompiler {
         if (res !== undefined) {
           if (argDef.const !== undefined && res !== argDef.const) throw new Error("Const mismatch");
           params[argDef.name] = res;
+          await this._consume(res);
         }
       }
 
@@ -448,6 +529,7 @@ export class JotCompiler {
         if (res !== undefined) {
           if (argDef.const !== undefined && res !== argDef.const) throw new Error("Const mismatch");
           params[argDef.name] = res;
+          await this._consume(res);
           
           // CRITICAL: If the consumer used the subject, we must clear it.
           // Since Pass 2 is for affiliates, if the pool didn't change but we got a result,

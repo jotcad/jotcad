@@ -64,12 +64,11 @@ The `Processor` handles the **Universal Sequence Principle** automatically:
 
 ### 1.4 The "Tee" Pattern (Side-Effects)
 
-Some operators, like `jot/pdf` or `jot/stl`, produce side-effects (artifacts) while acting as identity pass-throughs for geometry. These follow the **Output Field Artifact Pattern**:
+Some operators, like `jot/pdf` or `jot/stl`, produce side-effects (artifacts) while acting as identity pass-throughs for geometry. These are automatically handled by the **Graph-based Terminal Analysis** in the compiler.
 
-1.  **Identity Preservation:** The `execute` function performs a pure pass-through (`out = in`).
-2.  **On-Demand Generation:** Instead of generating the artifact on every geometry read, the operator's registration logic handles a specific `output` field in the Selector.
-3.  **Port Access:** The artifact (e.g., PDF bytes) is only generated and returned when the VFS requests the selector with a specific output (e.g., `output: "file"`).
-4.  **Metadata Signaling:** Set `passthrough: true` in the schema metadata to inform the compiler to "lift" the demand into the side-effect list.
+1.  **Multiple Outputs:** Define additional ports in the schema (e.g., `"file"`).
+2.  **Unconsumed Discovery:** The compiler automatically detects that the `"file"` port was never consumed by another operation and "lifts" it as a terminal artifact for the UI.
+3.  **Port Access:** The artifact bytes are only generated and returned when the VFS requests the selector with that specific output (e.g., `output: "file"`).
 
 ```cpp
 // Schema defines available outputs
