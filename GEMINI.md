@@ -33,6 +33,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 | `fs/cpp/selector.h` | `docs/VFS_SPECIFICATION.md` | Universal Addressing |
 | `geo/impl/processor.h` | `docs/JOT_LANGUAGE_SPECIFICATION.md` | Port Injection & Typed Execution |
 | `geo/ops/*.h` | `docs/DYNAMIC_OPERATIONS.md` | Kernel Logic & Tolerances |
+| `docs/TODO_SIMPLIFICATION.md` | `legacy/` | Edge-Collapse & Garland-Heckbert |
 
 ## Universal Protocol Rules
 
