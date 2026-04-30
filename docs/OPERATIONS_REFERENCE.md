@@ -50,3 +50,25 @@ Hexagon(radius=10)
 // Pointy-topped hexagon by edge-to-edge distance
 Hexagon(edgeToEdge=20, turns=1/12)
 ```
+
+## 4. Promoters (Dimensional Upgrades)
+
+### `fill(rule='odd', plane=null)`
+Promotes 1D segments (Paths/Outlines) into 2D areas (Faces).
+
+- **`rule`**: The topological filling rule.
+  - **`odd`** (Default): Even-Odd parity. Fills alternating regions (standard holes).
+  - **`any`**: Non-zero winding. Fills any region with a boundary.
+  - **`pos`**: Positive winding only.
+  - **`neg`**: Negative winding only.
+  - **`all`**: All-Bounded. Fills every enclosed cell regardless of winding.
+- **`plane`**: An optional orientation plane. If omitted, the operator infers the plane from the input segments or falls back to the local workbench (XY).
+
+#### Example
+```js
+// Convert a loop into a face
+Loop(Point(0,0), Point(10,0), Point(0,10)).fill()
+
+// Fill a complex wireframe using the 'all' rule
+MyWireframe.fill(rule='all')
+```
