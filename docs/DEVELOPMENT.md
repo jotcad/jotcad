@@ -62,20 +62,19 @@ The `Processor` handles the **Universal Sequence Principle** automatically:
 - If a user provides a sequence (e.g., `distance: [10, 20]`), `execute` is called for each value, and the results are harvested into a unified VFS sequence.
 - **Atomic Types:** Use `std::vector<double>` in the `execute` signature if the operator needs to consume a whole sequence at once (e.g., `PointsOp`).
 
-### 1.4 The "Tee" Pattern (Side-Effects)
+### 1.5 Geometry Well-Formedness Assertions
 
-Some operators, like `jot/pdf` or `jot/stl`, produce side-effects (artifacts) while acting as identity pass-throughs for geometry. These are automatically handled by the **Graph-based Terminal Analysis** in the compiler.
+All 3D shape generators and boolean operations MUST be verified for topological integrity and positive volume using the `verify_well_formed_solid` helper in `geo/test/test_base.h`.
 
-1.  **Multiple Outputs:** Define additional ports in the schema (e.g., `"file"`).
-2.  **Unconsumed Discovery:** The compiler automatically detects that the `"file"` port was never consumed by another operation and "lifts" it as a terminal artifact for the UI.
-3.  **Port Access:** The artifact bytes are only generated and returned when the VFS requests the selector with that specific output (e.g., `output: "file"`).
+- **Exact Rational Math (FT)**: Assertions are performed using CGAL's Exact Kernel. Never use `double` for volume or coordinate comparisons.
+- **Topological Closure**: Verifies the mesh is manifold and watertight (`CGAL::is_closed`).
+- **Orientation**: Verifies the mesh is outward-oriented to ensure positive volume calculations.
+- **Positive Volume**: Asserts that the shape bounds a strictly positive volume (`vol > FT(0)`).
 
 ```cpp
-// Schema defines available outputs
-"outputs": {
-  "$out": { "type": "shape" },
-  "file": { "type": "file", "mimeType": "application/pdf" }
-}
+// Example: Verifying a generated shape
+Geometry my_geo = vfs.read<Geometry>(my_selector);
+vfs.verify_well_formed_solid(my_geo, "My Operation Label");
 ```
 
 ### 1.5 Two-Stage Resolution (Lazy Execution)

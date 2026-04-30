@@ -19,6 +19,9 @@ int main() {
     Processor::execute(&vfs, box3d_addr);
     Shape s3d = vfs.read<Shape>(box3d_addr);
     vfs.verify_render(s3d, "box_op_3d", "95e7a44b7954f9faa3839b5fee1c67161510081c5d472562b742a4876105f06b");
+    
+    Geometry box_geo = vfs.read<Geometry>(s3d.geometry.value());
+    vfs.verify_well_formed_solid(box_geo, "3D Box (10x10x10)");
 
     std::cout << "✅ ALL Box Tests Passed" << std::endl;
     return 0;

@@ -8,6 +8,9 @@
 #include "protocols.h"
 #include "processor.h"
 #include "../../fs/cpp/vfs_node.h"
+#include "boolean/engine.h"
+#include <CGAL/Polygon_mesh_processing/measure.h>
+#include <CGAL/Polygon_mesh_processing/orientation.h>
 
 namespace jotcad {
 namespace geo {
@@ -41,6 +44,36 @@ public:
 
     void verify_render(const Shape& s, const std::string& label, const std::string& expected_hash) {
         std::cout << "  [Verification] " << label << " (Hash check skipped in MockVFS)" << std::endl;
+    }
+
+    void verify_well_formed_solid(const Geometry& geo, const std::string& label) {
+        std::cout << "  [Verification] " << label << " (Solid check)..." << std::endl;
+        boolean::Surface_mesh mesh = boolean::Engine::geometry_to_mesh(geo);
+        
+        bool closed = CGAL::is_closed(mesh);
+        if (!closed) {
+            std::cerr << "FAIL: Mesh is NOT CLOSED for " << label << std::endl;
+            exit(1);
+        }
+
+        bool valid = CGAL::Polygon_mesh_processing::is_outward_oriented(mesh);
+        if (!valid) {
+             std::cerr << "WARNING: Mesh is NOT OUTWARD ORIENTED for " << label << ". Reorienting..." << std::endl;
+             CGAL::Polygon_mesh_processing::reverse_face_orientations(mesh);
+             if (!CGAL::Polygon_mesh_processing::is_outward_oriented(mesh)) {
+                 std::cerr << "FAIL: Could not force outward orientation for " << label << std::endl;
+                 exit(1);
+             }
+        }
+
+        FT vol = CGAL::Polygon_mesh_processing::volume(mesh);
+        std::cout << "    - Volume (Exact): " << vol << " (~" << CGAL::to_double(vol) << ")" << std::endl;
+        
+        if (vol <= FT(0)) {
+            std::cerr << "FAIL: Mesh has NON-POSITIVE volume (" << vol << ") for " << label << std::endl;
+            exit(1);
+        }
+        std::cout << "    - SUCCESS" << std::endl;
     }
 
 private:

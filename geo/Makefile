@@ -53,6 +53,14 @@ $(OBJ_DIR)/logic_verification.o: test/logic_verification.cpp
 $(TEST_LOGIC_BIN): $(TEST_LOGIC_OBJ) $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $(TEST_LOGIC_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
 
+# Generic Test Rule
+$(BIN_DIR)/%: $(OBJ_DIR)/%.o $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $< $(LIB_JOTGEO) $(LIBS) -o $@
+
+$(OBJ_DIR)/%.o: test/%.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
 test: $(OPS_BIN) $(TEST_LOGIC_BIN)
 	$(TEST_LOGIC_BIN)
 

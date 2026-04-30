@@ -18,7 +18,7 @@ int main() {
     Geometry o_geo = vfs.read<Geometry>(orb.geometry.value());
     
     std::cout << "  - Sphere vertices: " << o_geo.vertices.size() << std::endl;
-    assert(CGAL::is_closed(boolean::Engine::geometry_to_mesh(o_geo)));
+    vfs.verify_well_formed_solid(o_geo, "Sphere (d=10)");
 
     // 2. Ellipsoid (20x10x5 override)
     Selector e_sel = Selector{"jot/Orb", {{"width", 20.0}, {"height", 10.0}, {"depth", 5.0}}}.with_output("$out");
@@ -27,7 +27,7 @@ int main() {
     Geometry e_geo = vfs.read<Geometry>(ell.geometry.value());
     
     std::cout << "  - Ellipsoid (20x10x5) vertices: " << e_geo.vertices.size() << std::endl;
-    assert(CGAL::is_closed(boolean::Engine::geometry_to_mesh(e_geo)));
+    vfs.verify_well_formed_solid(e_geo, "Ellipsoid (20x10x5)");
 
     std::cout << "✅ Orb PASS" << std::endl;
     return 0;
