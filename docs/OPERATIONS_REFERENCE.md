@@ -131,13 +131,30 @@ Extracts the normal vector of the first face as an oriented normal shape.
 - **Tags**: `type: "normal"`.
 - **Usage**: Typically used as an input to extrusion or directional translation: `MyShape.at(face.normal()).extrude(10)`.
 
-## 7. Infinite Planes (Orientations)
+## 8. Extrusion
 
-These operators provide standard orthogonal orientations. They are often used as "World Workbenches".
+### `e(target)` / `extrude(target)`
+The primary tool for promoting geometry along a vector or between coordinate systems.
 
-- **`X()`**: Infinite plane on the YZ axis (normal +X).
-- **`Y()`**: Infinite plane on the XZ axis (normal +Y).
-- **`Z()`**: Infinite plane on the XY axis (normal +Z).
+- **Normal Sweep (Number)**: If `target` is a number, the operator calculates the face normal of the subject and extrudes along it by that distance.
+  - Example: `Box(10).e(5)` (Extrudes 5 units along the local normal).
+- **Transform Sweep (Shape)**: If `target` is a shape, the operator sweeps the geometry from its current frame to the coordinate system of the target shape.
+  - Example: `Box(10).e(Z(20))` (Sweeps to the plane at world Z=20).
+- **Promotion Rules**:
+  - **Faces $\rightarrow$ Solids**
+  - **Edges $\rightarrow$ Faces**
+  - **Points $\rightarrow$ Edges**
+
+### `ex(height)`, `ey(height)`, `ez(height)`
+Axis-specific shorthands that take a numeric height and extrude along the local X, Y, or Z axes respectively.
+
+- Example: `Box(10).ez(5)` is equivalent to `Box(10).e(Z(5))`.
+
+## 9. Infinite Planes (Orientations)
+...
+- **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
+- **`Y(offset=0)`**: Infinite plane on the XZ axis (normal +Y).
+- **`Z(offset=0)`**: Infinite plane on the XY axis (normal +Z).
 
 #### Example
 ```js

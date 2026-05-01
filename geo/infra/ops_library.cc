@@ -27,6 +27,7 @@
 #include "fill_op.h"
 #include "sew_op.h"
 #include "plane_op.h"
+#include "extrude_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -61,6 +62,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     fill_init(vfs);
     sew_init(vfs);
     plane_init(vfs);
+    extrude_init(vfs);
 }
 
 } // namespace geo
