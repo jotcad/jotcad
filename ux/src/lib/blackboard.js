@@ -4,15 +4,12 @@ import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js'
 import { MeshLink } from '../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../jot/src/index.js';
 
-// Generate a unique ID for this tab/session to prevent mesh conflicts
+// Generate a unique ID for this session. 
+// We use a fresh ID every refresh to ensure the mesh treats us as a new neighbor 
+// and re-sends the schema catalog immediately.
 const getSessionId = () => {
-  const key = 'jotcad_peer_id';
-  let id = sessionStorage.getItem(key);
-  if (!id) {
-    id = `ui-${Math.random().toString(36).slice(2, 8)}`;
-    sessionStorage.setItem(key, id);
-  }
-  return id;
+  const prefix = import.meta.env.VITE_STORAGE_PREFIX || 'ui';
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 };
 
 const peerId = getSessionId();
@@ -33,6 +30,26 @@ const vfsUrl =
   import.meta.env.VITE_VFS_URL || `${window.location.protocol}//${window.location.hostname}:9092`;
 console.log(`[UX] Target VFS URL: ${vfsUrl} (Protocol: ${window.location.protocol}, Storage: ${storagePrefix})`);
 const mesh = new MeshLink(vfs, [vfsUrl]);
+
+export const DEFAULT_CODE = `
+// JotCAD Expressions
+Box(width, 10, 0)
+`.trim();
+
+const getInitialEditors = () => {
+    try {
+      const saved = localStorage.getItem(NODE_STATE_KEY);
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object' && parsed.opName) {
+          return [{ ...parsed, id: `editor-${Math.random().toString(36).slice(2, 8)}` }];
+      }
+      return [];
+    } catch (e) { return []; }
+};
+
+const [openEditors, setOpenEditors] = createStore(getInitialEditors());
 
 // Reactive State
 const [graph, setGraph] = createSignal({});
@@ -85,16 +102,54 @@ export const blackboard = {
   dynamicOps,
   error,
   setError,
+  openEditors: () => openEditors,
 
-  getNodeState() {
-    try {
-      const saved = localStorage.getItem(NODE_STATE_KEY);
-      return saved ? JSON.parse(saved) : {};
-    } catch (e) { return {}; }
+  openOp(path) {
+    const existing = openEditors.find(e => e.opName === path);
+    if (existing) return;
+
+    const op = dynamicOps()[path];
+    const newState = {
+        id: `editor-${Math.random().toString(36).slice(2, 8)}`,
+        opName: path,
+        code: op ? op.script : DEFAULT_CODE,
+        args: op ? (op.schema.arguments || []).map(a => ({ name: a.name, type: a.type, testValue: a.default })) : 
+             [{ name: 'width', type: 'jot:number', testValue: 20 }],
+        pos: { x: 300 + (openEditors.length * 30), y: 300 + (openEditors.length * 30) }
+    };
+    
+    setOpenEditors([...openEditors, newState]);
+    this._saveAllEditors();
   },
 
-  saveNodeState(state) {
-    localStorage.setItem(NODE_STATE_KEY, JSON.stringify(state));
+  createNewOp(path) {
+    const fullPath = path.startsWith('user/') ? path : `user/${path}`;
+    const newState = {
+        id: `editor-${Math.random().toString(36).slice(2, 8)}`,
+        opName: fullPath,
+        code: DEFAULT_CODE,
+        args: [{ name: 'width', type: 'jot:number', testValue: 20 }],
+        pos: { x: 300 + (openEditors.length * 30), y: 300 + (openEditors.length * 30) }
+    };
+    setOpenEditors([...openEditors, newState]);
+    this._saveAllEditors();
+  },
+
+  closeOp(id) {
+    setOpenEditors(openEditors.filter(e => e.id !== id));
+    this._saveAllEditors();
+  },
+
+  updateEditorState(id, updates) {
+    const idx = openEditors.findIndex(e => e.id === id);
+    if (idx !== -1) {
+        setOpenEditors(idx, updates);
+        this._saveAllEditors();
+    }
+  },
+
+  _saveAllEditors() {
+    localStorage.setItem(NODE_STATE_KEY, JSON.stringify(openEditors));
   },
 
   async discoverSchemas() {
@@ -261,7 +316,8 @@ export const blackboard = {
       const compiler = new JotCompiler(v);
       const currentSchemas = this.schemas();
       for (const [p, sch] of Object.entries(currentSchemas)) {
-        compiler.registerOperator(p.startsWith('jot/') ? p.slice(4) : p, { path: p, schema: sch });
+        const name = p.replace(/^(jot|user)\//, '');
+        compiler.registerOperator(name, { path: p, schema: sch });
       }
 
       const parser = new JotParser();
