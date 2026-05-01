@@ -13,8 +13,10 @@ console.log(`[Test Orchestrator] Starting JotCAD Test Cluster...`);
 console.log(`[Test Orchestrator] Ports: Ops=${PORT_OPS}, Export=${PORT_EXPORT}, UX=${PORT_UX}`);
 
 try {
-  console.log(`[Test Orchestrator] Cleaning up ports ${PORT_UX}, ${PORT_OPS}, ${PORT_EXPORT}...`);
+  console.log(`[Test Orchestrator] Cleaning up ports ${PORT_UX}, ${PORT_OPS}, ${PORT_EXPORT} and VFS storage...`);
   execSync(`fuser -k ${PORT_UX}/tcp ${PORT_OPS}/tcp ${PORT_EXPORT}/tcp || true`, { stdio: 'ignore' });
+  // Clear VFS storage
+  execSync(`rm -rf .vfs_storage_test-geo-ops-node .vfs_storage_test-export-node || true`);
   execSync('sleep 1');
 } catch (e) {}
 
@@ -22,7 +24,7 @@ const components = [
   {
     name: 'Test Ops Node',
     command: './geo/bin/ops',
-    args: [PORT_OPS, '.vfs_storage_test_ops'],
+    args: [PORT_OPS, '.vfs_storage_test-geo-ops-node'],
     cwd: __dirname,
     env: { 
         ...process.env, 
@@ -49,6 +51,7 @@ const components = [
     cwd: path.join(__dirname, 'ux'),
     env: {
         ...process.env,
+        VITE_STORAGE_PREFIX: 'test',
         VITE_VFS_URL: `http://localhost:${PORT_EXPORT}` // Connect UX to Export node (which peers with Ops)
     }
   }

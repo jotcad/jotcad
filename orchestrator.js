@@ -8,9 +8,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 console.log('[Orchestrator] Starting JotCAD System...');
 
 try {
-  console.log('[Orchestrator] Cleaning up ports 3030, 9091, 9092...');
+  console.log('[Orchestrator] Cleaning up ports 3030, 9091, 9092 and VFS storage...');
   // Force kill anything on these ports before starting
   execSync('fuser -k 3030/tcp 9091/tcp 9092/tcp || true', { stdio: 'ignore' });
+  // Clear VFS storage
+  execSync('rm -rf .vfs_storage_geo-ops-node .vfs_storage_export-node || true');
   // Give it a moment to release
   execSync('sleep 2');
 } catch (e) {}

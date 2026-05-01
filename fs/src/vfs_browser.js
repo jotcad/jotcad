@@ -145,6 +145,17 @@ export class IndexedDBStorage {
     });
   }
 
+  async wipe() {
+    const db = await this._getDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(this.storeName, 'readwrite');
+      const store = transaction.objectStore(this.storeName);
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   async close() {
     if (this.db) {
       this.db.close();

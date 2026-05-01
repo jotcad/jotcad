@@ -17,16 +17,20 @@ const getSessionId = () => {
 
 const peerId = getSessionId();
 
+const storagePrefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
+const DYNAMIC_OPS_KEY = `${storagePrefix}_dynamic_ops`;
+const VFS_DB_NAME = `${storagePrefix}-vfs`;
+
 export const vfs = new VFS({
   id: peerId,
-  storage: new IndexedDBStorage(),
+  storage: new IndexedDBStorage(VFS_DB_NAME),
 });
 
 registerJotProvider(vfs);
 
 const vfsUrl =
   import.meta.env.VITE_VFS_URL || `${window.location.protocol}//${window.location.hostname}:9092`;
-console.log(`[UX] Target VFS URL: ${vfsUrl} (Protocol: ${window.location.protocol})`);
+console.log(`[UX] Target VFS URL: ${vfsUrl} (Protocol: ${window.location.protocol}, Storage: ${storagePrefix})`);
 const mesh = new MeshLink(vfs, [vfsUrl]);
 
 // Reactive State
@@ -55,7 +59,7 @@ console.log = (...args) => { originalLog(...args); addLog('log', args); };
 console.warn = (...args) => { originalWarn(...args); addLog('warn', args); };
 console.error = (...args) => { originalError(...args); addLog('error', args); };
 
-console.log("[UX] Console redirection active. Peer ID:", peerId);
+console.log("[UX] Console redirection active. Peer ID:", peerId, "Storage Prefix:", storagePrefix);
 
 const [isConnected, setIsConnected] = createSignal(false);
 const [discoveryStatus, setDiscoveryStatus] = createSignal('idle');
@@ -101,12 +105,12 @@ export const blackboard = {
     console.log(`[UX] Mesh-VFS initialized. Connecting to: ${vfsUrl}`);
 
     // Load Local Dynamic Ops from localStorage
-    const saved = localStorage.getItem('jot_dynamic_ops');
+    const saved = localStorage.getItem(DYNAMIC_OPS_KEY);
     if (saved) {
       try {
         const ops = JSON.parse(saved);
         setDynamicOps(ops);
-        console.log(`[UX] Loaded ${Object.keys(ops).length} dynamic operations.`);
+        console.log(`[UX] Loaded ${Object.keys(ops).length} dynamic operations from ${DYNAMIC_OPS_KEY}.`);
         // We will publish them after utility ops are registered
         for (const [path, op] of Object.entries(ops)) {
           this.publishDynamicOp(path, op.schema, op.script, false);
@@ -276,7 +280,7 @@ export const blackboard = {
     setDynamicOps(prev => {
       const next = { ...prev, [path]: { schema, script } };
       if (persist) {
-        localStorage.setItem('jot_dynamic_ops', JSON.stringify(next));
+        localStorage.setItem(DYNAMIC_OPS_KEY, JSON.stringify(next));
       }
       return next;
     });
@@ -301,6 +305,21 @@ export const blackboard = {
   async write(path, parameters = {}, data) {
     return vfs.writeData(new Selector(path, parameters), data);
   },
+
+  async clearStorage() {
+    console.log(`[UX] Clearing Storage (${storagePrefix})...`);
+    // 1. Wipe VFS storage (IndexedDB)
+    if (vfs.storage && typeof vfs.storage.wipe === 'function') {
+        await vfs.storage.wipe();
+    }
+    // 2. Clear dynamic ops from localStorage
+    localStorage.removeItem(DYNAMIC_OPS_KEY);
+    // 3. Clear session ID to force a fresh identity
+    sessionStorage.removeItem('jotcad_peer_id');
+    
+    console.log('[UX] Storage cleared. Reloading page...');
+    window.location.reload();
+  }
 };
 
 if (typeof window !== 'undefined') {
