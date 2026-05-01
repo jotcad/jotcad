@@ -46,12 +46,14 @@ geometry/cgal/
 *~
 *.bak
 *.tmp
+*.log
 geometry/.orb.js.swp
 
 # Ignore generated assets
 server/assets/
 geometry/assets/
 **/.*vfs_storage*
+**/.vfs_storage_test_ops
 **/.test_vfs_*
 **/.test_*_storage*
 **/.test_catalog_ops

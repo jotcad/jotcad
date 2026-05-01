@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node orchestrator.js",
+    "start:test": "node test_orchestrator.js",
     "start:vfs": "node fs/serve.js",
     "depcheck": "npm run depcheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",

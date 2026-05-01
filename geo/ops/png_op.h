@@ -29,7 +29,7 @@ struct PngOp : P {
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
-                {"file", {{"type", "mime:png"}, {"description", "The generated PNG thumbnail."}}}
+                {"file", {{"type", "file"}, {"mimeType", "image/png"}, {"description", "The generated PNG thumbnail."}}}
             }}
         };
     }

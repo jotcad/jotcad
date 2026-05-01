@@ -53,7 +53,7 @@ struct PdfOp : P {
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
-                {"file", {{"type", "mime:application/pdf"}, {"description", "The generated PDF blob."}}}
+                {"file", {{"type", "file"}, {"mimeType", "application/pdf"}, {"description", "The generated PDF blob."}}}
             }}
         };
     }

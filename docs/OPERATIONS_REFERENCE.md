@@ -93,3 +93,20 @@ Sew(Front, Back, Top, Bottom, Left, Right)
 // Add a patch to an existing shell
 MyShell.sew(Patch)
 ```
+
+## 5. Export and Rendering
+
+### `pdf(path='export.pdf')`
+Generates a PDF document from the spatial representation of the input shape.
+
+- **`path`**: The filename for the download.
+- **Outputs**:
+  - **`$out`**: The input shape (pass-through).
+  - **`file`**: The generated PDF blob (triggers download in the UX).
+
+### `png()`
+Generates a PNG thumbnail for the input shape.
+
+- **Outputs**:
+  - **`$out`**: The input shape (pass-through).
+  - **`file`**: The generated PNG blob.
