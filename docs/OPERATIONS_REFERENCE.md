@@ -110,3 +110,37 @@ Generates a PNG thumbnail for the input shape.
 - **Outputs**:
   - **`$out`**: The input shape (pass-through).
   - **`file`**: The generated PNG blob.
+
+## 6. Plane and Normal Extraction
+
+### `plane()`
+Extracts the coordinate system from the first face of a shape.
+
+- **Subject**: A shape with 2D or 3D geometry.
+- **Output**: A new shape with **no geometry** but a transformation matrix where:
+  - **Origin**: The first vertex of the first face.
+  - **Z-Axis**: The normal vector of the face.
+- **Tags**: `type: "plane"`, `is_plane: true`.
+- **Usage**: Used to re-orient the workbench to a face for further operations like `at()` or `on()`.
+
+### `normal()`
+Extracts the normal vector of the first face as an oriented normal shape.
+
+- **Subject**: A shape with 2D or 3D geometry.
+- **Output**: A shape with a single unit segment pointing along the face's normal.
+- **Tags**: `type: "normal"`.
+- **Usage**: Typically used as an input to extrusion or directional translation: `MyShape.at(face.normal()).extrude(10)`.
+
+## 7. Infinite Planes (Orientations)
+
+These operators provide standard orthogonal orientations. They are often used as "World Workbenches".
+
+- **`X()`**: Infinite plane on the YZ axis (normal +X).
+- **`Y()`**: Infinite plane on the XZ axis (normal +Y).
+- **`Z()`**: Infinite plane on the XY axis (normal +Z).
+
+#### Example
+```js
+// Extrude along the world X axis
+Box(10).at(X()).extrude(5)
+```

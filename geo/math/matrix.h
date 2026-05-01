@@ -116,6 +116,28 @@ struct Matrix {
         return Matrix(m.inverse());
     }
 
+    // Creates an EXACT orthogonal matrix where the Z-axis is aligned with the given normal.
+    static Matrix fromNormal(const EK::Point_3& origin, const EK::Vector_3& normal) {
+        EK::Vector_3 Z = normal;
+        
+        // Find an arbitrary vector that is not parallel to Z
+        EK::Vector_3 arbitrary(1, 0, 0);
+        if (std::abs(CGAL::to_double(Z.x())) > 0.9) {
+            arbitrary = EK::Vector_3(0, 1, 0);
+        }
+
+        // Exact cross products for orthogonal basis
+        EK::Vector_3 X = CGAL::cross_product(Z, arbitrary);
+        EK::Vector_3 Y = CGAL::cross_product(Z, X);
+
+        // Construct the transformation: This matrix takes (1,0,0) to X, (0,1,0) to Y, etc.
+        return Matrix(Transformation(
+            X.x(), Y.x(), Z.x(), origin.x(),
+            X.y(), Y.y(), Z.y(), origin.y(),
+            X.z(), Y.z(), Z.z(), origin.z()
+        ));
+    }
+
     Matrix inverse() const {
         return Matrix(t.inverse());
     }

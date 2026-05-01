@@ -35,7 +35,7 @@ export class JotParser {
     const tokens = [];
     const cleanText = text.replace(/\/\/.*$/gm, '');
     const regex =
-      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;)\s*/g;
+      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);
@@ -78,14 +78,18 @@ export class JotParser {
     const token = this._peek();
     if (!token) throw new Error('Unexpected end of input');
 
-    if (token === '[') return this._parseArray();
-    if (token === '{') return this._parseObject();
     if (token === '(') {
       this._consume('(');
       const expr = this._parseExpression();
       this._consume(')');
       return expr;
     }
+
+    if (token === '[') {
+       return this._parseArrayOrRange();
+    }
+
+    if (token === '{') return this._parseObject();
 
     if (/^[0-9]/.test(token)) return parseFloat(this._consume());
     if (/^["']/.test(token)) return this._consume().slice(1, -1);
@@ -105,7 +109,72 @@ export class JotParser {
     throw new Error(`Unexpected token: ${token}`);
   }
 
+  _parseArrayOrRange() {
+    this._consume('[');
+    const next = this._peek();
+    
+    // Shorthand range [..10], [by 0.1], [count 5], [inc]
+    if (next === '..' || next === 'by' || next === 'count' || next === 'inc') {
+        return this._parseRangeContent(null);
+    }
+
+    // Could be an array [1, 2] or a range [0..10]
+    const firstExpr = this._parseExpression();
+    const afterFirst = this._peek();
+
+    if (afterFirst === ',' || afterFirst === ']') {
+        const elements = [firstExpr];
+        while (this._peek() === ',') {
+            this._consume(',');
+            elements.push(this._parseExpression());
+        }
+        this._consume(']');
+        return elements;
+    }
+
+    // It's a range starting with an expression [0..10]
+    return this._parseRangeContent(firstExpr);
+  }
+
+  _parseRangeContent(startExpr) {
+    let start = startExpr;
+    let end = null;
+    let step = null;
+    let count = null;
+    let inclusiveEnd = false;
+
+    if (this._peek() === '..') {
+      this._consume('..');
+      end = this._parseExpression();
+    }
+
+    if (this._peek() === 'by') {
+      this._consume('by');
+      step = this._parseExpression();
+    } else if (this._peek() === 'count') {
+      this._consume('count');
+      count = this._parseExpression();
+    }
+
+    if (this._peek() === 'inc') {
+      this._consume('inc');
+      inclusiveEnd = true;
+    }
+
+    this._consume(']');
+
+    return {
+      type: 'RANGE',
+      start,
+      end,
+      step,
+      count,
+      inclusiveEnd
+    };
+  }
+
   _parseArray() {
+    // Legacy - replaced by _parseGroupOrRange but kept for internal logic if needed
     this._consume('[');
     const elements = [];
     while (this._peek() && this._peek() !== ']') {

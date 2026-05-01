@@ -1,17 +1,25 @@
 import { createSignal, For, Show } from 'solid-js';
 import { blackboard } from '../lib/blackboard';
-import { Database, RefreshCw, Minus, Maximize2 } from 'lucide-solid';
+import { Database, RefreshCw, Minus, Maximize2, Plus, Edit2 } from 'lucide-solid';
 
 export const CatalogNode = (props) => {
   const schemas = () => Object.entries(blackboard.schemas() || {});
   const [isRefreshing, setIsRefreshing] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
+  const [newName, setNewName] = createSignal('');
   const status = () => blackboard.discoveryStatus();
 
   const refreshCatalog = async () => {
     setIsRefreshing(true);
     await blackboard.discoverSchemas();
     setIsRefreshing(false);
+  };
+
+  const handleCreate = (e) => {
+    e.preventDefault();
+    if (!newName().trim()) return;
+    blackboard.createNewOp(newName().trim());
+    setNewName('');
   };
 
   return (
@@ -64,16 +72,41 @@ export const CatalogNode = (props) => {
       </div>
 
       <Show when={!isMinimized()}>
+        {/* Create New Op Form */}
+        <form onSubmit={handleCreate} class="flex gap-1 mb-2">
+            <input 
+              class="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-[10px] text-white focus:outline-none focus:border-cyan-400/40"
+              placeholder="New op name (e.g. MyOp)..."
+              value={newName()}
+              onInput={e => setNewName(e.target.value)}
+            />
+            <button 
+              type="submit"
+              class="p-1.5 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-all"
+              title="Create New Operator"
+            >
+                <Plus size={14} />
+            </button>
+        </form>
+
         <div class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1">
           <For each={schemas()}>
-            {([path, schema]) => (
-              <div class="text-[10px] font-mono text-cyan-200/70 py-1 md:py-1.5 px-2 hover:bg-white/5 rounded cursor-pointer transition-colors flex justify-between items-center group">
-                <span class="truncate">{path}</span>
-                <span class="text-white/20 text-[8px]">
-                  {Object.keys(schema).length} params
-                </span>
-              </div>
-            )}
+            {([path, schema]) => {
+              const isLocal = schema._origin === blackboard.peerId || path.startsWith('user/');
+              return (
+                <div 
+                  onClick={() => blackboard.openOp(path)}
+                  class="text-[10px] font-mono text-cyan-200/70 py-1 md:py-1.5 px-2 hover:bg-white/5 rounded cursor-pointer transition-colors flex justify-between items-center group"
+                >
+                  <span class="truncate">{path}</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-white/10 text-[8px] group-hover:text-white/20">
+                      {Object.keys(schema).length} params
+                    </span>
+                  </div>
+                </div>
+              );
+            }}
           </For>
           <Show when={status() === 'success' && schemas().length === 0}>
             <div class="text-[10px] text-white/20 italic p-2 text-center">
@@ -89,5 +122,4 @@ export const CatalogNode = (props) => {
       </Show>
     </div>
   );
-
 };

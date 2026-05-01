@@ -141,6 +141,36 @@ argument stack. This ensures that complex nested structures are merged into a cl
 
 - `Group([a, b], [c, d], e)` -> Consumed as a single sequence of `(a, b, c, d, e)`.
 
+### 2.4. Sequence Literals (Range Comprehension)
+
+JotCAD provides a built-in **Sequence Literal** syntax for generating numeric
+ranges. This syntax uses balanced square brackets `[]` and is visually
+distinct from standard arrays.
+
+- **Syntax:** `[ <start>? .. <end>? (by <step> | count <count>)? <inc>? ]`
+- **Defaults:**
+  - `start`: 0
+  - `end`: 1 (Used if `count` is absent or if `count` is present but `by` is absent)
+- **Behaviors:**
+  - **`count N`**: Produces exactly $N$ items. If `by` is absent and `..end` is provided, the step is calculated to fit $N$ items into the range (Exclusive). If both are absent, step defaults to 1.
+  - **`by S`**: Increments by $S$ until the limit is reached.
+  - **`inc`**: Flag to include the endpoint (only applies to `by`-mode ranges).
+
+#### Examples:
+
+| Intent | JotCAD Syntax | Result |
+| :--- | :--- | :--- |
+| **Simple Integer Count** | `[count 5]` | `[0, 1, 2, 3, 4]` |
+| **Linear progression** | `[count 8 by 5]` | `[0, 5, 10, ..., 35]` |
+| **8-way circular array** | `[count 8 by 1/8]` | `[0, 0.125, 0.25, ..., 0.875]` |
+| **Inclusive by Step** | `[0..100 by 20 inc]` | `[0, 20, 40, 60, 80, 100]` |
+| **Descending Range** | `[10..0 by -1 inc]` | `[10, 9, ..., 0]` |
+| **Exclusive Integer** | `[0..5]` | `[0, 1, 2, 3, 4]` (Default step 1) |
+
+This notation integrates directly with the **Universal Sequence Principle**.
+Chaining a method off a range (e.g., `[count 4].Box(10)`) automatically expands
+the operation across the sequence.
+
 ## 3. Sequential Argument Harvesting
 
 Operations use a **Greedy Harvesting** model to pull and transform values from

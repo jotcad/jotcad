@@ -105,23 +105,6 @@ export function MeshMap(props) {
   const pulses = blackboard.pulse;
   const positions = blackboard.meshPositions;
 
-  const OP_LIST_WIDTH = 280;
-  const OP_LIST_RIGHT = 24;
-  // Global Operators list
-  const allOps = createMemo(() => {
-    const all = blackboard.schemas();
-    return Object.entries(all)
-      .filter(([path]) => path.startsWith('jot/')) // Only show jot/ operators in the list
-      .map(([path, schema]) => ({
-        id: path,
-        // Remove jot/ and make uppercase
-        name: path.replace(/^jot\//, '').toUpperCase(),
-        origin: (schema._origin || 'unknown').toLowerCase(),
-        path: path.toLowerCase(),
-      }))
-      .sort((a, b) => a.path.localeCompare(b.path));
-  });
-
   // Tight Force Layout (Stable Loop)
   onMount(() => {
     const interval = setInterval(() => {
@@ -182,49 +165,6 @@ export function MeshMap(props) {
     });
   });
 
-  const hostedLines = createMemo(() => {
-    const ns = nodes();
-    const ops = untrack(allOps);
-    const lines = [];
-
-    ns.forEach((node) => {
-      const pId = node.id.toLowerCase();
-      const env = getEnvInfo(node);
-
-      ops.forEach((op, idx) => {
-        let hosted = false;
-        const origin = op.origin;
-        if (origin !== 'unknown' && origin === pId) hosted = true;
-        else if (
-          origin !== 'unknown' &&
-          (pId.includes(origin) || origin.includes(pId))
-        )
-          hosted = true;
-        else {
-          const parts = op.path.split('/');
-          for (const part of parts) {
-            if (part.length > 2 && pId.includes(part)) {
-              hosted = true;
-              break;
-            }
-          }
-        }
-
-        if (hosted) {
-          lines.push({
-            x1: node.x,
-            y1: node.y,
-            // Calculate precisely based on fixed layout
-            x2: window.innerWidth - OP_LIST_RIGHT - OP_LIST_WIDTH,
-            y2: 52 + idx * 22,
-            color: env.color,
-          });
-        }
-      });
-    });
-    return lines;
-  });
-
   const topoEdges = createMemo(() => {
     const ns = nodes();
     const result = [];
@@ -252,22 +192,6 @@ export function MeshMap(props) {
   return (
     <div class="absolute inset-0 pointer-events-none z-0 overflow-hidden">
       <svg class="w-full h-full overflow-visible">
-        {/* Connection lines from nodes to operators */}
-        <For each={hostedLines()}>
-          {(line) => (
-            <line
-              x1={line.x1}
-              y1={line.y1}
-              x2={line.x2}
-              y2={line.y2}
-              stroke={line.color}
-              stroke-width="1.5"
-              stroke-opacity="0.2"
-              stroke-dasharray="2 2"
-            />
-          )}
-        </For>
-
         {/* Peer connections */}
         <For each={topoEdges()}>
           {(edge) => (
@@ -307,34 +231,6 @@ export function MeshMap(props) {
           }}
         </For>
       </svg>
-
-      {/* Fixed Operator List on Right (Left Justified) */}
-      <div
-        class="absolute top-10 py-2 flex flex-col gap-[2px] pointer-events-none items-start"
-        style={{
-          right: `${OP_LIST_RIGHT}px`,
-          width: `${OP_LIST_WIDTH}px`,
-        }}
-      >
-        <For each={allOps()}>
-          {(op, idx) => (
-            <div class="h-[20px] flex items-center gap-2">
-              {/* Anchor dot on the LEFT of the name */}
-              <div
-                class="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                style={{
-                  'background-color':
-                    hostedLines().find((l) => l.y2 === 52 + idx() * 22)
-                      ?.color || '#333',
-                }}
-              />
-              <span class="text-[10px] font-black uppercase tracking-widest text-white/60 whitespace-nowrap">
-                {op.name}
-              </span>
-            </div>
-          )}
-        </For>
-      </div>
 
       <div class="absolute inset-0 pointer-events-none">
         <For each={topo().peers}>

@@ -523,8 +523,7 @@ export const Canvas = () => {
 
   onMount(() => {
     blackboard.start();
-    const renderer = initSharedRenderer();
-    document.body.appendChild(renderer.domElement);
+    initSharedRenderer();
 
     const handleResize = () => {
       setWindowSize({
@@ -532,22 +531,17 @@ export const Canvas = () => {
         height: window.innerHeight,
         isMobile: window.innerWidth < 768
       });
+      requestRender();
     };
     window.addEventListener('resize', handleResize);
     onCleanup(() => window.removeEventListener('resize', handleResize));
-
-    const animate = () => {
-
-      updateViewports();
-      requestAnimationFrame(animate);
-    };
-    animate();
 
     interact(dragRef).draggable({
       listeners: {
         move(event) {
           if (event.target === dragRef) {
             setView((v) => ({ ...v, x: v.x + event.dx, y: v.y + event.dy }));
+            requestRender();
           }
         },
       },
@@ -571,6 +565,7 @@ export const Canvas = () => {
     const newY = mouseY - worldY * newScale;
 
     setView({ x: newX, y: newY, scale: newScale });
+    requestRender();
   };
 
   const groupedNodes = createMemo(() => {
@@ -723,7 +718,9 @@ export const Canvas = () => {
 
       <div class="absolute inset-0 z-50 pointer-events-none">
         <div class="pointer-events-auto">
-          <JotNode />
+          <For each={blackboard.openEditors()} by="id">
+            {(editorState) => <JotNode initial={editorState} />}
+          </For>
         </div>
         <div class="pointer-events-auto">
           <CatalogNode />
@@ -753,25 +750,6 @@ export const Canvas = () => {
         <div class="hidden md:block text-[8px] font-mono text-white/10 tracking-widest opacity-50 uppercase text-balance">
           Double-click Path [Circle] to view results • Drag background to Pan •
           Wheel to Zoom
-        </div>
-
-        {/* Debug Info - Desktop Only or toggleable? Let's make it compact */}
-        <div class="mt-2 md:mt-4 flex flex-col gap-1 md:gap-2">
-          <div class="text-[6px] md:text-[8px] font-mono text-white/10">
-            PEERS: {blackboard.meshTopology().peers?.length || 0} | SCHEMAS: {Object.keys(blackboard.schemas()).length}
-          </div>
-          <div class="max-w-[200px] md:max-w-xs flex flex-wrap gap-1">
-            <For each={Object.entries(blackboard.schemas()).slice(0, 10)}>
-              {([path, s]) => (
-                <div class="text-[5px] md:text-[6px] px-1 bg-white/5 text-white/20 rounded">
-                  {path.split('/').pop()}
-                </div>
-              )}
-            </For>
-            <Show when={Object.keys(blackboard.schemas()).length > 10}>
-              <div class="text-[5px] md:text-[6px] px-1 text-white/10">...</div>
-            </Show>
-          </div>
         </div>
       </div>
 

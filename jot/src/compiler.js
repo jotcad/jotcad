@@ -433,11 +433,77 @@ export class JotCompiler {
       case 'METHOD': return this._evaluateMethod(node, parameters, subject);
       case 'SYMBOL': return parameters[node.name] !== undefined ? parameters[node.name] : node;
       case 'ANNOTATED_ARG': return this._evaluateRecursive(node.value, parameters, subject);
+      case 'RANGE': return this._evaluateRange(node, parameters, subject);
       default:
         const res = {};
         for (const [k, v] of Object.entries(node)) res[k] = await this._evaluateRecursive(v, parameters, subject);
         return res;
     }
+  }
+
+  async _evaluateRange(node, parameters, subject) {
+    const start = node.start !== null ? await this._evaluateRecursive(node.start, parameters, subject) : 0;
+    const end = node.end !== null ? await this._evaluateRecursive(node.end, parameters, subject) : null;
+    const step = node.step !== null ? await this._evaluateRecursive(node.step, parameters, subject) : null;
+    const count = node.count !== null ? await this._evaluateRecursive(node.count, parameters, subject) : null;
+
+    if (typeof start !== 'number') {
+        throw new Error(`Compiler Error: Range start must be a number. Got ${typeof start}`);
+    }
+
+    const results = [];
+    
+    if (count !== null) {
+        if (typeof count !== 'number') throw new Error(`Compiler Error: Range count must be a number.`);
+        
+        let actualStep = step;
+        if (actualStep === null) {
+            if (end !== null) {
+                // If end is provided, we divide the distance by count (Exclusive)
+                actualStep = (end - start) / count;
+            } else {
+                // No end, no step -> default to 1
+                actualStep = 1;
+            }
+        }
+
+        // Generate EXACTLY count items to avoid epsilon drift
+        for (let i = 0; i < count; i++) {
+            results.push(start + i * actualStep);
+        }
+    } else {
+        // Standard 'by' loop (requires either 'end' or a default 'end=1')
+        const actualEnd = end !== null ? end : 1;
+        const actualStep = step !== null ? step : 1;
+        
+        if (actualStep === 0) return [start];
+
+        const epsilon = 1e-10;
+        let current = start;
+        const isIncreasing = actualStep >= 0;
+        
+        while (true) {
+            if (isIncreasing) {
+                if (node.inclusiveEnd) {
+                    if (current > actualEnd + epsilon) break;
+                } else {
+                    if (current >= actualEnd - epsilon) break;
+                }
+            } else {
+                if (node.inclusiveEnd) {
+                    if (current < actualEnd - epsilon) break;
+                } else {
+                    if (current <= actualEnd + epsilon) break;
+                }
+            }
+
+            results.push(current);
+            current += actualStep;
+            if (results.length > 10000) break;
+        }
+    }
+
+    return results;
   }
 
   async _evaluateMethod(node, parameters, subject) {

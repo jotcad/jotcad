@@ -26,6 +26,7 @@
 #include "move_op.h"
 #include "fill_op.h"
 #include "sew_op.h"
+#include "plane_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -59,6 +60,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     move_init(vfs);
     fill_init(vfs);
     sew_init(vfs);
+    plane_init(vfs);
 }
 
 } // namespace geo

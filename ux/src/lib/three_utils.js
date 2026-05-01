@@ -4,7 +4,17 @@ import earcut from 'earcut';
 import { ratioToNumber } from './ft.js';
 
 let renderer = null;
-const viewports = new Map(); // id -> {canvas, scene, camera}
+let renderRequested = false;
+const viewports = new Map(); // id -> {canvas, scene, camera, controls, needsUpdate}
+
+export function requestRender() {
+  renderRequested = true;
+}
+
+function renderLoop() {
+  updateViewports();
+  requestAnimationFrame(renderLoop);
+}
 
 /**
  * Decodes the custom JotCAD Geometry text format.
@@ -295,7 +305,8 @@ export function initSharedRenderer() {
   renderer = new THREE.WebGLRenderer({ 
     antialias: true, 
     alpha: true,
-    preserveDrawingBuffer: true
+    preserveDrawingBuffer: true,
+    powerPreference: "high-performance"
   });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -311,25 +322,53 @@ export function initSharedRenderer() {
   renderer.domElement.style.margin = '0';
   renderer.domElement.style.padding = '0';
 
+  if (typeof document !== 'undefined') {
+    document.body.appendChild(renderer.domElement);
+  }
+
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
+    requestRender();
   });
+
+  // Start the global render loop
+  requestAnimationFrame(renderLoop);
 
   return renderer;
 }
 
-export function registerViewport(id, canvas, scene, camera) {
-  viewports.set(id, { canvas, scene, camera });
+export function registerViewport(id, canvas, scene, camera, controls) {
+  viewports.set(id, { canvas, scene, camera, controls, needsUpdate: true });
+  requestRender();
   return () => viewports.delete(id);
 }
 
 export function unregisterViewport(id) {
   viewports.delete(id);
+  requestRender();
 }
 
 export function updateViewports() {
-  if (!renderer) initSharedRenderer();
   if (!renderer) return;
+
+  // We only render if:
+  // 1. A global render was requested (resize, new data, UI change)
+  // 2. ANY viewport's controls are currently animating (damping)
+  // 3. ANY viewport was just added/updated
+  let shouldRender = renderRequested;
+  
+  viewports.forEach(vp => {
+    if (vp.controls && vp.controls.update()) {
+      shouldRender = true;
+    }
+    if (vp.needsUpdate) {
+      shouldRender = true;
+      vp.needsUpdate = false;
+    }
+  });
+
+  if (!shouldRender) return;
+  renderRequested = false;
 
   renderer.setClearColor(0x000000, 0);
   renderer.setScissorTest(false);
@@ -341,7 +380,6 @@ export function updateViewports() {
     const rect = vp.canvas.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) return;
 
-    // Use logical pixels for setViewport/setScissor when setPixelRatio is active
     const width = rect.width;
     const height = rect.height;
     const left = rect.left;
