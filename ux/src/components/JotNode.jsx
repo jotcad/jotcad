@@ -15,16 +15,34 @@ Box(width, 10, 0)
 
 export const JotNode = (props) => {
   let nodeRef;
-  const [pos, setPos] = createSignal({ x: 400, y: 400 });
-  const [opName, setOpName] = createSignal('user/MyOp');
-  const [args, setArgs] = createSignal([
+  const initial = blackboard.getNodeState();
+
+  const [pos, setPos] = createSignal(initial.pos || { x: 400, y: 400 });
+  const [opName, setOpName] = createSignal(initial.opName || 'user/MyOp');
+  const [args, setArgs] = createSignal(initial.args || [
     { name: 'width', type: 'jot:number', testValue: 20 }
   ]);
-  const [code, setCode] = createSignal(DEFAULT_CODE);
+  const [code, setCode] = createSignal(initial.code || DEFAULT_CODE);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
   const [resultData, setResultData] = createSignal(null);
   const [associatedFiles, setAssociatedFiles] = createSignal([]);
+
+  // Auto-save UI state
+  createEffect(() => {
+    blackboard.saveNodeState({
+      pos: pos(),
+      opName: opName(),
+      args: args(),
+      code: code()
+    });
+  });
+
+  const isUnpublished = createMemo(() => {
+    const published = blackboard.dynamicOps()[opName()];
+    if (!published) return true;
+    return published.script !== code();
+  });
 
   const addArg = () => setArgs([...args(), { name: 'arg' + args().length, type: 'jot:number', testValue: 10 }]);
   const removeArg = (index) => setArgs(args().filter((_, i) => i !== index));
@@ -270,8 +288,10 @@ export const JotNode = (props) => {
           </button>
           <button
             onClick={publishToMesh}
-            class="px-3 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-all flex items-center justify-center"
-            title="Publish to Mesh"
+            class={`px-3 rounded-lg transition-all flex items-center justify-center ${
+              isUnpublished() ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/40' : 'bg-white/10 text-white/60 hover:bg-white/20'
+            }`}
+            title={isUnpublished() ? 'Publish Changes to Mesh' : 'Published to Mesh'}
           >
             <Globe size={16} />
           </button>

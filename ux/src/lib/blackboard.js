@@ -19,6 +19,7 @@ const peerId = getSessionId();
 
 const storagePrefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
 const DYNAMIC_OPS_KEY = `${storagePrefix}_dynamic_ops`;
+const NODE_STATE_KEY = `${storagePrefix}_node_state`;
 const VFS_DB_NAME = `${storagePrefix}-vfs`;
 
 export const vfs = new VFS({
@@ -84,6 +85,17 @@ export const blackboard = {
   dynamicOps,
   error,
   setError,
+
+  getNodeState() {
+    try {
+      const saved = localStorage.getItem(NODE_STATE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) { return {}; }
+  },
+
+  saveNodeState(state) {
+    localStorage.setItem(NODE_STATE_KEY, JSON.stringify(state));
+  },
 
   async discoverSchemas() {
     setDiscoveryStatus('loading');
@@ -312,8 +324,9 @@ export const blackboard = {
     if (vfs.storage && typeof vfs.storage.wipe === 'function') {
         await vfs.storage.wipe();
     }
-    // 2. Clear dynamic ops from localStorage
+    // 2. Clear dynamic ops and UI state from localStorage
     localStorage.removeItem(DYNAMIC_OPS_KEY);
+    localStorage.removeItem(NODE_STATE_KEY);
     // 3. Clear session ID to force a fresh identity
     sessionStorage.removeItem('jotcad_peer_id');
     
