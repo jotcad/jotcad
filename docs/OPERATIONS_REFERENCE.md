@@ -72,3 +72,24 @@ Loop(Point(0,0), Point(10,0), Point(0,10)).fill()
 // Fill a complex wireframe using the 'all' rule
 MyWireframe.fill(rule='all')
 ```
+
+### `Sew(shapes=[])` / `sew(shapes=[])`
+Stitches independent 2D faces into manifold shells or 3D solids.
+
+- **`shapes`**: A list of additional shapes to weld into the assembly.
+- **Topological Logic**:
+  - **Vertex Welding**: Merges vertices with identical rational coordinates.
+  - **Manifold Guard**: Fails if an edge is shared by more than 2 faces (no self-touches).
+  - **Orientation Solver**: Consistently orients connected components.
+- **Biasing**:
+  - **Closed Volumes**: Normals point **outward** (positive volume).
+  - **Open Shells**: Normals bias toward **+Z** (Floor-Up).
+
+#### Example
+```js
+// Stitch faces into a solid
+Sew(Front, Back, Top, Bottom, Left, Right)
+
+// Add a patch to an existing shell
+MyShell.sew(Patch)
+```
