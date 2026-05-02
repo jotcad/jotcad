@@ -12,6 +12,14 @@ void Geometry::apply_tf(const Matrix& m) {
         EK::Point_3 tp = m.transform(p);
         v.x = tp.x(); v.y = tp.y(); v.z = tp.z();
     }
+    // Involution: If reflection, flip faces to preserve outwards normals.
+    if (m.is_reflection()) {
+        for (auto& face : faces) {
+            for (auto& loop : face.loops) {
+                std::reverse(loop.begin(), loop.end());
+            }
+        }
+    }
 }
 
 } // namespace geo

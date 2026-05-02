@@ -33,7 +33,9 @@ struct CornersOp : P {
         res.vertices = geo.vertices;
         res.segments = geo.segments;
 
-        Shape out = in;
+        // Zero-Base Tags
+        Shape out;
+        out.tf = in.tf;
         out.geometry = vfs->materialize<Geometry>(res);
         out.add_tag("type", "corners");
         
@@ -68,7 +70,9 @@ struct EachCornerOp : P {
         // 1. Read input geometry
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
 
+        // Zero-Base Tags for the group
         Shape out;
+        out.tf = in.tf;
         out.add_tag("type", "corners");
 
         for (const auto& face : geo.faces) {
@@ -125,6 +129,7 @@ struct EachCornerOp : P {
                                             uy, vy, ny, v_curr.y,
                                             uz, vz, nz, v_curr.z));
 
+                    // Zero-Base Tags for the individual corner anchor
                     Shape corner;
                     corner.tf = m;
                     corner.add_tag("type", "corner");
@@ -184,7 +189,9 @@ struct EdgesOp : P {
         res.vertices = geo.vertices;
         res.segments = geo.segments;
 
-        Shape out = in;
+        // Zero-Base Tags
+        Shape out;
+        out.tf = in.tf;
         out.geometry = vfs->materialize<Geometry>(res);
         out.add_tag("type", "edges");
         
@@ -217,7 +224,9 @@ struct EachEdgeOp : P {
 
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
 
+        // Zero-Base Tags for the group
         Shape out;
+        out.tf = in.tf;
         out.add_tag("type", "edges");
 
         for (const auto& face : geo.faces) {
@@ -261,6 +270,7 @@ struct EachEdgeOp : P {
                                             vx, vy, ny, my,
                                             wx, wy, nz, mz));
 
+                    // Zero-Base Tags for the individual edge anchor
                     Shape edge;
                     edge.tf = m;
                     edge.add_tag("type", "edge");

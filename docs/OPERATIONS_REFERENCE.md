@@ -150,7 +150,55 @@ Axis-specific shorthands that take a numeric height and extrude along the local 
 
 - Example: `Box(10).ez(5)` is equivalent to `Box(10).e(Z(5))`.
 
-## 9. Infinite Planes (Orientations)
+### `spin(start=0, end=1, resolution=32)`
+Revolves geometry around the local Z axis to create circular features or solids of revolution.
+
+- **`start`**: Initial angle in turns (default `0.0`).
+- **`end`**: Final angle in turns (default `1.0` for a full circle).
+- **`resolution`**: Number of angular segments.
+- **Capping**: If the spin is not a full circle (`end - start != 1.0`), the result is automatically capped to form a valid solid.
+- **Promotion**: Points $\rightarrow$ Arcs, Segments $\rightarrow$ Ribbons, Faces $\rightarrow$ Solids.
+
+### `spx(start, end)`, `spy(start, end)`, `spz(start, end)`
+Axis-specific shorthands for revolving around the local X, Y, or Z axes.
+
+## 9. Selection and Querying
+
+### `faces()`
+Returns a collection of all faces in the subject as individual shapes.
+
+### `eachFace()`
+Returns a **Generator** of all faces. When used with `at()` or `on()`, it sequentially targets every face of the subject.
+- **Anchor**: Each face is anchored at its **Centroid**, with the local Z-axis aligned to the face **Normal**.
+
+### `eachEdge()`
+Returns a generator of all edges.
+- **Anchor**: Centered at the **Midpoint**, with the Z-axis aligned to the edge normal (interpolated from incident faces).
+
+### `eachCorner()`
+Returns a generator of all vertices.
+- **Anchor**: At the **Vertex coordinate**, with the Z-axis aligned to the vertex normal.
+
+## 10. Transformation
+
+### `s(x, y, z)` / `scale(x, y, z)`
+Scales the subject along the local axes.
+- **Involution**: If any scale component is negative (mirroring), the operator automatically flips the face winding to preserve outwards-pointing normals.
+- **Sequences**: Supports scale sequences like `sx(1, -1)` to produce "Mirror and Keep" groups.
+
+### `sx(val)`, `sy(val)`, `sz(val)`
+Axis-specific shorthands for scaling along X, Y, or Z.
+
+## 11. Mesh Optimization
+
+### `simplify(ratio=0.5, count=0, threshold=60.0)`
+Reduces mesh complexity while preserving sharp features using edge-collapse.
+
+- **`ratio`**: Target reduction (e.g., `0.1` keeps 10% of faces).
+- **`count`**: Explicit target face count (overrides ratio if > 0).
+- **`threshold`**: Dihedral angle (in degrees) used to identify and protect sharp features.
+
+## 12. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
 - **`Y(offset=0)`**: Infinite plane on the XZ axis (normal +Y).

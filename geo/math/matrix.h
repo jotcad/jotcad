@@ -62,6 +62,15 @@ struct Matrix {
         return Matrix(Transformation(cos_alpha, sin_alpha, 0, 0, -sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0, w));
     }
 
+    static Matrix scale(FT x, FT y, FT z) {
+        return Matrix(Transformation(
+            x, 0, 0, 0,
+            0, y, 0, 0,
+            0, 0, z, 0,
+            1
+        ));
+    }
+
     static Matrix from_vec(const std::string& tf_str) {
         std::stringstream ss(tf_str);
         std::vector<FT> coeffs;
@@ -80,6 +89,20 @@ struct Matrix {
 
     const std::string& to_vec() const {
         return s;
+    }
+
+    FT determinant() const {
+        // Determinant of the 3x3 linear part
+        FT m00 = t.cartesian(0, 0); FT m01 = t.cartesian(0, 1); FT m02 = t.cartesian(0, 2);
+        FT m10 = t.cartesian(1, 0); FT m11 = t.cartesian(1, 1); FT m12 = t.cartesian(1, 2);
+        FT m20 = t.cartesian(2, 0); FT m21 = t.cartesian(2, 1); FT m22 = t.cartesian(2, 2);
+        return m00 * (m11 * m22 - m12 * m21) - 
+               m01 * (m10 * m22 - m12 * m20) + 
+               m02 * (m10 * m21 - m11 * m20);
+    }
+
+    bool is_reflection() const {
+        return determinant() < 0;
     }
 
     EK::Point_3 transform(const EK::Point_3& p) const {

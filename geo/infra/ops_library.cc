@@ -28,6 +28,10 @@
 #include "sew_op.h"
 #include "plane_op.h"
 #include "extrude_op.h"
+#include "faces_op.h"
+#include "scale_op.h"
+#include "spin_op.h"
+#include "simplify_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -63,6 +67,10 @@ void register_all_ops(fs::VFSNode* vfs) {
     sew_init(vfs);
     plane_init(vfs);
     extrude_init(vfs);
+    faces_init(vfs);
+    scale_init(vfs);
+    spin_init(vfs);
+    simplify_init(vfs);
 }
 
 } // namespace geo
