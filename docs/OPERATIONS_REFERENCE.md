@@ -17,12 +17,23 @@ Connects a series of points into a closed loop.
 
 - **`$in`**, **`tools`**, **`smooth`**, **`zag`**: Same as `Link`, but the final point is automatically connected back to the first point to close the loop.
 
-## 2. Point Collection Rules
+## 2. Hull (Convex Envelopes)
 
-Both `Link` and `Loop` use a recursive vertex collection strategy:
-- If a shape contains **Geometry**, all of its vertices are harvested.
-- If a shape has no geometry (like a container or a `Point()`), its **Origin** (0,0,0) in local space is used.
-- All points are transformed into the world space of the operation before connection.
+### `Hull(shapes=[])` / `hull()`
+Generates the convex hull of the input shape(s).
+
+- **2D Hull**: If all vertices lie on a single plane, generates a 2D face representing the planar convex hull.
+- **3D Hull**: If vertices are not coplanar, generates a manifold 3D solid representing the volumetric convex hull.
+- **Recursion**: Collects vertices from all child components and applies their relative transforms.
+
+#### Example
+```js
+// 3D Volumetric Hull
+Hull(Cylinder(5), Box(10).m(20))
+
+// 2D Method call
+MyPath.hull().fill()
+```
 
 ## 3. Primitives
 
@@ -94,6 +105,24 @@ Sew(Front, Back, Top, Bottom, Left, Right)
 MyShell.sew(Patch)
 ```
 
+### `Sweep(profiles, path, closed_path=false, solid=true)` / `sweep(path, closed_path=false, solid=true)`
+Extrudes one or more 2D profiles along a 3D path.
+
+- **`profiles`**: A list of 2D shapes to sweep.
+- **`path`**: A shape containing 1D segments defining the trajectory.
+- **`closed_path`**: If `true`, connects the end of the sweep back to the start with twist correction.
+- **`solid`**: If `true`, generates a manifold solid with start/end caps. If `false`, generates a wireframe/surface assembly.
+- **RMF (Rotation Minimizing Frames)**: Uses the Double Reflection method to ensure the profile does not twist unexpectedly along complex curves.
+
+#### Example
+```js
+// Create a pipe
+Sweep(profiles=[Circle(5)], path=CubicPath(), solid=true)
+
+// Sweep a square along a closed loop
+Square(2).sweep(path=MyLoop, closed_path=true)
+```
+
 ## 5. Export and Rendering
 
 ### `pdf(path='export.pdf')`
@@ -110,6 +139,19 @@ Generates a PNG thumbnail for the input shape.
 - **Outputs**:
   - **`$out`**: The input shape (pass-through).
   - **`file`**: The generated PNG blob.
+
+### `section(planes=[])`
+Extracts 2D cross-sections of the input shape at specified planes.
+
+- **`planes`**: A list of shapes whose transforms define the sectioning planes.
+- **Default**: If no planes are provided, performs a section at local $Z=0$.
+- **Logic**: Slices the input geometry and merges overlapping/nested loops into clean 2D faces.
+
+#### Example
+```js
+// Slice at 10mm intervals
+MySolid.section([Z(0), Z(10), Z(20)])
+```
 
 ## 6. Plane and Normal Extraction
 
@@ -130,6 +172,29 @@ Extracts the normal vector of the first face as an oriented normal shape.
 - **Output**: A shape with a single unit segment pointing along the face's normal.
 - **Tags**: `type: "normal"`.
 - **Usage**: Typically used as an input to extrusion or directional translation: `MyShape.at(face.normal()).extrude(10)`.
+
+### `outline()`
+Extracts the wireframe outlines of the subject.
+
+- **Feature Extraction**: Only keeps boundary edges (shared by 1 face) or feature edges (shared by 2 faces with different normals).
+- **Coplanar Filter**: Automatically ignores edges between coplanar faces (zero-degree bends) to produce clean silhouettes.
+
+## 7. Distribution
+
+### `place(template_shape)`
+Instantiates a template shape at every anchor point in the subject collection.
+
+- **Iterative Pattern**: Used with selection generators like `eachCorner()` or `eachFace()`.
+- **Composition**: Each instance preserves the `template_shape` transforms while being placed on the target anchor.
+
+#### Example
+```js
+// Put a washer on every corner
+Plate.eachCorner().place(Disk(2))
+
+// Instantiate bolts into a hole pattern
+Pattern.place(Bolt())
+```
 
 ## 8. Extrusion
 

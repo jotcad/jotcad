@@ -6,7 +6,7 @@ import { Database, Minus, Maximize2, Layers, Plus, X, Globe, Trash2 } from 'luci
 import { JotParser } from '../../../jot/src/parser';
 import { JotCompiler } from '../../../jot/src/compiler';
 import { Viewport } from './Viewport';
-import { renderJotToScene, registerViewport, unregisterViewport, initSharedRenderer, requestRender } from '../lib/three_utils';
+import { renderJotToScene, registerViewport, unregisterViewport, initSharedRenderer, requestRender, packZFS } from '../lib/three_utils';
 
 export const JotNode = (props) => {
   let nodeRef;
@@ -206,6 +206,7 @@ export const JotNode = (props) => {
   return (
     <div
       ref={nodeRef}
+      onPointerDown={() => blackboard.raiseOp(props.initial.id)}
       class="fixed z-50 p-3 md:p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden flex flex-col gap-2 md:gap-3 transition-all duration-75"
       style={{
         left: `${pos().x}px`,
@@ -336,7 +337,7 @@ export const JotNode = (props) => {
           </div>
         </Show>
 
-        <div class="w-full min-h-[200px] flex-[1.5] bg-black/40 rounded-lg border border-white/10 overflow-hidden relative group mt-1">
+        <div class="w-full min-h-[200px] flex-[1.5] bg-black/20 rounded-lg border border-white/10 overflow-hidden relative group mt-1">
           <Show 
             when={resultData()} 
             fallback={

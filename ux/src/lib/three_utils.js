@@ -45,105 +45,68 @@ export const decodeGeometry = (text) => {
     const pieces = line.split(/\s+/);
     const code = pieces.shift();
     
-    if (code === 'V' || code === 'v') {
+    if (code === 'V') {
       const count = parseInt(pieces[0]);
-      if (!isNaN(count)) {
-        // Header-based: read next 'count' lines
-        i++;
-        for (let j = 0; j < count && i < lines.length; j++, i++) {
-          const vLine = lines[i].trim().split(/\s+/);
-          if (vLine.length >= 3) {
-            vertices.push([
-              ratioToNumber(vLine[0]),
-              ratioToNumber(vLine[1]),
-              ratioToNumber(vLine[2]),
-            ]);
-          }
-        }
-      } else {
-        // Legacy: prefix-based single line
-        if (pieces.length >= 3) {
+      i++;
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const vLine = lines[i].trim().split(/\s+/);
+        if (vLine.length >= 3) {
           vertices.push([
-            ratioToNumber(pieces[0]),
-            ratioToNumber(pieces[1]),
-            ratioToNumber(pieces[2]),
+            ratioToNumber(vLine[0]),
+            ratioToNumber(vLine[1]),
+            ratioToNumber(vLine[2]),
           ]);
         }
-        i++;
       }
-    } else if (code === 'F' || code === 'f') {
+    } else if (code === 'F') {
       const count = parseInt(pieces[0]);
-      if (!isNaN(count)) {
-        i++;
-        for (let j = 0; j < count && i < lines.length; j++, i++) {
-          const fLine = lines[i].trim().split(/\s+/);
-          if (fLine.length === 0) continue;
-          const numLoops = parseInt(fLine.shift() || '1');
-          for (let l = 0; l < numLoops; l++) {
-             const loopLen = parseInt(fLine.shift() || '0');
-             const loop = [];
-             for (let k = 0; k < loopLen; k++) {
-                const idx = parseInt(fLine.shift() || '-1');
-                if (!isNaN(idx) && idx >= 0) loop.push(idx);
-             }
-             if (loop.length > 0) {
-                if (l === 0) faces.push([loop]);
-                else faces.at(-1).push(loop);
-             }
-          }
-        }
-      } else {
-        // Legacy or single face logic could go here
-        i++;
-      }
-    } else if (code === 'P' || code === 'p') {
-      const count = parseInt(pieces[0]);
-      if (!isNaN(count)) {
-        // P <count>\n<v1> <v2>...
-        i++;
-        const pLine = lines[i].trim().split(/\s+/);
-        for (const p of pLine) {
-          const idx = parseInt(p);
-          if (!isNaN(idx)) points.push(idx);
-        }
-      } else {
-        for (const p of pieces) {
-          const idx = parseInt(p);
-          if (!isNaN(idx)) points.push(idx);
-        }
-      }
       i++;
-    } else if (code === 'S' || code === 's') {
-      const count = parseInt(pieces[0]);
-      if (!isNaN(count)) {
-        i++;
-        for (let j = 0; j < count && i < lines.length; j++, i++) {
-          const sLine = lines[i].trim().split(/\s+/);
-          if (sLine.length >= 2) {
-            segments.push([parseInt(sLine[0]), parseInt(sLine[1])]);
-          }
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const fLine = lines[i].trim().split(/\s+/);
+        if (fLine.length === 0) continue;
+        const numLoops = parseInt(fLine.shift() || '1');
+        for (let l = 0; l < numLoops; l++) {
+           const loopLen = parseInt(fLine.shift() || '0');
+           const loop = [];
+           for (let k = 0; k < loopLen; k++) {
+              const idx = parseInt(fLine.shift() || '-1');
+              if (!isNaN(idx) && idx >= 0) loop.push(idx);
+           }
+           if (loop.length > 0) {
+              if (l === 0) faces.push([loop]);
+              else faces.at(-1).push(loop);
+           }
         }
-      } else {
-        for (let j = 0; j + 1 < pieces.length; j += 2) {
-          segments.push([parseInt(pieces[j]), parseInt(pieces[j+1])]);
+      }
+    } else if (code === 'P') {
+      const count = parseInt(pieces[0]);
+      i++;
+      if (count > 0 && i < lines.length) {
+        const pLine = lines[i].trim().split(/\s+/);
+        for (let idxStr of pLine) {
+          const idx = parseInt(idxStr);
+          if (!isNaN(idx)) points.push(idx);
         }
         i++;
       }
-    } else if (code === 'T' || code === 't') {
+    }
+ else if (code === 'S') {
       const count = parseInt(pieces[0]);
-      if (!isNaN(count)) {
-        i++;
-        for (let j = 0; j < count && i < lines.length; j++, i++) {
-          const tLine = lines[i].trim().split(/\s+/);
-          if (tLine.length >= 3) {
-            triangles.push([parseInt(tLine[0]), parseInt(tLine[1]), parseInt(tLine[2])]);
-          }
+      i++;
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const sLine = lines[i].trim().split(/\s+/);
+        if (sLine.length >= 2) {
+          segments.push([parseInt(sLine[0]), parseInt(sLine[1])]);
         }
-      } else {
-        for (let j = 0; j + 2 < pieces.length; j += 3) {
-          triangles.push([parseInt(pieces[j]), parseInt(pieces[j+1]), parseInt(pieces[j+2])]);
+      }
+    } else if (code === 'T') {
+      const count = parseInt(pieces[0]);
+      i++;
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const tLine = lines[i].trim().split(/\s+/);
+        if (tLine.length >= 3) {
+          triangles.push([parseInt(tLine[0]), parseInt(tLine[1]), parseInt(tLine[2])]);
         }
-        i++;
       }
     } else {
       i++;
@@ -222,7 +185,10 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
             g.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
             const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
                 color: shapeColor,
-                side: THREE.DoubleSide 
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 4,
+                polygonOffsetUnits: 4
             }));
             mesh.applyMatrix4(worldMat);
             scene.add(mesh);
@@ -234,12 +200,18 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           const pos = [];
           for (const seg of segments) {
             const v0 = vertices[seg[0]], v1 = vertices[seg[1]];
-            if (v0 && v1) pos.push(...v0, ...v1);
+            if (v0 && v1) {
+              pos.push(...v0, ...v1);
+            }
           }
           if (pos.length > 0) {
             const g = new THREE.BufferGeometry();
             g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: shapeColor }));
+            // Use the shape color directly for edges
+            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ 
+              color: shapeColor,
+              linewidth: 1
+            }));
             line.applyMatrix4(worldMat);
             scene.add(line);
           }
@@ -288,8 +260,12 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           
           const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
               color: shapeColor,
-              side: THREE.DoubleSide 
+              side: THREE.DoubleSide,
+              polygonOffset: true,
+              polygonOffsetFactor: 4,
+              polygonOffsetUnits: 4
           }));
+
           mesh.applyMatrix4(worldMat);
           scene.add(mesh);
         }
@@ -311,6 +287,7 @@ export function initSharedRenderer() {
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
+  renderer.autoClear = false;
 
   renderer.domElement.style.position = 'fixed';
   renderer.domElement.style.top = '0';
@@ -351,10 +328,6 @@ export function unregisterViewport(id) {
 export function updateViewports() {
   if (!renderer) return;
 
-  // We only render if:
-  // 1. A global render was requested (resize, new data, UI change)
-  // 2. ANY viewport's controls are currently animating (damping)
-  // 3. ANY viewport was just added/updated
   let shouldRender = renderRequested;
   
   viewports.forEach(vp => {
@@ -388,10 +361,7 @@ export function updateViewports() {
     renderer.setViewport(left, bottom, width, height);
     renderer.setScissor(left, bottom, width, height);
     
-    if (vp.scene.background) {
-      renderer.setClearColor(vp.scene.background, 1.0);
-      renderer.clear();
-    }
+    renderer.clear(true, true, true);
 
     vp.camera.aspect = width / height;
     vp.camera.updateProjectionMatrix();

@@ -16,7 +16,7 @@ export const Viewport = (props) => {
     const height = containerRef.clientHeight || 100;
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f172a); // Slate-950
+    // scene.background = new THREE.Color(0x0f172a); // Removed to allow CSS background to show through
 
     camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
     camera.position.set(0, 0, 100);
@@ -97,14 +97,14 @@ export const Viewport = (props) => {
   return (
     <div
       ref={containerRef}
-      class="w-full h-full rounded-lg overflow-hidden"
-      onMouseDown={(e) => e.stopPropagation()}
-      onMouseMove={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
-      onWheel={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-      onDblClick={(e) => e.stopPropagation()}
-      onContextMenu={(e) => e.stopPropagation()}
+      class="w-full h-full rounded-lg overflow-hidden bg-slate-950"
+      onMouseDown={(e) => {}}
+      onMouseMove={(e) => {}}
+      onMouseUp={(e) => {}}
+      onWheel={(e) => {}}
+      onPointerDown={(e) => {}}
+      onDblClick={(e) => {}}
+      onContextMenu={(e) => {}}
     />
   );
 };

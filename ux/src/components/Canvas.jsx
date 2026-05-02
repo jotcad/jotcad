@@ -17,6 +17,7 @@ import {
   updateViewports,
   captureThumbnail,
   renderJotToScene,
+  requestRender,
 } from '../lib/three_utils';
 import { JotNode } from './JotNode';
 import { MeshMap } from './MeshMap';

@@ -32,6 +32,10 @@
 #include "scale_op.h"
 #include "spin_op.h"
 #include "simplify_op.h"
+#include "hull_op.h"
+#include "sweep_op.h"
+#include "section_op.h"
+#include "place_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -71,6 +75,10 @@ void register_all_ops(fs::VFSNode* vfs) {
     scale_init(vfs);
     spin_init(vfs);
     simplify_init(vfs);
+    hull_init(vfs);
+    sweep_init(vfs);
+    section_init(vfs);
+    place_init(vfs);
 }
 
 } // namespace geo

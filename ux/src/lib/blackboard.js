@@ -106,7 +106,10 @@ export const blackboard = {
 
   openOp(path) {
     const existing = openEditors.find(e => e.opName === path);
-    if (existing) return;
+    if (existing) {
+        this.raiseOp(existing.id);
+        return;
+    }
 
     const op = dynamicOps()[path];
     const newState = {
@@ -120,6 +123,15 @@ export const blackboard = {
     
     setOpenEditors([...openEditors, newState]);
     this._saveAllEditors();
+  },
+
+  raiseOp(id) {
+    const idx = openEditors.findIndex(e => e.id === id);
+    if (idx !== -1 && idx !== openEditors.length - 1) {
+      const editor = openEditors[idx];
+      const next = [...openEditors.filter(e => e.id !== id), editor];
+      setOpenEditors(reconcile(next));
+    }
   },
 
   createNewOp(path) {
