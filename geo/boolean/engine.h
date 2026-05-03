@@ -291,24 +291,70 @@ struct Engine {
         CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
         return mesh;
     }
-
-    static Geometry mesh_to_geometry(const Surface_mesh& mesh) {
-        Geometry geo;
-        std::map<Surface_mesh::Vertex_index, int> v_map;
-        for (auto v : mesh.vertices()) {
-            v_map[v] = (int)geo.vertices.size();
-            auto p = mesh.point(v);
-            geo.vertices.push_back({p.x(), p.y(), p.z()});
-        }
-        for (auto f : mesh.faces()) {
-            Geometry::Face face;
-            std::vector<int> loop;
-            for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) loop.push_back(v_map[v]);
-            face.loops.push_back(loop);
-            geo.faces.push_back(face);
-        }
-        return geo;
+static Geometry mesh_to_geometry(const Surface_mesh& mesh) {
+    Geometry geo;
+    std::map<Surface_mesh::Vertex_index, int> v_map;
+    for (auto v : mesh.vertices()) {
+        v_map[v] = (int)geo.vertices.size();
+        auto p = mesh.point(v);
+        geo.vertices.push_back({p.x(), p.y(), p.z()});
     }
+    for (auto f : mesh.faces()) {
+        Geometry::Face face;
+        std::vector<int> loop;
+        for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
+            loop.push_back(v_map[v]);
+        }
+        face.loops.push_back(loop);
+        geo.faces.push_back(face);
+    }
+    return geo;
+}
+
+typedef CGAL::Surface_mesh<IK::Point_3> InexactMesh;
+static InexactMesh geometry_to_mesh_ik(const Geometry& geo) {
+    std::vector<IK::Point_3> pts;
+    std::vector<std::vector<std::size_t>> faces;
+    for (const auto& v : geo.vertices) pts.push_back(IK::Point_3(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
+    for (const auto& f : geo.faces) {
+        if (f.loops.empty()) continue;
+        std::vector<std::size_t> face;
+        for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
+        faces.push_back(face);
+    }
+    CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
+    CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
+    InexactMesh mesh;
+    std::vector<InexactMesh::Vertex_index> v_indices;
+    for (const auto& p : pts) v_indices.push_back(mesh.add_vertex(p));
+    for (const auto& f : faces) {
+        std::vector<InexactMesh::Vertex_index> face_vs;
+        for (auto idx : f) face_vs.push_back(v_indices[idx]);
+        mesh.add_face(face_vs);
+    }
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+    return mesh;
+}
+
+static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
+    Geometry geo;
+    std::map<InexactMesh::Vertex_index, int> v_map;
+    for (auto v : mesh.vertices()) {
+        v_map[v] = (int)geo.vertices.size();
+        auto p = mesh.point(v);
+        geo.vertices.push_back({p.x(), p.y(), p.z()});
+    }
+    for (auto f : mesh.faces()) {
+        Geometry::Face face;
+        std::vector<int> loop;
+        for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
+            loop.push_back(v_map[v]);
+        }
+        face.loops.push_back(loop);
+        geo.faces.push_back(face);
+    }
+    return geo;
+}
 
     static void transform_mesh(Surface_mesh& mesh, const Matrix& tf) {
         for (auto v : mesh.vertices()) mesh.point(v) = tf.transform(mesh.point(v));

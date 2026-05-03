@@ -565,6 +565,26 @@ export class JotCompiler {
 
       const type = argDef.type?.toLowerCase() || '';
       const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
+
+      // --- New: Exact Type Match Pass (Selector or Symbol) ---
+      const candidates = this._findCandidates(pool, argDef.name);
+      for (const p of candidates) {
+        const val = await evaluateHelper(p.node, false);
+        if (val instanceof Selector && this._getSelectorOutputType(val) === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+        if (val?.type === 'SYMBOL' && this.symbolTypes[val.name] === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+      }
+      if (params[argDef.name] !== undefined) continue;
+
       const consumer = this.consumers[fullType.split('<')[0]];
       if (consumer) {
         const res = await consumer(pool, argDef, { opName, evaluate: evaluateHelper }, null);
@@ -587,6 +607,26 @@ export class JotCompiler {
 
       const type = argDef.type?.toLowerCase() || '';
       const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
+
+      // --- New: Exact Type Match Pass (Selector or Symbol) ---
+      const candidates = this._findCandidates(pool, argDef.name);
+      for (const p of candidates) {
+        const val = await evaluateHelper(p.node, false);
+        if (val instanceof Selector && this._getSelectorOutputType(val) === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+        if (val?.type === 'SYMBOL' && this.symbolTypes[val.name] === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+      }
+      if (params[argDef.name] !== undefined) continue;
+
       const consumer = this.consumers[fullType.split('<')[0]];
       
       if (consumer) {

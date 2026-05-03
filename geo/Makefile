@@ -14,9 +14,10 @@ OBJ_DIR = obj
 INCLUDES = -I. -I./ops -I./core -I./data -I./math -I./algorithms -I./render -I./infra \
            -I../fs/cpp -I../fs/cpp/vendor \
            -I./cgal -I./cgal/boost \
-           -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include
-DEFS = -DCGAL_DISABLE_GMP=1
-LIBS = -lpthread -lcrypto -lssl
+           -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include \
+           -I./cgal/freetype/include
+DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
+LIBS = ./cgal/freetype/build/libfreetype.a -lpthread -lcrypto -lssl
 
 # Library and Binary
 LIB_JOTGEO = $(BIN_DIR)/libjotgeo.a
@@ -45,6 +46,8 @@ $(OPS_BIN): $(DRIVER_OBJ) $(LIB_JOTGEO)
 # Test binaries
 TEST_LOGIC_BIN = $(BIN_DIR)/logic_verification
 TEST_LOGIC_OBJ = $(OBJ_DIR)/logic_verification.o
+TEST_TEXT_BIN = $(BIN_DIR)/text_test
+TEST_TEXT_OBJ = $(OBJ_DIR)/text_test.o
 
 $(OBJ_DIR)/logic_verification.o: test/logic_verification.cpp
 	@mkdir -p $(OBJ_DIR)
@@ -52,6 +55,13 @@ $(OBJ_DIR)/logic_verification.o: test/logic_verification.cpp
 
 $(TEST_LOGIC_BIN): $(TEST_LOGIC_OBJ) $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $(TEST_LOGIC_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
+
+$(OBJ_DIR)/text_test.o: test/text_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(TEST_TEXT_BIN): $(TEST_TEXT_OBJ) $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $(TEST_TEXT_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
 
 # Generic Test Rule
 $(BIN_DIR)/%: $(OBJ_DIR)/%.o $(LIB_JOTGEO)

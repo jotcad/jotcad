@@ -288,8 +288,34 @@ Reduces mesh complexity while preserving sharp features using edge-collapse.
 - **`count`**: Explicit target face count (overrides ratio if > 0).
 - **`threshold`**: Dihedral angle (in turns/tau) used to identify and protect sharp features.
 
+## 12. Typography
 
-## 12. Infinite Planes (Orientations)
+### `Font(url)`
+Downloads and validates a font file (TTF/OTF/WOFF) from a remote URL.
+
+- **`url`**: The full HTTPS/HTTP path to the raw font file.
+- **Security**: Validates file headers (magic numbers) to ensure it is a valid font before ingestion.
+- **VFS Integration**: Fonts are automatically cached by the VFS; subsequent uses of the same URL are instant.
+
+### `Text(text, font, size=10.0)`
+Generates 2D planar geometry (faces) for the specified text string.
+
+- **`text`**: The string of characters to render.
+- **`font`**: Either a `Font()` object or a direct URL string.
+- **`size`**: The height of the text in world units.
+- **Topological Logic**: Uses Parity-based Hole Detection to correctly triangulate characters with negative spaces (like 'A', 'B', 'P', '8').
+- **Bezier Subdivision**: Automatically flattens curves into high-resolution polylines (8 segments per curve).
+
+#### Example
+```js
+// Simple text with default font
+Text("JotCAD", size=20)
+
+// Custom font from URL
+Text("Hello", font="https://example.com/MyFont.ttf", size=50).ez(5)
+```
+
+## 13. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
 - **`Y(offset=0)`**: Infinite plane on the XZ axis (normal +Y).
