@@ -20,6 +20,9 @@
         s = pathOrSelector;
         context = parameters || {};
     } else {
+        if (typeof pathOrSelector === 'string' && !/^[0-9a-f]{64}$/i.test(pathOrSelector)) {
+            throw new Error(`Protocol Violation: readData requires a Selector for paths. Got string: "${pathOrSelector}"`);
+        }
         s = { path: pathOrSelector, parameters: parameters || {} };
     }
 
@@ -55,8 +58,11 @@
   }
 
   async readText(pathOrSelector, parameters, context = {}) {
+    if (typeof pathOrSelector === 'string' && !/^[0-9a-f]{64}$/i.test(pathOrSelector)) {
+        throw new Error(`Protocol Violation: readText requires a Selector for paths. Got string: "${pathOrSelector}"`);
+    }
     const data = await this.readData(pathOrSelector, parameters, context);
-    if (!data) return null;
+    if (data === undefined || data === null) return null;
     if (typeof data === 'string') return data;
     if (data instanceof Uint8Array) return new TextDecoder().decode(data);
     return JSON.stringify(data, null, 2);

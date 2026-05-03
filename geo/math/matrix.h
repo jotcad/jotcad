@@ -14,14 +14,31 @@ typedef CGAL::Aff_transformation_3<EK> Transformation;
 
 struct Matrix {
     Transformation t;
+    std::string s; // The "n/d n/d ..." exact ratio string
 
-    Matrix() : t(CGAL::IDENTITY) {}
-    Matrix(const Transformation& trans) : t(trans) {}
+    Matrix() : t(CGAL::IDENTITY) {
+        update_string();
+    }
+    Matrix(const Transformation& trans) : t(trans) {
+        update_string();
+    }
+    Matrix(const Transformation& trans, const std::string& tf_str) : t(trans), s(tf_str) {}
+
+    void update_string() {
+        std::stringstream ss;
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                ss << t.cartesian(i, j) << " ";
+            }
+        }
+        ss << "0/1 0/1 0/1 " << t.cartesian(3, 3);
+        s = ss.str();
+    }
 
     static Matrix identity() { return Matrix(Transformation(CGAL::IDENTITY)); }
 
-    static Matrix translate(double x, double y, double z) {
-        return Matrix(Transformation(CGAL::TRANSLATION, EK::Vector_3(FT(x), FT(y), FT(z))));
+    static Matrix translate(FT x, FT y, FT z) {
+        return Matrix(Transformation(CGAL::TRANSLATION, EK::Vector_3(x, y, z)));
     }
 
     static Matrix rotationX(double turns) {
@@ -45,51 +62,47 @@ struct Matrix {
         return Matrix(Transformation(cos_alpha, sin_alpha, 0, 0, -sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0, w));
     }
 
-    static Matrix from_vec(const std::vector<std::string>& v) {
-        if (v.size() < 16) return identity();
-        auto parse = [](const std::string& s) {
-            size_t slash = s.find('/');
-            if (slash == std::string::npos) return FT(std::stod(s));
-            std::string n = s.substr(0, slash);
-            std::string d = s.substr(slash + 1);
-            // CGAL FT can be constructed from strings to maintain precision if GMP/Boost Multiprecision is enabled.
-            // For now, use double as fallback for the construction if direct string init isn't available, 
-            // but the identity is already stable because the CID will be based on the string "n/d".
-            return FT(std::stod(n)) / FT(std::stod(d));
-        };
+    static Matrix scale(FT x, FT y, FT z) {
         return Matrix(Transformation(
-            parse(v[0]), parse(v[1]), parse(v[2]), parse(v[3]),
-            parse(v[4]), parse(v[5]), parse(v[6]), parse(v[7]),
-            parse(v[8]), parse(v[9]), parse(v[10]), parse(v[11]),
-            parse(v[15])
+            x, 0, 0, 0,
+            0, y, 0, 0,
+            0, 0, z, 0,
+            1
         ));
     }
 
-    std::vector<std::string> to_vec() const {
-        std::vector<std::string> v(16, "0/1");
-        auto to_ratio = [](const FT& val) {
-            double dval = CGAL::to_double(val);
-            if (dval == 0) return std::string("0/1");
-            long long precision = 1000000000LL;
-            long long n = (long long)std::round(std::abs(dval) * precision);
-            long long d = precision;
-            long long common = std::gcd(n, d);
-            return std::to_string((dval < 0 ? -1 : 1) * (n / common)) + "/" + std::to_string(d / common);
-        };
-        v[0] = to_ratio(t.cartesian(0, 0));
-        v[1] = to_ratio(t.cartesian(0, 1));
-        v[2] = to_ratio(t.cartesian(0, 2));
-        v[3] = to_ratio(t.cartesian(0, 3));
-        v[4] = to_ratio(t.cartesian(1, 0));
-        v[5] = to_ratio(t.cartesian(1, 1));
-        v[6] = to_ratio(t.cartesian(1, 2));
-        v[7] = to_ratio(t.cartesian(1, 3));
-        v[8] = to_ratio(t.cartesian(2, 0));
-        v[9] = to_ratio(t.cartesian(2, 1));
-        v[10] = to_ratio(t.cartesian(2, 2));
-        v[11] = to_ratio(t.cartesian(2, 3));
-        v[15] = to_ratio(t.cartesian(3, 3));
-        return v;
+    static Matrix from_vec(const std::string& tf_str) {
+        std::stringstream ss(tf_str);
+        std::vector<FT> coeffs;
+        FT val;
+        while (ss >> val) {
+            coeffs.push_back(val);
+        }
+        if (coeffs.size() < 16) return identity();
+        return Matrix(Transformation(
+            coeffs[0], coeffs[1], coeffs[2], coeffs[3],
+            coeffs[4], coeffs[5], coeffs[6], coeffs[7],
+            coeffs[8], coeffs[9], coeffs[10], coeffs[11],
+            coeffs[15]
+        ), tf_str);
+    }
+
+    const std::string& to_vec() const {
+        return s;
+    }
+
+    FT determinant() const {
+        // Determinant of the 3x3 linear part
+        FT m00 = t.cartesian(0, 0); FT m01 = t.cartesian(0, 1); FT m02 = t.cartesian(0, 2);
+        FT m10 = t.cartesian(1, 0); FT m11 = t.cartesian(1, 1); FT m12 = t.cartesian(1, 2);
+        FT m20 = t.cartesian(2, 0); FT m21 = t.cartesian(2, 1); FT m22 = t.cartesian(2, 2);
+        return m00 * (m11 * m22 - m12 * m21) - 
+               m01 * (m10 * m22 - m12 * m20) + 
+               m02 * (m10 * m21 - m11 * m20);
+    }
+
+    bool is_reflection() const {
+        return determinant() < 0;
     }
 
     EK::Point_3 transform(const EK::Point_3& p) const {
@@ -100,37 +113,52 @@ struct Matrix {
         return t.transform(p);
     }
 
-    // Creates a matrix that transforms world coordinates into the local space of a plane
-    // where the plane is the XY plane (Z=0).
+    // Creates an EXACT orthogonal matrix that transforms world coordinates into the local space of a plane.
     static Matrix lookAt(const EK::Point_3& origin, const EK::Vector_3& normal) {
-        double nx = CGAL::to_double(normal.x());
-        double ny = CGAL::to_double(normal.y());
-        double nz = CGAL::to_double(normal.z());
-        double len = std::sqrt(nx*nx + ny*ny + nz*nz);
-        nx /= len; ny /= len; nz /= len;
+        // Use an un-normalized but EXACT orthogonal basis.
+        EK::Vector_3 Z = normal;
+        
+        // Find an arbitrary vector that is not parallel to Z
+        EK::Vector_3 arbitrary(1, 0, 0);
+        if (std::abs(CGAL::to_double(Z.x())) > 0.9) {
+            arbitrary = EK::Vector_3(0, 1, 0);
+        }
 
-        double ux = (std::abs(nx) < 0.9) ? 1.0 : 0.0;
-        double uy = (std::abs(nx) < 0.9) ? 0.0 : 1.0;
-        double uz = 0.0;
+        // Exact cross products for orthogonal basis
+        EK::Vector_3 X = CGAL::cross_product(Z, arbitrary);
+        EK::Vector_3 Y = CGAL::cross_product(Z, X);
 
-        // Cross product to find Y axis
-        double vx = ny*uz - nz*uy;
-        double vy = nz*ux - nx*uz;
-        double vz = nx*uy - ny*ux;
-        double vlen = std::sqrt(vx*vx + vy*vy + vz*vz);
-        vx /= vlen; vy /= vlen; vz /= vlen;
-
-        // Cross product to find X axis
-        ux = vy*nz - vz*ny;
-        uy = vz*nx - vx*nz;
-        uz = vx*ny - vy*nx;
-
-        CGAL::Aff_transformation_3<EK> m(
-            FT(ux), FT(uy), FT(uz), FT(origin.x()),
-            FT(vx), FT(vy), FT(vz), FT(origin.y()),
-            FT(nx), FT(ny), FT(nz), FT(origin.z())
+        // Construct the transformation: This matrix takes (1,0,0) to X, (0,1,0) to Y, etc.
+        Transformation m(
+            X.x(), Y.x(), Z.x(), origin.x(),
+            X.y(), Y.y(), Z.y(), origin.y(),
+            X.z(), Y.z(), Z.z(), origin.z()
         );
+        
+        // The lookAt matrix is the INVERSE: it takes world points into this local frame.
         return Matrix(m.inverse());
+    }
+
+    // Creates an EXACT orthogonal matrix where the Z-axis is aligned with the given normal.
+    static Matrix fromNormal(const EK::Point_3& origin, const EK::Vector_3& normal) {
+        EK::Vector_3 Z = normal;
+        
+        // Find an arbitrary vector that is not parallel to Z
+        EK::Vector_3 arbitrary(1, 0, 0);
+        if (std::abs(CGAL::to_double(Z.x())) > 0.9) {
+            arbitrary = EK::Vector_3(0, 1, 0);
+        }
+
+        // Exact cross products for orthogonal basis
+        EK::Vector_3 X = CGAL::cross_product(Z, arbitrary);
+        EK::Vector_3 Y = CGAL::cross_product(Z, X);
+
+        // Construct the transformation: This matrix takes (1,0,0) to X, (0,1,0) to Y, etc.
+        return Matrix(Transformation(
+            X.x(), Y.x(), Z.x(), origin.x(),
+            X.y(), Y.y(), Z.y(), origin.y(),
+            X.z(), Y.z(), Z.z(), origin.z()
+        ));
     }
 
     Matrix inverse() const {

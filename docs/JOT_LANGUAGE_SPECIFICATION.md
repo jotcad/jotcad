@@ -24,9 +24,6 @@ from the actual computation.
 - **Diameter Standard:** Standardize on **Diameter** (Width/Bounding Envelope)
   for all primitives. Diameter is a universal property of every shape and aligns
   with physical measurement tools.
-  - **Normalization:** The engine automatically converts `radius` ($d=2r$) and
-    `apothem` (for hexagons) to `diameter` to ensure deterministic Content-IDs
-    across the mesh.
 - **Angular Turns:** Use **Turns** (Tau) where `1.0` is a full rotation
   ($360^\circ$).
 - **Demand-Driven:** Work is only triggered when a requester performs a `READ`.
@@ -42,351 +39,230 @@ transformation through casing. **Lookups are strictly case-sensitive**:
     constructor unless explicitly registered with that casing.
 - **Operations (camelCase):** Used for methods applied to existing subjects.
   - Examples: `shape.offset(2)`, `shape.rotateX(0.5)`, `shape.extrude(10)`.
-- **Aliases:** Short-form operations also follow camelCase (e.g., `.rx()`,
-  `.sz()`).
 
-### 1.2. Absence of Control Flow
+### 1.2. Type System
+
+All types are normalized to the `jot:` prefix for internal lookup:
+
+- **`jot:number`**: A single scalar value.
+- **`jot:numbers`**: A list/sequence of scalar values.
+- **`jot:shape`**: A single geometric entity (2D or 3D).
+- **`jot:shapes`**: A list/sequence of geometric entities.
+- **`jot:string`**: A UTF-8 string.
+- **`jot:vec2` / `jot:vec3`**: Arrays of numbers.
+- **`jot:interval`**: A pair of numbers `[min, max]`.
+
+### 1.3. Absence of Control Flow
 
 The JotCAD DSL intentionally excludes traditional programming control flow
 structures.
 
 - **No Iteration:** There are no `for` or `while` loops. Iteration is handled
-  implicitly by the **Universal Sequence Principle**. Utility operations like
-  `range()` or `iota()` are unrolled into sequences by the compiler.
-- **No Recursion:** Functions cannot call themselves. The language builds a
-  static, deterministic tree of operations.
-- **No Conditionals:** There are no `if/else` or `switch` expressions. Logic is
-  applied via **Selectors** and **Implicit Mapping** over data sets.
-- **Host-Logic Separation:** Any complex procedural logic (loops, branches,
-  recursion) should be executed in the host environment (e.g., JavaScript) to
-  generate the static JotCAD expression.
+  explicitly by the **Universal Sequence Principle**. Utility operations like
+  `range()` or `iota()` return sequences (arrays) that are passed to operators.
+- **No Recursion:** Functions cannot call themselves.
+- **No Conditionals:** Logic is applied via **Selectors** and **Explicit Mapping** over data sets.
 
-### 1.3. Logical Pass-Throughs (Optimized Aliases)
+### 1.4. Graph-based Terminal Analysis (Leaf Discovery)
 
-Some operations (like `.pdf()` or `.stl()`) perform side-effects but should not
-"pollute" the functional chain of geometric selectors.
+JotCAD avoids manual "passthrough" hacks or side-effect "lifting." Instead, the compiler implements **Graph-based Terminal Analysis**.
 
-- **Alias Assertion:** These operations use `metadata.aliases` to declare that
-  their functional result (`$out`) is logically identical to their input
-  (`$in`).
-- **Optimization Mode (`optimizeAliases: true`):**
-  - The compiler identifies these "Tee" operations and moves them to a separate
-    **Side Demands** collection.
-  - The expression `Box(10).pdf("out.pdf").offset(2)` resolves to a sequence:
-    `[Box(10).offset(2), Box(10).pdf("out.pdf")]`.
-  - **Benefit:** The `offset` selector remains clean and cacheable, as it points
-    directly to the `Box` instead of a PDF wrapper.
-- **Unoptimized Mode (`optimizeAliases: false`):**
-  - The expression resolves to a single nested VFS selector:
-    `op/offset?in=op/pdf?in=shape/box`.
-  - Work is still performed via VFS link-following, but the selector identity is
-    tied to the side-effect.
-- **Deduplication:** Side demands are automatically de-duplicated by their
-  canonical VFS selector to avoid redundant work during complex mapping
-  operations.
+- **Consumption Tracking:** Every time a `Selector` (and its specific output port) is used as an argument to another operator, it is marked as **Consumed**.
+- **Terminal Discovery:** After evaluation, the compiler identifies every `(Selector, Port)` pair that remains **Unconsumed**.
+- **User Presentation:**
+  - Unconsumed ports with type `jot:shape` are routed to the 3D Viewer.
+  - Unconsumed ports with type `file` (e.g., from `.pdf()` or `.stl()`) are routed to the Download List.
+- **Example:** `Box(10).pdf("out.pdf")`
+  - `Box:$out` is consumed by `pdf`.
+  - `pdf:$out` is unconsumed (Shape) -> Viewer.
+  - `pdf:file` is unconsumed (File) -> Download Button.
+
+### 1.5. Multi-Expression Support
+
+The JOT parser supports scripts containing one or more top-level expressions, optionally separated by semicolons or newlines.
+
+```js
+// Two independent terminals
+Box(10)
+Sphere(5)
+
+// Semicolon support
+Box(20); Cylinder(10)
+```
 
 ## 2. The Universal Sequence Principle
 
 In JotCAD, every object is treated as an ordered **Sequence**. This enables
 powerful set-based operations without explicit loops.
 
-### 2.1. Implicit Context Propagation
+### 2.1. Implicit Context Propagation (Subject Propagation)
 
-The JotCAD compiler automatically threads the "Active Subject" through nested
-expressions. This enables extremely concise parametric definitions where the
-coordinate system or parent geometry is inherited implicitly.
+The JotCAD compiler threads the "Active Subject" through method chains and deep
+into argument evaluation.
 
-- **Root Constructor:** `Box()` at the top level has no implicit input.
-- **Method Call:** In `a.Box()`, the subject `a` is automatically passed as the
-  implicit input to `Box`.
-- **Nested Context:** In `a.b(Box())`, the subject `a` is propagated into the
-  arguments of `b`. Thus, `Box()` is evaluated with `a` as its active context.
-- **Explicit Override:** If an operation is provided with an explicit input
-  (e.g., `a.b(Box({ $in: c }))`), the implicit context is ignored for that
-  input slot.
+- **Method Call:** In `a.b()`, the subject `a` is automatically passed as the
+  implicit input to `b`.
+- **Subject Propagation:** The active subject propagates into the evaluation of
+  nested arguments. In `a.b(c())`, the nested `c()` call receives `a` as its
+  ambient subject. This allows higher-order patterns like
+  `Hexagon(30).at(eachCorner(), cut(Triangle(2)))` to work without special modes;
+  `eachCorner()` and `cut()` both inherit the `Hexagon` subject to fulfill their
+  input requirements.
 
-### 2.2. Implicit Mapping
+### 2.2. Typed Consumer Mapping
 
-Any operation applied to a sequence is automatically mapped over its individual
-members.
+The compiler utilizes **Schema-Driven Consumers** to enforce protocol integrity
+between the JavaScript DSL and strict C++ typed kernels.
 
-- `Group(Box(10), Arc(10)).extrude(5)` -> Returns a sequence containing one 3D
-  box and one 3D cylinder.
+- **Consumer Responsibility:** Typed Consumers (e.g., `JotShapesConsumer`) are
+  solely responsible for harvesting values from the argument pool or ambient
+  subject and ensuring they match the required structure.
+- **Plural Structure:** Consumers for plural types (`jot:shapes`, `jot:numbers`)
+  guarantee the result is a JSON array. This satisfies C++ `std::vector`
+  requirements regardless of whether a single item or multiple items were
+  provided in the Jot code.
+- **Deterministic Chaining:** To ensure stable method calls, operators should
+  declare exactly one primary **affiliate** (usually `$in`). Non-affiliate
+  arguments take priority in the argument pool, ensuring the ambient subject is
+  reserved for the primary affiliate slot.
 
-### 2.2. Cartesian Product Generation
+### 2.3. Sequence Handling
 
-If an operation is called with a sequence of arguments, it produces the
-**Cartesian Product** of the subject and those arguments. This is the primary
-mechanism for generating arrays and patterns.
+Operators that accept sequence types (e.g., `jot:numbers`, `jot:shapes`) are responsible for processing the entire array.
 
-- `Box(10).rotateX(0.1, 0.2)` -> Returns a sequence of two boxes, one at 36° and
-  one at 72°.
-- `Arc(10, 20).rotateX(0.5)` -> Returns a sequence of two arcs, both rotated
-  180°.
-
-**Exemptions:** Semantic structural types represented as arrays (like `vec3` or 
-`intv`) and greedily harvested sequences (`nums`, `jots`) are treated as single 
-atomic units and do **not** trigger Cartesian Expansion.
+```jot
+Box(10).rotateZ(range(3)) // range returns [0, 0.1, 0.2], rotateZ handles the array.
+```
 
 ### 2.3. Universal Flattening
 
 The language engine automatically flattens nested arrays encountered in the
-argument stack. This ensures that complex nested structures (like those
-generated by parametric scripts) are merged into a clean, flat sequence flow.
+argument stack. This ensures that complex nested structures are merged into a clean, flat sequence flow.
 
-- `Group([a, b], [c, d], e)` -> Consumed as a single sequence of
-  `(a, b, c, d, e)`.
+- `Group([a, b], [c, d], e)` -> Consumed as a single sequence of `(a, b, c, d, e)`.
+
+### 2.4. Sequence Literals (Range Comprehension)
+
+JotCAD provides a built-in **Sequence Literal** syntax for generating numeric
+ranges. This syntax uses balanced square brackets `[]` and is visually
+distinct from standard arrays.
+
+- **Syntax:** `[ <start>? .. <end>? (by <step> | count <count>)? <inc>? ]`
+- **Defaults:**
+  - `start`: 0
+  - `end`: 1 (Used if `count` is absent or if `count` is present but `by` is absent)
+- **Behaviors:**
+  - **`count N`**: Produces exactly $N$ items. If `by` is absent and `..end` is provided, the step is calculated to fit $N$ items into the range (Exclusive). If both are absent, step defaults to 1.
+  - **`by S`**: Increments by $S$ until the limit is reached.
+  - **`inc`**: Flag to include the endpoint (only applies to `by`-mode ranges).
+
+#### Examples:
+
+| Intent | JotCAD Syntax | Result |
+| :--- | :--- | :--- |
+| **Simple Integer Count** | `[count 5]` | `[0, 1, 2, 3, 4]` |
+| **Linear progression** | `[count 8 by 5]` | `[0, 5, 10, ..., 35]` |
+| **8-way circular array** | `[count 8 by 1/8]` | `[0, 0.125, 0.25, ..., 0.875]` |
+| **Inclusive by Step** | `[0..100 by 20 inc]` | `[0, 20, 40, 60, 80, 100]` |
+| **Descending Range** | `[10..0 by -1 inc]` | `[10, 9, ..., 0]` |
+| **Exclusive Integer** | `[0..5]` | `[0, 1, 2, 3, 4]` (Default step 1) |
+
+This notation integrates directly with the **Universal Sequence Principle**.
+Chaining a method off a range (e.g., `[count 4].Box(10)`) automatically expands
+the operation across the sequence.
 
 ## 3. Sequential Argument Harvesting
 
 Operations use a **Greedy Harvesting** model to pull and transform values from
-the argument stack.
+the argument stack based on the registered schema.
 
 ### 3.1. Singleton Consumers
 
-- **`num`**: First numeric value.
-- **`str`**: First string value.
-- **`bool`**: First boolean value.
-- **`jot`**: First VFS Selector or nested expression.
-- **`vec3`**: First array of 3 numbers `[x, y, z]`.
-- **`intv`**: Normalizes ranges (e.g., `10` -> `[-5, 5]`).
+- **`jot:number`**: First numeric value.
+- **`jot:string`**: First string value.
+- **`jot:bool`**: First boolean value.
+- **`jot:shape`**: First VFS Selector (Shape).
+- **`jot:op<...>`**: Generic Operation Signature for template validation.
 
 ### 3.2. Contiguous Greedy Consumers
 
 These consumers perform **Universal Flattening** on the stack and harvest all 
-matching values starting from the current position until a non-matching value 
-is encountered.
+matching values.
 
-- **`nums`**: Contiguous numbers into an array. Expands range objects `{ge, le, by}`.
-- **`jots`**: Contiguous VFS Selectors and nested expression sequences into an array.
-- **`tags(whitelist)`**: Contiguous symbols/strings into a boolean map.
+- **`jot:numbers`**: Contiguous numbers into an array.
+- **`jot:shapes`**: Contiguous VFS Selectors (Shapes) into an array.
 
 ## 4. Higher-Order Provider Interface (C++)
 
-C++ Operators utilize **Typed Port Injection** to maintain architectural purity. Instead of raw JSON manipulation, operators interact with a formal **Shape** struct.
+C++ Operators utilize **Typed Port Injection** to maintain architectural purity.
 
-### 4.1. The Shape Container
-
-```cpp
-struct Shape {
-    std::optional<std::string> geometry; // CID string (Content Address)
-    std::vector<double> tf;              // 4x4 Affine Matrix
-    nlohmann::json tags;                 // Semantic metadata
-    std::vector<Shape> components;       // Hierarchical items
-};
-```
-
-### 4.2. Port Mapping
-
-The `Processor` automatically bridges the VFS JSON to the `execute()` signature:
-
-- **Input Ports:** Labeled `$in` in schema; resolved via `vfs->read<json>` and injected as `const Shape&` or `const std::vector<Shape>&`.
-- **Output Ports:** Labeled `$out` or custom sink names; injected as mutable references (e.g., `Shape& out`).
-- **Literal Arguments:** Decoded directly into `double`, `std::string`, or `std::vector<double>`.
-
-### 4.3. Standard Operator Lifecycle
-
-1. **Unwrap:** Resolve the nested `geometry` selector within the input Shape.
-2. **Transform:** Apply the `tf` matrix to bring geometry into world-space.
-3. **Execute:** Perform the kernel logic.
-4. **Re-package:** Generate new geometry CIDs and return a fresh Shape with identity `tf`.
+- **Input Ports:** Labeled `$in` in schema; resolved via `vfs->read<json>` and injected as `const Shape&`.
+- **Output Ports:** Labeled `$out` or custom sink names; injected as mutable references.
 
 ## 5. The Workbench Principle (Alignment)
 
-To enable "Blind Coupling" of disparate shapes, the language enforces a standard
-**Fundamental Alignment** for all geometric features.
-
-### 4.1. The Workbench Metaphor
-
-Imagine a machinist's workbench with a reference corner at (0,0,0). When any
-feature (a corner, an edge, a face) is selected as an anchor, the system
-effectively "places it on the workbench" in a normalized orientation before
-applying operations.
-
-### 4.2. Standard Axial Mapping
-
-All logical anchors (`corners`, `edges`, `faces`) are normalized to this frame:
+All logical anchors (`corners`, `edges`, `faces`) are normalized to a standard workbench frame:
 
 - **Origin (0,0,0):** The geometric center or start-point of the feature.
-- **X-Axis:** The **Primary Direction**. (Along the length of an edge, or along
-  the bisector of a corner).
-- **Y-Axis:** The **Secondary Direction**. (Tangent to the path or surface).
-- **Z-Axis:** The **Normal Direction**. (Pointing "Up" or "Out" from the
-  material).
+- **X-Axis:** The **Primary Direction**.
+- **Y-Axis:** The **Secondary Direction**.
+- **Z-Axis:** The **Normal Direction**.
 
-### 4.3. Planar Canonicalization (The `Z0` Contract)
-
-To ensure high-performance 2D operations (Clipper, Arrangement) can operate on 
-arbitrarily oriented shapes in 3D space, JotCAD enforces a **Planar Contract**:
-
-- **Local Z-Invariant:** All 2D geometry (Shapes, Paths) MUST be stored in a 
-  canonical "Local XY" state where all vertex $Z$ coordinates are strictly `0.0`.
-- **The `plane: "Z0"` Tag:** This explicit tag in the Shape JSON signals that 
-  the geometry adheres to the Planar Contract.
-- **Dispatching:** Operators like `.offset()` and `.fill()` check for this tag. 
-  If present, they perform fast 2D calculations on the local coordinates, 
-  ignoring the world transform (`tf`).
-- **World Placement:** The transformation matrix (`tf`) handles the rotation and 
-  translation of the canonical $Z=0$ mesh into its 3D world position.
-
-**Mandate:** 2D constructors (`Arc`, `Triangle`, 2D `Box`) MUST emit the 
-`plane: "Z0"` tag and ensure their internal mesh is $Z=0$.
-
-## 5. Identity and Attributes
-
-The language provides a symmetrical system for managing geometric components and
-their associated data.
-
-### 5.1. Components (Geometric Identity)
-
-- **`Part(name, geometry)`**: Constructor that wraps geometry in a named
-  semantic container.
-- **`.as(name)`**: Shorthand operator to label the subject as a named part.
-- **`.part(name)`**: Selector operator that retrieves a sub-component by its
-  name.
-
-### 5.2. Metadata (Data Attributes)
-
-- **`.set(key, val)`**: Stores an arbitrary primitive value (number, string) in
-  the shape's tag dictionary.
-- **`.get(key, [type])`**: Terminal operator that retrieves a local tag value.
-
-## 6. Interaction Surrogates (Gaps)
-
-These operators define how visible parts and their invisible clearances
-(surrogate tools) interact during boolean operations.
-
-- **`.gap()`**: **Transparent Cutter.** Marks the subject as "cutting space." It
-  carves volume out of other parts in booleans but is invisible in the final
-  output.
-- **`.gapOf(part)`**: **Enclosing Surrogate.** Marks the subject as the
-  clearance volume for the provided `part`.
-- **`.gapBy(volume)`**: **Self-Enclosing Surrogate.** Marks the provided
-  `volume` as the clearance for the subject.
-
-## 7. Spatial Alignment (`.origin()`)
+## 6. Spatial Alignment (`.origin()`)
 
 Every object maintains its **Birth Orientation**. The `.origin()` operator uses
 the inverted transformation matrix to return the shape to its birth frame at
 (0,0,0).
 
-### 7.1. The Anchor Pattern (`.at()`)
+## 7. Boolean Operations
 
-The `.at(anchor, op)` operator allows for localized work relative to a specific
-sub-feature or local origin:
+Boolean operations are foundational for CSG (Constructive Solid Geometry) and
+hierarchical assembly logic in JotCAD. All boolean operators use the
+**Exact Rational Kernel** to ensure zero-drift, topologically perfect results.
 
-1. **At Origin:** Inverts the `anchor`'s matrix to reach its local coordinate
-   system.
-2. **Apply:** Applies the operation `op` at that local origin.
-3. **Project:** Re-applies the `anchor`'s original matrix to the result.
+### 7.1. Basic Operators
+
+- **`cut(tools)`**: Subtraction. Removes the volume (or area) of the `tools`
+  from the subject.
+- **`join(tools)`**: Addition. Unions the subject and `tools`, preserving 
+  assembly hierarchy but merging overlapping geometry.
+- **`clip(tools)`**: Intersection. Keeps only the portion of the subject that
+  is *inside* the `tools`.
+
+### 7.2. Consolidating Fusion (`fuse`)
+
+The `fuse(tools)` operator is a **Flattening Union**. Unlike `join`, which
+preserves hierarchy (parent and child shapes), `fuse` merges all geometry into
+a single, flat `Geometry` object.
+
+- **3D Result**: Overlapping solids are merged into a single manifold shell; 
+  interior faces are deleted.
+- **2D Result**: Coplanar faces are merged into a single area.
+- **Dimensionality**: Fusing a 3D box and a 2D rectangle results in a single 
+  geometry containing both types of primitives.
+
+### 7.3. Cross-Dimensional Logic
+
+JotCAD's boolean engine is **Dimensionally Aware**:
+- **Solid Tool vs. Path**: Trims the path to the part outside the solid.
+- **Solid Tool vs. Points**: Removes points that fall inside the solid volume.
+- **Coplanar Optimization**: If the subject and tool are both flat and lie on
+  the same plane, the engine uses 2D PWH (Polygon With Holes) logic for 
+  maximum performance and exactness.
 
 ## 8. Comprehensive Operation Reference
 
-### 8.1. Constructors (Fundamental Shapes)
+(Standard operators: Arc, Box, Orb, Tri, Part, rotate, move, size, etc.)
 
-| Op                | Arguments          | VFS Path         | Description                     |
-| :---------------- | :----------------- | :--------------- | :------------------------------ |
-| `Arc()`           | `diameter, [opts]` | `shape/arc`      | 2D Circle or Arc.               |
-| `Box()`           | `w, h, [d]`        | `shape/box`      | 2D Rectangle or 3D Box.         |
-| `Orb()`           | `diameter, [opts]` | `shape/orb`      | 3D Sphere.                      |
-| `Tri()`           | (Polymorphic)      | `shape/triangle` | Various triangle forms.         |
-| `Part()`          | `name, jot`        | `op/tag`         | Named semantic container.       |
-| `Pt()`            | `x, y, [z]`        | `shape/point`    | A single vertex coordinate.     |
-| `Origin()`        | -                  | `shape/origin`   | Coordinate [0,0,0].             |
-| `X() / Y() / Z()` | `[num]`            | `shape/axis`     | Points or Planes along an axis. |
+## 8. VFS Providers & Parametric Symbols
 
-### 8.2. Geometric Operators (Selection & Topology)
+### 8.1. Late-Bound Symbols
 
-| Op           | Arguments    | VFS Path     | Description                      |
-| :----------- | :----------- | :----------- | :------------------------------- |
-| `.extrude()` | `height`     | `op/extrude` | 2D to 3D projection.             |
-| `.offset()`  | `radius`     | `op/offset`  | Boundary expansion/contraction.  |
-| `.outline()` | -            | `op/outline` | Extract boundary segments.       |
-| `.points()`  | -            | `op/points`  | Extract all vertices (0D).       |
-| `.corners()` | -            | `op/corners` | Extract oriented corner anchors. |
-| `.edges()`   | -            | `op/edges`   | Extract oriented edge anchors.   |
-| `.loop()`    | -            | `op/loop`    | Close point cloud into path.     |
-| `.fill()`    | -            | `op/fill`    | Surface generation from path.    |
-| `.nth()`     | `...indices` | `op/nth`     | Filter collection by index.      |
-
-### 8.3. Boolean & Assembly Logic
-
-| Op            | Arguments | VFS Path      | Description                         |
-| :------------ | :-------- | :------------ | :---------------------------------- |
-| `.and()`      | `...jots` | `op/group`    | Union (Addition).                   |
-| `.cut()`      | `...jots` | `op/cut`      | Difference (Subtraction).           |
-| `.cutFrom()`  | `target`  | `op/cut`      | Relative Difference.                |
-| `.clip()`     | `...jots` | `op/clip`     | Intersection.                       |
-| `.disjoint()` | -         | `op/disjoint` | Collision-Resolution (No overlaps). |
-| `.gap()`      | -         | `op/tag`      | Set as Transparent Cutter.          |
-| `.gapOf()`    | `part`    | `op/tag`      | Set as surrogate for part.          |
-| `.gapBy()`    | `volume`  | `op/tag`      | Set surrogate for subject.          |
-
-### 8.4. Transformations & Styling
-
-| Primary Op   | Alias   | Arguments  | Description               |
-| :----------- | :------ | :--------- | :------------------------ |
-| `.rotateX()` | `.rx()` | `...turns` | Rotation (Tau-based).     |
-| `.rotateY()` | `.ry()` | `...turns` | Rotation (Tau-based).     |
-| `.rotateZ()` | `.rz()` | `...turns` | Rotation (Tau-based).     |
-| `.move()`    | `.at()` | `x, y, z`  | Absolute Translation.     |
-| `.size()`    | `.sz()` | `factor`   | Scaling.                  |
-| `.color()`   | -       | `str`      | Semantic color tag.       |
-| `.as()`      | -       | `str`      | Assign part name.         |
-| `.set()`     | -       | `key, val` | Store arbitrary metadata. |
-| `.origin()`  | -       | -          | Return to birth frame.    |
-
-### 8.5. Terminal Operations (Exports)
-
-| Op       | Arguments      | VFS Path | Description              |
-| :------- | :------------- | :------- | :----------------------- |
-| `.pdf()` | `name, [opts]` | `op/pdf` | Export to PDF.           |
-| `.stl()` | `name`         | `op/stl` | Export to STL.           |
-| `.png()` | `name, [opts]` | `op/png` | Render snapshot.         |
-| `.bom()` | -              | `op/bom` | Aggregated Part List.    |
-| `.get()` | `key, [type]`  | `op/get` | Retrieve metadata value. |
-
-## 9. Tolerance-Driven Resolution (`zag`)
-
-JotCAD uses the **`zag`** algorithm to determine geometric resolution based on
-physical tolerance.
-
-- **The Goal:** Ensure edges never deviate from the ideal curve by more than a
-  specified `tolerance`.
-- **Calculation:** `zag(diameter, tolerance)` calculates the required number of
-  sides.
-
-## 10. VFS Providers & Parametric Symbols
-
-The language serves as the definition layer for dynamic, parametric VFS
-providers.
-
-### 10.1. Late-Bound Symbols
-
-VFS request parameters are bound as symbols within the evaluation context. This
-enables the creation of parametric "recipes" that remain abstract until a `READ`
-is performed.
+VFS request parameters are bound as symbols within the evaluation context.
 
 - **Syntax:** `Box(10, 10, length)`
-- **Resolution:** When requested via `{ "path": "shape/my_box", "parameters": { "length": 50 } }`, the symbol
-  `length` is automatically resolved to the value `50` during evaluation.
+- **Resolution:** `length` is resolved from the VFS `parameters` object during evaluation.
 
-### 10.2. Semantic Canonicalization (`.spec()`)
+### 8.2. Deterministic Identity (CID)
 
-To ensure **Deterministic Identity (CID)** across the mesh, providers must
-canonicalize diverse input parameters into a single, standard form. The
-`.spec()` operator defines this contract.
-
-- **Aliases:** Maps multiple external keys to a single internal symbol (e.g.,
-  `L` and `len` both map to `length`).
-- **Defaults:** Provides fallback values for missing parameters.
-- **Example:**
-  ```javascript
-  Box(length, width).spec({
-    length: { alias: ['L', 'len'], default: 50 },
-    width: { alias: ['W', 'w'], default: 50 },
-  });
-  ```
-- **Deterministic CID:** The Mesh-VFS calculates the Content-ID based on the
-  **Canonical Selector** (the result of the `.spec()` transformation), ensuring
-  that `?L=50` and `?length=50` resolve to the same data artifact.
+The Mesh-VFS calculates the Content-ID based on the **Canonical Selector**, ensuring that logically equivalent requests share the same address.

@@ -5,8 +5,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 test('C++ CID Consistency (Native)', (t) => {
-  const testDir = path.resolve('geo/test');
-  const cppBin = path.join(testDir, 'bin', 'cid_consistency_test');
+  const __dirname = path.dirname(new URL(import.meta.url).pathname);
+  const cppBin = path.resolve(__dirname, 'bin/cid_consistency_test');
 
   // 1. Run the binary (Assumes built by build.sh or make)
   console.log('[C++ Test] Running CID consistency test...');

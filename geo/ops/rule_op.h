@@ -21,7 +21,7 @@ template <typename P = JotVfsProtocol>
 struct RuleOp : P {
     static constexpr const char* path = "jot/Rule";
 
-    using FT = double;
+    using FT = EK::FT;
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& a, const Shape& b) {
         std::vector<ruled_surfaces::PolygonalChain> p_chains = extract_chains(vfs, a);
@@ -71,11 +71,11 @@ struct RuleOp : P {
 
     static std::vector<ruled_surfaces::PolygonalChain> extract_chains(fs::VFSNode* vfs, const Shape& s) {
         std::vector<ruled_surfaces::PolygonalChain> chains;
-        Matrix tf = Matrix::from_vec(s.tf);
+        Matrix tf = s.tf;
 
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            geo.apply_tf(tf.to_vec());
+            geo.apply_tf(tf);
 
             for (const auto& face : geo.faces) {
                 for (const auto& loop : face.loops) {
@@ -133,7 +133,7 @@ struct RuleOp : P {
         if (chains.empty() && !s.geometry.has_value() && !s.components.empty()) {
             ruled_surfaces::PolygonalChain chain;
             for (const auto& comp : s.components) {
-                Matrix m = tf * Matrix::from_vec(comp.tf);
+                Matrix m = tf * comp.tf;
                 Point_3 p = m.t.transform(Point_3(0, 0, 0));
                 chain.push_back(ruled_surfaces::PointCgal(CGAL::to_double(p.x()), CGAL::to_double(p.y()), CGAL::to_double(p.z())));
             }
@@ -145,8 +145,8 @@ struct RuleOp : P {
 
         for (const auto& comp : s.components) {
             Shape global_comp = comp;
-            Matrix comp_tf = tf * Matrix::from_vec(comp.tf);
-            global_comp.tf = comp_tf.to_vec();
+            Matrix comp_tf = tf * comp.tf;
+            global_comp.tf = comp_tf;
             auto comp_chains = extract_chains(vfs, global_comp);
             chains.insert(chains.end(), comp_chains.begin(), comp_chains.end());
         }
@@ -179,8 +179,8 @@ struct RuleOp : P {
             {"path", "jot/Rule"},
             {"description", "Generates a ruled surface triangulating between two sets of boundary loops, supporting holes."},
             {"arguments", {
-                {"$a", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"$b", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+                {{"name", "$a"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "$b"}, {"type", "jot:shape"}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}}}

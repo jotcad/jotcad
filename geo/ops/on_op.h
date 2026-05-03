@@ -23,11 +23,11 @@ struct OnOp : P {
         if (match) {
             // Conjugation Pattern: 
             // 1. Store the original attachment transform.
-            Matrix attachment = Matrix::from_vec(current.tf);
+            Matrix attachment = current.tf;
             
             // 2. Normalize the component to its local origin.
             Shape local_comp = current;
-            local_comp.tf = Matrix::identity().to_vec();
+            local_comp.tf = Matrix::identity();
             
             // 3. Apply the operation to the normalized component.
             fs::Selector call = op;
@@ -37,7 +37,7 @@ struct OnOp : P {
             // 4. Re-apply the original attachment to the transformed result.
             // (attachment * transformed.tf) preserves any transformation 
             // introduced by 'op' while maintaining the original placement.
-            transformed.tf = (attachment * Matrix::from_vec(transformed.tf)).to_vec();
+            transformed.tf = attachment * transformed.tf;
             
             current = transformed;
             return true; 
@@ -56,9 +56,9 @@ struct OnOp : P {
             {"path", "jot/on"},
             {"description", "Performs targeted in-place replacement of components within the subject hierarchy."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"target", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"op", {{"type", "jot:selector"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "target"}, {"type", "jot:shape"}, {"description", "The component shape to replace"}},
+                {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply to matching components"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

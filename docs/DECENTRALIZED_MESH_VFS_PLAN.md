@@ -163,6 +163,8 @@ implements a **Hop-by-Hop Pub-Sub** system.
 | **Handshake Protocol**   | [DONE] | Symmetric peer discovery and reachability negotiation. |
 | **Mesh Pulse (Pub-Sub)** | [DONE] | Event-driven notifications with long-poll pooling.    |
 | **Formal Links**         | [DONE] | Recursive alias resolution for semantic standardization.|
+| **Reverse Tunneling**    | [DONE] | Encapsulated poll-loop in ReverseConnection.          |
+| **Identity Sovereignty** | [DONE] | Unique session IDs with 409 zombie detection.         |
 
 ## 8. Aspirational Goals
 

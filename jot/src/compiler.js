@@ -1,537 +1,672 @@
-import { normalizeSelector, Selector } from '../../fs/src/vfs_core.js';
+import { normalizeSelector, Selector, getSelectorKey } from '../../fs/src/vfs_core.js';
 
 /**
  * JotCAD Next-Gen Compiler
- *
- * Transforms a generic Jot AST into deterministic VFS selectors
- * using a dynamic schema catalog.
  */
 export class JotCompiler {
   constructor(vfs = null, options = {}) {
     this.operators = new Map();
     this.vfs = vfs;
-    this.options = {
-      optimizeAliases: true,
-      defaultPrefix: 'jot/',
-      ...options,
+    this.options = { optimizeAliases: true, defaultPrefix: 'jot/', ...options };
+    this.symbolTypes = {};
+
+    // Terminal Tracking
+    this.candidates = new Map(); // Group-CID -> Set of ports
+    this.consumed = new Set();   // "Port-CID"
+    this.selectorInstances = new Map(); // Group-CID -> Base Selector
+
+
+    this.consumers = {
+      'jot:number': (p, a, c, s) => this.JotNumberConsumer(p, a, c, s),
+      'jot:numbers': (p, a, c, s) => this.JotNumbersConsumer(p, a, c, s),
+      'jot:string': (p, a, c, s) => this.JotStringConsumer(p, a, c, s),
+      'jot:strings': (p, a, c, s) => this.JotStringsConsumer(p, a, c, s),
+      'jot:boolean': (p, a, c, s) => this.JotBooleanConsumer(p, a, c, s),
+      'jot:shape': (p, a, c, s) => this.JotShapeConsumer(p, a, c, s),
+      'jot:shapes': (p, a, c, s) => this.JotShapesConsumer(p, a, c, s),
+      'jot:flags': (p, a, c, s) => this.JotFlagsConsumer(p, a, c, s),
+      'jot:vec3': (p, a, c, s) => this.JotVec3Consumer(p, a, c, s),
+      'jot:interval': (p, a, c, s) => this.JotIntervalConsumer(p, a, c, s),
+      'jot:operation': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
+      'jot:op': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
+      'jot:selector': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
+      'jot:any': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
+      'any': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
     };
-    this.sideDemands = new Map();
   }
 
-  /**
-   * Register a local (functional) operator that returns data directly.
-   */
-  registerLocal(name, fn) {
-    this.operators.set(name, { local: fn });
+  // --- Type Predicates ---
+
+  _checkSymbol(v, type, argDef, ctx) {
+    const symType = this.symbolTypes[v.name];
+    if (symType && symType !== type) {
+      throw new Error(`Compiler Error: Symbol '${v.name}' (type ${symType}) used in ${type} slot '${argDef.name}' of '${ctx.opName}'`);
+    }
+    return true;
   }
 
-  /**
-   * Register an operator with its schema and path template.
-   */
-  registerOperator(name, config) {
-    this.operators.set(name, config);
-  }
-
-  /**
-   * Evaluate an AST node and return all resulting VFS demands.
-   */
-  async evaluate(node, parameters = {}) {
-    this.sideDemands = new Map();
-    const result = await this._evaluateRecursive(node, parameters, null, true);
-
-    const sideValues = Array.from(this.sideDemands.values());
-    if (sideValues.length === 0) {
-      return result;
+  _getSelectorOutputType(sel) {
+    if (!sel.output) {
+      throw new Error(`Protocol Violation: Cannot determine type of port-less selector for "${sel.path}". Use .withOutput(port) to specify a value source.`);
     }
 
-    const all = [result, ...sideValues].filter(v => v !== null && v !== undefined);
-    const flattened = this.flatten(all);
-    return flattened.length === 1 ? flattened[0] : flattened;
-  }
-
-  async _evaluateRecursive(
-    node,
-    parameters = {},
-    currentSubject = null,
-    isTopLevel = false
-  ) {
-    if (node === null || node === undefined) return null;
-
-    let result;
-    // 1. Handle Sequences (Arrays)
-    if (Array.isArray(node)) {
-      const results = [];
-      for (const n of node)
-        results.push(
-          await this._evaluateRecursive(n, parameters, currentSubject)
-        );
-      result = this.flatten(results);
-    } else if (typeof node !== 'object') {
-      // 2. Handle Primitive Values
-      result = node;
-    } else if (node.type === 'SYMBOL') {
-      if (node.name === 'true') return true;
-      if (node.name === 'false') return false;
-      result =
-        parameters[node.name] !== undefined ? parameters[node.name] : node;
-    } else if (node.type === 'CALL') {
-      // 3. Handle CALL Nodes (e.g., box(10))
-      result = await this._evaluateCall(node, parameters, currentSubject);
-    } else if (node.type === 'METHOD') {
-      // 4. Handle METHOD Nodes (e.g., subject.offset(2))
-      result = await this._evaluateMethod(node, parameters, currentSubject);
-    } else if (node.type === 'ANNOTATED_ARG') {
-      // Handle annotated arguments (Type:Name=Expression)
-      const val = await this._evaluateRecursive(node.value, parameters, currentSubject);
-      return { __annotated: true, typeHint: node.typeHint, nameHint: node.nameHint, value: val };
-    } else if (node.path && node.parameters) {
-      // 5. Handle already-resolved Selectors or Objects
-      const resolvedParams = {};
-      for (const [k, v] of Object.entries(node.parameters)) {
-        resolvedParams[k] = await this._evaluateRecursive(
-          v,
-          parameters,
-          currentSubject
-        );
-      }
-      result = new Selector(node.path, resolvedParams, node.output);
-    } else {
-      result = {};
-      for (const [k, v] of Object.entries(node)) {
-        result[k] = await this._evaluateRecursive(
-          v,
-          parameters,
-          currentSubject
-        );
-      }
+    const schema = this._getSchemaForPath(sel.path);
+    if (!schema) {
+      throw new Error(`Compiler Error: Unregistered operator path "${sel.path}" during type resolution.`);
     }
 
-    return result;
+    const outDef = schema.outputs?.[sel.output];
+    if (!outDef) {
+      throw new Error(`Compiler Error: Port "${sel.output}" not found in schema for "${sel.path}". Available: ${Object.keys(schema.outputs || {}).join(', ')}`);
+    }
+
+    // Normalize: Treat 'shape' as 'jot:shape'
+    const type = outDef.type || 'jot:any';
+    return type.startsWith('jot:') ? type : 'jot:' + type;
   }
 
-  _getInputKey(schema) {
-    const argNames = schema?.arguments ? Object.keys(schema.arguments) : [];
-    if (argNames.includes('$in')) return '$in';
-    if (argNames.includes('source')) return 'source';
-    if (argNames.includes('input')) return 'input';
+  _isJotNumber(v, a, c) {
+    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:number', a, c);
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:number';
+    return typeof v === 'number';
+  }
+
+  _isJotString(v, a, c) {
+    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:string', a, c);
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:string';
+    return typeof v === 'string';
+  }
+
+  _isJotBoolean(v, a, c) {
+    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:boolean', a, c);
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:boolean';
+    return typeof v === 'boolean';
+  }
+
+  _isJotShape(v, a, c) {
+    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:shape', a, c);
+    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:shape';
+    return typeof v === 'object' && v !== null && v.path;
+  }
+
+  _isJotShapeList(v, a, c) {
+    return Array.isArray(v) && v.every(item => this._isJotShape(item, a, c));
+  }
+
+  _isJotVec3(v, a, c) {
+    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:vec3', a, c);
+    return Array.isArray(v) && v.length === 3;
+  }
+
+  _isJotInterval(v, a, c) {
+    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:interval', a, c);
+    return typeof v === 'number' || (Array.isArray(v) && (v.length === 1 || v.length === 2));
+  }
+
+  // --- Terminal Tracking ---
+
+  async _trackSelector(sel) {
+    if (!(sel instanceof Selector)) return;
+    // Protocol Rule: Use base identity (path + parameters) for grouping all its ports
+    const base = new Selector(sel.path, sel.parameters);
+    const key = await getSelectorKey(base);
+    
+    if (!this.candidates.has(key)) {
+      this.candidates.set(key, new Set());
+      this.selectorInstances.set(key, base);
+      
+      const schema = this._getSchemaForPath(sel.path);
+      if (schema?.outputs) {
+        for (const port of Object.keys(schema.outputs)) {
+          this.candidates.get(key).add(port);
+        }
+      } else {
+        this.candidates.get(key).add('$out');
+      }
+      console.log(`[JotCompiler] Tracking: ${sel.path} (CID: ${key.slice(0, 8)}...)`);
+    }
+  }
+
+  async _consumeSelector(sel) {
+    if (!(sel instanceof Selector)) return;
+    // Mark specific Port-CID as consumed
+    const key = await getSelectorKey(sel);
+    this.consumed.add(key);
+    console.log(`[JotCompiler] Consumed: ${sel.path}:${sel.output || '$out'} (CID: ${key.slice(0, 8)}...)`);
+  }
+
+  async _consume(val) {
+    if (val instanceof Selector) {
+      await this._consumeSelector(val);
+    } else if (Array.isArray(val)) {
+      for (const item of val) {
+        if (item instanceof Selector) await this._consumeSelector(item);
+      }
+    }
+  }
+
+  // --- Helper Methods ---
+
+  _findCandidates(pool, name) {
+    return pool.filter(p => !p.consumed && (p.nameHint === name || !p.nameHint));
+  }
+
+  _getSchemaForPath(path) {
+    for (const variants of this.operators.values()) {
+      const found = variants.find(v => v.path === path);
+      if (found) return found.schema;
+    }
     return null;
   }
 
-  _resolveOperator(name) {
-    // 1. Try exact match
-    let op = this.operators.get(name);
-    if (op) return op;
+  // --- Consumers ---
 
-    // 2. Hierarchical resolution: find all candidates
-    const targetPrefix = name + '/';
-    const candidates = [];
-
-    for (const [opKey, config] of this.operators.entries()) {
-      if (opKey.startsWith(targetPrefix)) {
-        candidates.push(config);
-      }
+  async JotNumberConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotNumber(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
+        if (p.nameHint === argDef.name) return undefined;
     }
-    
-    return candidates;
+    if (subject !== null && this._isJotNumber(subject, argDef, ctx)) {
+        return subject;
+    }
+    return undefined;
   }
 
-  async _evaluateCall(node, parameters, currentSubject = null) {
-    let candidates = this._resolveOperator(node.name);
-    if (!candidates || (Array.isArray(candidates) && candidates.length === 0)) {
-      throw new Error(`Unregistered operator: ${node.name}.`);
-    }
+  async JotNumbersConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    const results = [];
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
 
-    // Propagate context to arguments: Box(diameter()) -> Box(subject.diameter())
-    const args = [];
-    for (const arg of node.args)
-      args.push(await this._evaluateRecursive(arg, parameters, currentSubject));
-
-    // Resolve variant based on schema matching if multiple candidates exist
-    let op = null;
-    if (Array.isArray(candidates)) {
-      let bestMatch = null;
-      let maxConstraints = -1;
-      let ambiguous = false;
-
-      for (const candidate of candidates) {
-        const mapped = this.mapArguments(args, candidate.schema, node.name, false);
-        let match = true;
-        let constraintCount = 0;
-        const argDefs = candidate.schema?.arguments || {};
-        
-        for (const [name, config] of Object.entries(argDefs)) {
-          if (config.const !== undefined) {
-            constraintCount++;
-            if (mapped[name] !== config.const) {
-              match = false;
-              break;
+        if (val instanceof Selector) {
+            const type = this._getSelectorOutputType(val);
+            if (type === 'jot:number' || type === 'jot:numbers') {
+                results.push(val);
+                p.consumed = true;
+                continue;
             }
+        }
+
+        if (this._isJotNumber(val, argDef, ctx)) {
+            results.push(val);
+            p.consumed = true;
+        } else if (Array.isArray(val) && val.every(v => this._isJotNumber(v, argDef, ctx))) {
+            results.push(...val);
+            p.consumed = true;
+        } else break;
+    }
+    if (results.length === 0 && subject !== null) {
+        if (this._isJotNumber(subject, argDef, ctx)) {
+            results.push(subject);
+        } else if (Array.isArray(subject) && subject.every(v => this._isJotNumber(v, argDef, ctx))) {
+            results.push(...subject);
+        }
+    }
+    return results.length > 0 ? results : undefined;
+  }
+
+  async JotStringConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotString(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
+        if (p.nameHint === argDef.name) return undefined;
+    }
+    if (subject !== null && this._isJotString(subject, argDef, ctx)) {
+        return subject;
+    }
+    return undefined;
+  }
+
+  async JotStringsConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    const results = [];
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotString(val, argDef, ctx)) {
+            results.push(val);
+            p.consumed = true;
+        } else break;
+    }
+    if (results.length === 0 && subject !== null && this._isJotString(subject, argDef, ctx)) {
+        results.push(subject);
+    }
+    return results.length > 0 ? results : undefined;
+  }
+
+  async JotBooleanConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotBoolean(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
+        if (p.nameHint === argDef.name) return undefined;
+    }
+    if (subject !== null && this._isJotBoolean(subject, argDef, ctx)) {
+        return subject;
+    }
+    return undefined;
+  }
+
+  async JotShapeConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotShape(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
+        if (p.nameHint === argDef.name) return undefined;
+    }
+    if (subject !== null && this._isJotShape(subject, argDef, ctx)) {
+        return subject;
+    }
+    return undefined;
+  }
+
+  async JotShapesConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    const results = [];
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotShape(val, argDef, ctx)) {
+            results.push(val);
+            p.consumed = true;
+        } else if (this._isJotShapeList(val, argDef, ctx)) {
+            results.push(...val);
+            p.consumed = true;
+        } else break;
+    }
+    if (results.length === 0 && subject !== null) {
+        if (this._isJotShape(subject, argDef, ctx)) {
+            results.push(subject);
+        } else if (this._isJotShapeList(subject, argDef, ctx)) {
+            results.push(...subject);
+        }
+    }
+    return results.length > 0 ? results : undefined;
+  }
+
+  async JotFlagsConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    const flags = {};
+    let found = false;
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (typeof val === 'string' || val?.type === 'SYMBOL') {
+            const key = val?.type === 'SYMBOL' ? val.name : val;
+            flags[key] = true;
+            p.consumed = true;
+            found = true;
+        } else break;
+    }
+    return found ? flags : undefined;
+  }
+
+  async JotVec3Consumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotVec3(val, argDef, ctx)) { 
+          p.consumed = true; 
+          return val; 
+        }
+        if (p.nameHint === argDef.name) return undefined;
+    }
+    if (subject !== null && this._isJotVec3(subject, argDef, ctx)) return subject;
+    return undefined;
+  }
+
+  async JotIntervalConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    for (const p of candidates) {
+        const val = await ctx.evaluate(p.node, false);
+        if (this._isJotInterval(val, argDef, ctx)) {
+          p.consumed = true;
+          if (typeof val === 'number') return [-val / 2, val / 2];
+          if (Array.isArray(val) && val.length === 1) return [0, val[0]];
+          return val;
+        }
+        if (p.nameHint === argDef.name) return undefined;
+    }
+    if (subject !== null && this._isJotInterval(subject, argDef, ctx)) {
+        if (typeof subject === 'number') return [-subject / 2, subject / 2];
+        if (Array.isArray(subject) && subject.length === 1) return [0, subject[0]];
+        return subject;
+    }
+    return undefined;
+  }
+
+  async JotAnyConsumer(pool, argDef, ctx, subject) {
+    const candidates = this._findCandidates(pool, argDef.name);
+    if (candidates.length > 0) {
+        const p = candidates[0];
+        const val = await ctx.evaluate(p.node);
+        p.consumed = true;
+        return val;
+    }
+    if (subject !== null) {
+        return subject;
+    }
+    return undefined;
+  }
+
+  // --- Core API ---
+
+  registerOperator(name, config) {
+    if (!config.schema?.arguments || !Array.isArray(config.schema.arguments)) {
+       throw new Error(`Compiler Error: Operator '${name}' must provide an array-based arguments schema.`);
+    }
+
+    const register = (n) => {
+      const list = this.operators.get(n) || [];
+      if (!list.includes(config)) {
+        list.push(config);
+        this.operators.set(n, list);
+      }
+    };
+
+    register(name);
+    register(config.path);
+
+    // Support Base-Name mapping for variants (e.g. Hexagon/full -> Hexagon)
+    if (name.includes('/')) {
+      register(name.split('/')[0]);
+    }
+  }
+
+  async evaluate(ast, parameters = {}, symbolTypes = {}) {
+    this.symbolTypes = symbolTypes;
+    this.candidates.clear();
+    this.consumed.clear();
+    this.selectorInstances.clear();
+
+    try {
+      if (Array.isArray(ast)) {
+        for (const node of ast) {
+          await this._evaluateRecursive(node, parameters, null);
+        }
+      } else {
+        await this._evaluateRecursive(ast, parameters, null);
+      }
+
+      // Collect all terminals
+      const terminals = [];
+      for (const [groupKey, ports] of this.candidates.entries()) {
+        const base = this.selectorInstances.get(groupKey);
+        for (const port of ports) {
+          const term = Selector.fromObject(base).withOutput(port);
+          const portKey = await getSelectorKey(term);
+          if (!this.consumed.has(portKey)) {
+            terminals.push(term);
+            console.log(`[JotCompiler] Terminal discovered: ${term.path}:${port} (CID: ${portKey.slice(0, 8)}...)`);
           }
         }
+      }
+      return terminals;
+    } finally {
+      this.symbolTypes = {};
+    }
+  }
+
+  async _evaluateRecursive(node, parameters, subject) {
+    if (node === null || node === undefined) return node;
+    if (typeof node !== 'object') return node;
+    if (Array.isArray(node)) {
+        const results = [];
+        for (const item of node) results.push(await this._evaluateRecursive(item, parameters, subject));
+        return results;
+    }
+
+    switch (node.type) {
+      case 'CALL': return this._dispatchCall(node, parameters, subject);
+      case 'METHOD': return this._evaluateMethod(node, parameters, subject);
+      case 'SYMBOL': return parameters[node.name] !== undefined ? parameters[node.name] : node;
+      case 'ANNOTATED_ARG': return this._evaluateRecursive(node.value, parameters, subject);
+      case 'RANGE': return this._evaluateRange(node, parameters, subject);
+      default:
+        const res = {};
+        for (const [k, v] of Object.entries(node)) res[k] = await this._evaluateRecursive(v, parameters, subject);
+        return res;
+    }
+  }
+
+  async _evaluateRange(node, parameters, subject) {
+    const start = node.start !== null ? await this._evaluateRecursive(node.start, parameters, subject) : 0;
+    const end = node.end !== null ? await this._evaluateRecursive(node.end, parameters, subject) : null;
+    const step = node.step !== null ? await this._evaluateRecursive(node.step, parameters, subject) : null;
+    const count = node.count !== null ? await this._evaluateRecursive(node.count, parameters, subject) : null;
+
+    if (typeof start !== 'number') {
+        throw new Error(`Compiler Error: Range start must be a number. Got ${typeof start}`);
+    }
+
+    const results = [];
+    
+    if (count !== null) {
+        if (typeof count !== 'number') throw new Error(`Compiler Error: Range count must be a number.`);
         
-        if (match) {
-          if (constraintCount > maxConstraints) {
-            maxConstraints = constraintCount;
-            bestMatch = candidate;
-            ambiguous = false;
-          } else if (constraintCount === maxConstraints) {
-            ambiguous = true;
-          }
+        let actualStep = step;
+        if (actualStep === null) {
+            if (end !== null) {
+                // If end is provided, we divide the distance by count (Exclusive)
+                actualStep = (end - start) / count;
+            } else {
+                // No end, no step -> default to 1
+                actualStep = 1;
+            }
         }
-      }
-      
-      if (ambiguous || !bestMatch) {
-        throw new Error(`Ambiguous or unregistered operator call: ${node.name}. Please provide parameters to disambiguate.`);
-      }
-      op = bestMatch;
+
+        // Generate EXACTLY count items to avoid epsilon drift
+        for (let i = 0; i < count; i++) {
+            results.push(start + i * actualStep);
+        }
     } else {
-      op = candidates;
-    }
+        // Standard 'by' loop (requires either 'end' or a default 'end=1')
+        const actualEnd = end !== null ? end : 1;
+        const actualStep = step !== null ? step : 1;
+        
+        if (actualStep === 0) return [start];
 
-    const path = op.path;
-    const schema = op.schema;
-    const returns = op.returns;
-
-    const inputKey = this._getInputKey(schema);
-    const hasActiveInput = currentSubject !== null && inputKey !== null;
-
-    const resolvedParams = this.mapArguments(
-      args,
-      schema,
-      node.name,
-      hasActiveInput
-    );
-
-    // Apply Implicit Context if operator has a designated input slot
-    if (hasActiveInput && resolvedParams[inputKey] === undefined) {
-      resolvedParams[inputKey] = currentSubject;
-    }
-
-    const result = new Selector(path, resolvedParams).withOutput('$out');
-
-    // Schema-Driven Port Affiliation: 
-    // If the schema specifies an affiliate port for an argument, ensure the target selector uses it.
-    const affiliate = (params, schema) => {
-        if (!schema?.arguments) return;
-        for (const [name, config] of Object.entries(schema.arguments)) {
-            const port = config.affiliate;
-            if (!port || params[name] === undefined) continue;
-
-            const apply = (val) => {
-                if (val instanceof Selector) {
-                    if (!val.output) val.output = port;
-                } else if (Array.isArray(val)) {
-                    val.forEach(item => apply(item));
+        const epsilon = 1e-10;
+        let current = start;
+        const isIncreasing = actualStep >= 0;
+        
+        while (true) {
+            if (isIncreasing) {
+                if (node.inclusiveEnd) {
+                    if (current > actualEnd + epsilon) break;
+                } else {
+                    if (current >= actualEnd - epsilon) break;
                 }
-            };
-            apply(params[name]);
-        }
-    };
-    affiliate(result.parameters, schema);
-
-    if (this.vfs && !Array.isArray(result) && returns?.type === 'array') {
-      const data = await this.vfs.readData(result);
-      if (Array.isArray(data)) return data;
-    }
-
-    return result;
-  }
-
-  async _evaluateMethod(node, parameters, currentSubject = null) {
-    const subject = await this._evaluateRecursive(
-      node.subject,
-      parameters,
-      currentSubject
-    );
-
-    if (Array.isArray(subject)) {
-      const results = [];
-      for (const s of subject) {
-        results.push(
-          await this._evaluateRecursive(
-            { ...node, subject: s },
-            parameters,
-            currentSubject
-          )
-        );
-      }
-      return this.flatten(results);
-    }
-
-    let candidates = this._resolveOperator(node.name);
-
-    if (!candidates || (Array.isArray(candidates) && candidates.length === 0)) {
-      // Dynamic fallback
-      candidates = { path: this.options.defaultPrefix + node.name, schema: {} };
-    }
-
-    // A method provides its subject as context to its arguments ONLY for non-operation types
-    const args = [];
-    for (const arg of node.args)
-      args.push(await this._evaluateRecursive(arg, parameters, null)); // Evaluated naked
-
-    // Resolve variant based on schema matching
-    let op = null;
-    if (Array.isArray(candidates)) {
-      let bestMatch = null;
-      let maxConstraints = -1;
-      let ambiguous = false;
-
-      for (const candidate of candidates) {
-        const mapped = this.mapArguments(args, candidate.schema, node.name, true);
-        let match = true;
-        let constraintCount = 0;
-        const argDefs = candidate.schema?.arguments || {};
-
-        for (const [name, config] of Object.entries(argDefs)) {
-          if (config.const !== undefined) {
-            constraintCount++;
-            if (mapped[name] !== config.const) {
-              match = false;
-              break;
+            } else {
+                if (node.inclusiveEnd) {
+                    if (current < actualEnd - epsilon) break;
+                } else {
+                    if (current <= actualEnd + epsilon) break;
+                }
             }
-          }
-        }
 
-        if (match) {
-          if (constraintCount > maxConstraints) {
-            maxConstraints = constraintCount;
-            bestMatch = candidate;
-            ambiguous = false;
-          } else if (constraintCount === maxConstraints) {
-            ambiguous = true;
-          }
-        }
-      }
-
-      if (ambiguous || !bestMatch) {
-        throw new Error(`Ambiguous or unregistered method call: ${node.name}. Please provide parameters to disambiguate.`);
-      }
-      op = bestMatch;
-    } else {
-      op = candidates;
-    }
-
-    const path = op.path;
-    const schema = op.schema;
-
-    console.log(`[JotCompiler] Mapped arguments for ${node.name}:`, JSON.stringify(args));
-    const resolvedParams = this.mapArguments(args, schema, node.name, true);
-    console.log(`[JotCompiler] Resolved params (pre-binding) for ${node.name}:`, JSON.stringify(resolvedParams));
-
-    // Contextual Binding: Bind subject to any shape/shapes that are missing their primary input
-    const bindSubject = (val) => {
-      if (typeof val === 'object' && val !== null && val.path && val.parameters && val.parameters.$in === undefined) {
-          let op = null;
-          for (const config of this.operators.values()) {
-            if (config.path === val.path) { op = config; break; }
-          }
-          if (!op) op = this._resolveOperator(val.path.startsWith('jot/') ? val.path.slice(4) : val.path);
-
-          const inputKey = this._getInputKey(op?.schema) || '$in';
-          if (inputKey && val.parameters[inputKey] === undefined) {
-            val.parameters[inputKey] = subject;
-          }
-      }
-    };
-
-    const inputKey = this._getInputKey(schema) || '$in';
-    console.log(`[JotCompiler] Method Input Key for ${node.name}: ${inputKey}`);
-
-    for (const [name, val] of Object.entries(resolvedParams)) {
-        if (name === inputKey) continue; // don't bind to the main subject input itself again
-
-        if (typeof val === 'object' && val !== null && val.path) {
-           bindSubject(val);
-        } else if (Array.isArray(val)) {
-           val.forEach(v => {
-             if (typeof v === 'object' && v !== null && v.path) bindSubject(v);
-           });
+            results.push(current);
+            current += actualStep;
+            if (results.length > 10000) break;
         }
     }
 
-    // Map subject to the primary input of the method itself
-    resolvedParams[inputKey] = subject;
-    console.log(`[JotCompiler] Final params for ${node.name}:`, JSON.stringify(resolvedParams));
-    if (node.name === 'and') {
-      resolvedParams.$in = [subject, ...args];
-    }
-
-    const result = new Selector(path, resolvedParams).withOutput('$out');
-
-    const isTee = op?.schema?.metadata?.passthrough === true || op?.metadata?.passthrough === true || op?.metadata?.aliases?.['$out'] === '$in';
-    
-    if (this.options.optimizeAliases && isTee) {
-      console.log(`[JotCompiler] Lifting passthrough operation: ${node.name}`);
-      const results = Array.isArray(result) ? result : [result];
-      for (const r of results) {
-        this.sideDemands.set(JSON.stringify(r), r);
-      }
-      return subject;
-    }
-
-    return result;
+    return results;
   }
 
-  /**
-   * Namespaced Type Matching (jot:number, jot:shape, etc.)
-   */
-  _matchType(val, type, hint = null, context = {}) {
-    if (!type) return true;
-    const t = type.toLowerCase();
-    const { opName, argName } = context;
-    const ctxMsg = opName ? ` (in ${opName}.${argName})` : '';
-
-    // 1. Strict Hint Check: If a hint exists, it MUST match the target type family
-    if (hint) {
-      const h = hint.toLowerCase();
-      if (h === 'op' || h === 'operation') {
-        if (t !== 'jot:operation') return false;
-      } else if (h === 'shape' || h === 'shapes') {
-        if (t !== 'jot:shape' && t !== 'jot:shapes') return false;
-      } else if (h === 'num' || h === 'number' || h === 'n') {
-        if (t !== 'jot:number' && t !== 'jot:numbers') return false;
-      } else if (h === 'str' || h === 'string' || h === 's') {
-        if (t !== 'jot:string' && t !== 'jot:strings') return false;
+  async _evaluateMethod(node, parameters, subject) {
+    const s = await this._evaluateRecursive(node.subject, parameters, subject);
+    
+    // Universal Mapping Principle
+    if (Array.isArray(s)) {
+      const results = [];
+      for (const item of s) {
+        results.push(await this._dispatchCall(node, parameters, item));
       }
+      return results;
     }
 
-    // 2. Structural Matchers (Consume 1)
-    if (t === 'jot:number') return typeof val === 'number';
-    if (t === 'jot:integer') return Number.isInteger(val);
-    if (t === 'jot:string') return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
-    if (t === 'jot:boolean') return typeof val === 'boolean';
-    if (t === 'jot:shape') return typeof val === 'object' && val !== null && val.path;
-    if (t === 'jot:selector') return typeof val === 'object' && val !== null && val.path;
-    if (t === 'jot:operation') return typeof val === 'object' && val !== null && val.path;
-
-    // 3. Plural Matchers (Consume All - matching element-wise)
-    if (t === 'jot:numbers') return typeof val === 'number';
-    if (t === 'jot:strings') return typeof val === 'string' || (typeof val === 'object' && val !== null && val.type === 'SYMBOL');
-    if (t === 'jot:booleans') return typeof val === 'boolean';
-    if (t === 'jot:shapes') return typeof val === 'object' && val !== null && val.path;
-
-    // 4. Legacy / Internal types
-    if (t === 'vec3') return Array.isArray(val) && val.length === 3 && val.every(v => typeof v === 'number');
-    if (t === 'intv') return typeof val === 'number' || (Array.isArray(val) && val.length === 2);
-    if (t === 'array') return Array.isArray(val);
-
-    throw new Error(`Compiler Error: Unknown or unsupported type constraint '${type}'${ctxMsg} encountered during evaluation.`);
+    return await this._dispatchCall(node, parameters, s);
   }
 
-  /**
-   * Map positional and named arguments to property names based on JSON Schema.
-   */
-  mapArguments(args, schema, opName, hasSubject = false) {
-    const parameters = {};
-    const argDefs = schema ? schema.arguments || schema.properties || {} : {};
-    const propNames = Object.keys(argDefs);
+  async _dispatchCall(node, parameters, subject) {
+    const candidates = this._resolveOperator(node.name);
+    if (!candidates || candidates.length === 0) throw new Error(`Compiler Error: Unregistered operator '${node.name}'`);
 
-    // Object Spreading: If a single object is passed, map it directly.
-    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0]) && !args[0].path && !args[0].__annotated) {
-      Object.assign(parameters, args[0]);
-    }
-    
-    // Preparation: Wrap un-annotated args to simplify logic
-    const wrappedArgs = args.map(a => (a && a.__annotated ? a : { value: a }));
-    const unassignedArgs = new Set(wrappedArgs.keys());
-
-    // Phase 1: Named Assignment (Highest Priority)
-    for (let i = 0; i < wrappedArgs.length; i++) {
-       const arg = wrappedArgs[i];
-       if (arg.nameHint && argDefs[arg.nameHint]) {
-          parameters[arg.nameHint] = arg.value;
-          unassignedArgs.delete(i);
-       }
-    }
-
-    // Phase 2 & 3: Type-Aware Positional Sweep
-    let argPointer = 0;
-    let subjectSkipped = !hasSubject;
-
-    for (let i = 0; i < propNames.length; i++) {
-      const name = propNames[i];
-      const config = argDefs[name];
-      const t = config.type ? config.type.toLowerCase() : '';
-
-      // Skip the first 'jot:shape' slot if method call (subject mapping handled by caller)
-      if (!subjectSkipped && (t === 'jot:shape' || t === 'jot:shapes')) {
-        subjectSkipped = true;
+    for (const op of candidates) {
+      try {
+        const pool = node.args.map(a => ({ 
+            node: a, 
+            nameHint: a.type === 'ANNOTATED_ARG' ? a.nameHint : null, 
+            consumed: false 
+        }));
+        const params = await this._satisfySchema(op.schema, pool, parameters, subject, node.name);
+        const port = op.schema.outputs ? Object.keys(op.schema.outputs)[0] : '$out';
+        const sel = new Selector(op.path, params).withOutput(port);
+        await this._trackSelector(sel);
+        return sel;
+      } catch (e) {
+        if (candidates.length === 1) throw e;
         continue;
       }
-
-      // Skip if already assigned by name
-      if (parameters[name] !== undefined) continue;
-
-      // Find the next unassigned argument that matches this slot's type
-      while (argPointer < wrappedArgs.length && !unassignedArgs.has(argPointer)) {
-        argPointer++;
-      }
-
-      if (argPointer >= wrappedArgs.length) continue;
-
-      const arg = wrappedArgs[argPointer];
-      const isGreedy = t.endsWith('s') && t.startsWith('jot:');
-
-      if (isGreedy) {
-        const matching = [];
-        // Greedy consume until we hit a mismatch
-        while (argPointer < wrappedArgs.length) {
-          if (!unassignedArgs.has(argPointer)) { argPointer++; continue; }
-          
-          const a = wrappedArgs[argPointer];
-          if (this._matchType(a.value, t, a.typeHint, { opName, argName: name })) {
-            matching.push(a.value);
-            unassignedArgs.delete(argPointer);
-            argPointer++;
-          } else {
-            break; // Stop plural on mismatch
-          }
-        }
-        if (matching.length > 0) parameters[name] = matching;
-      } else {
-        // Scalar slot: Match 1
-        if (this._matchType(arg.value, t, arg.typeHint, { opName, argName: name })) {
-           parameters[name] = arg.value;
-           unassignedArgs.delete(argPointer);
-           argPointer++;
-        }
-      }
     }
-
-    // Final Validation: Ensure all positional arguments were consumed
-    if (unassignedArgs.size > 0) {
-        const firstIdx = Array.from(unassignedArgs)[0];
-        const val = wrappedArgs[firstIdx].value;
-        const desc = typeof val === 'object' ? (val.path || 'object') : val;
-        throw new Error(`Compiler Error: Could not map argument '${desc}' (at index ${firstIdx}) to any parameter of '${opName}'. Please check the operator's schema.`);
-    }
-
-    // Apply Defaults
-    for (const [name, config] of Object.entries(argDefs)) {
-      if (parameters[name] === undefined && config.default !== undefined) {
-        parameters[name] = config.default;
-      }
-    }
-
-    // Normalizations
-    if (parameters.radius !== undefined) {
-      if (parameters.diameter === undefined) parameters.diameter = parameters.radius * 2;
-      delete parameters.radius;
-    }
-    if (parameters.apothem !== undefined && (opName === 'hexagon' || opName?.includes('hexagon'))) {
-      if (parameters.diameter === undefined) parameters.diameter = (2 * parameters.apothem) / 0.86602540378;
-      delete parameters.apothem;
-    }
-
-    return parameters;
+    throw new Error(`Compiler Error: No variant of '${node.name}' satisfied the provided arguments.`);
   }
 
-  flatten(arr) {
-    return arr.reduce(
-      (acc, val) =>
-        Array.isArray(val) ? acc.concat(this.flatten(val)) : acc.concat(val),
-      []
-    );
+  _resolveOperator(name) {
+    if (this.operators.has(name)) return this.operators.get(name);
+    if (this.operators.has(this.options.defaultPrefix + name)) return this.operators.get(this.options.defaultPrefix + name);
+    return null;
+  }
+
+  async _satisfySchema(schema, pool, parameters, subject, opName) {
+    const params = {}, argList = schema?.arguments || [];
+
+    const evaluateHelper = async (node) => {
+        return this._evaluateRecursive(node, parameters, subject);
+    };
+
+    // PASS 1: Fill Non-Affiliate slots from the Pool
+    for (const argDef of argList) {
+      const isAffiliate = argDef.affiliate && (argDef.affiliate === '$out' || argDef.affiliate === '$in');
+      if (isAffiliate) continue;
+
+      const type = argDef.type?.toLowerCase() || '';
+      const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
+
+      // --- New: Exact Type Match Pass (Selector or Symbol) ---
+      const candidates = this._findCandidates(pool, argDef.name);
+      for (const p of candidates) {
+        const val = await evaluateHelper(p.node, false);
+        if (val instanceof Selector && this._getSelectorOutputType(val) === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+        if (val?.type === 'SYMBOL' && this.symbolTypes[val.name] === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+      }
+      if (params[argDef.name] !== undefined) continue;
+
+      const consumer = this.consumers[fullType.split('<')[0]];
+      if (consumer) {
+        const res = await consumer(pool, argDef, { opName, evaluate: evaluateHelper }, null);
+        if (res !== undefined) {
+          if (argDef.const !== undefined && res !== argDef.const) throw new Error("Const mismatch");
+          params[argDef.name] = res;
+          await this._consume(res);
+        }
+      }
+
+      if (params[argDef.name] === undefined && argDef.default !== undefined) {
+        params[argDef.name] = argDef.default;
+      }
+    }
+
+    // PASS 2: Fill Affiliate slots (Priority: Pool > Subject > Default)
+    for (const argDef of argList) {
+      const isAffiliate = argDef.affiliate && (argDef.affiliate === '$out' || argDef.affiliate === '$in');
+      if (!isAffiliate || params[argDef.name] !== undefined) continue;
+
+      const type = argDef.type?.toLowerCase() || '';
+      const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
+
+      // --- New: Exact Type Match Pass (Selector or Symbol) ---
+      const candidates = this._findCandidates(pool, argDef.name);
+      for (const p of candidates) {
+        const val = await evaluateHelper(p.node, false);
+        if (val instanceof Selector && this._getSelectorOutputType(val) === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+        if (val?.type === 'SYMBOL' && this.symbolTypes[val.name] === fullType) {
+          params[argDef.name] = val;
+          p.consumed = true;
+          await this._consume(val);
+          break;
+        }
+      }
+      if (params[argDef.name] !== undefined) continue;
+
+      const consumer = this.consumers[fullType.split('<')[0]];
+      
+      if (consumer) {
+        // Offer BOTH pool and subject to the consumer
+        const res = await consumer(pool, argDef, { opName, evaluate: evaluateHelper }, subject);
+        if (res !== undefined) {
+          if (argDef.const !== undefined && res !== argDef.const) throw new Error("Const mismatch");
+          params[argDef.name] = res;
+          await this._consume(res);
+          
+          // CRITICAL: If the consumer used the subject, we must clear it.
+          // Since Pass 2 is for affiliates, if the pool didn't change but we got a result,
+          // it must have come from the subject.
+          const poolConsumedBefore = pool.filter(p => p.consumed).length;
+          // (Consumer already updated pool if it used it)
+          if (pool.filter(p => p.consumed).length === poolConsumedBefore) {
+             subject = null;
+          }
+          continue;
+        }
+      }
+
+      // 3. Try Default
+      if (argDef.default !== undefined) {
+        params[argDef.name] = argDef.default;
+        continue;
+      }
+    }
+
+    // FINAL CHECK: Ensure complete schema satisfaction
+    for (const argDef of argList) {
+        if (params[argDef.name] === undefined) {
+            throw new Error(`Compiler Error: Missing required argument '${argDef.name}' for '${opName}'`);
+        }
+    }
+
+    // Positive Violation: Check that all provided arguments were consumed.
+    const unconsumed = pool.find(p => !p.consumed);
+    if (unconsumed) throw new Error(`Compiler Error: Unconsumed argument in '${opName}'`);
+
+    return params;
   }
 }

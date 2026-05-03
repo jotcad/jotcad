@@ -21,9 +21,9 @@ struct PointOp : P {
             {"path", "jot/Point"},
             {"description", "Generates a single point."},
             {"arguments", {
-                {"x", {{"type", "jot:number"}, {"default", 0.0}}},
-                {"y", {{"type", "jot:number"}, {"default", 0.0}}},
-                {"z", {{"type", "jot:number"}, {"default", 0.0}}}
+                {{"name", "x"}, {"type", "jot:number"}, {"default", 0.0}},
+                {{"name", "y"}, {"type", "jot:number"}, {"default", 0.0}},
+                {{"name", "z"}, {"type", "jot:number"}, {"default", 0.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -51,7 +51,7 @@ struct PointsOp : P {
             {"path", "jot/Points"},
             {"description", "Generates a point cloud from a list of coordinates."},
             {"arguments", {
-                {"points", {{"type", "array"}, {"items", {{"type", "array"}, {"items", {{"type", "jot:number"}}}}}}}
+                {{"name", "points"}, {"type", "array"}, {"items", {{"type", "array"}, {"items", {{"type", "jot:number"}}}}}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -78,7 +78,7 @@ struct PointsExtractOp : P {
             {"path", "jot/points"},
             {"description", "Extracts vertices from a shape as a point cloud."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -101,7 +101,7 @@ struct EachPointOp : P {
         for (const auto& v : geo.vertices) {
             Shape p;
             p.tags = {{"type", "point"}};
-            p.tf = Matrix::translate(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)).to_vec();
+            p.tf = Matrix::translate(v.x, v.y, v.z);
             
             // Give each point a terminal geometry (origin) so it's reifiable as a vertex
             Geometry p_geo;
@@ -110,7 +110,6 @@ struct EachPointOp : P {
             
             out.components.push_back(p);
         }
-        
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
@@ -119,7 +118,7 @@ struct EachPointOp : P {
             {"path", "jot/eachPoint"},
             {"description", "Extracts vertices from a shape as individual child components."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

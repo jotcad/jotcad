@@ -25,11 +25,11 @@ struct PngOp : P {
             {"path", "jot/png"},
             {"description", "Generates a PNG thumbnail for the input shape and stores it in the 'file' port."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
-                {"file", {{"type", "mime:png"}, {"description", "The generated PNG thumbnail."}}}
+                {"file", {{"type", "file"}, {"mimeType", "image/png"}, {"description", "The generated PNG thumbnail."}}}
             }}
         };
     }

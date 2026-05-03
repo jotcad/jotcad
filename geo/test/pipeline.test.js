@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import {
   VFS,
   MeshLink,
+  Selector,
   registerVFSRoutes,
   DiskStorage,
 } from '../../fs/src/index.js';
@@ -41,8 +42,8 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
   });
 
   // 1. Start C++ Ops Node (Leaf)
-  console.log('[Test Pipeline] Launching C++ Ops Node...');
-  const opsBin = path.resolve('geo/bin/ops');
+  const __dirname = path.dirname(new URL(import.meta.url).pathname);
+  const opsBin = path.resolve(__dirname, '../bin/ops');
   opsProcess = spawn(opsBin, [PORT_OPS.toString()], {
     env: { ...process.env, PEER_ID: 'pipeline-ops' },
   });
@@ -51,8 +52,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
 
   // 2. Start JS Export Node (Peered with Ops)
   console.log('[Test Pipeline] Launching JS Export Node...');
-  // The service is in the same directory as this test's parent
-  const exportService = path.resolve('geo/export_service.js');
+  const exportService = path.resolve(__dirname, '../export_service.js');
   exportProcess = spawn('node', [exportService], {
     env: {
       ...process.env,
@@ -103,27 +103,10 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
   await t.test(
     'should execute full structured pipeline across multiple language nodes',
     async () => {
-      const pipeline = {
-        path: 'jot/pdf',
-        parameters: {
-          path: filename,
-          $in: {
-            path: 'jot/outline',
-            parameters: {
-              $in: {
-                path: 'jot/offset',
-                parameters: {
-                  diameter: 5.0,
-                  $in: {
-                    path: 'jot/Hexagon/full',
-                    parameters: { diameter: 50 },
-                  },
-                },
-              },
-            },
-          },
-        },
-      };
+      const hex = new Selector('jot/Hexagon/full', { diameter: 50 }).withOutput('$out');
+      const offset = new Selector('jot/offset', { diameter: 5.0, $in: hex }).withOutput('$out');
+      const outline = new Selector('jot/outline', { $in: offset }).withOutput('$out');
+      const pipeline = new Selector('jot/pdf', { path: filename, $in: outline }).withOutput('$out');
 
       console.log('[Test Pipeline] Requesting structured export...');
       const result = await clientVfs.readData(pipeline);
@@ -138,19 +121,20 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
 
   await t.test('should reject underconstrained request to C++ op', async () => {
     clientVfs.addSchema('jot/Hexagon/full', {
-      type: 'object',
-      required: ['diameter'],
-      properties: { diameter: { type: 'number' } },
+      arguments: [
+        { name: 'diameter', type: 'jot:number' }
+      ]
     });
 
     console.log(
       '[Test Pipeline] Requesting underconstrained hexagon (no diameter)...'
     );
     try {
-      await clientVfs.read('jot/Hexagon/full', {});
+      // Use a Selector with empty parameters to trigger 'Missing required parameter'
+      await clientVfs.read(new Selector('jot/Hexagon/full', {}), {});
       assert.fail('Should have been rejected locally');
     } catch (err) {
-      assert.ok(err.message.includes("Missing required parameter"));
+      assert.ok(err.message.includes("Missing required parameter"), `Expected validation error, got: ${err.message}`);
       console.log('[Test Pipeline] Local rejection SUCCESS:', err.message);
     }
   });

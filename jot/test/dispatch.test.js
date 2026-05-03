@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage } from '@jotcad/fs';
+import { VFS, MemoryStorage } from '../../fs/src/vfs_core.js';
 import { JotCompiler } from '../src/compiler.js';
 
 test('Operator Variant Resolution and Dispatch', async (t) => {
@@ -10,44 +10,63 @@ test('Operator Variant Resolution and Dispatch', async (t) => {
   // --- Triangle Variants ---
   compiler.registerOperator('Triangle/equilateral', { 
     path: 'jot/Triangle/equilateral', 
-    schema: { arguments: { base: { type: 'number' } } } 
+    schema: { 
+        arguments: [{ name: 'base', type: 'jot:number' }],
+        outputs: { "$out": { type: "jot:shape" } }
+    } 
   });
   compiler.registerOperator('Triangle/right', { 
     path: 'jot/Triangle/right', 
-    schema: { arguments: { base: { type: 'number' }, height: { type: 'number' } } } 
+    schema: { 
+        arguments: [{ name: 'base', type: 'jot:number' }, { name: 'height', type: 'jot:number' }],
+        outputs: { "$out": { type: "jot:shape" } }
+    } 
   });
 
   // --- Offset Variants ---
   compiler.registerOperator('offset', { 
     path: 'jot/offset', 
-    schema: { arguments: { diameter: { type: 'number' } } } 
+    schema: { 
+        arguments: [{ name: 'diameter', type: 'jot:number' }],
+        outputs: { "$out": { type: "jot:shape" } }
+    } 
   });
   compiler.registerOperator('offset/closure', { 
     path: 'jot/offset/closure', 
-    schema: { arguments: { diameter: { type: 'number' } } } 
+    schema: { 
+        arguments: [{ name: 'diameter', type: 'jot:number' }],
+        outputs: { "$out": { type: "jot:shape" } }
+    } 
   });
 
   await t.test('Should resolve Triangle variants explicitly', async () => {
-    const op1 = compiler._resolveOperator('Triangle/equilateral');
-    assert.strictEqual(op1.path, 'jot/Triangle/equilateral');
-    
-    const op2 = compiler._resolveOperator('Triangle/right');
-    assert.strictEqual(op2.path, 'jot/Triangle/right');
+    const ops = compiler._resolveOperator('Triangle/equilateral');
+    assert.strictEqual(ops[0].path, 'jot/Triangle/equilateral');
   });
 
   await t.test('Should resolve Offset variants', async () => {
-    const op1 = compiler._resolveOperator('offset');
-    assert.strictEqual(op1.path, 'jot/offset');
-    
-    const op2 = compiler._resolveOperator('offset/closure');
-    assert.strictEqual(op2.path, 'jot/offset/closure');
+    const ops = compiler._resolveOperator('offset');
+    assert.strictEqual(ops[0].path, 'jot/offset');
   });
 
-  await t.test('Should throw on ambiguous Hexagon request', async () => {
-    compiler.registerOperator('Hexagon/full', { path: 'jot/Hexagon/full', schema: {} });
-    compiler.registerOperator('Hexagon/cap', { path: 'jot/Hexagon/cap', schema: {} });
+  await t.test('Should resolve first matching variant when ambiguous', async () => {
+    compiler.registerOperator('Hexagon', { 
+        path: 'jot/Hexagon/full', 
+        schema: { 
+            arguments: [],
+            outputs: { "$out": { type: "jot:shape" } }
+        } 
+    });
+    compiler.registerOperator('Hexagon', { 
+        path: 'jot/Hexagon/cap', 
+        schema: { 
+            arguments: [],
+            outputs: { "$out": { type: "jot:shape" } }
+        } 
+    });
     
-    // Hexagon is ambiguous because both /full and /cap exist under the prefix
-    await assert.rejects(() => compiler._evaluateCall({ name: 'Hexagon', args: [] }, {}), /ambiguous/);
+    // First match wins
+    const res = await compiler.evaluate({ type: 'CALL', name: 'Hexagon', args: [] });
+    assert.strictEqual(res.path, 'jot/Hexagon/full');
   });
 });

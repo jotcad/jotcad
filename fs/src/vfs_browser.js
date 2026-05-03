@@ -60,6 +60,20 @@ export class IndexedDBStorage {
     });
   }
 
+  async getMeta(cid) {
+    const db = await this._getDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(this.storeName, 'readonly');
+      const store = transaction.objectStore(this.storeName);
+      const request = store.get(cid);
+      request.onsuccess = () => {
+        const entry = request.result;
+        resolve(entry ? entry.info : null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   async set(cid, stream, info) {
     let blob;
     let bytesReceived = 0;
@@ -126,6 +140,17 @@ export class IndexedDBStorage {
       const transaction = db.transaction(this.storeName, 'readwrite');
       const store = transaction.objectStore(this.storeName);
       const request = store.delete(cid);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async wipe() {
+    const db = await this._getDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(this.storeName, 'readwrite');
+      const store = transaction.objectStore(this.storeName);
+      const request = store.clear();
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });

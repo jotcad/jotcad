@@ -22,13 +22,17 @@ A **Selector** is a recomposable request object containing:
 - `parameters` (e.g., `{"diameter": 30}`)
 - `output` (e.g., `"thumb"` or `"$out"`. If omitted, it targets the operation itself).
 
-- **Formal Addressing Mandate:** 
+- **Formal Identity & Sovereignty Mandate:** 
+  - **Unique Per-Session IDs:** Every mesh participant (including browser tabs) MUST maintain a unique Peer ID. Sharing IDs between concurrent instances (zombies, multiple tabs) is a protocol violation.
+  - **Identity Stability:** Clients SHOULD use `sessionStorage` to maintain ID stability across soft-refreshes (Vite HMR) while ensuring ID uniqueness across distinct tabs.
   - **No Implicit Linkage:** A base Selector (without an `output` port) represents the **Operation Identity**, not its result. It is a terminal error for the VFS to automatically resolve a base selector to its `$out` port.
   - **Explicit Port Targeting:** Callers (Compilers, Tests, other Operators) MUST explicitly append the target port (e.g., `:$out`) to retrieve computational results.
 
 - **Atomic Address:** The Selector is treated as an atomic unit. API methods consume the entire object (e.g., `vfs.read(selector)`). Hashing the *entire* Selector (including the `output` field) yields the CID for that specific artifact. **Deconstructing a Selector into top-level keys in metadata or network messages is strictly prohibited.**
 - **Parametric Standardization:** Parameters MUST be normalized (e.g., radial/apothem parameters to `diameter`) before execution to ensure deterministic CIDs.
-- **Strict readData Protocol:** `vfs.readData(selector)` MUST receive a full Selector instance. Passing plain object literals or split arguments is a protocol violation.
+- **Strict readData Protocol:** `vfs.readData(selector)` and `vfs.writeData(selector, data)` MUST receive a full Selector instance or a 64-character hex CID. Passing plain string paths or object literals is a protocol violation and will throw a **`CRITICAL PROTOCOL VIOLATION`** error. **Coercion is strictly prohibited.**
+- **Secure Context (WebCrypto):** The VFS requires the WebCrypto API for hashing. Because browsers restrict `crypto.subtle` to Secure Contexts, the VFS MUST throw a descriptive error if `crypto.subtle` is undefined, notifying the user that HTTPS is required for non-localhost environments.
+- **Script Evaluation Sniffing:** In `_readResult`, the VFS automatically sniffs for `.jot` file extensions. If a Selector's path ends in `.jot`, the VFS delegates execution to the `jot/eval` provider, passing the original Selector as the evaluation context. This ensures that parameterized scripts are treated as first-class computational artifacts.
 
 ### 1.2 Network Transmission & Hydration
 
@@ -80,9 +84,35 @@ The VFS decouples transport connections from peer identities. On connection esta
 
 All peer interactions are managed through a unified **Connection** abstraction.
 - **ForwardConnection:** Used for `DIRECT` reachability. Delivers publications and requests immediately via outbound HTTP `POST` calls.
-- **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers). Queues publications and uses a **Condition Variable** (C++) or **Listener Pool** (JS) to block `/listen` polls until data is available, ensuring reliable delivery.
+- **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers).
+  - **Encapsulated Responsibility:** The `ReverseConnection` class manages BOTH the server-side listener pool and the client-side active polling loop.
+  - **409 Conflict Protection:** Servers MUST reject a `POST /listen` with a **409 Conflict** if a poll is already active for that peer ID. Clients MUST treat a 409 as a critical failure (zombie process detection).
 
-### 3.3 Browser Compatibility & CORS
+### 3.3 Discovery & Lifecycle (`sys/`)
+
+The VFS uses specialized system paths for mesh management.
+
+- **Topology Updates (`sys/topo`):** Nodes notify neighbors of topology changes.
+  - Payload Type: `TOPOLOGY_UPDATE`
+  - Content: `{ peer: "id", neighbors: { "id": "url" } }`
+- **Schema Discovery (`sys/schema`):** Providers announce their available operators.
+  - Payload Type: `CATALOG_ANNOUNCEMENT`
+  - Content: `{ provider: "id", catalog: { "path": schema } }`
+  - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
+
+### 3.4 Interest Forwarding (`POST /subscribe`)
+
+To support reactive workflows (e.g., interactive boolean previews), nodes propagate "Interests" across the mesh.
+
+- **Subscription Request:** `POST /subscribe`
+  - Content: `{ selector, expiresAt, stack }`
+- **Mesh Painting:** When a node receives a subscription, it MUST:
+  1.  Record the interest locally.
+  2.  Forward the subscription to all OTHER connected peers (omitting any peer in the `stack` to prevent cycles).
+  3.  Immediately `NOTIFY` the subscriber if the data already exists locally.
+- **Clean Cleanup:** Subscriptions expire automatically after `expiresAt`.
+
+### 3.5 Browser Compatibility & CORS
 
 Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sharing (CORS).
 - **Required Headers:** `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`.

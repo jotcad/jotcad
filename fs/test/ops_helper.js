@@ -107,8 +107,20 @@ export async function launchOpsNode(opsPath, port, storageDir) {
   return {
     child,
     stop: async () => {
-      child.kill();
-      await new Promise(resolve => child.on('exit', resolve));
+      if (child.exitCode !== null) return;
+      
+      console.log(`[Ops Helper] Sending SIGTERM to PID ${child.pid}...`);
+      child.kill('SIGTERM');
+      
+      const exitPromise = new Promise(resolve => child.on('exit', resolve));
+      const timeoutPromise = new Promise(resolve => setTimeout(() => {
+          console.warn(`[Ops Helper] PID ${child.pid} did not exit within 5s, sending SIGKILL...`);
+          child.kill('SIGKILL');
+          resolve();
+      }, 5000));
+
+      await Promise.race([exitPromise, timeoutPromise]);
     }
   };
+
 }

@@ -77,7 +77,6 @@ public:
 
     std::string get_cid(const Selector& sel);
     std::vector<uint8_t> get_local(const std::string& cid);
-    std::vector<uint8_t> spy(const VFSRequest& req);
 
     Selector write(const Selector& sel, const json& data);
     Selector write(const Selector& sel, const std::vector<uint8_t>& data);
@@ -108,6 +107,7 @@ public:
         std::string neighbor_id;
         virtual ~Connection() = default;
         virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
+        virtual void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) = 0;
         virtual std::vector<uint8_t> read(const VFSRequest& req) = 0;
         virtual bool is_reverse() const = 0;
     };
@@ -117,6 +117,7 @@ private:
         std::string url;
         ForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
         void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
         std::vector<uint8_t> read(const VFSRequest& req) override;
         bool is_reverse() const override { return false; }
     };
@@ -125,8 +126,10 @@ private:
         std::vector<json> queue;
         std::mutex mutex;
         std::condition_variable cv;
+        bool is_polling = false;
         ReverseConnection(std::string id) { neighbor_id = std::move(id); }
         void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
         std::vector<uint8_t> read(const VFSRequest& req) override;
         bool is_reverse() const override { return true; }
     };

@@ -34,6 +34,9 @@ export class VFS {
 
   registerProvider(pattern, handler, options = {}) {
     console.log(`[VFS ${this.id}] Registering provider for: ${pattern}`);
+    if (options.schema?.arguments && !Array.isArray(options.schema.arguments)) {
+      throw new Error(`VFS Error: Arguments for provider '${pattern}' must be an array to preserve positional order.`);
+    }
     this.providers.set(pattern, handler);
     if (options.schema) {
         this.schemas.set(pattern, options.schema);
@@ -64,6 +67,14 @@ export class VFS {
     this.schemas.set(path, schema);
   }
 
+  getCatalog() {
+    const catalog = {};
+    for (const [path, schema] of this.schemas.entries()) {
+        catalog[path] = schema;
+    }
+    return { catalog, provider: this.id };
+  }
+
   validateSelector(selector) {
     if (typeof selector === 'string' && /^[0-9a-f]{64}$/i.test(selector)) return;
     if (!selector || typeof selector !== 'object') throw new Error('Invalid selector object');
@@ -81,6 +92,39 @@ export class VFS {
     const schema = this.schemas.get(selector.path);
     if (schema) {
       const params = selector.parameters || {};
+
+      // 1. Support new array-based arguments format
+      if (Array.isArray(schema.arguments)) {
+          for (const argDef of schema.arguments) {
+              const val = params[argDef.name];
+              const isMissing = val === undefined || val === null;
+              
+              if (isMissing && argDef.default === undefined) {
+                  // If it's an affiliate, it might be a hole, but for VFS-level 
+                  // fail-fast, we usually expect them to be bound or have a default.
+                  // However, jot/eval might pass holes.
+                  // For now, let's only throw if it's NOT an affiliate and NOT optional.
+                  const isAffiliate = argDef.affiliate === '$in' || argDef.affiliate === '$out';
+                  if (!isAffiliate) {
+                      throw new Error(`Missing required parameter '${argDef.name}'`);
+                  }
+              }
+
+              if (!isMissing) {
+                  if (argDef.type === 'jot:number' && typeof val !== 'number') {
+                      throw new Error(`Invalid parameter type for '${argDef.name}': expected number, got ${typeof val}`);
+                  }
+                  if (argDef.type === 'jot:string' && typeof val !== 'string') {
+                      throw new Error(`Invalid parameter type for '${argDef.name}': expected string, got ${typeof val}`);
+                  }
+                  if (argDef.type === 'jot:boolean' && typeof val !== 'boolean') {
+                      throw new Error(`Invalid parameter type for '${argDef.name}': expected boolean, got ${typeof val}`);
+                  }
+              }
+          }
+      }
+
+      // 2. Support legacy JSON-schema style (used in some tests)
       if (schema.required) {
         for (const req of schema.required) {
             if (params[req] === undefined) {
@@ -201,10 +245,18 @@ export class VFS {
     return { cid };
   }
 
-  async writeData(selector, data, context = {}) { return await this.write(selector, data, context); }
+  async writeData(selector, data, context = {}) { 
+    if (typeof selector === 'string' && !/^[0-9a-f]{64}$/i.test(selector)) {
+        throw new Error(`Protocol Violation: writeData requires a Selector for paths. Got string: "${selector}"`);
+    }
+    return await this.write(selector, data, context); 
+  }
 
   async readData(target, context = {}) {
-    if (!target) throw new Error('VFS.readData: Missing required target (CID or Selector)');
+    if (target === undefined || target === null) throw new Error('VFS.readData: Missing required target (CID or Selector)');
+    if (typeof target === 'string' && !/^[0-9a-f]{64}$/i.test(target)) {
+        throw new Error(`Protocol Violation: readData requires a Selector for paths. Got string: "${target}"`);
+    }
     const result = await this._readResult(target, { ...context, stack: [], resolutionStack: context.resolutionStack || [] });
     if (!result || !result.success) {
         throw new Error(`VFS ReadData Failure: ${result?.error || 'Content not found'}`);
@@ -265,8 +317,11 @@ export class VFS {
   }
 
   async readText(target, context = {}) {
+    if (typeof target === 'string' && !/^[0-9a-f]{64}$/i.test(target)) {
+        throw new Error(`Protocol Violation: readText requires a Selector for paths. Got string: "${target}"`);
+    }
     const data = await this.readData(target, context);
-    if (!data) return null;
+    if (data === undefined || data === null) return null;
     const serializeShape = async (shape) => {
       if (shape.geometry) return await this.readText(shape.geometry, context);
       let out = '';
@@ -324,6 +379,19 @@ export class VFS {
 
     const workPromise = (async () => {
       try {
+        if (s && s.path.endsWith('.jot') && s.path !== 'jot/eval') {
+            const hasParams = Object.keys(s.parameters).length > 0;
+            if (hasParams) {
+                const expression = await this.readText(new Selector(s.path), { ...context, followLinks: false });
+                if (expression) {
+                    return await this._readResult(new Selector('jot/eval', { 
+                        expression, 
+                        params: s.parameters 
+                    }), context);
+                }
+            }
+        }
+
         if (await this.storage.has(targetCID)) {
           const info = await this._getStorageInfo(targetCID);
           if (followLinks && info?.state === 'LINKED' && info?.target) {
@@ -351,7 +419,7 @@ export class VFS {
             }
         }
 
-        if (!resultData && this.mesh && (!isBackflow || s)) {
+        if (resultData === null && this.mesh && (!isBackflow || s)) {
           const meshResponse = await this.mesh.read(s || targetCID, { 
               ...context, 
               stack: nextStack, 
@@ -384,7 +452,7 @@ export class VFS {
             return { success: false, error: 'Backflow' };
         }
 
-        if (resultData) {
+        if (resultData !== null && resultData !== undefined) {
           // If we have a selector, write it properly to its computational CID
           if (s) {
               const { cid } = await this.write(s, resultData, { ...meshInfo, ...context });
@@ -414,7 +482,9 @@ export class VFS {
 
   async _getStorageInfo(key) {
     let info = null;
-    if (typeof this.storage.iterateMeta === 'function') {
+    if (typeof this.storage.getMeta === 'function') {
+      info = await this.storage.getMeta(key);
+    } else if (typeof this.storage.iterateMeta === 'function') {
       for await (const entry of this.storage.iterateMeta()) {
         if (entry.cid === key || entry.info?.cid === key) {
             info = entry.info;
@@ -422,8 +492,14 @@ export class VFS {
         }
       }
     }
-    if (info && info.target && !(info.target instanceof Selector)) {
-        info.target = new Selector(info.target.path, info.target.parameters, info.target.output);
+    
+    if (info) {
+        if (info.target && !(info.target instanceof Selector)) {
+            info.target = Selector.fromObject(info.target);
+        }
+        if (info.selector && !(info.selector instanceof Selector)) {
+            info.selector = Selector.fromObject(info.selector);
+        }
     }
     return info;
   }

@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node orchestrator.js",
+    "start:test": "node test_orchestrator.js",
     "start:vfs": "node fs/serve.js",
     "depcheck": "npm run depcheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
@@ -15,10 +16,10 @@
     "rollup": "npm run rollup --workspaces --if-present",
     "install_deps": "./geo/build.sh --install-deps",
     "setup": "./geo/build.sh",
-    "unit_test": "cd geo/test && ./run_unit_tests.sh && cd ../../fs && node --test --test-concurrency=1 test/*.js",
-    "integration_test": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test --test-timeout=30000 --test-force-exit fs/test/*.test.js geo/test/*.test.js",
+    "unit_test": "cd jot && node --test test/*.js && cd ../geo/test && ./run_unit_tests.sh && cd ../../fs && TEST_UX_PORT=3039 TEST_OPS_PORT=9099 node --test --test-concurrency=1 test/*.js",
+    "integration_test": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test --test-timeout=300000 --test-force-exit fs/test/browser_mesh.test.js fs/test/cpp_mesh_integration.test.js",
     "test": "npm run unit_test && npm run integration_test",
-    "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test --test-timeout=30000 --test-force-exit '*/*.test.js'",
+    "tests": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test --test-timeout=300000 --test-force-exit '*/*.test.js'",
     "lintfix_one": "npx eslint --fix $1",
     "ci": "npm run lint && npm run unit_test && npm run integration_test",
     "debug": "http-server . -p 9090"

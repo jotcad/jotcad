@@ -17,10 +17,13 @@ import {
   updateViewports,
   captureThumbnail,
   renderJotToScene,
+  requestRender,
 } from '../lib/three_utils';
 import { JotNode } from './JotNode';
 import { MeshMap } from './MeshMap';
 import { Viewport } from './Viewport';
+import { CatalogNode } from './CatalogNode';
+import { Console } from './Console';
 import { DynamicUX } from './DynamicUX';
 import * as THREE from 'three';
 import {
@@ -305,7 +308,7 @@ const PathNode = (props) => {
       </Show>
 
       <Show when={isExpanded()}>
-        <div class="w-96 h-auto rounded-xl p-4 flex flex-col text-white bg-blackboard border-2 border-white/10 shadow-2xl">
+        <div class="w-[90vw] md:w-96 h-auto rounded-xl p-3 md:p-4 flex flex-col text-white bg-blackboard border-2 border-white/10 shadow-2xl">
           <div class="flex items-center justify-between border-b border-white/10 pb-2">
             <div class="flex items-center gap-2 relative">
               <StatusBadge
@@ -315,7 +318,7 @@ const PathNode = (props) => {
                 resultCount={props.results.length}
               />
               <Layers size={16} class="opacity-50 text-available" />
-              <span class="text-xs font-black tracking-widest truncate">
+              <span class="text-[10px] md:text-xs font-black tracking-widest truncate max-w-[150px] md:max-w-none">
                 {props.path}
               </span>
             </div>
@@ -327,7 +330,8 @@ const PathNode = (props) => {
             </button>
           </div>
 
-          <div class="w-full h-64 bg-black/40 rounded-lg border border-white/5 overflow-hidden relative group mt-2">
+          <div class="w-full h-48 md:h-64 bg-black/40 rounded-lg border border-white/5 overflow-hidden relative group mt-2">
+
             <Show
               when={
                 shapeData() &&
@@ -509,25 +513,36 @@ const Connection = (props) => {
 export const Canvas = () => {
   const [nodePositions, setNodePositions] = createStore({});
   const [view, setView] = createSignal({ x: 0, y: 0, scale: 1 });
+  const [windowSize, setWindowSize] = createSignal({ 
+    width: window.innerWidth, 
+    height: window.innerHeight,
+    isMobile: window.innerWidth < 768
+  });
+
   let canvasRef;
   let dragRef;
 
   onMount(() => {
     blackboard.start();
-    const renderer = initSharedRenderer();
-    document.body.appendChild(renderer.domElement);
+    initSharedRenderer();
 
-    const animate = () => {
-      updateViewports();
-      requestAnimationFrame(animate);
+    const handleResize = () => {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        isMobile: window.innerWidth < 768
+      });
+      requestRender();
     };
-    animate();
+    window.addEventListener('resize', handleResize);
+    onCleanup(() => window.removeEventListener('resize', handleResize));
 
     interact(dragRef).draggable({
       listeners: {
         move(event) {
           if (event.target === dragRef) {
             setView((v) => ({ ...v, x: v.x + event.dx, y: v.y + event.dy }));
+            requestRender();
           }
         },
       },
@@ -551,6 +566,7 @@ export const Canvas = () => {
     const newY = mouseY - worldY * newScale;
 
     setView({ x: newX, y: newY, scale: newScale });
+    requestRender();
   };
 
   const groupedNodes = createMemo(() => {
@@ -577,22 +593,31 @@ export const Canvas = () => {
 
   createEffect(() => {
     const { paths, agents } = groupedNodes();
+    const { width, isMobile } = windowSize();
 
     Object.keys(paths).forEach((path, i) => {
       if (!nodePositions[path]) {
+        const spacing = isMobile ? 120 : 180;
+        const availableWidth = Math.max(width - (isMobile ? 100 : 450), 200);
+        
         setNodePositions(path, {
-          x: 350 + ((i * 180) % (window.innerWidth - 450)),
-          y: 150 + Math.floor(i / 4) * 180,
+          x: (isMobile ? 50 : 350) + ((i * spacing) % availableWidth),
+          y: (isMobile ? 100 : 150) + Math.floor(i / (isMobile ? 2 : 4)) * spacing,
         });
       }
     });
 
     agents.forEach((agent, i) => {
       if (!nodePositions[agent.cid]) {
-        setNodePositions(agent.cid, { x: 120, y: 120 + i * 120 });
+        setNodePositions(agent.cid, { 
+          x: isMobile ? 40 : 120, 
+          y: (isMobile ? 150 : 120) + i * (isMobile ? 100 : 120) 
+        });
       }
     });
   });
+
+
 
   const handleMove = (id, dx, dy) => {
     const s = untrack(() => view().scale);
@@ -694,7 +719,15 @@ export const Canvas = () => {
 
       <div class="absolute inset-0 z-50 pointer-events-none">
         <div class="pointer-events-auto">
-          <JotNode />
+          <For each={blackboard.openEditors()} by="id">
+            {(editorState) => <JotNode initial={editorState} />}
+          </For>
+        </div>
+        <div class="pointer-events-auto">
+          <CatalogNode />
+        </div>
+        <div class="pointer-events-auto">
+          <Console />
         </div>
       </div>
 
@@ -707,38 +740,20 @@ export const Canvas = () => {
           }`}
         />
         <span class="text-[10px] font-black text-white/70 tracking-widest uppercase">
-          {blackboard.isConnected() ? 'Mesh Online' : 'Mesh Offline'}
+          {blackboard.isConnected() ? `Mesh Online: ${blackboard.peerId}` : 'Mesh Offline'}
         </span>
       </div>
 
-      <div class="absolute bottom-6 left-6 flex flex-col gap-1 pointer-events-none z-50">
-        <div class="text-[10px] font-black text-white/20 tracking-[0.4em]">
+      <div class="absolute bottom-4 left-4 md:bottom-6 md:left-6 flex flex-col gap-1 pointer-events-none z-50">
+        <div class="text-[8px] md:text-[10px] font-black text-white/20 tracking-[0.2em] md:tracking-[0.4em]">
           JotCAD Distributed Blackboard
         </div>
-        <div class="text-[8px] font-mono text-white/10 tracking-widest opacity-50 uppercase text-balance">
+        <div class="hidden md:block text-[8px] font-mono text-white/10 tracking-widest opacity-50 uppercase text-balance">
           Double-click Path [Circle] to view results • Drag background to Pan •
           Wheel to Zoom
         </div>
-
-        {/* Debug Info */}
-        <div class="mt-4 flex flex-col gap-2">
-          <div class="text-[8px] font-mono text-white/20">
-            PEERS: {blackboard.meshTopology().peers?.length || 0}
-          </div>
-          <div class="text-[8px] font-mono text-white/20">
-            SCHEMAS: {Object.keys(blackboard.schemas()).length}
-          </div>
-          <div class="max-w-xs flex flex-wrap gap-1">
-            <For each={Object.entries(blackboard.schemas())}>
-              {([path, s]) => (
-                <div class="text-[6px] px-1 bg-white/5 text-white/30 rounded">
-                  {path.split('/').pop()} ({s._origin?.slice(0, 6)})
-                </div>
-              )}
-            </For>
-          </div>
-        </div>
       </div>
+
     </div>
   );
 };

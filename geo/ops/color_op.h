@@ -19,8 +19,8 @@ struct ColorOp : P {
             {"path", "jot/color"},
             {"description", "Applies a color tag to the input shape."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"description", "The shape to color."}, {"affiliate", "$out"}}},
-                {"color", {{"type", "jot:string"}, {"default", "red"}, {"description", "The color name or CSS hex value."}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The shape to color."}, {"affiliate", "$out"}},
+                {{"name", "color"}, {"type", "jot:string"}, {"default", "red"}, {"description", "The color name or CSS hex value."}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The colored shape."}}}}}
         };

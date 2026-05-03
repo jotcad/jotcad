@@ -27,16 +27,17 @@ void Triangulation::triangulate_face(
         }
     }
 
-    // Domain marking via point-in-polygon check on centroids
+    // Domain marking via point-in-polygon parity check on centroids across ALL loops
     for (auto fit = cdt.finite_faces_begin(); fit != cdt.finite_faces_end(); ++fit) {
         Point_2 center = CGAL::centroid(fit->vertex(0)->point(), fit->vertex(1)->point(), fit->vertex(2)->point());
         bool inside = false;
-        const auto& outer_loop = f.loops[0];
-        for (size_t i = 0, j = outer_loop.size() - 1; i < outer_loop.size(); j = i++) {
-            if (((pts[outer_loop[i]].y > center.y()) != (pts[outer_loop[j]].y > center.y())) &&
-                (center.x() < (pts[outer_loop[j]].x - pts[outer_loop[i]].x) * (center.y() - pts[outer_loop[i]].y) / 
-                 (pts[outer_loop[j]].y - pts[outer_loop[i]].y) + pts[outer_loop[i]].x)) {
-                inside = !inside;
+        for (const auto& loop : f.loops) {
+            for (size_t i = 0, j = loop.size() - 1; i < loop.size(); j = i++) {
+                if (((pts[loop[i]].y > center.y()) != (pts[loop[j]].y > center.y())) &&
+                    (center.x() < (pts[loop[j]].x - pts[loop[i]].x) * (center.y() - pts[loop[i]].y) / 
+                     (pts[loop[j]].y - pts[loop[i]].y) + pts[loop[i]].x)) {
+                    inside = !inside;
+                }
             }
         }
         if (inside) {

@@ -22,8 +22,8 @@ struct GroupOp : P {
             {"path", "jot/group"},
             {"description", "Combines multiple shapes into a single hierarchical group."},
             {"arguments", {
-                {"$in", {{"type", "jot:shape"}, {"description", "The base shape for the group."}, {"affiliate", "$out"}}},
-                {"shapes", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "Additional shapes to group together."}, {"affiliate", "$out"}}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The base shape for the group."}, {"affiliate", "$out"}},
+                {{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "Additional shapes to group together."}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting group shape."}}}}}
         };
@@ -45,7 +45,7 @@ struct GroupPrimitiveOp : P {
             {"path", "jot/Group"},
             {"description", "Creates a new group from a list of shapes."},
             {"arguments", {
-                {"shapes", {{"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}
+                {{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

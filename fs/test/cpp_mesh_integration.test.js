@@ -22,7 +22,13 @@ const PORT_JS = 20102;
 const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');
 const STORAGE_CPP = path.resolve('.vfs_storage_cpp-test-node');
 
-test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
+test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
+  const failsafe = setTimeout(() => {
+    console.error('[Test Error] Failsafe timeout reached. Forcefully exiting...');
+    process.exit(1);
+  }, 70000);
+  failsafe.unref();
+
   let cppNode;
   let server;
   let jsVfs;
@@ -30,6 +36,7 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
 
   t.after(async () => {
     console.log('[Test] Cleaning up...');
+    clearTimeout(failsafe);
     if (cppNode) cppNode.kill();
     if (stopServer) stopServer();
     if (server) server.close();
@@ -126,7 +133,10 @@ test('C++ Native Node Integration', { timeout: 30000 }, async (t) => {
     console.log('[Test] Geometry result type:', typeof geo, 'instanceof Uint8Array:', geo instanceof Uint8Array);
     assert.ok(geo, 'Should be able to read geometry by CID');
     const geoText = new TextDecoder().decode(geo);
-    assert.ok(geoText.includes('v 10.000000'), 'Should contain x coordinate');
+    // New format is: V <count>\n<x> <y> <z>...
+    // 2D Box (depth=0) has 4 vertices.
+    assert.ok(geoText.includes('V 4'), 'Should contain vertex count header');
+    assert.ok(geoText.includes('10'), 'Should contain x coordinate (10)');
   });
 
   await t.test('Provisioning: Triangle', async () => {

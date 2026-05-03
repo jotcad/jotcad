@@ -3,16 +3,18 @@
 ## Architecture & Build
 
 Refer to the root [README.md](./README.md) for core architecture and C++ rebuild
-instructions. All C++ implementations must link against **`-lcrypto`**.
+instructions. All C++ implementations must link against **`-lcrypto`** and **`-lssl`**.
 
 ## Core AI Directives (CRITICAL)
 
 1. **READ BEFORE ACTING:** Before modifying or reasoning about the Virtual File System (VFS), Mesh network, or Geometry Data Models, you MUST read the corresponding specification documents. Do not rely on assumptions.
 2. **CONTRACT CHECK:** Before modifying any file listed in the [Documentation Index](#documentation-index), you MUST state the governing protocol rule to the user to confirm alignment.
+3. **SECURE CONTEXTS (MOBILE):** WebCrypto API (`crypto.subtle`) is RESTRICTED to secure contexts (HTTPS or localhost). For mobile debugging over a network IP, local HTTPS is MANDATORY.
 
 ## Protocol Invariants (TERMINAL RULES)
 
 - **IDENTITY DUALITY (CRITICAL)**: **CID** and **Selector** are top-level alternatives. NEVER wrap a CID in a "fake" Selector. Requests must explicitly signal whether they target a content-hash (CID) or a computational-recipe (Selector).
+- **STRICT SELECTOR ENFORCEMENT**: `normalizeSelector` is a non-coercive type guard. It MUST throw a fatal error if passed a raw object. Hydration MUST happen at the boundary (REST/UX).
 - **STABLE HASHING**: The CID of a Selector is `hash(Safe-JCB(Selector_JSON))`. NEVER alter the Selector's structure (keys/paths) during hashing. Standardization (normalization) must happen *before* the Selector reaches the VFS.
 - **IMMUTABILITY**: Input artifacts are strictly read-only. Transformation results must be written as NEW anonymous geometry CIDs.
 - **VERTICAL DEFAULT**: Standard camera/rendering is top-down vertical (`ax=0, ay=0`).
@@ -31,6 +33,7 @@ instructions. All C++ implementations must link against **`-lcrypto`**.
 | `fs/cpp/selector.h` | `docs/VFS_SPECIFICATION.md` | Universal Addressing |
 | `geo/impl/processor.h` | `docs/JOT_LANGUAGE_SPECIFICATION.md` | Port Injection & Typed Execution |
 | `geo/ops/*.h` | `docs/DYNAMIC_OPERATIONS.md` | Kernel Logic & Tolerances |
+| `docs/TODO_SIMPLIFICATION.md` | `legacy/` | Edge-Collapse & Garland-Heckbert |
 
 ## Universal Protocol Rules
 

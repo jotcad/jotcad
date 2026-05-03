@@ -2,13 +2,20 @@
 #include "processor.h"
 #include <iostream>
 #include <thread>
+#include <cstdlib>
 
 namespace jotcad { namespace geo { void register_all_ops(fs::VFSNode* vfs); } }
 
 using namespace jotcad::geo;
 
 int main(int argc, char** argv) {
-    int port = (argc > 1) ? std::stoi(argv[1]) : 9091;
+    int port = 9091;
+    if (const char* env_p = std::getenv("PORT")) {
+        port = std::stoi(env_p);
+    } else if (argc > 1) {
+        port = std::stoi(argv[1]);
+    }
+
     fs::VFSNode::Config config;
     config.id = "geo-ops-node";
     config.port = port;

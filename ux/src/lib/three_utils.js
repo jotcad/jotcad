@@ -4,7 +4,17 @@ import earcut from 'earcut';
 import { ratioToNumber } from './ft.js';
 
 let renderer = null;
-const viewports = new Map(); // id -> {canvas, scene, camera}
+let renderRequested = false;
+const viewports = new Map(); // id -> {canvas, scene, camera, controls, needsUpdate}
+
+export function requestRender() {
+  renderRequested = true;
+}
+
+function renderLoop() {
+  updateViewports();
+  requestAnimationFrame(renderLoop);
+}
 
 /**
  * Decodes the custom JotCAD Geometry text format.
@@ -25,69 +35,86 @@ export const decodeGeometry = (text) => {
     faces = [];
   if (!text) return { vertices, points, triangles, segments, faces };
 
-  for (const line of text.split('\n')) {
-    const pieces = line.trim().split(/\s+/);
-    if (pieces.length === 0) continue;
-    const code = pieces.shift();
-    if (!code) continue;
+  const lines = text.split('\n');
+  let i = 0;
 
-    switch (code) {
-      case 'v':
-        // JOT format: v <inexact_x> <inexact_y> <inexact_z> [<exact_x> <exact_y> <exact_z>]
-        // JS always uses the first triplet (inexact) for visualization.
-        if (pieces.length >= 3) {
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+    
+    const pieces = line.split(/\s+/);
+    const code = pieces.shift();
+    
+    if (code === 'V') {
+      const count = parseInt(pieces[0]);
+      i++;
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const vLine = lines[i].trim().split(/\s+/);
+        if (vLine.length >= 3) {
           vertices.push([
-            parseFloat(pieces[0]),
-            parseFloat(pieces[1]),
-            parseFloat(pieces[2]),
+            ratioToNumber(vLine[0]),
+            ratioToNumber(vLine[1]),
+            ratioToNumber(vLine[2]),
           ]);
         }
-        break;
-      case 'p':
-        for (const p of pieces) {
-          const idx = parseInt(p);
+      }
+    } else if (code === 'F') {
+      const count = parseInt(pieces[0]);
+      i++;
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const fLine = lines[i].trim().split(/\s+/);
+        if (fLine.length === 0) continue;
+        const numLoops = parseInt(fLine.shift() || '1');
+        for (let l = 0; l < numLoops; l++) {
+           const loopLen = parseInt(fLine.shift() || '0');
+           const loop = [];
+           for (let k = 0; k < loopLen; k++) {
+              const idx = parseInt(fLine.shift() || '-1');
+              if (!isNaN(idx) && idx >= 0) loop.push(idx);
+           }
+           if (loop.length > 0) {
+              if (l === 0) faces.push([loop]);
+              else faces.at(-1).push(loop);
+           }
+        }
+      }
+    } else if (code === 'P') {
+      const count = parseInt(pieces[0]);
+      i++;
+      if (count > 0 && i < lines.length) {
+        const pLine = lines[i].trim().split(/\s+/);
+        for (let idxStr of pLine) {
+          const idx = parseInt(idxStr);
           if (!isNaN(idx)) points.push(idx);
         }
-        break;
-      case 's':
-        for (let i = 0; i + 1 < pieces.length; i += 2) {
-          segments.push([
-            parseInt(pieces[i]),
-            parseInt(pieces[i+1])
-          ]);
-        }
-        break;
-      case 't':
-        for (let i = 0; i + 2 < pieces.length; i += 3) {
-          triangles.push([
-            parseInt(pieces[i]),
-            parseInt(pieces[i+1]),
-            parseInt(pieces[i+2]),
-          ]);
-        }
-        break;
-      case 'f': {
-        const loop = [];
-        for (const p of pieces) {
-          const idx = parseInt(p);
-          if (!isNaN(idx)) loop.push(idx);
-        }
-        if (loop.length > 0) faces.push([loop]);
-        break;
+        i++;
       }
-      case 'h': {
-        const loop = [];
-        for (const p of pieces) {
-          const idx = parseInt(p);
-          if (!isNaN(idx)) loop.push(idx);
+    }
+ else if (code === 'S') {
+      const count = parseInt(pieces[0]);
+      i++;
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const sLine = lines[i].trim().split(/\s+/);
+        if (sLine.length >= 2) {
+          segments.push([parseInt(sLine[0]), parseInt(sLine[1])]);
         }
-        if (faces.length > 0 && loop.length > 0) faces.at(-1).push(loop);
-        break;
       }
+    } else if (code === 'T') {
+      const count = parseInt(pieces[0]);
+      i++;
+      for (let j = 0; j < count && i < lines.length; j++, i++) {
+        const tLine = lines[i].trim().split(/\s+/);
+        if (tLine.length >= 3) {
+          triangles.push([parseInt(tLine[0]), parseInt(tLine[1]), parseInt(tLine[2])]);
+        }
+      }
+    } else {
+      i++;
     }
   }
   return { vertices, points, triangles, segments, faces };
 };
+
 
 const identity = new THREE.Matrix4();
 
@@ -158,7 +185,10 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
             g.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
             const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
                 color: shapeColor,
-                side: THREE.DoubleSide 
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 4,
+                polygonOffsetUnits: 4
             }));
             mesh.applyMatrix4(worldMat);
             scene.add(mesh);
@@ -170,12 +200,18 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           const pos = [];
           for (const seg of segments) {
             const v0 = vertices[seg[0]], v1 = vertices[seg[1]];
-            if (v0 && v1) pos.push(...v0, ...v1);
+            if (v0 && v1) {
+              pos.push(...v0, ...v1);
+            }
           }
           if (pos.length > 0) {
             const g = new THREE.BufferGeometry();
             g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: shapeColor }));
+            // Use the shape color directly for edges
+            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ 
+              color: shapeColor,
+              linewidth: 1
+            }));
             line.applyMatrix4(worldMat);
             scene.add(line);
           }
@@ -224,8 +260,12 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           
           const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
               color: shapeColor,
-              side: THREE.DoubleSide 
+              side: THREE.DoubleSide,
+              polygonOffset: true,
+              polygonOffsetFactor: 4,
+              polygonOffsetUnits: 4
           }));
+
           mesh.applyMatrix4(worldMat);
           scene.add(mesh);
         }
@@ -241,11 +281,13 @@ export function initSharedRenderer() {
   renderer = new THREE.WebGLRenderer({ 
     antialias: true, 
     alpha: true,
-    preserveDrawingBuffer: true
+    preserveDrawingBuffer: true,
+    powerPreference: "high-performance"
   });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
+  renderer.autoClear = false;
 
   renderer.domElement.style.position = 'fixed';
   renderer.domElement.style.top = '0';
@@ -257,25 +299,49 @@ export function initSharedRenderer() {
   renderer.domElement.style.margin = '0';
   renderer.domElement.style.padding = '0';
 
+  if (typeof document !== 'undefined') {
+    document.body.appendChild(renderer.domElement);
+  }
+
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
+    requestRender();
   });
+
+  // Start the global render loop
+  requestAnimationFrame(renderLoop);
 
   return renderer;
 }
 
-export function registerViewport(id, canvas, scene, camera) {
-  viewports.set(id, { canvas, scene, camera });
+export function registerViewport(id, canvas, scene, camera, controls) {
+  viewports.set(id, { canvas, scene, camera, controls, needsUpdate: true });
+  requestRender();
   return () => viewports.delete(id);
 }
 
 export function unregisterViewport(id) {
   viewports.delete(id);
+  requestRender();
 }
 
 export function updateViewports() {
-  if (!renderer) initSharedRenderer();
   if (!renderer) return;
+
+  let shouldRender = renderRequested;
+  
+  viewports.forEach(vp => {
+    if (vp.controls && vp.controls.update()) {
+      shouldRender = true;
+    }
+    if (vp.needsUpdate) {
+      shouldRender = true;
+      vp.needsUpdate = false;
+    }
+  });
+
+  if (!shouldRender) return;
+  renderRequested = false;
 
   renderer.setClearColor(0x000000, 0);
   renderer.setScissorTest(false);
@@ -287,7 +353,6 @@ export function updateViewports() {
     const rect = vp.canvas.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > window.innerHeight) return;
 
-    // Use logical pixels for setViewport/setScissor when setPixelRatio is active
     const width = rect.width;
     const height = rect.height;
     const left = rect.left;
@@ -296,10 +361,7 @@ export function updateViewports() {
     renderer.setViewport(left, bottom, width, height);
     renderer.setScissor(left, bottom, width, height);
     
-    if (vp.scene.background) {
-      renderer.setClearColor(vp.scene.background, 1.0);
-      renderer.clear();
-    }
+    renderer.clear(true, true, true);
 
     vp.camera.aspect = width / height;
     vp.camera.updateProjectionMatrix();

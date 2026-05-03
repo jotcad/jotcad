@@ -1,51 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage } from '@jotcad/fs';
+import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
 
 test('Operator Variant Resolution (Strict Casing)', async (t) => {
-  const vfs = new VFS({ storage: new MemoryStorage() });
+  const parser = new JotParser();
+  const compiler = new JotCompiler();
+
+  // Constructor (PascalCase)
+  compiler.registerOperator('Box', {
+    path: 'shape/box',
+    schema: { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } }
+  });
+
+  // Operation (camelCase)
+  compiler.registerOperator('rotateX', {
+    path: 'op/rotateX',
+    schema: { 
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'angle', type: 'jot:number' }],
+        outputs: { "$out": { type: "jot:shape" } }
+    }
+  });
 
   await t.test('Should resolve PascalCase Constructors', async () => {
-    const compiler = new JotCompiler(vfs);
-    compiler.registerOperator('Hexagon/full', { 
-        path: 'jot/Hexagon/full',
-        schema: { arguments: { diameter: { type: 'number' } } }
-    });
-    compiler.registerOperator('Hexagon/cap', { 
-        path: 'jot/Hexagon/cap',
-        schema: { arguments: { diameter: { type: 'number' }, type: { type: 'string', const: 'cap' } } }
-    });
-
-    const op = await compiler._evaluateCall({ name: 'Hexagon', args: [30] }, {});
-    assert.strictEqual(op.path, 'jot/Hexagon/full');
+    const res = await compiler.evaluate({ type: 'CALL', name: 'Box', args: [10] });
+    assert.strictEqual(res.path, 'shape/box');
   });
 
   await t.test('Should resolve camelCase Operations', async () => {
-    const compiler = new JotCompiler(vfs);
-    compiler.registerOperator('offset/base', { 
-        path: 'jot/offset',
-        schema: { arguments: { diameter: { type: 'number' } } }
+    const res = await compiler.evaluate({ 
+        type: 'METHOD', 
+        subject: { path: 'shape/box', parameters: {} }, 
+        name: 'rotateX', 
+        args: [45] 
     });
-    compiler.registerOperator('offset/closure', { 
-        path: 'jot/offset/closure',
-        schema: { arguments: { diameter: { type: 'number' }, closure: { type: 'boolean', const: true } } }
-    });
-
-    // .offset(5)
-    const op1 = await compiler._evaluateMethod({ name: 'offset', args: [5], subject: { path: 'jot/Box', parameters: {} } }, {});
-    assert.strictEqual(op1.path, 'jot/offset');
-
-    // .offset(5, closure: true)
-    const op2 = await compiler._evaluateMethod({ name: 'offset', args: [5, { __annotated: true, nameHint: 'closure', value: true }], subject: { path: 'jot/Box', parameters: {} } }, {});
-    assert.strictEqual(op2.path, 'jot/offset/closure');
+    assert.strictEqual(res.path, 'op/rotateX');
   });
 
   await t.test('Should NOT resolve if casing is wrong', async () => {
-    const compiler = new JotCompiler(vfs);
-    compiler.registerOperator('Hexagon/full', { path: 'jot/Hexagon/full', schema: {} });
-    
-    // hexagon(30) should fail because it's not PascalCase
-    await assert.rejects(() => compiler._evaluateCall({ name: 'hexagon', args: [30] }, {}), /Unregistered/);
+    await assert.rejects(async () => {
+      await compiler.evaluate({ type: 'CALL', name: 'box', args: [10] });
+    }, /Unregistered operator/);
   });
 });

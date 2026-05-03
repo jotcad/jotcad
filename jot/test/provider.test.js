@@ -1,6 +1,6 @@
 import test from 'node:test';
-import assert from 'node:assert';
-import { VFS, MemoryStorage, WebReadableStream } from '@jotcad/fs';
+import assert from 'node:assert/strict';
+import { VFS, MemoryStorage, WebReadableStream, Selector } from '@jotcad/fs';
 import { registerJotProvider } from '../src/provider.js';
 import { JotCompiler } from '../src/compiler.js';
 
@@ -9,15 +9,48 @@ test('JotCAD VFS Provider: Integration', async (t) => {
   const compiler = new JotCompiler(vfs);
   registerJotProvider(vfs, { compiler });
 
-  // Register mock schemas with the compiler
-  compiler.registerOperator('box', { path: 'shape/box', schema: { arguments: { width: { type: 'jot:number' } } } });
-  compiler.registerOperator('rx', { path: 'op/rotateX', schema: { arguments: { source: { type: 'jot:shape' }, turns: { type: 'jot:number' } } } });
-  compiler.registerOperator('A', { path: 'op/A', schema: { arguments: { value: { type: 'jot:number' } } } });
-  compiler.registerOperator('B', { path: 'op/B', schema: { arguments: { $in: { type: 'jot:shape' }, arg: { type: 'any' } } } });
-  compiler.registerOperator('C', { path: 'op/C', schema: { arguments: { $in: { type: 'jot:shape' }, arg: { type: 'any' } } } });
+  // Register all mock schemas used in the tests
+  const baseOutputs = { "$out": { type: "jot:shape" } };
+  const anyOutputs = { "$out": { type: "jot:any" } };
 
-  // Register a mock shape provider
-  vfs.registerProvider('shape/box', async (v, selector) => {
+  compiler.registerOperator('box', { 
+    path: 'jot/box', 
+    schema: { 
+        arguments: [{ name: 'width', type: 'jot:number' }],
+        outputs: baseOutputs
+    } 
+  });
+  compiler.registerOperator('rx', { 
+    path: 'jot/rotateX', 
+    schema: { 
+        arguments: [{ name: 'source', type: 'jot:shape', affiliate: '$out' }, { name: 'turns', type: 'jot:number' }],
+        outputs: baseOutputs
+    } 
+  });
+  compiler.registerOperator('A', { 
+    path: 'jot/A', 
+    schema: { 
+        arguments: [{ name: 'value', type: 'jot:number' }],
+        outputs: baseOutputs
+    } 
+  });
+  compiler.registerOperator('B', { 
+    path: 'jot/B', 
+    schema: { 
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'arg', type: 'jot:any' }],
+        outputs: baseOutputs
+    } 
+  });
+  compiler.registerOperator('C', { 
+    path: 'jot/C', 
+    schema: { 
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'arg', type: 'jot:any' }],
+        outputs: baseOutputs
+    } 
+  });
+
+  // VFS-level provider registration
+  vfs.registerProvider('jot/box', async (v, selector) => {
     const { width = 0 } = selector.parameters;
     const bytes = new TextEncoder().encode(`Box of size ${width}`);
     return new WebReadableStream({
@@ -26,25 +59,28 @@ test('JotCAD VFS Provider: Integration', async (t) => {
         c.close();
       },
     });
+  }, {
+    schema: { 
+        arguments: [{ name: 'width', type: 'jot:number' }],
+        outputs: baseOutputs
+    }
   });
 
   await t.test('evaluates a .jot file with parameters', async () => {
-    // 1. "Upload" a jot file to the mesh
-    await vfs.writeData('parts/bracket.jot', {}, 'box(length)');
-
-    // 2. Request the jot file with a parameter
-    const result = await vfs.readText('parts/bracket.jot', { length: 42 });
-
+    // Write the .jot source file
+    await vfs.writeData(new Selector('parts/bracket.jot'), 'box(length)');
+    // Evaluate the .jot file by reading it with parameters
+    const result = await vfs.readText(new Selector('parts/bracket.jot', { length: 42 }));
     assert.strictEqual(result, 'Box of size 42');
   });
 
   await t.test('evaluates nested .jot expressions', async () => {
-    const expression = 'box({ width: L }).rx(0.1)';
+    const expression = 'box(L).rx(0.1)';
 
-    // Mock rotation op
-    vfs.registerProvider('op/rotateX', async (v, selector) => {
+    vfs.registerProvider('jot/rotateX', async (v, selector) => {
       const { source, turns } = selector.parameters;
-      const sourceText = await v.readText(source.path, source.parameters);
+      // 'source' is a Selector object here
+      const sourceText = await v.readText(source);
       const bytes = new TextEncoder().encode(
         `${sourceText} rotated ${turns} turns`
       );
@@ -54,88 +90,64 @@ test('JotCAD VFS Provider: Integration', async (t) => {
           c.close();
         },
       });
+    }, {
+      schema: { 
+          arguments: [{ name: 'source', type: 'jot:shape', affiliate: '$out' }, { name: 'turns', type: 'jot:number' }],
+          outputs: baseOutputs
+      }
     });
 
-    const result = await vfs.readText('jot/eval', {
+    const result = await vfs.readText(new Selector('jot/eval', {
       expression,
       params: { L: 100 },
-    });
+    }));
     assert.strictEqual(result, 'Box of size 100 rotated 0.1 turns');
   });
 
   await t.test('Implicit Context Propagation', async (st) => {
-    // Mock operators for A, B, C logic
-    vfs.registerProvider('op/A', async (v, s) => {
+    vfs.registerProvider('jot/A', async (v, s) => {
       return new TextEncoder().encode(`${s.parameters.value}`);
-    });
-    vfs.registerProvider('op/B', async (v, s) => {
-      const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
-      const arg = await v.readText(s.parameters.arg.path, s.parameters.arg.parameters);
-      return new TextEncoder().encode(`${input} + ${arg}`);
-    });
-    vfs.registerProvider('op/C', async (v, s) => {
-      console.log('--- op/C called ---');
-      console.log('selector:', JSON.stringify(s, null, 2));
-      try {
-        const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
-        console.log('op/C input:', input);
-        return new TextEncoder().encode(`${input} * ${s.parameters.arg}`);
-      } catch (err) {
-        console.log('op/C ERROR:', err);
-        throw err;
+    }, { schema: { 
+        arguments: [{ name: 'value', type: 'jot:number' }],
+        outputs: anyOutputs
+    } });
+    
+    vfs.registerProvider('jot/B', async (v, s) => {
+      const input = await v.readText(s.parameters.$in);
+      let arg = s.parameters.arg;
+      if (arg && arg.path) {
+        arg = await v.readText(arg);
       }
-    });
+      return new TextEncoder().encode(`${input} + ${arg}`);
+    }, { schema: { 
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'arg', type: 'jot:any' }],
+        outputs: anyOutputs
+    } });
 
-    await st.test('Scenario 1: Box() - no subject', async () => {
-      const result = await vfs.readText('jot/eval', { expression: 'box(10)' });
+    vfs.registerProvider('jot/C', async (v, s) => {
+      const input = await v.readText(s.parameters.$in);
+      return new TextEncoder().encode(`${input} * ${s.parameters.arg}`);
+    }, { schema: { 
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'arg', type: 'jot:any' }],
+        outputs: anyOutputs
+    } });
+
+    await st.test('Scenario 1: box() - no subject', async () => {
+      const result = await vfs.readText(new Selector('jot/eval', { expression: 'box(10)' }));
       assert.strictEqual(result, 'Box of size 10');
     });
 
-    await st.test('Scenario 2: a.Box() - a is subject of Box', async () => {
-      // Create a mock for op/B that doesn't expect its 'arg' to be a selector,
-      // because in A(10).B(2), '2' is a literal.
-      vfs.registerProvider('op/B_literal', async (v, s) => {
-        const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
-        return new TextEncoder().encode(`${input} + ${s.parameters.arg}`);
-      });
-      // We'll update the compiler registration for B to use this one just for this subtest
-      // or just use the existing B and handle the literal.
-      
-      // Let's just make op/B robust to both literals and selectors.
-      vfs.registerProvider('op/B', async (v, s) => {
-        const input = await v.readText(s.parameters.$in.path, s.parameters.$in.parameters);
-        let arg = s.parameters.arg;
-        if (arg && arg.path) {
-          arg = await v.readText(arg.path, arg.parameters);
-        }
-        return new TextEncoder().encode(`${input} + ${arg}`);
-      });
-
-      const result = await vfs.readText('jot/eval', { expression: 'A(10).B(2)' });
+    await st.test('Scenario 2: a.B() - a is subject of B', async () => {
+      const result = await vfs.readText(new Selector('jot/eval', { expression: 'A(10).B(2)' }));
       assert.strictEqual(result, '10 + 2');
     });
 
-    await st.test('Scenario 3: a.b(Box()) - a is subject of Box', async () => {
-      // Here 'Box()' is an argument to 'b', but its subject should be 'a'.
-      vfs.registerProvider('op/B_complex', async (v, s) => {
-        const input = await v.readText(s.parameters.$in);
-        const arg = await v.readText(s.parameters.arg);
-        return new TextEncoder().encode(`B(input=${input}, arg=${arg})`);
-      });
-      // Mock Box that reports its $in
-      vfs.registerProvider('op/Box_check', async (v, s) => {
-        const input = await v.readText(s.parameters.$in);
-        return new TextEncoder().encode(`Box(in=${input})`);
-      });
-
-      // Map them in the compiler (jot/eval uses the singleton compiler we setup in provider.js)
-      // This is slightly tricky because jot/eval uses a shared compiler.
-      // But we can test the general principle with A(10).B(C(2))
-      const result = await vfs.readText('jot/eval', { expression: 'A(10).B(C(2))' });
-      // A(10) -> "10"
-      // C(2) with subject A(10) -> "10 * 2"
-      // B("10 * 2") with subject A(10) -> "10 + 10 * 2" (assuming B uses the C(2) result as arg)
-      // Actually B(C(2)) means C(2) is the 'arg' to B.
+    // Scenario 3: a.B(C(2)) - a is subject of B AND propagated to C
+    await st.test('Scenario 3: a.B(C()) - a is subject of C (Propagation)', async () => {
+      const result = await vfs.readText(new Selector('jot/eval', { expression: 'A(10).B(C(2))' }));
+      // C(2) gets A(10) as subject -> Result: 10 * 2 = 20
+      // B(20) gets A(10) as subject -> Result: 10 + 20 = 30
+      // NOTE: Provider returns these as strings "10 * 2", etc.
       assert.strictEqual(result, '10 + 10 * 2');
     });
   });

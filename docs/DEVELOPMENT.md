@@ -62,21 +62,19 @@ The `Processor` handles the **Universal Sequence Principle** automatically:
 - If a user provides a sequence (e.g., `distance: [10, 20]`), `execute` is called for each value, and the results are harvested into a unified VFS sequence.
 - **Atomic Types:** Use `std::vector<double>` in the `execute` signature if the operator needs to consume a whole sequence at once (e.g., `PointsOp`).
 
-### 1.4 The "Tee" Pattern (Side-Effects)
+### 1.5 Geometry Well-Formedness Assertions
 
-Some operators, like `jot/pdf` or `jot/stl`, produce side-effects (artifacts) while acting as identity pass-throughs for geometry. These follow the **Output Field Artifact Pattern**:
+All 3D shape generators and boolean operations MUST be verified for topological integrity and positive volume using the `verify_well_formed_solid` helper in `geo/test/test_base.h`.
 
-1.  **Identity Preservation:** The `execute` function performs a pure pass-through (`out = in`).
-2.  **On-Demand Generation:** Instead of generating the artifact on every geometry read, the operator's registration logic handles a specific `output` field in the Selector.
-3.  **Port Access:** The artifact (e.g., PDF bytes) is only generated and returned when the VFS requests the selector with a specific output (e.g., `output: "file"`).
-4.  **Metadata Signaling:** Set `passthrough: true` in the schema metadata to inform the compiler to "lift" the demand into the side-effect list.
+- **Exact Rational Math (FT)**: Assertions are performed using CGAL's Exact Kernel. Never use `double` for volume or coordinate comparisons.
+- **Topological Closure**: Verifies the mesh is manifold and watertight (`CGAL::is_closed`).
+- **Orientation**: Verifies the mesh is outward-oriented to ensure positive volume calculations.
+- **Positive Volume**: Asserts that the shape bounds a strictly positive volume (`vol > FT(0)`).
 
 ```cpp
-// Schema defines available outputs
-"outputs": {
-  "$out": { "type": "shape" },
-  "file": { "type": "file", "mimeType": "application/pdf" }
-}
+// Example: Verifying a generated shape
+Geometry my_geo = vfs.read<Geometry>(my_selector);
+vfs.verify_well_formed_solid(my_geo, "My Operation Label");
 ```
 
 ### 1.5 Two-Stage Resolution (Lazy Execution)
@@ -136,26 +134,28 @@ Operators should throw `VFSException` (defined in `geo/impl/vfs_node.h`) for una
 - `508`: Loop detected (handled by MeshLink).
 - `429`: Rate limited/Resource exhausted.
 
-## 4. Build System
+## 5. HTTPS & Mobile Debugging
 
-JotCAD uses a tiered **Makefile** build system for high-performance incremental compilation.
+To support the **WebCrypto API** (required for CID generation and mesh handshakes) on mobile devices, the development environment must run over **HTTPS**.
 
-### 4.1 Core Library
-The VFS core and all operator logic are compiled into a static library: `geo/bin/libjotgeo.a`. This allows both the production binary and unit tests to share the exact same compiled logic.
+### 5.1 Certificate Generation
 
-### 4.2 Mandatory Testing
-Unit tests are **integrated into the build process**. A build is only considered successful if all operator tests pass.
-
+Use the provided script to generate self-signed certificates for your local network IP:
 ```bash
-# Build everything and run all unit tests
-cd geo && ./build.sh
-
-# Run tests independently
-npm run test:unit
+# Generates .ssl/localhost-key.pem and .ssl/localhost-cert.pem
+./scripts/generate_dev_cert.sh
 ```
 
-### 4.3 Clean Builds
-To perform a full clean and rebuild:
-```bash
-cd geo && make clean && make
-```
+### 5.2 Secure Context Requirement
+
+Browsers (Chrome, Safari) disable `crypto.subtle` on insecure HTTP IPs.
+- **Localhost:** Always counts as a Secure Context (HTTP is fine).
+- **Network IPs:** REQUIRES HTTPS.
+- **Handshake Rule:** When using self-signed certs, you MUST manually visit BOTH the UX port (3030) and the VFS port (9092) in your mobile browser and click "Advanced -> Proceed" for each.
+
+### 5.3 C++ SSL Support
+
+The C++ nodes (`geo/bin/ops`) must be compiled with OpenSSL support to communicate with HTTPS neighbors.
+- **Header:** `#define CPPHTTPLIB_OPENSSL_SUPPORT` must be set before including `httplib.h`.
+- **Linking:** Link against `-lcrypto` and `-lssl`.
+- **Verification:** For development, certificate verification is disabled in the C++ core to accommodate self-signed local certs.

@@ -11,8 +11,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
 const UX_ROOT = path.resolve(__dirname, '../../ux');
 const VITE_BIN = path.resolve(__dirname, '../../node_modules/.bin/vite');
-const PORT_OPS = 9092;
-const PORT_UX = 3030;
+const PORT_OPS = parseInt(process.env.TEST_OPS_PORT || '9092');
+const PORT_UX = parseInt(process.env.TEST_UX_PORT || '3033');
 
 test('Browser Mesh Integration: Catalog & Execution', async (t) => {
   let opsNode, uxServer, browser;
@@ -57,11 +57,23 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
 
   t.after(async () => {
     console.log('[Test Browser] Cleaning up...');
-    if (browser) await browser.close();
-    if (uxServer) uxServer.kill();
-    if (opsNode) await opsNode.stop();
+    if (browser) {
+      console.log('[Test Browser] Closing browser...');
+      await browser.close();
+    }
+    if (uxServer) {
+      console.log('[Test Browser] Killing UX server...');
+      uxServer.kill();
+    }
+    if (opsNode) {
+      console.log('[Test Browser] Stopping Ops node...');
+      await opsNode.stop();
+    }
+    console.log('[Test Browser] Removing temporary storage...');
     await fs.rm('.vfs_storage_browser_test_ops', { recursive: true, force: true }).catch(() => {});
+    console.log('[Test Browser] Cleanup complete.');
   });
+
 await t.test('should deliver catalog, define dynamic op, and execute it via mesh', async () => {
   const page = await browser.newPage();
 
