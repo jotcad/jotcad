@@ -18,7 +18,7 @@ template <typename P = JotVfsProtocol>
 struct SimplifyOp : P {
     static constexpr const char* path = "jot/simplify";
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double ratio = 0.5, int count = 0, double threshold = 60.0) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double ratio = 0.5, int count = 0, double threshold_tau = 60.0/360.0) {
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
@@ -61,8 +61,8 @@ struct SimplifyOp : P {
                 auto p2 = imesh.point(imesh.target(h));
                 auto p3 = imesh.point(imesh.target(imesh.next(h)));
                 auto p4 = imesh.point(imesh.target(imesh.next(imesh.opposite(h))));
-                double angle = CGAL::to_double(CGAL::approximate_dihedral_angle(p1, p2, p3, p4));
-                if(std::abs(angle) > threshold) {
+                double angle_rad = CGAL::to_double(CGAL::approximate_dihedral_angle(p1, p2, p3, p4));
+                if(std::abs(angle_rad) > threshold_tau * 2.0 * M_PI) {
                     is_constrained[e] = true;
                 }
             }
@@ -129,7 +129,7 @@ struct SimplifyOp : P {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "ratio"}, {"type", "jot:number"}, {"default", 0.5}, {"description", "Target face reduction ratio (0.1 = 10% of original faces)"}},
                 {{"name", "count"}, {"type", "jot:number"}, {"default", 0}, {"description", "Explicit target face count (if > 0, ratio is ignored)"}},
-                {{"name", "threshold"}, {"type", "jot:number"}, {"default", 60.0}, {"description", "Dihedral angle threshold for sharp edge preservation (in degrees)"}}
+                {{"name", "threshold"}, {"type", "jot:number"}, {"default", 60.0/360.0}, {"description", "Dihedral angle threshold for sharp feature preservation in turns (tau)."}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

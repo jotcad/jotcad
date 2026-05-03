@@ -36,6 +36,9 @@
 #include "sweep_op.h"
 #include "section_op.h"
 #include "place_op.h"
+#include "grow_op.h"
+#include "wrap_op.h"
+#include "smooth_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -79,6 +82,9 @@ void register_all_ops(fs::VFSNode* vfs) {
     sweep_init(vfs);
     section_init(vfs);
     place_init(vfs);
+    grow_init(vfs);
+    wrap_init(vfs);
+    smooth_init(vfs);
 }
 
 } // namespace geo

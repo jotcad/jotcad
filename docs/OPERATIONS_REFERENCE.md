@@ -244,10 +244,28 @@ Returns a generator of all edges.
 Returns a generator of all vertices.
 - **Anchor**: At the **Vertex coordinate**, with the Z-axis aligned to the vertex normal.
 
+### `smooth(limit=1/24, iterations=20, resolution=1.0, region=null)`
+Smooths geometry until dihedral angles approach a specified limit.
+
+- **`limit`**: Target dihedral angle in turns (tau). Corners sharper than this will be rounded.
+- **`iterations`**: Max number of relaxation steps.
+- **`resolution`**: Subdivision factor. Values $> 1.0$ will refine the mesh to support tighter curves.
+- **`region`**: Optional bounding shape. If provided, only vertices within this volume are smoothed.
+
+#### Example
+```js
+// Round all edges to 15 degrees (1/24 turns)
+Box(10).smooth(limit=1/24, resolution=2.0)
+
+// Round only the top-most corners
+Box(10).at(eachCorner().top()).smooth(limit=1/36)
+```
+
 ## 10. Transformation
 
 ### `s(x, y, z)` / `scale(x, y, z)`
 Scales the subject along the local axes.
+
 - **Involution**: If any scale component is negative (mirroring), the operator automatically flips the face winding to preserve outwards-pointing normals.
 - **Sequences**: Supports scale sequences like `sx(1, -1)` to produce "Mirror and Keep" groups.
 
@@ -256,12 +274,13 @@ Axis-specific shorthands for scaling along X, Y, or Z.
 
 ## 11. Mesh Optimization
 
-### `simplify(ratio=0.5, count=0, threshold=60.0)`
+### `simplify(ratio=0.5, count=0, threshold=1/6)`
 Reduces mesh complexity while preserving sharp features using edge-collapse.
 
 - **`ratio`**: Target reduction (e.g., `0.1` keeps 10% of faces).
 - **`count`**: Explicit target face count (overrides ratio if > 0).
-- **`threshold`**: Dihedral angle (in degrees) used to identify and protect sharp features.
+- **`threshold`**: Dihedral angle (in turns/tau) used to identify and protect sharp features.
+
 
 ## 12. Infinite Planes (Orientations)
 ...
