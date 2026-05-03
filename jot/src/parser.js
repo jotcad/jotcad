@@ -33,7 +33,8 @@ export class JotParser {
 
   _tokenize(text) {
     const tokens = [];
-    const cleanText = text.replace(/\/\/.*$/gm, '');
+    // Only strip // comments if they are at start of line or preceded by whitespace
+    const cleanText = text.replace(/(^|\s)\/\/.*$/gm, '$1');
     const regex =
       /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;)\s*/g;
     let match;
@@ -59,6 +60,15 @@ export class JotParser {
   }
 
   _parseExpression() {
+    // 1. Check for Declaration (identifier = ...)
+    // Lookahead for '=' after an identifier
+    if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
+      const name = this._consume();
+      this._consume('=');
+      const value = this._parseExpression();
+      return { type: 'ASSIGNMENT', name, value };
+    }
+
     let expr = this._parsePrimary();
 
     while (this._peek() === '.') {

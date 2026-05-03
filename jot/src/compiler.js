@@ -37,6 +37,15 @@ export class JotCompiler {
 
   // --- Type Predicates ---
 
+  _getTypeOfValue(val) {
+    if (val instanceof Selector) return this._getSelectorOutputType(val);
+    if (typeof val === 'number') return 'jot:number';
+    if (typeof val === 'string') return 'jot:string';
+    if (typeof val === 'boolean') return 'jot:boolean';
+    if (val?.type === 'SYMBOL') return this.symbolTypes[val.name] || 'jot:any';
+    return 'jot:any';
+  }
+
   _checkSymbol(v, type, argDef, ctx) {
     const symType = this.symbolTypes[v.name];
     if (symType && symType !== type) {
@@ -66,27 +75,20 @@ export class JotCompiler {
   }
 
   _isJotNumber(v, a, c) {
-    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:number', a, c);
-    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:number';
-    return typeof v === 'number';
+    return this._getTypeOfValue(v) === 'jot:number';
   }
 
   _isJotString(v, a, c) {
-    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:string', a, c);
-    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:string';
-    return typeof v === 'string';
+    return this._getTypeOfValue(v) === 'jot:string';
   }
 
   _isJotBoolean(v, a, c) {
-    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:boolean', a, c);
-    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:boolean';
-    return typeof v === 'boolean';
+    return this._getTypeOfValue(v) === 'jot:boolean';
   }
 
   _isJotShape(v, a, c) {
-    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:shape', a, c);
-    if (v instanceof Selector) return this._getSelectorOutputType(v) === 'jot:shape';
-    return typeof v === 'object' && v !== null && v.path;
+    const t = this._getTypeOfValue(v);
+    return t === 'jot:shape' || (typeof v === 'object' && v !== null && v.path);
   }
 
   _isJotShapeList(v, a, c) {
@@ -94,13 +96,11 @@ export class JotCompiler {
   }
 
   _isJotVec3(v, a, c) {
-    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:vec3', a, c);
-    return Array.isArray(v) && v.length === 3;
+    return this._getTypeOfValue(v) === 'jot:vec3' || (Array.isArray(v) && v.length === 3);
   }
 
   _isJotInterval(v, a, c) {
-    if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:interval', a, c);
-    return typeof v === 'number' || (Array.isArray(v) && (v.length === 1 || v.length === 2));
+    return this._getTypeOfValue(v) === 'jot:interval' || typeof v === 'number' || (Array.isArray(v) && (v.length === 1 || v.length === 2));
   }
 
   // --- Terminal Tracking ---
@@ -386,7 +386,8 @@ export class JotCompiler {
   }
 
   async evaluate(ast, parameters = {}, symbolTypes = {}) {
-    this.symbolTypes = symbolTypes;
+    this.symbolTypes = { ...symbolTypes };
+    this.localSymbols = { ...parameters };
     this.candidates.clear();
     this.consumed.clear();
     this.selectorInstances.clear();
@@ -394,10 +395,10 @@ export class JotCompiler {
     try {
       if (Array.isArray(ast)) {
         for (const node of ast) {
-          await this._evaluateRecursive(node, parameters, null);
+          await this._evaluateRecursive(node, this.localSymbols, null);
         }
       } else {
-        await this._evaluateRecursive(ast, parameters, null);
+        await this._evaluateRecursive(ast, this.localSymbols, null);
       }
 
       // Collect all terminals
@@ -429,6 +430,11 @@ export class JotCompiler {
     }
 
     switch (node.type) {
+      case 'ASSIGNMENT': {
+        const val = await this._evaluateRecursive(node.value, parameters, subject);
+        this.localSymbols[node.name] = val;
+        return val;
+      }
       case 'CALL': return this._dispatchCall(node, parameters, subject);
       case 'METHOD': return this._evaluateMethod(node, parameters, subject);
       case 'SYMBOL': return parameters[node.name] !== undefined ? parameters[node.name] : node;
@@ -566,17 +572,11 @@ export class JotCompiler {
       const type = argDef.type?.toLowerCase() || '';
       const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
 
-      // --- New: Exact Type Match Pass (Selector or Symbol) ---
+      // --- New: Exact Type Match Pass (Resolves Symbols) ---
       const candidates = this._findCandidates(pool, argDef.name);
       for (const p of candidates) {
-        const val = await evaluateHelper(p.node, false);
-        if (val instanceof Selector && this._getSelectorOutputType(val) === fullType) {
-          params[argDef.name] = val;
-          p.consumed = true;
-          await this._consume(val);
-          break;
-        }
-        if (val?.type === 'SYMBOL' && this.symbolTypes[val.name] === fullType) {
+        const val = await evaluateHelper(p.node); // Resolves
+        if (this._getTypeOfValue(val) === fullType) {
           params[argDef.name] = val;
           p.consumed = true;
           await this._consume(val);
@@ -608,17 +608,11 @@ export class JotCompiler {
       const type = argDef.type?.toLowerCase() || '';
       const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
 
-      // --- New: Exact Type Match Pass (Selector or Symbol) ---
+      // --- New: Exact Type Match Pass (Resolves Symbols) ---
       const candidates = this._findCandidates(pool, argDef.name);
       for (const p of candidates) {
-        const val = await evaluateHelper(p.node, false);
-        if (val instanceof Selector && this._getSelectorOutputType(val) === fullType) {
-          params[argDef.name] = val;
-          p.consumed = true;
-          await this._consume(val);
-          break;
-        }
-        if (val?.type === 'SYMBOL' && this.symbolTypes[val.name] === fullType) {
+        const val = await evaluateHelper(p.node); // Resolves
+        if (this._getTypeOfValue(val) === fullType) {
           params[argDef.name] = val;
           p.consumed = true;
           await this._consume(val);
