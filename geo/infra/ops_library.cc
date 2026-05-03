@@ -39,6 +39,7 @@
 #include "grow_op.h"
 #include "wrap_op.h"
 #include "smooth_op.h"
+#include "separate_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -85,6 +86,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     grow_init(vfs);
     wrap_init(vfs);
     smooth_init(vfs);
+    separate_init(vfs);
 }
 
 } // namespace geo

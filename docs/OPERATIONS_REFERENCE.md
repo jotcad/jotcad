@@ -147,10 +147,17 @@ Extracts 2D cross-sections of the input shape at specified planes.
 - **Default**: If no planes are provided, performs a section at local $Z=0$.
 - **Logic**: Slices the input geometry and merges overlapping/nested loops into clean 2D faces.
 
+### `separate()`
+Splits the input geometry into separate shapes based on connected components (disconnected geometric islands).
+
+- **Output**: A group containing one child shape for each disconnected piece of geometry.
+- **Support**: Works for 3D solids, 2D faces, 1D segments, and 0D points.
+- **Usage**: Useful after boolean operations (like `cut`) that result in multiple disjoint parts.
+
 #### Example
 ```js
-// Slice at 10mm intervals
-MySolid.section([Z(0), Z(10), Z(20)])
+// Cut a box in half and treat the two halves as separate objects
+Box(10).cut(Plane().m(0, 0, 5)).separate()
 ```
 
 ## 6. Plane and Normal Extraction
