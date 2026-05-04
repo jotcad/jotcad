@@ -1,6 +1,7 @@
 #pragma once
 #include "protocols.h"
 #include "processor.h"
+#include "../math/interval.h"
 
 namespace jotcad {
 namespace geo {
@@ -8,26 +9,28 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct BoxOp : P {
     static constexpr const char* path = "jot/Box";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double width, double height, double depth) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Interval width, Interval height, Interval depth) {
         Geometry res;
-        double w = width;
-        double h = height;
-        double d = depth;
+        
+        // Vertices at Interval min/max
+        double x_min = width.min, x_max = width.max;
+        double y_min = height.min, y_max = height.max;
+        double z_min = depth.min, z_max = depth.max;
 
-        // Bottom Vertices (z = -d/2)
-        res.vertices.push_back({FT(-w/2), FT(-h/2), FT(-d/2)}); // 0
-        res.vertices.push_back({FT(w/2), FT(-h/2), FT(-d/2)});  // 1
-        res.vertices.push_back({FT(w/2), FT(h/2), FT(-d/2)});   // 2
-        res.vertices.push_back({FT(-w/2), FT(h/2), FT(-d/2)});  // 3
+        // Bottom Vertices (z = min)
+        res.vertices.push_back({FT(x_min), FT(y_min), FT(z_min)}); // 0
+        res.vertices.push_back({FT(x_max), FT(y_min), FT(z_min)}); // 1
+        res.vertices.push_back({FT(x_max), FT(y_max), FT(z_min)}); // 2
+        res.vertices.push_back({FT(x_min), FT(y_max), FT(z_min)}); // 3
 
-        if (d == 0) {
+        if (z_min == z_max) {
             res.faces.push_back({{{0, 1, 2, 3}}});
         } else {
-            // Top Vertices (z = d/2)
-            res.vertices.push_back({FT(-w/2), FT(-h/2), FT(d/2)}); // 4
-            res.vertices.push_back({FT(w/2), FT(-h/2), FT(d/2)});  // 5
-            res.vertices.push_back({FT(w/2), FT(h/2), FT(d/2)});   // 6
-            res.vertices.push_back({FT(-w/2), FT(h/2), FT(d/2)});  // 7
+            // Top Vertices (z = max)
+            res.vertices.push_back({FT(x_min), FT(y_min), FT(z_max)}); // 4
+            res.vertices.push_back({FT(x_max), FT(y_min), FT(z_max)}); // 5
+            res.vertices.push_back({FT(x_max), FT(y_max), FT(z_max)}); // 6
+            res.vertices.push_back({FT(x_min), FT(y_max), FT(z_max)}); // 7
 
             // Corrected Winding (CCW from outside)
             res.faces.push_back({{{3, 2, 1, 0}}}); // Bottom (facing down)
@@ -45,11 +48,11 @@ struct BoxOp : P {
     static typename P::json schema() {
         return {
             {"path", "jot/Box"},
-            {"description", "Generates a box (rectangle or cuboid)."},
+            {"description", "Generates a box using symmetric or asymmetric intervals."},
             {"arguments", {
-                {{"name", "width"}, {"type", "jot:number"}, {"default", 10.0}},
-                {{"name", "height"}, {"type", "jot:number"}, {"default", 10.0}},
-                {{"name", "depth"}, {"type", "jot:number"}, {"default", 0.0}}
+                {{"name", "width"}, {"type", "jot:interval"}, {"default", 10.0}},
+                {{"name", "height"}, {"type", "jot:interval"}, {"default", 10.0}},
+                {{"name", "depth"}, {"type", "jot:interval"}, {"default", 0.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -57,7 +60,7 @@ struct BoxOp : P {
 };
 
 static void box_init(fs::VFSNode* vfs) {
-    Processor::register_op<BoxOp<>, double, double, double>(vfs, "jot/Box");
+    Processor::register_op<BoxOp<>, Interval, Interval, Interval>(vfs, "jot/Box");
 }
 
 } // namespace geo

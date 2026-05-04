@@ -1,6 +1,7 @@
 #pragma once
 #include "protocols.h"
 #include "../../fs/cpp/vfs_node.h"
+#include "../math/interval.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -87,6 +88,8 @@ struct Processor {
                 return val.get<fs::Selector>();
             }
             throw std::runtime_error("Argument '" + key + "' must be a Selector");
+        } else if constexpr (std::is_same_v<T, Interval>) {
+            return Interval::from_json(val);
         } else {
             return val.get<T>();
         }

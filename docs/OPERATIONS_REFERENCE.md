@@ -37,30 +37,30 @@ MyPath.hull().fill()
 
 ## 3. Primitives
 
+Primitives generate basic geometric shapes. Most dimensions support the **`jot:interval`** type, enabling both symmetric and asymmetric positioning.
+- **Symmetric**: `10` -> `[-5, 5]` (centered on origin)
+- **Asymmetric**: `[10]` -> `[0, 10]` or `[20, 30]` -> `[20, 30]`
+
+### `Box(width=10, height=10, depth=0)`
+Generates a 2D rectangle or 3D cuboid.
+- **`width`**, **`height`**, **`depth`**: Dimensions as `jot:interval`.
+
+### `Disk(diameter=10, width=0, height=0, start=0, end=1, zag=0.1)`
+Generates a circular or elliptical disk/sector.
+- **`diameter`**, **`width`**, **`height`**: Dimensions as `jot:interval`. `width`/`height` override diameter if non-zero.
+- **`start`**, **`end`**: Angular range in turns (tau).
+- **`zag`**: Resolution tolerance.
+
+### `Arc(diameter=10, width=0, height=0, start=0, end=1, zag=0.1)`
+Generates a circular or elliptical open arc. Arguments same as `Disk`.
+
+### `Orb(diameter=10, width=0, height=0, depth=0, zag=0.1)`
+Generates a 3D sphere or ellipsoid solid.
+- **`diameter`**, **`width`**, **`height`**, **`depth`**: Dimensions as `jot:interval`.
+
 ### `Hexagon(...)`
-Generates a regular 2D hexagon. The operator supports multiple dimensioning variants, which are automatically selected based on the provided arguments.
-
-#### Common Arguments
-- **`turns`**: Rotation in Tau (default `0.0`). `0.0` is flat-topped; `1/12` (30 deg) is pointy-topped.
-
-#### Variants
-| Variant | Argument | Description | VFS Path |
-| :--- | :--- | :--- | :--- |
-| **Radius** | `radius` | Center-to-corner distance. | `jot/Hexagon/radius` |
-| **Diameter** | `diameter` | Corner-to-corner distance (diagonal). | `jot/Hexagon/diameter` |
-| **Apothem** | `apothem` | Center-to-flat distance. | `jot/Hexagon/apothem` |
-| **Edge-to-Edge** | `edgeToEdge`| Flat-to-flat distance. | `jot/Hexagon/edgeToEdge` |
-| **Diagonal** | `diagonal` | Alias for diameter. | `jot/Hexagon/diagonal` |
-| **Edge-Length** | `edgeLength`| Length of a single side. | `jot/Hexagon/edgeLength` |
-
-#### Example
-```js
-// Flat-topped hexagon by radius
-Hexagon(radius=10)
-
-// Pointy-topped hexagon by edge-to-edge distance
-Hexagon(edgeToEdge=20, turns=1/12)
-```
+Generates a regular 2D hexagon.
+- **`turns`**: Rotation in Tau (default `0.0`).
 
 ## 4. Promoters (Dimensional Upgrades)
 
