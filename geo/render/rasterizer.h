@@ -4,6 +4,7 @@
 #include "geometry.h"
 #include "camera.h"
 #include "triangulation.h"
+#include "../core/protocols.h"
 
 namespace jotcad {
 namespace geo {
@@ -16,9 +17,13 @@ class Rasterizer {
 public:
     /**
      * render_png: Standard JotCAD rasterizer.
-     * Generates a 4-channel PNG with depth testing and robust triangulation.
+     * Traverses a Shape hierarchy, resolving geometry via VFS and applying
+     * color tags to produce a depth-buffered PNG.
      */
-    static std::vector<uint8_t> render_png(const Geometry& geo, int width = 256, int height = 256, double ax = 0.0, double ay = 0.0);
+    static std::vector<uint8_t> render_png(
+        fs::VFSNode* vfs,
+        const Shape& shape,
+        int width = 256, int height = 256, double ax = 0.0, double ay = 0.0);
 
 private:
     struct RenderTriangle {

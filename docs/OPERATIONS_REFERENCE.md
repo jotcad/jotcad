@@ -315,22 +315,32 @@ Text("JotCAD", size=20)
 Text("Hello", font="https://example.com/MyFont.ttf", size=50).ez(5)
 ```
 
-### `Trace(url, palette=[#000000])`
-Converts a raster image (PNG/JPG) into vector geometry using color segmentation.
+### `Image(url)`
+Downloads and validates a raster image (PNG/JPG) from a remote URL.
 
-- **`url`**: Remote URL or CID of the bitmap image.
-- **`palette`**: An array of color strings (hex or names).
-- **HSV Bucketing**: Pixels are classified into the nearest color bucket using Euclidean distance in HSV space, ensuring robust segmentation across varied lighting.
-- **Output**: A `Group` containing one child shape for each color in the palette. Each child is tagged with its color name for use with `on()`.
-- **Topological Precision**: Uses Marching Squares and parity-based hole detection to produce valid, triangulated faces.
+- **`url`**: The full HTTPS/HTTP path to the raw image file.
+- **Security**: Validates file headers (magic numbers) to ensure it is a valid image before ingestion.
+- **VFS Integration**: Images are automatically cached by the VFS; subsequent uses of the same URL are instant.
+
+### `Trace(image, colors=8, smooth=1.0)`
+Converts a raster image into vector geometry using automatic color quantization.
+
+- **`image`**: An `Image()` object or direct URL to a bitmap.
+- **`colors`**: Number of color buckets to automatically identify using K-Means clustering.
+- **`smooth`**: Simplification tolerance (Douglas-Peucker). Higher values result in fewer vertices and smoother curves.
+- **HSV Quantization**: Automatically identifies the most dominant colors in the image using HSV space, preserving color separation across varying brightness.
+- **Boundary Injection**: Automatically pads image edges to ensure large regions (like the sky) are correctly closed into manifold loops.
+- **Despeckling**: Includes a noise-reduction pass and area-based filtering to eliminate small, jagged "speckle" polygons.
+- **Output**: A `Group` containing one child shape for each identified color. Each child is tagged with its average hex color.
 
 #### Example
 ```js
-// Traces a multi-color map
-Logo = Trace("logo.png", palette=[#FF0000, #00FF00]);
+// Automatically trace a landscape with 12 colors and high smoothing
+Photo = Image("landscape.jpg");
+Vector = Trace(Photo, colors=12, smooth=2.0);
 
-// Extrude the Red bucket
-Logo.on(#FF0000).extrude(10);
+// Select and extrude the specific color region
+Vector.on("#bcd3ee").ez(5);
 ```
 
 ## 13. Infinite Planes (Orientations)

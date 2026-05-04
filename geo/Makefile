@@ -26,7 +26,11 @@ OPS_BIN = $(BIN_DIR)/ops
 # Object files
 OBJS = $(OBJ_DIR)/vfs_core.o $(OBJ_DIR)/vfs_primitives.o $(OBJ_DIR)/vfs_geo_adapter.o \
        $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o \
-       $(OBJ_DIR)/rasterizer.o $(OBJ_DIR)/triangulation.o
+       $(OBJ_DIR)/rasterizer.o $(OBJ_DIR)/triangulation.o $(OBJ_DIR)/stb_impl.o
+
+$(OBJ_DIR)/stb_impl.o: infra/stb_impl.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
