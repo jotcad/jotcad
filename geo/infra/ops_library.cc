@@ -41,8 +41,9 @@
 #include "smooth_op.h"
 #include "separate_op.h"
 #include "deform_op.h"
-#include "font_op.h"
 #include "text_op.h"
+#include "trace_op.h"
+#include "asset_ops.h"
 
 namespace jotcad {
 namespace geo {
@@ -91,8 +92,9 @@ void register_all_ops(fs::VFSNode* vfs) {
     smooth_init(vfs);
     separate_init(vfs);
     deform_init(vfs);
-    font_init(vfs);
+    assets_init(vfs);
     text_init(vfs);
+    trace_init(vfs);
 }
 
 } // namespace geo

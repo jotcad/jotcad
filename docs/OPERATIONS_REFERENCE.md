@@ -315,6 +315,24 @@ Text("JotCAD", size=20)
 Text("Hello", font="https://example.com/MyFont.ttf", size=50).ez(5)
 ```
 
+### `Trace(url, palette=[#000000])`
+Converts a raster image (PNG/JPG) into vector geometry using color segmentation.
+
+- **`url`**: Remote URL or CID of the bitmap image.
+- **`palette`**: An array of color strings (hex or names).
+- **HSV Bucketing**: Pixels are classified into the nearest color bucket using Euclidean distance in HSV space, ensuring robust segmentation across varied lighting.
+- **Output**: A `Group` containing one child shape for each color in the palette. Each child is tagged with its color name for use with `on()`.
+- **Topological Precision**: Uses Marching Squares and parity-based hole detection to produce valid, triangulated faces.
+
+#### Example
+```js
+// Traces a multi-color map
+Logo = Trace("logo.png", palette=[#FF0000, #00FF00]);
+
+// Extrude the Red bucket
+Logo.on(#FF0000).extrude(10);
+```
+
 ## 13. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).

@@ -85,6 +85,12 @@ struct Shape {
         }
         return s;
     }
+
+    static Shape group(const std::vector<Shape>& components) {
+        Shape s;
+        s.components = components;
+        return s;
+    }
 };
 
 // ADL helpers for nlohmann::json
