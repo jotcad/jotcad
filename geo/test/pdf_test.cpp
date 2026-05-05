@@ -8,7 +8,7 @@ int main() {
     
     std::cout << "Testing PDF Export..." << std::endl;
     
-    fs::Selector hex_sel = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    fs::Selector hex_sel = fs::Selector{"jot/Hexagon/radius", {{"radius", 15.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_sel);
     
     fs::Selector pdf_sel = fs::Selector{"jot/pdf", {{"$in", hex_sel}, {"path", "test.pdf"}}}.with_output("$out");

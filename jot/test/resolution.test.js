@@ -24,7 +24,8 @@ test('Operator Variant Resolution (Strict Casing)', async (t) => {
 
   await t.test('Should resolve PascalCase Constructors', async () => {
     const res = await compiler.evaluate({ type: 'CALL', name: 'Box', args: [10] });
-    assert.strictEqual(res.path, 'shape/box');
+    const resolved = res[0];
+    assert.strictEqual(resolved.path, 'shape/box');
   });
 
   await t.test('Should resolve camelCase Operations', async () => {
@@ -34,7 +35,8 @@ test('Operator Variant Resolution (Strict Casing)', async (t) => {
         name: 'rotateX', 
         args: [45] 
     });
-    assert.strictEqual(res.path, 'op/rotateX');
+    const resolved = res[0];
+    assert.strictEqual(resolved.path, 'op/rotateX');
   });
 
   await t.test('Should NOT resolve if casing is wrong', async () => {

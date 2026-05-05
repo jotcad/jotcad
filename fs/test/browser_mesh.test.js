@@ -29,7 +29,11 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
     uxServer = spawn(VITE_BIN, ['--port', PORT_UX, '--strictPort'], {
       cwd: UX_ROOT,
       stdio: 'pipe',
-      env: { ...process.env, VITE_VFS_URL: `http://localhost:${PORT_OPS}` }
+      env: { 
+        ...process.env, 
+        VITE_VFS_URL: `http://localhost:${PORT_OPS}`,
+        VITE_HTTPS: 'false'
+      }
     });
     
     // Forward UX logs with prefix
@@ -76,6 +80,7 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
 
 await t.test('should deliver catalog, define dynamic op, and execute it via mesh', async () => {
   const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 1024 });
 
   // Capture ALL browser console logs
   page.on('console', msg => {
@@ -94,10 +99,13 @@ await t.test('should deliver catalog, define dynamic op, and execute it via mesh
   // 2. Define Dynamic Op: user/Square(side)
   console.log('[Test Browser] Defining dynamic op...');
   await page.evaluate(() => {
-      const nameInput = document.querySelector('[data-testid="op-name-input"]');
-      nameInput.value = 'user/Square';
-      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      window.blackboard.createNewOp('user/Square');
+  });
 
+  // Wait for editor to appear
+  await page.waitForSelector('[data-testid="op-name-input"]');
+
+  await page.evaluate(() => {
       const argNameInput = document.querySelector('[data-testid="arg-name-0"]');
       argNameInput.value = 'side';
       argNameInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -110,7 +118,10 @@ await t.test('should deliver catalog, define dynamic op, and execute it via mesh
 
     // 3. Publish to Mesh
     console.log('[Test Browser] Publishing to mesh...');
-    await page.click('button[title="Publish to Mesh"]');
+    await page.click('button[title*="Publish"]');
+
+    // Wait for the button title to change to "Published to Mesh" indicating success
+    await page.waitForSelector('button[title="Published to Mesh"]', { timeout: 10000 });
 
     // 4. Verify catalog update
     await page.waitForFunction(() => {

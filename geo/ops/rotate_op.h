@@ -7,31 +7,115 @@ namespace jotcad {
 namespace geo {
 
 template <typename P = JotVfsProtocol>
-struct RotateOp : P {
-    static constexpr const char* path = "jot/rotate";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double angle) {
-        Shape out = in;
-        double turns = angle / 360.0;
-        Matrix r = Matrix::rotationZ(turns);
-        out.tf = r * in.tf;
+struct RotateOpBase : P {
+    static void execute_multi(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Matrix>& transforms) {
+        if (transforms.size() == 1) {
+            Shape out = in;
+            out.tf = transforms[0] * in.tf;
+            vfs->write(fulfilling.with_output("$out"), out);
+            return;
+        }
+
+        Shape out;
+        out.tf = in.tf;
+        out.add_tag("type", "group");
+        for (const auto& m : transforms) {
+            Shape c = in;
+            c.tf = m * in.tf;
+            out.components.push_back(c);
+        }
         vfs->write(fulfilling.with_output("$out"), out);
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "angle"}; }
+};
+
+template <typename P = JotVfsProtocol>
+struct RotateAxisOp : RotateOpBase<P> {
+    enum Axis { X, Y, Z };
+    static void execute_axis(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& turns, Axis axis) {
+        std::vector<Matrix> tfs;
+        for (double turn : turns) {
+            if (axis == X) tfs.push_back(Matrix::rotationX(turn));
+            else if (axis == Y) tfs.push_back(Matrix::rotationY(turn));
+            else tfs.push_back(Matrix::rotationZ(turn));
+        }
+
+        if (tfs.empty()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+        RotateOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct RotateXOp : RotateAxisOp<P> {
+    static constexpr const char* path = "jot/rotateX";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& turns) {
+        RotateAxisOp<P>::execute_axis(vfs, fulfilling, in, turns, RotateAxisOp<P>::X);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "turns"}; }
     static typename P::json schema() {
         return {
-            {"path", "jot/rotate"},
-            {"description", "Rotates the input shape around the Z-axis."},
+            {"path", "jot/rotateX"},
+            {"description", "Rotates the input shape around the X-axis (Tau-based turns)."},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The shape to rotate."}, {"affiliate", "$out"}},
-                {{"name", "angle"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "The rotation angle in degrees."}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", {0.0}}}
             }},
-            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The rotated shape."}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct RotateYOp : RotateAxisOp<P> {
+    static constexpr const char* path = "jot/rotateY";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& turns) {
+        RotateAxisOp<P>::execute_axis(vfs, fulfilling, in, turns, RotateAxisOp<P>::Y);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "turns"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/rotateY"},
+            {"description", "Rotates the input shape around the Y-axis (Tau-based turns)."},
+            {"arguments", {
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", {0.0}}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct RotateZOp : RotateAxisOp<P> {
+    static constexpr const char* path = "jot/rotateZ";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& turns) {
+        RotateAxisOp<P>::execute_axis(vfs, fulfilling, in, turns, RotateAxisOp<P>::Z);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "turns"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/rotateZ"},
+            {"description", "Rotates the input shape around the Z-axis (Tau-based turns)."},
+            {"arguments", {
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", {0.0}}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
 static void rotate_init(fs::VFSNode* vfs) {
-    Processor::register_op<RotateOp<>, Shape, double>(vfs, "jot/rotate");
+    Processor::register_op<RotateXOp<>, Shape, std::vector<double>>(vfs, "jot/rotateX");
+    Processor::register_op<RotateXOp<>, Shape, std::vector<double>>(vfs, "jot/rx");
+    Processor::register_op<RotateYOp<>, Shape, std::vector<double>>(vfs, "jot/rotateY");
+    Processor::register_op<RotateYOp<>, Shape, std::vector<double>>(vfs, "jot/ry");
+    Processor::register_op<RotateZOp<>, Shape, std::vector<double>>(vfs, "jot/rotateZ");
+    Processor::register_op<RotateZOp<>, Shape, std::vector<double>>(vfs, "jot/rz");
+    Processor::register_op<RotateZOp<>, Shape, std::vector<double>>(vfs, "jot/rotate");
+    Processor::register_op<RotateZOp<>, Shape, std::vector<double>>(vfs, "jot/r");
 }
 
 } // namespace geo

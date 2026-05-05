@@ -12,9 +12,9 @@ from the actual computation.
 - **Parsed, Not Executed:** Expressions are parsed into an Abstract Syntax Tree
   (AST) that maps to a VFS Selector chain. There is no runtime environment,
   avoiding arbitrary code execution risks.
-- **Symbols as Literals:** Unquoted identifiers (e.g., `length` in
-  `Box(length)`) are treated as native **Symbol Literals**, acting as late-bound
-  placeholders for VFS parameters.
+- **Typed Symbols:** Unquoted identifiers (e.g., `length` in `Box(length)`) are
+  treated as native **Symbol Literals**. To ensure VFS stability, symbols are
+  **re-typed** during evaluation to match their target slots (e.g., `jot:number`).
 - **Expressions as Addresses:** Every line of JotCAD code resolves to a
   deterministic **Mesh-VFS Selector**.
 - **Silent Construction:** Writing an expression does not execute work. It only
@@ -24,6 +24,12 @@ from the actual computation.
 - **Diameter Standard:** Standardize on **Diameter** (Width/Bounding Envelope)
   for all primitives. Diameter is a universal property of every shape and aligns
   with physical measurement tools.
+- **Interval Normalization:** Dimensional scalar values (like diameter) are
+  automatically normalized into symmetric **Intervals** (e.g., `10` -> `[-5, 5]`)
+  before reaching the VFS.
+- **Standardized evaluate() Return:** `JotCompiler.evaluate()` strictly returns
+  an **Array of Selectors**, even for single expressions. This ensures
+  consistent discovery of all computational terminals.
 - **Angular Turns:** Use **Turns** (Tau) where `1.0` is a full rotation
   ($360^\circ$).
 - **Demand-Driven:** Work is only triggered when a requester performs a `READ`.

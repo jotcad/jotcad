@@ -58,7 +58,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       // THE EXPRESSION:
       // pdf(offset(loop(group(origin, nth(points(hexagon), 0), nth(points(hexagon), 1))), diameter=5))
 
-      const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }).withOutput('$out');
+      const hexagon = new Selector('jot/Hexagon/diameter', { diameter: 200 }).withOutput('$out');
       const points = new Selector('jot/eachPoint', { $in: hexagon }).withOutput('$out');
       const point0 = new Selector('jot/nth', { $in: points, index: [0] }).withOutput('$out');
       const point1 = new Selector('jot/nth', { $in: points, index: [1] }).withOutput('$out');

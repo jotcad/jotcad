@@ -22,7 +22,7 @@ int main() {
     try {
         std::vector<uint8_t> png_file_bytes = vfs.read<std::vector<uint8_t>>(png_addr.with_output("file"));
         std::string actual_hash = vfs_hash256(png_file_bytes);
-        std::string golden_hash = "25ee1ec05ff2382c4b63b4a8142715d6aede554ac4b593136fcd3d63b69af6b7";
+        std::string golden_hash = "6bd8fd0d23d90f749db33bd8153e1cf11bd2983f88c3abaca70bb2728b99a1c9";
         
         std::cout << "  - 'file' port read OK (" << png_file_bytes.size() << " bytes)" << std::endl;
         std::cout << "  - SHA256: " << actual_hash << std::endl;

@@ -21,10 +21,11 @@ test('JotCAD Parser: Basic Function Call', async (t) => {
 
   const ast = parser.parse('Test(10, "hello", true)');
   const res = await compiler.evaluate(ast);
-  assert.strictEqual(res.path, 'jot/Test');
-  assert.strictEqual(res.parameters.size, 10);
-  assert.strictEqual(res.parameters.label, 'hello');
-  assert.strictEqual(res.parameters.active, true);
+  const term = res[0];
+  assert.strictEqual(term.path, 'jot/Test');
+  assert.strictEqual(term.parameters.size, 10);
+  assert.strictEqual(term.parameters.label, 'hello');
+  assert.strictEqual(term.parameters.active, true);
 });
 
 test('JotCAD Parser: Method Chaining', async (t) => {
@@ -45,9 +46,10 @@ test('JotCAD Parser: Method Chaining', async (t) => {
 
   const ast = parser.parse('box(100).rotateX(0.1)');
   const res = await compiler.evaluate(ast);
-  assert.strictEqual(res.path, 'jot/rotateX');
-  assert.strictEqual(res.parameters.angle, 0.1);
-  assert.strictEqual(res.parameters.$in.path, 'jot/box');
+  const term = res[0];
+  assert.strictEqual(term.path, 'jot/rotateX');
+  assert.strictEqual(term.parameters.angle, 0.1);
+  assert.strictEqual(term.parameters.$in.path, 'jot/box');
 });
 
 test('JotCAD Parser: Late-Bound Symbols', async (t) => {
@@ -60,8 +62,9 @@ test('JotCAD Parser: Late-Bound Symbols', async (t) => {
 
   const ast = parser.parse('box(width)');
   const res = await compiler.evaluate(ast);
-  assert.strictEqual(res.parameters.width.type, 'SYMBOL');
-  assert.strictEqual(res.parameters.width.name, 'width');
+  const term = res[0];
+  assert.strictEqual(term.parameters.width.type, 'jot:number');
+  assert.strictEqual(term.parameters.width.name, 'width');
 });
 
 test('JotCAD Evaluator: Symbol Resolution', async (t) => {
@@ -74,7 +77,8 @@ test('JotCAD Evaluator: Symbol Resolution', async (t) => {
 
   const ast = parser.parse('box(width)');
   const res = await compiler.evaluate(ast, { width: 42 });
-  assert.strictEqual(res.parameters.width, 42);
+  const term = res[0];
+  assert.strictEqual(term.parameters.width, 42);
 });
 
 test('JotCAD Parser: Deep Method Chaining', async (t) => {
@@ -92,9 +96,10 @@ test('JotCAD Parser: Deep Method Chaining', async (t) => {
 
   const ast = parser.parse('box(100).rotateX(0.1).offset(5).outline()');
   const res = await compiler.evaluate(ast);
-  assert.strictEqual(res.path, 'jot/outline');
-  assert.strictEqual(res.parameters.$in.path, 'jot/offset');
-  assert.strictEqual(res.parameters.$in.parameters.$in.path, 'jot/rotateX');
+  const term = res[0];
+  assert.strictEqual(term.path, 'jot/outline');
+  assert.strictEqual(term.parameters.$in.path, 'jot/offset');
+  assert.strictEqual(term.parameters.$in.parameters.$in.path, 'jot/rotateX');
 });
 
 test('JotCAD Parser: Array of Expressions', async (t) => {
@@ -135,7 +140,8 @@ test('JotCAD Parser: Complex Object Literals', async (t) => {
   });
 
   const ast = parser.parse('tri({ points: [pt(0,0), pt(10,0), pt(5,10)], color: "red" })');
-  const res = await compiler.evaluate(ast);
+  const res_raw = await compiler.evaluate(ast);
+  const res = res_raw[0];
   
   assert.strictEqual(res.path, 'jot/tri');
   const points = res.parameters.config.points;
@@ -161,7 +167,8 @@ test('JotCAD Evaluator: Deep Symbol Resolution', async (t) => {
   });
 
   const ast = parser.parse('box({ width: width }).rotateX(turn)');
-  const res = await compiler.evaluate(ast, { width: 100, turn: 0.5 });
+  const res_raw = await compiler.evaluate(ast, { width: 100, turn: 0.5 });
+  const res = res_raw[0];
   assert.strictEqual(res.parameters.$in.parameters.config.width, 100);
   assert.strictEqual(res.parameters.angle, 0.5);
 });
@@ -188,7 +195,8 @@ test('JotCAD Evaluator: .spec() Canonicalization', async (t) => {
     });
 
     const ast = parser.parse('box(length).spec({ length: { alias: ["L", "len"], default: 50 } })');
-    const res = await compiler.evaluate(ast, { L: 100 });
+    const res_raw = await compiler.evaluate(ast, { L: 100 });
+    const res = res_raw[0];
     
     // In this simplified test, we just check that the symbol was correctly handled
     assert.strictEqual(res.path, 'jot/spec');

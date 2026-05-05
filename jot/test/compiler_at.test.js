@@ -57,9 +57,9 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   });
 
   const ast = parser.parse('Hexagon(30).at(eachCorner(), cut(Triangle(2)))');
-  const result = await compiler.evaluate(ast);
+  const res = await compiler.evaluate(ast);
   
-  const at = result;
+  const at = res[0];
   assert.strictEqual(at.path, 'jot/at');
   assert.strictEqual(at.parameters.target.path, 'jot/eachCorner');
   

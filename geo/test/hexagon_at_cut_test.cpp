@@ -27,7 +27,7 @@ int main() {
     std::cout << "Testing Hexagon(30).at(eachCorner(), cut(Triangle(2))) Stage-by-Stage..." << std::endl;
     
     // 1. Hexagon(30)
-    fs::Selector hex_addr = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    fs::Selector hex_addr = fs::Selector{"jot/Hexagon/diameter", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_addr);
     render_to(&vfs, hex_addr, "step1_hexagon");
     

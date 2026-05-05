@@ -29,7 +29,7 @@ int main() {
     // This box covers (-5,-5,-5) to (5,5,5).
     // It should clip the segment into two parts: (-20 to -5) and (5 to 20).
     fs::Selector tool_sel = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}};
-    BoxOp<>::execute(&vfs, tool_sel, 10.0, 10.0, 10.0);
+    BoxOp<>::execute(&vfs, tool_sel, Interval{-5.0, 5.0}, Interval{-5.0, 5.0}, Interval{-5.0, 5.0});
     Shape tool_shape = vfs.read<Shape>(tool_sel);
     
     // 3. Perform Cut

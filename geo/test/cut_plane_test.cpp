@@ -13,7 +13,7 @@ int main() {
     // 1. Create a 20x20x20 Cube centered at origin
     // Bounds: [-10, 10]
     fs::Selector box_sel = {"jot/Box", {{"width", 20.0}, {"height", 20.0}, {"depth", 20.0}}};
-    BoxOp<>::execute(&vfs, box_sel, 20.0, 20.0, 20.0);
+    BoxOp<>::execute(&vfs, box_sel, Interval{-10.0, 10.0}, Interval{-10.0, 10.0}, Interval{-10.0, 10.0});
     Shape box_shape = vfs.read<Shape>(box_sel);
 
     // 2. Create a Z Plane moved up by 5 units

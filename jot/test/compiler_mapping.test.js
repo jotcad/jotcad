@@ -19,13 +19,15 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
       }
     });
     const res = await compiler.evaluate(parser.parse('Box(10)'));
-    assert.strictEqual(res.parameters.radius, 10);
+    const resolved = res[0];
+    assert.strictEqual(resolved.parameters.radius, 10);
   });
 
   await t.test('Named Argument Mapping (Name=Value)', async () => {
     const res = await compiler.evaluate(parser.parse('Box(depth=5, radius=20)'));
-    assert.strictEqual(res.parameters.radius, 20);
-    assert.strictEqual(res.parameters.depth, 5);
+    const resolved = res[0];
+    assert.strictEqual(resolved.parameters.radius, 20);
+    assert.strictEqual(resolved.parameters.depth, 5);
   });
 
   // FAIL: Fails with "Missing required argument 'tools'" due to the affiliate blocking bug
@@ -57,8 +59,9 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
 
     const ast = parser.parse('Box(10).at(Box(2), cut(Box(1)))');
     const res = await compiler.evaluate(ast);
-    assert.strictEqual(res.parameters.target.parameters.radius, 2);
-    assert.strictEqual(res.parameters.op.path, 'jot/cut');
+    const resolved = res[0];
+    assert.strictEqual(resolved.parameters.target.parameters.radius, 2);
+    assert.strictEqual(resolved.parameters.op.path, 'jot/cut');
   });
 
   await t.test('Lookahead Failure (Strict Mismatch)', async () => {

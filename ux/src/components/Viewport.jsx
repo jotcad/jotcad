@@ -8,6 +8,7 @@ export const Viewport = (props) => {
   let containerRef;
   let scene, camera, controls;
   const id = Math.random().toString(36).substring(7);
+  let hasAutoZoomed = false;
 
   const init = () => {
     if (!containerRef) return;
@@ -56,37 +57,45 @@ export const Viewport = (props) => {
 
   createEffect(async () => {
     const data = props.data;
+    const threshold = props.edgeThreshold ?? 15;
+    
     if (data && scene) {
-      // Clear previous geometry
-      while (scene.children.length > 0) {
-        const obj = scene.children[0];
-        if (obj.type === 'Mesh' || obj.type === 'LineSegments') {
-          obj.geometry.dispose();
-          obj.material.dispose();
+      // Clear previous geometry (Meshes and LineSegments)
+      const toRemove = [];
+      scene.traverse(child => {
+        if (child.type === 'Mesh' || child.type === 'LineSegments') {
+          toRemove.push(child);
+        }
+      });
+      for (const obj of toRemove) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+          else obj.material.dispose();
         }
         scene.remove(obj);
       }
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-      const dl = new THREE.DirectionalLight(0xffffff, 0.8);
-      dl.position.set(100, 200, 100);
-      scene.add(dl);
-
       try {
-        await renderJotToScene(vfs, data, scene);
+        await renderJotToScene(vfs, data, scene, threshold);
 
-        const box = new THREE.Box3().setFromObject(scene);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        if (!hasAutoZoomed) {
+          const box = new THREE.Box3().setFromObject(scene);
+          if (!box.isEmpty()) {
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
-        const distance = maxDim * 2;
-        camera.position.set(center.x, center.y, center.z + distance);
-        camera.lookAt(center);
-        camera.up.set(0, 1, 0);
+            const distance = maxDim * 2;
+            camera.position.set(center.x, center.y, center.z + distance);
+            camera.lookAt(center);
+            camera.up.set(0, 1, 0);
 
-        controls.target.copy(center);
-        controls.update();
+            controls.target.copy(center);
+            controls.update();
+            hasAutoZoomed = true;
+          }
+        }
         requestRender();
       } catch (e) {
         console.error('[Viewport] Render error:', e);

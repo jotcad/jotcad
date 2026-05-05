@@ -144,7 +144,7 @@ const toColor = (tags) => {
   return new THREE.Color(0x808080);
 };
 
-export const buildMeshes = async ({ assets, shape, scene }) => {
+export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) => {
   // Add lights if not already present in the scene for Lambert/Phong materials
   if (!scene.getObjectByName('ambient_light')) {
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
@@ -164,64 +164,20 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
       const text = await assets.getText(s.geometry);
       if (text) {
         const { vertices, triangles, segments, faces } = decodeGeometry(text);
+        if (vertices.length === 0) return;
+
+        const meshIndices = [];
         
         // 1. Triangles
-        if (triangles.length > 0) {
-          const pos = [], norm = [];
-          for (const tri of triangles) {
-            const v0 = vertices[tri[0]], v1 = vertices[tri[1]], v2 = vertices[tri[2]];
-            if (!v0 || !v1 || !v2) continue;
-            const vec0 = new THREE.Vector3(...v0), vec1 = new THREE.Vector3(...v1), vec2 = new THREE.Vector3(...v2);
-            const n = new THREE.Vector3().crossVectors(
-              new THREE.Vector3().subVectors(vec2, vec1),
-              new THREE.Vector3().subVectors(vec0, vec1)
-            ).normalize();
-            pos.push(...v0, ...v1, ...v2);
-            for (let i = 0; i < 3; i++) norm.push(n.x, n.y, n.z);
-          }
-          if (pos.length > 0) {
-            const g = new THREE.BufferGeometry();
-            g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            g.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
-            const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
-                color: shapeColor,
-                side: THREE.DoubleSide,
-                polygonOffset: true,
-                polygonOffsetFactor: 4,
-                polygonOffsetUnits: 4
-            }));
-            mesh.applyMatrix4(worldMat);
-            scene.add(mesh);
-          }
+        for (const tri of triangles) {
+          meshIndices.push(...tri);
         }
 
-        // 2. Segments
-        if (segments.length > 0) {
-          const pos = [];
-          for (const seg of segments) {
-            const v0 = vertices[seg[0]], v1 = vertices[seg[1]];
-            if (v0 && v1) {
-              pos.push(...v0, ...v1);
-            }
-          }
-          if (pos.length > 0) {
-            const g = new THREE.BufferGeometry();
-            g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            // Use the shape color directly for edges
-            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ 
-              color: shapeColor,
-              linewidth: 1
-            }));
-            line.applyMatrix4(worldMat);
-            scene.add(line);
-          }
-        }
-
-        // 3. Faces
+        // 2. Faces (Triangulated)
         for (const [face, ...holes] of faces) {
-          const outer = face.map((i) => vertices[i]).filter(Boolean);
+          const outer = face.map((i) => vertices[i]).filter(v => v !== undefined);
           if (outer.length < 3) continue;
-          const hls = holes.map((h) => h.map((i) => vertices[i]).filter(Boolean));
+          const hls = holes.map((h) => h.map((i) => vertices[i]).filter(v => v !== undefined));
 
           const n = new THREE.Vector3(0, 0, 0);
           for (let i = 0; i < outer.length; i++) {
@@ -233,7 +189,7 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           }
           n.normalize();
           
-          if (n.lengthSq() < 0.0001) n.set(0, 0, 1); // Fallback for failed normal
+          if (n.lengthSq() < 0.0001) n.set(0, 0, 1);
           
           let u = 0, v = 1;
           const nx = Math.abs(n.x), ny = Math.abs(n.y), nz = Math.abs(n.z);
@@ -249,25 +205,62 @@ export const buildMeshes = async ({ assets, shape, scene }) => {
           }
 
           const indices = earcut(flat, hIdx);
-          const allVertices = [...outer, ...hls.flat()];
-          const posArr = allVertices.flatMap((p) => [p[0], p[1], p[2]]);
-          const normArr = allVertices.flatMap(() => [n.x, n.y, n.z]);
-            
+          const allFaceIndices = [
+            ...face.filter(i => vertices[i] !== undefined), 
+            ...holes.flatMap(h => h.filter(i => vertices[i] !== undefined))
+          ];
+          for (const idx of indices) {
+            meshIndices.push(allFaceIndices[idx]);
+          }
+        }
+
+        if (meshIndices.length > 0) {
           const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
-          g.setAttribute('normal', new THREE.Float32BufferAttribute(normArr, 3));
-          g.setIndex(indices);
-          
+          g.setAttribute('position', new THREE.Float32BufferAttribute(vertices.flat(), 3));
+          g.setIndex(meshIndices);
+          g.computeVertexNormals(); 
+
           const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ 
               color: shapeColor,
               side: THREE.DoubleSide,
+              flatShading: true,
               polygonOffset: true,
-              polygonOffsetFactor: 4,
-              polygonOffsetUnits: 4
+              polygonOffsetFactor: 1,
+              polygonOffsetUnits: 1
           }));
-
           mesh.applyMatrix4(worldMat);
           scene.add(mesh);
+
+          // Sharp Edge Highlighting
+          const edgesGeo = new THREE.EdgesGeometry(g, edgeThreshold);
+          const edgesLine = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ 
+            color: 0xffffff, 
+            transparent: true, 
+            opacity: 0.5 
+          }));
+          edgesLine.applyMatrix4(worldMat);
+          scene.add(edgesLine);
+        }
+
+        // 3. Segments
+        if (segments.length > 0) {
+          const pos = [];
+          for (const seg of segments) {
+            const v0 = vertices[seg[0]], v1 = vertices[seg[1]];
+            if (v0 && v1) {
+              pos.push(...v0, ...v1);
+            }
+          }
+          if (pos.length > 0) {
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ 
+              color: shapeColor,
+              linewidth: 1
+            }));
+            line.applyMatrix4(worldMat);
+            scene.add(line);
+          }
         }
       }
     }
@@ -467,7 +460,7 @@ export async function packZFS(vfs, shape) {
   return zfs;
 }
 
-export async function renderJotToScene(vfs, data, scene) {
+export async function renderJotToScene(vfs, data, scene, edgeThreshold = 15) {
   const assets = new JOTAssets(vfs);
   let shape;
   let textData = data;
@@ -488,7 +481,7 @@ export async function renderJotToScene(vfs, data, scene) {
     }
   } else if (typeof textData === 'object') shape = textData;
 
-  if (shape) await buildMeshes({ assets, shape, scene });
+  if (shape) await buildMeshes({ assets, shape, scene, edgeThreshold });
   return shape;
 }
 

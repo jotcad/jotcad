@@ -8,10 +8,32 @@ namespace geo {
 
 template <typename P = JotVfsProtocol>
 struct ScaleOpBase : P {
+    static void eager_scale(fs::VFSNode* vfs, Shape& s, const Matrix& s_mat) {
+        if (s.geometry.has_value()) {
+            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+            geo.apply_tf(s_mat);
+            s.geometry = vfs->materialize(geo);
+        }
+        
+        // Rigid-Preserving Matrix Update:
+        // Scale the translation part of the matrix, but keep the rotation part rigid.
+        // This ensures the object stays at its 'scaled' position relative to parent.
+        Transformation t = s.tf.t;
+        s.tf = Matrix(Transformation(
+            t.cartesian(0,0), t.cartesian(0,1), t.cartesian(0,2), t.cartesian(0,3) * s_mat.t.cartesian(0,0),
+            t.cartesian(1,0), t.cartesian(1,1), t.cartesian(1,2), t.cartesian(1,3) * s_mat.t.cartesian(1,1),
+            t.cartesian(2,0), t.cartesian(2,1), t.cartesian(2,2), t.cartesian(2,3) * s_mat.t.cartesian(2,2)
+        ));
+
+        for (auto& child : s.components) {
+            eager_scale(vfs, child, s_mat);
+        }
+    }
+
     static void execute_multi(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Matrix>& transforms) {
         if (transforms.size() == 1) {
             Shape out = in;
-            out.tf = transforms[0] * in.tf;
+            eager_scale(vfs, out, transforms[0]);
             vfs->write(fulfilling.with_output("$out"), out);
             return;
         }
@@ -21,7 +43,7 @@ struct ScaleOpBase : P {
         out.add_tag("type", "group");
         for (const auto& m : transforms) {
             Shape c = in;
-            c.tf = m * in.tf;
+            eager_scale(vfs, c, m);
             out.components.push_back(c);
         }
         vfs->write(fulfilling.with_output("$out"), out);

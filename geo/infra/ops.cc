@@ -9,6 +9,15 @@ namespace jotcad { namespace geo { void register_all_ops(fs::VFSNode* vfs); } }
 using namespace jotcad::geo;
 
 int main(int argc, char** argv) {
+    if (argc > 1 && std::string(argv[1]) == "--schema-only") {
+        fs::VFSNode::Config config;
+        config.id = "temp-schema-node";
+        fs::VFSNode node(config);
+        register_all_ops(&node);
+        std::cout << node.get_catalog().dump(2) << std::endl;
+        return 0;
+    }
+
     int port = 9091;
     if (const char* env_p = std::getenv("PORT")) {
         port = std::stoi(env_p);

@@ -8,7 +8,7 @@ int main() {
     
     std::cout << "Testing Corners Operation..." << std::endl;
     
-    fs::Selector hex_sel = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    fs::Selector hex_sel = fs::Selector{"jot/Hexagon/diameter", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_sel);
     
     fs::Selector corners_sel = fs::Selector{"jot/corners", {{"$in", hex_sel}}}.with_output("$out");

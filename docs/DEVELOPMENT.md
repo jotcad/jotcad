@@ -21,7 +21,7 @@ struct MyOp {
     // 2. Vectorized Execution Logic
     // Processor automatically expands sequence inputs (e.g., [10, 20])
     // and calls execute() for each permutation.
-    static Shape execute(const Shape& in, double distance, double segments) {
+    static Shape execute(const Shape& in, Interval distance, double segments) {
         Shape out = in;
         // ... geometry logic ...
         return out;
@@ -31,8 +31,8 @@ struct MyOp {
     static nlohmann::json schema() {
         return {
             {"arguments", {
-                {"distance", {{"type", "number"}, {"default", 1.0}}},
-                {"segments", {{"type", "number"}, {"default", 16}}}
+                {"distance", {{"type", "jot:interval"}, {"default", 1.0}}},
+                {"segments", {{"type", "jot:number"}, {"default", 16}}}
             }},
             {"inputs", {{"source", {{"type", "geometry"}}}}},
             {"outputs", {{"result", {{"type", "geometry"}}}}},
@@ -44,14 +44,14 @@ struct MyOp {
 // 4. Registration in geo/ops.cc
 // Processor::register_op<Op, T...>(vfs, "op/path")
 // T... must match the trailing arguments of execute()
-processor.register_op<MyOp, double, double>(vfs, "op/my_op");
+processor.register_op<MyOp, Interval, double>(vfs, "op/my_op");
 ```
 
 ### 1.2 Triple-Block Schema Mandate
 
 Every operator **MUST** define three blocks in its `schema()`:
 
-1.  **`arguments`**: Literal values or VFS ports (e.g., `number`, `string`, `selector`). Every key here must have a corresponding entry in `argument_keys()`.
+1.  **`arguments`**: Literal values or VFS ports (e.g., `jot:number`, `jot:string`, `jot:interval`). Every key here must have a corresponding entry in `argument_keys()`.
 2.  **`inputs`**: Formal metadata about required input Shapes (usually labeled `source`).
 3.  **`outputs`**: Formal metadata about produced output Shapes (usually labeled `result`).
 
@@ -60,6 +60,7 @@ Every operator **MUST** define three blocks in its `schema()`:
 The `Processor` handles the **Universal Sequence Principle** automatically:
 - If a user provides a single value (e.g., `distance: 10`), `execute` is called once.
 - If a user provides a sequence (e.g., `distance: [10, 20]`), `execute` is called for each value, and the results are harvested into a unified VFS sequence.
+- **Interval Normalization:** Dimensional arguments (like `distance`) should use the `Interval` type. The `Processor` automatically handles conversion from scalars to symmetric intervals.
 - **Atomic Types:** Use `std::vector<double>` in the `execute` signature if the operator needs to consume a whole sequence at once (e.g., `PointsOp`).
 
 ### 1.5 Geometry Well-Formedness Assertions
@@ -153,9 +154,19 @@ Browsers (Chrome, Safari) disable `crypto.subtle` on insecure HTTP IPs.
 - **Network IPs:** REQUIRES HTTPS.
 - **Handshake Rule:** When using self-signed certs, you MUST manually visit BOTH the UX port (3030) and the VFS port (9092) in your mobile browser and click "Advanced -> Proceed" for each.
 
-### 5.3 C++ SSL Support
+### 5.3 C++ SSL & Library Dependencies
 
-The C++ nodes (`geo/bin/ops`) must be compiled with OpenSSL support to communicate with HTTPS neighbors.
+The C++ nodes (`geo/bin/ops`) must be compiled with OpenSSL and FreeType support.
 - **Header:** `#define CPPHTTPLIB_OPENSSL_SUPPORT` must be set before including `httplib.h`.
-- **Linking:** Link against `-lcrypto` and `-lssl`.
+- **Linking:** Link against `-lssl`, `-lcrypto`, `-lz` (for static FreeType), and `-ldl`.
+- **Order Mandate:** `-lssl` MUST precede `-lcrypto`.
+- **Linker Groups:** Use `-Wl,--start-group` and `-Wl,--end-group` to resolve transitive and circular dependencies between static archives.
 - **Verification:** For development, certificate verification is disabled in the C++ core to accommodate self-signed local certs.
+
+### 5.4 Forcing HTTP Mode
+
+In certain integration test scenarios (like Puppeteer), HTTPS can trigger "Mixed Content" blocks or certificate errors. You can force the UX server to run in HTTP mode:
+```bash
+VITE_HTTPS=false npm run unit_test
+```
+The `ux/vite.config.js` respects this flag even if local certificates are present.

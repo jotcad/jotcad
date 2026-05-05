@@ -67,6 +67,7 @@ test('Operator Variant Resolution and Dispatch', async (t) => {
     
     // First match wins
     const res = await compiler.evaluate({ type: 'CALL', name: 'Hexagon', args: [] });
-    assert.strictEqual(res.path, 'jot/Hexagon/full');
+    const resolved = res[0];
+    assert.strictEqual(resolved.path, 'jot/Hexagon/full');
   });
 });

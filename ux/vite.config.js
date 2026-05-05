@@ -7,7 +7,7 @@ const sslDir = path.resolve(__dirname, '../.ssl');
 const keyPath = path.join(sslDir, 'localhost-key.pem');
 const certPath = path.join(sslDir, 'localhost-cert.pem');
 
-const https = fs.existsSync(keyPath) && fs.existsSync(certPath) ? {
+const https = (process.env.VITE_HTTPS !== 'false') && fs.existsSync(keyPath) && fs.existsSync(certPath) ? {
   key: fs.readFileSync(keyPath),
   cert: fs.readFileSync(certPath),
 } : false;

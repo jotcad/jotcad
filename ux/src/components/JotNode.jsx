@@ -18,6 +18,7 @@ export const JotNode = (props) => {
     { name: 'width', type: 'jot:number', testValue: 20 }
   ]);
   const [code, setCode] = createSignal(props.initial.code || DEFAULT_CODE);
+  const [edgeThreshold, setEdgeThreshold] = createSignal(props.initial.edgeThreshold ?? 15);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
   const [resultData, setResultData] = createSignal(null);
@@ -30,14 +31,15 @@ export const JotNode = (props) => {
       size: size(),
       opName: opName(),
       args: args(),
-      code: code()
+      code: code(),
+      edgeThreshold: edgeThreshold()
     });
   };
 
   // Only sync heavy stuff (code/args) automatically or on edit
   createEffect(() => {
     // Track reactive changes and sync
-    code(); args(); opName();
+    code(); args(); opName(); edgeThreshold();
     syncToBlackboard();
   });
 
@@ -347,8 +349,22 @@ export const JotNode = (props) => {
               </div>
             }
           >
-            <Viewport data={resultData()} />
+            <Viewport data={resultData()} edgeThreshold={edgeThreshold()} />
           </Show>
+          
+          <div class="absolute top-2 right-2 flex flex-col items-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div class="flex items-center gap-2 bg-black/60 rounded px-2 py-1 border border-white/10">
+               <span class="text-[9px] font-black uppercase text-white/60">Edge Threshold</span>
+               <input 
+                 type="range" min="0" max="90" step="1" 
+                 value={edgeThreshold()} 
+                 onInput={e => setEdgeThreshold(parseInt(e.target.value))}
+                 class="w-20 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+               />
+               <span class="text-[9px] font-mono text-cyan-400 w-4">{edgeThreshold()}°</span>
+            </div>
+          </div>
+
           <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40 pointer-events-none group-hover:text-white/80 transition-colors">
             LOCAL VIEWPORT
           </div>

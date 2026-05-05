@@ -11,13 +11,13 @@ int main() {
     
     // 1. Create Base Cube (20x20x20)
     fs::Selector base_sel = {"jot/Box/base", {{"width", 20.0}, {"height", 20.0}, {"depth", 20.0}}};
-    BoxOp<>::execute(&vfs, base_sel, 20.0, 20.0, 20.0);
+    BoxOp<>::execute(&vfs, base_sel, Interval{-10.0, 10.0}, Interval{-10.0, 10.0}, Interval{-10.0, 10.0});
     Shape base_shape = vfs.read<Shape>(base_sel);
 
     // 2. Create Tool Cube (10x10x10) centered at (10,10,10)
     // This should overlap one corner of the base cube.
     fs::Selector tool_sel = {"jot/Box/tool", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}};
-    BoxOp<>::execute(&vfs, tool_sel, 10.0, 10.0, 10.0);
+    BoxOp<>::execute(&vfs, tool_sel, Interval{-5.0, 5.0}, Interval{-5.0, 5.0}, Interval{-5.0, 5.0});
     Shape tool_shape = vfs.read<Shape>(tool_sel);
     tool_shape.tf = Matrix::translate(10, 10, 10).to_vec();
     vfs.write(tool_sel, tool_shape);

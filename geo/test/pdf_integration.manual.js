@@ -21,7 +21,7 @@ async function main() {
                 parameters: {
                     color: 'green',
                     $in: {
-                        path: 'jot/Hexagon/full',
+                        path: 'jot/Hexagon/diameter',
                         parameters: {
                             diameter: 100
                         }

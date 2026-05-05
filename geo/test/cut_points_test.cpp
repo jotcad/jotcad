@@ -26,7 +26,7 @@ int main() {
 
     // 2. Create a Tool Box (10.1x10.1x10.1) centered at (0,0,0)
     fs::Selector tool_sel = {"jot/Box", {{"width", 10.1}, {"height", 10.1}, {"depth", 10.1}}};
-    BoxOp<>::execute(&vfs, tool_sel, 10.1, 10.1, 10.1);
+    BoxOp<>::execute(&vfs, tool_sel, Interval{-5.05, 5.05}, Interval{-5.05, 5.05}, Interval{-5.05, 5.05});
     Shape tool_shape = vfs.read<Shape>(tool_sel);
     
     // 3. Perform Cut

@@ -64,17 +64,17 @@ int main() {
 
     // 1. Box
     Selector box_addr = {"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}};
-    BoxOp<>::execute(&vfs, box_addr, 10.0, 10.0, 10.0);
+    Processor::execute(&vfs, box_addr);
     tests["box"] = {vfs.read<Shape>(box_addr), "95e7a44b7954f9faa3839b5fee1c67161510081c5d472562b742a4876105f06b"};
 
     // 2. Hexagon
-    Selector hex_addr = {"jot/Hexagon/full", {{"radius", 10.0}}};
-    HexagonFullOp<>::execute(&vfs, hex_addr, 10.0);
+    Selector hex_addr = {"jot/Hexagon/diameter", {{"diameter", 10.0}}};
+    Processor::execute(&vfs, hex_addr);
     tests["hexagon"] = {vfs.read<Shape>(hex_addr), ""}; // Needs initial baseline
 
     // 3. Triangle
-    Selector tri_addr.with_output("$out") = {"jot/Triangle/equilateral", {{"side", 10.0}}};
-    TriangleEquilateralOp<>::execute(&vfs, tri_addr.with_output("$out"), {10.0, 10.0, 10.0});
+    Selector tri_addr = {"jot/Triangle/equilateral", {{"size", {10.0}}}} ;
+    Processor::execute(&vfs, tri_addr);
     tests["triangle"] = {vfs.read<Shape>(tri_addr.with_output("$out")), ""}; // Needs initial baseline
 
     bool all_passed = true;
