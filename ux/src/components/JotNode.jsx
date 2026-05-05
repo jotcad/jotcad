@@ -11,14 +11,14 @@ import { renderJotToScene, packZFS } from '../lib/three_utils';
 export const JotNode = (props) => {
   let nodeRef;
 
-  const [pos, setPos] = createSignal(props.initial.pos || { x: 400, y: 400 });
-  const [size, setSize] = createSignal(props.initial.size || { width: 500, height: 600 });
-  const [opName, setOpName] = createSignal(props.initial.opName || 'user/MyOp');
-  const [args, setArgs] = createSignal(props.initial.args || [
+  const [pos, setPos] = createSignal(props.initial?.pos || { x: 400, y: 400 });
+  const [size, setSize] = createSignal(props.initial?.size || { width: 500, height: 600 });
+  const [opName, setOpName] = createSignal(props.initial?.opName || 'user/MyOp');
+  const [args, setArgs] = createSignal(props.initial?.args || [
     { name: 'width', type: 'jot:number', testValue: 20 }
   ]);
-  const [code, setCode] = createSignal(props.initial.code || DEFAULT_CODE);
-  const [edgeThreshold, setEdgeThreshold] = createSignal(props.initial.edgeThreshold ?? 15);
+  const [code, setCode] = createSignal(props.initial?.code || DEFAULT_CODE);
+  const [edgeThreshold, setEdgeThreshold] = createSignal(props.initial?.edgeThreshold ?? 15);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
   const [results, setResults] = createSignal([]);
@@ -26,6 +26,7 @@ export const JotNode = (props) => {
 
   // Sync state back to blackboard
   const syncToBlackboard = () => {
+    if (!props.initial?.id) return;
     blackboard.updateEditorState(props.initial.id, {
       pos: pos(),
       size: size(),

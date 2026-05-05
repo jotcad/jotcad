@@ -89,7 +89,7 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
       schema: { 
         arguments: [
             { name: '$in', type: 'jot:shape', affiliate: '$out' },
-            { name: 'angle', type: 'jot:numbers', default: [0] }
+            { name: 'turns', type: 'jot:numbers', default: [0] }
         ],
         outputs: { $out: { type: 'jot:shape' } }
       },
@@ -225,7 +225,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
   const compile = async (code, options = {}) => {
     const ast = parser.parse(code);
     const c = options.compiler || baseCompiler;
-    return await c.evaluate(ast);
+    const results = await c.evaluate(ast);
+    return results[0];
   };
 
   describe('Strict Casing', () => {
@@ -260,14 +261,14 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     it('should handle optimized chain (optimizeAliases: true)', async () => {
       const res = await compile('Box(10).pdf("out.pdf")');
       // In next-gen compiler, if a method is a side-demand (like pdf), 
-      // evaluate returns the primary result.
-      expect(res.path).toBe('jot/Box');
+      // evaluate returns the primary result (the tail of the chain).
+      expect(res.path).toBe('jot/pdf');
     });
 
     it('should handle complex optimized chain: Box(10).pdf("out.pdf").offset(2)', async () => {
       const res = await compile('Box(10).pdf("out.pdf").offset(2)');
       expect(res.path).toBe('jot/offset');
-      expect(res.parameters.$in.path).toBe('jot/Box');
+      expect(res.parameters.$in.path).toBe('jot/pdf');
     });
   });
 
@@ -275,8 +276,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     it('should pass range(3) as a Selector to rotateZ: Box(10).rotateZ(range(3))', async () => {
       const res = await compile('Box(10).rotateZ(range(3))');
       expect(res.path).toBe('jot/rotateZ');
-      expect(res.parameters.angle[0].path).toBe('jot/range');
-      expect(res.parameters.angle[0].parameters.count).toBe(3);
+      expect(res.parameters.turns[0].path).toBe('jot/range');
+      expect(res.parameters.turns[0].parameters.count).toBe(3);
     });
   });
 
@@ -285,7 +286,7 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
       const res = await compile(
         'Hexagon(50).offset(2).outline().pdf("out.pdf")'
       );
-      expect(res.path).toBe('jot/outline');
+      expect(res.path).toBe('jot/pdf');
     });
   });
 

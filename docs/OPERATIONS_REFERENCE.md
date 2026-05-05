@@ -268,7 +268,22 @@ Box(10).smooth(limit=1/24, resolution=2.0)
 Box(10).at(eachCorner().top()).smooth(limit=1/36)
 ```
 
-## 10. Transformation
+## 10. Movement
+
+### `m(x, y, z)` / `move(x, y, z)`
+Translates the subject by the specified X, Y, and Z offsets.
+
+- **`x`, `y`, `z`**: Numeric offsets.
+- **Example**: `Box(10).m(0, 10, 0)`
+
+### `mx(val)`, `my(val)`, `mz(val)`
+Axis-specific shorthands for translation. These operators align with the **Universal Sequence Principle**.
+
+- **`val`**: Can be a single `jot:number` or a `jot:numbers` sequence (Array).
+- **Sequence Behavior**: If an array is provided, the operator generates a **Group** containing one translated instance for each offset in the sequence.
+- **Example**: `Box(10).mx([0, 20, 40])` results in a group of three boxes spaced at 20mm intervals.
+
+## 11. Transformation
 
 ### `s(x, y, z)` / `scale(x, y, z)`
 Scales the subject along the local axes.

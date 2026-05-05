@@ -4,13 +4,17 @@ import { JotNode } from '../src/components/JotNode';
 import { blackboard, vfs } from '../src/lib/blackboard';
 
 // Mock interactjs
-vi.mock('interactjs', () => ({
-  default: vi.fn().mockReturnValue({
+vi.mock('interactjs', () => {
+  const mock = vi.fn().mockReturnValue({
     draggable: vi.fn().mockReturnThis(),
     resizable: vi.fn().mockReturnThis(),
     on: vi.fn().mockReturnThis()
-  })
-}));
+  });
+  mock.modifiers = {
+    restrictSize: vi.fn().mockReturnValue({})
+  };
+  return { default: mock };
+});
 
 // Mock Blackboard and VFS
 vi.mock('../src/lib/blackboard', () => {
@@ -36,8 +40,10 @@ vi.mock('../src/lib/blackboard', () => {
           }
         }
       }),
-      setError: vi.fn()
-    }
+      setError: vi.fn(),
+      dynamicOps: vi.fn().mockReturnValue({})
+    },
+    DEFAULT_CODE: 'Box(10)'
   };
 });
 
@@ -55,7 +61,7 @@ describe('JotNode Terminal Integration', () => {
     const { unmount } = render(() => <JotNode id="test-node" />);
     
     // 1. Find the code editor (text area)
-    const editor = screen.getByDisplayValue(/Box\(width, 10, 0\)/);
+    const editor = screen.getByDisplayValue(/Box\(10\)/);
     
     // 2. Update code to produce a PDF terminal
     fireEvent.input(editor, { target: { value: 'Box(10).pdf("foo.pdf")' } });
