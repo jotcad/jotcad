@@ -38,53 +38,39 @@ Within a bucket, features are sorted by **Dominance** so that the "Main" face or
 
 Alignment is the composition of three active operators: **`at`**, **`by`**, and **`to`**.
 
-### 3.1 `at(query)` — The Query (Reference)
-Called without a recipe, `at()` returns the oriented **Frame** (coordinate system) of the queried feature.
-- **Congruent**: The Z-axis points **out** of the part (Standard orientation).
+### 3.1 `at(query, [recipe])` — Scoped Context
+- **As an Operator**: Temporarily reorients the **entire subject** so that the queried feature is at the origin $(0,0,0)$ facing $+Z$. It applies the `recipe` in this local frame and then projects the result back to world space.
+- **As a Query**: Returns the oriented **Frame** (coordinate system) of the queried feature.
 
-### 3.2 `to(query)` — The Socket (Mate)
-Similar to `at()`, but returns an **Inverted Frame**.
-- **Opposed**: The Z-axis points **into** the part.
-- **Usage**: Used for **Surface-to-Surface Mating**.
+### 3.2 `by(reference)` — Relative Composition
+- **Behavior**: Composes the current transform with the reference's transform ($T_{new} = T_{ref} \times T_{old}$).
+- **Usage**: This is the fundamental movement operator. `move(v)` is sugar for `by(Translation(v))`.
 
-### 3.3 `by(reference)` — The "Grab"
-Moves the entire shape so that the specified `reference` frame is now the **World Origin** $(0,0,0)$ facing $+Z$.
-- **Math**: $T_{new} = \text{inverse}(T_{ref}) \times T_{old}$
-
-### 3.4 `to(destination)` — The "Place"
-Moves the entire shape so that its current origin $(0,0,0)$ matches the `destination` frame.
-- **Math**: $T_{new} = T_{dest} \times T_{old}$
-
-### 3.5 `place(template_shape)` — The "Distributor"
-Instantiates a template shape at every frame in the current collection. This is a constructive operator typically used with selection generators.
-- **Usage**: `eachCorner().place(Bolt())`
-- **Result**: A group containing transformed copies of the template.
+### 3.3 `to(destination)` — Absolute Placement
+- **Behavior**: Moves the shape so its **Birth Origin** matches the destination frame exactly ($T_{new} = T_{dest}$).
+- **Identity**: `a.to(b)` is strictly equivalent to `a.origin().by(b)`.
 
 ## 4. Blackboard Workflow Examples
 
-### Bolting a Bracket to a Wall (Mating)
+### Bolting a Bracket to a Wall (Grab & Place)
 "Grab the bracket by its back face and place it on the wall's front surface."
 ```js
-Bracket.by(Bracket.at('z-')).to(Wall.to('z+'))
+h = Bracket.at('z-') // Grab handle
+s = Wall.at('z+')    // Socket
+Bracket.by(h.inv()).by(s)
 ```
 
-### Inserting a Bearing (Insertion)
-"Grab the bearing by its center and place it at the housing's coordinate point."
+### Resetting to a Known Point
+"Place the part's original birth origin at the world coordinate [10, 10, 0]."
 ```js
-Bearing.by(Bearing.at('origin')).to(Housing.at('socket'))
-```
-
-### Flush Alignment with a Sheet
-"Grab the part by its left edge and place it on the sheet's left boundary."
-```js
-Part.by(Part.at('x-')).to(Sheet.at('x-'))
+Part.to(frame([10, 10, 0]))
 ```
 
 ### Stacking Parts (The Sandwich)
 ```js
 A.group(
-    B.by(B.at('z-')).to(A.to('z+')), // B sits on A
-    C.by(C.at('z-')).to(B.to('z+'))  // C sits on B
+    B.by(B.at('z-').inv()).by(A.at('z+')), // B's bottom at A's top
+    C.by(C.at('z-').inv()).by(B.at('z+'))  // C's bottom at B's top
 )
 ```
 

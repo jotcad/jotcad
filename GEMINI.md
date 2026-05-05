@@ -40,6 +40,8 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 - **STABILITY MANDATE (CRITICAL)**: JS unit tests MUST be executed sequentially (`--test-concurrency=1`) to prevent port deadlocks and race conditions in mesh-heavy tests.
 - **PROTOCOL INTEGRITY (CRITICAL)**: Every structured address MUST be a formal `Selector` instance. "String-path guessing" or deconstructing Selectors into top-level keys in metadata or network messages is strictly prohibited.
 - **BOUNDARY HYDRATION**: All REST handlers, mesh ingress points, and UI entry points MUST explicitly hydrate incoming JSON into formal `Selector` instances using `Selector.fromObject()`.
+- **SEMANTIC GEOMETRY TAGGING (MANDATORY)**: All CAD-produced geometry (Meshes, LineSegments) MUST be tagged with `userData.isJot = true`. Bounding box and auto-zoom calculations MUST exclusively filter for this tag to ignore system helpers (grids, labels).
+- **HITCHHIKER OVERLAY GRID**: The shared WebGL context features a dynamic, transparent overlay grid. System objects MUST be tagged with `userData.isSystem = true` and utilize high `renderOrder` with `depthTest: false` to ensure persistent visibility as a scale reference.
 - **CONTEXT-SAFE IDENTIFICATION**: Use robust string detection (`Object.prototype.toString.call(val) === '[object String]'`) to identify CID strings and bypass normalization, ensuring stability across bundlers (Vite) and test environments (Puppeteer).
 - **ATOMIC STATE EVENTS**: The VFS MUST emit entire `Selector` objects in its events, adhering to the atomic addressing model.
 - **JOTCAD CANONICAL BINARY (JCB)**: Tag-prefixed binary format used EXCLUSIVELY to generate stable hashes (CIDs).

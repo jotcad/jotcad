@@ -214,11 +214,21 @@ All logical anchors (`corners`, `edges`, `faces`) are normalized to a standard w
 - **Y-Axis:** The **Secondary Direction**.
 - **Z-Axis:** The **Normal Direction**.
 
+### 5.1 `at(query, recipe)` — Scoped Reduction
+The `at` operator implements **Sequential Subject Reduction**. It transforms the entire subject into the inverse frame of the queried feature, applies the `recipe`, and projects the result back to world space. 
+
+```js
+// Temporarily reorient to each corner to perform a local cut
+Box(10).at(eachCorner(), cut(Cylinder(1)))
+```
+
+### 5.2 `by(ref)` vs `to(dest)` — Movement
+- **`by(ref)`**: Relative Composition. Appends the reference's transform to the current one ($T_{new} = T_{ref} \times T_{old}$).
+- **`to(dest)`**: Absolute Placement. Overwrites the current transform with the destination frame ($T_{new} = T_{dest}$). Equivalent to `.origin().by(dest)`.
+
 ## 6. Spatial Alignment (`.origin()`)
 
-Every object maintains its **Birth Orientation**. The `.origin()` operator uses
-the inverted transformation matrix to return the shape to its birth frame at
-(0,0,0).
+Every object maintains its **Birth Orientation**. The `.origin()` operator resets the shape's transformation matrix to the Identity matrix ($I$), effectively returning it to its birth frame at $(0,0,0)$.
 
 ## 7. Boolean Operations
 

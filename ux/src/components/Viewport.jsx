@@ -1,69 +1,137 @@
-import { onMount, onCleanup, createEffect } from 'solid-js';
+import { onMount, onCleanup, createEffect, createSignal, Show } from 'solid-js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { renderJotToScene, registerViewport, unregisterViewport, initSharedRenderer, requestRender } from '../lib/three_utils';
+import { renderJotToScene, activateViewport, captureSnapshot, createLabel } from '../lib/three_utils';
 import { vfs } from '../lib/blackboard';
 
 export const Viewport = (props) => {
   let containerRef;
   let scene, camera, controls;
   const id = Math.random().toString(36).substring(7);
-  let hasAutoZoomed = false;
+  
+  const [snapshot, setSnapshot] = createSignal(null);
+  const [isActive, setIsActive] = createSignal(false);
+  const [hasAutoZoomed, setHasAutoZoomed] = createSignal(false);
 
   const init = () => {
     if (!containerRef) return;
-
-    const width = containerRef.clientWidth || 100;
-    const height = containerRef.clientHeight || 100;
+    const width = containerRef.clientWidth || 300;
+    const height = containerRef.clientHeight || 200;
 
     scene = new THREE.Scene();
-    // scene.background = new THREE.Color(0x0f172a); // Removed to allow CSS background to show through
-
-    camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
-    camera.position.set(0, 0, 100);
-    camera.up.set(0, 1, 0);
+    camera = new THREE.PerspectiveCamera(45, width / height, 1, 20000);
+    camera.position.set(100, 150, 200);
     camera.lookAt(0, 0, 0);
-
-    const renderer = initSharedRenderer();
 
     controls = new OrbitControls(camera, containerRef);
     controls.enableDamping = true;
-    controls.addEventListener('change', () => requestRender());
 
-    registerViewport(id, containerRef, scene, camera, controls);
+    // --- SYSTEM OBJECTS (Persistent) ---
+    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    ambient.userData.isSystem = true;
+    scene.add(ambient);
 
-    // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const dl = new THREE.DirectionalLight(0xffffff, 1.0);
-    dl.position.set(100, 200, 100);
+    dl.position.set(200, 500, 300);
+    dl.userData.isSystem = true;
     scene.add(dl);
-
-    // Grid
-    const grid = new THREE.GridHelper(100, 10);
-    grid.rotateX(Math.PI / 2);
-    grid.material.opacity = 0.2;
-    grid.material.transparent = true;
-    scene.add(grid);
-
-    onCleanup(() => {
-      unregisterViewport(id);
-      controls.dispose();
-    });
   };
 
-  onMount(() => {
-    init();
+  onCleanup(() => {
+    if (controls) controls.dispose();
   });
+
+  const updateGridAndLabels = (maxPos) => {
+    if (!scene) return;
+
+    // 1. Clear existing dynamic system objects (Grid, Labels)
+    const toRemove = [];
+    scene.traverse(child => {
+      if (child.userData.isSystem && (child.type === 'GridHelper' || child.type === 'AxesHelper' || child.type === 'Sprite')) {
+        toRemove.push(child);
+      }
+    });
+    toRemove.forEach(obj => scene.remove(obj));
+
+    // 2. Calculate optimal grid size (nearest 100 to keep 100mm marks aligned)
+    const size = Math.ceil(Math.max(maxPos.x, maxPos.y, 100) / 100) * 100;
+
+    // Minor Grid (10mm / 1cm)
+    const minorGrid = new THREE.GridHelper(size, size / 10, 0x444444, 0x444444);
+    minorGrid.rotation.x = Math.PI / 2;
+    minorGrid.position.set(size / 2, size / 2, 0.1); 
+    minorGrid.material.transparent = true;
+    minorGrid.material.opacity = 0.2;
+    minorGrid.material.depthTest = false;
+    minorGrid.material.depthWrite = false;
+    minorGrid.renderOrder = 1000;
+    minorGrid.userData.isSystem = true;
+    scene.add(minorGrid);
+
+    // Major Grid (100mm / 10cm) - Color Coded Cyan
+    const majorGrid = new THREE.GridHelper(size, size / 100, 0x00ffff, 0x00ffff);
+    majorGrid.rotation.x = Math.PI / 2;
+    majorGrid.position.set(size / 2, size / 2, 0.11);
+    majorGrid.material.transparent = true;
+    majorGrid.material.opacity = 0.4;
+    majorGrid.material.depthTest = false;
+    majorGrid.material.depthWrite = false;
+    majorGrid.renderOrder = 1001;
+    majorGrid.userData.isSystem = true;
+    scene.add(majorGrid);
+
+    // Labels at 10mm marks
+    for (let i = 10; i <= size; i += 10) {
+      const isMajor = i % 100 === 0;
+      const color = isMajor ? '#00ffff' : '#888888';
+
+      const xLabel = createLabel(i.toString(), color, isMajor ? 12 : 10);
+      xLabel.position.set(i, -8, 0.2);
+      xLabel.material.depthTest = false;
+      xLabel.renderOrder = 1002;
+      xLabel.userData.isSystem = true;
+      scene.add(xLabel);
+
+      const yLabel = createLabel(i.toString(), color, isMajor ? 12 : 10);
+      yLabel.position.set(-10, i, 0.2);
+      yLabel.material.depthTest = false;
+      yLabel.renderOrder = 1002;
+      yLabel.userData.isSystem = true;
+      scene.add(yLabel);
+    }
+  };
+
+  const handleActivate = () => {
+    if (isActive()) return;
+    if (!scene) init();
+    
+    console.log(`[Viewport] Activating ${id}. Camera at:`, camera.position);
+    
+    setIsActive(true);
+    activateViewport(id, containerRef, scene, camera, controls);
+    
+    const deactivate = (e) => {
+      if (containerRef && !containerRef.contains(e.target)) {
+        const snap = captureSnapshot(scene, camera);
+        setSnapshot(snap);
+        setIsActive(false);
+        window.removeEventListener('pointerdown', deactivate);
+      }
+    };
+    window.addEventListener('pointerdown', deactivate);
+  };
 
   createEffect(async () => {
     const data = props.data;
     const threshold = props.edgeThreshold ?? 15;
+    const active = isActive();
+    const forceZoom = !hasAutoZoomed(); // Synchronous access to track dependency
     
-    if (data && scene) {
-      // Clear previous geometry (Meshes and LineSegments)
+    if (active && data && scene) {
+      // CLEAR ONLY NON-SYSTEM OBJECTS
       const toRemove = [];
       scene.traverse(child => {
-        if (child.type === 'Mesh' || child.type === 'LineSegments') {
+        if (!child.userData.isSystem && (child.type === 'Mesh' || child.type === 'LineSegments')) {
           toRemove.push(child);
         }
       });
@@ -79,41 +147,75 @@ export const Viewport = (props) => {
       try {
         await renderJotToScene(vfs, data, scene, threshold);
 
-        if (!hasAutoZoomed) {
-          const box = new THREE.Box3().setFromObject(scene);
-          if (!box.isEmpty()) {
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z) || 1;
-
-            const distance = maxDim * 2;
-            camera.position.set(center.x, center.y, center.z + distance);
-            camera.lookAt(center);
-            camera.up.set(0, 1, 0);
-
-            controls.target.copy(center);
-            controls.update();
-            hasAutoZoomed = true;
+        const box = new THREE.Box3();
+        scene.traverse(obj => { 
+          if(obj.userData.isJot) {
+            box.expandByObject(obj); 
           }
+        });
+        
+        if (!box.isEmpty()) {
+          const center = box.getCenter(new THREE.Vector3());
+          const geoSize = box.getSize(new THREE.Vector3());
+          console.log(`[Viewport] Bounding Box: min(${box.min.x},${box.min.y}) max(${box.max.x},${box.max.y}) size(${geoSize.x},${geoSize.y})`);
+          
+          const maxDim = Math.max(geoSize.x, geoSize.y, geoSize.z) || 1;
+          const maxPos = box.max;
+
+          updateGridAndLabels(maxPos);
+
+          if (forceZoom) {
+            if (isFinite(center.x) && isFinite(center.y) && isFinite(center.z) && isFinite(maxDim)) {
+              camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim * 2.5);
+              camera.lookAt(center);
+              controls.target.copy(center);
+              controls.update();
+              setHasAutoZoomed(true);
+            } else {
+              console.warn('[Viewport] Non-finite bounds detected, skipping auto-zoom');
+            }
+          }
+        } else {
+          updateGridAndLabels({ x: 100, y: 100 });
         }
-        requestRender();
-      } catch (e) {
-        console.error('[Viewport] Render error:', e);
-      }
+        
+        if (!isActive()) {
+            const snap = captureSnapshot(scene, camera);
+            setSnapshot(snap);
+        }
+
+      } catch (e) { console.error('[Viewport] Render error:', e); }
     }
   });
 
+  const handleWheel = (e) => {
+    e.stopPropagation();
+  };
+
   return (
-    <div
-      ref={containerRef}
-      class="w-full h-full rounded-lg overflow-hidden bg-slate-950"
-      onMouseDown={(e) => {}}
-      onMouseMove={(e) => {}}
-      onMouseUp={(e) => {}}
-      onWheel={(e) => {}}
-      onPointerDown={(e) => {}}
-      onDblClick={(e) => {}}
-      onContextMenu={(e) => {}}
-    />
+    <div class="relative w-full h-full">
+      <button 
+        onClick={() => setHasAutoZoomed(false)}
+        class="absolute top-2 left-2 z-10 px-2 py-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-white rounded border border-white/20"
+      >
+        Reset Camera
+      </button>
+      <div
+        ref={containerRef}
+        class="w-full h-full rounded-lg overflow-hidden bg-slate-950 relative cursor-pointer"
+        onPointerDown={handleActivate}
+        onWheel={handleWheel}
+      >
+        <Show when={snapshot() && !isActive()}>
+          <img src={snapshot()} class="w-full h-full object-contain pointer-events-none" />
+        </Show>
+        
+        <Show when={!snapshot() && !isActive()}>
+          <div class="w-full h-full flex items-center justify-center opacity-20 bg-[#008080]">
+              <span class="text-[9px] font-black uppercase text-white">Click to Initialize</span>
+          </div>
+        </Show>
+      </div>
+    </div>
   );
 };

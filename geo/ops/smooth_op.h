@@ -1,4 +1,8 @@
 #pragma once
+#include <vector>
+#include <iterator>
+#include <algorithm>
+#include <set>
 #include "protocols.h"
 #include "processor.h"
 #include "boolean/engine.h"

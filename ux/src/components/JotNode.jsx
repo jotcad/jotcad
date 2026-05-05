@@ -6,7 +6,7 @@ import { Database, Minus, Maximize2, Layers, Plus, X, Globe, Trash2 } from 'luci
 import { JotParser } from '../../../jot/src/parser';
 import { JotCompiler } from '../../../jot/src/compiler';
 import { Viewport } from './Viewport';
-import { renderJotToScene, registerViewport, unregisterViewport, initSharedRenderer, requestRender, packZFS } from '../lib/three_utils';
+import { renderJotToScene, packZFS } from '../lib/three_utils';
 
 export const JotNode = (props) => {
   let nodeRef;
@@ -50,7 +50,7 @@ export const JotNode = (props) => {
         listeners: {
           move(event) {
             setPos({ x: pos().x + event.dx, y: pos().y + event.dy });
-            requestRender();
+            // No-op in new architecture
           },
           end() {
             syncToBlackboard();
@@ -69,7 +69,7 @@ export const JotNode = (props) => {
               x: pos().x + event.deltaRect.left,
               y: pos().y + event.deltaRect.top
             });
-            requestRender();
+            // No-op in new architecture
           },
           end() {
             syncToBlackboard();
@@ -199,7 +199,7 @@ export const JotNode = (props) => {
     <div
       ref={nodeRef}
       onPointerDown={() => blackboard.raiseOp(props.initial.id)}
-      class="fixed z-50 p-3 md:p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden flex flex-col gap-2 md:gap-3 transition-all duration-75"
+      class="fixed z-50 p-3 md:p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-y-auto flex flex-col gap-2 md:gap-3 transition-all duration-75 custom-scrollbar"
       style={{
         left: `${pos().x}px`,
         top: `${pos().y}px`,
@@ -209,7 +209,7 @@ export const JotNode = (props) => {
       }}
     >
       <div
-        class="flex justify-between items-center cursor-move drag-handle"
+        class="flex justify-between items-center cursor-move drag-handle shrink-0"
         onDblClick={() => setIsMinimized(!isMinimized())}
       >
         <div class="flex items-center gap-2">
@@ -243,7 +243,7 @@ export const JotNode = (props) => {
 
       <Show when={!isMinimized()}>
         {/* Argument Editor */}
-        <div class="bg-white/5 rounded-lg p-2 flex flex-col gap-2">
+        <div class="bg-white/5 rounded-lg p-2 flex flex-col gap-2 shrink-0">
            <div class="flex justify-between items-center px-1">
              <span class="text-[9px] font-black uppercase tracking-widest text-white/40">Arguments</span>
              <button onClick={addArg} class="text-cyan-400 hover:text-cyan-300"><Plus size={12}/></button>
@@ -271,7 +271,7 @@ export const JotNode = (props) => {
         </div>
 
         <textarea
-          class="bg-black/40 border border-white/5 rounded-lg p-3 font-mono text-[11px] min-h-[100px] flex-1 focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar"
+          class="bg-black/40 border border-white/5 rounded-lg p-3 font-mono text-[11px] min-h-[150px] focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar shrink-0"
           value={code()}
           onInput={(e) => setCode(e.target.value)}
           onKeyDown={(e) => {
@@ -283,7 +283,7 @@ export const JotNode = (props) => {
           spellcheck={false}
         />
 
-        <div class="flex gap-2">
+        <div class="flex gap-2 shrink-0">
           <button
             onClick={evaluateJot}
             disabled={isEvaluating()}
@@ -314,7 +314,7 @@ export const JotNode = (props) => {
         </div>
 
         <Show when={associatedFiles().length > 0}>
-          <div class="flex flex-wrap gap-2 py-1">
+          <div class="flex flex-wrap gap-2 py-1 shrink-0">
             <For each={associatedFiles()}>
               {(file) => (
                 <button
@@ -329,18 +329,19 @@ export const JotNode = (props) => {
           </div>
         </Show>
 
-        <div class="flex-1 flex flex-col gap-2 min-h-[200px] mt-1 overflow-y-auto pr-1 custom-scrollbar">
+        <div class="flex flex-col gap-2 mt-1 pr-1 shrink-0">
           <For 
             each={results()} 
+            by={(res) => `${res.selector.path}:${res.selector.output || '$out'}`}
             fallback={
-              <div class="w-full h-48 flex flex-col items-center justify-center gap-2 opacity-20 border border-white/10 rounded-lg">
+              <div class="w-full h-48 flex flex-col items-center justify-center gap-2 opacity-20 border border-white/10 rounded-lg shrink-0">
                 <Layers size={32} />
                 <span class="text-[10px] font-black uppercase tracking-widest">No Result Yet</span>
               </div>
             }
           >
             {(res) => (
-              <div class="w-full h-64 bg-black/20 rounded-lg border border-white/10 overflow-hidden relative group shrink-0">
+              <div class="w-full h-96 bg-black/20 rounded-lg border border-white/10 overflow-hidden relative group shrink-0">
                 <Viewport data={res.data} edgeThreshold={edgeThreshold()} />
                 
                 <div class="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 rounded text-[9px] font-black tracking-widest text-cyan-400 border border-cyan-400/20 pointer-events-none group-hover:bg-cyan-400 group-hover:text-black transition-all">

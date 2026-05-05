@@ -1,6 +1,8 @@
 #pragma once
 #include "protocols.h"
 #include "processor.h"
+#include "boolean/engine.h"
+#include "fix/repair.h"
 #include "math/zag.h"
 #include "math/rational_approx.h"
 #include "math/interval.h"
@@ -75,6 +77,9 @@ struct OrbOp : P {
                 }
             }
         }
+        
+        // Assert closure and manifoldness
+        assert(fix::is_geometry_solid(boolean::Engine::geometry_to_mesh(res)));
 
         Shape out = P::make_shape(vfs, res, {{"type", "orb"}});
         vfs->write(fulfilling.with_output("$out"), out);

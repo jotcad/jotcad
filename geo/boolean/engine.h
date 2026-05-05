@@ -15,6 +15,9 @@
 #include <vector>
 #include <algorithm>
 #include <variant>
+#include <map>
+#include <cassert>
+#include <iterator>
 #include "kernel.h"
 #include "../fix/repair.h"
 
@@ -22,7 +25,10 @@ namespace jotcad {
 namespace geo {
 namespace boolean {
 
-typedef CGAL::Surface_mesh<EK::Point_3> Surface_mesh;
+typedef CGAL::Surface_mesh<EK::Point_3> ExactMesh;
+typedef ExactMesh Surface_mesh; // Alias for compatibility
+typedef CGAL::Surface_mesh<IK::Point_3> InexactMesh;
+typedef InexactMesh InexactSurfaceMesh; // Alias for compatibility
 typedef CGAL::Gps_segment_traits_2<EK> Gps_traits_2;
 typedef CGAL::General_polygon_set_2<Gps_traits_2> General_polygon_set_2;
 typedef CGAL::Polygon_2<EK> Polygon_2;
@@ -32,7 +38,7 @@ struct Engine {
     /**
      * cut_mesh_by_mesh: 3D Volume-Volume subtraction.
      */
-    static bool cut_mesh_by_mesh(Surface_mesh& target, Surface_mesh& tool) {
+    static bool cut_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
         if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) {
             return CGAL::Polygon_mesh_processing::clip(
                 target, tool, 
@@ -52,7 +58,7 @@ struct Engine {
     /**
      * join_mesh_by_mesh: 3D Volume-Volume union.
      */
-    static bool join_mesh_by_mesh(Surface_mesh& target, Surface_mesh& tool) {
+    static bool join_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
         if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) {
             // Cannot union open meshes easily in 3D without clear inside/outside.
             // For now, we return false or just merge if they don't overlap properly.
@@ -71,7 +77,7 @@ struct Engine {
     /**
      * clip_mesh_by_mesh: 3D Volume-Volume intersection.
      */
-    static bool clip_mesh_by_mesh(Surface_mesh& target, Surface_mesh& tool) {
+    static bool clip_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
         if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) {
             return false;
         }
@@ -88,7 +94,7 @@ struct Engine {
     /**
      * cut_mesh_by_plane: 3D Mesh split by infinite plane.
      */
-    static bool cut_mesh_by_plane(Surface_mesh& target, const EK::Plane_3& plane) {
+    static bool cut_mesh_by_plane(ExactMesh& target, const EK::Plane_3& plane) {
         bool success = CGAL::Polygon_mesh_processing::clip(
             target, plane,
             CGAL::parameters::use_compact_clipper(true).clip_volume(true)
@@ -100,10 +106,10 @@ struct Engine {
     /**
      * cut_points_by_mesh: 0D Point removal by 3D Volume.
      */
-    static void cut_points_by_mesh(std::vector<EK::Point_3>& points, const Surface_mesh& tool) {
+    static void cut_points_by_mesh(std::vector<EK::Point_3>& points, const ExactMesh& tool) {
         if (!CGAL::is_closed(tool)) return; 
         
-        CGAL::Side_of_triangle_mesh<Surface_mesh, EK> inside_check(tool);
+        CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool);
         points.erase(
             std::remove_if(points.begin(), points.end(),
                 [&](const EK::Point_3& p) {
@@ -116,13 +122,13 @@ struct Engine {
     /**
      * clip_points_by_mesh: Keeps only points INSIDE the tool.
      */
-    static void clip_points_by_mesh(std::vector<EK::Point_3>& points, const Surface_mesh& tool) {
+    static void clip_points_by_mesh(std::vector<EK::Point_3>& points, const ExactMesh& tool) {
         if (!CGAL::is_closed(tool)) {
             points.clear();
             return;
         }
         
-        CGAL::Side_of_triangle_mesh<Surface_mesh, EK> inside_check(tool);
+        CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool);
         points.erase(
             std::remove_if(points.begin(), points.end(),
                 [&](const EK::Point_3& p) {
@@ -136,15 +142,15 @@ struct Engine {
      * cut_segments_by_mesh: 1D Segment clipping by 3D Volume.
      * Keeps portions of segments that are OUTSIDE the tool.
      */
-    static void cut_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const Surface_mesh& tool) {
+    static void cut_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const ExactMesh& tool) {
         if (!CGAL::is_closed(tool)) return;
 
-        typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> Primitive;
+        typedef CGAL::AABB_face_graph_triangle_primitive<ExactMesh> Primitive;
         typedef CGAL::AABB_traits<EK, Primitive> Traits;
         typedef CGAL::AABB_tree<Traits> Tree;
         
         Tree tree(faces(tool).first, faces(tool).second, tool);
-        CGAL::Side_of_triangle_mesh<Surface_mesh, EK> inside_check(tool);
+        CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool);
 
         std::vector<std::pair<EK::Point_3, EK::Point_3>> result;
 
@@ -192,18 +198,18 @@ struct Engine {
     /**
      * clip_segments_by_mesh: Keeps only portions of segments INSIDE the tool.
      */
-    static void clip_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const Surface_mesh& tool) {
+    static void clip_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const ExactMesh& tool) {
         if (!CGAL::is_closed(tool)) {
             segments.clear();
             return;
         }
 
-        typedef CGAL::AABB_face_graph_triangle_primitive<Surface_mesh> Primitive;
+        typedef CGAL::AABB_face_graph_triangle_primitive<ExactMesh> Primitive;
         typedef CGAL::AABB_traits<EK, Primitive> Traits;
         typedef CGAL::AABB_tree<Traits> Tree;
         
         Tree tree(faces(tool).first, faces(tool).second, tool);
-        CGAL::Side_of_triangle_mesh<Surface_mesh, EK> inside_check(tool);
+        CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool);
 
         std::vector<std::pair<EK::Point_3, EK::Point_3>> result;
 
@@ -268,7 +274,7 @@ struct Engine {
         target.intersection(tool);
     }
 
-    static Surface_mesh geometry_to_mesh(const Geometry& geo) {
+    static ExactMesh geometry_to_mesh(const Geometry& geo) {
         std::vector<EK::Point_3> pts;
         std::vector<std::vector<std::size_t>> faces;
         for (const auto& v : geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
@@ -278,85 +284,89 @@ struct Engine {
             for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
             faces.push_back(face);
         }
+        for (const auto& t : geo.triangles) {
+            faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
+        }
         CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
         CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
-        Surface_mesh mesh;
-        std::vector<Surface_mesh::Vertex_index> v_indices;
+        ExactMesh mesh;
+        std::vector<ExactMesh::Vertex_index> v_indices;
         for (const auto& p : pts) v_indices.push_back(mesh.add_vertex(p));
         for (const auto& f : faces) {
-            std::vector<Surface_mesh::Vertex_index> face_vs;
+            std::vector<ExactMesh::Vertex_index> face_vs;
             for (auto idx : f) face_vs.push_back(v_indices[idx]);
             mesh.add_face(face_vs);
         }
         CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
         return mesh;
     }
-static Geometry mesh_to_geometry(const Surface_mesh& mesh) {
-    Geometry geo;
-    std::map<Surface_mesh::Vertex_index, int> v_map;
-    for (auto v : mesh.vertices()) {
-        v_map[v] = (int)geo.vertices.size();
-        auto p = mesh.point(v);
-        geo.vertices.push_back({p.x(), p.y(), p.z()});
-    }
-    for (auto f : mesh.faces()) {
-        Geometry::Face face;
-        std::vector<int> loop;
-        for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
-            loop.push_back(v_map[v]);
+
+    static Geometry mesh_to_geometry(const ExactMesh& mesh) {
+        Geometry geo;
+        std::map<ExactMesh::Vertex_index, int> v_map;
+        for (auto v : mesh.vertices()) {
+            v_map[v] = (int)geo.vertices.size();
+            auto p = mesh.point(v);
+            geo.vertices.push_back({p.x(), p.y(), p.z()});
         }
-        face.loops.push_back(loop);
-        geo.faces.push_back(face);
-    }
-    return geo;
-}
-
-typedef CGAL::Surface_mesh<IK::Point_3> InexactMesh;
-static InexactMesh geometry_to_mesh_ik(const Geometry& geo) {
-    std::vector<IK::Point_3> pts;
-    std::vector<std::vector<std::size_t>> faces;
-    for (const auto& v : geo.vertices) pts.push_back(IK::Point_3(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
-    for (const auto& f : geo.faces) {
-        if (f.loops.empty()) continue;
-        std::vector<std::size_t> face;
-        for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
-        faces.push_back(face);
-    }
-    CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
-    CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
-    InexactMesh mesh;
-    std::vector<InexactMesh::Vertex_index> v_indices;
-    for (const auto& p : pts) v_indices.push_back(mesh.add_vertex(p));
-    for (const auto& f : faces) {
-        std::vector<InexactMesh::Vertex_index> face_vs;
-        for (auto idx : f) face_vs.push_back(v_indices[idx]);
-        mesh.add_face(face_vs);
-    }
-    CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
-    return mesh;
-}
-
-static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
-    Geometry geo;
-    std::map<InexactMesh::Vertex_index, int> v_map;
-    for (auto v : mesh.vertices()) {
-        v_map[v] = (int)geo.vertices.size();
-        auto p = mesh.point(v);
-        geo.vertices.push_back({p.x(), p.y(), p.z()});
-    }
-    for (auto f : mesh.faces()) {
-        Geometry::Face face;
-        std::vector<int> loop;
-        for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
-            loop.push_back(v_map[v]);
+        for (auto f : mesh.faces()) {
+            std::vector<int> loop;
+            for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
+                loop.push_back(v_map[v]);
+            }
+            assert(loop.size() == 3 && "ExactMesh face must be a triangle");
+            geo.triangles.push_back({loop[0], loop[1], loop[2]});
         }
-        face.loops.push_back(loop);
-        geo.faces.push_back(face);
+        return geo;
     }
-    return geo;
-}
 
-    static void transform_mesh(Surface_mesh& mesh, const Matrix& tf) {
+    static InexactMesh geometry_to_mesh_ik(const Geometry& geo) {
+        std::vector<IK::Point_3> pts;
+        std::vector<std::vector<std::size_t>> faces;
+        for (const auto& v : geo.vertices) pts.push_back(IK::Point_3(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
+        for (const auto& f : geo.faces) {
+            if (f.loops.empty()) continue;
+            std::vector<std::size_t> face;
+            for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
+            faces.push_back(face);
+        }
+        for (const auto& t : geo.triangles) {
+            faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
+        }
+        CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
+        CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
+        InexactMesh mesh;
+        std::vector<InexactMesh::Vertex_index> v_indices;
+        for (const auto& p : pts) v_indices.push_back(mesh.add_vertex(p));
+        for (const auto& f : faces) {
+            std::vector<InexactMesh::Vertex_index> face_vs;
+            for (auto idx : f) face_vs.push_back(v_indices[idx]);
+            mesh.add_face(face_vs);
+        }
+        CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+        return mesh;
+    }
+
+    static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
+        Geometry geo;
+        std::map<InexactMesh::Vertex_index, int> v_map;
+        for (auto v : mesh.vertices()) {
+            v_map[v] = (int)geo.vertices.size();
+            auto p = mesh.point(v);
+            geo.vertices.push_back({p.x(), p.y(), p.z()});
+        }
+        for (auto f : mesh.faces()) {
+            std::vector<int> loop;
+            for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
+                loop.push_back(v_map[v]);
+            }
+            assert(loop.size() == 3 && "InexactMesh face must be a triangle");
+            geo.triangles.push_back({loop[0], loop[1], loop[2]});
+        }
+        return geo;
+    }
+
+    static void transform_mesh(ExactMesh& mesh, const Matrix& tf) {
         for (auto v : mesh.vertices()) mesh.point(v) = tf.transform(mesh.point(v));
     }
 
@@ -486,14 +496,14 @@ static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
                 }
 
                 if (!is_target_flat) {
-                    Surface_mesh target_mesh = geometry_to_mesh(target_geo);
+                    ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
                         if (tool.is_plane) {
                             Matrix rel_tf = subject_world_inv * tool.world_tf;
                             EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
                             cut_mesh_by_plane(target_mesh, local_plane);
                         } else {
-                            Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                            ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                             Matrix rel_tf = subject_world_inv * tool.world_tf;
                             transform_mesh(tool_mesh, rel_tf);
                             if (tool.is_volume) assert(fix::is_geometry_solid(tool_mesh));
@@ -513,7 +523,7 @@ static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
 
                 for (const auto& tool : tool_nodes) {
                     if (tool.is_volume) {
-                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         cut_segments_by_mesh(local_segments, tool_mesh);
@@ -535,7 +545,7 @@ static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
 
                 for (const auto& tool : tool_nodes) {
                     if (tool.is_volume) {
-                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         cut_points_by_mesh(pts, tool_mesh);
@@ -597,9 +607,9 @@ static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
                 }
 
                 if (!is_target_flat) {
-                    Surface_mesh target_mesh = geometry_to_mesh(target_geo);
+                    ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
-                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         
@@ -663,9 +673,9 @@ static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
                 }
 
                 if (!is_target_flat) {
-                    Surface_mesh target_mesh = geometry_to_mesh(target_geo);
+                    ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
-                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         
@@ -686,7 +696,7 @@ static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
 
                 for (const auto& tool : tool_nodes) {
                     if (tool.is_volume) {
-                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         clip_segments_by_mesh(local_segments, tool_mesh);
@@ -708,7 +718,7 @@ static Geometry mesh_to_geometry_ik(const InexactMesh& mesh) {
 
                 for (const auto& tool : tool_nodes) {
                     if (tool.is_volume) {
-                        Surface_mesh tool_mesh = geometry_to_mesh(tool.geo);
+                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         clip_points_by_mesh(pts, tool_mesh);

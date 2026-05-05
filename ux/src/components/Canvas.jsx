@@ -12,12 +12,9 @@ import { createStore, reconcile } from 'solid-js/store';
 import interact from 'interactjs';
 import { blackboard, vfs } from '../lib/blackboard';
 import {
-  initSharedRenderer,
   createScene,
-  updateViewports,
   captureThumbnail,
   renderJotToScene,
-  requestRender,
 } from '../lib/three_utils';
 import { JotNode } from './JotNode';
 import { MeshMap } from './MeshMap';
@@ -303,7 +300,7 @@ const PathNode = (props) => {
 
         {/* Path Label Below */}
         <div class="px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest whitespace-nowrap bg-blackboard/80 border border-white/5 text-white/60 shadow-lg uppercase">
-          {props.path.split('/').pop()}
+          {(props.path || 'Unknown').split('/').pop()}
         </div>
       </Show>
 
@@ -524,7 +521,7 @@ export const Canvas = () => {
 
   onMount(() => {
     blackboard.start();
-    initSharedRenderer();
+    // No-op in new architecture
 
     const handleResize = () => {
       setWindowSize({
@@ -532,7 +529,7 @@ export const Canvas = () => {
         height: window.innerHeight,
         isMobile: window.innerWidth < 768
       });
-      requestRender();
+      // No-op in new architecture
     };
     window.addEventListener('resize', handleResize);
     onCleanup(() => window.removeEventListener('resize', handleResize));
@@ -542,7 +539,7 @@ export const Canvas = () => {
         move(event) {
           if (event.target === dragRef) {
             setView((v) => ({ ...v, x: v.x + event.dx, y: v.y + event.dy }));
-            requestRender();
+            // No-op in new architecture
           }
         },
       },
@@ -566,7 +563,7 @@ export const Canvas = () => {
     const newY = mouseY - worldY * newScale;
 
     setView({ x: newX, y: newY, scale: newScale });
-    requestRender();
+    // No-op in new architecture
   };
 
   const groupedNodes = createMemo(() => {
@@ -728,6 +725,15 @@ export const Canvas = () => {
         </div>
         <div class="pointer-events-auto">
           <Console />
+        </div>
+      </div>
+
+      <div class="absolute bottom-4 right-4 z-[100] flex flex-col items-end gap-2 pointer-events-none">
+        <div class="px-3 py-1 bg-red-600 text-white text-[10px] font-black animate-pulse rounded-full shadow-2xl">
+          DEBUG: VERSION 2.1 ACTIVE
+        </div>
+        <div class="px-2 py-0.5 bg-black/80 text-cyan-400 text-[8px] font-mono rounded border border-cyan-400/20">
+          LOGS: window._JOT_LOG
         </div>
       </div>
 

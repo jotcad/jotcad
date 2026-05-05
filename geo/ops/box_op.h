@@ -1,6 +1,8 @@
 #pragma once
 #include "protocols.h"
 #include "processor.h"
+#include "boolean/engine.h"
+#include "fix/repair.h"
 #include "../math/interval.h"
 
 namespace jotcad {
@@ -39,6 +41,9 @@ struct BoxOp : P {
             res.faces.push_back({{{1, 2, 6, 5}}}); // Right
             res.faces.push_back({{{2, 3, 7, 6}}}); // Back
             res.faces.push_back({{{3, 0, 4, 7}}}); // Left
+
+            // Assert closure and manifoldness
+            assert(fix::is_geometry_solid(boolean::Engine::geometry_to_mesh(res)));
         }
         
         Shape out = P::make_shape(vfs, res, {{"type", "box"}});

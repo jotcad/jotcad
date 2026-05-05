@@ -323,6 +323,13 @@ export class JotCompiler {
         }
     }
 
+    // PASS 4: Strict Overload Check (Ensure all provided arguments were consumed)
+    for (const p of pool) {
+      if (!p.consumed) {
+         throw new Error(`Compiler Error: Argument ${p.nameHint ? `'${p.nameHint}' ` : ''}was not consumed by '${opName}'`);
+      }
+    }
+
     return params;
   }
 
