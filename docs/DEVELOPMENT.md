@@ -92,13 +92,14 @@ To ensure operators always work with valid data, the `Processor` perform **Recur
 - **Automatic Link Following**: If an operator argument is a `Selector` (mesh address), the `Processor` eagerly follows the link to fetch the terminal `Shape` metadata before the operator executes.
 - **Unified Consistency**: This reification applies to both single `Shape` arguments and elements within `std::vector<Shape>`, ensuring that nested tools in boolean operations are fully hydrated.
 
-### 1.7 Optional Geometry
+### 1.7 Optional Geometry & Absolute Transforms
 
 A `Shape` in JOT is a recursive container. The `geometry` field is an **optional CID string**.
 
 - **Geometric Nodes**: Shapes that carry a mesh (e.g., a Box) have a `geometry` CID.
 - **Structural Nodes**: Shapes that act as containers (e.g., a Group) have `std::nullopt` for geometry but contain `components`.
 - **Hybrid Nodes**: Shapes can carry both a local geometry CID and nested components.
+- **Absolute Identity Mandate (CRITICAL)**: Every `Shape` in a hierarchy carries its own **Absolute World-Space Transform (`tf`)**. Parents MUST NOT apply their transform to their children during construction, and Renderers MUST NOT multiply parent and child transforms. This ensures that every sub-component remains semantically extractable and spatially correct regardless of its position in a group.
 
 Operators MUST check `shape.geometry.has_value()` before attempting to read geometry bits from the VFS.
 

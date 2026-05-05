@@ -74,9 +74,9 @@ structures.
 JotCAD avoids manual "passthrough" hacks or side-effect "lifting." Instead, the compiler implements **Graph-based Terminal Analysis**.
 
 - **Consumption Tracking:** Every time a `Selector` (and its specific output port) is used as an argument to another operator, it is marked as **Consumed**.
-- **Terminal Discovery:** After evaluation, the compiler identifies every `(Selector, Port)` pair that remains **Unconsumed**.
-- **User Presentation:**
-  - Unconsumed ports with type `jot:shape` are routed to the 3D Viewer.
+- **Terminal Discovery**: After evaluation, the compiler identifies every `(Selector, Port)` pair that remains **Unconsumed**.
+- **User Presentation (Independent Terminals)**: 
+  - EVERY unconsumed port with type `jot:shape` is rendered independently in its own viewport or viewport layer. This ensures that auxiliary outputs (debug meshes, side-effects) are visible without interfering with the primary result.
   - Unconsumed ports with type `file` (e.g., from `.pdf()` or `.stl()`) are routed to the Download List.
 - **Example:** `Box(10).pdf("out.pdf")`
   - `Box:$out` is consumed by `pdf`.

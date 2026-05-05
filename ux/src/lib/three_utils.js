@@ -156,8 +156,8 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
     scene.add(directional);
   }
 
-  const walk = async (s, parentMat = identity) => {
-    const worldMat = parentMat.clone().multiply(decodeTf(s.tf));
+  const walk = async (s) => {
+    const worldMat = decodeTf(s.tf);
     const shapeColor = toColor(s.tags);
 
     if (s.geometry) {
@@ -264,7 +264,7 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
         }
       }
     }
-    if (s.components) for (const sub of s.components) await walk(sub, worldMat);
+    if (s.components) for (const sub of s.components) await walk(sub);
   };
   await walk(shape);
 };

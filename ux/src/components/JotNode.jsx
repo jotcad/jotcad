@@ -21,7 +21,7 @@ export const JotNode = (props) => {
   const [edgeThreshold, setEdgeThreshold] = createSignal(props.initial.edgeThreshold ?? 15);
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
-  const [resultData, setResultData] = createSignal(null);
+  const [results, setResults] = createSignal([]);
   const [associatedFiles, setAssociatedFiles] = createSignal([]);
 
   // Sync state back to blackboard
@@ -141,14 +141,12 @@ export const JotNode = (props) => {
       const parser = new JotParser();
       const compiler = new JotCompiler(vfs);
 
-      // 1. Bind UI arguments as variables
       const boundVars = args().reduce((acc, arg) => {
         acc[arg.name] = arg.testValue;
         return acc;
       }, {});
 
       const currentSchemas = blackboard.schemas();
-      // 2. Register all discovered schemas with the compiler
       for (const [path, schema] of Object.entries(currentSchemas)) {
         const name = path.replace(/^(jot|user)\//, '');
         compiler.registerOperator(name, { path, schema });
@@ -157,7 +155,6 @@ export const JotNode = (props) => {
       const ast = parser.parse(code());
       const terminals = await compiler.evaluate(ast, boundVars);
 
-      // 1. Route Terminals: Shapes to Viewer, Files to Downloads
       const shapes = [];
       const files = [];
 
@@ -179,24 +176,17 @@ export const JotNode = (props) => {
       }
 
       setAssociatedFiles(files);
-      const primarySelector = shapes[shapes.length - 1]; 
 
-      if (!primarySelector) {
-          setResultData(null);
-          setIsEvaluating(false);
-          return;
-      }
-
-      const data = await vfs.readData(primarySelector);
-      
-      if (data) {
-        if (typeof data === 'object' && (data.geometry || data.components)) {
-          const unified = await packZFS(vfs, data);
-          setResultData(unified);
-        } else {
-          setResultData(data);
+      const resultList = await Promise.all(shapes.map(async (sel) => {
+        const data = await vfs.readData(sel);
+        let finalData = data;
+        if (data && typeof data === 'object' && (data.geometry || data.components)) {
+          finalData = await packZFS(vfs, data);
         }
-      }
+        return { selector: sel, data: finalData };
+      }));
+
+      setResults(resultList);
     } catch (err) {
       console.error('[JotNode] Compilation/Evaluation failed:', err);
       blackboard.setError(err);
@@ -339,35 +329,42 @@ export const JotNode = (props) => {
           </div>
         </Show>
 
-        <div class="w-full min-h-[200px] flex-[1.5] bg-black/20 rounded-lg border border-white/10 overflow-hidden relative group mt-1">
-          <Show 
-            when={resultData()} 
+        <div class="flex-1 flex flex-col gap-2 min-h-[200px] mt-1 overflow-y-auto pr-1 custom-scrollbar">
+          <For 
+            each={results()} 
             fallback={
-              <div class="w-full h-full flex flex-col items-center justify-center gap-2 opacity-20 transition-opacity group-hover:opacity-40">
+              <div class="w-full h-48 flex flex-col items-center justify-center gap-2 opacity-20 border border-white/10 rounded-lg">
                 <Layers size={32} />
                 <span class="text-[10px] font-black uppercase tracking-widest">No Result Yet</span>
               </div>
             }
           >
-            <Viewport data={resultData()} edgeThreshold={edgeThreshold()} />
-          </Show>
-          
-          <div class="absolute top-2 right-2 flex flex-col items-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div class="flex items-center gap-2 bg-black/60 rounded px-2 py-1 border border-white/10">
-               <span class="text-[9px] font-black uppercase text-white/60">Edge Threshold</span>
-               <input 
-                 type="range" min="0" max="90" step="1" 
-                 value={edgeThreshold()} 
-                 onInput={e => setEdgeThreshold(parseInt(e.target.value))}
-                 class="w-20 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-               />
-               <span class="text-[9px] font-mono text-cyan-400 w-4">{edgeThreshold()}°</span>
-            </div>
-          </div>
+            {(res) => (
+              <div class="w-full h-64 bg-black/20 rounded-lg border border-white/10 overflow-hidden relative group shrink-0">
+                <Viewport data={res.data} edgeThreshold={edgeThreshold()} />
+                
+                <div class="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 rounded text-[9px] font-black tracking-widest text-cyan-400 border border-cyan-400/20 pointer-events-none group-hover:bg-cyan-400 group-hover:text-black transition-all">
+                  {res.selector.path.split('/').pop()}:{res.selector.output || '$out'}
+                </div>
 
-          <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40 pointer-events-none group-hover:text-white/80 transition-colors">
-            LOCAL VIEWPORT
-          </div>
+                <div class="absolute top-2 right-2 flex flex-col items-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div class="flex items-center gap-2 bg-black/60 rounded px-2 py-1 border border-white/10">
+                     <span class="text-[9px] font-black uppercase text-white/60">Edges</span>
+                     <input 
+                       type="range" min="0" max="90" step="1" 
+                       value={edgeThreshold()} 
+                       onInput={e => setEdgeThreshold(parseInt(e.target.value))}
+                       class="w-16 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                     />
+                  </div>
+                </div>
+
+                <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40 pointer-events-none group-hover:text-white/80 transition-colors">
+                  LOCAL VIEWPORT
+                </div>
+              </div>
+            )}
+          </For>
         </div>
       </Show>
     </div>
