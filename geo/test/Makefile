@@ -22,7 +22,10 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                box_verification.cpp \
                cut_3d_test.cpp join_test.cpp clip_test.cpp fuse_test.cpp \
                disjoint_test.cpp disk_arc_test.cpp arc_variants_test.cpp orb_test.cpp path_test.cpp \
-               text_test.cpp
+               text_test.cpp \
+               boolean_plane_test.cpp \
+               extrude_interval_test.cpp \
+               boolean_visual_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 
 TEST_RUNS = $(addprefix run-, $(TEST_SOURCES:.cpp=))

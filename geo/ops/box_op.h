@@ -46,7 +46,7 @@ struct BoxOp : P {
             assert(fix::is_geometry_solid(boolean::Engine::geometry_to_mesh(res)));
         }
         
-        Shape out = P::make_shape(vfs, res, {{"type", "box"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "closed"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"width", "height", "depth"}; }

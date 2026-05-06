@@ -67,17 +67,23 @@ struct Processor {
              if (schema.contains("arguments") && schema.at("arguments").is_array()) {
                  for (const auto& arg : schema.at("arguments")) {
                      if (arg.contains("name") && arg.at("name") == key && arg.contains("default")) {
-                         return arg.at("default").get<T>();
+                         if constexpr (is_optional<T>::value) {
+                             return arg.at("default").get<typename T::value_type>();
+                         } else {
+                             return arg.at("default").get<T>();
+                         }
                      }
                  }
              }
+             if constexpr (is_optional<T>::value) return std::nullopt;
              throw std::runtime_error("Missing required argument: " + key);
         }
 
         const auto& val = params[key];
 
-
-        if constexpr (std::is_same_v<T, Shape>) {
+        if constexpr (is_optional<T>::value) {
+            return decode<typename T::value_type>(vfs, key, params, schema, stack);
+        } else if constexpr (std::is_same_v<T, Shape>) {
             if (val.is_string() && val.get<std::string>().size() == 64) {
                 return vfs->read<Shape>(fs::CID{val.get<std::string>()});
             }

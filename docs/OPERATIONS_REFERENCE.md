@@ -132,13 +132,16 @@ Extrudes one or more 2D profiles along a 3D path.
 - **`solid`**: If `true`, generates a manifold solid with start/end caps. If `false`, generates a wireframe/surface assembly.
 - **RMF (Rotation Minimizing Frames)**: Uses the Double Reflection method to ensure the profile does not twist unexpectedly along complex curves.
 
+### `sweepBy(profile, closed_path=false, solid=true)`
+A path-centric version of sweep where the subject (`$in`) is the path and the tool is the profile.
+
+- **`profile`**: The 2D shape to use as the cross-section.
+- **`closed_path`**, **`solid`**: Same as above.
+
 #### Example
 ```js
-// Create a pipe
-Sweep(profiles=[Circle(5)], path=CubicPath(), solid=true)
-
-// Sweep a square along a closed loop
-Square(2).sweep(path=MyLoop, closed_path=true)
+// Create a pipe by sweeping a circle along a path
+MyPath.sweepBy(Circle(5))
 ```
 
 ## 5. Export and Rendering

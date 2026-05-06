@@ -34,7 +34,7 @@ struct FuseOp : P {
         for (const auto& node : all_nodes) {
             if (node.geo.vertices.empty()) continue;
 
-            if (node.is_plane) {
+            if (node.type == "plane") {
                 auto plane_opt = node.geo.find_plane();
                 EK::Plane_3 world_plane = node.world_tf.transform(*plane_opt);
                 

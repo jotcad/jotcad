@@ -20,6 +20,10 @@
 #include <iterator>
 #include "kernel.h"
 #include "../fix/repair.h"
+#include "../data/geometry.h"
+#include "../data/shape.h"
+#include "../math/matrix.h"
+#include "../../fs/cpp/vfs_node.h"
 
 namespace jotcad {
 namespace geo {
@@ -92,9 +96,24 @@ struct Engine {
     }
 
     /**
-     * cut_mesh_by_plane: 3D Mesh split by infinite plane.
+     * cut_mesh_by_plane: 3D Mesh subtraction by half-space.
+     * Keeps the POSITIVE side (removes the tool's volume).
      */
     static bool cut_mesh_by_plane(ExactMesh& target, const EK::Plane_3& plane) {
+        // CGAL clip keeps the negative side, so we flip the plane to keep the positive side
+        bool success = CGAL::Polygon_mesh_processing::clip(
+            target, plane.opposite(),
+            CGAL::parameters::use_compact_clipper(true).clip_volume(true)
+        );
+        fix::make_geometry_unambiguous(target);
+        return success;
+    }
+
+    /**
+     * clip_mesh_by_plane: 3D Mesh intersection with half-space.
+     * Keeps the NEGATIVE side.
+     */
+    static bool clip_mesh_by_plane(ExactMesh& target, const EK::Plane_3& plane) {
         bool success = CGAL::Polygon_mesh_processing::clip(
             target, plane,
             CGAL::parameters::use_compact_clipper(true).clip_volume(true)
@@ -107,6 +126,7 @@ struct Engine {
      * cut_points_by_mesh: 0D Point removal by 3D Volume.
      */
     static void cut_points_by_mesh(std::vector<EK::Point_3>& points, const ExactMesh& tool) {
+        if (points.empty()) return;
         if (!CGAL::is_closed(tool)) return; 
         
         CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool);
@@ -114,6 +134,32 @@ struct Engine {
             std::remove_if(points.begin(), points.end(),
                 [&](const EK::Point_3& p) {
                     return inside_check(p) == CGAL::ON_BOUNDED_SIDE;
+                }),
+            points.end()
+        );
+    }
+
+    /**
+     * cut_points_by_plane: Removes points on the negative side.
+     */
+    static void cut_points_by_plane(std::vector<EK::Point_3>& points, const EK::Plane_3& plane) {
+        points.erase(
+            std::remove_if(points.begin(), points.end(),
+                [&](const EK::Point_3& p) {
+                    return plane.has_on_negative_side(p);
+                }),
+            points.end()
+        );
+    }
+
+    /**
+     * clip_points_by_plane: Keeps points on the negative side.
+     */
+    static void clip_points_by_plane(std::vector<EK::Point_3>& points, const EK::Plane_3& plane) {
+        points.erase(
+            std::remove_if(points.begin(), points.end(),
+                [&](const EK::Point_3& p) {
+                    return !plane.has_on_negative_side(p);
                 }),
             points.end()
         );
@@ -139,18 +185,19 @@ struct Engine {
     }
 
     /**
-     * cut_segments_by_mesh: 1D Segment clipping by 3D Volume.
+     * cut_segments_by_mesh: 1D Segment clipping by 3D Volume OR 2D Surface.
      * Keeps portions of segments that are OUTSIDE the tool.
      */
-    static void cut_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const ExactMesh& tool) {
-        if (!CGAL::is_closed(tool)) return;
+    static void cut_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const ExactMesh& tool, bool is_closed) {
+        if (segments.empty()) return;
 
         typedef CGAL::AABB_face_graph_triangle_primitive<ExactMesh> Primitive;
         typedef CGAL::AABB_traits<EK, Primitive> Traits;
         typedef CGAL::AABB_tree<Traits> Tree;
         
         Tree tree(faces(tool).first, faces(tool).second, tool);
-        CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool);
+        std::unique_ptr<CGAL::Side_of_triangle_mesh<ExactMesh, EK>> inside_check;
+        if (is_closed) inside_check = std::make_unique<CGAL::Side_of_triangle_mesh<ExactMesh, EK>>(tool);
 
         std::vector<std::pair<EK::Point_3, EK::Point_3>> result;
 
@@ -159,17 +206,9 @@ struct Engine {
             std::vector<Tree::Intersection_and_primitive_id<EK::Segment_3>::Type> intersections;
             tree.all_intersections(s, std::back_inserter(intersections));
 
-            if (intersections.empty()) {
-                if (inside_check(seg.first) != CGAL::ON_BOUNDED_SIDE) {
-                    result.push_back(seg);
-                }
-                continue;
-            }
-
             std::vector<EK::Point_3> split_pts;
             split_pts.push_back(seg.first);
             for (auto const& inter : intersections) {
-                // Access using std::get_if for std::variant results
                 if (const EK::Point_3* p = std::get_if<EK::Point_3>(&inter.first)) {
                     split_pts.push_back(*p);
                 } else if (const EK::Segment_3* s_inter = std::get_if<EK::Segment_3>(&inter.first)) {
@@ -187,7 +226,16 @@ struct Engine {
             for (size_t i = 0; i < split_pts.size() - 1; ++i) {
                 if (split_pts[i] == split_pts[i+1]) continue;
                 EK::Point_3 mid = CGAL::midpoint(split_pts[i], split_pts[i+1]);
-                if (inside_check(mid) != CGAL::ON_BOUNDED_SIDE) {
+
+                bool is_on_surface = tree.do_intersect(mid);
+                bool is_inside = false;
+                if (is_closed) {
+                    is_inside = (inside_check->operator()(mid) == CGAL::ON_BOUNDED_SIDE) || is_on_surface;
+                } else {
+                    is_inside = is_on_surface;
+                }
+
+                if (!is_inside) {
                     result.push_back({split_pts[i], split_pts[i+1]});
                 }
             }
@@ -196,20 +244,63 @@ struct Engine {
     }
 
     /**
+     * cut_segments_by_plane: Subtraction by half-space. Keeps POSITIVE side.
+     */
+    static void cut_segments_by_plane(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const EK::Plane_3& plane) {
+        std::vector<std::pair<EK::Point_3, EK::Point_3>> result;
+        for (const auto& seg : segments) {
+            EK::Segment_3 s(seg.first, seg.second);
+            auto inter = CGAL::intersection(s, plane);
+            if (inter) {
+                if (const EK::Point_3* p = std::get_if<EK::Point_3>(&*inter)) {
+                    if (!plane.has_on_negative_side(seg.first)) result.push_back({seg.first, *p});
+                    if (!plane.has_on_negative_side(seg.second)) result.push_back({*p, seg.second});
+                } else if (const EK::Segment_3* s_inter = std::get_if<EK::Segment_3>(&*inter)) {
+                    // Entire segment on the plane, keep it (not on negative side)
+                    result.push_back(seg);
+                }
+            } else {
+                if (!plane.has_on_negative_side(seg.first)) result.push_back(seg);
+            }
+        }
+        segments = std::move(result);
+    }
+
+    /**
+     * clip_segments_by_plane: Intersection with half-space. Keeps NEGATIVE side.
+     */
+    static void clip_segments_by_plane(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const EK::Plane_3& plane) {
+        std::vector<std::pair<EK::Point_3, EK::Point_3>> result;
+        for (const auto& seg : segments) {
+            EK::Segment_3 s(seg.first, seg.second);
+            auto inter = CGAL::intersection(s, plane);
+            if (inter) {
+                if (const EK::Point_3* p = std::get_if<EK::Point_3>(&*inter)) {
+                    if (plane.has_on_negative_side(seg.first)) result.push_back({seg.first, *p});
+                    if (plane.has_on_negative_side(seg.second)) result.push_back({*p, seg.second});
+                } else if (const EK::Segment_3* s_inter = std::get_if<EK::Segment_3>(&*inter)) {
+                    result.push_back(seg);
+                }
+            } else {
+                if (plane.has_on_negative_side(seg.first)) result.push_back(seg);
+            }
+        }
+        segments = std::move(result);
+    }
+
+    /**
      * clip_segments_by_mesh: Keeps only portions of segments INSIDE the tool.
      */
-    static void clip_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const ExactMesh& tool) {
-        if (!CGAL::is_closed(tool)) {
-            segments.clear();
-            return;
-        }
+    static void clip_segments_by_mesh(std::vector<std::pair<EK::Point_3, EK::Point_3>>& segments, const ExactMesh& tool, bool is_closed) {
+        if (segments.empty()) return;
 
         typedef CGAL::AABB_face_graph_triangle_primitive<ExactMesh> Primitive;
         typedef CGAL::AABB_traits<EK, Primitive> Traits;
         typedef CGAL::AABB_tree<Traits> Tree;
         
         Tree tree(faces(tool).first, faces(tool).second, tool);
-        CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool);
+        std::unique_ptr<CGAL::Side_of_triangle_mesh<ExactMesh, EK>> inside_check;
+        if (is_closed) inside_check = std::make_unique<CGAL::Side_of_triangle_mesh<ExactMesh, EK>>(tool);
 
         std::vector<std::pair<EK::Point_3, EK::Point_3>> result;
 
@@ -217,13 +308,6 @@ struct Engine {
             EK::Segment_3 s(seg.first, seg.second);
             std::vector<Tree::Intersection_and_primitive_id<EK::Segment_3>::Type> intersections;
             tree.all_intersections(s, std::back_inserter(intersections));
-
-            if (intersections.empty()) {
-                if (inside_check(seg.first) == CGAL::ON_BOUNDED_SIDE) {
-                    result.push_back(seg);
-                }
-                continue;
-            }
 
             std::vector<EK::Point_3> split_pts;
             split_pts.push_back(seg.first);
@@ -245,7 +329,16 @@ struct Engine {
             for (size_t i = 0; i < split_pts.size() - 1; ++i) {
                 if (split_pts[i] == split_pts[i+1]) continue;
                 EK::Point_3 mid = CGAL::midpoint(split_pts[i], split_pts[i+1]);
-                if (inside_check(mid) == CGAL::ON_BOUNDED_SIDE) {
+
+                bool is_on_surface = tree.do_intersect(mid);
+                bool is_inside = false;
+                if (is_closed) {
+                    is_inside = (inside_check->operator()(mid) == CGAL::ON_BOUNDED_SIDE) || is_on_surface;
+                } else {
+                    is_inside = is_on_surface;
+                }
+
+                if (is_inside) {
                     result.push_back({split_pts[i], split_pts[i+1]});
                 }
             }
@@ -433,22 +526,18 @@ struct Engine {
     struct ToolNode {
         Geometry geo;
         Matrix world_tf;
-        bool is_volume;
-        bool is_plane;
-        bool is_pwh;
+        std::string type;
     };
 
     static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
         Matrix current_tf = parent_tf * s.tf;
-        bool is_plane = s.tags.contains("is_plane") && s.tags["is_plane"].get<bool>();
-        bool is_pwh = s.tags.contains("is_pwh") && s.tags["is_pwh"].get<bool>();
+        std::string type = s.tags.value("type", "");
         
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            bool is_vol = !geo.faces.empty() && !is_plane && !is_pwh; 
-            tool_nodes.push_back({geo, current_tf, is_vol, is_plane, is_pwh});
-        } else if (is_plane) {
-            tool_nodes.push_back({Geometry(), current_tf, false, true, false});
+            tool_nodes.push_back({geo, current_tf, type});
+        } else if (type == "plane") {
+            tool_nodes.push_back({Geometry(), current_tf, type});
         }
 
         for (const auto& child : s.components) {
@@ -489,7 +578,7 @@ struct Engine {
                             add_geometry_to_gps(local_tool_geo, project_tf, tool_set);
                             cut_gps_by_gps(subject_set, tool_set);
                             used_pwh_path = true;
-                        } else if (!tool.is_plane) {
+                        } else if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
                             used_pwh_path = false; break;
                         }
                     }
@@ -505,15 +594,14 @@ struct Engine {
                 if (!is_target_flat) {
                     ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
-                        if (tool.is_plane) {
+                        if (tool.type == "plane") {
                             Matrix rel_tf = subject_world_inv * tool.world_tf;
                             EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
                             cut_mesh_by_plane(target_mesh, local_plane);
-                        } else {
+                        } else if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
                             ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                             Matrix rel_tf = subject_world_inv * tool.world_tf;
                             transform_mesh(tool_mesh, rel_tf);
-                            if (tool.is_volume) assert(fix::is_geometry_solid(tool_mesh));
                             cut_mesh_by_mesh(target_mesh, tool_mesh);
                         }
                     }
@@ -529,11 +617,15 @@ struct Engine {
                 }
 
                 for (const auto& tool : tool_nodes) {
-                    if (tool.is_volume) {
+                    if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
                         ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
-                        cut_segments_by_mesh(local_segments, tool_mesh);
+                        cut_segments_by_mesh(local_segments, tool_mesh, tool.type == "closed");
+                    } else if (tool.type == "plane") {
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
+                        cut_segments_by_plane(local_segments, local_plane);
                     }
                 }
 
@@ -551,11 +643,15 @@ struct Engine {
                 for (const auto& v : target_geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
 
                 for (const auto& tool : tool_nodes) {
-                    if (tool.is_volume) {
+                    if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
                         ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         cut_points_by_mesh(pts, tool_mesh);
+                    } else if (tool.type == "plane") {
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
+                        cut_points_by_plane(pts, local_plane);
                     }
                 }
 
@@ -616,12 +712,14 @@ struct Engine {
                 if (!is_target_flat) {
                     ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
-                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
-                        Matrix rel_tf = subject_world_inv * tool.world_tf;
-                        transform_mesh(tool_mesh, rel_tf);
-                        
-                        if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
-                            join_mesh_by_mesh(target_mesh, tool_mesh);
+                        if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
+                            ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
+                            Matrix rel_tf = subject_world_inv * tool.world_tf;
+                            transform_mesh(tool_mesh, rel_tf);
+                            
+                            if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
+                                join_mesh_by_mesh(target_mesh, tool_mesh);
+                            }
                         }
                     }
                     target_geo = mesh_to_geometry(target_mesh);
@@ -682,12 +780,18 @@ struct Engine {
                 if (!is_target_flat) {
                     ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
-                        ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
-                        Matrix rel_tf = subject_world_inv * tool.world_tf;
-                        transform_mesh(tool_mesh, rel_tf);
-                        
-                        if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
-                            clip_mesh_by_mesh(target_mesh, tool_mesh);
+                        if (tool.type == "plane") {
+                            Matrix rel_tf = subject_world_inv * tool.world_tf;
+                            EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
+                            clip_mesh_by_plane(target_mesh, local_plane);
+                        } else if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
+                            ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
+                            Matrix rel_tf = subject_world_inv * tool.world_tf;
+                            transform_mesh(tool_mesh, rel_tf);
+                            
+                            if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
+                                clip_mesh_by_mesh(target_mesh, tool_mesh);
+                            }
                         }
                     }
                     target_geo = mesh_to_geometry(target_mesh);
@@ -702,11 +806,15 @@ struct Engine {
                 }
 
                 for (const auto& tool : tool_nodes) {
-                    if (tool.is_volume) {
+                    if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
                         ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
-                        clip_segments_by_mesh(local_segments, tool_mesh);
+                        clip_segments_by_mesh(local_segments, tool_mesh, tool.type == "closed");
+                    } else if (tool.type == "plane") {
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
+                        clip_segments_by_plane(local_segments, local_plane);
                     }
                 }
 
@@ -724,11 +832,15 @@ struct Engine {
                 for (const auto& v : target_geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
 
                 for (const auto& tool : tool_nodes) {
-                    if (tool.is_volume) {
+                    if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") {
                         ExactMesh tool_mesh = geometry_to_mesh(tool.geo);
                         Matrix rel_tf = subject_world_inv * tool.world_tf;
                         transform_mesh(tool_mesh, rel_tf);
                         clip_points_by_mesh(pts, tool_mesh);
+                    } else if (tool.type == "plane") {
+                        Matrix rel_tf = subject_world_inv * tool.world_tf;
+                        EK::Plane_3 local_plane = rel_tf.transform(EK::Plane_3(0, 0, 1, 0));
+                        clip_points_by_plane(pts, local_plane);
                     }
                 }
 

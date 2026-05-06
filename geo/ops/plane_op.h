@@ -12,7 +12,7 @@ struct PlaneOpBase : P {
         Geometry res;
         res.vertices.push_back({FT(0), FT(0), FT(0)});
         
-        typename P::json tags = {{"is_plane", true}, {"type", "plane"}};
+        typename P::json tags = {{"type", "plane"}};
         Shape out = P::make_shape(vfs, res, tags);
         out.tf = orientation;
         
@@ -107,7 +107,6 @@ struct PlaneOp : P {
         Shape out;
         out.tf = in.tf * m;
         out.add_tag("type", "plane");
-        out.add_tag("is_plane", true);
         
         vfs->write(fulfilling.with_output("$out"), out);
     }

@@ -230,6 +230,30 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
+    c.registerOperator('sweep', {
+      path: 'jot/sweep',
+      schema: { 
+        arguments: [
+          { name: '$in', type: 'jot:shape', affiliate: '$out' },
+          { name: 'path', type: 'jot:shape' },
+          { name: 'closed_path', type: 'jot:boolean', default: false },
+          { name: 'solid', type: 'jot:boolean', default: true }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('sweepBy', {
+      path: 'jot/sweepBy',
+      schema: { 
+        arguments: [
+          { name: '$in', type: 'jot:shape', affiliate: '$out' },
+          { name: 'profile', type: 'jot:shape' },
+          { name: 'closed_path', type: 'jot:boolean', default: false },
+          { name: 'solid', type: 'jot:boolean', default: true }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
     c.registerOperator('range', {
       path: 'jot/range',
       schema: { 

@@ -81,7 +81,7 @@ struct OrbOp : P {
         // Assert closure and manifoldness
         assert(fix::is_geometry_solid(boolean::Engine::geometry_to_mesh(res)));
 
-        Shape out = P::make_shape(vfs, res, {{"type", "orb"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "closed"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

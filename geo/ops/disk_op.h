@@ -52,7 +52,7 @@ struct DiskOp : P {
         face.loops.push_back(loop);
         res.faces.push_back(face);
 
-        Shape out = P::make_shape(vfs, res, {{"type", "disk"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "surface"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
