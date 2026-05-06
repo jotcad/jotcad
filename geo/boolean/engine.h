@@ -278,23 +278,30 @@ struct Engine {
         std::vector<EK::Point_3> pts;
         std::vector<std::vector<std::size_t>> faces;
         for (const auto& v : geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
-        for (const auto& f : geo.faces) {
-            if (f.loops.empty()) continue;
-            std::vector<std::size_t> face;
-            for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
-            faces.push_back(face);
+
+        // CRITICAL: Prefer triangles if they exist to avoid overlapping quads/triangles
+        if (!geo.triangles.empty()) {
+            for (const auto& t : geo.triangles) {
+                faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
+            }
+        } else {
+            for (const auto& f : geo.faces) {
+                if (f.loops.empty()) continue;
+                std::vector<std::size_t> face;
+                for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
+                faces.push_back(face);
+            }
         }
-        for (const auto& t : geo.triangles) {
-            faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
-        }
+
         CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
         CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
+
         ExactMesh mesh;
         std::vector<ExactMesh::Vertex_index> v_indices;
         for (const auto& p : pts) v_indices.push_back(mesh.add_vertex(p));
-        for (const auto& f : faces) {
+        for (const auto& f_indices : faces) {
             std::vector<ExactMesh::Vertex_index> face_vs;
-            for (auto idx : f) face_vs.push_back(v_indices[idx]);
+            for (auto idx : f_indices) face_vs.push_back(v_indices[idx]);
             mesh.add_face(face_vs);
         }
         CGAL::Polygon_mesh_processing::triangulate_faces(mesh);

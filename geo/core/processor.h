@@ -7,8 +7,16 @@
 #include <map>
 #include <functional>
 
+#include <optional>
+
 namespace jotcad {
 namespace geo {
+
+template <typename T>
+struct is_optional : std::false_type {};
+
+template <typename T>
+struct is_optional<std::optional<T>> : std::true_type {};
 
 /**
  * Processor: The schema-aware execution engine for JOT operators.
@@ -49,6 +57,11 @@ struct Processor {
 
     template <typename T>
     static T decode(fs::VFSNode* vfs, const std::string& key, const json& params, const json& schema, const std::vector<std::string>& stack) {
+        if constexpr (is_optional<T>::value) {
+            if (!params.contains(key)) return std::nullopt;
+            return decode<typename T::value_type>(vfs, key, params, schema, stack);
+        }
+
         if (!params.contains(key)) {
              // Find default in array-based arguments
              if (schema.contains("arguments") && schema.at("arguments").is_array()) {

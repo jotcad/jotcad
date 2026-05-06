@@ -147,31 +147,48 @@ await t.test('should deliver catalog, define dynamic op, and execute it via mesh
         return btn && !btn.disabled;
     }, { timeout: 30000 });
     
-    // Give Three.js a moment to upload geometry and render a frame
-    await new Promise(r => setTimeout(r, 1000));
+    // 7. Click the viewport to activate the shared renderer/canvas
+    console.log('[Test Browser] Activating viewport...');
+    await page.waitForSelector('.cursor-pointer');
+    await page.click('.cursor-pointer');
 
-    // 7. Capture rendered result from Canvas
+    // Give Three.js a moment to upload geometry and render a frame
+    await new Promise(r => setTimeout(r, 2000));
+
+    // 8. Capture full screen for documentation BEFORE assertion
+    const screenPath = path.resolve(__dirname, '../../ux/browser_integration_screenshot.png');
+    await page.screenshot({ path: screenPath, fullPage: true });
+    console.log(`[Test Browser] UI screenshot captured to ${screenPath}`);
+
+    // 9. Capture rendered result from Canvas
     console.log('[Test Browser] Capturing rendered result...');
-    const pngDataUrl = await page.evaluate(async () => {
+    const result = await page.evaluate(async () => {
         const canvas = document.querySelector('canvas');
-        if (!canvas) return null;
-        
-        // Force a synchronous render loop completion if possible
-        // but since we are external, we'll just capture.
-        return canvas.toDataURL('image/png');
+        if (!canvas) {
+            const allElements = Array.from(document.querySelectorAll('*'));
+            return { 
+                error: 'Canvas not found', 
+                elements: allElements.map(el => ({
+                    tag: el.tagName,
+                    class: el.className,
+                    text: el.innerText?.slice(0, 20)
+                })).slice(0, 50)
+            };
+        }
+        return { pngDataUrl: canvas.toDataURL('image/png') };
     });
 
-    assert.ok(pngDataUrl, 'Canvas should be present with rendered result');
+    if (result.error) {
+        console.error(`[Test Browser] ERROR: ${result.error}`);
+        console.log(`[Test Browser] Elements found: ${JSON.stringify(result.elements, null, 2)}`);
+    }
+
+    assert.ok(result.pngDataUrl, 'Canvas should be present with rendered result');
     
-    const base64Data = pngDataUrl.replace(/^data:image\/png;base64,/, "");
+    const base64Data = result.pngDataUrl.replace(/^data:image\/png;base64,/, "");
     const pngPath = path.resolve(__dirname, '../../ux/user_square_result.png');
     await fs.writeFile(pngPath, base64Data, 'base64');
     
-    // 8. Capture full screen for documentation
-    const screenPath = path.resolve(__dirname, '../../ux/browser_integration_screenshot.png');
-    await page.screenshot({ path: screenPath, fullPage: true });
-    
-    console.log(`[Test Browser] SUCCESS: UI screenshot captured to ${screenPath}`);
     console.log(`[Test Browser] SUCCESS: Dynamic op result captured to ${pngPath}`);
   });
 });

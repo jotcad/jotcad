@@ -51,8 +51,26 @@ Generates a circular or elliptical disk/sector.
 - **`start`**, **`end`**: Angular range in turns (tau).
 - **`zag`**: Resolution tolerance.
 
-### `Arc(diameter=10, width=0, height=0, start=0, end=1, zag=0.1)`
-Generates a circular or elliptical open arc. Arguments same as `Disk`.
+### `Arc(...)`
+Generates a circular or elliptical open arc. Supports multiple construction variants:
+
+#### Variant 1: Bounds-based (Legacy)
+`Arc(diameter=10, width=0, height=0, start=0, end=1, zag=0.1)`
+- **`diameter`**, **`width`**, **`height`**: Dimensions as `jot:interval`.
+- **`start`**, **`end`**: Angular range in turns (tau).
+
+#### Variant 2: 2-Point + Radius (SVG Style)
+`Arc(p1, p2, radius, large=false, cw=false, zag=0.1)`
+- **`p1`**, **`p2`**: Anchor points (shapes).
+- **`radius`**: Arc radius.
+- **`large`**: If `true`, uses the large arc (spanning > 180 degrees).
+- **`cw`**: If `true`, draws the arc in a clockwise direction.
+- **Exact Endpoints**: This variant explicitly aligns vertices to the input anchors to prevent floating-point drift.
+
+#### Variant 3: 3-Point
+`Arc(p1, p2, p3, zag=0.1)`
+- **`p1`**, **`p2`**, **`p3`**: Points the arc must pass through. `p1` is the start, `p3` is the end, and `p2` defines the curvature and plane.
+
 
 ### `Orb(diameter=10, width=0, height=0, depth=0, zag=0.1)`
 Generates a 3D sphere or ellipsoid solid.

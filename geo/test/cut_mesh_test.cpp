@@ -29,11 +29,11 @@ int main() {
     Shape out = vfs.read<Shape>(cut_sel);
     Geometry res = vfs.read<Geometry>(out.geometry.value());
 
-    std::cout << "  Resulting mesh has " << res.vertices.size() << " vertices and " << res.faces.size() << " faces." << std::endl;
+    std::cout << "  Resulting mesh has " << res.vertices.size() << " vertices, " << res.faces.size() << " faces, and " << res.triangles.size() << " triangles." << std::endl;
 
     // Verify: The base cube had 8 vertices. After a corefinement cut, it should have more.
     assert(res.vertices.size() > 8);
-    assert(!res.faces.empty());
+    assert(!res.faces.empty() || !res.triangles.empty());
 
     // Defensive check: Is the result unambiguous?
     boolean::Surface_mesh result_mesh = CutOp<>::geometry_to_mesh(res);

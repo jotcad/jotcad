@@ -5,9 +5,15 @@ namespace jotcad {
 namespace geo {
 
 struct Interval {
-    double min, max;
-    double size() const { return max - min; }
-    double center() const { return (min + max) * 0.5; }
+    double min = 1e18, max = -1e18;
+    bool empty() const { return min > max; }
+    double size() const { return empty() ? 0.0 : (max - min); }
+    double center() const { return empty() ? 0.0 : (min + max) * 0.5; }
+
+    void expand(double v) {
+        if (v < min) min = v;
+        if (v > max) max = v;
+    }
 
     static Interval from_json(const nlohmann::json& j) {
         if (j.is_array()) {
@@ -18,7 +24,7 @@ struct Interval {
             double v = j.get<double>();
             return {-v * 0.5, v * 0.5}; // 10 -> [-5, 5]
         }
-        return {0.0, 0.0};
+        return {1e18, -1e18}; // Empty
     }
 };
 

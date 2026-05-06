@@ -22,7 +22,7 @@ int main() {
 
     // 2. Full Arc (Circle boundary)
     Selector arc_sel = Selector{"jot/Arc", {{"diameter", 10.0}}}.with_output("$out");
-    ArcOp<>::execute(&vfs, arc_sel, Interval{-5.0, 5.0}, Interval{0, 0}, Interval{0, 0}, 0.0, 1.0, 0.1);
+    ArcBoundsOp<>::execute(&vfs, arc_sel, Interval{-5.0, 5.0}, Interval{0, 0}, Interval{0, 0}, 0.0, 1.0, 0.1);
     Shape arc = vfs.read<Shape>(arc_sel);
     Geometry a_geo = vfs.read<Geometry>(arc.geometry.value());
     std::cout << "  - Circle Arc segments: " << a_geo.segments.size() << std::endl;

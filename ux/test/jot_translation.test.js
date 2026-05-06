@@ -54,7 +54,34 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
         ],
         outputs: { $out: { type: 'jot:shape' } }
       },
-    });    c.registerOperator('Orb', {
+    });
+    c.registerOperator('Arc', {
+      path: 'jot/Arc/2p',
+      schema: { 
+        arguments: [
+          { name: 'p1', type: 'jot:shape' },
+          { name: 'p2', type: 'jot:shape' },
+          { name: 'radius', type: 'jot:number' },
+          { name: 'large', type: 'jot:boolean', default: false },
+          { name: 'cw', type: 'jot:boolean', default: false },
+          { name: 'zag', type: 'jot:number', default: 0.1 }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('Arc', {
+      path: 'jot/Arc/3p',
+      schema: { 
+        arguments: [
+          { name: 'p1', type: 'jot:shape' },
+          { name: 'p2', type: 'jot:shape' },
+          { name: 'p3', type: 'jot:shape' },
+          { name: 'zag', type: 'jot:number', default: 0.1 }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('Orb', {
       path: 'jot/Orb',
       schema: { 
         arguments: [
@@ -151,6 +178,16 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
+    c.registerOperator('fuse', {
+      path: 'jot/fuse',
+      schema: { 
+        arguments: [
+          { name: '$in', type: 'jot:shape', affiliate: '$out' },
+          { name: 'tools', type: 'jot:shapes', default: [] }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
     c.registerOperator('move', {
       path: 'jot/move',
       schema: { 
@@ -193,30 +230,12 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
-    c.registerOperator('fuse', {
-      path: 'jot/fuse',
-      schema: { 
-        arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
-          { name: 'tools', type: 'jot:shapes', default: [] }
-        ],
-        outputs: { $out: { type: 'jot:shape' } }
-      },
-    });
-    c.registerOperator('disjoint', {
-      path: 'jot/disjoint',
-      schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
-        outputs: { $out: { type: 'jot:shape' } }
-      },
-    });
     c.registerOperator('range', {
       path: 'jot/range',
-      schema: {
-        arguments: [{ name: 'count', type: 'number' }],
+      schema: { 
+        arguments: [{ name: 'count', type: 'jot:number' }],
         outputs: { $out: { type: 'jot:numbers' } }
       },
-      returns: { type: 'array' },
     });
   };
 
@@ -260,8 +279,6 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
 
     it('should handle optimized chain (optimizeAliases: true)', async () => {
       const res = await compile('Box(10).pdf("out.pdf")');
-      // In next-gen compiler, if a method is a side-demand (like pdf), 
-      // evaluate returns the primary result (the tail of the chain).
       expect(res.path).toBe('jot/pdf');
     });
 
@@ -294,6 +311,29 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     it('should use diameter for PascalCase Orb', async () => {
       const selector = await compile('Orb(diameter = 10)');
       expect(selector.parameters.diameter).toBe(10);
+    });
+  });
+
+  describe('Arc Variants', () => {
+    it('should resolve Arc(diameter=10) to the bounds variant', async () => {
+      const res = await compile('Arc(diameter=10)');
+      expect(res.path).toBe('jot/Arc');
+      expect(res.parameters.diameter).toBe(10);
+    });
+
+    it('should resolve Arc(Box(1), Box(2), radius=5) to the 2p variant', async () => {
+      const res = await compile('Arc(Box(1), Box(2), radius=5)');
+      expect(res.path).toBe('jot/Arc/2p');
+      expect(res.parameters.radius).toBe(5);
+      expect(res.parameters.p1.path).toBe('jot/Box');
+    });
+
+    it('should resolve Arc(Box(1), Box(2), Box(3)) to the 3p variant', async () => {
+      const res = await compile('Arc(Box(1), Box(2), Box(3))');
+      expect(res.path).toBe('jot/Arc/3p');
+      expect(res.parameters.p1.path).toBe('jot/Box');
+      expect(res.parameters.p2.path).toBe('jot/Box');
+      expect(res.parameters.p3.path).toBe('jot/Box');
     });
   });
 });
