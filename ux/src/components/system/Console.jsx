@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from 'solid-js';
-import { blackboard } from '../lib/blackboard';
+import { blackboard } from '../../lib/blackboard';
 import { Terminal, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-solid';
 
 export const Console = () => {

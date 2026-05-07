@@ -1,13 +1,28 @@
-import { createSignal, For, Show } from 'solid-js';
-import { blackboard } from '../lib/blackboard';
+import { createSignal, For, Show, onMount } from 'solid-js';
+import interact from 'interactjs';
+import { blackboard } from '../../lib/blackboard';
 import { Database, RefreshCw, Minus, Maximize2, Plus, Edit2 } from 'lucide-solid';
 
 export const CatalogNode = (props) => {
+  let nodeRef;
+  const [pos, setPos] = createSignal({ x: 20, y: 20 });
   const schemas = () => Object.entries(blackboard.schemas() || {});
   const [isRefreshing, setIsRefreshing] = createSignal(false);
   const [isMinimized, setIsMinimized] = createSignal(false);
   const [newName, setNewName] = createSignal('');
   const status = () => blackboard.discoveryStatus();
+
+  onMount(() => {
+    interact(nodeRef).draggable({
+      allowFrom: '.drag-handle',
+      listeners: {
+        move(event) {
+          const s = window._JOT_VIEW ? window._JOT_VIEW().scale : 1;
+          setPos({ x: pos().x + event.dx / s, y: pos().y + event.dy / s });
+        },
+      },
+    });
+  });
 
   const refreshCatalog = async () => {
     setIsRefreshing(true);
@@ -24,12 +39,17 @@ export const CatalogNode = (props) => {
 
   return (
     <div
-      class={`fixed md:absolute top-4 right-[5vw] md:right-4 z-40 w-[90vw] md:w-72 flex flex-col gap-2 p-3 md:p-4 rounded-xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden transition-all ${
+      ref={nodeRef}
+      class={`absolute z-40 w-[90vw] md:w-72 flex flex-col gap-2 p-3 md:p-4 rounded-xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden transition-all ${
         isMinimized() ? 'h-12' : 'max-h-[60vh] md:max-h-[80vh]'
       }`}
+      style={{
+        left: `${pos().x}px`,
+        top: `${pos().y}px`
+      }}
     >
       <div
-        class="flex justify-between items-center mb-1 cursor-pointer"
+        class="flex justify-between items-center mb-1 cursor-pointer drag-handle"
         onDblClick={() => setIsMinimized(!isMinimized())}
       >
         <div class="flex items-center gap-2 text-white/60">

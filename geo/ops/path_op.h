@@ -151,9 +151,73 @@ struct LoopOp : P {
     }
 };
 
+template <typename P = JotVfsProtocol>
+struct LinkConstructorOp : P {
+    static constexpr const char* path = "jot/Link";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes, bool smooth = false, double zag = 0) {
+        std::vector<EK::Point_3> pts;
+        for (const auto& s : shapes) {
+            detail::collect_points_recursive(vfs, s, Matrix::identity(), pts);
+        }
+
+        Geometry res = detail::generate_path_geometry(pts, false, smooth, zag);
+
+        Shape out;
+        out.geometry = vfs->materialize<Geometry>(res);
+        out.add_tag("type", "link");
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"shapes", "smooth", "zag"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/Link"},
+            {"description", "Creates an open path from a sequence of shapes or points."},
+            {"arguments", {
+                {{"name", "shapes"}, {"type", "jot:shapes"}},
+                {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct LoopConstructorOp : P {
+    static constexpr const char* path = "jot/Loop";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes, bool smooth = false, double zag = 0) {
+        std::vector<EK::Point_3> pts;
+        for (const auto& s : shapes) {
+            detail::collect_points_recursive(vfs, s, Matrix::identity(), pts);
+        }
+
+        Geometry res = detail::generate_path_geometry(pts, true, smooth, zag);
+
+        Shape out;
+        out.geometry = vfs->materialize<Geometry>(res);
+        out.add_tag("type", "loop");
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"shapes", "smooth", "zag"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/Loop"},
+            {"description", "Creates a closed loop from a sequence of shapes or points."},
+            {"arguments", {
+                {{"name", "shapes"}, {"type", "jot:shapes"}},
+                {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
 static void path_init(fs::VFSNode* vfs) {
     Processor::register_op<LinkOp<>, Shape, std::vector<Shape>, bool, double>(vfs, "jot/link");
     Processor::register_op<LoopOp<>, Shape, std::vector<Shape>, bool, double>(vfs, "jot/loop");
+    Processor::register_op<LinkConstructorOp<>, std::vector<Shape>, bool, double>(vfs, "jot/Link");
+    Processor::register_op<LoopConstructorOp<>, std::vector<Shape>, bool, double>(vfs, "jot/Loop");
 }
 
 } // namespace geo

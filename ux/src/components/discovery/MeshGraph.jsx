@@ -1,5 +1,5 @@
 import { For, Show, createSignal, onMount } from 'solid-js';
-import { blackboard } from '../lib/blackboard';
+import { blackboard } from '../../lib/blackboard';
 import interact from 'interactjs';
 import { Minus, Maximize2 } from 'lucide-solid';
 

@@ -146,7 +146,17 @@ MyPath.sweepBy(Circle(5))
 
 ## 5. Export and Rendering
 
-### `pdf(path='export.pdf')`
+### `stitch(repeat=[10, 3], start=[], end=[], offset=0)`
+Applies a recurring on/off length pattern to a segment chain (polylines).
+- **repeat**: The core pattern applied to the gap between start and end zones. If any value is negative, the repeat cycle anchors to the **end** of the path.
+- **start**: A specific pattern applied from the beginning of the path.
+- **end**: A specific pattern applied from the end of the path. Values are relative to the end (e.g., `[-5]` creates a 5mm stitch at the very end).
+- **offset**: Shifts the repeat pattern phase.
+
+---
+
+### `pdf(path="export.pdf", width=0, height=0)`
+
 Generates a PDF document from the spatial representation of the input shape.
 
 - **`path`**: The filename for the download.

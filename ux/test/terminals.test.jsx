@@ -52,7 +52,7 @@ vi.mock('../src/lib/three_utils', () => ({
   packZFS: vi.fn().mockResolvedValue({ type: 'packed-geometry' })
 }));
 
-vi.mock('../src/components/Viewport', () => ({
+vi.mock('../src/components/viewport/Viewport', () => ({
   Viewport: () => <div data-testid="mock-viewport">Viewport</div>
 }));
 

@@ -3,15 +3,35 @@
 A high-performance reactive graph visualizer for the JotCAD Distributed
 Blackboard.
 
-## Tech Stack
+## Architecture
 
-- **Reactivity:** Solid.js (No Virtual DOM)
-- **3D:** Three.js
-- **Interactions:** Interact.js
-- **Styling:** Tailwind CSS
-- **Build:** Vite
+The UX is organized into atomic modules to maintain high maintainability and
+precise responsibility:
 
-## How to Run
+-   `src/components/canvas/`: The spatial blackboard layer and its nodes.
+-   `src/components/editor/`: Code editors and result viewports.
+-   `src/components/discovery/`: Mesh mapping and schema catalogs.
+-   `src/components/system/`: HUD elements (Console, Error Overlays).
+-   `src/lib/render/`: Shared WebGL renderer and JOT-to-Three.js decoders.
+-   `src/lib/state/`: Reactive application and mesh state.
+-   `src/lib/vfs/`: VFS/Mesh connection and bridge logic.
+
+## Interaction Model
+
+### Unified Gestures
+The blackboard uses a custom, non-passive gesture system to ensure smooth
+panning and zooming on both touch and mouse devices.
+
+-   **Two-Finger Pinch/Pan**: Zooms relative to the gesture center and pans
+    simultaneously.
+-   **Gesture Ownership**: Multi-touch gestures are strictly "owned" by either
+    the blackboard or a specific window to prevent accidental window raising or
+    dragging during navigation.
+-   **Manual Viewports**: 3D viewports are static snapshots by default and
+    become "Active" only when focused, ensuring 60fps performance even with
+    hundreds of windows.
+
+## CID Validation
 
 ### 1. Start the Full System
 

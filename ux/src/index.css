@@ -19,6 +19,10 @@
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
+  touch-action: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 body {
@@ -27,11 +31,14 @@ body {
   place-content: center;
   min-width: 320px;
   min-height: 100vh;
+  touch-action: none !important;
+  overscroll-behavior: none;
 }
 
 #root {
   width: 100%;
   height: 100%;
+  touch-action: none !important;
 }
 
 .canvas-container {
@@ -40,4 +47,52 @@ body {
   position: relative;
   background-image: radial-gradient(circle, #2a2a2a 1px, transparent 1px);
   background-size: 20px 20px;
+  overscroll-behavior: none;
+  touch-action: none !important;
+}
+
+/* Ensure all interactive CAD components block native touch */
+.jot-node, .path-node, .agent-node, .viewport-container {
+  touch-action: none !important;
+}
+
+/* Custom Scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+  background-clip: content-box;
+}
+
+/* Mobile Scrollbar Overrides */
+@media (max-width: 768px) {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border: 3px solid transparent;
+  }
+
+  /* Force touch scrolling to be smooth */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
 }

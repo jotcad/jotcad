@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
-import { vfs, blackboard } from '../lib/blackboard';
+import { vfs, blackboard } from '../../lib/blackboard';
 
 export const DynamicUX = (props) => {
   let containerRef;

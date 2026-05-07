@@ -1,7 +1,7 @@
 import { render } from 'solid-js/web';
 import { ErrorBoundary } from 'solid-js';
-import { Canvas } from './components/Canvas';
-import { ErrorOverlay } from './components/ErrorOverlay';
+import { Canvas } from './components/canvas/Canvas';
+import { ErrorOverlay } from './components/system/ErrorOverlay';
 import { blackboard } from './lib/blackboard';
 import './index.css';
 

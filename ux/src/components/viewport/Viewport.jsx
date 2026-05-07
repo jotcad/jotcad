@@ -1,8 +1,9 @@
 import { onMount, onCleanup, createEffect, createSignal, Show } from 'solid-js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { renderJotToScene, activateViewport, captureSnapshot, createLabel } from '../lib/three_utils';
-import { vfs } from '../lib/blackboard';
+import { activateViewport, captureSnapshot, createLabel } from '../../lib/render/SharedRenderer';
+import { renderJotToScene } from '../../lib/render/GeometryDecoder';
+import { vfs } from '../../lib/blackboard';
 
 export const Viewport = (props) => {
   let containerRef;
@@ -25,6 +26,10 @@ export const Viewport = (props) => {
 
     controls = new OrbitControls(camera, containerRef);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.rotateSpeed = 0.7; // Slightly slower for touch precision
+    controls.enablePan = true;
+    controls.screenSpacePanning = true;
 
     // --- SYSTEM OBJECTS (Persistent) ---
     const ambient = new THREE.AmbientLight(0xffffff, 0.8);
@@ -35,7 +40,17 @@ export const Viewport = (props) => {
     dl.position.set(200, 500, 300);
     dl.userData.isSystem = true;
     scene.add(dl);
+
+    updateGridAndLabels({ x: 100, y: 100 });
+    
+    // Capture initial empty state to remove "Click to Initialize"
+    const snap = captureSnapshot(scene, camera);
+    setSnapshot(snap);
   };
+
+  onMount(() => {
+    init();
+  });
 
   onCleanup(() => {
     if (controls) controls.dispose();
@@ -105,15 +120,15 @@ export const Viewport = (props) => {
     if (isActive()) return;
     if (!scene) init();
     
-    console.log(`[Viewport] Activating ${id}. Camera at:`, camera.position);
-    
     setIsActive(true);
     activateViewport(id, containerRef, scene, camera, controls);
     
     const deactivate = (e) => {
       if (containerRef && !containerRef.contains(e.target)) {
+        // Capture the final state before hiding the renderer
         const snap = captureSnapshot(scene, camera);
         setSnapshot(snap);
+
         setIsActive(false);
         window.removeEventListener('pointerdown', deactivate);
       }
@@ -121,70 +136,78 @@ export const Viewport = (props) => {
     window.addEventListener('pointerdown', deactivate);
   };
 
+  // 1. Geometry Effect (Only runs when data/threshold changes)
   createEffect(async () => {
     const data = props.data;
     const threshold = props.edgeThreshold ?? 15;
-    const active = isActive();
-    const forceZoom = !hasAutoZoomed(); // Synchronous access to track dependency
     
-    if (active && data && scene) {
-      // CLEAR ONLY NON-SYSTEM OBJECTS
-      const toRemove = [];
-      scene.traverse(child => {
-        if (!child.userData.isSystem && (child.type === 'Mesh' || child.type === 'LineSegments')) {
-          toRemove.push(child);
+    if (!scene) init();
+    if (!scene || !data) return;
+
+    // Clear previous JOT geometry
+    const toRemove = [];
+    scene.traverse(child => {
+      if (!child.userData.isSystem && (child.type === 'Mesh' || child.type === 'LineSegments')) {
+        toRemove.push(child);
+      }
+    });
+    for (const obj of toRemove) {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+      }
+      scene.remove(obj);
+    }
+
+    try {
+      await renderJotToScene(vfs, data, scene, threshold);
+
+      const box = new THREE.Box3();
+      scene.traverse(obj => { if(obj.userData.isJot) box.expandByObject(obj); });
+      
+      if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        const geoSize = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(geoSize.x, geoSize.y, geoSize.z) || 1;
+        updateGridAndLabels(box.max);
+
+        const alreadyZoomed = untrack(hasAutoZoomed);
+        const isDefaultCam = camera.position.x === 100 && camera.position.y === 150 && camera.position.z === 200;
+
+        if (!alreadyZoomed && isDefaultCam) {
+          if (isFinite(center.x) && isFinite(center.y) && isFinite(center.z) && isFinite(maxDim)) {
+            camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim * 2.5);
+            camera.lookAt(center);
+            controls.target.copy(center);
+            controls.update();
+            untrack(() => setHasAutoZoomed(true));
+          }
         }
-      });
-      for (const obj of toRemove) {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-          else obj.material.dispose();
-        }
-        scene.remove(obj);
+      } else {
+        updateGridAndLabels({ x: 100, y: 100 });
       }
 
-      try {
-        await renderJotToScene(vfs, data, scene, threshold);
+      // If we are NOT active, update the snapshot now
+      if (!untrack(isActive)) {
+        setTimeout(() => {
+          const snap = captureSnapshot(scene, camera);
+          if (snap) setSnapshot(snap);
+        }, 50); // Give it a few frames to settle
+      }
+    } catch (e) { console.error('[Viewport] Render error:', e); }
+  });
 
-        const box = new THREE.Box3();
-        scene.traverse(obj => { 
-          if(obj.userData.isJot) {
-            box.expandByObject(obj); 
-          }
-        });
-        
-        if (!box.isEmpty()) {
-          const center = box.getCenter(new THREE.Vector3());
-          const geoSize = box.getSize(new THREE.Vector3());
-          console.log(`[Viewport] Bounding Box: min(${box.min.x},${box.min.y}) max(${box.max.x},${box.max.y}) size(${geoSize.x},${geoSize.y})`);
-          
-          const maxDim = Math.max(geoSize.x, geoSize.y, geoSize.z) || 1;
-          const maxPos = box.max;
-
-          updateGridAndLabels(maxPos);
-
-          if (forceZoom) {
-            if (isFinite(center.x) && isFinite(center.y) && isFinite(center.z) && isFinite(maxDim)) {
-              camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim * 2.5);
-              camera.lookAt(center);
-              controls.target.copy(center);
-              controls.update();
-              setHasAutoZoomed(true);
-            } else {
-              console.warn('[Viewport] Non-finite bounds detected, skipping auto-zoom');
-            }
-          }
-        } else {
-          updateGridAndLabels({ x: 100, y: 100 });
-        }
-        
-        if (!isActive()) {
-            const snap = captureSnapshot(scene, camera);
-            setSnapshot(snap);
-        }
-
-      } catch (e) { console.error('[Viewport] Render error:', e); }
+  // 2. Activation Sync (No geometry changes)
+  createEffect(() => {
+    const active = isActive();
+    if (active) {
+       // Ensure renderer is sized correctly upon activation
+       const rect = containerRef.getBoundingClientRect();
+       const width = rect.width || 300;
+       const height = rect.height || 200;
+       camera.aspect = width / height;
+       camera.updateProjectionMatrix();
     }
   });
 
@@ -202,7 +225,7 @@ export const Viewport = (props) => {
       </button>
       <div
         ref={containerRef}
-        class="w-full h-full rounded-lg overflow-hidden bg-slate-950 relative cursor-pointer"
+        class="viewport-container w-full h-full rounded-lg overflow-hidden bg-slate-950 relative cursor-pointer"
         onPointerDown={handleActivate}
         onWheel={handleWheel}
       >

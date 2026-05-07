@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup } from 'solid-js';
 import interact from 'interactjs';
-import { vfs } from '../lib/blackboard';
+import { vfs } from '../../lib/blackboard';
 import { Selector } from '../../../fs/src/cid';
 
 const DEFAULT_CODE = `

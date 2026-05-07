@@ -7,7 +7,7 @@ import {
   untrack,
   onCleanup,
 } from 'solid-js';
-import { blackboard } from '../lib/blackboard';
+import { blackboard } from '../../lib/blackboard';
 import { Cpu, Globe, Zap, FileJson, Shield, Workflow } from 'lucide-solid';
 import interact from 'interactjs';
 

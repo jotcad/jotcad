@@ -1,5 +1,5 @@
 import { Show, createSignal } from 'solid-js';
-import { blackboard } from '../lib/blackboard';
+import { blackboard } from '../../lib/blackboard';
 import { AlertTriangle, RefreshCw, X } from 'lucide-solid';
 
 export const ErrorOverlay = () => {
