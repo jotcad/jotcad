@@ -306,6 +306,19 @@ Axis-specific shorthands for translation. These operators align with the **Unive
 
 ## 11. Transformation
 
+### `by(target)`
+Transforms the subject's matrix by the matrix of the target shape. 
+- **Algebra**: $T_{result} = T_{target} \times T_{subject}$
+- **Use Case**: Relative movement or applying a complex frame stored in another object.
+
+### `to(target)`
+Moves the subject to the frame of the target shape, resetting any local transformation.
+- **Algebra**: $T_{result} = T_{target}$
+- **Identity**: `a.to(b)` is equivalent to `a.origin().by(b)`.
+
+### `origin()`
+Resets the shape's transformation matrix to the Identity matrix ($I$), returning it to its birth frame at $(0,0,0)$.
+
 ### `s(x, y, z)` / `scale(x, y, z)`
 Scales the subject along the local axes.
 

@@ -29,8 +29,12 @@ struct PdfOp : P {
         }
     }
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& pdf_path) {
-        PDFWriter writer;
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& pdf_path, double width, double height) {
+        PDFConfig config;
+        config.page_width = width;
+        config.page_height = height;
+        
+        PDFWriter writer(config);
         walk(vfs, in, Matrix::identity(), writer);
         auto pdf_bytes = writer.write();
         
@@ -41,7 +45,7 @@ struct PdfOp : P {
         vfs->write(fulfilling.with_output("file"), pdf_bytes);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "path"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "path", "width", "height"}; }
 
     static typename P::json schema() {
         return {
@@ -49,7 +53,9 @@ struct PdfOp : P {
             {"description", "Generates a PDF document from the spatial representation of the input shape."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "path"}, {"type", "jot:string"}, {"default", "export.pdf"}}
+                {{"name", "path"}, {"type", "jot:string"}, {"default", "export.pdf"}},
+                {{"name", "width"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Page width in mm (0 = auto)"}},
+                {{"name", "height"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Page height in mm (0 = auto)"}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
@@ -60,7 +66,7 @@ struct PdfOp : P {
 };
 
 static void pdf_init(fs::VFSNode* vfs) {
-    Processor::register_op<PdfOp<>, Shape, std::string>(vfs, "jot/pdf");
+    Processor::register_op<PdfOp<>, Shape, std::string, double, double>(vfs, "jot/pdf");
 }
 
 } // namespace geo

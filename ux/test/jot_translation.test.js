@@ -254,6 +254,33 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
+    c.registerOperator('by', {
+      path: 'jot/by',
+      schema: { 
+        arguments: [
+          { name: '$in', type: 'jot:shape', affiliate: '$out' },
+          { name: 'target', type: 'jot:shape' }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('to', {
+      path: 'jot/to',
+      schema: { 
+        arguments: [
+          { name: '$in', type: 'jot:shape', affiliate: '$out' },
+          { name: 'target', type: 'jot:shape' }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('origin', {
+      path: 'jot/origin',
+      schema: { 
+        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
     c.registerOperator('range', {
       path: 'jot/range',
       schema: { 

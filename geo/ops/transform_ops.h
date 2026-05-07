@@ -1,0 +1,115 @@
+#pragma once
+#include "protocols.h"
+#include "processor.h"
+#include "matrix.h"
+
+namespace jotcad {
+namespace geo {
+
+template <typename P = JotVfsProtocol>
+struct TransformOpBase : P {
+    static void execute_multi(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Matrix>& result_tfs) {
+        if (result_tfs.size() == 1) {
+            Shape out = in;
+            out.tf = result_tfs[0];
+            vfs->write(fulfilling.with_output("$out"), out);
+            return;
+        }
+
+        Shape out;
+        out.tf = Matrix::identity();
+        out.add_tag("type", "group");
+        for (const auto& m : result_tfs) {
+            Shape c = in;
+            c.tf = m;
+            out.components.push_back(c);
+        }
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct ByOp : TransformOpBase<P> {
+    static constexpr const char* path = "jot/by";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& targets) {
+        if (targets.empty()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+        std::vector<Matrix> tfs;
+        for (const auto& t : targets) {
+            tfs.push_back(t.tf * in.tf);
+        }
+        TransformOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/by"},
+            {"description", "Transforms the subject by the matrices of the target shapes. Supports sequences."},
+            {"arguments", {
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "targets"}, {"type", "jot:shapes"}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct ToOp : TransformOpBase<P> {
+    static constexpr const char* path = "jot/to";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& targets) {
+        if (targets.empty()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+        std::vector<Matrix> tfs;
+        for (const auto& t : targets) {
+            tfs.push_back(t.tf);
+        }
+        TransformOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/to"},
+            {"description", "Moves the subject to the frames of the target shapes (resets local transform). Supports sequences."},
+            {"arguments", {
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "targets"}, {"type", "jot:shapes"}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct OriginOp : P {
+    static constexpr const char* path = "jot/origin";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        Shape out = in;
+        out.tf = Matrix::identity();
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/origin"},
+            {"description", "Resets the subject's transformation to the identity matrix (birth origin)."},
+            {"arguments", {
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+inline void transform_ops_init(fs::VFSNode* vfs) {
+    Processor::register_op<ByOp<>, Shape, std::vector<Shape>>(vfs, "jot/by");
+    Processor::register_op<ToOp<>, Shape, std::vector<Shape>>(vfs, "jot/to");
+    Processor::register_op<OriginOp<>, Shape>(vfs, "jot/origin");
+}
+
+} // namespace geo
+} // namespace jotcad

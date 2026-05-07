@@ -43,6 +43,7 @@
 #include "deform_op.h"
 #include "text_op.h"
 #include "trace_op.h"
+#include "transform_ops.h"
 #include "asset_ops.h"
 
 namespace jotcad {
@@ -95,6 +96,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     assets_init(vfs);
     text_init(vfs);
     trace_init(vfs);
+    transform_ops_init(vfs);
 }
 
 } // namespace geo
