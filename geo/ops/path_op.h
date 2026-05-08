@@ -99,7 +99,7 @@ struct LinkOp : P {
 
         Shape out = in; 
         out.geometry = vfs->materialize<Geometry>(res);
-        out.add_tag("type", "link");
+        out.add_tag("type", "segments");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "tools", "smooth", "zag"}; }
@@ -132,7 +132,7 @@ struct LoopOp : P {
 
         Shape out = in;
         out.geometry = vfs->materialize<Geometry>(res);
-        out.add_tag("type", "loop");
+        out.add_tag("type", "segments");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "tools", "smooth", "zag"}; }
@@ -164,7 +164,7 @@ struct LinkConstructorOp : P {
 
         Shape out;
         out.geometry = vfs->materialize<Geometry>(res);
-        out.add_tag("type", "link");
+        out.add_tag("type", "segments");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"shapes", "smooth", "zag"}; }
@@ -195,7 +195,7 @@ struct LoopConstructorOp : P {
 
         Shape out;
         out.geometry = vfs->materialize<Geometry>(res);
-        out.add_tag("type", "loop");
+        out.add_tag("type", "segments");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"shapes", "smooth", "zag"}; }

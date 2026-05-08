@@ -2,6 +2,11 @@
 #include "protocols.h"
 #include "processor.h"
 #include "matrix.h"
+#include "boolean/engine.h"
+#include <CGAL/General_polygon_set_2.h>
+#include <CGAL/Gps_segment_traits_2.h>
+#include <queue>
+#include <set>
 
 namespace jotcad {
 namespace geo {
@@ -40,72 +45,157 @@ struct FacesOp : P {
 template <typename P = JotVfsProtocol>
 struct EachFaceOp : P {
     static constexpr const char* path = "jot/eachFace";
+
+    typedef boolean::ExactMesh ExactMesh;
+    typedef CGAL::Gps_segment_traits_2<EK> Gps_traits_2;
+    typedef CGAL::General_polygon_set_2<Gps_traits_2> General_polygon_set_2;
+    typedef CGAL::Polygon_2<EK> Polygon_2;
+    typedef CGAL::Polygon_with_holes_2<EK> Polygon_with_holes_2;
+
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, bool proxy = true) {
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
-        
+        ExactMesh mesh = boolean::Engine::geometry_to_mesh(geo);
+
         // Zero-Base Tags for the group
         Shape out;
         out.tf = in.tf;
         out.add_tag("type", "faces");
 
-        for (size_t i = 0; i < geo.faces.size(); ++i) {
-            const auto& face = geo.faces[i];
-            if (face.loops.empty() || face.loops[0].size() < 3) continue;
+        std::set<ExactMesh::Face_index> visited;
+        for (auto f : mesh.faces()) {
+            if (visited.count(f)) continue;
 
-            // Calculate plane
-            auto v0 = geo.vertices[face.loops[0][0]];
-            auto v1 = geo.vertices[face.loops[0][1]];
-            auto v2 = geo.vertices[face.loops[0][2]];
-            EK::Plane_3 plane(EK::Point_3(v0.x, v0.y, v0.z),
-                              EK::Point_3(v1.x, v1.y, v1.z),
-                              EK::Point_3(v2.x, v2.y, v2.z));
+            // Start a new BFS for a contiguous coplanar patch
+            std::vector<ExactMesh::Face_index> patch;
+            std::queue<ExactMesh::Face_index> q;
             
-            if (plane.is_degenerate()) continue;
+            q.push(f);
+            visited.insert(f);
+            patch.push_back(f);
 
-            // Centroid for anchor origin
-            FT tx(0), ty(0), tz(0);
-            for (int idx : face.loops[0]) {
-                tx += geo.vertices[idx].x;
-                ty += geo.vertices[idx].y;
-                tz += geo.vertices[idx].z;
+            // Plane of this patch
+            auto h0 = mesh.halfedge(f);
+            auto p0 = mesh.point(mesh.source(h0));
+            auto p1 = mesh.point(mesh.target(h0));
+            auto p2 = mesh.point(mesh.target(mesh.next(h0)));
+            EK::Plane_3 patch_plane(p0, p1, p2);
+
+            while (!q.empty()) {
+                auto current = q.front();
+                q.pop();
+
+                for (auto edge : mesh.halfedges_around_face(mesh.halfedge(current))) {
+                    auto opp = mesh.opposite(edge);
+                    auto neighbor = mesh.face(opp);
+                    if (neighbor == ExactMesh::null_face() || visited.count(neighbor)) continue;
+
+                    // Coplanar check: all vertices of neighbor must be on patch_plane
+                    bool coplanar = true;
+                    for (auto v : mesh.vertices_around_face(mesh.halfedge(neighbor))) {
+                        if (!patch_plane.has_on(mesh.point(v))) {
+                            coplanar = false;
+                            break;
+                        }
+                    }
+
+                    if (coplanar) {
+                        visited.insert(neighbor);
+                        patch.push_back(neighbor);
+                        q.push(neighbor);
+                    }
+                }
             }
-            FT count = FT((int)face.loops[0].size());
-            Point_3 centroid(tx/count, ty/count, tz/count);
 
-            Matrix m = Matrix::fromNormal(centroid, plane.orthogonal_vector());
+            // Merge patch into PWHs
+            Matrix project_tf = Matrix::lookAt(patch_plane.point(), patch_plane.orthogonal_vector());
+            Matrix rehydrate_tf = project_tf.inverse();
 
-            // Zero-Base Tags for the individual face anchor
-            Shape f_shape;
-            f_shape.tf = m;
-            f_shape.add_tag("type", "face");
-            f_shape.add_tag("index", (int)i);
+            General_polygon_set_2 gps;
+            for (auto pf : patch) {
+                Polygon_2 poly;
+                for (auto v : mesh.vertices_around_face(mesh.halfedge(pf))) {
+                    auto p3 = mesh.point(v);
+                    auto lp = project_tf.transform(p3);
+                    poly.push_back(EK::Point_2(lp.x(), lp.y()));
+                }
+                if (poly.is_empty() || !poly.is_simple()) continue;
+                if (poly.is_clockwise_oriented()) poly.reverse_orientation();
+                gps.join(Polygon_with_holes_2(poly));
+            }
 
-            if (proxy) {
-                Geometry f_geo;
-                Matrix inv_m = m.inverse();
-                std::map<int, int> v_map;
-                Geometry::Face local_face;
-                for (const auto& loop : face.loops) {
-                    std::vector<int> local_loop;
-                    for (int v_idx : loop) {
-                        if (v_map.find(v_idx) == v_map.end()) {
-                            auto& v = geo.vertices[v_idx];
-                            Point_3 lp = inv_m.transform(Point_3(v.x, v.y, v.z));
-                            v_map[v_idx] = (int)f_geo.vertices.size();
+            std::vector<Polygon_with_holes_2> merged_pwhs;
+            gps.polygons_with_holes(std::back_inserter(merged_pwhs));
+
+            for (const auto& pwh : merged_pwhs) {
+                // Centroid and Frame
+                FT tx(0), ty(0), tz(0);
+                int count = 0;
+                std::vector<EK::Point_3> boundary_pts;
+                for (auto it = pwh.outer_boundary().vertices_begin(); it != pwh.outer_boundary().vertices_end(); ++it) {
+                    EK::Point_3 p3 = rehydrate_tf.transform(EK::Point_3(it->x(), it->y(), 0));
+                    tx += p3.x(); ty += p3.y(); tz += p3.z();
+                    boundary_pts.push_back(p3);
+                    count++;
+                }
+                if (count < 3) continue;
+                EK::Point_3 centroid(tx/FT(count), ty/FT(count), tz/FT(count));
+
+                EK::Vector_3 X_dir = boundary_pts[1] - boundary_pts[0];
+                EK::Vector_3 Z_dir = patch_plane.orthogonal_vector();
+                EK::Vector_3 Y_dir = CGAL::cross_product(Z_dir, X_dir);
+
+                double dx = std::sqrt(CGAL::to_double(X_dir.squared_length()));
+                double dy = std::sqrt(CGAL::to_double(Y_dir.squared_length()));
+                double dz = std::sqrt(CGAL::to_double(Z_dir.squared_length()));
+                FT w(1000000);
+                auto scale_v = [&](const EK::Vector_3& v, double len) {
+                    double s = 1000000.0 / len;
+                    return std::array<FT, 3>{FT(v.x() * s), FT(v.y() * s), FT(v.z() * s)};
+                };
+                auto nx = scale_v(X_dir, dx);
+                auto ny = scale_v(Y_dir, dy);
+                auto nz = scale_v(Z_dir, dz);
+
+                Matrix m(Transformation(
+                    nx[0], ny[0], nz[0], centroid.x() * w,
+                    nx[1], ny[1], nz[1], centroid.y() * w,
+                    nx[2], ny[2], nz[2], centroid.z() * w,
+                    w
+                ));
+
+                Shape f_shape;
+                f_shape.tf = m;
+                f_shape.add_tag("type", "surface");
+
+                if (proxy) {
+                    Geometry f_geo;
+                    Matrix inv_m = m.inverse();
+                    Geometry::Face local_face;
+                    
+                    auto add_loop = [&](const Polygon_2& poly) {
+                        std::vector<int> loop;
+                        for (auto it = poly.vertices_begin(); it != poly.vertices_end(); ++it) {
+                            EK::Point_3 p3 = rehydrate_tf.transform(EK::Point_3(it->x(), it->y(), 0));
+                            EK::Point_3 lp = inv_m.transform(p3);
+                            loop.push_back((int)f_geo.vertices.size());
                             f_geo.vertices.push_back({lp.x(), lp.y(), lp.z()});
                         }
-                        local_loop.push_back(v_map[v_idx]);
+                        return loop;
+                    };
+
+                    local_face.loops.push_back(add_loop(pwh.outer_boundary()));
+                    for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
+                        local_face.loops.push_back(add_loop(*hit));
                     }
-                    local_face.loops.push_back(local_loop);
+                    f_geo.faces.push_back(local_face);
+                    f_shape.geometry = vfs->materialize<Geometry>(f_geo);
                 }
-                f_geo.faces.push_back(local_face);
-                f_shape.geometry = vfs->materialize<Geometry>(f_geo);
+                out.components.push_back(f_shape);
             }
-            out.components.push_back(f_shape);
         }
         vfs->write(fulfilling.with_output("$out"), out);
     }
@@ -113,7 +203,7 @@ struct EachFaceOp : P {
     static typename P::json schema() {
         return {
             {"path", "jot/eachFace"},
-            {"description", "Extracts faces from a shape as individual oriented child components."},
+            {"description", "Extracts faces from a shape as individual oriented child components. Merges contiguous coplanar patches."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}

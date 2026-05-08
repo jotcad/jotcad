@@ -26,7 +26,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                boolean_plane_test.cpp \
                extrude_interval_test.cpp \
                boolean_visual_test.cpp \
-               transform_test.cpp
+               transform_test.cpp \
+               each_face_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 
 TEST_RUNS = $(addprefix run-, $(TEST_SOURCES:.cpp=))

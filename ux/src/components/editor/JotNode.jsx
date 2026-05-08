@@ -188,12 +188,13 @@ export const JotNode = (props) => {
       ref={nodeRef}
       onPointerDown={handleRaise}
       data-id={props.initial.id}
-      class="jot-node absolute z-50 p-3 md:p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-y-auto flex flex-col gap-2 md:gap-3 transition-all duration-75 custom-scrollbar"
+      class="jot-node absolute p-3 md:p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-y-auto flex flex-col gap-2 md:gap-3 transition-all duration-75 custom-scrollbar"
       style={{
         left: `${pos().x}px`,
         top: `${pos().y}px`,
         width: isMinimized() ? '200px' : `${size().width}px`,
-        height: isMinimized() ? 'auto' : `${size().height}px`
+        height: isMinimized() ? 'auto' : `${size().height}px`,
+        "z-index": props.initial.zIndex
       }}
     >
       <div

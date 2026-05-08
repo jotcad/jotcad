@@ -271,8 +271,10 @@ Axis-specific shorthands for revolving around the local X, Y, or Z axes.
 Returns a collection of all faces in the subject as individual shapes.
 
 ### `eachFace()`
-Returns a **Generator** of all faces. When used with `at()` or `on()`, it sequentially targets every face of the subject.
-- **Anchor**: Each face is anchored at its **Centroid**, with the local Z-axis aligned to the face **Normal**.
+Returns a **Generator** of contiguous coplanar patches (Polygons with Holes). It automatically merges contiguous triangles and N-gons into clean surfaces.
+- **Anchor**: Each patch is anchored at its **Centroid**.
+- **Orientation**: The local **Z-axis** is aligned to the face **Normal**, and the local **X-axis** is aligned to the **first edge** of the outer boundary.
+- **Type**: Produced components are tagged as `surface` and have local geometry at $Z=0$.
 
 ### `eachEdge()`
 Returns a generator of all edges.

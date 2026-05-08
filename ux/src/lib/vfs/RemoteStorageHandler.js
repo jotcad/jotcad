@@ -1,17 +1,24 @@
 import RemoteStorage from 'remotestoragejs';
 import Widget from 'remotestorage-widget';
-import './RemoteStorageModule';
+import JotStorageModule from './RemoteStorageModule';
 import { setSyncStatus, setCloudAccount } from '../state/SyncState';
 import { blackboard } from '../blackboard';
 import { Merger } from './CloudSync';
-import { shadowOps, syncActions } from '../state/SyncState';
+import { shadowOps, syncActions, shadowLayout } from '../state/SyncState';
+import { createEffect } from 'solid-js';
 
 const rs = new RemoteStorage({
-  modules: ['jotcad'],
   cache: true,
   logging: true
 });
 
+// Enable Google Drive & Dropbox as backends
+rs.setApiKeys({
+  googledrive: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+  dropbox: import.meta.env.VITE_DROPBOX_APP_KEY
+});
+
+rs.addModule(JotStorageModule);
 rs.access.claim('jotcad', 'rw');
 
 /**
@@ -51,6 +58,19 @@ export const RemoteStorageHandler = {
         }
       }
     });
+
+    // --- DECIPHERING THE BLACKBOARD BUS ---
+    // This is how we keep the VFS layer clean.
+    createEffect(() => {
+        const ev = blackboard.events();
+        if (ev.type === 'op:publish' || ev.type === 'op:update') {
+            this.pushOperator(ev.data.path || ev.data.id, ev.data.script, ev.data.schema);
+        }
+        if (ev.type === 'editor:open' || ev.type === 'editor:close') {
+            const editors = blackboard.openEditors();
+            this.pushLayout({ editors });
+        }
+    });
   },
 
   async initialSync() {
@@ -87,9 +107,6 @@ export const RemoteStorageHandler = {
 
     const merged = Merger.mergeLayout(localLayout, baseLayout, remoteLayout);
     if (merged && merged.editors) {
-       // Update UI state
-       // Note: blackboard.openEditors is a function returning the state
-       // We need to use editorActions to reconcile the store
        blackboard.setOpenEditors(merged.editors);
        syncActions.updateShadowLayout(remoteLayout);
     }
@@ -108,11 +125,9 @@ export const RemoteStorageHandler = {
     const baseOp = shadowOps[path];
 
     if (!localOp) {
-      // New op from cloud
       blackboard.publishDynamicOp(path, remoteOp.schema, remoteOp.script, true);
       syncActions.updateShadowOp(path, remoteOp);
     } else if (JSON.stringify(localOp) !== JSON.stringify(remoteOp)) {
-      // Conflict resolution needed
       const merged = Merger.mergeOperator(path, localOp, baseOp, remoteOp);
       blackboard.publishDynamicOp(path, merged.schema, merged.script, true);
       
@@ -133,7 +148,7 @@ export const RemoteStorageHandler = {
   },
 
   async pushOperator(path, script, schema) {
-    if (!rs.connected) return;
+    if (!rs.connected || !path) return;
     const name = path.replace('user/', '');
     const opData = { script, schema };
     await rs.jotcad.saveOperator(name, opData);

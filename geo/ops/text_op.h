@@ -126,7 +126,7 @@ struct TextOp : P {
                 x_offset += FT(face->glyph->advance.x) * scale;
             }
             FT_Done_Face(face); FT_Done_FreeType(library);
-            vfs->write(fulfilling.with_output("$out"), P::make_shape(vfs, geo, {{"type", "text"}}));
+            vfs->write(fulfilling.with_output("$out"), P::make_shape(vfs, geo, {{"type", "surface"}}));
         } catch (const std::exception& e) {
             std::cerr << "[TextOp] Error: " << e.what() << std::endl;
             vfs->write(fulfilling.with_output("$out"), Shape());

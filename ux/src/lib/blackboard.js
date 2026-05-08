@@ -1,3 +1,4 @@
+import { createSignal } from 'solid-js';
 import {
   vfs,
   peerId,
@@ -32,6 +33,9 @@ import {
 
 export { vfs, DEFAULT_CODE };
 
+// --- Blackboard Event Bus ---
+const [eventBus, setEventBus] = createSignal({ type: 'init', t: Date.now() });
+
 export const blackboard = {
   vfs,
   peerId,
@@ -56,18 +60,37 @@ export const blackboard = {
   setOpenEditors,
   NODE_STATE_KEY,
 
+  // Event Bus
+  events: () => eventBus(),
+  emit: (type, data) => setEventBus({ type, data, t: Date.now() }),
+
   // Editor Actions
-  openOp: editorActions.openOp.bind(editorActions),
+  openOp: (id, code, schema) => {
+    editorActions.openOp(id, code, schema);
+    blackboard.emit('editor:open', { id });
+  },
   raiseOp: editorActions.raiseOp.bind(editorActions),
   createNewOp: editorActions.createNewOp.bind(editorActions),
-  closeOp: editorActions.closeOp.bind(editorActions),
-  updateEditorState: editorActions.updateEditorState.bind(editorActions),
+  closeOp: (id) => {
+    editorActions.closeOp(id);
+    blackboard.emit('editor:close', { id });
+  },
+  updateEditorState: (id, updates) => {
+    editorActions.updateEditorState(id, updates);
+    if (updates.code || updates.schema) {
+        blackboard.emit('op:update', { id, ...updates });
+    }
+  },
 
   // VFS/Mesh Actions
   discoverSchemas: vfsActions.discoverSchemas.bind(vfsActions),
   start: () => vfsActions.start(blackboard),
-  publishDynamicOp: (path, schema, script, persist = true) => 
-    vfsActions.publishDynamicOp(path, schema, script, persist, blackboard),
+  publishDynamicOp: (path, schema, script, persist = true) => {
+    vfsActions.publishDynamicOp(path, schema, script, persist, blackboard);
+    if (persist) {
+        blackboard.emit('op:publish', { path, schema, script });
+    }
+  },
   
   stop: vfsActions.stop.bind(vfsActions),
   read: vfsActions.read.bind(vfsActions),

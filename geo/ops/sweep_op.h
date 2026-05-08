@@ -161,7 +161,16 @@ struct SweepOp : P {
 
         Shape out;
         out.tags = base_tags;
-        out.add_tag("type", "sweep");
+        if (solid) {
+            // Check if profile was a surface or just segments
+            if (profile.faces.empty() && profile.triangles.empty()) {
+                out.add_tag("type", "open");
+            } else {
+                out.add_tag("type", "closed");
+            }
+        } else {
+            out.add_tag("type", "segments");
+        }
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }

@@ -49,7 +49,7 @@ struct ArcBoundsOp : P {
             res.segments.push_back({i, next});
         }
 
-        Shape out = P::make_shape(vfs, res, {{"type", "arc"}, {"variant", "bounds"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "segments"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "width", "height", "start", "end", "zag"}; }
@@ -147,7 +147,7 @@ struct Arc2POp : P {
             }
         }
 
-        Shape out = P::make_shape(vfs, res, {{"type", "arc"}, {"variant", "2p"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "segments"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"p1", "p2", "radius", "large", "cw", "zag"}; }
@@ -235,7 +235,7 @@ struct Arc3POp : P {
             res.segments.push_back({0, 1});
         }
 
-        Shape out = P::make_shape(vfs, res, {{"type", "arc"}, {"variant", "3p"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "segments"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"p1", "p2", "p3", "zag"}; }

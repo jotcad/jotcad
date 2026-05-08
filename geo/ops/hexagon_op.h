@@ -26,7 +26,7 @@ struct HexagonOp : P {
         Geometry res;
         res.vertices = get_hexagon_vertices(r, turns);
         res.faces.push_back({{{0, 1, 2, 3, 4, 5}}});
-        Shape out = P::make_shape(vfs, res, {{"type", "hexagon"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "surface"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

@@ -95,7 +95,7 @@ struct HullOp : P {
 
         Shape out;
         out.tags = base_tags;
-        out.add_tag("type", "hull");
+        out.add_tag("type", coplanar ? "surface" : "closed");
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }

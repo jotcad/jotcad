@@ -36,7 +36,7 @@ export class JotParser {
     // Only strip // comments if they are at start of line or preceded by whitespace
     const cleanText = text.replace(/(^|\s)\/\/.*$/gm, '$1');
     const regex =
-      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;)\s*/g;
+      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);
@@ -69,6 +69,10 @@ export class JotParser {
       return { type: 'ASSIGNMENT', name, value };
     }
 
+    return this._parseChaining();
+  }
+
+  _parseChaining() {
     let expr = this._parsePrimary();
 
     while (this._peek() === '.') {
@@ -101,7 +105,18 @@ export class JotParser {
 
     if (token === '{') return this._parseObject();
 
-    if (/^[0-9]/.test(token)) return parseFloat(this._consume());
+    if (/^[0-9]/.test(token)) {
+        let val = parseFloat(this._consume());
+        // Handle fraction literal (e.g. 1/4)
+        if (this._peek() === '/') {
+            this._consume('/');
+            const denominator = parseFloat(this._consume());
+            if (denominator !== 0) {
+                val /= denominator;
+            }
+        }
+        return val;
+    }
     if (/^["']/.test(token)) return this._consume().slice(1, -1);
 
     if (/^[a-zA-Z_]/.test(token)) {

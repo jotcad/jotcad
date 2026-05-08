@@ -3,7 +3,11 @@ import { ErrorBoundary } from 'solid-js';
 import { Canvas } from './components/canvas/Canvas';
 import { ErrorOverlay } from './components/system/ErrorOverlay';
 import { blackboard } from './lib/blackboard';
+import { RemoteStorageHandler } from './lib/vfs/RemoteStorageHandler';
 import './index.css';
+
+// Initialize Cloud Sync (Unhosted/RemoteStorage)
+RemoteStorageHandler.init();
 
 function App() {
   // 1. Global Window Listeners

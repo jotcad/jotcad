@@ -23,7 +23,7 @@ struct TriangleEquilateralOp : P {
         res.vertices.push_back({FT(0), h, FT(0)});
         res.faces.push_back({{{0, 1, 2}}});
 
-        Shape out = P::make_shape(vfs, res, {{"type", "triangle"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "surface"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"size"}; }

@@ -551,9 +551,9 @@ struct Engine {
 
         if (s.geometry.has_value()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
-            bool has_faces = !target_geo.faces.empty();
+            bool has_faces = !target_geo.faces.empty() || !target_geo.triangles.empty();
             bool has_segments = !target_geo.segments.empty();
-            bool has_only_points = target_geo.faces.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
+            bool has_only_points = target_geo.faces.empty() && target_geo.triangles.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
 
             if (has_faces) {
                 bool is_target_flat = target_geo.is_plane();
@@ -673,7 +673,7 @@ struct Engine {
 
         if (s.geometry.has_value()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
-            bool has_faces = !target_geo.faces.empty();
+            bool has_faces = !target_geo.faces.empty() || !target_geo.triangles.empty();
 
             if (has_faces) {
                 bool is_target_flat = target_geo.is_plane();
@@ -739,9 +739,9 @@ struct Engine {
 
         if (s.geometry.has_value()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
-            bool has_faces = !target_geo.faces.empty();
+            bool has_faces = !target_geo.faces.empty() || !target_geo.triangles.empty();
             bool has_segments = !target_geo.segments.empty();
-            bool has_only_points = target_geo.faces.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
+            bool has_only_points = target_geo.faces.empty() && target_geo.triangles.empty() && target_geo.segments.empty() && !target_geo.vertices.empty();
 
             if (has_faces) {
                 bool is_target_flat = target_geo.is_plane();

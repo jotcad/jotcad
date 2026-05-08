@@ -44,7 +44,4 @@ export const JotStorageModule = {
   }
 };
 
-// Register the module
-RemoteStorage.addModule(JotStorageModule);
-
 export default JotStorageModule;
