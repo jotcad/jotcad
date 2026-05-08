@@ -9,11 +9,22 @@ template <typename P = JotVfsProtocol>
 struct GroupOp : P {
     static constexpr const char* path = "jot/group";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& shapes) {
-        Shape out = in;
+        if (shapes.empty()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+
+        Shape out;
+        out.tf = Matrix::identity();
+        out.add_tag("type", "group");
+        
+        // Subject is the first component
+        out.components.push_back(in);
+        
+        // Tools are sibling components
         for (const auto& s : shapes) {
             out.components.push_back(s);
         }
-        out.add_tag("type", "group");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "shapes"}; }

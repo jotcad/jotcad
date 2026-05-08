@@ -39,7 +39,7 @@ struct ScaleOpBase : P {
         }
 
         Shape out;
-        out.tf = in.tf;
+        out.tf = Matrix::identity();
         out.add_tag("type", "group");
         for (const auto& m : transforms) {
             Shape c = in;

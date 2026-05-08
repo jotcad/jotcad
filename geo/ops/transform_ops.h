@@ -11,7 +11,7 @@ struct TransformOpBase : P {
     static void execute_multi(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Matrix>& result_tfs) {
         if (result_tfs.size() == 1) {
             Shape out = in;
-            out.tf = result_tfs[0];
+            out.apply_absolute_transform(result_tfs[0]);
             vfs->write(fulfilling.with_output("$out"), out);
             return;
         }
@@ -21,7 +21,7 @@ struct TransformOpBase : P {
         out.add_tag("type", "group");
         for (const auto& m : result_tfs) {
             Shape c = in;
-            c.tf = m;
+            c.apply_absolute_transform(m);
             out.components.push_back(c);
         }
         vfs->write(fulfilling.with_output("$out"), out);
@@ -36,11 +36,22 @@ struct ByOp : TransformOpBase<P> {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
-        std::vector<Matrix> tfs;
-        for (const auto& t : targets) {
-            tfs.push_back(t.tf * in.tf);
+        if (targets.size() == 1) {
+            Shape out = in;
+            out.apply_transform(targets[0].tf);
+            vfs->write(fulfilling.with_output("$out"), out);
+            return;
         }
-        TransformOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
+
+        Shape out;
+        out.tf = Matrix::identity();
+        out.add_tag("type", "group");
+        for (const auto& t : targets) {
+            Shape c = in;
+            c.apply_transform(t.tf);
+            out.components.push_back(c);
+        }
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
     static typename P::json schema() {
@@ -89,7 +100,7 @@ struct OriginOp : P {
     static constexpr const char* path = "jot/origin";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         Shape out = in;
-        out.tf = Matrix::identity();
+        out.apply_transform(in.tf.inverse());
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }

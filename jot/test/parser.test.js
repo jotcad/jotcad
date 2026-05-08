@@ -197,8 +197,31 @@ test('JotCAD Evaluator: .spec() Canonicalization', async (t) => {
     const ast = parser.parse('box(length).spec({ length: { alias: ["L", "len"], default: 50 } })');
     const res_raw = await compiler.evaluate(ast, { L: 100 });
     const res = res_raw[0];
-    
+
     // In this simplified test, we just check that the symbol was correctly handled
     assert.strictEqual(res.path, 'jot/spec');
     assert.strictEqual(res.parameters.$in.path, 'jot/box');
+});
+
+test('JotCAD Parser: Negative Ratios', async (t) => {
+  const parser = new JotParser();
+  const compiler = new JotCompiler();
+
+  compiler.registerOperator('jot/Box', {
+    path: 'jot/Box',
+    schema: { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } }
+  });
+
+  // Test basic negative fraction
+  const ast1 = parser.parse('-1/6');
+  assert.strictEqual(ast1, -1/6);
+
+  // Test negative fraction as argument
+  const ast2 = parser.parse('Box(-1/6)');
+  const res2 = await compiler.evaluate(ast2);
+  assert.strictEqual(res2[0].parameters.size, -1/6);
+
+  // Test signed denominator (works because -2 is a literal)
+  const ast3 = parser.parse('1/-2');
+  assert.strictEqual(ast3, -0.5);
 });

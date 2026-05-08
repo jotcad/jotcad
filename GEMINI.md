@@ -14,6 +14,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 ## Protocol Invariants (TERMINAL RULES)
 
 - **IDENTITY DUALITY (CRITICAL)**: **CID** and **Selector** are top-level alternatives. NEVER wrap a CID in a "fake" Selector. Requests must explicitly signal whether they target a content-hash (CID) or a computational-recipe (Selector).
+- **INDEPENDENT MATRIX MANDATE (CRITICAL)**: Shape matrices (`tf`) represent absolute world-space transforms. No scene-graph multiplication (parent-child accumulation) is allowed. All transformations MUST be applied recursively to child components.
 - **STRICT SELECTOR ENFORCEMENT**: `normalizeSelector` is a non-coercive type guard. It MUST throw a fatal error if passed a raw object. Hydration MUST happen at the boundary (REST/UX).
 - **STABLE HASHING**: The CID of a Selector is `hash(Safe-JCB(Selector_JSON))`. NEVER alter the Selector's structure (keys/paths) during hashing. Standardization (normalization) must happen *before* the Selector reaches the VFS.
 - **IMMUTABILITY**: Input artifacts are strictly read-only. Transformation results must be written as NEW anonymous geometry CIDs.
@@ -32,6 +33,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 | `fs/cpp/cid.cpp` | `docs/CORE_DATA_MODELS.md` | JCB & Cryptographic Identity |
 | `fs/cpp/selector.h` | `docs/VFS_SPECIFICATION.md` | Universal Addressing |
 | `geo/impl/processor.h` | `docs/JOT_LANGUAGE_SPECIFICATION.md` | Port Injection & Typed Execution |
+| `geo/ops/stl_op.h` | `docs/DYNAMIC_OPERATIONS.md` | STL Binary Export |
 | `geo/ops/*.h` | `docs/DYNAMIC_OPERATIONS.md` | Kernel Logic & Tolerances |
 | `docs/TODO_SIMPLIFICATION.md` | `legacy/` | Edge-Collapse & Garland-Heckbert |
 

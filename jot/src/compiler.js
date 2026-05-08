@@ -364,10 +364,15 @@ export class JotCompiler {
     if (val?.type === 'SYMBOL') return { ...val, type };
 
     if (type === 'jot:interval') {
-      if (typeof val === 'number') return [-val / 2, val / 2];
+      if (typeof val === 'number') return [-Math.abs(val) / 2, Math.abs(val) / 2];
       if (Array.isArray(val)) {
-        if (val.length === 1) return [0, val[0]];
-        if (val.length === 2) return val;
+        if (val.length === 1) {
+            const v = val[0];
+            return v < 0 ? [v, 0] : [0, v];
+        }
+        if (val.length === 2) {
+            return [Math.min(val[0], val[1]), Math.max(val[0], val[1])];
+        }
       }
     }
     

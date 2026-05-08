@@ -95,7 +95,9 @@ struct Processor {
             std::vector<Shape> results;
             if (!val.is_array()) throw std::runtime_error("Argument '" + key + "' must be an array for std::vector<Shape>");
             for (const auto& item : val) {
-                if (item.is_object() && item.contains("path")) {
+                if (item.is_string() && item.get<std::string>().size() == 64) {
+                    results.push_back(vfs->read<Shape>(fs::CID{item.get<std::string>()}));
+                } else if (item.is_object() && item.contains("path")) {
                     results.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
                 } else {
                     results.push_back(Shape::from_json(item));

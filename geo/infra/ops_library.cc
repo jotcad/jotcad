@@ -21,6 +21,7 @@
 #include "fuse_op.h"
 #include "disjoint_op.h"
 #include "pdf_op.h"
+#include "stl_op.h"
 #include "png_op.h"
 #include "rule_op.h"
 #include "move_op.h"
@@ -74,6 +75,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     fuse_init(vfs);
     disjoint_init(vfs);
     pdf_init(vfs);
+    stl_init(vfs);
     png_init(vfs);
     rule_init(vfs);
     move_init(vfs);

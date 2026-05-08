@@ -91,6 +91,26 @@ struct Shape {
         s.components = components;
         return s;
     }
+
+    /**
+     * Recursively applies a relative transformation matrix to this shape and all its children.
+     * This maintains the "Independent Matrix" mandate where every component's tf is its absolute world-space matrix.
+     */
+    void apply_transform(const Matrix& m) {
+        tf = m * tf;
+        for (auto& c : components) {
+            c.apply_transform(m);
+        }
+    }
+
+    /**
+     * Recursively sets a new absolute world-space matrix for this shape, maintaining the 
+     * relative relationships of all its children.
+     */
+    void apply_absolute_transform(const Matrix& absolute) {
+        Matrix delta = absolute * tf.inverse();
+        apply_transform(delta);
+    }
 };
 
 // ADL helpers for nlohmann::json

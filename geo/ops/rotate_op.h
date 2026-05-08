@@ -11,17 +11,17 @@ struct RotateOpBase : P {
     static void execute_multi(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Matrix>& transforms) {
         if (transforms.size() == 1) {
             Shape out = in;
-            out.tf = transforms[0] * in.tf;
+            out.apply_transform(transforms[0]);
             vfs->write(fulfilling.with_output("$out"), out);
             return;
         }
 
         Shape out;
-        out.tf = in.tf;
+        out.tf = Matrix::identity();
         out.add_tag("type", "group");
         for (const auto& m : transforms) {
             Shape c = in;
-            c.tf = m * in.tf;
+            c.apply_transform(m);
             out.components.push_back(c);
         }
         vfs->write(fulfilling.with_output("$out"), out);

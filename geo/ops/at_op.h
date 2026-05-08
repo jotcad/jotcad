@@ -24,15 +24,15 @@ struct AtOp : P {
             
             // 2. Move the subject into this local origin.
             Shape local_subject = subject;
-            local_subject.tf = world_inv * subject.tf;
+            local_subject.apply_transform(world_inv);
             
             // 3. Apply the operation at the local origin.
             fs::Selector call = op;
             call.parameters["$in"] = vfs->materialize(local_subject).value;
-            Shape local_result = vfs->read<Shape>(call);
+            Shape local_result = vfs->read<Shape>(call.with_output("$out"));
             
             // 4. Project the result back to the original world frame.
-            local_result.tf = world_frame * local_result.tf;
+            local_result.apply_transform(world_frame);
             
             // 5. Update the subject for the next anchor (Sequential Reduction).
             subject = local_result;
