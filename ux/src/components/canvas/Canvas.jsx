@@ -19,6 +19,7 @@ import { Connection } from './Connection';
 import { MeshMap } from '../discovery/MeshMap';
 import { CatalogNode } from '../discovery/CatalogNode';
 import { Console } from '../system/Console';
+import { SyncBadge } from '../system/SyncBadge';
 import { JotNode } from '../editor/JotNode';
 
 export const Canvas = () => {
@@ -363,18 +364,22 @@ export const Canvas = () => {
         </div>
       </div>
 
-      <div class="absolute top-4 left-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 shadow-xl">
-        <div
-          class={`w-2.5 h-2.5 rounded-full ${
-            blackboard.isConnected()
-              ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
-              : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'
-          }`}
-        />
-        <span class="text-[10px] font-black text-white/70 tracking-widest uppercase">
-          {blackboard.isConnected() ? `Mesh Online: ${blackboard.peerId}` : 'Mesh Offline'}
-        </span>
+      <div class="absolute top-4 left-4 z-50 flex flex-col md:flex-row items-start md:items-center gap-2">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 shadow-xl">
+          <div
+            class={`w-2.5 h-2.5 rounded-full ${
+              blackboard.isConnected()
+                ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
+                : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'
+            }`}
+          />
+          <span class="text-[10px] font-black text-white/70 tracking-widest uppercase">
+            {blackboard.isConnected() ? `Mesh Online: ${blackboard.peerId}` : 'Mesh Offline'}
+          </span>
+        </div>
+        <SyncBadge />
       </div>
+
 
       <div class="absolute bottom-4 left-4 md:bottom-6 md:left-6 flex flex-col gap-1 pointer-events-none z-50">
         <div class="text-[8px] md:text-[10px] font-black text-white/20 tracking-[0.2em] md:tracking-[0.4em]">

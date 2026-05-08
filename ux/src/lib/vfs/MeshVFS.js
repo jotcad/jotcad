@@ -7,6 +7,7 @@ import {
   setIsConnected, setDiscoveryStatus, setDynamicOps,
   DYNAMIC_OPS_KEY
 } from '../state/AppState.js';
+import { RemoteStorageHandler } from './RemoteStorageHandler.js';
 
 const getSessionId = () => {
   const prefix = import.meta.env.VITE_STORAGE_PREFIX || 'ui';
@@ -47,6 +48,8 @@ export const vfsActions = {
   async start(blackboard) {
     if (isStarted) return;
     isStarted = true;
+
+    RemoteStorageHandler.init();
 
     await vfs.init();
     console.log(`[MeshVFS] Initialized. Connecting to: ${vfsUrl}`);
@@ -178,6 +181,8 @@ export const vfsActions = {
       const next = { ...prev, [path]: { schema, script } };
       if (persist) {
         localStorage.setItem(DYNAMIC_OPS_KEY, JSON.stringify(next));
+        // Sync to RemoteStorage if connected
+        RemoteStorageHandler.pushOperator(path, script, schema);
       }
       return next;
     });

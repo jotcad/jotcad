@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createEffect, createSignal, Show } from 'solid-js';
+import { onMount, onCleanup, createEffect, createSignal, Show, untrack } from 'solid-js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { activateViewport, captureSnapshot, createLabel } from '../../lib/render/SharedRenderer';

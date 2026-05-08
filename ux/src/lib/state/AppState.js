@@ -114,6 +114,10 @@ export const editorActions = {
   },
 
   _saveAllEditors() {
-    localStorage.setItem(NODE_STATE_KEY, JSON.stringify(openEditors));
+    const editors = JSON.parse(JSON.stringify(openEditors));
+    localStorage.setItem(NODE_STATE_KEY, JSON.stringify(editors));
+    import('../vfs/RemoteStorageHandler').then(({ RemoteStorageHandler }) => {
+        RemoteStorageHandler.pushLayout({ editors });
+    }).catch(() => {});
   }
 };

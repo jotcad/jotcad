@@ -11,8 +11,12 @@
   "dependencies": {
     "interactjs": "^1.10.27",
     "lucide-solid": "^0.363.0",
+    "node-diff3": "^3.2.0",
+    "remotestorage-widget": "^1.8.1",
+    "remotestoragejs": "^2.0.0-beta.9",
     "solid-js": "^1.8.15",
-    "three": "^0.162.0"
+    "three": "^0.162.0",
+    "trimerge": "^1.3.0-alpha.15"
   },
   "devDependencies": {
     "@solidjs/testing-library": "^0.8.10",

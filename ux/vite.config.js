@@ -14,6 +14,9 @@ const https = (process.env.VITE_HTTPS !== 'false') && fs.existsSync(keyPath) && 
 
 export default defineConfig({
   plugins: [solidPlugin()],
+  optimizeDeps: {
+    include: ['node-diff3', 'trimerge'],
+  },
   server: {
     port: 3030,
     strictPort: true,

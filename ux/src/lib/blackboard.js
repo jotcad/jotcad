@@ -7,6 +7,8 @@ import {
 
 import {
   openEditors,
+  setOpenEditors,
+  NODE_STATE_KEY,
   graph,
   schemas,
   pulse,
@@ -51,6 +53,8 @@ export const blackboard = {
   error,
   setError,
   openEditors: () => openEditors,
+  setOpenEditors,
+  NODE_STATE_KEY,
 
   // Editor Actions
   openOp: editorActions.openOp.bind(editorActions),
