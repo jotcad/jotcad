@@ -224,11 +224,15 @@ Box(10).at(eachCorner(), cut(Cylinder(1)))
 
 ### 5.2 `by(ref)` vs `to(dest)` — Movement
 - **`by(ref)`**: Relative Composition. Appends the reference's transform to the current one ($T_{new} = T_{ref} \times T_{old}$).
-- **`to(dest)`**: Absolute Placement. Overwrites the current transform with the destination frame ($T_{new} = T_{dest}$). Equivalent to `.origin().by(dest)`.
+- **`to(dest)`**: Absolute Placement. Overwrites the current transform with the destination frame ($T_{new} = T_{dest}$). Equivalent to `.o().by(dest)`.
 
-## 6. Spatial Alignment (`.origin()`)
+## 6. Spatial Alignment (`.o()`)
 
-Every object maintains its **Birth Orientation**. The `.origin()` operator resets the shape's transformation matrix to the Identity matrix ($I$), effectively returning it to its birth frame at $(0,0,0)$.
+The `.o()` (or `.origin()`) operator is the primary tool for frame inversion. 
+- **Method**: `X.o()` returns a shape with the inverse matrix of `X`.
+- **Constructor**: `o()` returns the identity frame.
+
+This allows for "Feature Snapping": `H.by(C.o())` drags the entire shape `H` so that its feature `C` lands at the world origin.
 
 ## 7. Boolean Operations
 

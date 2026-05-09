@@ -57,20 +57,20 @@ Alignment is the composition of three active operators: **`at`**, **`by`**, and 
 ```js
 h = Bracket.at('z-') // Grab handle
 s = Wall.at('z+')    // Socket
-Bracket.by(h.inv()).by(s)
+Bracket.by(h.o()).by(s)
 ```
 
 ### Resetting to a Known Point
 "Place the part's original birth origin at the world coordinate [10, 10, 0]."
 ```js
-Part.to(frame([10, 10, 0]))
+Part.to(o().move([10, 10, 0]))
 ```
 
 ### Stacking Parts (The Sandwich)
 ```js
 A.group(
-    B.by(B.at('z-').inv()).by(A.at('z+')), // B's bottom at A's top
-    C.by(C.at('z-').inv()).by(B.at('z+'))  // C's bottom at B's top
+    B.by(B.at('z-').o()).by(A.at('z+')), // B's bottom at A's top
+    C.by(C.at('z-').o()).by(B.at('z+'))  // C's bottom at B's top
 )
 ```
 
