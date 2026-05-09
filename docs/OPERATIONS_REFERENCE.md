@@ -328,8 +328,19 @@ Moves the subject to the frame of the target shape, resetting any local transfor
 - **Algebra**: $T_{result} = T_{target}$
 - **Identity**: `a.to(b)` is equivalent to `a.origin().by(b)`.
 
-### `origin()`
-Resets the shape's transformation matrix to the Identity matrix ($I$), returning it to its birth frame at $(0,0,0)$.
+### `origin()` (alias: `o()`)
+- **Method**: `X.origin()` or `X.o()`
+  Returns the shape with its transformation matrix inverted ($tf = X.tf^{-1}$). This is the primary tool for "un-moving" a shape or calculating an inverse delta.
+- **Constructor**: `origin()` or `o()`
+  Returns an identity frame (a shape at the world origin with no geometry). Useful as a target for `.to()`.
+
+**Example: Feature Snapping**
+To move a shape so its corner lands on the world origin:
+```javascript
+H = Box(100, 100).mx(50).my(50)
+C = H.eachCorner().nth(0)
+H.by(C.o()) // "Drags" H by its corner C back to (0,0,0)
+```
 
 ### `s(x, y, z)` / `scale(x, y, z)`
 Scales the subject along the local axes.

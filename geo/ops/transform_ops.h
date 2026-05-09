@@ -98,18 +98,24 @@ struct ToOp : TransformOpBase<P> {
 template <typename P = JotVfsProtocol>
 struct OriginOp : P {
     static constexpr const char* path = "jot/origin";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        Shape out = in;
-        out.apply_transform(in.tf.inverse());
-        vfs->write(fulfilling.with_output("$out"), out);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, std::optional<Shape> in) {
+        if (in.has_value()) {
+            Shape out = in.value();
+            out.tf = in.value().tf.inverse();
+            vfs->write(fulfilling.with_output("$out"), out);
+        } else {
+            Shape out;
+            out.tf = Matrix::identity();
+            vfs->write(fulfilling.with_output("$out"), out);
+        }
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/origin"},
-            {"description", "Resets the subject's transformation to the identity matrix (birth origin)."},
+            {"description", "Resets the subject's transformation to the identity matrix (birth origin), or returns an identity frame if no subject is provided."},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}, {"optional", true}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -119,7 +125,8 @@ struct OriginOp : P {
 inline void transform_ops_init(fs::VFSNode* vfs) {
     Processor::register_op<ByOp<>, Shape, std::vector<Shape>>(vfs, "jot/by");
     Processor::register_op<ToOp<>, Shape, std::vector<Shape>>(vfs, "jot/to");
-    Processor::register_op<OriginOp<>, Shape>(vfs, "jot/origin");
+    Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/origin");
+    Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/o");
 }
 
 } // namespace geo

@@ -11,8 +11,8 @@ template <typename P = JotVfsProtocol>
 struct StlOp : P {
     static constexpr const char* path = "jot/stl";
 
-    static void walk(fs::VFSNode* vfs, const Shape& shape, const Matrix& parent_tf, STLWriter& writer) {
-        Matrix current_tf = parent_tf * shape.tf;
+    static void walk(fs::VFSNode* vfs, const Shape& shape, STLWriter& writer) {
+        Matrix current_tf = shape.tf;
         
         if (shape.geometry.has_value()) {
             try {
@@ -25,13 +25,13 @@ struct StlOp : P {
         }
         
         for (const auto& child : shape.components) {
-            walk(vfs, child, current_tf, writer);
+            walk(vfs, child, writer);
         }
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& stl_path) {
         STLWriter writer;
-        walk(vfs, in, Matrix::identity(), writer);
+        walk(vfs, in, writer);
         auto stl_bytes = writer.write_binary();
         
         // 1. Primary Output: Shape Pass-through

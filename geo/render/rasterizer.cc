@@ -77,8 +77,8 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
     std::vector<std::pair<std::pair<Vec3, Vec3>, ColorRGBA>> wireframe;
 
     // 1. Scene Collection
-    auto collect = [&](auto self, const Shape& s, const Matrix& tf, const std::string& current_color) -> void {
-        Matrix next_tf = tf * s.tf;
+    auto collect = [&](auto self, const Shape& s, const std::string& current_color) -> void {
+        Matrix current_tf = s.tf;
         std::string next_color = s.tags.value("color", current_color);
 
         if (s.geometry.has_value()) {
@@ -91,7 +91,7 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
 
             std::vector<Vec3> pts;
             for (const auto& v : geo.vertices) {
-                Point_3 p_world = next_tf.t.transform(Point_3(v.x, v.y, v.z));
+                Point_3 p_world = current_tf.t.transform(Point_3(v.x, v.y, v.z));
                 pts.push_back(cam.project(Vertex{p_world.x(), p_world.y(), p_world.z()}));
             }
 
@@ -114,10 +114,10 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
                 wireframe.push_back({{pts[s_wire[0]], pts[s_wire[1]]}, {255, 255, 0, 255}});
             }
         }
-        for (const auto& child : s.components) self(self, child, next_tf, next_color);
+        for (const auto& child : s.components) self(self, child, next_color);
     };
 
-    collect(collect, shape, Matrix::identity(), "");
+    collect(collect, shape, "");
     if (triangles.empty() && wireframe.empty()) return {};
 
     // 2. Global View Setup

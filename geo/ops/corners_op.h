@@ -129,9 +129,11 @@ struct EachCornerOp : P {
                                             uy, vy, ny, v_curr.y,
                                             uz, vz, nz, v_curr.z));
 
+                    Matrix world_m = in.tf * m;
+
                     // Zero-Base Tags for the individual corner anchor
                     Shape corner;
-                    corner.tf = m;
+                    corner.tf = world_m;
                     corner.add_tag("type", "corner");
                     corner.add_tag("index", (int)i);
 
@@ -270,9 +272,11 @@ struct EachEdgeOp : P {
                                             vx, vy, ny, my,
                                             wx, wy, nz, mz));
 
+                    Matrix world_m = in.tf * m;
+
                     // Zero-Base Tags for the individual edge anchor
                     Shape edge;
-                    edge.tf = m;
+                    edge.tf = world_m;
                     edge.add_tag("type", "edge");
                     edge.add_tag("index", (int)i);
 
