@@ -16,7 +16,7 @@ export const JotNode = (props) => {
   // 1. CANONICAL SIGNALS (Stored in spatial units)
   const [spatialSize, setSpatialSize] = createSignal(props.data?.size || { width: 500, height: 600 });
   const [pos, setPos] = createSignal(props.data?.pos || { x: 400, y: 400 });
-  const [opName, setOpName] = createSignal(props.data?.opName || props.data?.id || 'user/MyOp');
+  const [opName, setOpName] = createSignal(props.data?.opName ?? (props.data?.id || 'user/MyOp'));
   const [args, setArgs] = createSignal(props.data?.args || [
     { name: 'width', type: 'jot:number', testValue: 20 }
   ]);
@@ -59,17 +59,15 @@ export const JotNode = (props) => {
   });
 
   // REACTIVE HYDRATION: Update local signals if props.data changes in the store.
-  // This is crucial for correctly reflecting recovery updates or library changes.
   createEffect(() => {
     const data = props.data;
     if (!data) return;
     
-    // Use untrack for setters to avoid circular signaling
     untrack(() => {
         if (data.pos) setPos(data.pos);
         if (data.size) setSpatialSize(data.size);
         if (data.code && data.code !== code()) setCode(data.code);
-        if (data.opName) setOpName(data.opName);
+        if (data.opName !== undefined) setOpName(data.opName);
         if (data.args) setArgs(data.args);
         if (data.split) setSplit(data.split);
     });
@@ -138,14 +136,38 @@ export const JotNode = (props) => {
   });
 
   const isUnpublished = createMemo(() => {
-    const published = blackboard.dynamicOps()[opName()];
+    const path = opName();
+    if (!path) return true;
+    const published = blackboard.dynamicOps()[path];
     if (!published) return true;
-    return published.script !== code();
+
+    // Compare normalized scripts to avoid whitespace-only false positives
+    const local = code().trim();
+    const remote = (published.script || '').trim();
+    return local !== remote;
   });
 
   const publishToMesh = () => {
+     let path = opName().trim();
+     
+     if (path && !path.includes('/')) {
+         path = `user/${path}`;
+         setOpName(path);
+         // Force immediate store sync for the prefixed path
+         blackboard.updateEditorState(props.data.id, { opName: path, label: path });
+     }
+
+     if (!path || !path.startsWith('user/')) {
+         alert("Please enter a valid operator path (e.g. 'user/MyOperator')");
+         return;
+     }
+
+     if (props.data.id.startsWith('temp:')) {
+         blackboard.rename(props.data.id, path);
+     }
+
      const schema = {
-       path: opName(),
+       path,
        arguments: args().map(arg => ({
          name: arg.name,
          type: arg.type,
@@ -153,7 +175,7 @@ export const JotNode = (props) => {
        })),
        outputs: { "$out": { type: "shape" } }
      };
-     blackboard.publishDynamicOp(opName(), schema, code());
+     blackboard.publishDynamicOp(path, schema, code());
   };
 
   const evaluateJot = async () => {
@@ -232,12 +254,38 @@ export const JotNode = (props) => {
               <div class="flex justify-between items-center cursor-move drag-handle shrink-0 mb-1 px-1">
                 <div class="flex items-center gap-2">
                    <input 
-                     class="bg-transparent border-none text-ui-label font-black uppercase tracking-tighter text-cyan-400 focus:outline-none w-48"
+                     class="bg-transparent border-none text-ui-label font-black tracking-tighter text-cyan-400 focus:outline-none w-48 placeholder:text-cyan-400/20"
                      value={opName()}
+                     placeholder="Name your op..."
                      onInput={e => setOpName(e.target.value)}
+                     onKeyDown={e => {
+                         if (e.key === 'Enter') {
+                             e.currentTarget.blur();
+                         }
+                     }}
                    />
                 </div>
                 <div class="flex items-center gap-2">
+                  <button 
+                    onClick={publishToMesh}
+                    class={`relative transition-all p-1 ${isUnpublished() ? 'text-cyan-400' : 'text-white/20'}`}
+                    title="Publish Operator"
+                  >
+                    <Globe size={14} />
+                    <div class={`absolute top-0 right-0 w-1.5 h-1.5 rounded-full ${isUnpublished() ? 'bg-red-500' : 'bg-green-500'}`} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                        if (confirm(`Delete operator '${opName()}' from library?`)) {
+                            blackboard.removeDynamicOp(opName());
+                            blackboard.closeOp(props.data.id);
+                        }
+                    }}
+                    class="text-white/30 hover:text-red-400 transition-colors p-1"
+                    title="Delete Operator"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                   <button onClick={() => blackboard.closeOp(props.data.id)} class="text-white/30 hover:text-cyan-400 transition-colors p-1">
                     <X size={14} />
                   </button>
@@ -274,15 +322,6 @@ export const JotNode = (props) => {
                   }`}
                 >
                   {isEvaluating() ? 'EVALUATING...' : 'Evaluate Jot'}
-                </button>
-                <button
-                  onClick={publishToMesh}
-                  class={`px-3 rounded-lg transition-all flex items-center justify-center border-2 shadow-lg ${
-                    isUnpublished() ? 'bg-cyan-500/20 text-cyan-400 border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)] hover:bg-cyan-500/30' : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
-                  }`}
-                  title={isUnpublished() ? 'Publish Changes' : 'Published'}
-                >
-                  <Globe size={18} />
                 </button>
               </div>
           </div>

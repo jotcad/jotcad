@@ -12,6 +12,7 @@ import {
   setOpenWindows,
   desktopIcons,
   setDesktopIcons,
+  windowActions,
   openEditors,
   setOpenEditors,
   editorActions
@@ -88,10 +89,12 @@ export const blackboard = {
 
   // Actions
   ...editorActions,
+  rename: windowActions.rename.bind(windowActions),
   discoverSchemas: vfsActions.discoverSchemas.bind(vfsActions),
   start: (bb) => vfsActions.start(bb || blackboard), 
   stop: vfsActions.stop.bind(vfsActions),
   publishDynamicOp: vfsActions.publishDynamicOp.bind(vfsActions),
+  removeDynamicOp: vfsActions.removeDynamicOp.bind(vfsActions),
   read: vfsActions.read.bind(vfsActions),
   write: vfsActions.write.bind(vfsActions),
   clearStorage: vfsActions.clearStorage.bind(vfsActions),

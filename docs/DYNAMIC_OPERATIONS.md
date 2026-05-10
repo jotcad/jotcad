@@ -29,7 +29,20 @@ A Dynamic Operation is a metadata-driven definition that combines a Schema with 
     - `desktop`: The dashboard icon layout.
 - **VFS Fulfillment:** When a dynamic operation is executed, the *result* is cached in the VFS using the standard **Pure Flat CID** identity rule: `CID = hash(JCB(path, parameters))`.
 
-## 3. Synchronization & Multi-Device Support
+## 3. Creation & Publishing Workflow
+
+User operations are created and managed through the JOT Editor on the spatial desktop.
+
+1. **Initialization:** Clicking "New Op" creates an untitled draft. It is assigned a temporary internal ID and does not yet exist in the global library or mesh catalog.
+2. **Drafting:** The user defines the operator name (case-sensitive) and writes the JOT expression. A **Red Dot** on the publish icon indicates that the current draft differs from the library version.
+3. **Publication:** Clicking the **Globe (Publish)** icon in the window titlebar performs the following:
+   - Validates the operator name (must follow the `user/name` pattern).
+   - Registers the script and schema in the local `jot_user_ops` library.
+   - Unifies the window instance with the permanent path.
+   - Announces the new capability to the mesh.
+   - The indicator turns **Green**, signifying the state is clean.
+
+## 4. Synchronization & Multi-Device Support
 
 JotCAD utilizes a **3-Way Merge Engine** via the RemoteStorage protocol to synchronize your workspace across devices (e.g., Desktop to Mobile).
 

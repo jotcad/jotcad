@@ -109,6 +109,15 @@ export const windowActions = {
     this._save();
   },
 
+  rename(oldId, newId) {
+    const list = openWindows.map(w => {
+      if (w.id === oldId) return { ...w, id: newId };
+      return w;
+    });
+    setOpenWindows(list);
+    this._save();
+  },
+
   _save() {
     if (this._saveTimer) clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => {
@@ -151,13 +160,20 @@ export const editorActions = {
     windowActions.open('editor', id, { 
         code, 
         schema,
-        opName: id 
+        opName: id, // Established ops always have a name
+        label: id
     });
   },
   raiseOp: windowActions.raise.bind(windowActions),
   createNewOp() {
-    const id = `user/op-${Math.random().toString(36).slice(2, 6)}`;
-    this.openOp(id);
+    // Initially untitled with a hidden instance ID
+    const winId = `new-op-${Date.now()}`;
+    windowActions.open('editor', winId, { 
+        code: DEFAULT_CODE, 
+        schema: { arguments: [] },
+        opName: '', // Pure empty name for new ops
+        label: 'New Operator'
+    });
   },
   closeOp: windowActions.close.bind(windowActions),
   updateEditorState: windowActions.update.bind(windowActions),

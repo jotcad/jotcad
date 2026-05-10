@@ -59,5 +59,26 @@ export const JotRegistry = {
           catalog: { [path]: schemaWithOrigin }
         });
     }
+  },
+
+  removeDynamicOp(vfs, mesh, path) {
+    console.log(`[JotRegistry] Removing: ${path}`);
+    
+    setSchemas(prev => {
+        const next = { ...prev };
+        delete next[path];
+        return next;
+    });
+
+    setDynamicOps(prev => {
+        const next = { ...prev };
+        delete next[path];
+        Worksheet.save(Worksheet.TIERS.OPERATORS, null, next);
+        return next;
+    });
+
+    // In-memory cleanup of VFS provider
+    // Note: VFS doesn't currently support unregisterProvider, but we can overwrite it
+    // with a tombstone or just let it be (since the schema is gone).
   }
 };

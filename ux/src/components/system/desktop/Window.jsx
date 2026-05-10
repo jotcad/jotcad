@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, createEffect, onCleanup, createMemo } from 'solid-js';
 import interact from 'interactjs';
-import { X, Maximize2, Minimize2, Minus } from 'lucide-solid';
+import { X, Maximize2, Minimize2, Minus, Trash2, Globe } from 'lucide-solid';
 import { windowActions } from '../../../lib/state/DesktopState';
 import { blackboard } from '../../../lib/blackboard';
 
@@ -82,6 +82,56 @@ export const Window = (props) => {
     windowActions.update(props.data.id, { isMaximized: !isMaximized() });
   };
 
+  const isUnpublished = createMemo(() => {
+    if (props.data.type !== 'editor') return false;
+    const path = props.data.opName || '';
+    const code = props.data.code || '';
+    if (!path) return true;
+
+    const published = blackboard.dynamicOps()[path];
+    if (!published) return true;
+    
+    // Compare normalized scripts to avoid whitespace-only false positives
+    const local = code.trim();
+    const remote = (published.script || '').trim();
+    return local !== remote;
+  });
+
+  const handlePublish = (e) => {
+    e.stopPropagation();
+    let path = (props.data.opName || '').trim();
+    
+    if (!path) {
+        alert("Please enter a name for your operator before publishing.");
+        return;
+    }
+
+    if (path && !path.includes('/')) path = `user/${path}`;
+    
+    if (!path.startsWith('user/')) {
+        alert("Please enter a valid operator path (e.g. 'user/MyOperator')");
+        return;
+    }
+
+    // Force immediate store sync for the prefixed path and unify IDs
+    windowActions.update(props.data.id, { opName: path, label: path });
+    
+    if (props.data.id.startsWith('new-op-')) {
+        blackboard.rename(props.data.id, path);
+    }
+
+    const schema = {
+      path,
+      arguments: (props.data.args || []).map(arg => ({
+        name: arg.name,
+        type: arg.type,
+        default: arg.testValue
+      })),
+      outputs: { "$out": { type: "shape" } }
+    };
+    blackboard.publishDynamicOp(path, schema, props.data.code);
+  };
+
   // Memoized style to ensure reactive recalculation during zoom/pan
   const windowStyle = createMemo(() => {
     const v = view();
@@ -128,13 +178,60 @@ export const Window = (props) => {
         }`}
       >
         <div class="flex items-center gap-3">
-          <span class={`font-black uppercase tracking-[0.2em] text-white/50 ${
-            isMaximized() ? 'text-xs md:text-sm' : 'text-[10px] md:text-xs'
-          }`}>
-            {props.data.label || props.data.id}
-          </span>
+          <Show when={props.data.type === 'editor'} fallback={
+            <span class={`font-black tracking-[0.2em] text-white/50 ${
+                isMaximized() ? 'text-xs md:text-sm' : 'text-[10px] md:text-xs'
+            }`}>
+                {props.data.label || props.data.id}
+            </span>
+          }>
+             <input 
+               class="bg-transparent border-none text-ui-label font-black tracking-tighter text-cyan-400 focus:outline-none w-48 placeholder:text-cyan-400/20"
+               value={props.data.opName ?? ''}
+               placeholder="Name your op..."
+               onPointerDown={e => e.stopPropagation()}
+               onInput={e => {
+                   const val = e.target.value;
+                   windowActions.update(props.data.id, { opName: val, label: val || 'New Operator' });
+               }}
+               onKeyDown={e => {
+                   if (e.key === 'Enter') {
+                       e.currentTarget.blur();
+                   }
+               }}
+             />
+          </Show>
         </div>
         <div class="flex items-center gap-2 md:gap-3">
+           <Show when={props.data.type === 'editor'}>
+               <button 
+                 onClick={handlePublish}
+                 class={`relative tap-target rounded-full bg-white/5 transition-all flex items-center justify-center p-1.5 ${
+                    isUnpublished() ? 'text-cyan-400' : 'text-white/20'
+                 }`}
+                 title="Publish to Mesh"
+               >
+                 <Globe size={20} />
+                 {/* Status Dot */}
+                 <div class={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-black ${
+                     isUnpublished() ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
+                 }`} />
+               </button>
+               <button 
+                 onClick={(e) => {
+                     e.stopPropagation();
+                     const name = props.data.opName || props.data.id;
+                     if (confirm(`Delete operator '${name}' from library?`)) {
+                         blackboard.removeDynamicOp(name);
+                         windowActions.close(props.data.id);
+                     }
+                 }}
+                 class="tap-target rounded-full bg-white/5 text-white/40 hover:bg-red-500/20 hover:text-red-400 transition-all flex items-center justify-center p-1.5"
+                 title="Delete Operator"
+               >
+                 <Trash2 size={20} />
+               </button>
+           </Show>
            <button 
              onClick={toggleMaximize}
              class={`tap-target rounded-full transition-all flex items-center justify-center ${

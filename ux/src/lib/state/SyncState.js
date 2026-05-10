@@ -16,7 +16,6 @@ const getInitialShadowLayout = () => {
     try {
         const saved = localStorage.getItem(SHADOW_LAYOUT_KEY);
         const parsed = saved ? JSON.parse(saved) : { windows: [], desktop: [] };
-        // Ensure arrays exist
         return {
             windows: Array.isArray(parsed.windows) ? parsed.windows : [],
             desktop: Array.isArray(parsed.desktop) ? parsed.desktop : []
@@ -31,7 +30,7 @@ export const [shadowLayout, setShadowLayout] = createStore(getInitialShadowLayou
 export const [syncStatus, setSyncStatus] = createSignal('idle'); // 'idle' | 'syncing' | 'conflict' | 'error'
 export const [isDirty, setIsDirty] = createSignal(false);
 export const [lastSyncTime, setLastSyncTime] = createSignal(Date.now());
-export const [cloudAccount, setCloudAccount] = createSignal(null); // { email, name, picture }
+export const [cloudAccount, setCloudAccount] = createSignal(null); 
 
 export const syncActions = {
     markDirty() {
@@ -43,8 +42,12 @@ export const syncActions = {
         localStorage.setItem(SHADOW_OPS_KEY, JSON.stringify(shadowOps));
     },
 
+    removeShadowOp(path) {
+        setShadowOps(path, undefined);
+        localStorage.setItem(SHADOW_OPS_KEY, JSON.stringify(shadowOps));
+    },
+
     updateShadowLayout(layout) {
-        // Ensure structure before saving to shadow
         const clean = {
             windows: Array.isArray(layout.windows) ? layout.windows : [],
             desktop: Array.isArray(layout.desktop) ? layout.desktop : []

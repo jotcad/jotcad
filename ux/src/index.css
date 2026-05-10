@@ -92,7 +92,6 @@ input:focus, textarea:focus {
 .text-ui-label {
   font-size: 0.875rem;
   font-weight: 800;
-  text-transform: uppercase;
   letter-spacing: 0.1em;
   opacity: 0.6;
 }

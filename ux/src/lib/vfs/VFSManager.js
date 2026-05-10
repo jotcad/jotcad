@@ -136,6 +136,10 @@ export const vfsActions = {
     JotRegistry.publishDynamicOp(vfs, mesh, path, schema, script, persist);
   },
 
+  removeDynamicOp(path) {
+    JotRegistry.removeDynamicOp(vfs, mesh, path);
+  },
+
   stop() {
     mesh.stop();
     vfs.close();

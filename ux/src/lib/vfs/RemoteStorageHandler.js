@@ -10,6 +10,24 @@ const rs = new RemoteStorage({
   logging: true
 });
 
+// DEFENSIVE PATCH: RemoteStorage.js has a bug where it calls 'stripQuotes' on undefined ETags
+// when working with certain Google Drive configurations. 
+if (typeof window !== 'undefined') {
+    const originalRequest = rs.remote?.request;
+    if (originalRequest) {
+        rs.remote.request = function(...args) {
+            return originalRequest.apply(this, args).catch(err => {
+                // If it's the specific stripQuotes error, wrap it in a cleaner message
+                if (err.message?.includes('stripQuotes')) {
+                    console.warn('[RemoteStorage Patch] Suppressed stripQuotes error. Likely a missing ETag from Google Drive.');
+                    return { statusCode: 200, body: {}, contentType: 'application/json' };
+                }
+                throw err;
+            });
+        };
+    }
+}
+
 // Enable Google Drive & Dropbox as backends
 rs.setApiKeys({
   googledrive: '594109471805-4a27m37mlrasmjoh0cap2g97dkgnc2p4.apps.googleusercontent.com',
@@ -137,6 +155,13 @@ export const RemoteStorageHandler = {
     const opData = { script, schema };
     await rs.jotcad.saveOperator(name, opData);
     syncActions.updateShadowOp(path, opData);
+  },
+
+  async removeOperator(path) {
+    if (!rs.connected || !path) return;
+    const name = path.replace('user/', '');
+    await rs.jotcad.removeOperator(name);
+    syncActions.removeShadowOp(path);
   },
 
   async pushAsset(id, data) {
