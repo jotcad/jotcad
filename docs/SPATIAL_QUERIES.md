@@ -10,37 +10,35 @@ To ensure mathematical stability during complex multi-part alignments, JotCAD en
 2.  **Deformation (Geometry)**: All non-rigid transforms—**Scale**, **Mirror**, and **Skew**—are **"Baked"** directly into the geometry vertices.
     -   *Implementation*: When a user calls `.scale(2)`, the C++ kernel generates a *new* Content-ID (CID) with scaled vertex coordinates and resets the local `tf` to identity.
 
-## 2. Spatial Query Language (SQL)
+## 2. Functional Selection
 
-Features are selected using compact, bucketed query strings.
+Instead of string-path guessing, JotCAD uses explicit measurement and ranking to target features.
 
 ### 2.1 Bucketed Extremities (Resilience)
-Instead of exact coordinate sorting, SQL groups features into **Clusters** based on their absolute limits. Features within a default epsilon (`1e-4`) are treated as being at the "same height" or "same orientation."
+The `highest()` and `lowest()` operators group features into **Clusters** (Buckets) based on their measurements. Features within a default epsilon (`1e-4`) are treated as being in the same bucket, allowing selection of "all bolts on a flange" even with microscopic numerical noise.
 
-### 2.2 Dominance Ranking (Priority)
-Within a bucket, features are sorted by **Dominance** so that the "Main" face or longest edge is always at index `0`.
-- **Faces**: Area-sorted (Largest first).
-- **Edges**: Length-sorted (Longest first).
+### 2.2 Measurement Suite
+Features are targeted by their physical role using measurement operators:
+- **`z()`**, **`y()`**, **`x()`**: Spatial span (Intervals).
+- **`facing(vector)`**: Alignment with a world direction.
+- **`area()`**, **`length()`**, **`volume()`**: Geometric size.
 
-### 2.3 Syntax Table
+### 2.3 Selection Examples
 
-| Symbol | Meaning | Example |
-| :--- | :--- | :--- |
-| `x, y, z` | **Position** | `z+` (Highest bucket), `z-` (Lowest) |
-| `nx, ny, nz`| **Normal** | `nz+` (Up-facing), `nx0` (Side-facing) |
-| `?` | **Hole** | Only internal parity faces. |
-| `!` | **Shell** | Only outer boundary faces. |
-| `_` | **Flat** | Only perfectly planar faces (skips curved). |
-| `#tag` | **Tag** | Matches Zero-Base semantic tags. |
-| `0, 1, ...` | **Bucket** | `z+1` (The second-highest cluster). |
+| Intent | Selection String |
+| :--- | :--- |
+| **Highest points** | `highest(z(), 0)` |
+| **Largest face** | `highest(area(), 0)` |
+| **Top-facing face** | `highest(facing(UP), 0)` |
+| **Sideways faces** | `highest(facing(UP), 1)` |
 
 ## 3. The Alignment Vocabulary
 
 Alignment is the composition of three active operators: **`at`**, **`by`**, and **`to`**.
 
-### 3.1 `at(query, [recipe])` — Scoped Context
-- **As an Operator**: Temporarily reorients the **entire subject** so that the queried feature is at the origin $(0,0,0)$ facing $+Z$. It applies the `recipe` in this local frame and then projects the result back to world space.
-- **As a Query**: Returns the oriented **Frame** (coordinate system) of the queried feature.
+### 3.1 `at(target, [recipe])` — Scoped Context
+- **`target`**: A shape or group (usually produced by `faces()`, `corners()`, or `rank()`).
+- **Behavior**: Temporarily reorients the **entire subject** so that the target feature is at the origin $(0,0,0)$ facing $+Z$. It applies the `recipe` in this local frame and then projects the result back to world space.
 
 ### 3.2 `by(reference)` — Relative Composition
 - **Behavior**: Composes the current transform with the reference's transform ($T_{new} = T_{ref} \times T_{old}$).
@@ -48,35 +46,35 @@ Alignment is the composition of three active operators: **`at`**, **`by`**, and 
 
 ### 3.3 `to(destination)` — Absolute Placement
 - **Behavior**: Moves the shape so its **Birth Origin** matches the destination frame exactly ($T_{new} = T_{dest}$).
-- **Identity**: `a.to(b)` is strictly equivalent to `a.origin().by(b)`.
+- **Identity**: `a.to(b)` is strictly equivalent to `a.o().by(b)`.
 
 ## 4. Blackboard Workflow Examples
 
 ### Bolting a Bracket to a Wall (Grab & Place)
-"Grab the bracket by its back face and place it on the wall's front surface."
+"Grab the bracket by its bottom-most face and place it on the wall's front surface."
 ```js
-h = Bracket.at('z-') // Grab handle
-s = Wall.at('z+')    // Socket
+h = Bracket.faces().lowest(z(), 0) // Grab handle (bottom face)
+s = Wall.faces().highest(z(), 0)   // Socket (top face)
 Bracket.by(h.o()).by(s)
 ```
 
 ### Resetting to a Known Point
 "Place the part's original birth origin at the world coordinate [10, 10, 0]."
 ```js
-Part.to(o().move([10, 10, 0]))
+Part.to(O().move(10, 10, 0))
 ```
 
 ### Stacking Parts (The Sandwich)
 ```js
 A.group(
-    B.by(B.at('z-').o()).by(A.at('z+')), // B's bottom at A's top
-    C.by(C.at('z-').o()).by(B.at('z+'))  // C's bottom at B's top
+    B.by(B.faces().lowest(z(), 0).o()).by(A.faces().highest(z(), 0)), // B's bottom at A's top
+    C.by(C.faces().lowest(z(), 0).o()).by(B.faces().highest(z(), 0))  // C's bottom at B's top
 )
 ```
 
 ## 5. Multi-Point Solving
 
-When a query returns multiple points (e.g., `at('? z+')` for all top-face holes), the `to()` and `by()` operators automatically perform a **Rigid SVD Fit**:
+When a selection returns multiple points (e.g., `at(highest(z(), 0))` for all top-face bolts), the `to()` and `by()` operators automatically perform a **Rigid SVD Fit**:
 1.  **Translation**: Matches the centroids of the point sets.
 2.  **Rotation**: Minimizes the angular error between the vectors of the subject and target.
 3.  **Result**: A rigid move with no distortion, providing the "Best Mechanical Fit" for noisy geometry.

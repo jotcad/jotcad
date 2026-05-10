@@ -12,8 +12,8 @@ namespace jotcad {
 namespace geo {
 
 template <typename P = JotVfsProtocol>
-struct FacesOp : P {
-    static constexpr const char* path = "jot/faces";
+struct AsFacesOp : P {
+    static constexpr const char* path = "jot/asFaces";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
@@ -24,7 +24,6 @@ struct FacesOp : P {
         res.vertices = geo.vertices;
         res.faces = geo.faces;
         
-        // Zero-Base Tags for the group
         Shape out;
         out.tf = in.tf;
         out.geometry = vfs->materialize<Geometry>(res);
@@ -34,8 +33,8 @@ struct FacesOp : P {
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
         return {
-            {"path", "jot/faces"},
-            {"description", "Extracts faces from a shape as a mesh."},
+            {"path", "jot/asFaces"},
+            {"description", "Materializes the subject's faces into a single mesh shape."},
             {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -43,8 +42,8 @@ struct FacesOp : P {
 };
 
 template <typename P = JotVfsProtocol>
-struct EachFaceOp : P {
-    static constexpr const char* path = "jot/eachFace";
+struct FacesOp : P {
+    static constexpr const char* path = "jot/faces";
 
     typedef boolean::ExactMesh ExactMesh;
     typedef CGAL::Gps_segment_traits_2<EK> Gps_traits_2;
@@ -60,7 +59,6 @@ struct EachFaceOp : P {
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
         ExactMesh mesh = boolean::Engine::geometry_to_mesh(geo);
 
-        // Zero-Base Tags for the group
         Shape out;
         out.tf = in.tf;
         out.add_tag("type", "faces");
@@ -69,15 +67,12 @@ struct EachFaceOp : P {
         for (auto f : mesh.faces()) {
             if (visited.count(f)) continue;
 
-            // Start a new BFS for a contiguous coplanar patch
             std::vector<ExactMesh::Face_index> patch;
             std::queue<ExactMesh::Face_index> q;
-            
             q.push(f);
             visited.insert(f);
             patch.push_back(f);
 
-            // Plane of this patch
             auto h0 = mesh.halfedge(f);
             auto p0 = mesh.point(mesh.source(h0));
             auto p1 = mesh.point(mesh.target(h0));
@@ -87,21 +82,14 @@ struct EachFaceOp : P {
             while (!q.empty()) {
                 auto current = q.front();
                 q.pop();
-
                 for (auto edge : mesh.halfedges_around_face(mesh.halfedge(current))) {
                     auto opp = mesh.opposite(edge);
                     auto neighbor = mesh.face(opp);
                     if (neighbor == ExactMesh::null_face() || visited.count(neighbor)) continue;
-
-                    // Coplanar check: all vertices of neighbor must be on patch_plane
                     bool coplanar = true;
                     for (auto v : mesh.vertices_around_face(mesh.halfedge(neighbor))) {
-                        if (!patch_plane.has_on(mesh.point(v))) {
-                            coplanar = false;
-                            break;
-                        }
+                        if (!patch_plane.has_on(mesh.point(v))) { coplanar = false; break; }
                     }
-
                     if (coplanar) {
                         visited.insert(neighbor);
                         patch.push_back(neighbor);
@@ -110,16 +98,13 @@ struct EachFaceOp : P {
                 }
             }
 
-            // Merge patch into PWHs
             Matrix project_tf = Matrix::lookAt(patch_plane.point(), patch_plane.orthogonal_vector());
             Matrix rehydrate_tf = project_tf.inverse();
-
             General_polygon_set_2 gps;
             for (auto pf : patch) {
                 Polygon_2 poly;
                 for (auto v : mesh.vertices_around_face(mesh.halfedge(pf))) {
-                    auto p3 = mesh.point(v);
-                    auto lp = project_tf.transform(p3);
+                    auto lp = project_tf.transform(mesh.point(v));
                     poly.push_back(EK::Point_2(lp.x(), lp.y()));
                 }
                 if (poly.is_empty() || !poly.is_simple()) continue;
@@ -131,7 +116,6 @@ struct EachFaceOp : P {
             gps.polygons_with_holes(std::back_inserter(merged_pwhs));
 
             for (const auto& pwh : merged_pwhs) {
-                // Centroid and Frame
                 FT tx(0), ty(0), tz(0);
                 int count = 0;
                 std::vector<EK::Point_3> boundary_pts;
@@ -143,7 +127,6 @@ struct EachFaceOp : P {
                 }
                 if (count < 3) continue;
                 EK::Point_3 centroid(tx/FT(count), ty/FT(count), tz/FT(count));
-
                 EK::Vector_3 X_dir = boundary_pts[1] - boundary_pts[0];
                 EK::Vector_3 Z_dir = patch_plane.orthogonal_vector();
                 EK::Vector_3 Y_dir = CGAL::cross_product(Z_dir, X_dir);
@@ -160,37 +143,30 @@ struct EachFaceOp : P {
                 auto ny = scale_v(Y_dir, dy);
                 auto nz = scale_v(Z_dir, dz);
 
-                Matrix m(Transformation(
-                    nx[0], ny[0], nz[0], centroid.x() * w,
-                    nx[1], ny[1], nz[1], centroid.y() * w,
-                    nx[2], ny[2], nz[2], centroid.z() * w,
-                    w
-                ));
+                Matrix m(Transformation(nx[0], ny[0], nz[0], centroid.x() * w,
+                                        nx[1], ny[1], nz[1], centroid.y() * w,
+                                        nx[2], ny[2], nz[2], centroid.z() * w, w));
 
                 Shape f_shape;
-                f_shape.tf = m;
+                f_shape.tf = in.tf * m;
                 f_shape.add_tag("type", "surface");
 
                 if (proxy) {
                     Geometry f_geo;
                     Matrix inv_m = m.inverse();
-                    Geometry::Face local_face;
-                    
                     auto add_loop = [&](const Polygon_2& poly) {
-                        std::vector<int> loop;
+                        std::vector<int> l;
                         for (auto it = poly.vertices_begin(); it != poly.vertices_end(); ++it) {
                             EK::Point_3 p3 = rehydrate_tf.transform(EK::Point_3(it->x(), it->y(), 0));
                             EK::Point_3 lp = inv_m.transform(p3);
-                            loop.push_back((int)f_geo.vertices.size());
+                            l.push_back((int)f_geo.vertices.size());
                             f_geo.vertices.push_back({lp.x(), lp.y(), lp.z()});
                         }
-                        return loop;
+                        return l;
                     };
-
+                    Geometry::Face local_face;
                     local_face.loops.push_back(add_loop(pwh.outer_boundary()));
-                    for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
-                        local_face.loops.push_back(add_loop(*hit));
-                    }
+                    for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) local_face.loops.push_back(add_loop(*hit));
                     f_geo.faces.push_back(local_face);
                     f_shape.geometry = vfs->materialize<Geometry>(f_geo);
                 }
@@ -202,8 +178,8 @@ struct EachFaceOp : P {
     static std::vector<std::string> argument_keys() { return {"$in", "proxy"}; }
     static typename P::json schema() {
         return {
-            {"path", "jot/eachFace"},
-            {"description", "Extracts faces from a shape as individual oriented child components. Merges contiguous coplanar patches."},
+            {"path", "jot/faces"},
+            {"description", "Extracts faces from a shape as individual oriented components. Merges contiguous coplanar patches."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}
@@ -214,8 +190,8 @@ struct EachFaceOp : P {
 };
 
 static void faces_init(fs::VFSNode* vfs) {
-    Processor::register_op<FacesOp<>, Shape>(vfs, "jot/faces");
-    Processor::register_op<EachFaceOp<>, Shape, bool>(vfs, "jot/eachFace");
+    Processor::register_op<AsFacesOp<>, Shape>(vfs, "jot/asFaces");
+    Processor::register_op<FacesOp<>, Shape, bool>(vfs, "jot/faces");
 }
 
 } // namespace geo

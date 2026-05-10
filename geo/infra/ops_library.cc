@@ -48,6 +48,9 @@
 #include "asset_ops.h"
 #include "stitch_op.h"
 
+#include "measure_ops.h"
+#include "sort_ops.h"
+
 namespace jotcad {
 namespace geo {
 
@@ -101,6 +104,8 @@ void register_all_ops(fs::VFSNode* vfs) {
     trace_init(vfs);
     transform_ops_init(vfs);
     stitch_init(vfs);
+    measure_init(vfs);
+    selection_init(vfs);
 }
 
 } // namespace geo

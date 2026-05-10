@@ -76,6 +76,13 @@ Generates a circular or elliptical open arc. Supports multiple construction vari
 Generates a 3D sphere or ellipsoid solid.
 - **`diameter`**, **`width`**, **`height`**, **`depth`**: Dimensions as `jot:interval`.
 
+### `Triangle(va, vb, vc)`
+Generates a 2D triangle.
+- **`va`**: Side length along the local X-axis.
+- **`vb`**: Side length opposite the first vertex.
+- **`vc`**: Side length from the origin to the second vertex.
+- **Centering**: The triangle is automatically centered on its **Centroid** at `(0,0,0)`.
+
 ### `Hexagon(...)`
 Generates a regular 2D hexagon.
 - **`turns`**: Rotation in Tau (default `0.0`).
@@ -268,21 +275,72 @@ Axis-specific shorthands for revolving around the local X, Y, or Z axes.
 ## 9. Selection and Querying
 
 ### `faces()`
-Returns a collection of all faces in the subject as individual shapes.
-
-### `eachFace()`
-Returns a **Generator** of contiguous coplanar patches (Polygons with Holes). It automatically merges contiguous triangles and N-gons into clean surfaces.
+Returns a **Generator** of contiguous coplanar patches (Polygons with Holes). It automatically merges contiguous triangles and N-gons into clean surfaces. (Formerly `eachFace`).
 - **Anchor**: Each patch is anchored at its **Centroid**.
 - **Orientation**: The local **Z-axis** is aligned to the face **Normal**, and the local **X-axis** is aligned to the **first edge** of the outer boundary.
 - **Type**: Produced components are tagged as `surface` and have local geometry at $Z=0$.
 
-### `eachEdge()`
-Returns a generator of all edges.
+### `asFaces()`
+Returns the subject's faces materialized into a single mesh shape. (Formerly `faces`).
+
+### `edges()`
+Returns a generator of all edges as individual oriented components. (Formerly `eachEdge`).
 - **Anchor**: Centered at the **Midpoint**, with the Z-axis aligned to the edge normal (interpolated from incident faces).
 
-### `eachCorner()`
-Returns a generator of all vertices.
+### `asEdges()`
+Returns the subject's edges materialized into a single wireframe shape.
+
+### `corners()`
+Returns a generator of all vertices as individual oriented components. (Formerly `eachCorner`).
 - **Anchor**: At the **Vertex coordinate**, with the Z-axis aligned to the vertex normal.
+
+### `asCorners()`
+Returns the subject's vertices materialized into a single point cloud shape.
+
+### `length()`
+**Measurement Operator.**
+- **Subject**: A shape with 1D segments (Outlines/Wireframes).
+- **Output**: Returns the total Euclidean length of all segments as a `jot:number`.
+
+### `area()`
+**Measurement Operator.**
+- **Subject**: A shape with 2D or 3D geometry.
+- **Output**: Returns the total surface area of the subject as a `jot:number`.
+
+### `volume()`
+**Measurement Operator.**
+- **Subject**: A shape with a closed 3D shell.
+- **Output**: Returns the enclosed volume as a `jot:number`.
+
+### `facing(vector)`
+**Measurement Operator.**
+- **Subject**: A shape or oriented component.
+- **Output**: Returns the **Dot Product** between the subject's local **Z-axis** (normal) and the target vector.
+- **Values**: `1.0` (Aligned), `0.0` (Perpendicular), `-1.0` (Opposite).
+- **Example**: `faces().highest(facing(UP), 0)` targets the top face.
+
+### `highest(measure, bucket=0, epsilon=null, ratio=null)`
+**Selection Operator.**
+Ranks the components of a group by a measurement and selects a logically equivalent "bucket" of features, starting from the **highest** value.
+
+- **`measure`**: A partial operator (e.g., `z()`, `area()`, `facing(UP)`). If the measure returns an **Interval** (like `z()`), `highest` implicitly sorts by the **Maximum** value.
+- **`bucket`**: The cluster index (0 = Highest cluster).
+
+### `lowest(measure, bucket=0, epsilon=null, ratio=null)`
+**Selection Operator.**
+Ranks components starting from the **lowest** value. If the measure returns an **Interval**, `lowest` implicitly sorts by the **Minimum** value.
+
+#### Example
+```js
+// Select the largest face (Highest Area)
+MyBox.faces().highest(area(), 0)
+
+// Select the lowest corners (Lowest Z-min)
+Table.corners().lowest(z(), 0, ratio=0.01)
+
+// Round only the top-most corners (Highest Z-max)
+Box(10).at(corners().highest(z(), 0)).smooth(limit=1/36)
+```
 
 ### `smooth(limit=1/24, iterations=20, resolution=1.0, region=null)`
 Smooths geometry until dihedral angles approach a specified limit.
@@ -298,10 +356,21 @@ Smooths geometry until dihedral angles approach a specified limit.
 Box(10).smooth(limit=1/24, resolution=2.0)
 
 // Round only the top-most corners
-Box(10).at(eachCorner().top()).smooth(limit=1/36)
+Box(10).at(corners().highest(z(), 0)).smooth(limit=1/36)
 ```
 
-## 10. Movement
+## 10. Constants and Directions
+
+To support alignment and selection, the following world-space direction vectors are provided as global constants:
+
+- **`UP`** / **`Z()`**: `[0, 0, 1]`
+- **`DOWN`**: `[0, 0, -1]`
+- **`RIGHT`** / **`X()`**: `[1, 0, 0]`
+- **`LEFT`**: `[-1, 0, 0]`
+- **`FRONT`** / **`Y()`**: `[0, 1, 0]`
+- **`BACK`**: `[0, -1, 0]`
+
+## 11. Movement
 
 ### `m(x, y, z)` / `move(x, y, z)`
 Translates the subject by the specified X, Y, and Z offsets.
@@ -338,7 +407,7 @@ Moves the subject to the frame of the target shape, resetting any local transfor
 To move a shape so its corner lands on the world origin:
 ```javascript
 H = Box(100, 100).mx(50).my(50)
-C = H.eachCorner().nth(0)
+C = H.corners().nth(0)
 H.by(C.o()) // "Drags" H by its corner C back to (0,0,0)
 ```
 

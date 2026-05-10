@@ -22,6 +22,18 @@ template<> json VFSNode::read<json>(const Selector& sel) {
     }
 }
 
+template<> double VFSNode::read<double>(const Selector& sel) {
+    auto data = read<json>(sel);
+    if (data.is_number()) return data.get<double>();
+    return 0.0;
+}
+
+template<> int VFSNode::read<int>(const Selector& sel) {
+    auto data = read<json>(sel);
+    if (data.is_number()) return data.get<int>();
+    return 0;
+}
+
 // --- read(VFSRequest) ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req) {
@@ -36,6 +48,18 @@ template<> json VFSNode::read<json>(const VFSRequest& req) {
     } catch (...) {
         return json::object();
     }
+}
+
+template<> double VFSNode::read<double>(const VFSRequest& req) {
+    auto data = read<json>(req);
+    if (data.is_number()) return data.get<double>();
+    return 0.0;
+}
+
+template<> int VFSNode::read<int>(const VFSRequest& req) {
+    auto data = read<json>(req);
+    if (data.is_number()) return data.get<int>();
+    return 0;
 }
 
 // --- read(CID) ---
@@ -53,6 +77,18 @@ template<> json VFSNode::read<json>(const CID& cid) {
     } catch (...) {
         return json::object();
     }
+}
+
+template<> double VFSNode::read<double>(const CID& cid) {
+    auto data = read<json>(cid);
+    if (data.is_number()) return data.get<double>();
+    return 0.0;
+}
+
+template<> int VFSNode::read<int>(const CID& cid) {
+    auto data = read<json>(cid);
+    if (data.is_number()) return data.get<int>();
+    return 0;
 }
 
 // --- write implementations ---

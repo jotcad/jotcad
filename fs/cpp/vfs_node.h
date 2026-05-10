@@ -161,10 +161,16 @@ private:
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel);
 template<> json VFSNode::read<json>(const Selector& sel);
+template<> double VFSNode::read<double>(const Selector& sel);
+template<> int VFSNode::read<int>(const Selector& sel);
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req);
 template<> json VFSNode::read<json>(const VFSRequest& req);
+template<> double VFSNode::read<double>(const VFSRequest& req);
+template<> int VFSNode::read<int>(const VFSRequest& req);
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& cid);
 template<> json VFSNode::read<json>(const CID& cid);
+template<> double VFSNode::read<double>(const CID& cid);
+template<> int VFSNode::read<int>(const CID& cid);
 
 template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint8_t>& data);
 template<> CID VFSNode::materialize<json>(const json& data);

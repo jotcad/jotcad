@@ -230,9 +230,26 @@ Box(10).at(eachCorner(), cut(Cylinder(1)))
 
 The `.o()` (or `.origin()`) operator is the primary tool for frame inversion. 
 - **Method**: `X.o()` returns a shape with the inverse matrix of `X`.
-- **Constructor**: `o()` returns the identity frame.
+- **Constructor**: `O()` or `Origin()` returns the identity frame.
 
-This allows for "Feature Snapping": `H.by(C.o())` drags the entire shape `H` so that its feature `C` lands at the world origin.
+This allows for **Feature Snapping**: `H.by(C.o())` drags the entire shape `H` so that its feature `C` lands at the world origin.
+
+## 7. Functional Selection (`highest`/`lowest`)
+
+Collections (Groups) can be filtered and sorted using the **Functional Measurement** model.
+
+```js
+// Select the largest child component
+group.highest(area(), 0)
+
+// Select the highest bucket of components
+group.highest(z(), 0)
+```
+
+Measurement operators like `area()`, `z()`, and `facing()` are template operators applied to each component to produce a ranking value. Selection is performed using **Epsilon Bucketing**, which groups components with logically equivalent measurements. 
+
+- **`highest`**: Sorts Descending (Highest value = Bucket 0).
+- **`lowest`**: Sorts Ascending (Lowest value = Bucket 0).
 
 ## 7. Boolean Operations
 
