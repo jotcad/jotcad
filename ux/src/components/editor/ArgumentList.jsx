@@ -34,7 +34,7 @@ export const ArgumentList = (props) => {
                value={arg.testValue}
                onInput={e => updateArg(i(), 'testValue', parseFloat(e.target.value))}
              />
-             <button onClick={() => removeArg(i())} class="tap-target text-white/20 hover:text-red-400 ml-auto flex items-center justify-center p-1">
+             <button onClick={() => removeArg(i())} class="tap-target text-white/20 hover:text-cyan-400 ml-auto flex items-center justify-center p-1">
                <X size={18} stroke-width={3} />
              </button>
            </div>

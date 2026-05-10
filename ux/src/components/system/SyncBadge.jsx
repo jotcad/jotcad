@@ -9,7 +9,7 @@ export const SyncBadge = () => {
     };
 
     return (
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/10 shadow-xl pointer-events-auto select-none">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border-2 border-cyan-400 shadow-xl pointer-events-auto select-none">
             <button 
                 onClick={handleSync}
                 disabled={syncStatus() === 'syncing'}
@@ -18,7 +18,7 @@ export const SyncBadge = () => {
             >
                 <div class="relative">
                     <Show when={syncStatus() === 'idle'}>
-                        <Cloud size={16} class="text-white/40 group-hover:text-white transition-colors" />
+                        <Cloud size={16} class="text-white/40 group-hover:text-cyan-400 transition-colors" />
                     </Show>
                     <Show when={syncStatus() === 'syncing'}>
                         <RefreshCw size={16} class="text-cyan-400 animate-spin" />

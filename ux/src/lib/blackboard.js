@@ -1,34 +1,55 @@
+console.log('[Boot] blackboard.js loading...');
 import { createSignal } from 'solid-js';
 import {
   vfs,
   peerId,
   mesh,
   vfsActions
-} from './vfs/MeshVFS.js';
+} from './vfs/VFSManager.js';
 
 import {
+  openWindows,
+  setOpenWindows,
+  desktopIcons,
+  setDesktopIcons,
   openEditors,
   setOpenEditors,
+  editorActions
+} from './state/DesktopState.js';
+
+import {
   graph,
   schemas,
   pulse,
+  meshTopology,
+  meshPositions,
+  setMeshPositions,
+  isConnected,
+  discoveryStatus,
+  dynamicOps
+} from './state/MeshState.js';
+
+import {
+  logs
+} from './state/LogState.js';
+
+import {
   pointerCount,
+  setPointerCount,
   isGesturing,
   setIsGesturing,
   gestureOwner,
   setGestureOwner,
-  meshTopology,
-  meshPositions,
-  setMeshPositions,
-  logs,
-  isConnected,
-  discoveryStatus,
-  dynamicOps,
   error,
-  setError,
-  editorActions
-} from './state/AppState.js';
-import { NODE_STATE_KEY, DEFAULT_CODE } from './state/Config.js';
+  setError
+} from './state/SystemState.js';
+
+import {
+  NODE_STATE_KEY,
+  DEFAULT_CODE
+} from './state/Config.js';
+
+console.log('[Boot] blackboard.js imports resolved.');
 
 export { vfs, DEFAULT_CODE };
 
@@ -37,7 +58,16 @@ const [eventBus, setEventBus] = createSignal({ type: 'init', t: Date.now() });
 
 export const blackboard = {
   vfs,
+  mesh,
   peerId,
+  
+  // State Selectors (Signals)
+  openEditors: () => openEditors,
+  setOpenEditors,
+  openWindows: () => openWindows,
+  setOpenWindows,
+  desktopIcons: () => desktopIcons,
+  setDesktopIcons,
   graph,
   schemas,
   pulse,
@@ -55,46 +85,25 @@ export const blackboard = {
   dynamicOps,
   error,
   setError,
-  openEditors: () => openEditors,
-  setOpenEditors,
-  NODE_STATE_KEY,
 
-  // Event Bus
-  events: () => eventBus(),
-  emit: (type, data) => setEventBus({ type, data, t: Date.now() }),
-
-  // Editor Actions
-  openOp: (id, code, schema) => {
-    editorActions.openOp(id, code, schema);
-    blackboard.emit('editor:open', { id });
-  },
-  raiseOp: editorActions.raiseOp.bind(editorActions),
-  createNewOp: editorActions.createNewOp.bind(editorActions),
-  closeOp: (id) => {
-    editorActions.closeOp(id);
-    blackboard.emit('editor:close', { id });
-  },
-  updateEditorState: (id, updates) => {
-    editorActions.updateEditorState(id, updates);
-    if (updates.code || updates.schema) {
-        blackboard.emit('op:update', { id, ...updates });
-    }
-  },
-
-  // VFS/Mesh Actions
+  // Actions
+  ...editorActions,
   discoverSchemas: vfsActions.discoverSchemas.bind(vfsActions),
-  start: () => vfsActions.start(blackboard),
-  publishDynamicOp: (path, schema, script, persist = true) => {
-    vfsActions.publishDynamicOp(path, schema, script, persist, blackboard);
-    if (persist) {
-        blackboard.emit('op:publish', { path, schema, script });
-    }
-  },
-  
+  start: (bb) => vfsActions.start(bb || blackboard), 
   stop: vfsActions.stop.bind(vfsActions),
+  publishDynamicOp: vfsActions.publishDynamicOp.bind(vfsActions),
   read: vfsActions.read.bind(vfsActions),
   write: vfsActions.write.bind(vfsActions),
-  clearStorage: vfsActions.clearStorage.bind(vfsActions)
+  clearStorage: vfsActions.clearStorage.bind(vfsActions),
+
+  // Event Bus
+  emit(type, detail = {}) {
+    setEventBus({ type, detail, t: Date.now() });
+  },
+  on(type, callback) {
+    // Basic effect-based listener would go here if needed
+  },
+  events: eventBus
 };
 
 if (typeof window !== 'undefined') {

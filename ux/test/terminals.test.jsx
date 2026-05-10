@@ -1,6 +1,6 @@
 import { render, fireEvent, waitFor, screen } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { JotNode } from '../src/components/JotNode';
+import { JotNode } from '../src/components/editor/JotNode';
 import { blackboard, vfs } from '../src/lib/blackboard';
 
 // Mock interactjs
@@ -67,7 +67,7 @@ describe('JotNode Terminal Integration', () => {
     fireEvent.input(editor, { target: { value: 'Box(10).pdf("foo.pdf")' } });
     
     // 3. Trigger evaluation
-    const evaluateBtn = screen.getByText('EVALUATE JOT');
+    const evaluateBtn = screen.getByText('Evaluate Jot');
     fireEvent.click(evaluateBtn);
     
     // 4. Wait for the download button to appear

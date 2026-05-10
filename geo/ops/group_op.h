@@ -67,6 +67,7 @@ static void group_init(fs::VFSNode* vfs) {
     Processor::register_op<GroupOp<>, Shape, std::vector<Shape>>(vfs, "jot/group");
     Processor::register_op<GroupOp<>, Shape, std::vector<Shape>>(vfs, "jot/and");
     Processor::register_op<GroupPrimitiveOp<>, std::vector<Shape>>(vfs, "jot/Group");
+    Processor::register_op<GroupPrimitiveOp<>, std::vector<Shape>>(vfs, "jot/And");
 }
 
 } // namespace geo

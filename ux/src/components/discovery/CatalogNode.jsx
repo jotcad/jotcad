@@ -73,7 +73,7 @@ export const CatalogNode = (props) => {
 
   return (
     <Show when={props.isWindowed} fallback={
-        <div class="absolute z-40 w-72 flex flex-col bg-black/80 backdrop-blur-2xl border border-white/10 rounded-xl shadow-2xl overflow-hidden" style={{left: '20px', top: '20px'}}>
+        <div class="absolute z-40 w-72 flex flex-col bg-black/80 backdrop-blur-2xl border-2 border-cyan-400 rounded-xl shadow-2xl overflow-hidden" style={{left: '20px', top: '20px'}}>
             {content()}
         </div>
     }>

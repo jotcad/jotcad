@@ -31,6 +31,26 @@ export const Viewport = (props) => {
     controls.enablePan = true;
     controls.screenSpacePanning = true;
 
+    // --- RE-SIZE TRACKING ---
+    const resizeObserver = new ResizeObserver(() => {
+        if (!containerRef || !camera) return;
+        const w = containerRef.clientWidth || 300;
+        const h = containerRef.clientHeight || 200;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        
+        // If active, the shared renderer will handle the actual canvas size update
+        // but we trigger a snapshot update if inactive
+        if (!isActive()) {
+            setTimeout(() => {
+                const snap = captureSnapshot(scene, camera);
+                if (snap) setSnapshot(snap);
+            }, 50);
+        }
+    });
+    resizeObserver.observe(containerRef);
+    onCleanup(() => resizeObserver.disconnect());
+
     // --- SYSTEM OBJECTS (Persistent) ---
     const ambient = new THREE.AmbientLight(0xffffff, 0.8);
     ambient.userData.isSystem = true;
@@ -219,7 +239,7 @@ export const Viewport = (props) => {
     <div class="relative w-full h-full">
       <button 
         onClick={() => setHasAutoZoomed(false)}
-        class="absolute top-2 left-2 z-10 px-2 py-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-white rounded border border-white/20"
+        class="absolute top-2 left-2 z-10 px-2 py-1 text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded border border-cyan-400/20 transition-all font-black uppercase tracking-tighter"
       >
         Reset Camera
       </button>
@@ -234,8 +254,8 @@ export const Viewport = (props) => {
         </Show>
         
         <Show when={!snapshot() && !isActive()}>
-          <div class="w-full h-full flex items-center justify-center opacity-20 bg-[#008080]">
-              <span class="text-[9px] font-black uppercase text-white">Click to Initialize</span>
+          <div class="w-full h-full flex items-center justify-center bg-slate-900">
+              <span class="text-[9px] font-black uppercase text-white/20">Click to Initialize</span>
           </div>
         </Show>
       </div>

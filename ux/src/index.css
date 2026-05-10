@@ -8,6 +8,7 @@
   --color-wire: #94a3b8;
   --color-capability: #f97316;
   --color-blackboard: #0f172a;
+  --color-accent: #22d3ee; /* Cyan 400 */
 }
 
 .hexagon {
@@ -20,6 +21,9 @@
   font-weight: 400;
   color-scheme: dark;
   font-size: 16px; /* Base DPI scale */
+  
+  --interactive-cyan: #22d3ee;
+  --interactive-hover: #67e8f9;
 }
 
 body {
@@ -31,10 +35,24 @@ body {
   background-color: var(--color-blackboard);
 }
 
-#root {
-  width: 100vw;
-  height: 100vh;
-  position: relative;
+/* Global Interactive Control Theme */
+button.tap-target {
+  color: var(--interactive-cyan);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button.tap-target:hover {
+  color: var(--interactive-hover);
+  background-color: rgba(34, 211, 238, 0.1);
+}
+
+button.tap-target:active {
+  transform: scale(0.95);
+}
+
+input:focus, textarea:focus {
+  border-color: rgba(34, 211, 238, 0.5) !important;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.1);
 }
 
 /* Custom Scrollbars using rem for physical consistency */
@@ -48,7 +66,7 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #22d3ee;
+  background: var(--interactive-cyan);
   border: 2px solid #000;
   border-radius: 4px;
 }
@@ -60,21 +78,9 @@ body {
   }
 }
 
-/* Maximized Window - Forced 1:1 Scale via Body Portal */
+/* Maximized Window - Stylistic overrides only */
 .jot-window.is-maximized {
-  width: 100vw !important;
-  height: 100vh !important;
-  font-size: 1.25rem !important; /* Scale up everything inside */
-  background: #111827 !important;
-}
-
-.jot-window.is-maximized .text-readable {
-  font-size: 1.5rem !important; /* ~24px */
-}
-
-.jot-window.is-maximized .custom-scrollbar::-webkit-scrollbar {
-  width: 2rem !important; /* ~32px */
-  height: 2rem !important;
+  background: #000 !important;
 }
 
 /* Base Readable Text Utilities */
@@ -89,45 +95,4 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   opacity: 0.6;
-}
-
-/* RemoteStorage Widget Overrides */
-#remotestorage-widget, 
-.remotestorage-widget,
-.rs-widget {
-  display: none !important;
-  position: fixed;
-  top: 0;
-  right: 0;
-  z-index: -1;
-  pointer-events: none;
-}
-
-#rs-widget-container #remotestorage-widget,
-#rs-widget-container .remotestorage-widget,
-#rs-widget-container .rs-widget {
-  display: flex !important;
-  position: static !important;
-  z-index: auto !important;
-  pointer-events: auto !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  width: auto !important;
-  padding: 0 !important;
-}
-
-#remotestorage-widget .rs-widget-icon,
-.rs-widget .rs-widget-icon {
-  background-color: rgba(255, 255, 255, 0.1) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 8px !important;
-}
-
-#remotestorage-widget .rs-main,
-.rs-widget .rs-main {
-  background: #0f172a !important; /* matches slate-900 */
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.5) !important;
 }

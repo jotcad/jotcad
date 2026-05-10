@@ -89,7 +89,7 @@ export const ScriptNode = (props) => {
   return (
     <div
       ref={nodeRef}
-      class="absolute select-none p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden flex flex-col gap-3"
+      class="absolute select-none p-4 rounded-xl border-2 border-cyan-400/30 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden flex flex-col gap-3"
       style={{
         transform: `translate(${pos().x}px, ${pos().y}px)`,
         width: '400px',
@@ -117,10 +117,10 @@ export const ScriptNode = (props) => {
       <div class="flex gap-2">
         <button
           onClick={toggleAgent}
-          class={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+          class={`flex-1 py-2 rounded-lg text-sm font-bold transition-all border ${
             isRunning()
-              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-              : 'bg-provisioning text-black hover:bg-provisioning/80'
+              ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20'
+              : 'bg-cyan-400 text-black border-cyan-400 hover:bg-cyan-300'
           }`}
         >
           {isRunning() ? 'STOP AGENT' : 'RUN AGENT'}

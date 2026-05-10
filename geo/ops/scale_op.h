@@ -15,9 +15,6 @@ struct ScaleOpBase : P {
             s.geometry = vfs->materialize(geo);
         }
         
-        // Rigid-Preserving Matrix Update:
-        // Scale the translation part of the matrix, but keep the rotation part rigid.
-        // This ensures the object stays at its 'scaled' position relative to parent.
         Transformation t = s.tf.t;
         s.tf = Matrix(Transformation(
             t.cartesian(0,0), t.cartesian(0,1), t.cartesian(0,2), t.cartesian(0,3) * s_mat.t.cartesian(0,0),
@@ -53,46 +50,26 @@ struct ScaleOpBase : P {
 template <typename P = JotVfsProtocol>
 struct ScaleOp : ScaleOpBase<P> {
     static constexpr const char* path = "jot/scale";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const typename P::json& factors) {
-        std::vector<Matrix> tfs;
-        if (factors.is_array() && !factors.empty()) {
-            if (factors[0].is_number()) {
-                // Single vec3: [x, y, z]
-                FT x = FT(factors[0].template get<double>());
-                FT y = (factors.size() > 1) ? FT(factors[1].template get<double>()) : x;
-                FT z = (factors.size() > 2) ? FT(factors[2].template get<double>()) : y;
-                tfs.push_back(Matrix::scale(x, y, z));
-            } else {
-                // List of vec3s: [[x,y,z], [x,y,z]]
-                for (const auto& f : factors) {
-                    if (f.is_array() && !f.empty()) {
-                        FT x = FT(f[0].template get<double>());
-                        FT y = (f.size() > 1) ? FT(f[1].template get<double>()) : x;
-                        FT z = (f.size() > 2) ? FT(f[2].template get<double>()) : y;
-                        tfs.push_back(Matrix::scale(x, y, z));
-                    }
-                }
-            }
-        } else if (factors.is_number()) {
-            // Uniform scale
-            FT s = FT(factors.template get<double>());
-            tfs.push_back(Matrix::scale(s, s, s));
-        }
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, 
+                       std::optional<double> x, std::optional<double> y, std::optional<double> z) {
+        
+        double vx = x.value_or(1.0);
+        // If only X is provided, it's a uniform scale. If any other is provided, it's non-uniform.
+        double vy = y.value_or((y.has_value() || z.has_value()) ? 1.0 : vx);
+        double vz = z.value_or((y.has_value() || z.has_value()) ? 1.0 : vx);
 
-        if (tfs.empty()) {
-            vfs->write(fulfilling.with_output("$out"), in);
-            return;
-        }
-        ScaleOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
+        ScaleOpBase<P>::execute_multi(vfs, fulfilling, in, {Matrix::scale(FT(vx), FT(vy), FT(vz))});
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "factors"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "x", "y", "z"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/scale"},
-            {"description", "Scales the shape. Supports uniform, non-uniform (vec3), and sequences."},
+            {"description", "Scales the shape. Supports scale(s) and scale(x, y, z)."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "factors"}, {"type", "jot:any"}, {"description", "Number, Vec3, or Array of Vec3s"}}
+                {{"name", "x"}, {"type", "jot:number"}, {"optional", true}, {"description", "X factor (or uniform s)"}},
+                {{"name", "y"}, {"type", "jot:number"}, {"optional", true}, {"description", "Y factor"}},
+                {{"name", "z"}, {"type", "jot:number"}, {"optional", true}, {"description", "Z factor"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -187,8 +164,8 @@ struct ScaleZOp : ScaleAxisOp<P> {
 };
 
 static void scale_init(fs::VFSNode* vfs) {
-    Processor::register_op<ScaleOp<>, Shape, typename JotVfsProtocol::json>(vfs, "jot/scale");
-    Processor::register_op<ScaleOp<>, Shape, typename JotVfsProtocol::json>(vfs, "jot/s");
+    Processor::register_op<ScaleOp<>, Shape, std::optional<double>, std::optional<double>, std::optional<double>>(vfs, "jot/scale");
+    Processor::register_op<ScaleOp<>, Shape, std::optional<double>, std::optional<double>, std::optional<double>>(vfs, "jot/s");
     Processor::register_op<ScaleXOp<>, Shape, typename JotVfsProtocol::json>(vfs, "jot/scaleX");
     Processor::register_op<ScaleXOp<>, Shape, typename JotVfsProtocol::json>(vfs, "jot/sx");
     Processor::register_op<ScaleYOp<>, Shape, typename JotVfsProtocol::json>(vfs, "jot/scaleY");

@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, createEffect, createMemo } from 'solid-js';
+import { createSignal, onMount, Show, createEffect, createMemo, onCleanup, untrack } from 'solid-js';
 import interact from 'interactjs';
 import { vfs, blackboard, DEFAULT_CODE } from '../../lib/blackboard';
 import { Minus, Maximize2, X, Globe, Trash2, Zap } from 'lucide-solid';
@@ -12,24 +12,30 @@ import { ResultList } from './ResultList';
 export const JotNode = (props) => {
   let nodeRef;
   let dividerRef;
+  
+  // 1. CANONICAL SIGNALS (Stored in spatial units)
+  const [spatialSize, setSpatialSize] = createSignal(props.data?.size || { width: 500, height: 600 });
   const [pos, setPos] = createSignal(props.data?.pos || { x: 400, y: 400 });
-  const [size, setSize] = createSignal(props.data?.size || { width: 500, height: 600 });
   const [opName, setOpName] = createSignal(props.data?.opName || props.data?.id || 'user/MyOp');
   const [args, setArgs] = createSignal(props.data?.args || [
     { name: 'width', type: 'jot:number', testValue: 20 }
   ]);
   const [code, setCode] = createSignal(props.data?.code || DEFAULT_CODE);
   const [edgeThreshold, setEdgeThreshold] = createSignal(props.data?.edgeThreshold ?? 15);
-  const [split, setSplit] = createSignal(props.data?.split || 0.6); // 60% editor by default
+  const [split, setSplit] = createSignal(props.data?.split || 0.6);
+
+  // 2. TRANSIENT UI SIGNALS
+  const [layoutSize, setLayoutSize] = createSignal({ width: 500, height: 600 });
   const [isEvaluating, setIsEvaluating] = createSignal(false);
   const [results, setResults] = createSignal([]);
   const [associatedFiles, setAssociatedFiles] = createSignal([]);
 
-  const syncToBlackboard = () => {
+  const isWide = createMemo(() => layoutSize().width > layoutSize().height * 1.1);
+
+  // 3. SYNCHRONIZATION
+  const syncContent = () => {
     if (!props.data?.id) return;
     blackboard.updateEditorState(props.data.id, {
-      pos: pos(),
-      size: size(),
       opName: opName(),
       args: args(),
       code: code(),
@@ -38,21 +44,63 @@ export const JotNode = (props) => {
     });
   };
 
+  const syncTransform = () => {
+    if (!props.data?.id) return;
+    blackboard.updateEditorState(props.data.id, {
+      pos: pos(),
+      size: spatialSize()
+    });
+  };
+
+  // Sync content whenever it changes (e.g. typing)
   createEffect(() => {
     code(); args(); opName(); edgeThreshold(); split();
-    syncToBlackboard();
+    untrack(() => syncContent());
+  });
+
+  // REACTIVE HYDRATION: Update local signals if props.data changes in the store.
+  // This is crucial for correctly reflecting recovery updates or library changes.
+  createEffect(() => {
+    const data = props.data;
+    if (!data) return;
+    
+    // Use untrack for setters to avoid circular signaling
+    untrack(() => {
+        if (data.pos) setPos(data.pos);
+        if (data.size) setSpatialSize(data.size);
+        if (data.code && data.code !== code()) setCode(data.code);
+        if (data.opName) setOpName(data.opName);
+        if (data.args) setArgs(data.args);
+        if (data.split) setSplit(data.split);
+    });
   });
 
   onMount(() => {
+    // Track actual rendered dimensions for responsive layout only.
+    const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+            setLayoutSize({ 
+                width: entry.contentRect.width, 
+                height: entry.contentRect.height 
+            });
+        }
+    });
+    if (nodeRef) resizeObserver.observe(nodeRef);
+    onCleanup(() => resizeObserver.disconnect());
+
     // Divider dragging logic
     interact(dividerRef).draggable({
-        lockAxis: 'y',
         listeners: {
+            start(event) {
+                if (event.pointerId !== undefined && event.target && event.target.setPointerCapture) {
+                    event.target.setPointerCapture(event.pointerId);
+                }
+            },
             move(event) {
                 const rect = nodeRef.getBoundingClientRect();
-                const totalHeight = rect.height;
-                const delta = event.dy;
-                const newSplit = Math.max(0.1, Math.min(0.9, split() + (delta / totalHeight)));
+                const delta = isWide() ? event.dx : event.dy;
+                const total = isWide() ? rect.width : rect.height;
+                const newSplit = Math.max(0.1, Math.min(0.9, split() + (delta / total)));
                 setSplit(newSplit);
             }
         }
@@ -60,6 +108,7 @@ export const JotNode = (props) => {
 
     if (props.isWindowed) return;
 
+    // Manual interaction logic for unwindowed nodes
     interact(nodeRef)
       .draggable({
         allowFrom: '.drag-handle',
@@ -69,19 +118,20 @@ export const JotNode = (props) => {
             const s = window._JOT_VIEW ? window._JOT_VIEW().scale : 1;
             setPos({ x: pos().x + event.dx / s, y: pos().y + event.dy / s });
           },
-          end() { syncToBlackboard(); }
+          end() { syncTransform(); }
         },
       })
       .resizable({
-        edges: { left: false, right: true, bottom: true, top: false },
+        edges: { left: true, right: true, bottom: true, top: true },
+        margin: 12,
         listeners: {
           move(event) {
             if (blackboard.gestureOwner() === 'blackboard') return;
             const s = window._JOT_VIEW ? window._JOT_VIEW().scale : 1;
-            setSize({ width: event.rect.width / s, height: event.rect.height / s });
+            setSpatialSize({ width: event.rect.width / s, height: event.rect.height / s });
             setPos({ x: pos().x + event.deltaRect.left / s, y: pos().y + event.deltaRect.top / s });
           },
-          end() { syncToBlackboard(); }
+          end() { syncTransform(); }
         },
         modifiers: [ interact.modifiers.restrictSize({ min: { width: 350, height: 400 } }) ]
       });
@@ -142,7 +192,7 @@ export const JotNode = (props) => {
           files.push({
             label,
             selector: sel,
-            mimeType: output?.mimeType || 'application/octet-stream'
+            mimeType: output?.mimeType || 'application/pdf'
           });
         }
       }
@@ -168,76 +218,86 @@ export const JotNode = (props) => {
   };
 
   const content = () => (
-    <div ref={nodeRef} class="jot-node flex flex-col h-full gap-1.5 p-1.5 bg-transparent overflow-hidden">
-      <Show when={!props.isWindowed}>
-          <div class="flex justify-between items-center cursor-move drag-handle shrink-0 mb-1 px-1">
-            <div class="flex items-center gap-2">
-               <input 
-                 class="bg-transparent border-none text-ui-label font-black uppercase tracking-tighter text-cyan-400 focus:outline-none w-48"
-                 value={opName()}
-                 onInput={e => setOpName(e.target.value)}
-               />
-            </div>
-            <div class="flex items-center gap-2">
-              <button onClick={() => blackboard.closeOp(props.data.id)} class="text-white/30 hover:text-red-400 transition-colors p-1">
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-      </Show>
-
-      {/* Top Group: Arguments + Editor + Actions */}
+    <div ref={nodeRef} class={`jot-node flex h-full gap-1.5 p-1.5 bg-transparent overflow-hidden ${isWide() ? 'flex-row' : 'flex-col'}`}>
+      
+      {/* Container for Header + Main UI (Editor/Args) */}
       <div 
-        class="flex flex-col gap-2 shrink-0 overflow-hidden" 
-        style={{ height: `${split() * 100}%`, "min-height": "150px" }}
+        class="flex flex-col gap-1.5 shrink-0 overflow-hidden"
+        style={{ 
+            [isWide() ? 'width' : 'height']: `${split() * 100}%`,
+            [isWide() ? 'min-width' : 'min-height']: isWide() ? "300px" : "180px"
+        }}
       >
-          <ArgumentList args={args()} setArgs={setArgs} />
+          <Show when={!props.isWindowed}>
+              <div class="flex justify-between items-center cursor-move drag-handle shrink-0 mb-1 px-1">
+                <div class="flex items-center gap-2">
+                   <input 
+                     class="bg-transparent border-none text-ui-label font-black uppercase tracking-tighter text-cyan-400 focus:outline-none w-48"
+                     value={opName()}
+                     onInput={e => setOpName(e.target.value)}
+                   />
+                </div>
+                <div class="flex items-center gap-2">
+                  <button onClick={() => blackboard.closeOp(props.data.id)} class="text-white/30 hover:text-cyan-400 transition-colors p-1">
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+          </Show>
 
-          <textarea
-            class="flex-1 bg-black/80 border border-white/10 rounded-lg p-3 font-mono text-readable focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar shadow-inner"
-            value={code()}
-            onInput={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.shiftKey && e.key === 'Enter') {
-                e.preventDefault();
-                evaluateJot();
-              }
-            }}
-            spellcheck={false}
-          />
+          <div class="flex-1 flex flex-col gap-2 min-h-0">
+              <div class="shrink-0 max-h-48 overflow-y-auto custom-scrollbar">
+                  <ArgumentList args={args()} setArgs={setArgs} />
+              </div>
+    
+              <textarea
+                class="flex-1 bg-black/80 border border-white/10 rounded-lg p-3 font-mono text-readable focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar shadow-inner"
+                value={code()}
+                onInput={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.shiftKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    evaluateJot();
+                  }
+                }}
+                spellcheck={false}
+              />
 
-          <div class="flex gap-2 shrink-0">
-            <button
-              onClick={evaluateJot}
-              disabled={isEvaluating()}
-              class={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border ${
-                isEvaluating() ? 'bg-cyan-900/40 text-cyan-500 border-cyan-500/20' : 'bg-cyan-400 text-black border-cyan-400 hover:bg-cyan-300 active:scale-95'
-              }`}
-            >
-              {isEvaluating() ? 'EVALUATING...' : 'EVALUATE JOT'}
-            </button>
-            <button
-              onClick={publishToMesh}
-              class={`px-3 rounded-lg transition-all flex items-center justify-center border shadow-lg ${
-                isUnpublished() ? 'bg-orange-500 text-black border-orange-400 hover:bg-orange-400' : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
-              }`}
-              title={isUnpublished() ? 'Publish Changes' : 'Published'}
-            >
-              <Globe size={18} />
-            </button>
+              <div class="flex gap-2 shrink-0">
+                <button
+                  onClick={evaluateJot}
+                  disabled={isEvaluating()}
+                  class={`flex-1 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-all border-2 ${
+                    isEvaluating() 
+                      ? 'bg-cyan-500/5 text-cyan-500/40 border-cyan-500/10' 
+                      : 'bg-cyan-500/10 text-cyan-400 border-cyan-400 hover:bg-cyan-500/20 hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] active:scale-95'
+                  }`}
+                >
+                  {isEvaluating() ? 'EVALUATING...' : 'Evaluate Jot'}
+                </button>
+                <button
+                  onClick={publishToMesh}
+                  class={`px-3 rounded-lg transition-all flex items-center justify-center border-2 shadow-lg ${
+                    isUnpublished() ? 'bg-cyan-500/20 text-cyan-400 border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)] hover:bg-cyan-500/30' : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
+                  }`}
+                  title={isUnpublished() ? 'Publish Changes' : 'Published'}
+                >
+                  <Globe size={18} />
+                </button>
+              </div>
           </div>
       </div>
 
       {/* Sliding Divider */}
       <div 
         ref={dividerRef}
-        class="h-4 w-full cursor-row-resize flex items-center justify-center group shrink-0"
+        class={`flex items-center justify-center group shrink-0 touch-none ${isWide() ? 'w-6 h-full cursor-col-resize' : 'h-6 w-full cursor-row-resize'}`}
       >
-          <div class="w-16 h-1.5 rounded-full bg-white/10 group-hover:bg-cyan-400 transition-colors shadow-lg border border-white/5" />
+          <div class={`rounded-full bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] border border-white/20 transition-all ${isWide() ? 'w-2 h-24 group-hover:scale-y-110' : 'w-24 h-2 group-hover:scale-x-110'}`} />
       </div>
 
-      {/* Bottom Group: Results */}
-      <div class="flex-1 overflow-auto">
+      {/* Results Group */}
+      <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
           <ResultList 
             results={results()} 
             files={associatedFiles()} 
@@ -251,14 +311,15 @@ export const JotNode = (props) => {
   return (
     <Show when={props.isWindowed} fallback={
         <div
-          onPointerDown={() => blackboard.raiseOp(props.data.id)}
-          class="jot-node absolute p-3 md:p-4 rounded-xl border-2 border-white/20 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-y-auto flex flex-col gap-2 md:gap-3 transition-all duration-75 custom-scrollbar"
+          onPointerDown={() => props.data && blackboard.raiseOp(props.data.id)}
+          class="jot-node absolute p-3 md:p-4 rounded-2xl border-2 border-cyan-400 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-y-auto flex flex-col gap-2 md:gap-3 transition-all duration-75 custom-scrollbar"
+
           style={{
             left: `${pos().x}px`,
             top: `${pos().y}px`,
-            width: `${size().width}px`,
-            height: `${size().height}px`,
-            "z-index": props.data.zIndex
+            width: `${spatialSize().width}px`,
+            height: `${spatialSize().height}px`,
+            "z-index": props.data?.zIndex || 0
           }}
         >
             {content()}

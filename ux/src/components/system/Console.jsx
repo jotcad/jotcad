@@ -1,6 +1,6 @@
 import { createSignal, For, Show, createEffect } from 'solid-js';
 import { blackboard } from '../../lib/blackboard';
-import { logActions } from '../../lib/state/AppState';
+import { logActions } from '../../lib/state/LogState';
 import { Terminal, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-solid';
 
 export const Console = (props) => {
@@ -24,7 +24,7 @@ export const Console = (props) => {
              </div>
              <button 
                 onClick={() => logActions.clear()}
-                class="p-1 text-white/20 hover:text-red-400 transition-colors"
+                class="p-1 text-white/20 hover:text-cyan-400 transition-colors"
                 title="Clear Logs"
              >
                  <Trash2 size={12} />
@@ -51,7 +51,7 @@ export const Console = (props) => {
         <div class="fixed bottom-20 left-4 z-[60] flex flex-col pointer-events-none">
           <button
             onClick={() => setIsOpen(!isOpen())}
-            class="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 shadow-xl text-white/60 hover:text-white transition-all"
+            class="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-cyan-400/30 shadow-xl text-white/60 hover:text-cyan-400 transition-all"
           >
             <Terminal size={14} />
             <span class="text-[10px] font-black uppercase tracking-widest">Console</span>
@@ -63,7 +63,7 @@ export const Console = (props) => {
           </button>
 
           <Show when={isOpen()}>
-            <div class="pointer-events-auto mt-2 w-[90vw] md:w-[600px] h-64 md:h-96 rounded-xl border border-white/10 bg-black/90 backdrop-blur-3xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="pointer-events-auto mt-2 w-[90vw] md:w-[600px] h-64 md:h-96 rounded-xl border-2 border-cyan-400 bg-black/90 backdrop-blur-3xl shadow-2xl overflow-hidden flex flex-col">
                 {content()}
             </div>
           </Show>

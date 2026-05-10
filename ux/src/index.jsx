@@ -1,18 +1,28 @@
+console.log('[Boot] Entry point reached.');
 import { render } from 'solid-js/web';
 import { ErrorBoundary } from 'solid-js';
 import { Canvas } from './components/canvas/Canvas';
 import { ErrorOverlay } from './components/system/ErrorOverlay';
 import { blackboard } from './lib/blackboard';
 import { RemoteStorageHandler } from './lib/vfs/RemoteStorageHandler';
-import { logActions, initAppState } from './lib/state/AppState';
+import { logActions } from './lib/state/LogState';
+import { initAppState } from './lib/state/SystemState';
 import './index.css';
 
+console.log('[Boot] Modules imported.');
+
 // Initialize Logging, App State, and Cloud Sync
-logActions.initInterception();
-initAppState();
-RemoteStorageHandler.init();
+try {
+    logActions.initInterception();
+    initAppState();
+    RemoteStorageHandler.init();
+    console.log('[Boot] App State initialized.');
+} catch (e) {
+    console.error('[Boot] Initialization failed:', e);
+}
 
 function App() {
+    console.log('[Boot] Rendering App component.');
   // 1. Global Window Listeners
   window.addEventListener('error', (event) => {
     if (event.error) {

@@ -29,7 +29,9 @@ struct Processor {
         auto handler = [vfs](const fs::VFSNode::VFSRequest& req) {
             dispatch<Op, Args...>(vfs, req, Op::argument_keys(), std::make_index_sequence<sizeof...(Args)>{});
         };
-        vfs->register_op(path, handler, Op::schema());
+        json s = Op::schema();
+        s["path"] = path; // Force schema path to match registration key
+        vfs->register_op(path, handler, s);
     }
 
     /**

@@ -98,7 +98,7 @@ export function MeshGraph() {
           </span>
         </div>
         <button
-          class="text-white/20 hover:text-white transition-colors"
+          class="text-white/20 hover:text-cyan-400 transition-colors"
           onClick={() => setIsMinimized(!isMinimized())}
         >
           {isMinimized() ? <Maximize2 size={12} /> : <Minus size={12} />}

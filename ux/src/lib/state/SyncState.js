@@ -1,9 +1,8 @@
 import { createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 
-const storagePrefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
-export const SHADOW_OPS_KEY = `${storagePrefix}_shadow_ops`;
-export const SHADOW_LAYOUT_KEY = `${storagePrefix}_shadow_layout`;
+export const SHADOW_OPS_KEY = 'jot_shadow_ops';
+export const SHADOW_LAYOUT_KEY = 'jot_shadow_layout';
 
 // BASE (Shadow) State - This reflects what is currently on the cloud
 const getInitialShadowOps = () => {
@@ -16,8 +15,13 @@ const getInitialShadowOps = () => {
 const getInitialShadowLayout = () => {
     try {
         const saved = localStorage.getItem(SHADOW_LAYOUT_KEY);
-        return saved ? JSON.parse(saved) : {};
-    } catch (e) { return {}; }
+        const parsed = saved ? JSON.parse(saved) : { windows: [], desktop: [] };
+        // Ensure arrays exist
+        return {
+            windows: Array.isArray(parsed.windows) ? parsed.windows : [],
+            desktop: Array.isArray(parsed.desktop) ? parsed.desktop : []
+        };
+    } catch (e) { return { windows: [], desktop: [] }; }
 };
 
 export const [shadowOps, setShadowOps] = createStore(getInitialShadowOps());
@@ -25,24 +29,35 @@ export const [shadowLayout, setShadowLayout] = createStore(getInitialShadowLayou
 
 // Sync Status Signals
 export const [syncStatus, setSyncStatus] = createSignal('idle'); // 'idle' | 'syncing' | 'conflict' | 'error'
+export const [isDirty, setIsDirty] = createSignal(false);
 export const [lastSyncTime, setLastSyncTime] = createSignal(Date.now());
 export const [cloudAccount, setCloudAccount] = createSignal(null); // { email, name, picture }
 
 export const syncActions = {
+    markDirty() {
+        setIsDirty(true);
+    },
+
     updateShadowOp(path, op) {
         setShadowOps(path, op);
         localStorage.setItem(SHADOW_OPS_KEY, JSON.stringify(shadowOps));
     },
 
     updateShadowLayout(layout) {
-        setShadowLayout(layout);
-        localStorage.setItem(SHADOW_LAYOUT_KEY, JSON.stringify(shadowLayout));
+        // Ensure structure before saving to shadow
+        const clean = {
+            windows: Array.isArray(layout.windows) ? layout.windows : [],
+            desktop: Array.isArray(layout.desktop) ? layout.desktop : []
+        };
+        setShadowLayout(clean);
+        localStorage.setItem(SHADOW_LAYOUT_KEY, JSON.stringify(clean));
     },
 
     clearShadow() {
         setShadowOps({});
-        setShadowLayout({});
+        setShadowLayout({ windows: [], desktop: [] });
         localStorage.removeItem(SHADOW_OPS_KEY);
         localStorage.removeItem(SHADOW_LAYOUT_KEY);
+        setIsDirty(false);
     }
 };

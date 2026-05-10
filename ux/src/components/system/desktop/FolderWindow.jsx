@@ -1,5 +1,5 @@
 import { For } from 'solid-js';
-import { desktopIcons } from '../../../lib/state/AppState';
+import { desktopIcons } from '../../../lib/state/DesktopState';
 import { DesktopIcon } from './DesktopIcon';
 
 export const FolderWindow = (props) => {

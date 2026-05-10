@@ -1,22 +1,18 @@
-import { Merger } from './CloudSync';
 import { shadowOps, shadowLayout, syncActions } from '../state/SyncState';
 import { DYNAMIC_OPS_KEY, NODE_STATE_KEY, DESKTOP_STATE_KEY } from '../state/Config';
 
 /**
  * Worksheet: The unified persistence and sync layer.
- * Manages LocalStorage + RemoteStorage with tier-specific merging.
- * 
- * NOTE: This module must not import blackboard or AppState directly 
- * to avoid circular dependencies.
+ * Manages LocalStorage with deferred RemoteStorage synchronization.
  */
 export const Worksheet = {
     TIERS: {
-        OPERATORS: 'operators', // user/*.jot scripts
-        DESKTOP: 'desktop',     // icon/folder layout
-        WINDOWS: 'windows',     // screen-space window state
-        ASSETS: 'assets',       // base64 icons/images
-        APP_DATA: 'app_data',   // app-specific settings
-        CONFIG: 'config'        // global system settings
+        OPERATORS: 'operators', 
+        DESKTOP: 'desktop',     
+        WINDOWS: 'windows',     
+        ASSETS: 'assets',       
+        APP_DATA: 'app_data',   
+        CONFIG: 'config'        
     },
 
     /**
@@ -29,99 +25,76 @@ export const Worksheet = {
         try {
             return JSON.parse(saved);
         } catch (e) {
-            return saved; // Raw string (source code)
+            return saved; 
         }
     },
 
     /**
-     * Save data locally and schedule a remote sync
+     * Save data locally and mark the state as dirty.
+     * @param {boolean} triggerSync If true, resets idle timer and marks dirty.
      */
-    save(tier, key, data) {
+    save(tier, key, data, triggerSync = true) {
         const fullKey = this._getLocalKey(tier, key);
         const serialized = typeof data === 'string' ? data : JSON.stringify(data);
         localStorage.setItem(fullKey, serialized);
 
-        // Notify sync handler (window._RS_HANDLER is the RemoteStorageHandler instance)
-        if (typeof window !== 'undefined' && window._RS_HANDLER) {
-            this._triggerRemoteSync(tier, key, data);
+        if (triggerSync) {
+            // Mark as dirty and reset idle timer
+            import('./CloudSync').then(({ CloudSync }) => {
+                if (CloudSync && CloudSync.activity) {
+                    CloudSync.activity();
+                }
+            });
         }
     },
 
-    /**
-     * Trigger remote sync based on tier
-     */
-    _triggerRemoteSync(tier, key, data) {
-        const handler = window._RS_HANDLER;
-        switch(tier) {
-            case this.TIERS.OPERATORS:
-                handler.pushOperator(key, data.script, data.schema);
-                break;
-            case this.TIERS.WINDOWS:
-            case this.TIERS.DESKTOP:
-                // Sync combined layout
-                handler.pushLayout({
-                    windows: tier === this.TIERS.WINDOWS ? data : this.get(this.TIERS.WINDOWS),
-                    desktop: tier === this.TIERS.DESKTOP ? data : this.get(this.TIERS.DESKTOP)
-                });
-                break;
-            case this.TIERS.ASSETS:
-                handler.pushAsset(key, data);
-                break;
-            case this.TIERS.APP_DATA:
-            case this.TIERS.CONFIG:
-                handler.pushConfig(tier, key, data);
-                break;
-        }
-    },
-
-    /**
-     * Internal helper to map tiers to LocalStorage keys
-     */
     _getLocalKey(tier, key) {
         if (tier === this.TIERS.OPERATORS) {
             if (key) {
-                const prefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
-                return `${prefix}_op_${key}`;
+                return `jot_op_${key}`;
             }
             return DYNAMIC_OPS_KEY;
         }
         if (tier === this.TIERS.WINDOWS) return NODE_STATE_KEY;
         if (tier === this.TIERS.DESKTOP) return DESKTOP_STATE_KEY;
         if (tier === this.TIERS.ASSETS) {
-            const prefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
-            return `${prefix}_asset_${key}`;
+            return `jot_asset_${key}`;
         }
         
-        const prefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
-        return `${prefix}_${tier}_${key || 'default'}`;
+        return `jot_${tier}_${key || 'default'}`;
     },
 
     /**
      * Merge incoming remote data into local state
      */
-    mergeRemote(tier, key, remoteData) {
-        // Access blackboard and setActions via window to avoid circular imports
+    async mergeRemote(tier, key, remoteData) {
         const bb = window.blackboard;
-        if (!bb) {
-            console.warn('[Worksheet] Blackboard not initialized yet, skipping merge.');
-            return null;
-        }
+        if (!bb) return null;
+
+        const { Merger } = await import('./CloudSync');
+        const { reconcile } = await import('solid-js/store');
 
         if (tier === this.TIERS.OPERATORS) {
             const path = `user/${key}`;
             const localOp = bb.dynamicOps()[path];
-            const baseOp = shadowOps[path];
+            // Extract raw data from shadow store proxy
+            const baseOp = JSON.parse(JSON.stringify(shadowOps[path] || {}));
+            
             const merged = Merger.mergeOperator(path, localOp, baseOp, remoteData);
             
             bb.publishDynamicOp(path, merged.schema, merged.script, true);
             if (!merged.hasConflicts) syncActions.updateShadowOp(path, remoteData);
+            
+            // Persist the merged op to local storage silently
+            this.save(tier, key, merged, false);
             return merged;
         }
 
         if (tier === this.TIERS.WINDOWS || tier === this.TIERS.DESKTOP) {
             const localWindows = this.get(this.TIERS.WINDOWS) || [];
             const localDesktop = this.get(this.TIERS.DESKTOP) || [];
-            const baseLayout = shadowLayout();
+            // Extract raw data from shadow store proxy
+            const baseLayout = JSON.parse(JSON.stringify(shadowLayout || { windows: [], desktop: [] }));
 
             const merged = Merger.mergeLayout(
                 { windows: localWindows, desktop: localDesktop },
@@ -129,15 +102,49 @@ export const Worksheet = {
                 remoteData
             );
 
-            if (merged.windows) bb.setOpenWindows(merged.windows);
-            if (merged.desktop) bb.setDesktopIcons(merged.desktop);
+            if (!merged) {
+                console.warn('[Worksheet] Layout merge returned undefined, skipping update.');
+                return null;
+            }
+
+            // ID-Stable reconciliation for Solid stores
+            if (merged.windows && Array.isArray(merged.windows)) {
+                if (typeof bb.setOpenWindows === 'function') {
+                    bb.setOpenWindows(reconcile(merged.windows, { key: 'id' }));
+                    this.save(this.TIERS.WINDOWS, null, merged.windows, false);
+                }
+            }
+            
+            if (merged.desktop && Array.isArray(merged.desktop)) {
+                // Ensure system icons are always present after merge
+                const repaired = [
+                    { id: 'app:catalog', type: 'app', label: 'Catalog', x: 40, y: 40, target: 'catalog', icon: 'Database' },
+                    { id: 'app:mesh', type: 'app', label: 'Mesh Graph', x: 140, y: 40, target: 'mesh', icon: 'Network' },
+                    { id: 'app:settings', type: 'app', label: 'Settings', x: 40, y: 140, target: 'settings', icon: 'Settings' },
+                    { id: 'app:console', type: 'app', label: 'Console', x: 140, y: 140, target: 'console', icon: 'Terminal' },
+                    { id: 'action:sync', type: 'action', label: 'Sync Cloud', x: 40, y: 240, target: 'sync_cloud', icon: 'Cloud' },
+                    { id: 'action:new', type: 'action', label: 'New Op', x: 140, y: 240, target: 'new_op', icon: 'Plus' }
+                ];
+                
+                const finalDesktop = [...repaired];
+                for (const icon of merged.desktop) {
+                    if (!finalDesktop.find(ri => ri.id === icon.id)) {
+                        finalDesktop.push(icon);
+                    }
+                }
+
+                if (typeof bb.setDesktopIcons === 'function') {
+                    bb.setDesktopIcons(reconcile(finalDesktop, { key: 'id' }));
+                    this.save(this.TIERS.DESKTOP, null, finalDesktop, false);
+                }
+            }
             
             syncActions.updateShadowLayout(remoteData);
             return merged;
         }
 
-        // Default: Last-Write-Wins for non-mergable types (Assets/Config)
-        this.save(tier, key, remoteData);
+        // Default: Last-Write-Wins
+        this.save(tier, key, remoteData, false);
         return remoteData;
     }
 };

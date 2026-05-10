@@ -1,5 +1,5 @@
 import { For, Show } from 'solid-js';
-import { openWindows } from '../../../lib/state/AppState';
+import { openWindows } from '../../../lib/state/DesktopState';
 import { Window } from './Window';
 import { JotNode } from '../../editor/JotNode';
 import { CatalogNode } from '../../discovery/CatalogNode';
@@ -9,21 +9,12 @@ import { FolderWindow } from './FolderWindow';
 import { SettingsApp } from '../../system/SettingsApp';
 
 export const WindowManager = (props) => {
-  // Filter windows based on whether they should be in the spatial group or fixed viewport
-  const filteredWindows = () => openWindows.filter(win => {
-    const isMax = win.isMaximized || false;
-    // Spatial layer shows floating windows
-    if (props.isSpatial) return !isMax;
-    // Non-spatial layer shows maximized windows
-    return isMax;
-  });
-
   return (
-    <div class={`${props.isSpatial ? 'absolute' : 'fixed'} inset-0 pointer-events-none z-50`}>
-      <For each={filteredWindows()} by="id">
+    <div class="absolute inset-0 pointer-events-none z-50">
+      <For each={openWindows} by="id">
         {(win) => {
           return (
-            <Window data={win} ignoreZoom={!props.isSpatial}>
+            <Window data={win}>
               <Show when={win.type === 'editor'}>
                 <JotNode data={win} isWindowed={true} />
               </Show>

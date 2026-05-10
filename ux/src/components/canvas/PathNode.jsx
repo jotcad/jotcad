@@ -143,7 +143,6 @@ export const PathNode = (props) => {
       ref={nodeRef}
       data-id={props.path}
       class={`absolute select-none cursor-move flex flex-col items-center gap-2 ${
-
         isExpanded() ? 'z-50' : 'z-10'
       }`}
       style={{
@@ -176,8 +175,8 @@ export const PathNode = (props) => {
       </Show>
 
       <Show when={isExpanded()}>
-        <div class="w-[90vw] md:w-96 h-auto rounded-xl p-3 md:p-4 flex flex-col text-white bg-blackboard border-2 border-white/10 shadow-2xl">
-          <div class="flex items-center justify-between border-b border-white/10 pb-2">
+        <div class="w-[90vw] md:w-[500px] h-[80vh] rounded-2xl p-3 md:p-4 flex flex-col text-white bg-blackboard border-2 border-cyan-400 shadow-2xl overflow-hidden">
+          <div class="flex items-center justify-between border-b border-white/10 pb-2 shrink-0">
             <div class="flex items-center gap-2 relative">
               <StatusBadge
                 states={currentStates()}
@@ -191,62 +190,66 @@ export const PathNode = (props) => {
               </span>
             </div>
             <button
-              class="text-[10px] font-bold opacity-40 hover:opacity-100 hover:text-red-400 transition-colors"
+              class="text-[10px] font-bold opacity-40 hover:opacity-100 hover:text-cyan-400 transition-colors"
               onClick={() => setIsExpanded(false)}
             >
               CLOSE
             </button>
           </div>
 
-          <div class="w-full h-48 md:h-64 bg-black/40 rounded-lg border border-white/5 overflow-hidden relative group mt-2">
-            <Show
-              when={
-                shapeData() &&
-                (props.path.startsWith('jot/') ||
-                  props.path.includes('mesh') ||
-                  props.path.includes('triangle') ||
-                  props.path.includes('box'))
-              }
-              fallback={
-                <Show when={thumbnail()}>
-                  <img
-                    src={thumbnail()}
-                    class="w-full h-full object-contain opacity-50"
-                  />
+          <div class="flex-1 min-h-0 flex flex-col gap-2">
+            <div class="w-full flex-1 bg-black/40 rounded-xl border-2 border-white/5 overflow-hidden relative group mt-2">
+                <Show
+                when={
+                    shapeData() &&
+                    (props.path.startsWith('jot/') ||
+                    props.path.includes('mesh') ||
+                    props.path.includes('triangle') ||
+                    props.path.includes('box'))
+                }
+                fallback={
+                    <Show when={thumbnail()}>
+                    <img
+                        src={thumbnail()}
+                        class="w-full h-full object-contain opacity-50"
+                    />
+                    </Show>
+                }
+                >
+                <Viewport data={shapeData()} />
                 </Show>
-              }
-            >
-              <Viewport data={shapeData()} />
-            </Show>
-            <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40 pointer-events-none group-hover:text-white/80 transition-colors">
-              INTERACTIVE VIEW
+                <div class="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/60 rounded text-[8px] font-mono text-white/40 pointer-events-none group-hover:text-white/80 transition-colors">
+                INTERACTIVE VIEW
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2 mt-3 max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar shrink-0">
+                <For each={props.results}>
+                    {(res) => (
+                        <div class="bg-black/40 rounded-lg p-2 border border-white/5 flex flex-col gap-1.5 shrink-0">
+                            <div class="flex justify-between items-center">
+                                <span class="text-[8px] font-black tracking-widest text-available">
+                                {res.state}
+                                </span>
+                                <span class="text-[7px] opacity-20 font-mono">
+                                {res.cid.slice(0, 8)}
+                                </span>
+                            </div>
+                            <div class="text-[9px] font-mono text-white/70 break-all bg-black/20 p-1.5 rounded">
+                                {JSON.stringify(res.parameters)}
+                            </div>
+                        </div>
+                    )}
+                </For>
             </div>
           </div>
 
-          <div class="flex flex-col gap-2 mt-3 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
-            <For each={props.results}>
-              {(res) => (
-                <div class="bg-black/40 rounded-lg p-2 border border-white/5 flex flex-col gap-1.5">
-                  <div class="flex justify-between items-center">
-                    <span class="text-[8px] font-black tracking-widest text-available">
-                      {res.state}
-                    </span>
-                    <span class="text-[7px] opacity-20 font-mono">
-                      {res.cid.slice(0, 8)}
-                    </span>
-                  </div>
-                  <div class="text-[9px] font-mono text-white/70 break-all bg-black/20 p-1.5 rounded">
-                    {JSON.stringify(res.parameters)}
-                  </div>
-                </div>
-              )}
-            </For>
-
+          <div class="mt-auto shrink-0 pt-2 flex flex-col gap-1 border-t border-white/5">
             <Show when={shapeData()}>
-              <div class="flex flex-col gap-1 border-t border-white/5 pt-2">
+              <div class="flex flex-col gap-1">
                 <button
                   onClick={() => setShowShape(!showShape())}
-                  class="flex items-center justify-between w-full px-2 py-1 bg-white/5 hover:bg-white/10 rounded transition-colors text-left"
+                  class="flex items-center justify-between w-full px-2 py-1 bg-white/5 hover:bg-white/10 hover:text-cyan-400 rounded transition-colors text-left"
                 >
                   <span class="text-[9px] font-black tracking-[0.2em] text-white/40 uppercase">
                     Shape JSON
@@ -259,7 +262,7 @@ export const PathNode = (props) => {
                   />
                 </button>
                 <Show when={showShape()}>
-                  <pre class="text-[8px] font-mono p-2 bg-black/60 rounded border border-white/5 text-cyan-400/80 overflow-x-auto whitespace-pre-wrap">
+                  <pre class="text-[8px] font-mono p-2 bg-black/60 rounded border border-white/5 text-cyan-400/80 overflow-x-auto whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
                     {JSON.stringify(shapeData(), null, 2)}
                   </pre>
                 </Show>
@@ -267,10 +270,10 @@ export const PathNode = (props) => {
             </Show>
 
             <Show when={geoData()}>
-              <div class="flex flex-col gap-1 border-t border-white/5 pt-2">
+              <div class="flex flex-col gap-1">
                 <button
                   onClick={() => setShowGeo(!showGeo())}
-                  class="flex items-center justify-between w-full px-2 py-1 bg-white/5 hover:bg-white/10 rounded transition-colors text-left"
+                  class="flex items-center justify-between w-full px-2 py-1 bg-white/5 hover:bg-white/10 hover:text-cyan-400 rounded transition-colors text-left"
                 >
                   <span class="text-[9px] font-black tracking-[0.2em] text-white/40 uppercase">
                     Raw Geometry
@@ -283,7 +286,7 @@ export const PathNode = (props) => {
                   />
                 </button>
                 <Show when={showGeo()}>
-                  <pre class="text-[8px] font-mono p-2 bg-black/60 rounded border border-white/5 text-green-400/80 max-h-48 overflow-auto custom-scrollbar whitespace-pre">
+                  <pre class="text-[8px] font-mono p-2 bg-black/60 rounded border border-white/5 text-green-400/80 max-h-32 overflow-auto custom-scrollbar whitespace-pre">
                     {geoData()}
                   </pre>
                 </Show>

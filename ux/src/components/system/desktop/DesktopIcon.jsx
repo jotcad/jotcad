@@ -2,8 +2,10 @@ import { createSignal, onMount, createMemo, Show } from 'solid-js';
 import interact from 'interactjs';
 import * as Icons from 'lucide-solid';
 import { blackboard } from '../../../lib/blackboard';
-import { desktopActions, windowActions, isConnected } from '../../../lib/state/AppState';
-import { syncStatus } from '../../../lib/state/SyncState';
+import { desktopActions, windowActions } from '../../../lib/state/DesktopState';
+import { isConnected } from '../../../lib/state/MeshState';
+import { syncStatus, isDirty } from '../../../lib/state/SyncState';
+import { CloudSync } from '../../../lib/vfs/CloudSync';
 
 export const DesktopIcon = (props) => {
   let iconRef;
@@ -12,6 +14,10 @@ export const DesktopIcon = (props) => {
 
   const IconComponent = () => {
     if (props.data.type === 'folder') return Icons.Folder;
+    
+    // Sync Action Icon Handling: Keep as Cloud icon, status handled by badges/dots
+    if (props.data.target === 'sync_cloud') return Icons.Cloud;
+
     const iconName = props.data.icon || 'Box';
     const Icon = Icons[iconName] || Icons.Box;
     if (!Icons[iconName]) {
@@ -21,7 +27,6 @@ export const DesktopIcon = (props) => {
   };
 
   onMount(() => {
-    console.log(`[DesktopIcon] Mounting icon: ${props.data.id} at ${props.data.x}, ${props.data.y}`);
     if (props.isNested) return;
 
     interact(iconRef).draggable({
@@ -71,6 +76,8 @@ export const DesktopIcon = (props) => {
     } else if (props.data.type === 'action') {
         if (props.data.target === 'new_op') {
             blackboard.createNewOp();
+        } else if (props.data.target === 'sync_cloud') {
+            CloudSync.syncAll();
         }
     }
   };
@@ -90,13 +97,22 @@ export const DesktopIcon = (props) => {
     >
       <div class={`relative w-16 h-16 md:w-14 md:h-14 rounded-2xl md:rounded-xl flex items-center justify-center transition-all ${
         isPressed() ? 'scale-90 bg-white/30' : 'bg-black/60 md:bg-white/10 group-hover:bg-cyan-500/20'
-      } border-2 ${props.isUserOp ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'border-white/10'} group-hover:border-cyan-400/50 shadow-xl`}>
+      } border-2 ${props.isUserOp ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'border-cyan-400 group-hover:border-cyan-300'} shadow-xl`}>
         
         {/* Status Indicators */}
         <Show when={props.data.target === 'mesh'}>
            <div class={`absolute -top-1 -right-1 w-4 h-4 md:w-3 md:h-3 rounded-full border-2 border-black ${isConnected() ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.7)]' : 'bg-red-500'}`} />
         </Show>
 
+        {/* Sync Cloud: Simple Green/Red Dot for Clean/Dirty */}
+        <Show when={props.data.target === 'sync_cloud'}>
+           <div class={`absolute -top-1 -right-1 w-4 h-4 md:w-3 md:h-3 rounded-full border-2 border-black ${
+             isDirty() ? 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.7)]' : 
+             (syncStatus() === 'idle' ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.7)]' : 'bg-white/20')
+           }`} />
+        </Show>
+
+        {/* Settings: Detailed Sync Badges (Disconnect, Conflict, Progress) */}
         <Show when={props.data.target === 'settings'}>
             <div class="absolute -top-1 -right-1">
                 <Show when={syncStatus() === 'syncing'}>
@@ -114,6 +130,7 @@ export const DesktopIcon = (props) => {
         <div class={`${
             props.data.type === 'folder' ? 'text-amber-400/90' : 
             props.data.type === 'editor' ? 'text-cyan-400/90' :
+            (props.data.target === 'sync_cloud' && syncStatus() === 'syncing') ? 'text-cyan-400 animate-spin' :
             'text-white/90'
         } group-hover:text-cyan-300 transition-colors`}>
            <IconComponent size={32} />

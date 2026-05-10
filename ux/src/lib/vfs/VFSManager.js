@@ -1,21 +1,24 @@
+console.log('[Boot] VFSManager.js loading...');
 import { reconcile } from 'solid-js/store';
 import { VFS, IndexedDBStorage, Selector } from '../../../../fs/src/vfs_browser.js';
 import { MeshLink } from '../../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../../jot/src/index.js';
 import { Worksheet } from './Worksheet';
+import { registerUtilityOps } from './UtilityOps';
+import { JotRegistry } from './JotRegistry';
 import {
   setGraph, setSchemas, setPulse, setMeshTopology,
   setIsConnected, setDiscoveryStatus, setDynamicOps
-} from '../state/AppState.js';
+} from '../state/MeshState.js';
+
+console.log('[Boot] VFSManager.js imports resolved.');
 
 const getSessionId = () => {
-  const prefix = import.meta.env.VITE_STORAGE_PREFIX || 'ui';
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+  return `ui-${Math.random().toString(36).slice(2, 8)}`;
 };
 
 export const peerId = getSessionId();
-const storagePrefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
-const VFS_DB_NAME = `${storagePrefix}-vfs`;
+const VFS_DB_NAME = `jot-vfs`;
 
 export const vfs = new VFS({
   id: peerId,
@@ -48,33 +51,32 @@ export const vfsActions = {
     if (isStarted) return;
     isStarted = true;
 
-    await vfs.init();
-    console.log(`[MeshVFS] Initialized. Connecting to: ${vfsUrl}`);
+    console.log(`[MeshVFS] Starting... Peer: ${peerId}`);
+    try {
+        await vfs.init();
+        console.log(`[MeshVFS] VFS Initialized.`);
+    } catch (e) {
+        console.error(`[MeshVFS] VFS Init Failed:`, e);
+    }
 
+    // 1. LOAD OPERATORS
     const ops = Worksheet.get(Worksheet.TIERS.OPERATORS);
-    if (ops) {
+    if (ops && typeof ops === 'object') {
+        console.log(`[MeshVFS] Found stored ops:`, Object.keys(ops));
         setDynamicOps(ops);
         for (const [path, op] of Object.entries(ops)) {
-          blackboard.publishDynamicOp(path, op.schema, op.script, false);
+          try {
+            JotRegistry.publishDynamicOp(vfs, mesh, path, op.schema, op.script, false);
+          } catch (e) {
+            console.error(`[MeshVFS] Failed to publish stored op ${path}:`, e);
+          }
         }
     }
 
-    // Register Utility Ops
-    vfs.registerProvider('jot/range', async (v, s) => {
-        const { start = 0, stop = s.parameters.arg || 0, step = 1 } = s.parameters;
-        const res = [];
-        for (let i = start; i < stop; i += step) res.push(i);
-        return new TextEncoder().encode(JSON.stringify(res));
-      }, { schema: { arguments: [{ name: 'start', type: 'number', default: 0 }, { name: 'stop', type: 'number' }, { name: 'step', type: 'number', default: 1 }] } }
-    );
+    // 2. Register Utility Ops
+    registerUtilityOps(vfs);
 
-    vfs.registerProvider('jot/iota', async (v, s) => {
-        const count = s.parameters.count || s.parameters.arg || 0;
-        const res = Array.from({ length: count }, (_, i) => i);
-        return new TextEncoder().encode(JSON.stringify(res));
-      }, { schema: { arguments: [{ name: 'count', type: 'number' }] } }
-    );
-
+    // 3. Event Handling
     vfs.events.on('state', async (event) => {
       if (!event.selector) return;
       setGraph((prev) => ({ ...prev, [event.cid]: { ...prev[event.cid], ...event } }));
@@ -104,6 +106,7 @@ export const vfsActions = {
     try {
       await mesh.start();
       setIsConnected(true);
+      console.log(`[MeshVFS] Mesh started. Discovery active.`);
     } catch (e) {
       console.error('[MeshVFS] Mesh start failed:', e);
       setIsConnected(false);
@@ -129,59 +132,8 @@ export const vfsActions = {
     }, 1000);
   },
 
-  publishDynamicOp(path, schema, script, persist = true, blackboard) {
-    console.log(`[MeshVFS] Publishing Dynamic Op: ${path}`);
-
-    if (schema.arguments && !Array.isArray(schema.arguments)) {
-      throw new Error(`Catalog Error: Arguments for operator '${path}' must be an array.`);
-    }
-
-    vfs.registerProvider(path, async (v, s) => {
-      const { JotCompiler } = await import('../../../../jot/src/compiler');
-      const { JotParser } = await import('../../../../jot/src/parser');
-      
-      const compiler = new JotCompiler(v);
-      const currentSchemas = blackboard.schemas();
-      for (const [p, sch] of Object.entries(currentSchemas)) {
-        const name = p.replace(/^(jot|user)\//, '');
-        compiler.registerOperator(name, { path: p, schema: sch });
-      }
-
-      const parser = new JotParser();
-      const ast = parser.parse(script);
-      
-      const params = { ...s.parameters };
-      if (schema.arguments && Array.isArray(schema.arguments)) {
-        for (const arg of schema.arguments) {
-           if (params[arg.name] === undefined && arg.default !== undefined) {
-             params[arg.name] = arg.default;
-           }
-        }
-      }
-
-      const result = await compiler.evaluate(ast, params);
-      const primary = Array.isArray(result) ? result[0] : result;
-      const shapeData = await v.readData(primary);
-      return new TextEncoder().encode(JSON.stringify(shapeData));
-    }, { schema });
-
-    const schemaWithOrigin = { ...schema, _origin: vfs.id };
-    setSchemas(prev => ({ ...prev, [path]: schemaWithOrigin }));
-    vfs.addSchema(path, schemaWithOrigin);
-
-    setDynamicOps(prev => {
-      const next = { ...prev, [path]: { schema, script } };
-      if (persist) {
-        Worksheet.save(Worksheet.TIERS.OPERATORS, null, next);
-      }
-      return next;
-    });
-
-    mesh.notify(new Selector('sys/schema'), {
-      type: 'CATALOG_ANNOUNCEMENT',
-      provider: vfs.id,
-      catalog: { [path]: schemaWithOrigin }
-    });
+  publishDynamicOp(path, schema, script, persist = true) {
+    JotRegistry.publishDynamicOp(vfs, mesh, path, schema, script, persist);
   },
 
   stop() {

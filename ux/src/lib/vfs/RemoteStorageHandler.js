@@ -2,7 +2,6 @@ import RemoteStorage from 'remotestoragejs';
 import Widget from 'remotestorage-widget';
 import JotStorageModule from './RemoteStorageModule';
 import { setSyncStatus, setCloudAccount } from '../state/SyncState';
-import { blackboard } from '../blackboard';
 import { Worksheet } from './Worksheet';
 import { syncActions } from '../state/SyncState';
 
@@ -13,7 +12,7 @@ const rs = new RemoteStorage({
 
 // Enable Google Drive & Dropbox as backends
 rs.setApiKeys({
-  googledrive: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+  googledrive: '594109471805-4a27m37mlrasmjoh0cap2g97dkgnc2p4.apps.googleusercontent.com',
   dropbox: import.meta.env.VITE_DROPBOX_APP_KEY
 });
 
@@ -98,16 +97,16 @@ export const RemoteStorageHandler = {
     setSyncStatus('syncing');
     try {
       // 1. Sync Operators
-      const operators = await rs.jotcad.getOperators();
+      const operators = await this.getOperators();
       if (operators) {
         for (const name of Object.keys(operators)) {
-          const remoteOp = await rs.jotcad.getOperator(name);
+          const remoteOp = await this.getOperator(name);
           Worksheet.mergeRemote(Worksheet.TIERS.OPERATORS, name, remoteOp);
         }
       }
 
       // 2. Sync Layout
-      const remoteLayout = await rs.jotcad.getLayout();
+      const remoteLayout = await this.getLayout();
       if (remoteLayout) {
         Worksheet.mergeRemote(Worksheet.TIERS.WINDOWS, null, remoteLayout);
       }
@@ -116,9 +115,16 @@ export const RemoteStorageHandler = {
     } catch (e) {
       console.error('[RemoteStorage] Initial sync failed:', e);
       setSyncStatus('error');
+      alert(`Initial Cloud Sync Failed: ${e.message || e}`);
     }
   },
 
+  // --- GETTERS ---
+  getOperators: () => rs.jotcad.getOperators(),
+  getOperator: (name) => rs.jotcad.getOperator(name),
+  getLayout: () => rs.jotcad.getLayout(),
+
+  // --- SETTERS ---
   async pushLayout(layout) {
     if (!rs.connected) return;
     await rs.jotcad.saveLayout(layout);
