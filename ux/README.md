@@ -1,35 +1,43 @@
-# JotCAD Interactive UX
+# JotCAD Spatial Desktop
 
-A high-performance reactive graph visualizer for the JotCAD Distributed
-Blackboard.
+A professional-grade "Infinite Blackboard" operating system for geometric
+modeling.
 
 ## Architecture
 
-The UX is organized into atomic modules to maintain high maintainability and
-precise responsibility:
+The JotCAD UX follows a "Spatial Desktop" metaphor, separating the world-space
+canvas from screen-space application windows.
 
--   `src/components/canvas/`: The spatial blackboard layer and its nodes.
--   `src/components/editor/`: Code editors and result viewports.
--   `src/components/discovery/`: Mesh mapping and schema catalogs.
--   `src/components/system/`: HUD elements (Console, Error Overlays).
--   `src/lib/render/`: Shared WebGL renderer and JOT-to-Three.js decoders.
--   `src/lib/state/`: Reactive application and mesh state.
--   `src/lib/vfs/`: VFS/Mesh connection and bridge logic.
+-   `src/components/system/desktop/`: The core Desktop environment, including
+    the Window Manager and Desktop Icons.
+-   `src/components/canvas/`: The infinite pannable and zoomable blackboard.
+-   `src/components/editor/`: Windowed code editors and result viewports.
+-   `src/components/discovery/`: Mesh mapping apps and schema catalogs.
+-   `src/lib/vfs/Worksheet.js`: The unified persistence layer (LocalStorage +
+    RemoteStorage) with 3-way merging.
 
 ## Interaction Model
 
-### Unified Gestures
-The blackboard uses a custom, non-passive gesture system to ensure smooth
-panning and zooming on both touch and mouse devices.
+### The Blackboard
+-   **Desktop**: Hold **Shift**, **Alt**, or **Meta** to enter "World Mode."
+    Left-click drag anywhere to pan; scroll wheel anywhere to zoom.
+-   **Mobile**: Two-finger pinch to zoom and pan.
+-   **Middle Mouse**: Global pan at any time (CAD standard).
 
--   **Two-Finger Pinch/Pan**: Zooms relative to the gesture center and pans
-    simultaneously.
--   **Gesture Ownership**: Multi-touch gestures are strictly "owned" by either
-    the blackboard or a specific window to prevent accidental window raising or
-    dragging during navigation.
--   **Manual Viewports**: 3D viewports are static snapshots by default and
-    become "Active" only when focused, ensuring 60fps performance even with
-    hundreds of windows.
+### Application Windows
+-   **Maximized Mode**: Tapping the expand button "portals" the window to the
+    document body, bypassing blackboard zoom and ensuring **1:1 logical pixel
+    parity** (DPI compensation) for perfect legibility on mobile.
+-   **Tap Targets**: All interactive elements in maximized windows enforce a
+    minimum **44x44px** hitbox.
+
+## Unified Persistence (Worksheet)
+
+The `Worksheet` abstraction handles cross-device synchronization of:
+1.  **JOT Source Code** (Text-based `diff3` merge).
+2.  **Desktop Layout** (Spatial icon positions via `trimerge`).
+3.  **Window Session** (Which apps are open and where).
+4.  **Assets** (Icon images and custom tool data).
 
 ## CID Validation
 

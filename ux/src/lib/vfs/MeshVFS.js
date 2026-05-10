@@ -2,10 +2,10 @@ import { reconcile } from 'solid-js/store';
 import { VFS, IndexedDBStorage, Selector } from '../../../../fs/src/vfs_browser.js';
 import { MeshLink } from '../../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../../jot/src/index.js';
+import { Worksheet } from './Worksheet';
 import {
   setGraph, setSchemas, setPulse, setMeshTopology,
-  setIsConnected, setDiscoveryStatus, setDynamicOps,
-  DYNAMIC_OPS_KEY
+  setIsConnected, setDiscoveryStatus, setDynamicOps
 } from '../state/AppState.js';
 
 const getSessionId = () => {
@@ -51,17 +51,12 @@ export const vfsActions = {
     await vfs.init();
     console.log(`[MeshVFS] Initialized. Connecting to: ${vfsUrl}`);
 
-    const saved = localStorage.getItem(DYNAMIC_OPS_KEY);
-    if (saved) {
-      try {
-        const ops = JSON.parse(saved);
+    const ops = Worksheet.get(Worksheet.TIERS.OPERATORS);
+    if (ops) {
         setDynamicOps(ops);
         for (const [path, op] of Object.entries(ops)) {
           blackboard.publishDynamicOp(path, op.schema, op.script, false);
         }
-      } catch (e) {
-        console.error('[MeshVFS] Failed to load dynamic ops:', e);
-      }
     }
 
     // Register Utility Ops
@@ -177,7 +172,7 @@ export const vfsActions = {
     setDynamicOps(prev => {
       const next = { ...prev, [path]: { schema, script } };
       if (persist) {
-        localStorage.setItem(DYNAMIC_OPS_KEY, JSON.stringify(next));
+        Worksheet.save(Worksheet.TIERS.OPERATORS, null, next);
       }
       return next;
     });
@@ -207,9 +202,7 @@ export const vfsActions = {
     if (vfs.storage && typeof vfs.storage.wipe === 'function') {
         await vfs.storage.wipe();
     }
-    localStorage.removeItem(DYNAMIC_OPS_KEY);
-    const storagePrefix = import.meta.env.VITE_STORAGE_PREFIX || 'demo';
-    localStorage.removeItem(`${storagePrefix}_node_state`);
+    localStorage.clear();
     sessionStorage.removeItem('jotcad_peer_id');
     window.location.reload();
   }

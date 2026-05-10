@@ -9,7 +9,6 @@ import {
 import {
   openEditors,
   setOpenEditors,
-  NODE_STATE_KEY,
   graph,
   schemas,
   pulse,
@@ -27,9 +26,9 @@ import {
   dynamicOps,
   error,
   setError,
-  editorActions,
-  DEFAULT_CODE
+  editorActions
 } from './state/AppState.js';
+import { NODE_STATE_KEY, DEFAULT_CODE } from './state/Config.js';
 
 export { vfs, DEFAULT_CODE };
 

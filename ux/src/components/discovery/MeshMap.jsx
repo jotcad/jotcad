@@ -35,7 +35,7 @@ const MeshNode = (props) => {
     const saved = blackboard.meshPositions()[p.id];
     if (saved) return saved;
 
-    const centerX = 400; // Consistent with force layout
+    const centerX = 400; 
     const centerY = 500;
     const angle = (props.index / Math.max(1, props.total)) * Math.PI * 2;
     return {
@@ -105,7 +105,6 @@ export function MeshMap(props) {
   const pulses = blackboard.pulse;
   const positions = blackboard.meshPositions;
 
-  // Tight Force Layout (Stable Loop)
   onMount(() => {
     const interval = setInterval(() => {
       const peers = untrack(topo).peers || [];
@@ -130,7 +129,6 @@ export function MeshMap(props) {
             const distSq = dx * dx + dy * dy;
             const dist = Math.sqrt(distSq) || 1;
 
-            // Strong repulsion
             const force = 10000 / distSq;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
@@ -190,9 +188,8 @@ export function MeshMap(props) {
   });
 
   return (
-    <div class="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+    <div class={`absolute inset-0 pointer-events-none z-0 overflow-hidden ${props.isWindowed ? 'bg-slate-950/50' : ''}`}>
       <svg class="w-full h-full overflow-visible">
-        {/* Peer connections */}
         <For each={topoEdges()}>
           {(edge) => (
             <line
@@ -208,7 +205,6 @@ export function MeshMap(props) {
           )}
         </For>
 
-        {/* Pulse bubbles */}
         <For each={pulses()}>
           {(pulse) => {
             const stack = pulse.payload?.stack || [];
@@ -239,11 +235,17 @@ export function MeshMap(props) {
               node={node}
               index={idx()}
               total={topo().peers.length}
-              scale={props.scale}
+              scale={props.scale || 1}
             />
           )}
         </For>
       </div>
+
+      <Show when={!props.isWindowed}>
+          <div class="absolute bottom-4 left-4 text-[10px] font-black text-white/20 uppercase tracking-widest">
+            Mesh Topology Monitor
+          </div>
+      </Show>
     </div>
   );
 }

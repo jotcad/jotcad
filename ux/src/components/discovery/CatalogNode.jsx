@@ -4,25 +4,10 @@ import { blackboard } from '../../lib/blackboard';
 import { Database, RefreshCw, Minus, Maximize2, Plus, Edit2 } from 'lucide-solid';
 
 export const CatalogNode = (props) => {
-  let nodeRef;
-  const [pos, setPos] = createSignal({ x: 20, y: 20 });
   const schemas = () => Object.entries(blackboard.schemas() || {});
   const [isRefreshing, setIsRefreshing] = createSignal(false);
-  const [isMinimized, setIsMinimized] = createSignal(false);
   const [newName, setNewName] = createSignal('');
   const status = () => blackboard.discoveryStatus();
-
-  onMount(() => {
-    interact(nodeRef).draggable({
-      allowFrom: '.drag-handle',
-      listeners: {
-        move(event) {
-          const s = window._JOT_VIEW ? window._JOT_VIEW().scale : 1;
-          setPos({ x: pos().x + event.dx / s, y: pos().y + event.dy / s });
-        },
-      },
-    });
-  });
 
   const refreshCatalog = async () => {
     setIsRefreshing(true);
@@ -37,109 +22,62 @@ export const CatalogNode = (props) => {
     setNewName('');
   };
 
-  return (
-    <div
-      ref={nodeRef}
-      class={`absolute z-40 w-[90vw] md:w-72 flex flex-col gap-2 p-3 md:p-4 rounded-xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-hidden transition-all ${
-        isMinimized() ? 'h-12' : 'max-h-[60vh] md:max-h-[80vh]'
-      }`}
-      style={{
-        left: `${pos().x}px`,
-        top: `${pos().y}px`
-      }}
-    >
-      <div
-        class="flex justify-between items-center mb-1 cursor-pointer drag-handle"
-        onDblClick={() => setIsMinimized(!isMinimized())}
-      >
-        <div class="flex items-center gap-2 text-white/60">
-          <Database size={16} />
-          <span class="text-[10px] md:text-xs font-black uppercase tracking-widest">
-            Provider Catalog
-          </span>
-          <Show when={status() === 'loading'}>
-            <div class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-          </Show>
-          <Show when={status() === 'error'}>
-            <div
-              class="w-2 h-2 rounded-full bg-red-500"
-              title="Discovery Error"
-            />
-          </Show>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              refreshCatalog();
-            }}
-            class={`text-white/40 hover:text-white transition-all ${
-              isRefreshing() ? 'animate-spin' : ''
-            }`}
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsMinimized(!isMinimized());
-            }}
-            class="text-white/20 hover:text-white transition-colors"
-          >
-            {isMinimized() ? <Maximize2 size={12} /> : <Minus size={12} />}
-          </button>
-        </div>
-      </div>
+  const content = () => (
+    <div class="catalog-content flex flex-col h-full gap-2 p-3 md:p-6 bg-transparent overflow-hidden">
+        <Show when={!props.isWindowed}>
+            <div class="flex justify-between items-center mb-1 text-white/60">
+              <div class="flex items-center gap-2">
+                <Database size={16} />
+                <span class="text-ui-label font-black uppercase tracking-widest">Provider Catalog</span>
+              </div>
+            </div>
+        </Show>
 
-      <Show when={!isMinimized()}>
-        {/* Create New Op Form */}
-        <form onSubmit={handleCreate} class="flex gap-1 mb-2">
+        <form onSubmit={handleCreate} class="flex gap-2 mb-6 shrink-0">
             <input 
-              class="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-[10px] text-white focus:outline-none focus:border-cyan-400/40"
-              placeholder="New op name (e.g. MyOp)..."
+              class="flex-1 bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-readable text-white focus:outline-none focus:border-cyan-400/60 shadow-inner"
+              placeholder="New op name..."
               value={newName()}
               onInput={e => setNewName(e.target.value)}
             />
             <button 
               type="submit"
-              class="p-1.5 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-all"
-              title="Create New Operator"
+              class="tap-target px-4 rounded-xl bg-cyan-400 text-black hover:bg-cyan-300 transition-all border border-cyan-400 shadow-lg"
             >
-                <Plus size={14} />
+                <Plus size={24} stroke-width={3} />
+            </button>
+            <button
+                type="button"
+                onClick={refreshCatalog}
+                class={`tap-target px-4 rounded-xl bg-white/10 text-white hover:bg-white/20 hover:text-cyan-400 transition-all border border-white/10 shadow-lg ${isRefreshing() ? 'animate-spin' : ''}`}
+            >
+                <RefreshCw size={20} />
             </button>
         </form>
 
-        <div class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1">
+        <div class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
           <For each={schemas()}>
-            {([path, schema]) => {
-              const isLocal = schema._origin === blackboard.peerId || path.startsWith('user/');
-              return (
+            {([path, schema]) => (
                 <div 
                   onClick={() => blackboard.openOp(path)}
-                  class="text-[10px] font-mono text-cyan-200/70 py-1 md:py-1.5 px-2 hover:bg-white/5 rounded cursor-pointer transition-colors flex justify-between items-center group"
+                  class="text-readable font-mono text-cyan-200/80 py-3 px-3 hover:bg-white/10 rounded-lg cursor-pointer transition-colors flex justify-between items-center group border border-transparent hover:border-white/10"
                 >
                   <span class="truncate">{path}</span>
-                  <div class="flex items-center gap-2">
-                    <span class="text-white/10 text-[8px] group-hover:text-white/20">
-                      {Object.keys(schema).length} params
-                    </span>
-                  </div>
                 </div>
-              );
-            }}
+              )
+            }
           </For>
-          <Show when={status() === 'success' && schemas().length === 0}>
-            <div class="text-[10px] text-white/20 italic p-2 text-center">
-              No providers discovered.
-            </div>
-          </Show>
-          <Show when={status() === 'error'}>
-            <div class="text-[10px] text-red-400 italic p-2 text-center">
-              Discovery failed! Check network connectivity.
-            </div>
-          </Show>
         </div>
-      </Show>
     </div>
+  );
+
+  return (
+    <Show when={props.isWindowed} fallback={
+        <div class="absolute z-40 w-72 flex flex-col bg-black/80 backdrop-blur-2xl border border-white/10 rounded-xl shadow-2xl overflow-hidden" style={{left: '20px', top: '20px'}}>
+            {content()}
+        </div>
+    }>
+        {content()}
+    </Show>
   );
 };

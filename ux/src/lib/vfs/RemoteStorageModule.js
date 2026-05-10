@@ -20,9 +20,22 @@ export const JotStorageModule = {
     privateClient.declareType('layout', {
       type: 'object',
       properties: {
-        editors: { type: 'array' },
+        windows: { type: 'array' },
+        desktop: { type: 'array' },
         view: { type: 'object' }
       }
+    });
+
+    privateClient.declareType('asset', {
+      type: 'object',
+      properties: {
+        data: { type: 'string' }, // Base64 or URL
+        mimeType: { type: 'string' }
+      }
+    });
+
+    privateClient.declareType('config', {
+      type: 'object'
     });
 
     return {
@@ -36,6 +49,14 @@ export const JotStorageModule = {
         // Layout Methods
         getLayout: () => privateClient.getObject('layout'),
         saveLayout: (data) => privateClient.storeObject('layout', 'layout', data),
+
+        // Asset Methods
+        getAsset: (id) => privateClient.getObject(`assets/${id}`),
+        saveAsset: (id, data) => privateClient.storeObject('asset', `assets/${id}`, data),
+
+        // Config/AppData Methods
+        getConfig: (tier, key) => privateClient.getObject(`config/${tier}/${key}`),
+        saveConfig: (tier, key, data) => privateClient.storeObject('config', `config/${tier}/${key}`, data),
 
         // Events
         onChange: (callback) => privateClient.on('change', callback),

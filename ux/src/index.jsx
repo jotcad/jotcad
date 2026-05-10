@@ -4,9 +4,12 @@ import { Canvas } from './components/canvas/Canvas';
 import { ErrorOverlay } from './components/system/ErrorOverlay';
 import { blackboard } from './lib/blackboard';
 import { RemoteStorageHandler } from './lib/vfs/RemoteStorageHandler';
+import { logActions, initAppState } from './lib/state/AppState';
 import './index.css';
 
-// Initialize Cloud Sync (Unhosted/RemoteStorage)
+// Initialize Logging, App State, and Cloud Sync
+logActions.initInterception();
+initAppState();
 RemoteStorageHandler.init();
 
 function App() {

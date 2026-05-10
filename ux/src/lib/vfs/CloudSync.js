@@ -1,15 +1,11 @@
 import { merge as diff3Merge } from 'node-diff3';
 import { combineMergers, trimergeJsonDeepEqual, trimergeJsonObject } from 'trimerge';
-import { shadowOps, shadowLayout, syncActions, setSyncStatus, syncStatus } from '../state/SyncState';
-import { dynamicOps, openEditors, editorActions } from '../state/AppState';
-import { blackboard } from '../blackboard';
-import RemoteStorage from 'remotestoragejs';
-import './RemoteStorageModule';
 
 const jsonMerger = combineMergers(trimergeJsonDeepEqual, trimergeJsonObject);
 
 /**
- * 3-Way Merge Engine
+ * 3-Way Merge Engine - Pure Logic
+ * NOTE: Do not import AppState or blackboard here to avoid circularity.
  */
 export const Merger = {
     /**
@@ -52,63 +48,40 @@ export const Merger = {
 };
 
 /**
- * Real RemoteStorage Provider
- */
-export const RemoteStorageProvider = {
-    _getRS() {
-        const rs = new RemoteStorage({ modules: ['jotcad'] });
-        rs.access.claim('jotcad', 'rw');
-        return rs;
-    },
-    async list() {
-        const rs = this._getRS();
-        const list = await rs.jotcad.getOperators();
-        return list ? Object.keys(list) : [];
-    },
-    async get(name) {
-        const rs = this._getRS();
-        return await rs.jotcad.getOperator(name);
-    },
-    async put(name, data) {
-        const rs = this._getRS();
-        await rs.jotcad.saveOperator(name, data);
-    }
-};
-
-/**
- * High-level Sync Orchestrator
+ * Sync Orchestrator
+ * Uses runtime references to blackboard to avoid circular imports.
  */
 export const CloudSync = {
-    provider: RemoteStorageProvider,
-
     async syncAll() {
+        const bb = window.blackboard;
+        if (!bb) return;
+
+        const { shadowOps, syncActions, setSyncStatus, syncStatus } = await import('../state/SyncState');
+        
         setSyncStatus('syncing');
         try {
-            const remotePaths = await this.provider.list();
-            const localOps = blackboard.dynamicOps();
-            
-            // 1. Pull / Merge Operators
-            for (const name of remotePaths) {
-                const path = `user/${name}`;
-                const remoteOp = await this.provider.get(name);
-                const localOp = localOps[path];
-                const baseOp = shadowOps[path];
+            const handler = window._RS_HANDLER;
+            if (!handler) throw new Error('RemoteStorageHandler not initialized');
 
-                if (!localOp) {
-                    // New operator from cloud
-                    blackboard.publishDynamicOp(path, remoteOp.schema, remoteOp.script, true);
-                    syncActions.updateShadowOp(path, remoteOp);
-                } else if (JSON.stringify(localOp) !== JSON.stringify(remoteOp)) {
-                    // Potential conflict or update
-                    const merged = Merger.mergeOperator(path, localOp, baseOp, remoteOp);
-                    
-                    blackboard.publishDynamicOp(path, merged.schema, merged.script, true);
-                    if (merged.hasConflicts) {
-                        setSyncStatus('conflict');
-                    }
-                    
-                    if (!merged.hasConflicts) {
+            // 1. Pull / Merge Operators
+            const operatorsListing = await handler.getOperators();
+            const localOps = bb.dynamicOps();
+            
+            if (operatorsListing) {
+                for (const name of Object.keys(operatorsListing)) {
+                    const path = `user/${name}`;
+                    const remoteOp = await handler.getOperator(name);
+                    const localOp = localOps[path];
+                    const baseOp = shadowOps[path];
+
+                    if (!localOp) {
+                        bb.publishDynamicOp(path, remoteOp.schema, remoteOp.script, true);
                         syncActions.updateShadowOp(path, remoteOp);
+                    } else if (JSON.stringify(localOp) !== JSON.stringify(remoteOp)) {
+                        const merged = Merger.mergeOperator(path, localOp, baseOp, remoteOp);
+                        bb.publishDynamicOp(path, merged.schema, merged.script, true);
+                        if (merged.hasConflicts) setSyncStatus('conflict');
+                        if (!merged.hasConflicts) syncActions.updateShadowOp(path, remoteOp);
                     }
                 }
             }
@@ -116,9 +89,9 @@ export const CloudSync = {
             // 2. Push Local-only Operators
             for (const [path, localOp] of Object.entries(localOps)) {
                 const name = path.replace('user/', '');
-                const isRemote = remotePaths.includes(name);
+                const isRemote = operatorsListing && operatorsListing[name];
                 if (!isRemote) {
-                    await this.provider.put(name, localOp);
+                    await handler.pushOperator(path, localOp.script, localOp.schema);
                     syncActions.updateShadowOp(path, localOp);
                 }
             }
