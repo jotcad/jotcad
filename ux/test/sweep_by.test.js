@@ -29,9 +29,10 @@ describe('SweepBy Syntax', () => {
   });
 
   it('should compile path.sweepBy(profile)', async () => {
-    const code = 'Box(100).sweepBy(Circle(5))';
+    const code = 'Box(100).sweepBy(Circle(5)) -> $out';
     const ast = parser.parse(code);
-    const results = await compiler.evaluate(ast);
+    const schema = { outputs: { $out: { type: 'jot:shape' } } };
+    const results = await compiler.evaluate(ast, {}, schema);
     const res = results[0];
 
     expect(res.path).toBe('jot/sweepBy');

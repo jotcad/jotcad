@@ -56,27 +56,35 @@ describe('3-Way Merge Engine', () => {
 
     it('should merge JSON layout state using trimerge', () => {
         const baseLayout = {
-            "editor-1": { x: 100, y: 100, scale: 1 }
+            windows: [{ id: "editor-1", x: 100, y: 100, scale: 1 }],
+            desktop: []
         };
 
         const localLayout = {
-            "editor-1": { x: 200, y: 100, scale: 1 },
-            "editor-2": { x: 0, y: 0, scale: 1 }
+            windows: [
+                { id: "editor-1", x: 200, y: 100, scale: 1 },
+                { id: "editor-2", x: 0, y: 0, scale: 1 }
+            ],
+            desktop: []
         };
 
         const remoteLayout = {
-            "editor-1": { x: 100, y: 100, scale: 1.5 },
-            "editor-3": { x: 500, y: 500, scale: 1 }
+            windows: [
+                { id: "editor-1", x: 100, y: 100, scale: 1.5 },
+                { id: "editor-3", x: 500, y: 500, scale: 1 }
+            ],
+            desktop: []
         };
 
         const result = Merger.mergeLayout(localLayout, baseLayout, remoteLayout);
 
         // editor-1 should have combined x (from local) and scale (from remote)
-        expect(result["editor-1"].x).toBe(200);
-        expect(result["editor-1"].scale).toBe(1.5);
+        const editor1 = result.windows.find(w => w.id === "editor-1");
+        expect(editor1.x).toBe(200);
+        expect(editor1.scale).toBe(1.5);
         
         // New editors from both sides should be present
-        expect(result["editor-2"]).toBeDefined();
-        expect(result["editor-3"]).toBeDefined();
+        expect(result.windows.find(w => w.id === "editor-2")).toBeDefined();
+        expect(result.windows.find(w => w.id === "editor-3")).toBeDefined();
     });
 });

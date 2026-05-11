@@ -190,7 +190,8 @@ export const JotNode = (props) => {
           if (arg.type === 'jot:shape' || arg.type === 'shape') {
               if (arg.testValue && typeof arg.testValue === 'string') {
                   const subAst = parser.parse(arg.testValue);
-                  const res = await compiler.evaluate(subAst, {});
+                  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+                  const res = await compiler.evaluate(subAst, {}, schema);
                   boundVars[arg.name] = Array.isArray(res) ? res[0] : res;
               } else {
                   boundVars[arg.name] = arg.testValue;

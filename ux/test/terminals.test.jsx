@@ -3,6 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JotNode } from '../src/components/editor/JotNode';
 import { blackboard, vfs } from '../src/lib/blackboard';
 
+// Mock ResizeObserver for JSDOM
+global.ResizeObserver = vi.fn().mockImplementation(() => ({
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+}));
+
 // Mock interactjs
 vi.mock('interactjs', () => {
   const mock = vi.fn().mockReturnValue({

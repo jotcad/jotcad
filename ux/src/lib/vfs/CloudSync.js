@@ -1,5 +1,4 @@
 import { merge as diff3Merge } from 'node-diff3';
-import { combineMergers, trimergeJsonDeepEqual, trimergeJsonObject } from 'trimerge';
 import { 
     shadowOps, 
     shadowLayout, 
@@ -12,47 +11,66 @@ import {
 } from '../state/SyncState';
 
 /**
- * Custom Merger for Arrays of Objects with IDs.
- */
-const trimergeArrayById = (orig, left, right, merge) => {
-    if (!Array.isArray(left) || !Array.isArray(right)) return undefined;
-
-    const origMap = new Map((Array.isArray(orig) ? orig : []).filter(i => i && i.id).map(i => [i.id, i]));
-    const leftMap = new Map(left.filter(i => i && i.id).map(i => [i.id, i]));
-    const rightMap = new Map(right.filter(i => i && i.id).map(i => [i.id, i]));
-
-    const allIds = new Set([...leftMap.keys(), ...rightMap.keys()]);
-    const result = [];
-
-    for (const id of allIds) {
-        const o = origMap.get(id);
-        const l = leftMap.get(id);
-        const r = rightMap.get(id);
-
-        if (l === undefined) {
-            if (o === undefined || JSON.stringify(o) !== JSON.stringify(r)) {
-                result.push(r);
-            }
-            continue;
-        }
-        if (r === undefined) {
-            if (o === undefined || JSON.stringify(o) !== JSON.stringify(l)) {
-                result.push(l);
-            }
-            continue;
-        }
-
-        result.push(merge(o, l, r));
-    }
-    return result;
-};
-
-const jsonMerger = combineMergers(trimergeJsonDeepEqual, trimergeArrayById, trimergeJsonObject);
-
-/**
  * 3-Way Merge Engine
  */
 export const Merger = {
+    mergeJson(orig, left, right) {
+        if (left === right) return left;
+        if (left === orig) return right;
+        if (right === orig) return left;
+
+        if (typeof left === 'object' && left !== null && typeof right === 'object' && right !== null) {
+            if (Array.isArray(left) && Array.isArray(right)) {
+                // Array merge: ID-aware or fallback to local
+                const origArr = Array.isArray(orig) ? orig : [];
+                const origMap = new Map(origArr.filter(i => i?.id).map(i => [i.id, i]));
+                const leftMap = new Map(left.filter(i => i?.id).map(i => [i.id, i]));
+                const rightMap = new Map(right.filter(i => i?.id).map(i => [i.id, i]));
+
+                if (leftMap.size === 0 && rightMap.size === 0) return left; // Fallback for simple arrays
+
+                const allIds = new Set([...leftMap.keys(), ...rightMap.keys()]);
+                const result = [];
+
+                for (const id of allIds) {
+                    const o = origMap.get(id);
+                    const l = leftMap.get(id);
+                    const r = rightMap.get(id);
+                    
+                    if (l === undefined) {
+                        // Remote add or local delete
+                        if (o === undefined || JSON.stringify(o) !== JSON.stringify(r)) {
+                            result.push(r);
+                        }
+                        continue;
+                    }
+                    if (r === undefined) {
+                        // Local add or remote delete
+                        if (o === undefined || JSON.stringify(o) !== JSON.stringify(l)) {
+                            result.push(l);
+                        }
+                        continue;
+                    }
+                    result.push(this.mergeJson(o, l, r));
+                }
+                return result;
+            } else if (!Array.isArray(left) && !Array.isArray(right)) {
+                // Object merge
+                const allKeys = new Set([
+                    ...Object.keys(orig || {}),
+                    ...Object.keys(left),
+                    ...Object.keys(right)
+                ]);
+                const res = {};
+                for (const key of allKeys) {
+                    res[key] = this.mergeJson(orig?.[key], left[key], right[key]);
+                }
+                return res;
+            }
+        }
+        return left; // Conflict fallback
+    },
+
     mergeOperator(path, localOp, baseOp, remoteOp) {
         const localLines = (localOp?.script || '').split('\n');
         const baseLines = (baseOp?.script || '').split('\n');
@@ -67,13 +85,12 @@ export const Merger = {
                            .replace(/^>>>>>>>$/gm, '>>>>>>> REMOTE');
         }
 
-        const schema = jsonMerger(baseOp?.schema || {}, localOp?.schema || {}, remoteOp?.schema || {});
+        const schema = this.mergeJson(baseOp?.schema || {}, localOp?.schema || {}, remoteOp?.schema || {});
 
         return { script, schema, hasConflicts };
     },
 
     mergeLayout(localLayout, baseLayout, remoteLayout) {
-        console.group('[Merger] Performing Layout Merge');
         try {
             const base = {
                 windows: Array.isArray(baseLayout?.windows) ? baseLayout.windows : [],
@@ -88,17 +105,9 @@ export const Merger = {
                 desktop: Array.isArray(remoteLayout?.desktop) ? remoteLayout.desktop : []
             };
             
-            console.log('Base:', base);
-            console.log('Local:', local);
-            console.log('Remote:', remote);
-
-            const res = jsonMerger(base, local, remote);
-            console.log('Result:', res);
-            console.groupEnd();
-            return res || local;
+            return this.mergeJson(base, local, remote);
         } catch (e) {
             console.error('[Merger] Layout merge failed, falling back to local.', e);
-            console.groupEnd();
             return localLayout;
         }
     }
