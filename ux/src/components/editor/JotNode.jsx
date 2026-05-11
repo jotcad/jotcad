@@ -16,9 +16,13 @@ export const JotNode = (props) => {
   // 1. CANONICAL SIGNALS (Stored in spatial units)
   const [spatialSize, setSpatialSize] = createSignal(props.data?.size || { width: 500, height: 600 });
   const [pos, setPos] = createSignal(props.data?.pos || { x: 400, y: 400 });
-  const [opName, setOpName] = createSignal(props.data?.opName ?? (props.data?.id || 'user/MyOp'));
+  const [opName, setOpName] = createSignal(props.data?.opName ?? (props.data?.id || ''));
   const [args, setArgs] = createSignal(props.data?.args || [
-    { name: 'width', type: 'jot:number', testValue: 20 }
+    { name: '$in', type: 'jot:shape', testValue: 'Box(20)' },
+    { name: 'width', type: 'jot:number', testValue: 10 }
+  ]);
+  const [outputs, setOutputs] = createSignal(props.data?.outputs || [
+    { name: '$out', type: 'jot:shape' }
   ]);
   const [code, setCode] = createSignal(props.data?.code || DEFAULT_CODE);
   const [edgeThreshold, setEdgeThreshold] = createSignal(props.data?.edgeThreshold ?? 15);
@@ -38,6 +42,7 @@ export const JotNode = (props) => {
     blackboard.updateEditorState(props.data.id, {
       opName: opName(),
       args: args(),
+      outputs: outputs(),
       code: code(),
       edgeThreshold: edgeThreshold(),
       split: split()
@@ -54,33 +59,29 @@ export const JotNode = (props) => {
 
   // Sync content whenever it changes (e.g. typing)
   createEffect(() => {
-    code(); args(); opName(); edgeThreshold(); split();
+    code(); args(); opName(); edgeThreshold(); split(); outputs();
     untrack(() => syncContent());
   });
 
-  // REACTIVE HYDRATION: Update local signals if props.data changes in the store.
+  // REACTIVE HYDRATION
   createEffect(() => {
     const data = props.data;
     if (!data) return;
-    
     untrack(() => {
         if (data.pos) setPos(data.pos);
         if (data.size) setSpatialSize(data.size);
         if (data.code && data.code !== code()) setCode(data.code);
         if (data.opName !== undefined) setOpName(data.opName);
         if (data.args) setArgs(data.args);
+        if (data.outputs) setOutputs(data.outputs);
         if (data.split) setSplit(data.split);
     });
   });
 
   onMount(() => {
-    // Track actual rendered dimensions for responsive layout only.
     const resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
-            setLayoutSize({ 
-                width: entry.contentRect.width, 
-                height: entry.contentRect.height 
-            });
+            setLayoutSize({ width: entry.contentRect.width, height: entry.contentRect.height });
         }
     });
     if (nodeRef) resizeObserver.observe(nodeRef);
@@ -106,7 +107,6 @@ export const JotNode = (props) => {
 
     if (props.isWindowed) return;
 
-    // Manual interaction logic for unwindowed nodes
     interact(nodeRef)
       .draggable({
         allowFrom: '.drag-handle',
@@ -140,8 +140,6 @@ export const JotNode = (props) => {
     if (!path) return true;
     const published = blackboard.dynamicOps()[path];
     if (!published) return true;
-
-    // Compare normalized scripts to avoid whitespace-only false positives
     const local = code().trim();
     const remote = (published.script || '').trim();
     return local !== remote;
@@ -149,31 +147,26 @@ export const JotNode = (props) => {
 
   const publishToMesh = () => {
      let path = opName().trim();
-     
      if (path && !path.includes('/')) {
          path = `user/${path}`;
          setOpName(path);
-         // Force immediate store sync for the prefixed path
          blackboard.updateEditorState(props.data.id, { opName: path, label: path });
      }
-
      if (!path || !path.startsWith('user/')) {
          alert("Please enter a valid operator path (e.g. 'user/MyOperator')");
          return;
      }
-
-     if (props.data.id.startsWith('temp:')) {
+     if (props.data.id.startsWith('new-op-')) {
          blackboard.rename(props.data.id, path);
      }
 
      const schema = {
        path,
-       arguments: args().map(arg => ({
-         name: arg.name,
-         type: arg.type,
-         default: arg.testValue
-       })),
-       outputs: { "$out": { type: "shape" } }
+       arguments: args().map(arg => ({ name: arg.name, type: arg.type, default: arg.testValue })),
+       outputs: outputs().reduce((acc, out) => {
+           acc[out.name] = { type: out.type };
+           return acc;
+       }, {})
      };
      blackboard.publishDynamicOp(path, schema, code());
   };
@@ -185,37 +178,49 @@ export const JotNode = (props) => {
       const parser = new JotParser();
       const compiler = new JotCompiler(vfs);
 
-      const boundVars = args().reduce((acc, arg) => {
-        acc[arg.name] = arg.testValue;
-        return acc;
-      }, {});
-
       const currentSchemas = blackboard.schemas();
       for (const [path, schema] of Object.entries(currentSchemas)) {
         const name = path.replace(/^(jot|user)\//, '');
         compiler.registerOperator(name, { path, schema });
       }
 
+      // --- SCHEMA-DRIVEN EVALUATION ---
+      const boundVars = {};
+      for (const arg of args()) {
+          if (arg.type === 'jot:shape' || arg.type === 'shape') {
+              if (arg.testValue && typeof arg.testValue === 'string') {
+                  const subAst = parser.parse(arg.testValue);
+                  const res = await compiler.evaluate(subAst, {});
+                  boundVars[arg.name] = Array.isArray(res) ? res[0] : res;
+              } else {
+                  boundVars[arg.name] = arg.testValue;
+              }
+          } else {
+              boundVars[arg.name] = arg.testValue;
+          }
+      }
+
       const ast = parser.parse(code());
-      const terminals = await compiler.evaluate(ast, boundVars);
+      
+      // Construct local test schema for extraction
+      const testSchema = {
+          outputs: outputs().reduce((acc, out) => { acc[out.name] = { type: out.type }; return acc; }, {})
+      };
+
+      const terminals = await compiler.evaluate(ast, boundVars, testSchema);
 
       const shapes = [];
       const files = [];
 
       for (const sel of terminals) {
-        const schema = currentSchemas[sel.path];
-        const output = schema?.outputs?.[sel.output || '$out'];
-        const type = output?.type || 'jot:shape';
+        const portName = sel.output || '$out';
+        const portDef = testSchema.outputs[portName];
+        const type = portDef?.type || 'jot:shape';
 
         if (type === 'jot:shape' || type === 'shape') {
           shapes.push(sel);
         } else if (type === 'file') {
-          const label = sel.parameters.path || sel.output;
-          files.push({
-            label,
-            selector: sel,
-            mimeType: output?.mimeType || 'application/pdf'
-          });
+          files.push({ label: sel.parameters.path || portName, selector: sel, mimeType: 'application/pdf' });
         }
       }
 
@@ -227,7 +232,7 @@ export const JotNode = (props) => {
         if (data && typeof data === 'object' && (data.geometry || data.components)) {
           finalData = await packZFS(vfs, data);
         }
-        return { selector: sel, data: finalData };
+        return { selector: sel, data: finalData, port: sel.output };
       }));
 
       setResults(resultList);
@@ -242,7 +247,6 @@ export const JotNode = (props) => {
   const content = () => (
     <div ref={nodeRef} class={`jot-node flex h-full gap-1.5 p-1.5 bg-transparent overflow-hidden ${isWide() ? 'flex-row' : 'flex-col'}`}>
       
-      {/* Container for Header + Main UI (Editor/Args) */}
       <div 
         class="flex flex-col gap-1.5 shrink-0 overflow-hidden"
         style={{ 
@@ -258,31 +262,17 @@ export const JotNode = (props) => {
                      value={opName()}
                      placeholder="Name your op..."
                      onInput={e => setOpName(e.target.value)}
-                     onKeyDown={e => {
-                         if (e.key === 'Enter') {
-                             e.currentTarget.blur();
-                         }
-                     }}
+                     onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                    />
                 </div>
                 <div class="flex items-center gap-2">
-                  <button 
-                    onClick={publishToMesh}
-                    class={`relative transition-all p-1 ${isUnpublished() ? 'text-cyan-400' : 'text-white/20'}`}
-                    title="Publish Operator"
-                  >
+                  <button onClick={publishToMesh} class={`relative transition-all p-1 ${isUnpublished() ? 'text-cyan-400' : 'text-white/20'}`} title="Publish Operator">
                     <Globe size={14} />
                     <div class={`absolute top-0 right-0 w-1.5 h-1.5 rounded-full ${isUnpublished() ? 'bg-red-500' : 'bg-green-500'}`} />
                   </button>
                   <button 
-                    onClick={() => {
-                        if (confirm(`Delete operator '${opName()}' from library?`)) {
-                            blackboard.removeDynamicOp(opName());
-                            blackboard.closeOp(props.data.id);
-                        }
-                    }}
-                    class="text-white/30 hover:text-red-400 transition-colors p-1"
-                    title="Delete Operator"
+                    onClick={() => { if (confirm(`Delete operator '${opName()}' from library?`)) { blackboard.removeDynamicOp(opName()); blackboard.closeOp(props.data.id); } }}
+                    class="text-white/30 hover:text-red-400 transition-colors p-1" title="Delete Operator"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -295,19 +285,14 @@ export const JotNode = (props) => {
 
           <div class="flex-1 flex flex-col gap-2 min-h-0">
               <div class="shrink-0 max-h-48 overflow-y-auto custom-scrollbar">
-                  <ArgumentList args={args()} setArgs={setArgs} />
+                  <ArgumentList args={args()} setArgs={setArgs} outputs={outputs()} setOutputs={setOutputs} />
               </div>
     
               <textarea
                 class="flex-1 bg-black/80 border border-white/10 rounded-lg p-3 font-mono text-readable focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar shadow-inner"
                 value={code()}
                 onInput={(e) => setCode(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.shiftKey && e.key === 'Enter') {
-                    e.preventDefault();
-                    evaluateJot();
-                  }
-                }}
+                onKeyDown={(e) => { if (e.shiftKey && e.key === 'Enter') { e.preventDefault(); evaluateJot(); } }}
                 spellcheck={false}
               />
 
@@ -327,7 +312,6 @@ export const JotNode = (props) => {
           </div>
       </div>
 
-      {/* Sliding Divider */}
       <div 
         ref={dividerRef}
         class={`flex items-center justify-center group shrink-0 touch-none ${isWide() ? 'w-6 h-full cursor-col-resize' : 'h-6 w-full cursor-row-resize'}`}
@@ -335,14 +319,8 @@ export const JotNode = (props) => {
           <div class={`rounded-full bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] border border-white/20 transition-all ${isWide() ? 'w-2 h-24 group-hover:scale-y-110' : 'w-24 h-2 group-hover:scale-x-110'}`} />
       </div>
 
-      {/* Results Group */}
       <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <ResultList 
-            results={results()} 
-            files={associatedFiles()} 
-            edgeThreshold={edgeThreshold()} 
-            setEdgeThreshold={setEdgeThreshold} 
-          />
+          <ResultList results={results()} files={associatedFiles()} edgeThreshold={edgeThreshold()} setEdgeThreshold={setEdgeThreshold} />
       </div>
     </div>
   );
@@ -352,7 +330,6 @@ export const JotNode = (props) => {
         <div
           onPointerDown={() => props.data && blackboard.raiseOp(props.data.id)}
           class="jot-node absolute p-3 md:p-4 rounded-2xl border-2 border-cyan-400 bg-black/80 backdrop-blur-2xl shadow-2xl overflow-y-auto flex flex-col gap-2 md:gap-3 transition-all duration-75 custom-scrollbar"
-
           style={{
             left: `${pos().x}px`,
             top: `${pos().y}px`,

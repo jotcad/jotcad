@@ -22,21 +22,32 @@ export const JotRegistry = {
         compiler.registerOperator(name, { path: p, schema: sch });
       }
 
+      // --- MESH BINDING LOGIC ---
+      // 1. Identify Subject argument from schema
+      const subjectArg = (schema.arguments || []).find(arg => 
+        arg.name === '$in' || arg.affiliate === '$out' || arg.affiliate === '$in'
+      );
+      
+      const params = { ...s.parameters };
+      
+      // 2. Bind Mesh Subject to the identified symbol
+      if (s.subject && subjectArg) {
+          params[subjectArg.name] = s.subject;
+      }
+
       const parser = new JotParser();
       const ast = parser.parse(script);
       
-      const params = { ...s.parameters };
-      if (schema.arguments && Array.isArray(schema.arguments)) {
-        for (const arg of schema.arguments) {
-           if (params[arg.name] === undefined && arg.default !== undefined) {
-             params[arg.name] = arg.default;
-           }
-        }
-      }
+      // 3. Evaluate with Schema-Driven Extraction
+      const result = await compiler.evaluate(ast, params, schema);
+      
+      // 4. Return the requested output port (defaulting to $out)
+      const requestedPort = s.output || '$out';
+      const outputSel = Array.isArray(result) 
+        ? (result.find(sel => sel.output === requestedPort) || result[0])
+        : result;
 
-      const result = await compiler.evaluate(ast, params);
-      const primary = Array.isArray(result) ? result[0] : result;
-      const shapeData = await v.readData(primary);
+      const shapeData = await v.readData(outputSel);
       return new TextEncoder().encode(JSON.stringify(shapeData));
     }, { schema });
 
@@ -63,22 +74,16 @@ export const JotRegistry = {
 
   removeDynamicOp(vfs, mesh, path) {
     console.log(`[JotRegistry] Removing: ${path}`);
-    
     setSchemas(prev => {
         const next = { ...prev };
         delete next[path];
         return next;
     });
-
     setDynamicOps(prev => {
         const next = { ...prev };
         delete next[path];
         Worksheet.save(Worksheet.TIERS.OPERATORS, null, next);
         return next;
     });
-
-    // In-memory cleanup of VFS provider
-    // Note: VFS doesn't currently support unregisterProvider, but we can overwrite it
-    // with a tombstone or just let it be (since the schema is gone).
   }
 };

@@ -111,6 +111,7 @@ export class JotCompiler {
       case 'ASSIGNMENT': {
         const val = await this._evaluateRecursive(node.value, parameters, subject);
         this.localSymbols[node.name] = val;
+        parameters[node.name] = val; // Propagate assigned values to scope
         return val;
       }
       case 'CALL': return this._dispatchCall(node, parameters, subject);

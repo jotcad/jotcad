@@ -36,13 +36,15 @@ export class JotParser {
     // Only strip // comments if they are at start of line or preceded by whitespace
     const cleanText = text.replace(/(^|\s)\/\/.*$/gm, '$1');
     const regex =
-      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|\-?[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/|\-|\+)\s*/g;
+      /\s*([a-zA-Z_\$][a-zA-Z0-9_/]*|\->|-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/|\-|\+)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);
     }
     return tokens;
   }
+
+
 
   _peek() {
     return this.tokens[this.pos];
@@ -60,16 +62,25 @@ export class JotParser {
   }
 
   _parseExpression() {
-    // 1. Check for Declaration (identifier = ...)
-    // Lookahead for '=' after an identifier
-    if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
+    // 1. Standard Assignment (B = A)
+    if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_\$]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
       const name = this._consume();
       this._consume('=');
       const value = this._parseExpression();
       return { type: 'ASSIGNMENT', name, value };
     }
 
-    return this._parseChaining();
+    let expr = this._parseChaining();
+
+    // 2. Arrow Assignment (A -> B)
+    if (this._peek() === '->') {
+        this._consume('->');
+        const name = this._consume();
+        if (!/^[a-zA-Z_\$]/.test(name)) throw new Error(`Expected identifier after ->, got ${name}`);
+        return { type: 'ASSIGNMENT', name, value: expr };
+    }
+
+    return expr;
   }
 
   _parseChaining() {
@@ -106,20 +117,16 @@ export class JotParser {
     if (token === '{') return this._parseObject();
 
     if (/^-?[0-9]/.test(token)) {
-        let val = parseFloat(this._consume());
-        // Handle fraction literal (e.g. -1/4)
-        if (this._peek() === '/') {
-            this._consume('/');
-            const denominator = parseFloat(this._consume());
-            if (denominator !== 0) {
-                val /= denominator;
-            }
+        const raw = this._consume();
+        if (raw.includes('/')) {
+            const parts = raw.split('/');
+            return parseFloat(parts[0]) / parseFloat(parts[1]);
         }
-        return val;
+        return parseFloat(raw);
     }
     if (/^["']/.test(token)) return this._consume().slice(1, -1);
 
-    if (/^[a-zA-Z_]/.test(token)) {
+    if (/^[a-zA-Z_\$]/.test(token)) {
       const name = this._consume();
       if (name === 'true') return true;
       if (name === 'false') return false;
@@ -234,7 +241,7 @@ export class JotParser {
       // 1. Check for Type Hint (Greedy identifier:identifier:... sequence)
       let p = this.pos;
       let hintParts = [];
-      while (p + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[p]) && this.tokens[p+1] === ':') {
+      while (p + 1 < this.tokens.length && /^[a-zA-Z_\$]/.test(this.tokens[p]) && this.tokens[p+1] === ':') {
           if (p + 2 < this.tokens.length && this.tokens[p+2] === '=') break;
           hintParts.push(this.tokens[p]);
           p += 2;
@@ -245,7 +252,7 @@ export class JotParser {
       }
 
       // 2. Check for Named Argument (identifier =)
-      if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
+      if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_\$]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
         nameHint = this._consume();
         this._consume('=');
       }
