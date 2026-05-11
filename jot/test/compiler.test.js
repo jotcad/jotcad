@@ -3,10 +3,17 @@ import assert from 'node:assert/strict';
 import { JotCompiler } from '../src/compiler.js';
 import { JotParser } from '../src/parser.js';
 import { Selector } from '../../fs/src/vfs_core.js';
+import { schemaToTypeMap } from './test_helpers.js';
 
 test('JotCompiler Argument Mapping', async (t) => {
   const parser = new JotParser();
   const compiler = new JotCompiler();
+
+  // Baseline Schema for all tests that just return a primary shape
+  const defaultSchema = {
+      outputs: { "$out": { type: "jot:shape" } }
+  };
+  const defaultTypeMap = { "$out": "jot:shape" };
 
   await t.test('Singleton Harvesting (num, str, bool)', async () => {
     compiler.registerOperator('Test', {
@@ -20,7 +27,12 @@ test('JotCompiler Argument Mapping', async (t) => {
         outputs: { "$out": { type: "jot:any" } }
       }
     });
-    const res = await compiler.evaluate(parser.parse('Test(10, "hello", true)'));
+
+    const schema = { outputs: { "$out": { type: "jot:any" } } };
+    const originalTypeMap = { "$out": "jot:any" };
+    assert.deepStrictEqual(schemaToTypeMap(schema), originalTypeMap);
+
+    const res = await compiler.evaluate(parser.parse('Test(10, "hello", true)'), {}, originalTypeMap);
     const resolved = res[0];
     assert.deepEqual(resolved.parameters, { n: 10, s: 'hello', b: true });
     assert.strictEqual(resolved.output, '$out');
@@ -37,7 +49,9 @@ test('JotCompiler Argument Mapping', async (t) => {
         outputs: { "$out": { type: "jot:shape" } }
       }
     });
-    const res = await compiler.evaluate(parser.parse('Poly(1, 2, 3, 4, false)'));
+
+    assert.deepStrictEqual(schemaToTypeMap(defaultSchema), defaultTypeMap);
+    const res = await compiler.evaluate(parser.parse('Poly(1, 2, 3, 4, false)'), {}, defaultTypeMap);
     const resolved = res[0];
     assert.deepEqual(resolved.parameters, { points: [1, 2, 3, 4], closed: false });
   });
@@ -54,7 +68,9 @@ test('JotCompiler Argument Mapping', async (t) => {
         outputs: { "$out": { type: "jot:shape" } }
       }
     });
-    const res = await compiler.evaluate(parser.parse('Style(42, "bold", "italic", true)'));
+
+    assert.deepStrictEqual(schemaToTypeMap(defaultSchema), defaultTypeMap);
+    const res = await compiler.evaluate(parser.parse('Style(42, "bold", "italic", true)'), {}, defaultTypeMap);
     const resolved = res[0];
     assert.deepEqual(resolved.parameters, {
       id: 42,
@@ -93,7 +109,8 @@ test('JotCompiler Argument Mapping', async (t) => {
       args: [10]
     };
     
-    const res = await compiler.evaluate(ast);
+    assert.deepStrictEqual(schemaToTypeMap(defaultSchema), defaultTypeMap);
+    const res = await compiler.evaluate(ast, {}, defaultTypeMap);
     const resolved = res[0];
     assert.equal(resolved.path, 'jot/offset');
     assert.equal(resolved.parameters.$in.path, subject.path);
@@ -114,17 +131,18 @@ test('JotCompiler Argument Mapping', async (t) => {
       }
     });
 
-    const res1_raw = await compiler.evaluate(parser.parse('Move([1, 2, 3], 10)'));
+    assert.deepStrictEqual(schemaToTypeMap(defaultSchema), defaultTypeMap);
+    const res1_raw = await compiler.evaluate(parser.parse('Move([1, 2, 3], 10)'), {}, defaultTypeMap);
     const res1 = res1_raw[0];
     assert.deepEqual(res1.parameters.pos, [1, 2, 3]);
     assert.deepEqual(res1.parameters.range, [-5, 5]); // interval normalization
 
-    const res2_raw = await compiler.evaluate(parser.parse('Move([0, 0, 0], [10, 20])'));
+    const res2_raw = await compiler.evaluate(parser.parse('Move([0, 0, 0], [10, 20])'), {}, defaultTypeMap);
     const res2 = res2_raw[0];
     assert.deepEqual(res2.parameters.range, [10, 20]); // explicit interval
 
     // Implicit 0-start interval: [5] -> [0, 5]
-    const res3_raw = await compiler.evaluate(parser.parse('Move([0, 0, 0], [5])'));
+    const res3_raw = await compiler.evaluate(parser.parse('Move([0, 0, 0], [5])'), {}, defaultTypeMap);
     const res3 = res3_raw[0];
     assert.deepEqual(res3.parameters.range, [0, 5]);
   });
@@ -145,7 +163,8 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('A', { path: 'jot/A', schema: { arguments: [], outputs: {"$out":{ type: 'jot:shape' }} } });
     compiler.registerOperator('B', { path: 'jot/B', schema: { arguments: [], outputs: {"$out":{ type: 'jot:shape' }} } });
 
-    const res = await compiler.evaluate(parser.parse('Assemble(A(), B(), "my-assembly")'));
+    assert.deepStrictEqual(schemaToTypeMap(defaultSchema), defaultTypeMap);
+    const res = await compiler.evaluate(parser.parse('Assemble(A(), B(), "my-assembly")'), {}, defaultTypeMap);
     const resolved = res[0];
     assert.equal(resolved.parameters.children.length, 2);
     assert.equal(resolved.parameters.children[0].path, 'jot/A');
@@ -167,8 +186,9 @@ test('JotCompiler Argument Mapping', async (t) => {
       }
     });
 
+    assert.deepStrictEqual(schemaToTypeMap(defaultSchema), defaultTypeMap);
     await assert.rejects(
-      () => compiler.evaluate(parser.parse('Mixed(1, 2, 3)')),
+      () => compiler.evaluate(parser.parse('Mixed(1, 2, 3)'), {}, defaultTypeMap),
       /Compiler Error: Missing required argument 'other' for 'Mixed'/
     );
   });

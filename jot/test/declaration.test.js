@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { JotCompiler } from '../src/compiler.js';
 import { JotParser } from '../src/parser.js';
 import { Selector } from '../../fs/src/vfs_core.js';
+import { schemaToTypeMap } from './test_helpers.js';
 
 test('DSL Declaration Integration (A = Font())', async (t) => {
   const compiler = new JotCompiler();
@@ -35,12 +36,17 @@ test('DSL Declaration Integration (A = Font())', async (t) => {
     Text("Hello", font=MyFont, size=20);
   `;
 
+  // Documentation of the expected interface for this script
+  const schema = {
+      outputs: { "$out": { type: "jot:shape" } }
+  };
+  const originalTypeMap = { "$out": "jot:shape" };
+  assert.deepStrictEqual(schemaToTypeMap(schema), originalTypeMap);
+
   const ast = parser.parse(script);
-  const results = await compiler.evaluate(ast);
+  const results = await compiler.evaluate(ast, {}, originalTypeMap);
   
   // 3. Verify
-  // Results will contain the terminal Text selector.
-  // MyFont is NOT a terminal because it was consumed by Text.
   assert.strictEqual(results.length, 1);
   const textSelector = results[0];
   assert.strictEqual(textSelector.path, 'jot/text');
@@ -68,12 +74,15 @@ test('Sequential Declaration Safety (No recursion)', async (t) => {
     }
   });
 
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const originalTypeMap = { "$out": "jot:shape" };
+
   // Test that A = Text(font=A) fails because A is not defined yet
   const script = 'A = Text("X", font=A);';
   const ast = parser.parse(script);
   
   try {
-    await compiler.evaluate(ast);
+    await compiler.evaluate(ast, {}, originalTypeMap);
     assert.fail('Should have thrown an error for unresolved symbol A');
   } catch (e) {
     assert.ok(e.message.includes("Missing required argument 'font'"), 'Should fail on missing font because A is unresolved');
