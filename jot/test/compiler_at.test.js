@@ -60,7 +60,7 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   const schema = { outputs: { "$out": { type: "jot:shape" } } };
   const res = await compiler.evaluate(ast, {}, schema);
   
-  const at = res[0];
+  const at = res[0].selector;
   assert.strictEqual(at.path, 'jot/at');
   assert.strictEqual(at.parameters.target.path, 'jot/eachCorner');
   

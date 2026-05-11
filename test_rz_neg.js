@@ -19,8 +19,8 @@ const test = async (str) => {
     try {
         console.log(`Input: "${str}"`);
         const ast = parser.parse(str);
-        const res = await compiler.evaluate(ast);
-        console.log(`Result: ${JSON.stringify(res[0], null, 2)}`);
+        const results = await compiler.evaluate(ast);
+        console.log(`Result: ${JSON.stringify(results[0].selector, null, 2)}`);
     } catch (e) {
         console.log(`Error: ${e.message}`);
     }

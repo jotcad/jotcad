@@ -29,7 +29,7 @@ test('Operator Variant Resolution (Strict Casing)', async (t) => {
         name: '$out', 
         value: { type: 'CALL', name: 'Box', args: [10] }
     }, {}, schema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.path, 'shape/box');
   });
 
@@ -45,7 +45,7 @@ test('Operator Variant Resolution (Strict Casing)', async (t) => {
             args: [45] 
         }
     }, {}, schema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.path, 'op/rotateX');
   });
 

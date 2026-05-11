@@ -20,7 +20,7 @@ test('JotCAD Evaluator: Symbol Resolution', async (t) => {
     const ast = parser.parse('box(w) -> $out');
     const schema = { outputs: { '$out': { type: 'jot:shape' } } };
     const res = await compiler.evaluate(ast, { w: 100 }, schema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.parameters.width, 100);
   });
 
@@ -39,7 +39,7 @@ test('JotCAD Evaluator: Symbol Resolution', async (t) => {
 
     // 2. Pass schema directly
     const res = await compiler.evaluate(ast, {}, schema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.parameters.width.type, 'jot:number');
     assert.strictEqual(resolved.parameters.width.name, 'w');
   });

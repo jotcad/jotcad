@@ -296,7 +296,7 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     const ast = parser.parse(code);
     const c = options.compiler || baseCompiler;
     const results = await c.evaluate(ast, {}, schema);
-    return results[0];
+    return results[0]?.selector;
   };
 
   describe('Strict Casing', () => {

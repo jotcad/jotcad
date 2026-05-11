@@ -27,9 +27,9 @@ test('Schema-Driven: Arrow Assignment (A -> B)', async (t) => {
   const results = await compiler.evaluate(ast, {}, schema);
   
   assert.strictEqual(results.length, 1);
-  assert.strictEqual(results[0].output, '$out');
-  assert.strictEqual(results[0].path, 'jot/Box');
-  assert.strictEqual(results[0].parameters.size, 10);
+  assert.strictEqual(results[0].selector.output, '$out');
+  assert.strictEqual(results[0].selector.path, 'jot/Box');
+  assert.strictEqual(results[0].selector.parameters.size, 10);
 });
 
 test('Schema-Driven: Multi-Port Assignment', async (t) => {
@@ -61,8 +61,8 @@ test('Schema-Driven: Multi-Port Assignment', async (t) => {
     const results = await compiler.evaluate(ast, {}, schema);
     
     assert.strictEqual(results.length, 2);
-    const main = results.find(r => r.output === '$main');
-    const core = results.find(r => r.output === '$core');
+    const main = results.find(r => r.selector.output === '$main').selector;
+    const core = results.find(r => r.selector.output === '$core').selector;
     
     assert.strictEqual(main.path, 'jot/Box');
     assert.strictEqual(core.path, 'jot/Orb');
@@ -100,9 +100,9 @@ test('Schema-Driven: $in Binding and Chaining', async (t) => {
     const results = await compiler.evaluate(ast, { '$in': mockIn }, schema);
     
     assert.strictEqual(results.length, 1);
-    assert.strictEqual(results[0].path, 'jot/cut');
-    assert.strictEqual(results[0].parameters.$in.path, 'jot/Box');
-    assert.strictEqual(results[0].parameters.$in.parameters.s, 50);
-    assert.strictEqual(results[0].parameters.tool.path, 'jot/Box');
-    assert.strictEqual(results[0].parameters.tool.parameters.s, 10);
+    assert.strictEqual(results[0].selector.path, 'jot/cut');
+    assert.strictEqual(results[0].selector.parameters.$in.path, 'jot/Box');
+    assert.strictEqual(results[0].selector.parameters.$in.parameters.s, 50);
+    assert.strictEqual(results[0].selector.parameters.tool.path, 'jot/Box');
+    assert.strictEqual(results[0].selector.parameters.tool.parameters.s, 10);
 });

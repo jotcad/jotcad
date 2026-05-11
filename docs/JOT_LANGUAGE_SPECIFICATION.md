@@ -28,8 +28,10 @@ from the actual computation.
   automatically normalized into symmetric **Intervals** (e.g., `10` -> `[-5, 5]`)
   before reaching the VFS.
 - **Standardized evaluate() Return:** `JotCompiler.evaluate()` strictly returns
-  an **Array of Selectors**, even for single expressions. This ensures
-  consistent discovery of all computational terminals.
+  an **Array of Terminal Bundles** (`{ selector: Selector, schema: OutputPortSchema }[]`), 
+  even for single expressions. This ensures consistent discovery of all 
+  computational terminals and provides the associated schema metadata (e.g., type) 
+  for each discovered port.
 - **Angular Turns:** Use **Turns** (Tau) where `1.0` is a full rotation
   ($360^\circ$).
 - **Demand-Driven:** Work is only triggered when a requester performs a `READ`.

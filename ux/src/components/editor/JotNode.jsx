@@ -191,7 +191,8 @@ export const JotNode = (props) => {
               if (arg.testValue && typeof arg.testValue === 'string') {
                   const subAst = parser.parse(arg.testValue);
                   const schema = { outputs: { "$out": { type: "jot:shape" } } };
-                  const res = await compiler.evaluate(subAst, {}, schema);
+                  const bundles = await compiler.evaluate(subAst, {}, schema);
+                  const res = bundles[0]?.selector;
                   boundVars[arg.name] = Array.isArray(res) ? res[0] : res;
               } else {
                   boundVars[arg.name] = arg.testValue;
@@ -213,14 +214,13 @@ export const JotNode = (props) => {
       const shapes = [];
       const files = [];
 
-      for (const sel of terminals) {
-        const portName = sel.output || '$out';
-        const portDef = testSchema.outputs[portName];
+      for (const { selector: sel, schema: portDef } of terminals) {
         const type = portDef?.type || 'jot:shape';
 
         if (type === 'jot:shape' || type === 'shape') {
           shapes.push(sel);
         } else if (type === 'file') {
+          const portName = sel.output || '$out';
           files.push({ label: sel.parameters.path || portName, selector: sel, mimeType: 'application/pdf' });
         }
       }

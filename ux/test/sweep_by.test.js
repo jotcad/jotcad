@@ -33,7 +33,7 @@ describe('SweepBy Syntax', () => {
     const ast = parser.parse(code);
     const schema = { outputs: { $out: { type: 'jot:shape' } } };
     const results = await compiler.evaluate(ast, {}, schema);
-    const res = results[0];
+    const res = results[0].selector;
 
     expect(res.path).toBe('jot/sweepBy');
     expect(res.parameters.$in.path).toBe('jot/Box');

@@ -30,7 +30,7 @@ test('JotCompiler Argument Mapping', async (t) => {
     const schema = { outputs: { "$out": { type: "jot:any" } } };
 
     const res = await compiler.evaluate(parser.parse('Test(10, "hello", true) -> $out'), {}, schema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.deepEqual(resolved.parameters, { n: 10, s: 'hello', b: true });
     assert.strictEqual(resolved.output, '$out');
   });
@@ -48,7 +48,7 @@ test('JotCompiler Argument Mapping', async (t) => {
     });
 
     const res = await compiler.evaluate(parser.parse('Poly(1, 2, 3, 4, false) -> $out'), {}, defaultSchema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.deepEqual(resolved.parameters, { points: [1, 2, 3, 4], closed: false });
   });
 
@@ -66,7 +66,7 @@ test('JotCompiler Argument Mapping', async (t) => {
     });
 
     const res = await compiler.evaluate(parser.parse('Style(42, "bold", "italic", true) -> $out'), {}, defaultSchema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.deepEqual(resolved.parameters, {
       id: 42,
       traits: { bold: true, italic: true },
@@ -109,7 +109,7 @@ test('JotCompiler Argument Mapping', async (t) => {
     };
     
     const res = await compiler.evaluate(ast, {}, defaultSchema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.equal(resolved.path, 'jot/offset');
     assert.equal(resolved.parameters.$in.path, subject.path);
     assert.deepEqual(resolved.parameters.$in.parameters, subject.parameters);
@@ -130,17 +130,17 @@ test('JotCompiler Argument Mapping', async (t) => {
     });
 
     const res1_raw = await compiler.evaluate(parser.parse('Move([1, 2, 3], 10) -> $out'), {}, defaultSchema);
-    const res1 = res1_raw[0];
+    const res1 = res1_raw[0].selector;
     assert.deepEqual(res1.parameters.pos, [1, 2, 3]);
     assert.deepEqual(res1.parameters.range, [-5, 5]); // interval normalization
 
     const res2_raw = await compiler.evaluate(parser.parse('Move([0, 0, 0], [10, 20]) -> $out'), {}, defaultSchema);
-    const res2 = res2_raw[0];
+    const res2 = res2_raw[0].selector;
     assert.deepEqual(res2.parameters.range, [10, 20]); // explicit interval
 
     // Implicit 0-start interval: [5] -> [0, 5]
     const res3_raw = await compiler.evaluate(parser.parse('Move([0, 0, 0], [5]) -> $out'), {}, defaultSchema);
-    const res3 = res3_raw[0];
+    const res3 = res3_raw[0].selector;
     assert.deepEqual(res3.parameters.range, [0, 5]);
   });
 
@@ -161,7 +161,7 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('B', { path: 'jot/B', schema: { arguments: [], outputs: {"$out":{ type: 'jot:shape' }} } });
 
     const res = await compiler.evaluate(parser.parse('Assemble(A(), B(), "my-assembly") -> $out'), {}, defaultSchema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.equal(resolved.parameters.children.length, 2);
     assert.equal(resolved.parameters.children[0].path, 'jot/A');
     assert.equal(resolved.parameters.children[1].path, 'jot/B');

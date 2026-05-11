@@ -42,7 +42,8 @@ test('DSL Declaration Integration (A = Font())', async (t) => {
   };
 
   const ast = parser.parse(script);
-  const results = await compiler.evaluate(ast, {}, schema);
+  const res = await compiler.evaluate(ast, {}, schema);
+  const results = res.map(r => r.selector);
   
   // 3. Verify
   assert.strictEqual(results.length, 1);

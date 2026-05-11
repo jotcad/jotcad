@@ -39,13 +39,14 @@ export const JotRegistry = {
       const ast = parser.parse(script);
       
       // 3. Evaluate with Schema-Driven Extraction
-      const result = await compiler.evaluate(ast, params, schema);
+      const results = await compiler.evaluate(ast, params, schema);
       
       // 4. Return the requested output port (defaulting to $out)
       const requestedPort = s.output || '$out';
-      const outputSel = Array.isArray(result) 
-        ? (result.find(sel => sel.output === requestedPort) || result[0])
-        : result;
+      const outputBundle = results.find(b => b.selector.output === requestedPort) || results[0];
+      const outputSel = outputBundle?.selector;
+
+      if (!outputSel) throw new Error(`Mesh Error: No output terminal found for port '${requestedPort}'`);
 
       const shapeData = await v.readData(outputSel);
       return new TextEncoder().encode(JSON.stringify(shapeData));

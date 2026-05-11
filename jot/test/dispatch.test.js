@@ -72,7 +72,7 @@ test('Operator Variant Resolution and Dispatch', async (t) => {
         name: '$out', 
         value: { type: 'CALL', name: 'Hexagon', args: [] } 
     }, {}, schema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.path, 'jot/Hexagon/full');
   });
 });

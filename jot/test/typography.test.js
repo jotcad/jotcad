@@ -52,7 +52,7 @@ test('Typography DSL Integration (Exact Type Match)', async (t) => {
   
   // 3. Verify the resulting selector structure
   assert.strictEqual(results.length, 1);
-  const textSelector = results[0];
+  const textSelector = results[0].selector;
   assert.strictEqual(textSelector.path, 'jot/text');
   assert.strictEqual(textSelector.parameters.text, 'Hole Test');
   assert.strictEqual(textSelector.parameters.size, 25);

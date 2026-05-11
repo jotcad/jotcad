@@ -21,13 +21,13 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
       }
     });
     const res = await compiler.evaluate(parser.parse('Box(10) -> $out'), {}, defaultSchema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.parameters.radius, 10);
   });
 
   await t.test('Named Argument Mapping (Name=Value)', async () => {
     const res = await compiler.evaluate(parser.parse('Box(depth=5, radius=20) -> $out'), {}, defaultSchema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.parameters.radius, 20);
     assert.strictEqual(resolved.parameters.depth, 5);
   });
@@ -61,7 +61,7 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
 
     const ast = parser.parse('Box(10).at(Box(2), cut(Box(1))) -> $out');
     const res = await compiler.evaluate(ast, {}, defaultSchema);
-    const resolved = res[0];
+    const resolved = res[0].selector;
     assert.strictEqual(resolved.parameters.target.parameters.radius, 2);
     assert.strictEqual(resolved.parameters.op.path, 'jot/cut');
   });

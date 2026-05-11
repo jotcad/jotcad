@@ -43,7 +43,8 @@ async function test() {
     const ast = parser.parse(code);
     const terminals = await compiler.evaluate(ast);
     
-    const stlTerminal = terminals.find(t => t.output === 'file');
+    const stlBundle = terminals.find(t => t.selector.output === 'file');
+    const stlTerminal = stlBundle?.selector;
     if (!stlTerminal) {
         console.error("Failed to find STL file terminal");
         process.exit(1);

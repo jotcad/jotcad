@@ -95,21 +95,43 @@ export class JotCompiler {
       }
 
       const results = [];
+      // PASS 1: Explicit Schema Extraction
       if (schema.outputs) {
           for (const portName of Object.keys(schema.outputs)) {
               const val = this.localSymbols[portName];
               if (val !== undefined) {
+                  const portDef = schema.outputs[portName];
                   if (val instanceof Selector) {
-                      results.push(val.withOutput(portName));
+                      // Consume original output before re-tagging for result set
                       await this._consume(val);
+                      const sel = val.withOutput(portName);
+                      results.push({ selector: sel, schema: portDef });
+                      await this._consume(sel);
                   } else if (Array.isArray(val)) {
                       for (const item of val) {
                           if (item instanceof Selector) {
-                              results.push(item.withOutput(portName));
                               await this._consume(item);
+                              const sel = item.withOutput(portName);
+                              results.push({ selector: sel, schema: portDef });
+                              await this._consume(sel);
                           }
                       }
                   }
+              }
+          }
+      }
+
+      // PASS 2: Terminal Discovery (All unconsumed outputs)
+      for (const [key, ports] of this.candidates.entries()) {
+          const base = this.selectorInstances.get(key);
+          const opSchema = this._getSchemaForPath(base.path);
+          for (const port of ports) {
+              const sel = base.withOutput(port);
+              const selKey = await getSelectorKey(sel);
+              if (!this.consumed.has(selKey)) {
+                  const portDef = opSchema?.outputs?.[port];
+                  results.push({ selector: sel, schema: portDef });
+                  await this._consume(sel);
               }
           }
       }

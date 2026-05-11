@@ -48,7 +48,8 @@ test('JotCompiler Terminal Discovery', async (t) => {
             }
         };
 
-        const terminals = await compiler.evaluate(ast, {}, schema);
+        const results = await compiler.evaluate(ast, {}, schema);
+        const terminals = results.map(r => r.selector);
         
         // We expect exactly TWO terminals:
         // 1. jot/pdf:$out (The shape passthrough)
@@ -72,7 +73,8 @@ test('JotCompiler Terminal Discovery', async (t) => {
         const ast = parser.parse('[Box(10), Box(20)] -> $out');
         const schema = { outputs: { "$out": { type: "jot:shape" } } };
 
-        const terminals = await compiler.evaluate(ast, {}, schema);
+        const res = await compiler.evaluate(ast, {}, schema);
+        const terminals = res.map(r => r.selector);
         
         assert.strictEqual(terminals.length, 2, 'Should have 2 terminal shapes');
         assert.ok(terminals.some(t => t.parameters.size === 10));
@@ -92,7 +94,8 @@ test('JotCompiler Terminal Discovery', async (t) => {
         const ast = parser.parse('BoxWrap(Box(10)) -> $out');
         const schema = { outputs: { "$out": { type: "jot:shape" } } };
 
-        const terminals = await compiler.evaluate(ast, {}, schema);
+        const res = await compiler.evaluate(ast, {}, schema);
+        const terminals = res.map(r => r.selector);
         
         assert.strictEqual(terminals.length, 1, 'Only the outer BoxWrap should be a terminal');
         assert.strictEqual(terminals[0].path, 'jot/BoxWrap');
