@@ -11,7 +11,7 @@ struct TransformOpBase : P {
     static void execute_multi(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Matrix>& result_tfs) {
         if (result_tfs.size() == 1) {
             Shape out = in;
-            out.apply_absolute_transform(result_tfs[0]);
+            out.apply_transform(result_tfs[0] * out.tf.inverse());
             vfs->write(fulfilling.with_output("$out"), out);
             return;
         }
@@ -21,7 +21,7 @@ struct TransformOpBase : P {
         out.add_tag("type", "group");
         for (const auto& m : result_tfs) {
             Shape c = in;
-            c.apply_absolute_transform(m);
+            c.apply_transform(m * c.tf.inverse());
             out.components.push_back(c);
         }
         vfs->write(fulfilling.with_output("$out"), out);

@@ -102,15 +102,6 @@ struct Shape {
             c.apply_transform(m);
         }
     }
-
-    /**
-     * Recursively sets a new absolute world-space matrix for this shape, maintaining the 
-     * relative relationships of all its children.
-     */
-    void apply_absolute_transform(const Matrix& absolute) {
-        Matrix delta = absolute * tf.inverse();
-        apply_transform(delta);
-    }
 };
 
 // ADL helpers for nlohmann::json

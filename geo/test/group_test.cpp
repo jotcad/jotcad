@@ -14,7 +14,7 @@ int main() {
     Processor::execute(&vfs, s1_addr);
     Processor::execute(&vfs, s2_addr);
     
-    fs::Selector group_addr = fs::Selector{"jot/and", {{"$in", s1_addr}, {"shapes", {s1_addr, s2_addr}}}}.with_output("$out");
+    fs::Selector group_addr = fs::Selector{"jot/and", {{"$in", s1_addr}, {"shapes", {s2_addr}}}}.with_output("$out");
     Processor::execute(&vfs, group_addr);
     
     Shape g = vfs.read<Shape>(group_addr);

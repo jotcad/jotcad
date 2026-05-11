@@ -51,10 +51,24 @@ int main() {
     }
 
     // 5. Test 'origin' operator: a.origin()
+    // In JOT, a.o() returns the INVERSE frame.
+    // If a is at X=10, a.o() should be at X=-10.
     fs::Selector origin_sel = fs::Selector("jot/origin", {{"$in", move_sel}}).with_output("$out");
     Shape a_origin = vfs.read<Shape>(origin_sel);
-    if (a_origin.tf.to_vec() != Matrix::identity().to_vec()) {
+    Matrix expected_origin = a.tf.inverse();
+    if (a_origin.tf.to_vec() != expected_origin.to_vec()) {
         std::cerr << "FAIL: a.origin() transformation mismatch!" << std::endl;
+        std::cerr << "Actual:   [" << a_origin.tf.to_vec() << "]" << std::endl;
+        std::cerr << "Expected: [" << expected_origin.to_vec() << "]" << std::endl;
+        return 1;
+    }
+
+    // 6. Verify a.by(a.o()) moves to identity
+    Shape a_at_origin = a;
+    a_at_origin.apply_transform(a_origin.tf);
+    if (a_at_origin.tf.to_vec() != Matrix::identity().to_vec()) {
+        std::cerr << "FAIL: a.by(a.o()) did not result in identity!" << std::endl;
+        std::cerr << "Actual: [" << a_at_origin.tf.to_vec() << "]" << std::endl;
         return 1;
     }
 

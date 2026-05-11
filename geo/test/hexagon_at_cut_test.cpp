@@ -31,8 +31,8 @@ int main() {
     Processor::execute(&vfs, hex_addr);
     render_to(&vfs, hex_addr, "step1_hexagon");
     
-    // 2. eachCorner() frame
-    fs::Selector corners_addr = fs::Selector{"jot/eachCorner", {{"$in", hex_addr}}}.with_output("$out");
+    // 2. corners() frame
+    fs::Selector corners_addr = fs::Selector{"jot/corners", {{"$in", hex_addr}}}.with_output("$out");
     Processor::execute(&vfs, corners_addr);
     render_to(&vfs, corners_addr, "step2_corners");
 

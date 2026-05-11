@@ -3,7 +3,7 @@
 .DELETE_ON_ERROR:
 
 CXX = g++
-CXXFLAGS = -O3 -std=c++17 -fPIC -MMD -MP
+CXXFLAGS = -O1 -std=c++17 -fPIC -MMD -MP
 AR = ar
 ARFLAGS = rcs
 

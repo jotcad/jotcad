@@ -157,6 +157,19 @@ struct Matrix {
         return Matrix(t.inverse());
     }
 
+    bool operator==(const Matrix& other) const {
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                if (t.cartesian(i, j) != other.t.cartesian(i, j)) return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator!=(const Matrix& other) const {
+        return !(*this == other);
+    }
+
     Matrix operator*(const Matrix& other) const {
         return Matrix(t * other.t);
     }
