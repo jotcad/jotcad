@@ -33,18 +33,16 @@ test('DSL Declaration Integration (A = Font())', async (t) => {
   // 2. Multi-line script with declaration
   const script = `
     MyFont = Font("https://example.com/test.ttf");
-    Text("Hello", font=MyFont, size=20);
+    Text("Hello", font=MyFont, size=20) -> $out;
   `;
 
   // Documentation of the expected interface for this script
   const schema = {
       outputs: { "$out": { type: "jot:shape" } }
   };
-  const originalTypeMap = { "$out": "jot:shape" };
-  assert.deepStrictEqual(schemaToTypeMap(schema), originalTypeMap);
 
   const ast = parser.parse(script);
-  const results = await compiler.evaluate(ast, {}, originalTypeMap);
+  const results = await compiler.evaluate(ast, {}, schema);
   
   // 3. Verify
   assert.strictEqual(results.length, 1);
@@ -75,14 +73,13 @@ test('Sequential Declaration Safety (No recursion)', async (t) => {
   });
 
   const schema = { outputs: { "$out": { type: "jot:shape" } } };
-  const originalTypeMap = { "$out": "jot:shape" };
 
   // Test that A = Text(font=A) fails because A is not defined yet
   const script = 'A = Text("X", font=A);';
   const ast = parser.parse(script);
   
   try {
-    await compiler.evaluate(ast, {}, originalTypeMap);
+    await compiler.evaluate(ast, {}, schema);
     assert.fail('Should have thrown an error for unresolved symbol A');
   } catch (e) {
     assert.ok(e.message.includes("Missing required argument 'font'"), 'Should fail on missing font because A is unresolved');

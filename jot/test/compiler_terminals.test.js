@@ -33,21 +33,22 @@ test('JotCompiler Terminal Discovery', async (t) => {
     });
 
     await t.test('Box(10).pdf("x") produces both shape and file terminals', async () => {
-        const ast = parser.parse('Box(10).pdf("x")');
+        const script = `
+            res = Box(10).pdf("x");
+            res.$out -> $out;
+            res.file -> file;
+        `;
+        const ast = parser.parse(script);
         
         // Document the expected outputs of this test script
         const schema = {
             outputs: {
                 "$out": { type: "jot:shape" },
-                "file": { type: "file" }
+                "file": { type: "jot:file" }
             }
         };
-        const originalTypeMap = { "$out": "jot:shape", "file": "jot:file" };
-        
-        // Assert schema documentation is correct
-        assert.deepStrictEqual(schemaToTypeMap(schema), originalTypeMap);
 
-        const terminals = await compiler.evaluate(ast, {}, originalTypeMap);
+        const terminals = await compiler.evaluate(ast, {}, schema);
         
         // We expect exactly TWO terminals:
         // 1. jot/pdf:$out (The shape passthrough)
@@ -67,15 +68,11 @@ test('JotCompiler Terminal Discovery', async (t) => {
     });
 
     await t.test('Multiple shapes Box(10); Box(20) produces two terminals', async () => {
-        const ast = parser.parse('Box(10); Box(20)');
-        
-        // Note: Legacy terminal discovery returns unassigned shapes.
-        // In strict mode, we'd need named ports or explicit assignments.
+        // In strict mode, we collect multiple terminals into a single port via array
+        const ast = parser.parse('[Box(10), Box(20)] -> $out');
         const schema = { outputs: { "$out": { type: "jot:shape" } } };
-        const originalTypeMap = { "$out": "jot:shape" };
 
-        assert.deepStrictEqual(schemaToTypeMap(schema), originalTypeMap);
-        const terminals = await compiler.evaluate(ast, {}, originalTypeMap);
+        const terminals = await compiler.evaluate(ast, {}, schema);
         
         assert.strictEqual(terminals.length, 2, 'Should have 2 terminal shapes');
         assert.ok(terminals.some(t => t.parameters.size === 10));
@@ -92,10 +89,10 @@ test('JotCompiler Terminal Discovery', async (t) => {
             }
         });
 
-        const ast = parser.parse('BoxWrap(Box(10))');
-        const originalTypeMap = { "$out": "jot:shape" };
+        const ast = parser.parse('BoxWrap(Box(10)) -> $out');
+        const schema = { outputs: { "$out": { type: "jot:shape" } } };
 
-        const terminals = await compiler.evaluate(ast, {}, originalTypeMap);
+        const terminals = await compiler.evaluate(ast, {}, schema);
         
         assert.strictEqual(terminals.length, 1, 'Only the outer BoxWrap should be a terminal');
         assert.strictEqual(terminals[0].path, 'jot/BoxWrap');

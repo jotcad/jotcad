@@ -59,11 +59,27 @@ export class JotCompiler {
     }
   }
 
-  async evaluate(ast, parameters = {}, symbolTypes = {}) {
-    this.symbolTypes = {};
-    for (const [k, v] of Object.entries(symbolTypes)) {
-        this.symbolTypes[k] = v.startsWith('jot:') ? v : 'jot:' + v;
+  async evaluate(ast, parameters = {}, schema = null) {
+    if (!schema || typeof schema !== 'object' || (!schema.outputs && !schema.arguments)) {
+        throw new Error(`JotCompiler Error: A formal schema is now mandatory. Received: ${JSON.stringify(schema)}`);
     }
+
+    this.symbolTypes = {};
+    // Populate internal symbolTypes from formal schema for greedy matching
+    if (schema.arguments) {
+        schema.arguments.forEach(arg => {
+            const type = typeof arg === 'string' ? arg : arg.type;
+            const name = typeof arg === 'string' ? arg : arg.name;
+            this.symbolTypes[name] = type.startsWith('jot:') ? type : 'jot:' + type;
+        });
+    }
+    if (schema.outputs) {
+        Object.entries(schema.outputs).forEach(([name, def]) => {
+            const type = typeof def === 'string' ? def : (def.type || 'jot:shape');
+            this.symbolTypes[name] = type.startsWith('jot:') ? type : 'jot:' + type;
+        });
+    }
+
     this.localSymbols = { ...parameters };
     this.candidates.clear();
     this.consumed.clear();
@@ -78,21 +94,27 @@ export class JotCompiler {
         await this._evaluateRecursive(ast, this.localSymbols, null);
       }
 
-      // Collect all terminals
-      const terminals = [];
-      for (const [groupKey, ports] of this.candidates.entries()) {
-        const base = this.selectorInstances.get(groupKey);
-        for (const port of ports) {
-          const term = Selector.fromObject(base).withOutput(port);
-          const portKey = await getSelectorKey(term);
-          if (!this.consumed.has(portKey)) {
-            terminals.push(term);
-            console.log(`[JotCompiler] Terminal discovered: ${term.path}:${port} (CID: ${portKey.slice(0, 8)}...)`);
+      const results = [];
+      if (schema.outputs) {
+          for (const portName of Object.keys(schema.outputs)) {
+              const val = this.localSymbols[portName];
+              if (val !== undefined) {
+                  if (val instanceof Selector) {
+                      results.push(val.withOutput(portName));
+                      await this._consume(val);
+                  } else if (Array.isArray(val)) {
+                      for (const item of val) {
+                          if (item instanceof Selector) {
+                              results.push(item.withOutput(portName));
+                              await this._consume(item);
+                          }
+                      }
+                  }
+              }
           }
-        }
       }
 
-      return terminals;
+      return results;
     } finally {
       this.symbolTypes = {};
     }
@@ -116,6 +138,7 @@ export class JotCompiler {
       }
       case 'CALL': return this._dispatchCall(node, parameters, subject);
       case 'METHOD': return this._evaluateMethod(node, parameters, subject);
+      case 'OUTPUT_ACCESS': return this._evaluateOutputAccess(node, parameters, subject);
       case 'SYMBOL': return parameters[node.name] !== undefined ? parameters[node.name] : node;
       case 'ANNOTATED_ARG': return this._evaluateRecursive(node.value, parameters, subject);
       case 'RANGE': return this._evaluateRange(node, parameters, subject);
@@ -204,6 +227,20 @@ export class JotCompiler {
     }
 
     return await this._dispatchCall(node, parameters, s);
+  }
+
+  async _evaluateOutputAccess(node, parameters, subject) {
+    const s = await this._evaluateRecursive(node.subject, parameters, subject);
+    
+    if (Array.isArray(s)) {
+      return s.map(item => (item instanceof Selector ? item.withOutput(node.output) : item));
+    }
+
+    if (s instanceof Selector) {
+      return s.withOutput(node.output);
+    }
+
+    return s;
   }
 
   async _dispatchCall(node, parameters, subject) {

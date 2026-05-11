@@ -89,11 +89,13 @@ export class JotParser {
     while (this._peek() === '.') {
       this._consume('.');
       const name = this._consume();
-      if (this._peek() !== '(') {
-        throw new Error(`Expected ( after method name, got ${this._peek()}`);
+      if (this._peek() === '(') {
+        const args = this._parseArguments();
+        expr = this._wrapInOp(name, expr, args);
+      } else {
+        // Output Port Access (e.g. res.$out)
+        expr = { type: 'OUTPUT_ACCESS', subject: expr, output: name };
       }
-      const args = this._parseArguments();
-      expr = this._wrapInOp(name, expr, args);
     }
 
     return expr;

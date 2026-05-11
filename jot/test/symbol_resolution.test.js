@@ -17,14 +17,15 @@ test('JotCAD Evaluator: Symbol Resolution', async (t) => {
   });
 
   await t.test('resolves provided symbols', async () => {
-    const ast = parser.parse('box(w)');
-    const res = await compiler.evaluate(ast, { w: 100 });
+    const ast = parser.parse('box(w) -> $out');
+    const schema = { outputs: { '$out': { type: 'jot:shape' } } };
+    const res = await compiler.evaluate(ast, { w: 100 }, schema);
     const resolved = res[0];
     assert.strictEqual(resolved.parameters.width, 100);
   });
 
   await t.test('preserves unprovided symbols with type verification', async () => {
-    const ast = parser.parse('box(w)');
+    const ast = parser.parse('box(w) -> $out');
     
     // Schema definition for the late-bound symbol 'w'
     const schema = {
@@ -36,15 +37,15 @@ test('JotCAD Evaluator: Symbol Resolution', async (t) => {
     // 1. Assert Schema-to-TypeMap equivalence
     assert.deepStrictEqual(schemaToTypeMap(schema), originalTypeMap);
 
-    // 2. Pass original map to preserve behavior
-    const res = await compiler.evaluate(ast, {}, originalTypeMap);
+    // 2. Pass schema directly
+    const res = await compiler.evaluate(ast, {}, schema);
     const resolved = res[0];
     assert.strictEqual(resolved.parameters.width.type, 'jot:number');
     assert.strictEqual(resolved.parameters.width.name, 'w');
   });
 
   await t.test('throws on typed symbol mismatch', async () => {
-    const ast = parser.parse('box(s)');
+    const ast = parser.parse('box(s) -> $out');
     
     const schema = {
         arguments: [{ name: 's', type: 'jot:string' }],
@@ -56,7 +57,7 @@ test('JotCAD Evaluator: Symbol Resolution', async (t) => {
     assert.deepStrictEqual(schemaToTypeMap(schema), originalTypeMap);
 
     await assert.rejects(
-      async () => await compiler.evaluate(ast, {}, originalTypeMap),
+      async () => await compiler.evaluate(ast, {}, schema),
       /Missing required argument 'width'/
     );
   });
