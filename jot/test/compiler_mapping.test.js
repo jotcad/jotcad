@@ -7,6 +7,8 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
   const parser = new JotParser();
   const compiler = new JotCompiler();
 
+  const defaultSchema = { outputs: { "$out": { type: "jot:shape" } } };
+
   await t.test('Positional Mapping (Basic)', async () => {
     compiler.registerOperator('jot/Box', {
       path: 'jot/Box',
@@ -18,13 +20,13 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
         outputs: { "$out": { type: "jot:shape" } }
       }
     });
-    const res = await compiler.evaluate(parser.parse('Box(10)'));
+    const res = await compiler.evaluate(parser.parse('Box(10) -> $out'), {}, defaultSchema);
     const resolved = res[0];
     assert.strictEqual(resolved.parameters.radius, 10);
   });
 
   await t.test('Named Argument Mapping (Name=Value)', async () => {
-    const res = await compiler.evaluate(parser.parse('Box(depth=5, radius=20)'));
+    const res = await compiler.evaluate(parser.parse('Box(depth=5, radius=20) -> $out'), {}, defaultSchema);
     const resolved = res[0];
     assert.strictEqual(resolved.parameters.radius, 20);
     assert.strictEqual(resolved.parameters.depth, 5);
@@ -57,8 +59,8 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
         }
     });
 
-    const ast = parser.parse('Box(10).at(Box(2), cut(Box(1)))');
-    const res = await compiler.evaluate(ast);
+    const ast = parser.parse('Box(10).at(Box(2), cut(Box(1))) -> $out');
+    const res = await compiler.evaluate(ast, {}, defaultSchema);
     const resolved = res[0];
     assert.strictEqual(resolved.parameters.target.parameters.radius, 2);
     assert.strictEqual(resolved.parameters.op.path, 'jot/cut');
@@ -68,7 +70,7 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
     // If I pass a shape to a number slot, it should throw a "Missing required argument" error
     // because the number consumer won't take the shape.
     await assert.rejects(async () => {
-        await compiler.evaluate(parser.parse('Box(Box(10))'));
+        await compiler.evaluate(parser.parse('Box(Box(10)) -> $out'), {}, defaultSchema);
     }, /Missing required argument 'radius' for 'Box'/);
   });
 });

@@ -19,8 +19,9 @@ test('JotCAD Parser: Basic Function Call', async (t) => {
     }
   });
 
-  const ast = parser.parse('Test(10, "hello", true)');
-  const res = await compiler.evaluate(ast);
+  const ast = parser.parse('Test(10, "hello", true) -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const res = await compiler.evaluate(ast, {}, schema);
   const term = res[0];
   assert.strictEqual(term.path, 'jot/Test');
   assert.strictEqual(term.parameters.size, 10);
@@ -44,8 +45,9 @@ test('JotCAD Parser: Method Chaining', async (t) => {
     }
   });
 
-  const ast = parser.parse('box(100).rotateX(0.1)');
-  const res = await compiler.evaluate(ast);
+  const ast = parser.parse('box(100).rotateX(0.1) -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const res = await compiler.evaluate(ast, {}, schema);
   const term = res[0];
   assert.strictEqual(term.path, 'jot/rotateX');
   assert.strictEqual(term.parameters.angle, 0.1);
@@ -60,8 +62,12 @@ test('JotCAD Parser: Late-Bound Symbols', async (t) => {
     schema: { arguments: [{ name: 'width', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } }
   });
 
-  const ast = parser.parse('box(width)');
-  const res = await compiler.evaluate(ast);
+  const ast = parser.parse('box(width) -> $out');
+  const schema = { 
+    arguments: [{ name: 'width', type: 'jot:number' }],
+    outputs: { "$out": { type: "jot:shape" } }
+  };
+  const res = await compiler.evaluate(ast, {}, schema);
   const term = res[0];
   assert.strictEqual(term.parameters.width.type, 'jot:number');
   assert.strictEqual(term.parameters.width.name, 'width');
@@ -75,8 +81,9 @@ test('JotCAD Evaluator: Symbol Resolution', async (t) => {
     schema: { arguments: [{ name: 'width', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } }
   });
 
-  const ast = parser.parse('box(width)');
-  const res = await compiler.evaluate(ast, { width: 42 });
+  const ast = parser.parse('box(width) -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const res = await compiler.evaluate(ast, { width: 42 }, schema);
   const term = res[0];
   assert.strictEqual(term.parameters.width, 42);
 });
@@ -94,8 +101,9 @@ test('JotCAD Parser: Deep Method Chaining', async (t) => {
   compiler.registerOperator('jot/offset', { path: 'jot/offset', schema: { arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'r', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
   compiler.registerOperator('jot/outline', { path: 'jot/outline', schema: noopSchema });
 
-  const ast = parser.parse('box(100).rotateX(0.1).offset(5).outline()');
-  const res = await compiler.evaluate(ast);
+  const ast = parser.parse('box(100).rotateX(0.1).offset(5).outline() -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const res = await compiler.evaluate(ast, {}, schema);
   const term = res[0];
   assert.strictEqual(term.path, 'jot/outline');
   assert.strictEqual(term.parameters.$in.path, 'jot/offset');
@@ -105,12 +113,13 @@ test('JotCAD Parser: Deep Method Chaining', async (t) => {
 test('JotCAD Parser: Array of Expressions', async (t) => {
   const parser = new JotParser();
   const compiler = new JotCompiler();
-  compiler.registerOperator('jot/box', { path: 'jot/box', schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
-  compiler.registerOperator('jot/arc', { path: 'jot/arc', schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
-  compiler.registerOperator('jot/rotateX', { path: 'jot/rotateX', schema: { arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'a', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
+  compiler.registerOperator('jot/box', { path: 'jot/box', schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { "$out": { type: 'jot:shape' } } } });
+  compiler.registerOperator('jot/arc', { path: 'jot/arc', schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { "$out": { type: 'jot:shape' } } } });
+  compiler.registerOperator('jot/rotateX', { path: 'jot/rotateX', schema: { arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'a', type: 'jot:number' }], outputs: { "$out": { type: 'jot:shape' } } } });
 
-  const ast = parser.parse('[box(10), arc(20).rotateX(0.5)]');
-  const res = await compiler.evaluate(ast);
+  const ast = parser.parse('[box(10), arc(20).rotateX(0.5)] -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shapes" } } };
+  const res = await compiler.evaluate(ast, {}, schema);
   assert.ok(Array.isArray(res));
   assert.strictEqual(res.length, 2);
   assert.strictEqual(res[0].path, 'jot/box');
@@ -139,8 +148,9 @@ test('JotCAD Parser: Complex Object Literals', async (t) => {
     }
   });
 
-  const ast = parser.parse('tri({ points: [pt(0,0), pt(10,0), pt(5,10)], color: "red" })');
-  const res_raw = await compiler.evaluate(ast);
+  const ast = parser.parse('tri({ points: [pt(0,0), pt(10,0), pt(5,10)], color: "red" }) -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const res_raw = await compiler.evaluate(ast, {}, schema);
   const res = res_raw[0];
   
   assert.strictEqual(res.path, 'jot/tri');
@@ -166,8 +176,9 @@ test('JotCAD Evaluator: Deep Symbol Resolution', async (t) => {
     }
   });
 
-  const ast = parser.parse('box({ width: width }).rotateX(turn)');
-  const res_raw = await compiler.evaluate(ast, { width: 100, turn: 0.5 });
+  const ast = parser.parse('box({ width: width }).rotateX(turn) -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const res_raw = await compiler.evaluate(ast, { width: 100, turn: 0.5 }, schema);
   const res = res_raw[0];
   assert.strictEqual(res.parameters.$in.parameters.config.width, 100);
   assert.strictEqual(res.parameters.angle, 0.5);
@@ -194,8 +205,9 @@ test('JotCAD Evaluator: .spec() Canonicalization', async (t) => {
         }
     });
 
-    const ast = parser.parse('box(length).spec({ length: { alias: ["L", "len"], default: 50 } })');
-    const res_raw = await compiler.evaluate(ast, { L: 100 });
+    const ast = parser.parse('box(length).spec({ length: { alias: ["L", "len"], default: 50 } }) -> $out');
+    const schema = { outputs: { "$out": { type: "jot:shape" } } };
+    const res_raw = await compiler.evaluate(ast, { L: 100 }, schema);
     const res = res_raw[0];
 
     // In this simplified test, we just check that the symbol was correctly handled
@@ -217,8 +229,9 @@ test('JotCAD Parser: Negative Ratios', async (t) => {
   assert.strictEqual(ast1, -1/6);
 
   // Test negative fraction as argument
-  const ast2 = parser.parse('Box(-1/6)');
-  const res2 = await compiler.evaluate(ast2);
+  const ast2 = parser.parse('Box(-1/6) -> $out');
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const res2 = await compiler.evaluate(ast2, {}, schema);
   assert.strictEqual(res2[0].parameters.size, -1/6);
 
   // Test signed denominator (works because -2 is a literal)

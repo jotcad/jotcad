@@ -23,25 +23,40 @@ test('Operator Variant Resolution (Strict Casing)', async (t) => {
   });
 
   await t.test('Should resolve PascalCase Constructors', async () => {
-    const res = await compiler.evaluate({ type: 'CALL', name: 'Box', args: [10] });
+    const schema = { outputs: { "$out": { type: "jot:shape" } } };
+    const res = await compiler.evaluate({ 
+        type: 'ASSIGNMENT', 
+        name: '$out', 
+        value: { type: 'CALL', name: 'Box', args: [10] }
+    }, {}, schema);
     const resolved = res[0];
     assert.strictEqual(resolved.path, 'shape/box');
   });
 
   await t.test('Should resolve camelCase Operations', async () => {
+    const schema = { outputs: { "$out": { type: "jot:shape" } } };
     const res = await compiler.evaluate({ 
-        type: 'METHOD', 
-        subject: { path: 'shape/box', parameters: {} }, 
-        name: 'rotateX', 
-        args: [45] 
-    });
+        type: 'ASSIGNMENT', 
+        name: '$out', 
+        value: { 
+            type: 'METHOD', 
+            subject: { path: 'shape/box', parameters: {} }, 
+            name: 'rotateX', 
+            args: [45] 
+        }
+    }, {}, schema);
     const resolved = res[0];
     assert.strictEqual(resolved.path, 'op/rotateX');
   });
 
   await t.test('Should NOT resolve if casing is wrong', async () => {
     await assert.rejects(async () => {
-      await compiler.evaluate({ type: 'CALL', name: 'box', args: [10] });
+      const schema = { outputs: { "$out": { type: "jot:shape" } } };
+      await compiler.evaluate({ 
+        type: 'ASSIGNMENT', 
+        name: '$out', 
+        value: { type: 'CALL', name: 'box', args: [10] }
+      }, {}, schema);
     }, /Unregistered operator/);
   });
 });

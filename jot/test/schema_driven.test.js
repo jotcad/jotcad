@@ -106,26 +106,3 @@ test('Schema-Driven: $in Binding and Chaining', async (t) => {
     assert.strictEqual(results[0].parameters.tool.path, 'jot/Box');
     assert.strictEqual(results[0].parameters.tool.parameters.s, 10);
 });
-
-test('Schema-Driven: Fallback Terminal Discovery', async (t) => {
-    const compiler = new JotCompiler();
-    const parser = new JotCompiler(); // Wait, mistake here in previous lines? No.
-    const p = new JotParser();
-
-    compiler.registerOperator('Box', {
-        path: 'jot/Box',
-        schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { '$out': { type: 'jot:shape' } } }
-    });
-
-    // Script with no explicit assignments
-    const script = 'Box(100); Box(200);';
-    const ast = p.parse(script);
-    
-    // Evaluate without schema
-    const results = await compiler.evaluate(ast);
-    
-    // Should discover both boxes as terminals because they aren't consumed
-    assert.strictEqual(results.length, 2);
-    assert.strictEqual(results[0].parameters.s, 100);
-    assert.strictEqual(results[1].parameters.s, 200);
-});

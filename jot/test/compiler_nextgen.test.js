@@ -39,8 +39,9 @@ test('JotCAD Next-Gen: Template Modes', async (t) => {
     });
 
     await t.test('evaluates template arguments with subject propagation', async () => {
-        const ast = parser.parse('Hexagon(30).at([0,0,0], cut(Hexagon(5)))');
-        const res_raw = await compiler.evaluate(ast);
+        const ast = parser.parse('Hexagon(30).at([0,0,0], cut(Hexagon(5))) -> $out');
+        const schema = { outputs: { "$out": { type: "jot:shape" } } };
+        const res_raw = await compiler.evaluate(ast, {}, schema);
         const res = res_raw[0];
         
         const cutOp = res.parameters.op;
