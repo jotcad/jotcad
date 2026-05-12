@@ -12,6 +12,7 @@ export const JotRegistry = {
     }
 
     vfs.registerProvider(path, async (v, s) => {
+      console.log(`[JotRegistry] Executing User Op Script: ${path}`);
       const { JotCompiler } = await import('../../../../jot/src/compiler');
       const { JotParser } = await import('../../../../jot/src/parser');
       
@@ -34,6 +35,8 @@ export const JotRegistry = {
       if (s.subject && subjectArg) {
           params[subjectArg.name] = s.subject;
       }
+
+      console.log(`[JotRegistry] Evaluating script for ${path} with params:`, params);
 
       const parser = new JotParser();
       const ast = parser.parse(script);

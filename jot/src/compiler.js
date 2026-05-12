@@ -38,11 +38,17 @@ export class JotCompiler {
   // --- Core API ---
 
   registerOperator(name, config) {
-    if (!config.schema?.arguments || !Array.isArray(config.schema.arguments)) {
-       throw new Error(`Compiler Error: Operator '${name}' must provide an array-based arguments schema.`);
+    if (!config.schema || !config.schema.arguments || !Array.isArray(config.schema.arguments)) {
+       const path = config.path || name;
+       const msg = `Compiler Error: Operator '${name}' (path: ${path}) must provide a formal schema with an array-based 'arguments' property. Received: ${JSON.stringify(config.schema)}`;
+       console.error(`[JotCompiler] FATAL REGISTRATION ERROR: ${msg}`);
+       throw new Error(msg);
     }
 
+    if (!config.path) config.path = name;
+
     const register = (n) => {
+      console.log(`[JotCompiler] Registering: ${n} -> ${config.path}`);
       const list = this.operators.get(n) || [];
       if (!list.includes(config)) {
         list.push(config);
@@ -54,12 +60,21 @@ export class JotCompiler {
     register(config.path);
 
     // Support Base-Name mapping for variants (e.g. Hexagon/full -> Hexagon)
+    // If we have 'Triangle/equilateral', also register 'Triangle'
     if (name.includes('/')) {
-      register(name.split('/')[0]);
+      const parts = name.split('/');
+      const base = parts[0];
+      // Only register the base if it's not a reserved namespace
+      if (base !== 'jot' && base !== 'user' && base !== '') {
+        register(base);
+      }
     }
   }
 
   async evaluate(ast, parameters = {}, schema = null) {
+    console.log('[JotCompiler] Evaluating AST:', JSON.stringify(ast, null, 2));
+    console.log('[JotCompiler] Parameters:', JSON.stringify(parameters, null, 2));
+
     if (!schema || typeof schema !== 'object' || (!schema.outputs && !schema.arguments)) {
         throw new Error(`JotCompiler Error: A formal schema is now mandatory. Received: ${JSON.stringify(schema)}`);
     }
@@ -97,9 +112,11 @@ export class JotCompiler {
       const results = [];
       // PASS 1: Explicit Schema Extraction
       if (schema.outputs) {
+          console.log(`[JotCompiler] Extraction Pass 1: ${Object.keys(schema.outputs).join(', ')}`);
           for (const portName of Object.keys(schema.outputs)) {
               const val = this.localSymbols[portName];
               if (val !== undefined) {
+                  console.log(`[JotCompiler]   Found output for ${portName}:`, val);
                   const portDef = schema.outputs[portName];
                   if (val instanceof Selector) {
                       // Consume original output before re-tagging for result set
@@ -277,6 +294,12 @@ export class JotCompiler {
             consumed: false 
         }));
         const params = await this._satisfySchema(op.schema, pool, parameters, subject, node.name);
+        
+        console.log(`[JotCompiler] Dispatching: ${node.name} -> ${op.path}`);
+        if (op.path.startsWith('user/')) {
+          console.log(`[JotCompiler] Calling User Op: ${op.path}`, params);
+        }
+
         const port = op.schema.outputs ? Object.keys(op.schema.outputs)[0] : '$out';
         const sel = new Selector(op.path, params).withOutput(port);
         await this._trackSelector(sel);
@@ -290,100 +313,86 @@ export class JotCompiler {
   }
 
   _resolveOperator(name) {
-    if (this.operators.has(name)) return this.operators.get(name);
-    if (this.operators.has(this.options.defaultPrefix + name)) return this.operators.get(this.options.defaultPrefix + name);
+    console.log(`[JotCompiler] Resolving: ${name}`);
+    if (this.operators.has(name)) {
+      console.log(`[JotCompiler]   Found direct: ${name}`);
+      return this.operators.get(name);
+    }
+    if (this.operators.has('jot/' + name)) {
+      console.log(`[JotCompiler]   Found jot prefix: ${name}`);
+      return this.operators.get('jot/' + name);
+    }
+    if (this.operators.has('user/' + name)) {
+      console.log(`[JotCompiler]   Found user prefix: ${name}`);
+      return this.operators.get('user/' + name);
+    }
+    console.log(`[JotCompiler]   NOT FOUND: ${name}`);
     return null;
   }
 
   async _satisfySchema(schema, pool, parameters, subject, opName) {
     const params = {}, argList = schema?.arguments || [];
+    let subjectConsumed = false;
 
     const evaluateHelper = async (node) => {
         return this._evaluateRecursive(node, parameters, subject);
     };
 
-    // PASS 1: Fill Non-Affiliate slots from the Pool
+    // PASS 1: Resolution (Priority: Explicit Pool > Preferential Subject (Inputs) > Greedy Pool > Default)
     for (const argDef of argList) {
-      const isAffiliate = argDef.affiliate && (argDef.affiliate === '$out' || argDef.affiliate === '$in');
-      if (isAffiliate) continue;
-
       const type = argDef.type?.toLowerCase() || '';
       const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
+      const isInput = argDef.name === '$in' || argDef.affiliate === '$out' || argDef.affiliate === '$in';
 
-      // --- New: Exact Type Match Pass (Resolves Symbols) ---
-      const candidates = this._findCandidates(pool, argDef.name);
-      for (const p of candidates) {
-        const val = await evaluateHelper(p.node); // Resolves
+      // 1. Explicit Name Match Pass (User-overridden named arg)
+      const explicitCandidates = pool.filter(p => !p.consumed && p.nameHint === argDef.name);
+      if (explicitCandidates.length > 0) {
+        const p = explicitCandidates[0];
+        const val = await evaluateHelper(p.node);
         if (this._getTypeOfValue(val) === fullType) {
           params[argDef.name] = this._normalize(val, fullType);
           p.consumed = true;
           await this._consume(val);
-          break;
+          continue;
         }
       }
-      if (params[argDef.name] !== undefined) continue;
 
+      // 2. Preferential Subject Consumption for Inputs
+      if (isInput && subject && !subjectConsumed) {
+        if (this._isSubtype(this._getTypeOfValue(subject), fullType)) {
+          params[argDef.name] = subject;
+          subjectConsumed = true;
+          await this._consume(subject);
+          continue;
+        }
+      }
+
+      // 3. Greedy Consumer Pass (Checks remaining pool)
       const consumer = this.consumers[fullType.split('<')[0]];
       if (consumer) {
+        // We pass subject=null because we've already handled preferential consumption above.
+        // This ensures the consumer only looks at the pool.
         const res = await consumer(pool, argDef, { opName, evaluate: evaluateHelper }, null);
         if (res !== undefined) {
-          if (argDef.const !== undefined && res !== argDef.const) throw new Error("Const mismatch");
           params[argDef.name] = (res?.type === 'SYMBOL') ? { ...res, type: fullType } : res;
           await this._consume(res);
         }
       }
 
+      // 4. Default Value Pass
       if (params[argDef.name] === undefined && argDef.default !== undefined) {
         params[argDef.name] = argDef.default;
       }
     }
 
-    // PASS 2: Fill Affiliate slots (Priority: Pool > Subject > Default)
-    for (const argDef of argList) {
-      const isAffiliate = argDef.affiliate && (argDef.affiliate === '$out' || argDef.affiliate === '$in');
-      if (!isAffiliate || params[argDef.name] !== undefined) continue;
-
-      const type = argDef.type?.toLowerCase() || '';
-      const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
-
-      // --- New: Exact Type Match Pass (Resolves Symbols) ---
-      const candidates = this._findCandidates(pool, argDef.name);
-      for (const p of candidates) {
-        const val = await evaluateHelper(p.node); // Resolves
-        if (this._getTypeOfValue(val) === fullType) {
-          params[argDef.name] = this._normalize(val, fullType);
-          p.consumed = true;
-          await this._consume(val);
-          break;
-        }
-      }
-      if (params[argDef.name] !== undefined) continue;
-
-      const consumer = this.consumers[fullType.split('<')[0]];
-      
-      if (consumer) {
-        // Offer BOTH pool and subject to the consumer
-        const res = await consumer(pool, argDef, { opName, evaluate: evaluateHelper }, subject);
-        if (res !== undefined) {
-          if (argDef.const !== undefined && res !== argDef.const) throw new Error("Const mismatch");
-          params[argDef.name] = (res?.type === 'SYMBOL') ? { ...res, type: fullType } : res;
-          await this._consume(res);
-        }
-      }
-
-      if (params[argDef.name] === undefined && argDef.default !== undefined) {
-        params[argDef.name] = argDef.default;
-      }
-    }
-
-    // PASS 3: Validation
+    // PASS 2: Validation
     for (const argDef of argList) {
         if (params[argDef.name] === undefined && argDef.default === undefined) {
              throw new Error(`Compiler Error: Missing required argument '${argDef.name}' for '${opName}'`);
         }
     }
 
-    // PASS 4: Strict Overload Check (Ensure all provided arguments were consumed)
+    // PASS 3: Strict Overload Check (Ensure all provided arguments were consumed)
     for (const p of pool) {
       if (!p.consumed) {
          throw new Error(`Compiler Error: Argument ${p.nameHint ? `'${p.nameHint}' ` : ''}was not consumed by '${opName}'`);
