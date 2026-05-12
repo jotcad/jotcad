@@ -59,15 +59,24 @@ export class JotCompiler {
     register(name);
     register(config.path);
 
-    // Support Base-Name mapping for variants (e.g. Hexagon/full -> Hexagon)
-    // If we have 'Triangle/equilateral', also register 'Triangle'
-    if (name.includes('/')) {
-      const parts = name.split('/');
-      const base = parts[0];
-      // Only register the base if it's not a reserved namespace
-      if (base !== 'jot' && base !== 'user' && base !== '') {
-        register(base);
-      }
+    // Support Base-Name mapping for ALL variants (e.g. jot/Hexagon/radius -> Hexagon)
+    const fullPath = config.path;
+    const parts = fullPath.split('/');
+    
+    // Logic: If path is 'jot/Hexagon/radius', parts are ['jot', 'Hexagon', 'radius']
+    // We want to register 'Hexagon' if it's in the second slot.
+    if (parts.length >= 2) {
+        const namespace = parts[0];
+        const baseName = parts[1];
+        if ((namespace === 'jot' || namespace === 'user') && baseName) {
+            register(baseName);
+        }
+    }
+    
+    // Also handle direct variants like 'Hexagon/equilateral' (without prefix)
+    if (name.includes('/') && !name.startsWith('jot/') && !name.startsWith('user/')) {
+        const base = name.split('/')[0];
+        if (base) register(base);
     }
   }
 
@@ -138,17 +147,21 @@ export class JotCompiler {
           }
       }
 
-      // PASS 2: Terminal Discovery (All unconsumed outputs)
+      if (results.length > 1) {
+          console.warn(`[JotCompiler] Warning: Evaluation produced ${results.length} terminal results.`, results);
+      }
+
+      // PASS 2: Strict Consumption Validation
       for (const [key, ports] of this.candidates.entries()) {
           const base = this.selectorInstances.get(key);
-          const opSchema = this._getSchemaForPath(base.path);
           for (const port of ports) {
               const sel = base.withOutput(port);
               const selKey = await getSelectorKey(sel);
               if (!this.consumed.has(selKey)) {
-                  const portDef = opSchema?.outputs?.[port];
-                  results.push({ selector: sel, schema: portDef });
-                  await this._consume(sel);
+                  const msg = `Compiler Error: Unconsumed output terminal found: '${base.path}:${port}'. ` +
+                              `Every created shape must either be passed to another operator or assigned to an output port (-> $out).`;
+                  console.error(`[JotCompiler] ${msg}`, sel);
+                  throw new Error(msg);
               }
           }
       }
