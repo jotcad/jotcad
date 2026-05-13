@@ -39,6 +39,7 @@ await vfs.init();
 console.log(`[Export Node ${id}] Starting Native Mesh Node with neighbors: [${neighbors.join(', ')}]`);
 const meshLink = new MeshLink(vfs, neighbors, { localUrl: `${protocol}://localhost:${port}` });
 
+/*
 // Register the Export Op as a VFS Provider
 vfs.registerProvider('jot/pdf', async (v, selector) => {
     try {
@@ -51,15 +52,12 @@ vfs.registerProvider('jot/pdf', async (v, selector) => {
         const data = await v.readData($in);
         if (!data) throw new Error(`Could not find input: ${JSON.stringify($in)}`);
 
-        // 2. Perform the export (Side-effect on server)
-        const outPath = path.resolve(pdfPath);
-        // NOTE: In a real implementation, this would involve actual PDF generation logic.
-        // For now, we simulate by writing the data representation.
+        // 2. Perform the export (Simulated)
+        // In a real implementation, this would involve actual PDF generation logic.
         const fileContent = data instanceof Uint8Array ? data : 
                            (typeof data === 'string' ? data : JSON.stringify(data));
         
-        await fsPromises.writeFile(outPath, fileContent);
-        console.log(`[Export Node] Exported to ${outPath}`);
+        console.log(`[Export Node] Export generated for ${pdfPath}`);
 
         // 3. Fulfill based on requested port
         if (output === 'file') {
@@ -87,6 +85,7 @@ vfs.registerProvider('jot/pdf', async (v, selector) => {
         }
     }
 });
+*/
 
 registerVFSRoutes(vfs, server, '', meshLink);
 

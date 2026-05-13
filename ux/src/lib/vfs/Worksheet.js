@@ -1,3 +1,6 @@
+console.log('[Trace] Executing Worksheet.js');
+import { batch } from 'solid-js';
+import { reconcile } from 'solid-js/store';
 import { shadowOps, shadowLayout, syncActions } from '../state/SyncState';
 import { DYNAMIC_OPS_KEY, NODE_STATE_KEY, DESKTOP_STATE_KEY } from '../state/Config';
 
@@ -14,6 +17,8 @@ export const Worksheet = {
         APP_DATA: 'app_data',   
         CONFIG: 'config'        
     },
+
+    _isSyncing: false,
 
     /**
      * Get data from local storage
@@ -38,7 +43,8 @@ export const Worksheet = {
         const serialized = typeof data === 'string' ? data : JSON.stringify(data);
         localStorage.setItem(fullKey, serialized);
 
-        if (triggerSync) {
+        // DELIBERATE GUARD: Don't trigger sync activity if we are already in a sync cycle
+        if (triggerSync && !this._isSyncing) {
             // Mark as dirty and reset idle timer
             import('./CloudSync').then(({ CloudSync }) => {
                 if (CloudSync && CloudSync.activity) {
@@ -72,80 +78,97 @@ export const Worksheet = {
         if (!bb) return null;
 
         const { Merger } = await import('./CloudSync');
-        const { reconcile } = await import('solid-js/store');
+        
+        this._isSyncing = true;
+        console.log(`[Worksheet] mergeRemote started for tier: ${tier}`);
 
-        if (tier === this.TIERS.OPERATORS) {
-            const path = `user/${key}`;
-            const localOp = bb.dynamicOps()[path];
-            // Extract raw data from shadow store proxy
-            const baseOp = JSON.parse(JSON.stringify(shadowOps[path] || {}));
-            
-            const merged = Merger.mergeOperator(path, localOp, baseOp, remoteData);
-            
-            bb.publishDynamicOp(path, merged.schema, merged.script, true);
-            if (!merged.hasConflicts) syncActions.updateShadowOp(path, remoteData);
-            
-            // Persist the merged op to local storage silently
-            this.save(tier, key, merged, false);
-            return merged;
-        }
-
-        if (tier === this.TIERS.WINDOWS || tier === this.TIERS.DESKTOP) {
-            const localWindows = this.get(this.TIERS.WINDOWS) || [];
-            const localDesktop = this.get(this.TIERS.DESKTOP) || [];
-            // Extract raw data from shadow store proxy
-            const baseLayout = JSON.parse(JSON.stringify(shadowLayout || { windows: [], desktop: [] }));
-
-            const merged = Merger.mergeLayout(
-                { windows: localWindows, desktop: localDesktop },
-                baseLayout,
-                remoteData
-            );
-
-            if (!merged) {
-                console.warn('[Worksheet] Layout merge returned undefined, skipping update.');
-                return null;
-            }
-
-            // ID-Stable reconciliation for Solid stores
-            if (merged.windows && Array.isArray(merged.windows)) {
-                if (typeof bb.setOpenWindows === 'function') {
-                    bb.setOpenWindows(reconcile(merged.windows, { key: 'id' }));
-                    this.save(this.TIERS.WINDOWS, null, merged.windows, false);
-                }
-            }
-            
-            if (merged.desktop && Array.isArray(merged.desktop)) {
-                // Ensure system icons are always present after merge
-                const repaired = [
-                    { id: 'app:catalog', type: 'app', label: 'Catalog', x: 40, y: 40, target: 'catalog', icon: 'Database' },
-                    { id: 'app:mesh', type: 'app', label: 'Mesh Graph', x: 140, y: 40, target: 'mesh', icon: 'Network' },
-                    { id: 'app:settings', type: 'app', label: 'Settings', x: 40, y: 140, target: 'settings', icon: 'Settings' },
-                    { id: 'app:console', type: 'app', label: 'Console', x: 140, y: 140, target: 'console', icon: 'Terminal' },
-                    { id: 'action:sync', type: 'action', label: 'Sync Cloud', x: 40, y: 240, target: 'sync_cloud', icon: 'Cloud' },
-                    { id: 'action:new', type: 'action', label: 'New Op', x: 140, y: 240, target: 'new_op', icon: 'Plus' }
-                ];
+        try {
+            if (tier === this.TIERS.OPERATORS) {
+                const remoteOps = remoteData || {};
+                const localOps = bb.dynamicOps();
                 
-                const finalDesktop = [...repaired];
-                for (const icon of merged.desktop) {
-                    if (!finalDesktop.find(ri => ri.id === icon.id)) {
-                        finalDesktop.push(icon);
+                batch(() => {
+                    for (const [vfsKey, remoteOp] of Object.entries(remoteOps)) {
+                        const path = `user/${vfsKey}`;
+                        const localOp = localOps[path];
+                        const baseOp = JSON.parse(JSON.stringify(shadowOps[path] || {}));
+
+                        const merged = Merger.mergeOperator(path, localOp, baseOp, remoteOp);
+                        
+                        if (!merged.schema?.arguments) {
+                            console.warn('[Worksheet] mergeRemote: skipping malformed op:', path);
+                            continue; 
+                        }
+
+                        bb.publishDynamicOp(path, merged.schema, merged.script, false);
+                        if (!merged.hasConflicts) syncActions.updateShadowOp(path, remoteOp);
+                        this.save(tier, vfsKey, merged, false);
                     }
-                }
-
-                if (typeof bb.setDesktopIcons === 'function') {
-                    bb.setDesktopIcons(reconcile(finalDesktop, { key: 'id' }));
-                    this.save(this.TIERS.DESKTOP, null, finalDesktop, false);
-                }
+                });
+                return remoteOps;
             }
-            
-            syncActions.updateShadowLayout(remoteData);
-            return merged;
-        }
 
-        // Default: Last-Write-Wins
-        this.save(tier, key, remoteData, false);
-        return remoteData;
+            if (tier === this.TIERS.WINDOWS || tier === this.TIERS.DESKTOP) {
+                const localWindows = this.get(this.TIERS.WINDOWS) || [];
+                const localDesktop = this.get(this.TIERS.DESKTOP) || [];
+                const baseLayout = JSON.parse(JSON.stringify(shadowLayout || { windows: [], desktop: [] }));
+
+                const merged = Merger.mergeLayout(
+                    { windows: localWindows, desktop: localDesktop },
+                    baseLayout,
+                    remoteData
+                );
+
+                if (!merged || !merged.windows || !merged.desktop) {
+                    console.warn('[Worksheet] Layout merge produced invalid result, aborting merge to prevent data loss.');
+                    return null;
+                }
+
+                console.log(`[Worksheet] Layout merged. Windows: ${merged.windows.length}, Icons: ${merged.desktop.length}`);
+
+                // ID-Stable reconciliation for Solid stores
+                try {
+                    if (typeof bb.setOpenWindows === 'function') {
+                        bb.setOpenWindows(reconcile(merged.windows, { key: 'id' }));
+                        this.save(this.TIERS.WINDOWS, null, merged.windows, false);
+                    }
+                } catch (err) {
+                    console.error('[Worksheet] setOpenWindows reconciliation failed:', err);
+                }
+
+                try {
+                    if (typeof bb.setDesktopIcons === 'function') {
+                        // Ensure system icons are present
+                        const repaired = [
+                            { id: 'app:catalog', type: 'app', label: 'Catalog', x: 40, y: 40, target: 'catalog', icon: 'Database' },
+                            { id: 'app:mesh', type: 'app', label: 'Mesh Graph', x: 140, y: 40, target: 'mesh', icon: 'Network' },
+                            { id: 'app:settings', type: 'app', label: 'Settings', x: 40, y: 140, target: 'settings', icon: 'Settings' },
+                            { id: 'app:console', type: 'app', label: 'Console', x: 140, y: 140, target: 'console', icon: 'Terminal' },
+                            { id: 'action:sync', type: 'action', label: 'Sync Cloud', x: 40, y: 240, target: 'sync_cloud', icon: 'Cloud' },
+                            { id: 'action:new', type: 'action', label: 'New Op', x: 140, y: 240, target: 'new_op', icon: 'Plus' }
+                        ];
+
+                        const finalDesktop = [...repaired];
+                        for (const icon of merged.desktop) {
+                            if (icon && icon.id && !finalDesktop.find(ri => ri.id === icon.id)) finalDesktop.push(icon);
+                        }
+
+                        bb.setDesktopIcons(reconcile(finalDesktop, { key: 'id' }));
+                        this.save(this.TIERS.DESKTOP, null, finalDesktop, false);
+                    }
+                } catch (err) {
+                    console.error('[Worksheet] setDesktopIcons reconciliation failed:', err);
+                }                
+                syncActions.updateShadowLayout(remoteData);
+                return merged;
+            }
+
+            this.save(tier, key, remoteData, false);
+            return remoteData;
+        } finally {
+            this._isSyncing = false;
+            console.log(`[Worksheet] mergeRemote finished for tier: ${tier}`);
+        }
     }
 };
 

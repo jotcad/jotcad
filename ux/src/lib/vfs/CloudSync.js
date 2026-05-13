@@ -1,3 +1,4 @@
+console.log('[Trace] Executing CloudSync.js');
 import { merge as diff3Merge } from 'node-diff3';
 import { 
     shadowOps, 
@@ -19,56 +20,53 @@ export const Merger = {
         if (left === orig) return right;
         if (right === orig) return left;
 
-        if (typeof left === 'object' && left !== null && typeof right === 'object' && right !== null) {
-            if (Array.isArray(left) && Array.isArray(right)) {
-                // Array merge: ID-aware or fallback to local
-                const origArr = Array.isArray(orig) ? orig : [];
-                const origMap = new Map(origArr.filter(i => i?.id).map(i => [i.id, i]));
-                const leftMap = new Map(left.filter(i => i?.id).map(i => [i.id, i]));
-                const rightMap = new Map(right.filter(i => i?.id).map(i => [i.id, i]));
-
-                if (leftMap.size === 0 && rightMap.size === 0) return left; // Fallback for simple arrays
-
-                const allIds = new Set([...leftMap.keys(), ...rightMap.keys()]);
-                const result = [];
-
-                for (const id of allIds) {
-                    const o = origMap.get(id);
-                    const l = leftMap.get(id);
-                    const r = rightMap.get(id);
-                    
-                    if (l === undefined) {
-                        // Remote add or local delete
-                        if (o === undefined || JSON.stringify(o) !== JSON.stringify(r)) {
-                            result.push(r);
-                        }
-                        continue;
-                    }
-                    if (r === undefined) {
-                        // Local add or remote delete
-                        if (o === undefined || JSON.stringify(o) !== JSON.stringify(l)) {
-                            result.push(l);
-                        }
-                        continue;
-                    }
-                    result.push(this.mergeJson(o, l, r));
-                }
-                return result;
-            } else if (!Array.isArray(left) && !Array.isArray(right)) {
-                // Object merge
-                const allKeys = new Set([
-                    ...Object.keys(orig || {}),
-                    ...Object.keys(left),
-                    ...Object.keys(right)
-                ]);
-                const res = {};
-                for (const key of allKeys) {
-                    res[key] = this.mergeJson(orig?.[key], left[key], right[key]);
-                }
-                return res;
-            }
+        // NULL SAFETY: If either side is not an object, return the newest or fall back to left
+        if (!left || typeof left !== 'object' || !right || typeof right !== 'object') {
+            return right !== undefined ? right : left;
         }
-        return left; // Conflict fallback
+
+        if (Array.isArray(left) && Array.isArray(right)) {
+            // Array merge: ID-aware
+            const origArr = Array.isArray(orig) ? orig : [];
+            const origMap = new Map(origArr.filter(i => i?.id).map(i => [i.id, i]));
+            const leftMap = new Map(left.filter(i => i?.id).map(i => [i.id, i]));
+            const rightMap = new Map(right.filter(i => i?.id).map(i => [i.id, i]));
+
+            if (leftMap.size === 0 && rightMap.size === 0) return left;
+
+            const allIds = new Set([...leftMap.keys(), ...rightMap.keys()]);
+            const result = [];
+
+            for (const id of allIds) {
+                const o = origMap.get(id);
+                const l = leftMap.get(id);
+                const r = rightMap.get(id);
+                
+                if (l === undefined) {
+                    if (o === undefined || JSON.stringify(o) !== JSON.stringify(r)) result.push(r);
+                    continue;
+                }
+                if (r === undefined) {
+                    if (o === undefined || JSON.stringify(o) !== JSON.stringify(l)) result.push(l);
+                    continue;
+                }
+                result.push(this.mergeJson(o, l, r));
+            }
+            return result;
+        } else if (!Array.isArray(left) && !Array.isArray(right)) {
+            // Object merge
+            const allKeys = new Set([
+                ...Object.keys(orig || {}),
+                ...Object.keys(left),
+                ...Object.keys(right)
+            ]);
+            const res = {};
+            for (const key of allKeys) {
+                res[key] = this.mergeJson(orig?.[key], left[key], right[key]);
+            }
+            return res;
+        }
+        return right || left; 
     },
 
     mergeOperator(path, localOp, baseOp, remoteOp) {
@@ -105,7 +103,13 @@ export const Merger = {
                 desktop: Array.isArray(remoteLayout?.desktop) ? remoteLayout.desktop : []
             };
             
-            return this.mergeJson(base, local, remote);
+            const merged = this.mergeJson(base, local, remote);
+            
+            // FINAL SAFETY: Ensure result is an object with arrays
+            return {
+                windows: Array.isArray(merged?.windows) ? merged.windows : local.windows,
+                desktop: Array.isArray(merged?.desktop) ? merged.desktop : local.desktop
+            };
         } catch (e) {
             console.error('[Merger] Layout merge failed, falling back to local.', e);
             return localLayout;
@@ -143,59 +147,102 @@ export const CloudSync = {
             const handler = window._RS_HANDLER;
             if (!handler) throw new Error('RemoteStorageHandler not initialized');
 
-            // --- 1. SYNC OPERATORS ---
-            console.log('[CloudSync] Step 1: Synchronizing Operators');
-            const operatorsListing = (await handler.getOperators()) || {};
+            // --- 1. SYNC USER OPS (Unified Catalog) ---
+            console.log('[CloudSync] Step 1: Synchronizing UserOps catalog');
+            
+            // Fetch with safety timeout
+            const fetchTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('RemoteStorage timeout after 15s')), 15000));
+            const remoteUserOps = await Promise.race([
+                handler.getUserOps(),
+                fetchTimeout
+            ]) || {};
+            
             const localOps = bb.dynamicOps();
             
-            for (const name of Object.keys(operatorsListing)) {
-                const path = `user/${name}`;
-                const remoteOp = await handler.getOperator(name);
+            let catalogChanged = false;
+            const finalRemoteCatalog = { ...remoteUserOps };
+            const processedKeys = new Set();
+
+            // A. Process Remote Catalog (Additions & Updates)
+            for (const [vfsKey, remoteOp] of Object.entries(remoteUserOps)) {
+                const path = `user/${vfsKey}`;
+                processedKeys.add(path);
+                
                 const localOp = localOps[path];
-                const baseOp = JSON.parse(JSON.stringify(shadowOps[path] || null));
+                const baseOp = shadowOps[path];
 
                 if (!localOp) {
-                    if (baseOp && JSON.stringify(baseOp) === JSON.stringify(remoteOp)) {
-                        console.log(`[CloudSync] Operator deleted locally, removing from remote: ${name}`);
-                        await handler.removeOperator(path);
+                    // It's on remote, but not in local blackboard
+                    if (baseOp) {
+                        // DELIBERATE LOCAL DELETION: It was here (in shadow), now it's gone.
+                        console.log(`[CloudSync] Local deletion detected for: ${vfsKey}. Removing from remote.`);
+                        delete finalRemoteCatalog[vfsKey];
+                        syncActions.removeShadowOp(path);
+                        catalogChanged = true;
                     } else {
-                        console.log(`[CloudSync] New operator on remote, pulling: ${name}`);
+                        // REMOTE ADDITION: It's new to us.
+                        console.log(`[CloudSync] New operator on remote, pulling: ${vfsKey}`);
+                        if (!remoteOp.schema?.arguments) {
+                            console.warn(`[CloudSync] Skipping invalid remote operator '${vfsKey}'.`);
+                            continue;
+                        }
+                        // HYDRATION: persist=false keeps the version number and stops save-loops
                         bb.publishDynamicOp(path, remoteOp.schema, remoteOp.script, false);
                         syncActions.updateShadowOp(path, remoteOp);
                     }
                 } else {
+                    // It's in both.
                     const localStr = JSON.stringify({ script: localOp.script, schema: localOp.schema });
                     const remoteStr = JSON.stringify({ script: remoteOp.script, schema: remoteOp.schema });
                     
                     if (localStr !== remoteStr) {
-                        console.log(`[CloudSync] Operator modified on both sides, merging: ${name}`);
-                        const merged = Merger.mergeOperator(path, localOp, baseOp || {}, remoteOp);
-                        bb.publishDynamicOp(path, merged.schema, merged.script, false);
-                        if (merged.hasConflicts) setSyncStatus('conflict');
-                        syncActions.updateShadowOp(path, remoteOp);
+                        const baseOpJson = JSON.parse(JSON.stringify(baseOp || null));
+                        if (JSON.stringify(remoteOp) === JSON.stringify(baseOpJson)) {
+                            // LOCAL UPDATE: Local changed, Remote matches shadow.
+                            console.log(`[CloudSync] Local update for: ${vfsKey}. Pushing.`);
+                            finalRemoteCatalog[vfsKey] = { script: localOp.script, schema: localOp.schema };
+                            syncActions.updateShadowOp(path, localOp);
+                            catalogChanged = true;
+                        } else {
+                            // CONFLICT / REMOTE UPDATE: Remote changed from shadow.
+                            console.log(`[CloudSync] Conflict/Remote update for: ${vfsKey}. Merging.`);
+                            const merged = Merger.mergeOperator(path, localOp, baseOpJson || {}, remoteOp);
+                            // HYDRATION: persist=false
+                            bb.publishDynamicOp(path, merged.schema, merged.script, false);
+                            if (merged.hasConflicts) setSyncStatus('conflict');
+                            syncActions.updateShadowOp(path, remoteOp);
+                        }
                     }
                 }
             }
 
-            // Push local-only ops
+            // B. Process Local-Only Additions
             for (const [path, localOp] of Object.entries(localOps)) {
-                const name = path.replace('user/', '');
-                const isRemote = operatorsListing[name] || operatorsListing[name + '/'];
-                if (!isRemote) {
+                if (!processedKeys.has(path)) {
+                    const vfsKey = path.replace('user/', '');
                     const baseOp = shadowOps[path];
+                    
                     if (baseOp) {
-                        console.log(`[CloudSync] Operator deleted on remote, removing locally: ${path}`);
+                        // REMOTE DELETION: Was in shadow, now gone from remote.
+                        console.log(`[CloudSync] Remote deletion detected for: ${path}.`);
                         bb.removeDynamicOp(path);
                         syncActions.removeShadowOp(path);
                     } else {
-                        console.log(`[CloudSync] New operator locally, pushing: ${path}`);
-                        await handler.pushOperator(path, localOp.script, localOp.schema);
+                        // NEW LOCAL ADDITION
+                        console.log(`[CloudSync] New local addition: ${vfsKey}`);
+                        finalRemoteCatalog[vfsKey] = { script: localOp.script, schema: localOp.schema };
                         syncActions.updateShadowOp(path, localOp);
+                        catalogChanged = true;
                     }
                 }
             }
 
-            // Persist operators to disk silently
+            if (catalogChanged) {
+                console.log('[CloudSync] Pushing updated catalog.');
+                await handler.saveUserOps(finalRemoteCatalog);
+            }
+
+            // Persist locally silently (triggerSync=false)
             const ws = (await import('./Worksheet')).Worksheet;
             ws.save('operators', null, bb.dynamicOps(), false);
 
@@ -204,25 +251,19 @@ export const CloudSync = {
             const remoteLayout = await handler.getLayout();
             const baseLayout = JSON.parse(JSON.stringify(shadowLayout));
 
-            // Use blackboard stores directly as Live Local Source of Truth
             const localLayout = { 
                 windows: JSON.parse(JSON.stringify(bb.openWindows())), 
                 desktop: JSON.parse(JSON.stringify(bb.desktopIcons())) 
             };
 
-            const localLayoutStr = JSON.stringify(localLayout);
-            const remoteLayoutStr = JSON.stringify(remoteLayout || { windows: [], desktop: [] });
-
-            if (localLayoutStr !== remoteLayoutStr) {
+            if (JSON.stringify(localLayout) !== JSON.stringify(remoteLayout || { windows: [], desktop: [] })) {
                 if (!remoteLayout || (remoteLayout.windows?.length === 0 && remoteLayout.desktop?.length === 0)) {
                     if (localLayout.windows.length > 0 || localLayout.desktop.length > 0) {
-                        console.log('[CloudSync] Remote layout is empty, pushing local state.');
                         await handler.pushLayout(localLayout);
                         syncActions.updateShadowLayout(localLayout);
                     }
                 } else {
                     const merged = Merger.mergeLayout(localLayout, baseLayout, remoteLayout);
-                    
                     const { reconcile } = await import('solid-js/store');
                     if (merged.windows) bb.setOpenWindows(reconcile(merged.windows, { key: 'id' }));
                     if (merged.desktop) bb.setDesktopIcons(reconcile(merged.desktop, { key: 'id' }));

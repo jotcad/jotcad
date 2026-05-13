@@ -1,176 +1,150 @@
-import RemoteStorage from 'remotestoragejs';
-import Widget from 'remotestorage-widget';
-import JotStorageModule from './RemoteStorageModule';
 import { setSyncStatus, setCloudAccount } from '../state/SyncState';
 import { Worksheet } from './Worksheet';
 import { syncActions } from '../state/SyncState';
+import RemoteStorage from 'remotestoragejs';
+import Widget from 'remotestorage-widget';
+import JotStorageModule from './RemoteStorageModule.js';
 
-const rs = new RemoteStorage({
-  cache: true,
-  logging: true
-});
+let rs = null;
 
-// DEFENSIVE PATCH: RemoteStorage.js has a bug where it calls 'stripQuotes' on undefined ETags
-// when working with certain Google Drive configurations. 
-if (typeof window !== 'undefined') {
-    const originalRequest = rs.remote?.request;
-    if (originalRequest) {
-        rs.remote.request = function(...args) {
-            return originalRequest.apply(this, args).catch(err => {
-                // If it's the specific stripQuotes error, wrap it in a cleaner message
-                if (err.message?.includes('stripQuotes')) {
-                    console.warn('[RemoteStorage Patch] Suppressed stripQuotes error. Likely a missing ETag from Google Drive.');
-                    return { statusCode: 200, body: {}, contentType: 'application/json' };
-                }
-                throw err;
-            });
-        };
-    }
-}
-
-// Enable Google Drive & Dropbox as backends
-rs.setApiKeys({
-  googledrive: '594109471805-4a27m37mlrasmjoh0cap2g97dkgnc2p4.apps.googleusercontent.com',
-  dropbox: import.meta.env.VITE_DROPBOX_APP_KEY
-});
-
-rs.addModule(JotStorageModule);
-rs.access.claim('jotcad', 'rw');
-
-/**
- * RemoteStorage Lifecycle Handler
- */
 export const RemoteStorageHandler = {
   init() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || rs) return;
+
+    console.log('[RemoteStorageHandler] Initializing...');
+
+    rs = new RemoteStorage({
+      cache: true,
+      logging: true
+    });
+
+    // --- CRITICAL LIBRARY PATCH ---
+    // Fixes the 'stripQuotes' TypeError in GoogleDrive/Dropbox wire clients
+    // caused by lost 'this' context in callbacks.
+    rs.on('features-loaded', () => {
+        if (rs.remote) {
+            console.log('[RemoteStorageHandler] Patching WireClient scope...');
+            // Bind stripQuotes to the remote instance so it survives callbacks
+            if (typeof rs.remote.stripQuotes === 'function') {
+                rs.remote.stripQuotes = rs.remote.stripQuotes.bind(rs.remote);
+            }
+            // Add a fallback just in case the method itself is missing on some prototypes
+            if (!rs.remote.stripQuotes) {
+                rs.remote.stripQuotes = (str) => (typeof str === 'string' ? str.replace(/["']/g, '') : str);
+            }
+        }
+    });
+
+    rs.setApiKeys({
+      googledrive: '594109471805-4a27m37mlrasmjoh0cap2g97dkgnc2p4.apps.googleusercontent.com',
+      dropbox: import.meta.env.VITE_DROPBOX_APP_KEY
+    });
+
+    rs.addModule(JotStorageModule);
+    rs.access.claim('jotcad', 'rw');
+
     window._RS_HANDLER = this;
 
-    let widget = null;
-
-    // Check for container immediately, or wait for it to appear
-    const attachWidget = () => {
-        const container = document.getElementById('rs-widget-container');
-        if (container) {
-            // Lazy-create the widget ONLY when the container exists
-            if (!widget) {
-                widget = new Widget(rs, { leaveOpen: false });
-            }
-            // Only attach if container isn't already hosting the widget
-            if (!container.querySelector('#remotestorage-widget')) {
-                widget.attach('rs-widget-container');
-            }
-            return true;
-        }
-        return false;
-    };
-
-    // Robust re-attachment whenever the container appears in the DOM
-    const observer = new MutationObserver(() => {
-        attachWidget();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    const widget = new Widget(rs, { leaveOpen: false });
     
-    // Initial attempt
-    attachWidget();
+    // Simple re-attach logic
+    const interval = setInterval(() => {
+        const container = document.getElementById('rs-widget-container');
+        if (container && !container.querySelector('.rs-widget')) {
+            widget.attach('rs-widget-container');
+        }
+    }, 1000);
 
-    rs.on('connected', () => {
+    rs.on('connected', async () => {
       const userAddress = rs.remote.userAddress;
-      console.log(`[RemoteStorage] Connected: ${userAddress}`);
+      console.log(`%c[RemoteStorage] Connected: ${userAddress}`, 'color: #00ffff; font-weight: bold;');
       setCloudAccount({ email: userAddress, name: userAddress.split('@')[0] });
       setSyncStatus('idle');
+
+      // Small delay to allow the app to finish its first paint
+      await new Promise(r => setTimeout(r, 2000));
       this.initialSync();
     });
 
-    rs.on('network-offline', () => {
-      setSyncStatus('error');
-    });
+    rs.on('network-offline', () => setSyncStatus('error'));
+    rs.on('network-online', () => setSyncStatus('idle'));
 
-    rs.on('network-online', () => {
-      setSyncStatus('idle');
-    });
-
-    // Handle incoming changes from other devices
-    rs.jotcad.onChange((event) => {
+    rs.jotcad.onChange(async (event) => {
       if (event.origin === 'remote') {
+        console.log(`[RemoteStorage] Remote change: ${event.relativePath}`);
         if (event.relativePath === 'layout') {
-          Worksheet.mergeRemote(Worksheet.TIERS.WINDOWS, null, event.newValue);
-        } else if (event.relativePath.startsWith('operators/')) {
-          const name = event.relativePath.replace('operators/', '');
-          Worksheet.mergeRemote(Worksheet.TIERS.OPERATORS, name, event.newValue);
-        } else if (event.relativePath.startsWith('assets/')) {
-          const id = event.relativePath.replace('assets/', '');
-          Worksheet.mergeRemote(Worksheet.TIERS.ASSETS, id, event.newValue);
-        } else if (event.relativePath.startsWith('config/')) {
-           // Handle app_data or config
-           const parts = event.relativePath.split('/');
-           const tier = parts[1]; // app_data or config
-           const key = parts.slice(2).join('/');
-           Worksheet.mergeRemote(tier, key, event.newValue);
+          await Worksheet.mergeRemote(Worksheet.TIERS.WINDOWS, null, event.newValue);
+        } else if (event.relativePath === 'userops') {
+          await Worksheet.mergeRemote(Worksheet.TIERS.OPERATORS, null, event.newValue);
         }
       }
     });
   },
 
   async initialSync() {
+    if (!rs) return;
+    console.log('[RemoteStorage] initialSync started');
     setSyncStatus('syncing');
     try {
-      // 1. Sync Operators
-      const operators = await this.getOperators();
-      if (operators) {
-        for (const name of Object.keys(operators)) {
-          const remoteOp = await this.getOperator(name);
-          Worksheet.mergeRemote(Worksheet.TIERS.OPERATORS, name, remoteOp);
-        }
+      const remoteUserOps = await this.getUserOps();
+      if (remoteUserOps && Object.keys(remoteUserOps).length > 0) {
+          await Worksheet.mergeRemote(Worksheet.TIERS.OPERATORS, null, remoteUserOps);
       }
 
-      // 2. Sync Layout
       const remoteLayout = await this.getLayout();
       if (remoteLayout) {
-        Worksheet.mergeRemote(Worksheet.TIERS.WINDOWS, null, remoteLayout);
+        await Worksheet.mergeRemote(Worksheet.TIERS.WINDOWS, null, remoteLayout);
       }
 
       setSyncStatus('idle');
+      console.log('[RemoteStorage] initialSync finished');
     } catch (e) {
       console.error('[RemoteStorage] Initial sync failed:', e);
       setSyncStatus('error');
-      alert(`Initial Cloud Sync Failed: ${e.message || e}`);
     }
   },
 
   // --- GETTERS ---
-  getOperators: () => rs.jotcad.getOperators(),
-  getOperator: (name) => rs.jotcad.getOperator(name),
-  getLayout: () => rs.jotcad.getLayout(),
+  getUserOps: async () => {
+      if (!rs) return {};
+      const data = await rs.jotcad.getUserOps();
+      if (data && typeof data === 'string') {
+          try { return JSON.parse(data); } catch(e) { return {}; }
+      }
+      return data || {};
+  },
+  getLayout: async () => {
+      if (!rs) return { windows: [], desktop: [] };
+      const data = await rs.jotcad.getLayout();
+      if (data && typeof data === 'string') {
+          try { return JSON.parse(data); } catch(e) { return { windows: [], desktop: [] }; }
+      }
+      return data || { windows: [], desktop: [] };
+  },
 
-  // --- SETTERS ---
+  saveUserOps: (data) => rs?.jotcad.saveUserOps(data),
+
   async pushLayout(layout) {
-    if (!rs.connected) return;
+    if (!rs || !rs.connected) return;
     await rs.jotcad.saveLayout(layout);
     syncActions.updateShadowLayout(layout);
   },
 
   async pushOperator(path, script, schema) {
-    if (!rs.connected || !path) return;
-    const name = path.replace('user/', '');
-    const opData = { script, schema };
-    await rs.jotcad.saveOperator(name, opData);
-    syncActions.updateShadowOp(path, opData);
+    if (!rs || !rs.connected || !path) return;
+    const vfsKey = path.replace('user/', '');
+    const currentOps = await this.getUserOps() || {};
+    currentOps[vfsKey] = { script, schema };
+    await rs.jotcad.saveUserOps(currentOps);
+    syncActions.updateShadowOp(path, { script, schema });
   },
 
   async removeOperator(path) {
-    if (!rs.connected || !path) return;
-    const name = path.replace('user/', '');
-    await rs.jotcad.removeOperator(name);
+    if (!rs || !rs.connected || !path) return;
+    const vfsKey = path.replace('user/', '');
+    const currentOps = await this.getUserOps() || {};
+    delete currentOps[vfsKey];
+    await rs.jotcad.saveUserOps(currentOps);
     syncActions.removeShadowOp(path);
-  },
-
-  async pushAsset(id, data) {
-    if (!rs.connected) return;
-    await rs.jotcad.saveAsset(id, data);
-  },
-
-  async pushConfig(tier, key, data) {
-    if (!rs.connected) return;
-    await rs.jotcad.saveConfig(tier, key, data);
   }
 };

@@ -33,8 +33,9 @@ export class JotParser {
 
   _tokenize(text) {
     const tokens = [];
-    // Only strip // comments if they are at start of line or preceded by whitespace
-    const cleanText = text.replace(/(^|\s)\/\/.*$/gm, '$1');
+    // Only strip // comments if they are at start of line or preceded by whitespace.
+    // Preserve the newline character to avoid merging lines.
+    const cleanText = text.replace(/(^|\s)\/\/.*(?=\n|$)/g, '$1');
     const regex =
       /\s*([a-zA-Z_\$][a-zA-Z0-9_/]*|\->|-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/|\-|\+)\s*/g;
     let match;

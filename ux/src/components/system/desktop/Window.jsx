@@ -151,10 +151,10 @@ export const Window = (props) => {
     }
 
     return {
-        left: `${props.data.pos.x}px`,
-        top: `${props.data.pos.y}px`,
-        width: `${props.data.size.width}px`,
-        height: `${props.data.size.height}px`,
+        left: `${props.data.pos?.x ?? 100}px`,
+        top: `${props.data.pos?.y ?? 100}px`,
+        width: `${props.data.size?.width ?? 500}px`,
+        height: `${props.data.size?.height ?? 600}px`,
         'z-index': props.data.zIndex || 10,
         'border-radius': '1rem',
         'border-width': '2px'

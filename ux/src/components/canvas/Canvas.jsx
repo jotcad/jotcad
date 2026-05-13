@@ -4,6 +4,7 @@ import {
   onCleanup,
   For,
   createMemo,
+  createEffect,
 } from 'solid-js';
 import { blackboard } from '../../lib/blackboard';
 import { desktopIcons, windowActions } from '../../lib/state/DesktopState';
@@ -20,10 +21,26 @@ export const Canvas = () => {
   
   if (typeof window !== 'undefined') window._JOT_VIEW = view;
 
+  const [visibleCount, setVisibleCount] = createSignal(10);
+  
   const userOpIcons = createMemo(() => {
     const ops = dynamicOps();
-    console.log('[Canvas] userOpIcons updating. Count:', Object.keys(ops).length);
-    return Object.entries(ops).map(([path, data], i) => {
+    
+    // 1. Group ops by base name and find the highest version for each
+    const latestVersions = new Map(); // name -> { path, version, data }
+    
+    Object.entries(ops).forEach(([path, data]) => {
+        const [base, vStr] = path.split(':v');
+        const name = base.replace('user/', '');
+        const version = vStr ? parseInt(vStr) : 1;
+        
+        if (!latestVersions.has(name) || latestVersions.get(name).version < version) {
+            latestVersions.set(name, { path, version, data });
+        }
+    });
+
+    // 2. Map only the latest versions to icons
+    const all = Array.from(latestVersions.values()).map(({ path, data }, i) => {
         const savedPos = data.schema?._desktopPos || { 
             x: 300 + (i % 5) * 120, 
             y: 40 + Math.floor(i / 5) * 120 
@@ -38,7 +55,19 @@ export const Canvas = () => {
             y: savedPos.y
         };
     });
+    return all;
   });
+
+  // Incremental rendering throttle
+  createEffect(() => {
+    const all = userOpIcons();
+    if (visibleCount() < all.length) {
+        const timer = requestAnimationFrame(() => setVisibleCount(prev => prev + 10));
+        onCleanup(() => cancelAnimationFrame(timer));
+    }
+  });
+
+  const throttledIcons = createMemo(() => userOpIcons().slice(0, visibleCount()));
 
   let canvasRef;
   let dragRef;
@@ -104,7 +133,7 @@ export const Canvas = () => {
                 {(icon) => <DesktopIcon data={icon} />}
             </For>
 
-            <For each={userOpIcons()} by="id">
+            <For each={throttledIcons()} by="id">
                 {(icon) => <DesktopIcon data={icon} isUserOp={true} />}
             </For>
             

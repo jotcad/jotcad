@@ -95,3 +95,32 @@ test('Compiler: Nested User Op Propagation', async (t) => {
   assert.strictEqual(finalResult.parameters.c, 'red');
   assert.strictEqual(finalResult.parameters.$in.path, 'jot/Box', 'Step1 subject should be the original Box');
 });
+
+test('Compiler: User Op Versioning (:vN)', async (t) => {
+  const parser = new JotParser();
+  const compiler = new JotCompiler();
+
+  compiler.registerOperator('Box', { path: 'jot/Box', schema: { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: 'shape' } } });
+  compiler.registerOperator('Color', { path: 'jot/Color', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'c', type: 'string' }], outputs: { $out: 'shape' } } });
+
+  // 1. Register v1
+  compiler.registerOperator('user/MyOp:v1', {
+    path: 'user/MyOp:v1',
+    schema: { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } }
+  });
+
+  const script = 'Box(10).MyOp() -> $out';
+  const ast = parser.parse(script);
+  const terminals1 = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+  assert.strictEqual(terminals1[0].selector.path, 'user/MyOp:v1', 'Should target v1');
+
+  // 2. Register v2 (Replacing v1)
+  compiler.registerOperator('user/MyOp:v2', {
+    path: 'user/MyOp:v2',
+    schema: { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } }
+  });
+
+  const terminals2 = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+  assert.strictEqual(terminals2[0].selector.path, 'user/MyOp:v2', 'Should target v2 after replacement');
+  assert.strictEqual(compiler.operators.get('MyOp').length, 1, 'Should only have one version registered for the short name');
+});

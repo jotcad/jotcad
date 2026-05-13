@@ -4,13 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>JotCAD Spatial Desktop</title>
-    <script type="module" crossorigin src="/assets/index-DxaOQ-Xc.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/chunk-DECur_0Z.js">
-    <link rel="modulepreload" crossorigin href="/assets/preload-helper-D4M6sveU.js">
-    <link rel="modulepreload" crossorigin href="/assets/vfs_core-UcLN70Z_.js">
-    <link rel="modulepreload" crossorigin href="/assets/SyncState-BR5rwq8i.js">
-    <link rel="modulepreload" crossorigin href="/assets/__vite-browser-external-DGJKVr5g.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-CBboUkMn.css">
+    <script>
+      console.log('[HTML Boot] Initial URL:', window.location.href);
+      // Heartbeat to detect main thread lockup
+      setInterval(() => {
+        console.log('[HTML Heartbeat] Main thread is alive.');
+      }, 5000);
+    </script>
+    <script type="module" crossorigin src="/assets/index-Cx9Uo-uM.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-gUCMwKB7.css">
   </head>
   <body class="bg-blackboard text-gray-100 overflow-hidden">
     <div id="root"></div>

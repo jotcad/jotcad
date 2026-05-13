@@ -488,34 +488,43 @@ export class MeshLinkBase {
         const info = await resp.json();
         console.log(`[MeshLink ${this.vfs.id}] Registration successful for ${url}:`, info);
         if (info.id && info.id !== this.vfs.id) {
+          let newConn = null;
+
           if (!this.peers.has(info.id)) {
-            const conn = new ForwardConnection(info.id, url, this.fetch, { 
+            newConn = new ForwardConnection(info.id, url, this.fetch, { 
                 localUrl: this.localUrl, 
                 signal: this.abortController.signal,
                 reachability: info.reachability
             });
-            this._setPeer(info.id, conn);
-            console.log(`[MeshLink ${this.vfs.id}] Peer added to registry: ${info.id} (reachability: ${info.reachability})`);
-            this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
-            for (const entry of this.interests.values()) {
-              let maxExp = entry.localExpiresAt || 0;
-              for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
-              if (maxExp > Date.now()) {
-                conn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
-              }
-            }
+            this._setPeer(info.id, newConn);
+            console.log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id} (${info.reachability})`);
           }
+
           // Browser Rule: If we have no local URL, we MUST poll for mesh events
           if (info.reachability === 'REVERSE' || !this.localUrl) {
-            // Unify: Create a ReverseConnection for the poll link
             const pollerId = `${info.id}-poller`;
             if (!this.peers.has(pollerId)) {
                 console.log(`[MeshLink ${this.vfs.id}] Starting reverse poll line for ${info.id}`);
                 const poller = new ReverseConnection(pollerId, this, { instanceId: this.instanceId });
                 this._setPeer(pollerId, poller);
                 poller.startPolling(url, this.fetch);
+                newConn = poller; // Ensure interests are synced to the poller too
             }
           }
+
+          // SYNC INTERESTS TO NEW CONNECTION
+          if (newConn) {
+              for (const entry of this.interests.values()) {
+                let maxExp = entry.localExpiresAt || 0;
+                for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+                if (maxExp > Date.now()) {
+                  console.log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new peer ${newConn.neighborId}`);
+                  newConn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
+                }
+              }
+          }
+
+          this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
           return info.id;
         }
       } else {

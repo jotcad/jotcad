@@ -94,6 +94,7 @@ export const blackboard = {
   start: (bb) => vfsActions.start(bb || blackboard), 
   stop: vfsActions.stop.bind(vfsActions),
   publishDynamicOp: vfsActions.publishDynamicOp.bind(vfsActions),
+  getNextVersionPath: vfsActions.getNextVersionPath.bind(vfsActions),
   removeDynamicOp: vfsActions.removeDynamicOp.bind(vfsActions),
   read: vfsActions.read.bind(vfsActions),
   write: vfsActions.write.bind(vfsActions),

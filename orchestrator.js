@@ -45,13 +45,12 @@ const components = [
   },
   {
     name: 'Interactive UX',
-    command: 'npm',
-    args: ['run', 'dev', '--', '--port', '3030'],
-    cwd: path.join(__dirname, 'ux'),
+    command: 'npx',
+    args: ['http-server', 'ux/dist', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem'],
+    cwd: __dirname,
     env: {
         ...process.env
     }
-
   }
 ];
 

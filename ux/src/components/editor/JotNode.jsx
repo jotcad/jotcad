@@ -145,17 +145,23 @@ export const JotNode = (props) => {
     return local !== remote;
   });
 
-  const publishToMesh = () => {
+  const publishToMesh = (isNewVersion = false) => {
      let path = opName().trim();
      if (path && !path.includes('/')) {
          path = `user/${path}`;
-         setOpName(path);
-         blackboard.updateEditorState(props.data.id, { opName: path, label: path });
      }
      if (!path || !path.startsWith('user/')) {
          alert("Please enter a valid operator path (e.g. 'user/MyOperator')");
          return;
      }
+
+     if (isNewVersion) {
+         path = blackboard.getNextVersionPath(path);
+     }
+
+     setOpName(path);
+     blackboard.updateEditorState(props.data.id, { opName: path, label: path });
+     
      if (props.data.id.startsWith('new-op-')) {
          blackboard.rename(props.data.id, path);
      }
@@ -168,7 +174,12 @@ export const JotNode = (props) => {
            return acc;
        }, {})
      };
-     blackboard.publishDynamicOp(path, schema, code());
+
+     if (!schema.arguments || !Array.isArray(schema.arguments)) {
+         throw new Error(`CRITICAL UI ERROR: Attempted to publish operator '${path}' with malformed arguments.`);
+     }
+
+     blackboard.publishDynamicOp(path, schema, code(), true);
   };
 
   const evaluateJot = async () => {
@@ -187,29 +198,26 @@ export const JotNode = (props) => {
       // --- SCHEMA-DRIVEN EVALUATION ---
       const boundVars = {};
       for (const arg of args()) {
-          if (arg.type === 'jot:shape' || arg.type === 'shape') {
-              if (arg.testValue && typeof arg.testValue === 'string') {
-                  const subAst = parser.parse(arg.testValue);
-                  const schema = { outputs: { "$out": { type: "jot:shape" } } };
-                  const bundles = await compiler.evaluate(subAst, {}, schema);
-                  const res = bundles[0]?.selector;
-                  boundVars[arg.name] = Array.isArray(res) ? res[0] : res;
-              } else {
-                  boundVars[arg.name] = arg.testValue;
-              }
-          } else {
-              boundVars[arg.name] = arg.testValue;
+          const isShape = arg.type === 'jot:shape' || arg.type === 'shape';
+          // If it's a shape argument and the test value is a code string, 
+          // we leave it to the compiler to resolve from the defaults.
+          if (isShape && typeof arg.testValue === 'string' && arg.testValue.trim()) {
+              continue;
           }
+          boundVars[arg.name] = arg.testValue;
       }
 
+      const qualifiedName = opName().includes('/') ? opName() : `user/${opName()}`;
+      console.log(`[JotNode] Evaluating ${qualifiedName}:\n${code()}`);
       const ast = parser.parse(code());
       
-      // Construct local test schema for extraction
+      // Construct local test schema for extraction and default resolution
       const testSchema = {
+          arguments: args().map(arg => ({ name: arg.name, type: arg.type, default: arg.testValue })),
           outputs: outputs().reduce((acc, out) => { acc[out.name] = { type: out.type }; return acc; }, {})
       };
 
-      const terminals = await compiler.evaluate(ast, boundVars, testSchema);
+      const terminals = await compiler.evaluate(ast, boundVars, testSchema, qualifiedName);
 
       const shapes = [];
       const files = [];
@@ -267,9 +275,12 @@ export const JotNode = (props) => {
                    />
                 </div>
                 <div class="flex items-center gap-2">
-                  <button onClick={publishToMesh} class={`relative transition-all p-1 ${isUnpublished() ? 'text-cyan-400' : 'text-white/20'}`} title="Publish Operator">
+                  <button onClick={() => publishToMesh(false)} class={`relative transition-all p-1 ${isUnpublished() ? 'text-cyan-400' : 'text-white/20'}`} title="Save Current Version">
                     <Globe size={14} />
                     <div class={`absolute top-0 right-0 w-1.5 h-1.5 rounded-full ${isUnpublished() ? 'bg-red-500' : 'bg-green-500'}`} />
+                  </button>
+                  <button onClick={() => publishToMesh(true)} class="text-white/30 hover:text-cyan-400 transition-colors p-1" title="Publish New Version">
+                    <Maximize2 size={14} class="rotate-45" /> 
                   </button>
                   <button 
                     onClick={() => { if (confirm(`Delete operator '${opName()}' from library?`)) { blackboard.removeDynamicOp(opName()); blackboard.closeOp(props.data.id); } }}
@@ -321,7 +332,7 @@ export const JotNode = (props) => {
       </div>
 
       <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <ResultList results={results()} files={associatedFiles()} edgeThreshold={edgeThreshold()} setEdgeThreshold={setEdgeThreshold} />
+          <ResultList results={results()} files={associatedFiles()} outputs={outputs()} edgeThreshold={edgeThreshold()} setEdgeThreshold={setEdgeThreshold} />
       </div>
     </div>
   );

@@ -4,7 +4,23 @@ import { blackboard } from '../../lib/blackboard';
 import { Database, RefreshCw, Minus, Maximize2, Plus, Edit2 } from 'lucide-solid';
 
 export const CatalogNode = (props) => {
-  const schemas = () => Object.entries(blackboard.schemas() || {});
+  const schemas = () => {
+    const raw = Object.entries(blackboard.schemas() || {});
+    const groups = new Map();
+
+    for (const [path, schema] of raw) {
+        // user/Foot5:v2 -> base: user/Foot5, v: 2
+        const [base, vStr] = path.split(':v');
+        const version = vStr ? parseInt(vStr) : 0;
+
+        if (!groups.has(base) || groups.get(base).version < version) {
+            groups.set(base, { path, schema, version });
+        }
+    }
+
+    // Return the latest versioned path for each base name
+    return Array.from(groups.values()).map(g => [g.path, g.schema]);
+  };
   const [isRefreshing, setIsRefreshing] = createSignal(false);
   const [newName, setNewName] = createSignal('');
   const status = () => blackboard.discoveryStatus();

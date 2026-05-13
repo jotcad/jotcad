@@ -1,4 +1,5 @@
 import { normalizeSelector, Selector, getSelectorKey } from '../../fs/src/vfs_core.js';
+import { JotParser } from './parser.js';
 
 /**
  * JotCAD Next-Gen Compiler
@@ -9,12 +10,6 @@ export class JotCompiler {
     this.vfs = vfs;
     this.options = { optimizeAliases: true, defaultPrefix: 'jot/', ...options };
     this.symbolTypes = {};
-
-    // Terminal Tracking
-    this.candidates = new Map(); // Group-CID -> Set of ports
-    this.consumed = new Set();   // "Port-CID"
-    this.selectorInstances = new Map(); // Group-CID -> Base Selector
-
 
     this.consumers = {
       'jot:number': (p, a, c, s) => this.JotNumberConsumer(p, a, c, s),
@@ -46,8 +41,32 @@ export class JotCompiler {
     }
 
     if (!config.path) config.path = name;
+    const configVersion = this._parseVersion(config.path);
 
     const register = (n) => {
+      // 1. Version-Qualified Names (user/Test:v74) always match exactly
+      if (n.includes(':v')) {
+          console.log(`[JotCompiler] Registering (Exact): ${n} -> ${config.path}`);
+          this.operators.set(n, [config]);
+          return;
+      }
+
+      // 2. Short Names (Test, user/Test) resolve to LATEST version
+      if (config.path.startsWith('user/')) {
+          const existing = this.operators.get(n);
+          if (existing && existing.length > 0) {
+              const currentVersion = this._parseVersion(existing[0].path);
+              if (configVersion <= currentVersion) {
+                  // Keep the existing newer version for this short-name mapping
+                  return;
+              }
+          }
+          console.log(`[JotCompiler] Registering (Latest): ${n} -> ${config.path}`);
+          this.operators.set(n, [config]);
+          return;
+      }
+
+      // 3. Standard Operators (built-ins) support multi-variant dispatch
       console.log(`[JotCompiler] Registering: ${n} -> ${config.path}`);
       const list = this.operators.get(n) || [];
       if (!list.includes(config)) {
@@ -60,29 +79,37 @@ export class JotCompiler {
     register(config.path);
 
     // Support Base-Name mapping for ALL variants (e.g. jot/Hexagon/radius -> Hexagon)
+    // Also handle versioned paths (e.g. user/Foot5:v2 -> Foot5)
     const fullPath = config.path;
-    const parts = fullPath.split('/');
+    const pathNoVersion = fullPath.split(':')[0];
+    const parts = pathNoVersion.split('/');
     
-    // Logic: If path is 'jot/Hexagon/radius', parts are ['jot', 'Hexagon', 'radius']
-    // We want to register 'Hexagon' if it's in the second slot.
     if (parts.length >= 2) {
         const namespace = parts[0];
         const baseName = parts[1];
         if ((namespace === 'jot' || namespace === 'user') && baseName) {
             register(baseName);
+            // Also register namespace/baseName (e.g. user/Test) as a short-name
+            register(`${namespace}/${baseName}`);
         }
     }
     
     // Also handle direct variants like 'Hexagon/equilateral' (without prefix)
-    if (name.includes('/') && !name.startsWith('jot/') && !name.startsWith('user/')) {
-        const base = name.split('/')[0];
+    const nameNoVersion = name.split(':')[0];
+    if (nameNoVersion.includes('/') && !nameNoVersion.startsWith('jot/') && !nameNoVersion.startsWith('user/')) {
+        const base = nameNoVersion.split('/')[0];
         if (base) register(base);
     }
   }
 
-  async evaluate(ast, parameters = {}, schema = null) {
-    console.log('[JotCompiler] Evaluating AST:', JSON.stringify(ast, null, 2));
-    console.log('[JotCompiler] Parameters:', JSON.stringify(parameters, null, 2));
+  _parseVersion(path) {
+    const match = path.match(/:v(\d+)$/);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
+  async evaluate(ast, parameters = {}, schema = null, contextName = null) {
+    console.log(`[JotCompiler] Evaluating AST${contextName ? ` (${contextName})` : ''}:`, JSON.stringify(ast, null, 2));
+    console.log(`[JotCompiler] Parameters${contextName ? ` (${contextName})` : ''}:`, JSON.stringify(parameters, null, 2));
 
     if (!schema || typeof schema !== 'object' || (!schema.outputs && !schema.arguments)) {
         throw new Error(`JotCompiler Error: A formal schema is now mandatory. Received: ${JSON.stringify(schema)}`);
@@ -105,41 +132,77 @@ export class JotCompiler {
     }
 
     this.localSymbols = { ...parameters };
-    this.candidates.clear();
-    this.consumed.clear();
-    this.selectorInstances.clear();
+
+    // 1. RESOLVE DEFAULTS: If a parameter is missing, use the schema default.
+    // Shape defaults that are strings (Jot code) are evaluated as implicit assignments.
+    if (schema?.arguments) {
+        for (const arg of schema.arguments) {
+            if (this.localSymbols[arg.name] === undefined && arg.default !== undefined) {
+                const val = arg.default;
+                const isShape = arg.type === 'shape' || arg.type === 'jot:shape' || arg.type === 'jot:shapes';
+                if (typeof val === 'string' && isShape && val.trim()) {
+                    // Implicit assignment to the argument name
+                    const parser = new JotParser();
+                    const subAst = parser.parse(val);
+                    const node = { 
+                        type: 'ASSIGNMENT', 
+                        name: arg.name, 
+                        value: Array.isArray(subAst) ? subAst[0] : subAst 
+                    };
+                    await this._evaluateRecursive(node, this.localSymbols, null);
+                } else {
+                    this.localSymbols[arg.name] = val;
+                }
+            }
+        }
+    }
+
+    const requiredOutputs = new Set(Object.keys(schema.outputs || {}));
+    const topLevelNodes = Array.isArray(ast) ? [...ast] : [ast];
 
     try {
-      if (Array.isArray(ast)) {
-        for (const node of ast) {
-          await this._evaluateRecursive(node, this.localSymbols, null);
-        }
-      } else {
-        await this._evaluateRecursive(ast, this.localSymbols, null);
+      // 1. AUTO-ASSIGNMENT: If it's a single expression and the schema has a single output, treat it as an assignment.
+      const outputNames = Object.keys(schema.outputs || {});
+      if (topLevelNodes.length === 1 && topLevelNodes[0]?.type !== 'ASSIGNMENT' && outputNames.length === 1) {
+          topLevelNodes[0] = { type: 'ASSIGNMENT', name: outputNames[0], value: topLevelNodes[0] };
+      }
+
+      // 2. VALIDATION: Every top-level statement MUST be an assignment
+      for (const node of topLevelNodes) {
+          if (node?.type !== 'ASSIGNMENT') {
+              const codeSnippet = this.stringifyAST(node);
+              const ctxStr = contextName ? ` in '${contextName}'` : '';
+              const msg = `Compiler Error${ctxStr}: Each top-level statement in a User Operator must be an assignment (e.g., 'A = Op()' or 'Op() -> $out'). Found ${node?.type || typeof node}: "${codeSnippet}"`;
+              console.error(`[JotCompiler] ${msg}`, node);
+              throw new Error(msg);
+          }
+      }
+
+      // EXECUTION: Evaluate assignments sequentially
+      for (const node of topLevelNodes) {
+          const val = await this._evaluateRecursive(node, this.localSymbols, null);
+          
+          // If this assignment targets a schema output, track it
+          if (requiredOutputs.has(node.name)) {
+              requiredOutputs.delete(node.name);
+          }
       }
 
       const results = [];
-      // PASS 1: Explicit Schema Extraction
+      // PASS 1: Schema Fulfillment & Extraction
       if (schema.outputs) {
-          console.log(`[JotCompiler] Extraction Pass 1: ${Object.keys(schema.outputs).join(', ')}`);
           for (const portName of Object.keys(schema.outputs)) {
               const val = this.localSymbols[portName];
               if (val !== undefined) {
-                  console.log(`[JotCompiler]   Found output for ${portName}:`, val);
                   const portDef = schema.outputs[portName];
                   if (val instanceof Selector) {
-                      // Consume original output before re-tagging for result set
-                      await this._consume(val);
                       const sel = val.withOutput(portName);
                       results.push({ selector: sel, schema: portDef });
-                      await this._consume(sel);
                   } else if (Array.isArray(val)) {
                       for (const item of val) {
                           if (item instanceof Selector) {
-                              await this._consume(item);
                               const sel = item.withOutput(portName);
                               results.push({ selector: sel, schema: portDef });
-                              await this._consume(sel);
                           }
                       }
                   }
@@ -147,23 +210,14 @@ export class JotCompiler {
           }
       }
 
-      if (results.length > 1) {
-          console.warn(`[JotCompiler] Warning: Evaluation produced ${results.length} terminal results.`, results);
+      // PASS 1.5: Missing Output Check
+      if (requiredOutputs.size > 0) {
+          const missing = Array.from(requiredOutputs).join(', ');
+          throw new Error(`Compiler Error: Operator script failed to assign values to output port(s): ${missing}`);
       }
 
-      // PASS 2: Strict Consumption Validation
-      for (const [key, ports] of this.candidates.entries()) {
-          const base = this.selectorInstances.get(key);
-          for (const port of ports) {
-              const sel = base.withOutput(port);
-              const selKey = await getSelectorKey(sel);
-              if (!this.consumed.has(selKey)) {
-                  const msg = `Compiler Error: Unconsumed output terminal found: '${base.path}:${port}'. ` +
-                              `Every created shape must either be passed to another operator or assigned to an output port (-> $out).`;
-                  console.error(`[JotCompiler] ${msg}`, sel);
-                  throw new Error(msg);
-              }
-          }
+      if (results.length > 1) {
+          console.warn(`[JotCompiler] Warning: Evaluation produced ${results.length} terminal results.`, results);
       }
 
       return results;
@@ -315,7 +369,6 @@ export class JotCompiler {
 
         const port = op.schema.outputs ? Object.keys(op.schema.outputs)[0] : '$out';
         const sel = new Selector(op.path, params).withOutput(port);
-        await this._trackSelector(sel);
         return sel;
       } catch (e) {
         if (candidates.length === 1) throw e;
@@ -365,7 +418,6 @@ export class JotCompiler {
         if (this._getTypeOfValue(val) === fullType) {
           params[argDef.name] = this._normalize(val, fullType);
           p.consumed = true;
-          await this._consume(val);
           continue;
         }
       }
@@ -375,7 +427,6 @@ export class JotCompiler {
         if (this._isSubtype(this._getTypeOfValue(subject), fullType)) {
           params[argDef.name] = subject;
           subjectConsumed = true;
-          await this._consume(subject);
           continue;
         }
       }
@@ -388,7 +439,6 @@ export class JotCompiler {
         const res = await consumer(pool, argDef, { opName, evaluate: evaluateHelper }, null);
         if (res !== undefined) {
           params[argDef.name] = (res?.type === 'SYMBOL') ? { ...res, type: fullType } : res;
-          await this._consume(res);
         }
       }
 
@@ -564,52 +614,6 @@ export class JotCompiler {
        return true;
     }
     return false;
-  }
-
-  // --- Terminal Tracking ---
-
-  async _trackSelector(sel) {
-    if (!(sel instanceof Selector)) return;
-    // Protocol Rule: Use base identity (path + parameters) for grouping all its ports
-    const base = new Selector(sel.path, sel.parameters);
-    const key = await getSelectorKey(base);
-    
-    if (!this.candidates.has(key)) {
-      this.candidates.set(key, new Set());
-      this.selectorInstances.set(key, base);
-      
-      const schema = this._getSchemaForPath(sel.path);
-      if (schema?.outputs) {
-        for (const port of Object.keys(schema.outputs)) {
-          this.candidates.get(key).add(port);
-        }
-      } else {
-        this.candidates.get(key).add('$out');
-      }
-      console.log(`[JotCompiler] Tracking: ${sel.path} (CID: ${key.slice(0, 8)}...)`);
-    }
-  }
-
-  async _consumeSelector(sel) {
-    if (!(sel instanceof Selector)) return;
-    // Mark specific Port-CID as consumed
-    const key = await getSelectorKey(sel);
-    this.consumed.add(key);
-    console.log(`[JotCompiler] Consumed: ${sel.path}:${sel.output || '$out'} (CID: ${key.slice(0, 8)}...)`);
-  }
-
-  async _consume(val) {
-    if (val instanceof Selector) {
-      await this._consumeSelector(val);
-    } else if (Array.isArray(val)) {
-      for (const item of val) {
-        await this._consume(item);
-      }
-    } else if (typeof val === 'object' && val !== null && val.type !== 'SYMBOL') {
-      for (const item of Object.values(val)) {
-        await this._consume(item);
-      }
-    }
   }
 
   // --- Helper Methods ---
@@ -824,5 +828,31 @@ export class JotCompiler {
         return subject;
     }
     return undefined;
+  }
+
+  stringifyAST(node) {
+    if (node === null) return 'null';
+    if (typeof node !== 'object') return String(node);
+    
+    switch (node.type) {
+      case 'ASSIGNMENT':
+        return `${this.stringifyAST(node.value)} -> ${node.name}`;
+      case 'CALL':
+        return `${node.name}(${(node.args || []).map(a => this.stringifyAST(a)).join(', ')})`;
+      case 'METHOD':
+        return `${this.stringifyAST(node.subject)}.${node.name}(${(node.args || []).map(a => this.stringifyAST(a)).join(', ')})`;
+      case 'SYMBOL':
+        return node.name;
+      case 'ANNOTATED_ARG':
+        let prefix = '';
+        if (node.typeHint) prefix += `${node.typeHint}:`;
+        if (node.nameHint) prefix += `${node.nameHint}=`;
+        return `${prefix}${this.stringifyAST(node.value)}`;
+      case 'OUTPUT_ACCESS':
+        return `${this.stringifyAST(node.subject)}.${node.output}`;
+      default:
+        if (Array.isArray(node)) return `[${node.map(n => this.stringifyAST(n)).join(', ')}]`;
+        return JSON.stringify(node);
+    }
   }
 }

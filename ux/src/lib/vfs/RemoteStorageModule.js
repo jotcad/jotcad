@@ -8,47 +8,48 @@ export const JotStorageModule = {
   builder(privateClient, publicClient) {
     // Define the data structure
     // We use 'private' storage for user operators and blackboard layout
-    privateClient.declareType('operator', {
-      type: 'object',
-      properties: {
-        script: { type: 'string' },
-        schema: { type: 'object' }
-      },
-      required: ['script', 'schema']
+    
+    privateClient.declareType('userops', {
+      type: 'object'
     });
 
     privateClient.declareType('layout', {
-      type: 'object',
-      properties: {
-        windows: { type: 'array' },
-        desktop: { type: 'array' },
-        view: { type: 'object' }
-      }
+      type: 'object'
     });
 
     privateClient.declareType('asset', {
-      type: 'object',
-      properties: {
-        data: { type: 'string' }, // Base64 or URL
-        mimeType: { type: 'string' }
-      }
+      // Permissive schema to allow strings (blobs) or objects
     });
 
     privateClient.declareType('config', {
-      type: 'object'
+      // Permissive schema
     });
 
     return {
       exports: {
-        // Operator Methods
-        getOperators: () => privateClient.getListing('operators/'),
-        getOperator: (name) => privateClient.getObject(`operators/${name}`),
-        saveOperator: (name, data) => privateClient.storeObject('operator', `operators/${name}`, data),
-        removeOperator: (name) => privateClient.remove(`operators/${name}`),
+        // UserOps Methods (Unified dictionary)
+        getUserOps: () => privateClient.getObject('userops'),
+        saveUserOps: (data) => {
+            if (typeof data !== 'object' || data === null) {
+                console.error('[RemoteStorageModule] saveUserOps expected object, got:', typeof data, data);
+                throw new Error(`Invalid UserOps data: expected object, got ${typeof data}`);
+            }
+            // Ensure plain object (strips proxies)
+            const plainData = JSON.parse(JSON.stringify(data));
+            return privateClient.storeObject('userops', 'userops', plainData);
+        },
 
         // Layout Methods
         getLayout: () => privateClient.getObject('layout'),
-        saveLayout: (data) => privateClient.storeObject('layout', 'layout', data),
+        saveLayout: (data) => {
+            if (typeof data !== 'object' || data === null) {
+                console.error('[RemoteStorageModule] saveLayout expected object, got:', typeof data, data);
+                throw new Error(`Invalid Layout data: expected object, got ${typeof data}`);
+            }
+            // Ensure plain object (strips proxies)
+            const plainData = JSON.parse(JSON.stringify(data));
+            return privateClient.storeObject('layout', 'layout', plainData);
+        },
 
         // Asset Methods
         getAsset: (id) => privateClient.getObject(`assets/${id}`),

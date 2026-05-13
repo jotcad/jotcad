@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>JotCAD Spatial Desktop</title>
+    <script>
+      console.log('[HTML Boot] Initial URL:', window.location.href);
+      // Heartbeat to detect main thread lockup
+      setInterval(() => {
+        console.log('[HTML Heartbeat] Main thread is alive.');
+      }, 5000);
+    </script>
     <script type="module" src="/src/index.jsx"></script>
   </head>
   <body class="bg-blackboard text-gray-100 overflow-hidden">

@@ -8,7 +8,8 @@ import { registerUtilityOps } from './UtilityOps';
 import { JotRegistry } from './JotRegistry';
 import {
   setGraph, setSchemas, setPulse, setMeshTopology,
-  setIsConnected, setDiscoveryStatus, setDynamicOps
+  setIsConnected, setDiscoveryStatus, setDynamicOps,
+  schemas
 } from '../state/MeshState.js';
 
 console.log('[Boot] VFSManager.js imports resolved.');
@@ -36,11 +37,18 @@ let isStarted = false;
 const meshMap = new Map();
 
 export const vfsActions = {
-  async discoverSchemas() {
+  async discoverSchemas(retryCount = 0) {
     setDiscoveryStatus('loading');
+    console.log(`[MeshVFS] discoverSchemas attempt ${retryCount + 1}`);
     try {
       await mesh.subscribe(new Selector('sys/schema'), Date.now() + 60000);
       setDiscoveryStatus('success');
+
+      // If we have no peers yet, the sub was likely dropped. Retry in 1s, then 2s, then 4s...
+      if (mesh.peers.size === 0 && retryCount < 5) {
+          console.log('[MeshVFS] No peers yet, scheduling discovery retry...');
+          setTimeout(() => this.discoverSchemas(retryCount + 1), Math.pow(2, retryCount) * 1000);
+      }
     } catch (err) {
       console.error('[MeshVFS] Catalog discovery failed:', err);
       setDiscoveryStatus('error');
@@ -59,18 +67,42 @@ export const vfsActions = {
         console.error(`[MeshVFS] VFS Init Failed:`, e);
     }
 
-    // 1. LOAD OPERATORS
+    // 1. LOAD OPERATORS (Latest Version Purge)
     const ops = Worksheet.get(Worksheet.TIERS.OPERATORS);
     if (ops && typeof ops === 'object') {
         console.log(`[MeshVFS] Found stored ops:`, Object.keys(ops));
-        setDynamicOps(ops);
+        
+        // Group by base name to find latest versions
+        const groups = new Map(); // baseName -> { path, version, op }
         for (const [path, op] of Object.entries(ops)) {
+            const [base, vStr] = path.split(':v');
+            const version = vStr ? parseInt(vStr) : 0;
+            if (!groups.has(base) || groups.get(base).version < version) {
+                groups.set(base, { path, version, op });
+            }
+        }
+
+        const cleanedOps = {};
+        let changed = false;
+
+        // Only attempt to publish and keep the LATEST for each name
+        for (const { path, op } of groups.values()) {
           try {
             JotRegistry.publishDynamicOp(vfs, mesh, path, op.schema, op.script, false);
+            cleanedOps[path] = op;
           } catch (e) {
-            console.error(`[MeshVFS] Failed to publish stored op ${path}:`, e);
+            console.error(`[MeshVFS] Defective operator detected and purged: ${path}`, e);
+            changed = true;
           }
         }
+
+        // If we have fewer ops than we started with, we purged rubbish
+        if (Object.keys(cleanedOps).length < Object.keys(ops).length || changed) {
+            console.log(`[MeshVFS] Rubbish purged. Reduced library from ${Object.keys(ops).length} to ${Object.keys(cleanedOps).length} entries.`);
+            Worksheet.save(Worksheet.TIERS.OPERATORS, null, cleanedOps, false);
+        }
+        
+        setDynamicOps(cleanedOps);
     }
 
     // 2. Register Utility Ops
@@ -87,13 +119,20 @@ export const vfsActions = {
       if (payload.type === 'TOPOLOGY_UPDATE') meshMap.set(payload.peer, payload.neighbors);
       if (payload.type === 'CATALOG_ANNOUNCEMENT') {
         const { catalog, provider } = payload;
+        console.log(`%c[MeshVFS] Received Catalog from ${provider} (${Object.keys(catalog || {}).length} ops)`, 'color: #f59e0b; font-weight: bold;');
+        
         if (catalog) {
           setSchemas((prev) => {
             const next = { ...prev };
             for (const [path, schema] of Object.entries(catalog)) {
-              const schemaWithOrigin = { ...schema, _origin: provider };
+              if (path.startsWith('user/') && (!schema.arguments || !Array.isArray(schema.arguments))) {
+                console.warn(`[MeshVFS] Skipping malformed user operator '${path}' from ${provider}`);
+                continue;
+              }
+              const schemaWithOrigin = { ...schema, _origin: provider, path };
               vfs.addSchema(path, schemaWithOrigin);
               next[path] = schemaWithOrigin;
+              console.log(`[MeshVFS]   Registered: ${path}`);
             }
             return next;
           });
@@ -107,12 +146,13 @@ export const vfsActions = {
       await mesh.start();
       setIsConnected(true);
       console.log(`[MeshVFS] Mesh started. Discovery active.`);
+      
+      // Trigger initial discovery automatically
+      this.discoverSchemas();
     } catch (e) {
       console.error('[MeshVFS] Mesh start failed:', e);
       setIsConnected(false);
     }
-
-    mesh.subscribe(new Selector('sys/schema'));
 
     setInterval(() => {
       const nodes = new Map();
@@ -130,10 +170,24 @@ export const vfsActions = {
       }
       setMeshTopology('peers', reconcile([...nodes.values()]));
     }, 1000);
+
+    // Helper for debugging
+    window.dumpSchemas = () => {
+        console.table(Object.entries(schemas()).map(([path, s]) => ({
+            path,
+            origin: s._origin,
+            args: s.arguments?.length || 0,
+            outputs: Object.keys(s.outputs || {}).join(', ')
+        })));
+    };
   },
 
   publishDynamicOp(path, schema, script, persist = true) {
     JotRegistry.publishDynamicOp(vfs, mesh, path, schema, script, persist);
+  },
+
+  getNextVersionPath(name) {
+    return JotRegistry.getNextVersionPath(name);
   },
 
   removeDynamicOp(path) {
@@ -154,7 +208,7 @@ export const vfsActions = {
   },
 
   async clearStorage() {
-    console.log(`[MeshVFS] Clearing Storage...`);
+    console.warn(`[MeshVFS] clearStorage CALLED from:`, new Error().stack);
     if (vfs.storage && typeof vfs.storage.wipe === 'function') {
         await vfs.storage.wipe();
     }

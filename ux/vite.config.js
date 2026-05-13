@@ -15,12 +15,14 @@ const https = (process.env.VITE_HTTPS !== 'false') && fs.existsSync(keyPath) && 
 export default defineConfig({
   plugins: [solidPlugin()],
   optimizeDeps: {
-    include: ['node-diff3', 'trimerge'],
+    include: ['node-diff3', 'trimerge', 'lucide-solid'],
   },
   server: {
     port: 3030,
     strictPort: true,
+    host: true,
     https,
+    hmr: false
   },
   build: {
     target: 'esnext',

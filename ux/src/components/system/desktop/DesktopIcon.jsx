@@ -1,11 +1,39 @@
 import { createSignal, onMount, createMemo, Show } from 'solid-js';
 import interact from 'interactjs';
-import * as Icons from 'lucide-solid';
+import { 
+  Folder, 
+  Cloud, 
+  Database, 
+  Network, 
+  Settings, 
+  Terminal, 
+  Plus, 
+  RefreshCw, 
+  AlertCircle, 
+  CloudOff, 
+  FileText, 
+  Box 
+} from 'lucide-solid';
 import { blackboard } from '../../../lib/blackboard';
 import { desktopActions, windowActions } from '../../../lib/state/DesktopState';
 import { isConnected } from '../../../lib/state/MeshState';
 import { syncStatus, isDirty } from '../../../lib/state/SyncState';
 import { CloudSync } from '../../../lib/vfs/CloudSync';
+
+const ICON_MAP = {
+    Folder,
+    Cloud,
+    Database,
+    Network,
+    Settings,
+    Terminal,
+    Plus,
+    RefreshCw,
+    AlertCircle,
+    CloudOff,
+    FileText,
+    Box
+};
 
 export const DesktopIcon = (props) => {
   let iconRef;
@@ -13,15 +41,15 @@ export const DesktopIcon = (props) => {
   const [longPressTimer, setLongPressTimer] = createSignal(null);
 
   const IconComponent = () => {
-    if (props.data.type === 'folder') return Icons.Folder;
+    if (props.data.type === 'folder') return Folder;
     
-    // Sync Action Icon Handling: Keep as Cloud icon, status handled by badges/dots
-    if (props.data.target === 'sync_cloud') return Icons.Cloud;
+    // Sync Action Icon Handling
+    if (props.data.target === 'sync_cloud') return Cloud;
 
     const iconName = props.data.icon || 'Box';
-    const Icon = Icons[iconName] || Icons.Box;
-    if (!Icons[iconName]) {
-        console.warn(`[DesktopIcon] Lucide icon not found: ${iconName}. Falling back to Box.`);
+    const Icon = ICON_MAP[iconName] || Box;
+    if (!ICON_MAP[iconName]) {
+        console.warn(`[DesktopIcon] Icon not found in map: ${iconName}. Falling back to Box.`);
     }
     return Icon;
   };
@@ -116,13 +144,13 @@ export const DesktopIcon = (props) => {
         <Show when={props.data.target === 'settings'}>
             <div class="absolute -top-1 -right-1">
                 <Show when={syncStatus() === 'syncing'}>
-                    <Icons.RefreshCw size={16} class="text-cyan-400 animate-spin" />
+                    <RefreshCw size={16} class="text-cyan-400 animate-spin" />
                 </Show>
                 <Show when={syncStatus() === 'conflict'}>
-                    <Icons.AlertCircle size={18} class="text-orange-500 bg-black rounded-full shadow-lg" />
+                    <AlertCircle size={18} class="text-orange-500 bg-black rounded-full shadow-lg" />
                 </Show>
                 <Show when={syncStatus() === 'error'}>
-                    <Icons.CloudOff size={18} class="text-red-500 bg-black rounded-full shadow-lg" />
+                    <CloudOff size={18} class="text-red-500 bg-black rounded-full shadow-lg" />
                 </Show>
             </div>
         </Show>
