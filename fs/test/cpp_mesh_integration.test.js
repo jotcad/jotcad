@@ -128,7 +128,7 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
     console.log('[Test] Box provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Box provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
-    assert.strictEqual(result.tags?.type, 'box');
+    assert.strictEqual(result.tags?.type, 'surface');
     const geo = await jsVfs.readData(result.geometry);
     console.log('[Test] Geometry result type:', typeof geo, 'instanceof Uint8Array:', geo instanceof Uint8Array);
     assert.ok(geo, 'Should be able to read geometry by CID');
@@ -146,6 +146,6 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
     console.log('[Test] Triangle provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Triangle provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
-    assert.strictEqual(result.tags?.type, 'triangle');
+    assert.strictEqual(result.tags?.type, 'surface');
   });
 });

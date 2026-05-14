@@ -16,7 +16,8 @@ test('JotCompiler Error Context: Should show problematic code in User Op error',
   });
 
   // A script that violates the "must be an assignment" rule
-  const script = 'Box(10)'; 
+  // We use two calls to bypass the single-expression auto-assignment convenience.
+  const script = 'Box(10); Box(20)'; 
   const ast = parser.parse(script);
   const schema = { outputs: { "$out": { type: "shape" } } };
 

@@ -27,7 +27,7 @@ class Connection {
 /**
  * ForwardConnection: A pipe using outgoing HTTP requests to a stable neighbor URL.
  */
-class ForwardConnection extends Connection {
+export class ForwardConnection extends Connection {
   constructor(neighborId, url, fetch, options = {}) {
     super(neighborId);
     this.url = url.replace(/\/$/, '');
@@ -119,7 +119,7 @@ class ForwardConnection extends Connection {
  * ReverseConnection: A pipe reached by replying to a neighbor's pending /listen poll.
  * Encapsulates BOTH the server-side pool management and the client-side poll loop.
  */
-class ReverseConnection extends Connection {
+export class ReverseConnection extends Connection {
   constructor(neighborId, mesh, options = {}) {
     super(neighborId);
     this.mesh = mesh;
@@ -155,7 +155,9 @@ class ReverseConnection extends Connection {
       const resolve = this.replies.get(replyTo);
       if (resolve) {
         this.replies.delete(replyTo);
-        resolve(stream, new Map(stream.length ? [['Content-Length', stream.length.toString()]] : []));
+        // Protocol Fix: ReadableStream does not have .length. 
+        // We omit Content-Length for streamed replies.
+        resolve(stream, new Map());
       }
     }
 
@@ -268,20 +270,43 @@ class ReverseConnection extends Connection {
         const headers = { 'x-vfs-peer-id': this.vfs.id };
         if (replyTo) headers['x-vfs-reply-to'] = replyTo;
         
-        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
-        const resp = await fetch(`${baseUrl}/listen`, { 
+        let bodyToSend = stream;
+        const fetchOptions = { 
             method: 'POST', 
             headers, 
-            signal: this.abortController.signal, 
-            body: stream 
-        });
+            signal: this.abortController.signal
+        };
+
+        // Browser Compatibility: Streaming bodies REQUIRE HTTP/2 in Chrome.
+        // Since our nodes are HTTP/1.1, we must "drain" the stream into a buffer first
+        // to use a standard buffered POST.
+        if (stream instanceof ReadableStream || (stream && typeof stream.getReader === 'function')) {
+            console.log(`[ReverseConn ${this.neighborId}] Draining stream for HTTP/1.1 compatibility...`);
+            const reader = stream.getReader();
+            const chunks = [];
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+            const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+            const merged = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+            bodyToSend = merged;
+        }
+
+        if (bodyToSend !== undefined) fetchOptions.body = bodyToSend;
+        
+        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
+        const resp = await fetch(`${baseUrl}/listen`, fetchOptions);
         replyTo = null; stream = null;
         
         console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} <- GOT SOMETHING (status ${resp.status}) from ${baseUrl}`);
         if (resp.status === 200) {
           const cmdText = await resp.text();
           const cmd = JSON.parse(cmdText);
-          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - STARTING execution of ${cmd.op || cmd.type}`);
+          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - RECEIVED COMMAND:`, cmdText);
           
           if (cmd.type === 'COMMAND') {
             const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;

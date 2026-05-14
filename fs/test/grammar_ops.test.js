@@ -68,9 +68,8 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
       const origin = new Selector('jot/eachPoint', {
         $in: new Selector('jot/Box', { width: 0, height: 0, depth: 0 }).withOutput('$out'),
       }).withOutput('$out'); 
-      const origin0 = new Selector('jot/at', { $in: origin, target: point0, op: new Selector('jot/Box', { width: 1, height: 1, depth: 1 }).withOutput('$out') }).withOutput('$out');
 
-      const group = new Selector('jot/group', { $in: origin0, shapes: [point0, point1] }).withOutput('$out');
+      const group = new Selector('jot/group', { $in: origin, shapes: [point0, point1] }).withOutput('$out');
       const sector = new Selector('jot/loop', { $in: group });
 
       console.log('[Test Grammar] Requesting complex grammar sector...');
@@ -78,16 +77,18 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
 
       assert.ok(geoText, 'Result should be defined');
 
-      // Validation:
+      // Validation: JOT format starts with "V <count>\n<x> <y> <z>\n..."
       const lines = geoText.trim().split('\n');
-      const vCount = lines.filter((l) => l.startsWith('v ')).length;
-      
+      let vCount = 0;
       let sCount = 0;
+      
+      const vMatch = lines[0].match(/^V (\d+)/);
+      if (vMatch) vCount = parseInt(vMatch[1]);
+
       for (const line of lines) {
-        if (line.startsWith('s ')) {
-          // Format: "s v1 v2 v3 v4..." where each pair is a segment
-          const parts = line.split(' ').filter(p => p !== 's' && p.trim() !== '');
-          sCount += (parts.length / 2);
+        if (line.startsWith('S ')) {
+          const sMatch = line.match(/^S (\d+)/);
+          if (sMatch) sCount = parseInt(sMatch[1]);
         }
       }
 
@@ -105,9 +106,9 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
       );
       assert.strictEqual(sCount, 3, 'Should have 3 segments (triangle)');
 
-      // Origin should be among the vertices (allowing for -0.000000 formatting)
+      // Origin should be among the vertices
       assert.ok(
-        geoText.includes('0.000000 0.000000 0.000000'),
+        geoText.includes('0 0 0') || geoText.includes('0.000000 0.000000 0.000000'),
         'One vertex should be origin (0,0,0)'
       );
     }

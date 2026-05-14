@@ -9,7 +9,8 @@ import {
   encodeSafe, 
   decodeSafe, 
   encodeJCB, 
-  decodeJCB 
+  decodeJCB,
+  decodeInfo
 } from './cid.js';
 
 export class VFSClosedError extends Error {
@@ -171,6 +172,11 @@ export class VFS {
 
   async write(target, streamOrBytes, context = {}) {
     this._checkClosed();
+    // Protocol Integrity: Prevent leaking request objects into storage
+    if (streamOrBytes && streamOrBytes.constructor && streamOrBytes.constructor.name === 'IncomingMessage') {
+        throw new Error(`CRITICAL PROTOCOL VIOLATION: VFS.write received an 'IncomingMessage' request object as data. This indicates an unconsumed request stream.`);
+    }
+
     let s = null;
     let cid = null;
 
@@ -181,19 +187,21 @@ export class VFS {
         cid = await getSelectorKey(s);
     }
     
-    let bytes, dataCID, type = 'bytes';
+    let bytes, dataCID;
+    let type = context.type || 'bytes';
 
     if (streamOrBytes instanceof Uint8Array) {
         bytes = streamOrBytes;
         dataCID = await getCID(bytes);
+        // Keep default 'bytes' or existing context.type
     } else if (typeof streamOrBytes === 'string') {
         bytes = new TextEncoder().encode(streamOrBytes);
         dataCID = await getCID(streamOrBytes);
-        type = 'string';
+        type = context.type || 'string';
     } else if (streamOrBytes === null) {
         bytes = new Uint8Array();
         dataCID = await getCID(bytes);
-        type = 'null';
+        type = context.type || 'null';
     } else if (streamOrBytes && typeof streamOrBytes.getReader === 'function') {
         const chunks = [];
         const reader = streamOrBytes.getReader();
@@ -209,26 +217,32 @@ export class VFS {
         let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
         dataCID = await getCID(bytes);
+        // Keep existing context.type or 'bytes'
     } else {
         dataCID = await getCID(streamOrBytes);
         bytes = new TextEncoder().encode(JSON.stringify(streamOrBytes));
-        type = 'json';
+        type = context.type || 'json';
     }
+const info = {
+    type,
+    state: 'AVAILABLE',
+    cid
+};
+if (context.expiresAt) info.expiresAt = context.expiresAt;
+if (context.depth) info.depth = context.depth;
+if (context.size) info.size = context.size;
+if (context.tags) info.tags = context.tags;
 
-    const info = {
-        type,
-        ...context,
-        state: 'AVAILABLE',
-        cid
-    };
-    if (s) info.selector = s;
-    if (type === 'json' && info.type !== 'bytes') info.type = 'json';
-    delete info.expiresAt;
+if (s) info.selector = s;
+if (type === 'json' && info.type !== 'bytes') info.type = 'json';
 
-    // Proper Linkage: Only store literal data in metadata if it's not a stream
-    if ((type === 'json' || type === 'string') && !(streamOrBytes && typeof streamOrBytes.getReader === 'function')) {
-        info.data = streamOrBytes;
-    }
+if (context.size !== undefined && bytes.length !== context.size) {
+    throw new Error(`VFS.write: Size mismatch. Expected ${context.size} bytes, got ${bytes.length}`);
+}
+
+// Proper Linkage: Metadata is strictly for routing and identity descriptors.
+
+    // Inlining data here is a protocol violation.
     
     // Store by the CID derived from the Selector
     await this.storage.set(cid, bytes, info);
@@ -249,8 +263,11 @@ export class VFS {
     if (typeof selector === 'string' && !/^[0-9a-f]{64}$/i.test(selector)) {
         throw new Error(`Protocol Violation: writeData requires a Selector for paths. Got string: "${selector}"`);
     }
-    return await this.write(selector, data, context); 
+    // Auto-promote tags for discoverability
+    const tags = context.tags || (data && typeof data === 'object' ? data.tags : null);
+    return this.write(selector, data, { ...context, type: 'json', tags });
   }
+
 
   async readData(target, context = {}) {
     if (target === undefined || target === null) throw new Error('VFS.readData: Missing required target (CID or Selector)');
@@ -367,6 +384,8 @@ export class VFS {
         targetCID = await getSelectorKey(s);
     }
 
+    console.log(`[VFS ${this.id}] Resolving: ${s ? s.path : targetCID} (stack: ${stack.join('->')})`);
+
     if (depth > 20) throw new Error(`Maximum recursion depth exceeded for ${targetCID}`);
     if (Date.now() > expiresAt) return { success: false, error: 'Expired' };
 
@@ -419,7 +438,8 @@ export class VFS {
             }
         }
 
-        if (resultData === null && this.mesh && (!isBackflow || s)) {
+        if (resultData === null && this.mesh && !isBackflow) {
+          console.log(`[VFS ${this.id}] Dispatching mesh read for: ${s ? s.path : targetCID}`);
           const meshResponse = await this.mesh.read(s || targetCID, { 
               ...context, 
               stack: nextStack, 
@@ -445,7 +465,7 @@ export class VFS {
 
               if (meshResponse.headers) {
                   const infoHeader = meshResponse.headers.get('x-vfs-info');
-                  if (infoHeader) { try { meshInfo = decodeSafe(infoHeader); } catch (e) {} }
+                  meshInfo = decodeInfo(infoHeader);
               }
           }
         } else if (isBackflow) {
@@ -468,6 +488,7 @@ export class VFS {
         }
         return { success: true, cid: null };
       } catch (err) {
+        console.error(`[VFS ${this.id}] _readResult Error:`, err);
         return { success: false, error: err.message };
       } finally { this.activeWait.delete(targetCID); }
     })();

@@ -37,13 +37,13 @@ int main() {
         return 1;
     }
     
-    if (to_group.components[0].tf.to_vec() != b.tf.to_vec()) {
+    if (to_group.components[0].tf != b.tf) {
         std::cerr << "FAIL: first component of a.to(b, c) mismatch!" << std::endl;
         std::cerr << "Actual: " << to_group.components[0].tf.to_vec() << std::endl;
         std::cerr << "Expected: " << b.tf.to_vec() << std::endl;
         return 1;
     }
-    if (to_group.components[1].tf.to_vec() != c.tf.to_vec()) {
+    if (to_group.components[1].tf != c.tf) {
         std::cerr << "FAIL: second component of a.to(b, c) mismatch!" << std::endl;
         std::cerr << "Actual: " << to_group.components[1].tf.to_vec() << std::endl;
         std::cerr << "Expected: " << c.tf.to_vec() << std::endl;
@@ -56,7 +56,7 @@ int main() {
     fs::Selector origin_sel = fs::Selector("jot/origin", {{"$in", move_sel}}).with_output("$out");
     Shape a_origin = vfs.read<Shape>(origin_sel);
     Matrix expected_origin = a.tf.inverse();
-    if (a_origin.tf.to_vec() != expected_origin.to_vec()) {
+    if (a_origin.tf != expected_origin) {
         std::cerr << "FAIL: a.origin() transformation mismatch!" << std::endl;
         std::cerr << "Actual:   [" << a_origin.tf.to_vec() << "]" << std::endl;
         std::cerr << "Expected: [" << expected_origin.to_vec() << "]" << std::endl;
@@ -66,7 +66,7 @@ int main() {
     // 6. Verify a.by(a.o()) moves to identity
     Shape a_at_origin = a;
     a_at_origin.apply_transform(a_origin.tf);
-    if (a_at_origin.tf.to_vec() != Matrix::identity().to_vec()) {
+    if (a_at_origin.tf != Matrix::identity()) {
         std::cerr << "FAIL: a.by(a.o()) did not result in identity!" << std::endl;
         std::cerr << "Actual: [" << a_at_origin.tf.to_vec() << "]" << std::endl;
         return 1;

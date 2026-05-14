@@ -1,4 +1,59 @@
 /**
+ * Selector: The universal address for mesh content.
+ * MUST be defined at the top to avoid hoisting issues with encodeSelectorJCB.
+ */
+export class Selector {
+  constructor(path, parameters = {}) {
+    if (arguments.length > 2) {
+      throw new Error('Selector constructor only accepts (path, parameters). Use .withOutput(out) for output ports.');
+    }
+    this.path = path;
+    this.parameters = parameters;
+    this._isJotSelector = true; // Branding for context-safe identification
+  }
+
+  withOutput(output) {
+    const s = new Selector(this.path, this.parameters);
+    s.output = output;
+    return s;
+  }
+
+  toJSON() {
+    const res = { path: this.path, parameters: this.parameters };
+    if (this.output) res.output = this.output;
+    return res;
+  }
+
+  static fromObject(obj) {
+    if (!obj) return null;
+    const s = new Selector(obj.path, obj.parameters);
+    if (obj.output) s.output = obj.output;
+    return s;
+  }
+}
+
+/**
+ * isSelector: Context-safe type guard.
+ */
+export function isSelector(s) {
+    return s && (s instanceof Selector || s._isJotSelector === true);
+}
+
+/**
+ * normalizeSelector: Enforces strict Selector type.
+ */
+export function normalizeSelector(s) {
+  if (isSelector(s)) return s;
+
+  const errorMsg = `CRITICAL PROTOCOL VIOLATION: Received raw object where a formal Selector instance was required. ` +
+                   `This indicates a boundary hydration leak (Selector.fromObject() was missed). ` +
+                   `Input type: ${s?.constructor?.name || typeof s}`;
+  
+  console.error(errorMsg, s);
+  throw new Error(errorMsg);
+}
+
+/**
  * toBase64: Standard Base64 encoding for Uint8Array.
  */
 function toBase64(bytes) {
@@ -20,10 +75,10 @@ function fromBase64(base64) {
 }
 
 /**
- * encodeJCB: Deterministic Binary Encoding (JotCAD Canonical Binary)
- * Handles recursive sorting of object keys internally.
+ * encodeDataJCB: Deterministic Binary Encoding for any structured data.
+ * Used for hashing content (CIDs).
  */
-export function encodeJCB(val) {
+export function encodeDataJCB(val) {
   const chunks = [];
   function walk(v) {
     if (v === null || v === undefined) {
@@ -51,7 +106,9 @@ export function encodeJCB(val) {
       chunks.push(header);
       for (const item of v) walk(item);
     } else if (typeof v === 'object') {
-      const keys = Object.keys(v).sort();
+      // Use toJSON if available (for Selector instances)
+      const data = (v && typeof v.toJSON === 'function') ? v.toJSON() : v;
+      const keys = Object.keys(data).sort();
       const header = new Uint8Array(5);
       header[0] = 0x06;
       const view = new DataView(header.buffer);
@@ -59,7 +116,7 @@ export function encodeJCB(val) {
       chunks.push(header);
       for (const k of keys) {
         walk(k);
-        walk(v[k]);
+        walk(data[k]);
       }
     }
   }
@@ -72,23 +129,32 @@ export function encodeJCB(val) {
 }
 
 /**
- * encodeSafe: json -> JCB -> Base64
+ * encodeSelectorJCB: Deterministic Binary Encoding for ADDRESSES.
+ * Enforces strict Selector type.
  */
-export function encodeSafe(val) {
-    return toBase64(encodeJCB(val));
+export function encodeSelectorJCB(val) {
+  if (!isSelector(val)) {
+    console.error('[CID DEBUG] encodeSelectorJCB failed check.', {
+        val,
+        isSelector: isSelector(val),
+        constructor: val?.constructor?.name,
+        proto: Object.getPrototypeOf(val)?.constructor?.name,
+        isJot: val?._isJotSelector
+    });
+    throw new Error(`CRITICAL: encodeSelectorJCB requires a formal Selector instance. Got: ${val?.constructor?.name || typeof val}.`);
+  }
+  return encodeDataJCB(val);
 }
 
 /**
- * decodeSafe: Base64 -> JCB -> json
+ * encodeJCB: General purpose alias for data encoding.
  */
-export function decodeSafe(base64) {
-    return decodeJCB(fromBase64(base64));
-}
+export const encodeJCB = encodeDataJCB;
 
 /**
- * decodeJCB: Decodes JCB bytes back into JS values.
+ * decodeDataJCB: Decodes JCB bytes back into JS values.
  */
-export function decodeJCB(bytes) {
+export function decodeDataJCB(bytes) {
   let offset = 0;
   function walk() {
     if (offset >= bytes.length) return undefined;
@@ -133,17 +199,65 @@ export function decodeJCB(bytes) {
   return walk();
 }
 
+/**
+ * decodeSelectorJCB: Decodes JCB bytes into a formal Selector instance.
+ */
+export function decodeSelectorJCB(bytes) {
+    const obj = decodeDataJCB(bytes);
+    if (!obj || typeof obj !== 'object' || !obj.path) {
+        throw new Error('decodeSelectorJCB: Decoded object is not a valid Selector source');
+    }
+    return Selector.fromObject(obj);
+}
+
+/**
+ * decodeJCB: General purpose alias for data decoding.
+ */
+export const decodeJCB = decodeDataJCB;
+
+/**
+ * encodeSafe: Selector -> JCB -> Base64 (Identity Transport)
+ */
+export function encodeSafe(val) {
+    return toBase64(encodeSelectorJCB(val));
+}
+
+/**
+ * decodeSafe: Base64 -> JCB -> Selector (Identity Transport)
+ */
+export function decodeSafe(base64) {
+    return decodeSelectorJCB(fromBase64(base64));
+}
+
+export function decodeInfo(b64) {
+    if (!b64) return {};
+    try {
+        const decoded = Buffer.from(b64, 'base64');
+        // Hybrid support: check for JCB object tag (0x06) to fallback to JCB decoding
+        if (decoded[0] === 0x06) return decodeDataJCB(decoded);
+        return JSON.parse(decoded.toString());
+    } catch (e) {
+        console.error(`[CID] decodeInfo CRITICAL: Failed to parse metadata header: "${b64}". Error: ${e.message}`);
+        throw e;
+    }
+}
+
+export function encodeInfo(info) {
+    if (!info) return '';
+    return Buffer.from(JSON.stringify(info)).toString('base64');
+}
+
+/**
+ * vfs_hash256: SHA-256 helper.
+ */
 export async function vfs_hash256(bytes) {
   let cryptoImpl = globalThis.crypto;
   
   if (!cryptoImpl?.subtle) {
     try {
-        // Dynamic import for Node.js to avoid breaking browser bundles
         const nodeCrypto = await import('node:crypto');
         cryptoImpl = nodeCrypto.webcrypto;
-    } catch (e) {
-        // If import fails, we are likely in a browser
-    }
+    } catch (e) {}
   }
 
   if (!cryptoImpl?.subtle) {
@@ -163,18 +277,11 @@ export const isString = (val) => typeof val === 'string' || Object.prototype.toS
 
 export async function jcbHash(val) {
   // Protocol Rule: Hash the canonical binary representation (JCB) directly.
-  return vfs_hash256(encodeJCB(val));
+  return vfs_hash256(encodeSelectorJCB(val));
 }
 
 /**
  * getCID: Identity of terminal content.
- * 
- * JCB (JotCAD Canonical Binary) is used to produce a stable, 
- * deterministic representation of structured data across JS and C++.
- * 
- * - Identity (CID): Derived by hashing the raw JCB binary.
- * - Storage: Disk content remains raw (e.g., human-readable JSON).
- * - Transport: Safe-JCB carrier strings are used when JSON-safety is required.
  */
 export async function getCID(data) {
   let bytes;
@@ -183,66 +290,17 @@ export async function getCID(data) {
   } else if (typeof data === 'string') {
       bytes = new TextEncoder().encode(data);
   } else {
-      // For structured data, the CID is the hash of the raw JCB binary.
-      bytes = encodeJCB(data);
+      bytes = encodeDataJCB(data);
   }
   return vfs_hash256(bytes);
 }
 
 /**
  * getSelectorKey: Identity of a mesh address.
- * Uses deterministic JCB to ensure that {path:'a', parameters:{b:1, c:2}}
- * and {path:'a', parameters:{c:2, b:1}} produce the same key.
  */
 export async function getSelectorKey(selector) {
   const s = normalizeSelector(selector);
-  // Match C++ behavior: only include 'output' in hash if it's non-empty
-  if (!s.output) delete s.output;
-  // Ensure parameters are sorted by using encodeJCB which handles key ordering.
-  return await jcbHash(s);
-}
-
-/**
- * Selector: The universal address for mesh content.
- */
-export class Selector {
-  constructor(path, parameters = {}) {
-    if (arguments.length > 2) {
-      throw new Error('Selector constructor only accepts (path, parameters). Use .withOutput(out) for output ports.');
-    }
-    this.path = path;
-    this.parameters = parameters;
-  }
-
-  withOutput(output) {
-    const s = new Selector(this.path, this.parameters);
-    s.output = output;
-    return s;
-  }
-
-  toJSON() {
-    const res = { path: this.path, parameters: this.parameters };
-    if (this.output) res.output = this.output;
-    return res;
-  }
-
-  static fromObject(obj) {
-    const s = new Selector(obj.path, obj.parameters);
-    if (obj.output) s.output = obj.output;
-    return s;
-  }
-}
-
-/**
- * normalizeSelector: Enforces strict Selector type.
- */
-export function normalizeSelector(s) {
-  if (s instanceof Selector) return s;
-
-  const errorMsg = `CRITICAL PROTOCOL VIOLATION: Received raw object where a formal Selector instance was required. ` +
-                   `This indicates a boundary hydration leak (Selector.fromObject() was missed). ` +
-                   `Input type: ${s?.constructor?.name || typeof s}`;
-  
-  console.error(errorMsg, s);
-  throw new Error(errorMsg);
+  const json = s.toJSON();
+  if (!json.output) delete json.output;
+  return vfs_hash256(encodeSelectorJCB(Selector.fromObject(json)));
 }

@@ -157,6 +157,7 @@ struct HexagonOp : P {
 static void hexagon_init(fs::VFSNode* vfs) {
     Processor::register_op<HexagonOp<>::ByRadius, double, double>(vfs, "jot/Hexagon/radius");
     Processor::register_op<HexagonOp<>::ByDiameter, double, double>(vfs, "jot/Hexagon/diameter");
+    Processor::register_op<HexagonOp<>::ByDiameter, double, double>(vfs, "jot/Hexagon/full");
     Processor::register_op<HexagonOp<>::ByApothem, double, double>(vfs, "jot/Hexagon/apothem");
     Processor::register_op<HexagonOp<>::ByEdgeToEdge, double, double>(vfs, "jot/Hexagon/edgeToEdge");
     Processor::register_op<HexagonOp<>::ByCornerToCorner, double, double>(vfs, "jot/Hexagon/cornerToCorner");

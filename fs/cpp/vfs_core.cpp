@@ -167,7 +167,14 @@ void VFSNode::listen() {
                     try { in >> meta; info = meta; } catch(...) {}
                 }
             }
-            res.set_header("x-vfs-info", encode_safe(info));
+            // Sanitize info to only include descriptors
+            json info_out = {{"state", info.value("state", "AVAILABLE")}, {"type", info.value("type", "json")}, {"cid", cid}};
+            
+            // Base64 encode the JSON string directly
+            std::string info_str = info_out.dump();
+            std::string info_b64 = httplib::detail::base64_encode(info_str);
+
+            res.set_header("x-vfs-info", info_b64);
             res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
             res.status = e.code;
@@ -248,6 +255,10 @@ std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req) {
         target_cid = get_cid(req.selector);
     }
 
+    std::cout << "[VFSNode " << config_.id << "] Resolving: " << (req.is_cid() ? req.cid : req.selector.to_json().dump()) << " (stack: ";
+    for(size_t i=0; i<req.stack.size(); ++i) std::cout << (i==0?"":",") << req.stack[i];
+    std::cout << ")" << std::endl;
+
     if (has_local(target_cid)) {
         // Check if it's a LINK in .meta
         bool isLink = false;
@@ -321,33 +332,30 @@ std::vector<uint8_t> VFSNode::read_impl(const VFSRequest& req) {
 
     // --- Mesh Discovery ---
     {
-        for (const auto& neighbor : config_.neighbors) {
-            // Protocol Rule: Don't dispatch to neighbors already in the stack
-            // We use a simple string match on the neighbor URL for now, 
-            // but the neighbor will also check the stack themselves.
-            bool already_in_stack = false;
-            for (const auto& s : req.stack) {
-                if (neighbor.find(s) != std::string::npos) already_in_stack = true;
+        std::vector<std::shared_ptr<Connection>> targets;
+        {
+            std::lock_guard<std::mutex> lock(peer_mutex_);
+            for (auto const& [id, conn] : peers_) {
+                // Protocol Rule: Don't dispatch to neighbors already in the stack
+                bool already_in_stack = false;
+                for (const auto& s : req.stack) {
+                    if (s == id) already_in_stack = true;
+                }
+                if (already_in_stack) continue;
+                targets.push_back(conn);
             }
-            if (already_in_stack) continue;
+        }
 
+        for (const auto& conn : targets) {
             VFSRequest forwardReq = req;
             forwardReq.stack.push_back(config_.id);
 
-            httplib::Client cli(neighbor);
-            httplib::Headers headers = { {"x-vfs-id", config_.id} };
-            
-            json body = {{"stack", forwardReq.stack}, {"expiresAt", forwardReq.expiresAt}, {"followLinks", forwardReq.followLinks}};
-            if (forwardReq.is_cid()) {
-                body["cid"] = forwardReq.cid;
-            } else {
-                body["selector"] = forwardReq.selector;
-            }
-
-            auto res = cli.Post("/read", headers, body.dump(), "application/json");
-            if (res && res->status == 200) {
-                std::vector<uint8_t> data(res->body.begin(), res->body.end());
-                return data;
+            try {
+                return conn->read(forwardReq);
+            } catch (const std::exception& e) {
+                // std::cerr << "[VFS Mesh Discovery] Read failure from " << conn->neighbor_id << ": " << e.what() << std::endl;
+            } catch (...) {
+                // Continue to next neighbor
             }
         }
     }

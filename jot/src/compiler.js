@@ -196,13 +196,13 @@ export class JotCompiler {
               if (val !== undefined) {
                   const portDef = schema.outputs[portName];
                   if (val instanceof Selector) {
-                      const sel = val.withOutput(portName);
-                      results.push({ selector: sel, schema: portDef });
+                      // Protocol Integrity: Preserve the actual output port of the selector 
+                      // (e.g. .file) while flagging which schema port it fulfills.
+                      results.push({ port: portName, selector: val, schema: portDef });
                   } else if (Array.isArray(val)) {
                       for (const item of val) {
                           if (item instanceof Selector) {
-                              const sel = item.withOutput(portName);
-                              results.push({ selector: sel, schema: portDef });
+                              results.push({ port: portName, selector: item, schema: portDef });
                           }
                       }
                   }

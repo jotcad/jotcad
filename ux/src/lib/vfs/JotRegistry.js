@@ -86,13 +86,31 @@ export const JotRegistry = {
       const result = await compiler.evaluate(ast, params, schema, newPath);
       
       const requestedPort = s.output || '$out';
-      const outputBundle = result.find(b => b.selector.output === requestedPort) || result[0];
-      const outputSel = outputBundle?.selector;
+      let requestedTerminal = null;
 
-      if (!outputSel) throw new Error(`Mesh Error: No output terminal found for port '${requestedPort}' in ${newPath}`);
+      // 1. Eager Fulfillment: satisfies all schema outputs defined by the compiler results
+      for (const bundle of result) {
+          const port = bundle.port;
+          const terminal = bundle.selector;
+          
+          if (port === requestedPort) {
+              requestedTerminal = terminal;
+          } else {
+              // Fulfill side ports in storage
+              if (terminal instanceof Selector) {
+                  await v.link(s.withOutput(port), terminal);
+              } else {
+                  await v.write(s.withOutput(port), terminal);
+              }
+          }
+      }
 
-      const shapeData = await v.readData(outputSel);
-      return new TextEncoder().encode(JSON.stringify(shapeData));
+      if (requestedTerminal === null) {
+          throw new Error(`Mesh Error: No output terminal found for port '${requestedPort}' in ${newPath}`);
+      }
+
+      // Return the terminal directly. If it's a Selector, vfs.write will save it as a pointer.
+      return requestedTerminal;
     }, { schema });
 
     const schemaWithOrigin = { ...schema, _origin: vfs.id, path: newPath };

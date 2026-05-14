@@ -47,11 +47,11 @@ test('Discovery Protocol (Spy)', async (t) => {
   });
 
   await t.test('spy returns multiplexed VFS bundle', async () => {
-    // Proactively provision data on both nodes
-    await vfsA.writeData(new Selector('shape/box', { w: 10 }), { from: 'A' });
+    // Proactively provision data on both nodes with discoverable tags
+    await vfsA.writeData(new Selector('shape/box', { w: 10 }), { tags: { from: 'A' } });
 
-    await vfsB.writeData(new Selector('shape/box', { w: 20 }), { from: 'B' });
-    await vfsB.writeData(new Selector('shape/sphere', { r: 5 }), { from: 'B' });
+    await vfsB.writeData(new Selector('shape/box', { w: 20 }), { tags: { from: 'B' } });
+    await vfsB.writeData(new Selector('shape/sphere', { r: 5 }), { tags: { from: 'B' } });
 
     // Query Node A. It should gather from A and B using passive storage scanning.
     const stream = await vfsA.spy(new Selector('shape/*'), {});

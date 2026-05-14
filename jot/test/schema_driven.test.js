@@ -61,8 +61,8 @@ test('Schema-Driven: Multi-Port Assignment', async (t) => {
     const results = await compiler.evaluate(ast, {}, schema);
     
     assert.strictEqual(results.length, 2);
-    const main = results.find(r => r.selector.output === '$main').selector;
-    const core = results.find(r => r.selector.output === '$core').selector;
+    const main = results.find(r => r.port === '$main').selector;
+    const core = results.find(r => r.port === '$core').selector;
     
     assert.strictEqual(main.path, 'jot/Box');
     assert.strictEqual(core.path, 'jot/Orb');
