@@ -136,6 +136,10 @@ export class ReverseConnection extends Connection {
     this.abortController = new AbortController();
   }
 
+  stop() {
+    this.abortController.abort();
+  }
+
   /**
    * SERVER SIDE: Handle an incoming /listen poll.
    */
@@ -338,7 +342,6 @@ export class ReverseConnection extends Connection {
         } else { 
           if (resp.status !== 204) console.log(`[ReverseConn ${this.neighborId}] poll non-200 response: ${resp.status}`);
           console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- IDLE. Looping. ---`);
-          await new Promise(r => setTimeout(r, 1000)); 
         }
       } catch (err) { 
         if (this.abortController.signal.aborted) break; 
@@ -468,6 +471,14 @@ export class MeshLinkBase {
     for (const entry of this.interests.values()) {
       if (this._matches(entry.selector, s)) {
         entry.lastValue = payload;
+
+        // 1. Local Delivery
+        if (entry.localExpiresAt > Date.now()) {
+          console.log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
+          this.vfs.events.emit('notify', s, payload);
+        }
+
+        // 2. Neighbor Propagation
         for (const [neighborId, expiry] of entry.subs.entries()) {
           if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
           if (stack.includes(neighborId)) continue;
