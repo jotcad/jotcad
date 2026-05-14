@@ -13,6 +13,21 @@ const PORT_OPS = 9301;
 const STORAGE_OPS = path.resolve('.vfs_storage_sector_ops');
 const STORAGE_CLIENT = path.resolve('.vfs_storage_sector_client');
 
+async function consumeBytes(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return bytes;
+}
+
 test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
   const PORT_CLIENT = 9302;
   let opsNode, vfs, mesh, server;
@@ -74,7 +89,9 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       const pdf = new Selector('jot/pdf', { $in: offset, path: 'sector.pdf' }).withOutput('$out');
 
       console.log('[Test Sector] Requesting complex expression...');
-      const pdfData = await vfs.readData(pdf.withOutput('file'));
+      const result = await vfs.read(pdf.withOutput('file'));
+      assert.ok(result, 'Should return result');
+      const pdfData = await consumeBytes(result.stream);
       assert.ok(pdfData, 'Should return PDF data');
       
       // Check for PDF magic number

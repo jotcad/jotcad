@@ -43,6 +43,7 @@ test('VFS Aborted Stream Detection', async (t) => {
     await vfs.write(selector, stream, { size: 5 });
     const result = await vfs.read(selector);
     assert.ok(result !== null, 'Valid stream should be allowed');
+    assert.ok(result.stream !== undefined);
   });
 
   await vfs.close();

@@ -18,9 +18,10 @@ test('VFS TTL Enforcement', async (t) => {
 
   await t.test('should allow request with future expiration', async () => {
     const future = Date.now() + 5000;
-    const stream = await vfs.read(new Selector('test/op'), { expiresAt: future });
-    assert.ok(stream !== null, 'Fresh request should be allowed');
+    const result = await vfs.read(new Selector('test/op'), { expiresAt: future });
+    assert.ok(result !== null, 'Fresh request should be allowed');
 
+    const { stream } = result;
     const reader = stream.getReader();
     const { value } = await reader.read();
     assert.strictEqual(new TextDecoder().decode(value), 'fresh');

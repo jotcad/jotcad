@@ -139,7 +139,7 @@ export class ReverseConnection extends Connection {
   /**
    * SERVER SIDE: Handle an incoming /listen poll.
    */
-  addScanner(res, replyTo = null, stream = null) {
+  addScanner(res, replyTo = null, stream = null, info = null) {
     // CRITICAL ASSERTION: No hidden errors. 
     // If a node tries to open a second poll line, it's a protocol violation or zombie.
     if (this.pool.length > 0) {
@@ -157,7 +157,9 @@ export class ReverseConnection extends Connection {
         this.replies.delete(replyTo);
         // Protocol Fix: ReadableStream does not have .length. 
         // We omit Content-Length for streamed replies.
-        resolve(stream, new Map());
+        const headers = new Map();
+        if (info) headers.set('x-vfs-info', info);
+        resolve(stream, headers);
       }
     }
 
@@ -262,13 +264,14 @@ export class ReverseConnection extends Connection {
    */
   async startPolling(baseUrl, fetch) {
     console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} starting Poll-based Receiver for ${baseUrl}`);
-    let replyTo = null, stream = null;
+    let replyTo = null, stream = null, metadata = null;
     
     while (!this.abortController.signal.aborted) {
       console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- ENTERING LOOP ITERATION ---`);
       try {
         const headers = { 'x-vfs-peer-id': this.vfs.id };
         if (replyTo) headers['x-vfs-reply-to'] = replyTo;
+        if (metadata) headers['x-vfs-info'] = Buffer.from(JSON.stringify(metadata)).toString('base64');
         
         let bodyToSend = stream;
         const fetchOptions = { 
@@ -300,23 +303,28 @@ export class ReverseConnection extends Connection {
         
         console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
         const resp = await fetch(`${baseUrl}/listen`, fetchOptions);
-        replyTo = null; stream = null;
-        
+        replyTo = null; stream = null; metadata = null;
+
         console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} <- GOT SOMETHING (status ${resp.status}) from ${baseUrl}`);
         if (resp.status === 200) {
           const cmdText = await resp.text();
           const cmd = JSON.parse(cmdText);
           console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - RECEIVED COMMAND:`, cmdText);
-          
+
           if (cmd.type === 'COMMAND') {
             const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;
             if (cmd.op === 'READ') {
-              stream = await this.vfs.read(sel || cmd.cid, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
+              const result = await this.vfs.read(sel || cmd.cid, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
+              if (result) {
+                  stream = result.stream;
+                  metadata = result.metadata;
+              }
               replyTo = cmd.id;
             } else if (cmd.op === 'SPY') {
               stream = await this.vfs.spy(sel, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
               replyTo = cmd.id;
-            } else if (cmd.op === 'SUB') {
+            }
+ else if (cmd.op === 'SUB') {
               this.mesh.addInterest(cmd.stack[0] || 'unknown', sel, cmd.expiresAt, cmd.stack);
             }
           } else if (cmd.type === 'NOTIFY') {
@@ -582,7 +590,7 @@ export class MeshLinkBase {
   /**
    * SERVER SIDE: Entry point for a hidden peer calling /listen.
    */
-  registerReversePeer(neighborId, res, replyTo = null, stream = null) {
+  registerReversePeer(neighborId, res, replyTo = null, stream = null, info = null) {
     console.log(`[MeshLink ${this.vfs.id}] registerReversePeer: ${neighborId} (replyTo: ${replyTo || 'none'})`);
     if (!this.peers.has(neighborId)) {
       const conn = new ReverseConnection(neighborId, this, { instanceId: this.instanceId });
@@ -600,7 +608,7 @@ export class MeshLinkBase {
     if (!(conn instanceof ReverseConnection)) {
         throw new Error(`CRITICAL PROTOCOL VIOLATION: registerReversePeer called for ${neighborId} but connection is ${conn.constructor.name}`);
     }
-    conn.addScanner(res, replyTo, stream);
+    conn.addScanner(res, replyTo, stream, info);
   }
 
   async read(target, context = {}) {

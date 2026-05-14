@@ -52,15 +52,13 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const selector = selObj ? Selector.fromObject(selObj) : null;
         if (selector) vfs.validateSelector(selector); // CRITICAL: FAIL VISIBLY
         const target = selector || cid;
-        const stream = await vfs.read(target, { stack, resolutionStack, expiresAt });
-        if (stream) {
-          const addrKey = typeof target === 'string' ? target : await getSelectorKey(target);
-          const info = await vfs._getStorageInfo(addrKey);
-          
+        const result = await vfs.read(target, { stack, resolutionStack, expiresAt });
+        if (result) {
+          const { stream, metadata } = result;
           res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
             'x-vfs-id': vfs.id,
-            'x-vfs-info': encodeInfo(info),
+            'x-vfs-info': encodeInfo(metadata),
           });
           return await pump(stream, res);
         }
@@ -133,6 +131,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/listen') {
         const peerId = req.headers['x-vfs-peer-id'];
         const replyTo = req.headers['x-vfs-reply-to'];
+        const info = decodeInfo(req.headers['x-vfs-info']);
         console.log(`[MeshServer ${vfs.id}] POST /listen from ${peerId} (replyTo: ${replyTo || 'none'})`);
         if (!peerId) {
           res.writeHead(400);
@@ -140,7 +139,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         }
         if (meshLink) {
           // Protocol Integrity: Convert Node IncomingMessage to Web ReadableStream
-          meshLink.registerReversePeer(peerId, res, replyTo, Readable.toWeb(req));
+          meshLink.registerReversePeer(peerId, res, replyTo, Readable.toWeb(req), info);
           return;
         }
         res.writeHead(501);

@@ -57,40 +57,15 @@ export class LegacyNode {
                 );
                 return v.read(s, context);
               };
-              sockets[name].readData = async (overrideParams = {}) => {
-                const s = new Selector(
-                  def.selector.path,
-                  { ...def.selector.parameters, ...selector.parameters, ...overrideParams },
-                  def.selector.output
-                );
-                return v.readData(s, context);
-              };
-              sockets[name].readText = async (overrideParams = {}) => {
-                const s = new Selector(
-                  def.selector.path,
-                  { ...def.selector.parameters, ...selector.parameters, ...overrideParams },
-                  def.selector.output
-                );
-                return v.readText(s, context);
-              };
             } else if (def.mode === 'write') {
-              sockets[name].write = async (stream) => {
+              sockets[name].write = async (streamOrBytes, writeContext = {}) => {
                 const s = new Selector(
                     def.selector.path,
                     { ...def.selector.parameters, ...selector.parameters },
                     def.selector.output
                 );
-                this._fulfilled.set(def.selector.path, stream);
-                return v.write(s, stream);
-              };
-              sockets[name].writeData = async (data) => {
-                const s = new Selector(
-                    def.selector.path,
-                    { ...def.selector.parameters, ...selector.parameters },
-                    def.selector.output
-                );
-                this._fulfilled.set(def.selector.path, data);
-                return v.writeData(s, data);
+                this._fulfilled.set(def.selector.path, streamOrBytes);
+                return v.write(s, streamOrBytes, writeContext);
               };
             }
           }

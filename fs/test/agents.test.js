@@ -2,6 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, Selector } from '../src/index.js';
 
+async function consumeJSON(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 test('Agent-style Processors (as Providers)', async (t) => {
   const vfs = new VFS({ id: 'agent-vfs', storage: new MemoryStorage() });
   await vfs.init();
@@ -14,7 +29,9 @@ test('Agent-style Processors (as Providers)', async (t) => {
 
   await t.test('cascading demand works', async () => {
     const selector = new Selector('compute/sum', { a: 10, b: 20 });
-    const data = await vfs.readData(selector);
+    const { stream, metadata } = await vfs.read(selector);
+    assert.strictEqual(metadata.encoding, 'json');
+    const data = await consumeJSON(stream);
     assert.strictEqual(data?.result, 30);
   });
 
@@ -26,8 +43,8 @@ test('Agent-style Processors (as Providers)', async (t) => {
     });
 
     const sel = new Selector('compute/once', { id: 1 });
-    await vfs.readData(sel);
-    await vfs.readData(sel);
+    await vfs.read(sel);
+    await vfs.read(sel);
 
     assert.strictEqual(callCount, 1);
   });

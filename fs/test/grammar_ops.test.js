@@ -16,6 +16,26 @@ const OPS_URL = `http://localhost:${OPS_PORT}`;
 const STORAGE_OPS = path.resolve('.vfs_storage_grammar-ops');
 const STORAGE_JS = path.resolve('.vfs_storage_grammar-js');
 
+async function consumeBytes(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return bytes;
+}
+
+async function consumeText(stream) {
+    const bytes = await consumeBytes(stream);
+    return new TextDecoder().decode(bytes);
+}
+
 test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
   let opsProcess;
   let vfs;
@@ -73,7 +93,12 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
       const sector = new Selector('jot/loop', { $in: group });
 
       console.log('[Test Grammar] Requesting complex grammar sector...');
-      const geoText = await vfs.readText(sector.withOutput('$out'));
+      const { stream } = await vfs.read(sector.withOutput('$out'));
+      const shape = JSON.parse(new TextDecoder().decode(await consumeBytes(stream)));
+      
+      console.log('[Test Grammar] Shape received, requesting geometry:', shape.geometry);
+      const { stream: geoStream } = await vfs.read(shape.geometry);
+      const geoText = new TextDecoder().decode(await consumeBytes(geoStream));
 
       assert.ok(geoText, 'Result should be defined');
 

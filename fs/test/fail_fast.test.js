@@ -57,8 +57,9 @@ test('VFS Fail-Fast Validation', async (t) => {
   });
 
   await t.test('should allow valid request', async () => {
-    const stream = await vfs.read(new Selector('test/op', { diameter: 20, variant: 'a' }));
-    assert.ok(stream !== null);
+    const result = await vfs.read(new Selector('test/op', { diameter: 20, variant: 'a' }));
+    assert.ok(result !== null);
+    const { stream } = result;
     const reader = stream.getReader();
     const { value } = await reader.read();
     assert.strictEqual(new TextDecoder().decode(value), 'success');

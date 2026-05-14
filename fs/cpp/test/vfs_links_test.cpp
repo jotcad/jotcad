@@ -4,67 +4,68 @@
 #include <filesystem>
 #include <fstream>
 
-namespace fs = std::filesystem;
-using namespace jotcad::fs;
+namespace stdfs = std::filesystem;
+using namespace fs;
 
 void test_formal_link() {
     VFSNode::Config config;
     config.id = "test-node-formal";
     config.storage_dir = "./test_storage_formal_links";
-    fs::remove_all(config.storage_dir);
-    fs::create_directories(config.storage_dir);
+    stdfs::remove_all(config.storage_dir);
+    stdfs::create_directories(config.storage_dir);
 
     VFSNode node(config);
 
     // 1. Setup target data
-    std::string target_path = "geo/mesh";
-    json target_params = {{"cid", "abc123"}};
+    Selector target_sel;
+    target_sel.path = "geo/mesh";
+    target_sel.parameters = {{"cid", "abc123"}};
     std::vector<uint8_t> target_data = {'M', 'E', 'S', 'H'};
-    node.write(target_path, target_params, target_data);
+    node.write(target_sel, target_data);
 
     // 2. Create FORMAL link in VFS
     // This writes .meta with "target" field
-    std::string src_path = "jot/Triangle/geometry";
-    json src_params = {{"side", 10}};
-    node.link(src_path, src_params, target_path, target_params);
+    Selector src_sel;
+    src_sel.path = "jot/Triangle/geometry";
+    src_sel.parameters = {{"side", 10}};
+    node.link(src_sel, target_sel);
 
     // 3. Resolve Link
     VFSNode::VFSRequest req;
-    req.path = src_path;
-    req.parameters = src_params;
-    auto res = node.read(req);
+    req.selector = src_sel;
+    auto res = node.read<std::vector<uint8_t>>(req);
     
     assert(res == target_data);
     std::cout << "✔ C++ Formal Link (Metadata Target) Resolved Successfully" << std::endl;
 
-    fs::remove_all(config.storage_dir);
+    stdfs::remove_all(config.storage_dir);
 }
 
 void test_no_guessing() {
     VFSNode::Config config;
     config.id = "test-node-no-guessing";
     config.storage_dir = "./test_storage_no_guessing";
-    fs::remove_all(config.storage_dir);
-    fs::create_directories(config.storage_dir);
+    stdfs::remove_all(config.storage_dir);
+    stdfs::create_directories(config.storage_dir);
 
     VFSNode node(config);
 
     // 1. Setup raw data that LOOKS like a link pointer
-    std::string src_path = "fake/link";
+    Selector src_sel;
+    src_sel.path = "fake/link";
     std::string link_ptr = "vfs:/should/not/be/followed";
     std::vector<uint8_t> link_ptr_data(link_ptr.begin(), link_ptr.end());
-    node.write(src_path, {}, link_ptr_data);
+    node.write(src_sel, link_ptr_data);
 
     // 2. Reading should return the raw data, NOT attempt to follow it
     VFSNode::VFSRequest req;
-    req.path = src_path;
-    req.parameters = {};
-    auto res = node.read(req);
+    req.selector = src_sel;
+    auto res = node.read<std::vector<uint8_t>>(req);
     
     assert(res == link_ptr_data);
     std::cout << "✔ C++ No Guessing: Raw 'vfs:/' strings are not followed" << std::endl;
 
-    fs::remove_all(config.storage_dir);
+    stdfs::remove_all(config.storage_dir);
 }
 
 int main() {
