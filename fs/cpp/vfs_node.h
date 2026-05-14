@@ -61,6 +61,17 @@ public:
         bool is_cid() const { return !cid.empty(); }
     };
 
+    // Mesh Connection Abstraction
+    struct Connection {
+        std::string neighbor_id;
+        virtual ~Connection() = default;
+        virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
+        virtual void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) = 0;
+        virtual VFSResult read(const VFSRequest& req) = 0;
+        virtual bool is_reverse() const = 0;
+        virtual std::string get_url() const { return ""; }
+    };
+
     using OpHandler = std::function<void(const VFSRequest& req)>;
 
     VFSNode(const Config& config);
@@ -102,20 +113,11 @@ public:
     void notify(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
 
     void add_peer(const std::string& url);
+    void add_connection(std::shared_ptr<Connection> conn);
     void register_reverse_peer(const std::string& peer_id, httplib::Response& res);
 
     json get_catalog();
     json get_neighbors();
-
-    // Mesh Connection Abstraction
-    struct Connection {
-        std::string neighbor_id;
-        virtual ~Connection() = default;
-        virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
-        virtual void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) = 0;
-        virtual VFSResult read(const VFSRequest& req) = 0;
-        virtual bool is_reverse() const = 0;
-    };
 
 private:
     struct ForwardConnection : public Connection {
@@ -125,6 +127,7 @@ private:
         void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
         VFSResult read(const VFSRequest& req) override;
         bool is_reverse() const override { return false; }
+        std::string get_url() const override { return url; }
     };
 
     struct ReverseConnection : public Connection {

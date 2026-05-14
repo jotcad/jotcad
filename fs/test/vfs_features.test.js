@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, Selector } from '../src/index.js';
+import { vfsResult } from './vfs_test_helpers.js';
 
 async function consumeStream(stream) {
     const chunks = [];
@@ -42,7 +43,7 @@ test('VFS Core Features (Pure Router)', async (t) => {
     vfs.registerProvider('test/dedup', async () => {
       callCount++;
       await new Promise(r => setTimeout(r, 50));
-      return new TextEncoder().encode('fulfilled');
+      return vfsResult('fulfilled');
     });
 
     const sel = new Selector('test/dedup', { id: 1 });

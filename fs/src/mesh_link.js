@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { normalizeSelector, Selector, decodeSafe } from './vfs_core.js';
+import { normalizeSelector, Selector, decodeSafe, decodeInfo } from './cid.js';
 
 /**
  * Connection: Abstract interface for a direct communication pipe to a neighbor.
@@ -620,9 +620,16 @@ export class MeshLinkBase {
     const fetchPromises = targetConns.map(async (conn) => {
       console.log(`[MeshLink ${this.vfs.id}] Requesting ${target.path || target} from peer: ${conn.neighborId}`);
       const resp = await conn.read(target, { ...context, stack, resolutionStack, expiresAt });
-      if (resp) return resp;
-      throw new Error('Conn failed');
+      
+      if (resp && resp.body) {
+          return {
+              stream: resp.body,
+              metadata: decodeInfo(resp.headers.get('x-vfs-info'))
+          };
+      }
+      throw new Error(`Connection ${conn.neighborId} failed to return a valid response body.`);
     });
+
     try { 
         return await Promise.any(fetchPromises); 
     } catch (e) { 

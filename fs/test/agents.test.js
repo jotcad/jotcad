@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, Selector } from '../src/index.js';
+import { vfsResult } from './vfs_test_helpers.js';
 
 async function consumeJSON(stream) {
     const reader = stream.getReader();
@@ -23,8 +24,7 @@ test('Agent-style Processors (as Providers)', async (t) => {
 
   vfs.registerProvider('compute/sum', async (v, s) => {
     const { a, b } = s.parameters;
-    const sum = a + b;
-    return { result: sum };
+    return vfsResult({ result: a + b });
   });
 
   await t.test('cascading demand works', async () => {
@@ -39,7 +39,7 @@ test('Agent-style Processors (as Providers)', async (t) => {
     let callCount = 0;
     vfs.registerProvider('compute/once', async () => {
       callCount++;
-      return new TextEncoder().encode('done');
+      return vfsResult('done', { encoding: 'binary' });
     });
 
     const sel = new Selector('compute/once', { id: 1 });

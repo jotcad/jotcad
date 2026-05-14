@@ -29,6 +29,30 @@ void VFSNode::register_op(const std::string& path, OpHandler handler, const json
     schemas_[path] = schema;
 }
 
+void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
+    if (!conn) return;
+    std::string id = conn->neighbor_id;
+    {
+        std::lock_guard<std::mutex> lock(peer_mutex_);
+        peers_[id] = conn;
+    }
+    std::cout << "[VFSNode " << config_.id << "] Peer Added: " << id << (conn->is_reverse() ? " (REVERSE)" : " (DIRECT)") << std::endl;
+    
+    // Protocol Rule: Only sync interests on connection. 
+    // Announcements (Catalog/Topo) happen on-demand via subscriptions.
+    {
+        std::lock_guard<std::mutex> lock(interest_mutex_);
+        long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        for (auto const& [sel_str, subs] : interests_) {
+            long long maxExp = 0;
+            for (auto const& [neighbor_id, expiry] : subs) if (expiry > maxExp) maxExp = expiry;
+            if (maxExp > now) {
+                conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
+            }
+        }
+    }
+}
+
 void VFSNode::notify_schema() {
 }
 
@@ -95,26 +119,13 @@ void VFSNode::listen() {
                     add_peer(url);
                     res.set_content(json({{"id", config_.id}, {"reachability", "DIRECT"}}).dump(), "application/json");
                 } else {
+                    bool exists = false;
                     {
                         std::lock_guard<std::mutex> lock(peer_mutex_);
-                        if (!peers_.count(peerId)) {
-                            auto conn = std::make_shared<ReverseConnection>(peerId);
-                            peers_[peerId] = conn;
-                            std::cout << "[VFSNode " << config_.id << "] Reverse Peer Added: " << peerId << std::endl;
-
-                            // Forward existing interests to the new peer
-                            {
-                                std::lock_guard<std::mutex> ilock(interest_mutex_);
-                                long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                                for (auto const& [sel_str, subs] : interests_) {
-                                    long long maxExp = 0;
-                                    for (auto const& [neighbor_id, expiry] : subs) if (expiry > maxExp) maxExp = expiry;
-                                    if (maxExp > now) {
-                                        conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
-                                    }
-                                }
-                            }
-                        }
+                        if (peers_.count(peerId)) exists = true;
+                    }
+                    if (!exists) {
+                        add_connection(std::make_shared<ReverseConnection>(peerId));
                     }
                     res.set_content(json({{"id", config_.id}, {"reachability", "REVERSE"}}).dump(), "application/json");
                 }
@@ -358,7 +369,7 @@ Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& d
 
         json meta = {
             {"state", "AVAILABLE"},
-            {"encoding", "json"}, // Default for writes via Selector
+            {"encoding", "bytes"}, // Raw bytes via Selector
             {"selector", sel.to_json()}
         };
         std::ofstream mos(mp);
@@ -465,12 +476,14 @@ VFSResult VFSNode::ReverseConnection::read(const VFSRequest& req) {
 }
 
 void VFSNode::notify(const json& selector_json, const json& payload, const std::vector<std::string>& stack) {
+    // 1. Stack Protection: Break loops early
     if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
-    
+
     Selector selector;
     if (!selector_json.is_null()) {
         selector = Selector::from_json(selector_json);
     }
+
     std::string sel_str = encode_safe(selector.to_json());
     
     std::cout << "[VFSNode " << config_.id << "] notify: " << (selector.path.empty() ? "null" : selector.path) << " from stack {";
@@ -499,6 +512,8 @@ void VFSNode::notify(const json& selector_json, const json& payload, const std::
 }
 
 void VFSNode::subscribe(const json& selector_json, long long expiresAt, const std::vector<std::string>& stack) {
+    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
+
     Selector selector = Selector::from_json(selector_json);
     std::string sel_str = encode_safe(selector.to_json());
     std::string peer_id = stack.empty() ? "unknown" : stack.back();
@@ -607,11 +622,7 @@ json VFSNode::get_neighbors() {
     std::lock_guard<std::mutex> lock(peer_mutex_);
     json neighbors = json::array();
     for (auto const& [id, conn] : peers_) {
-        std::string url = "";
-        if (!conn->is_reverse()) {
-            url = std::static_pointer_cast<ForwardConnection>(conn)->url;
-        }
-        neighbors.push_back({{"id", id}, {"url", url}, {"reachability", conn->is_reverse() ? "REVERSE" : "DIRECT"}});
+        neighbors.push_back({{"id", id}, {"url", conn->get_url()}, {"reachability", conn->is_reverse() ? "REVERSE" : "DIRECT"}});
     }
     return neighbors;
 }
@@ -632,33 +643,7 @@ void VFSNode::add_peer(const std::string& url) {
             try {
                 json body = json::parse(res->body);
                 std::string id = body["id"];
-                std::shared_ptr<ForwardConnection> conn;
-                {
-                    std::lock_guard<std::mutex> lock(peer_mutex_);
-                    conn = std::make_shared<ForwardConnection>(id, url);
-                    peers_[id] = conn;
-                }
-                std::cout << "[VFSNode " << config_.id << "] Peer Added: " << id << " (" << url << ")" << std::endl;
-                
-                // 1. Forward existing interests to the new peer
-                {
-                    std::lock_guard<std::mutex> lock(interest_mutex_);
-                    long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                    for (auto const& [sel_str, subs] : interests_) {
-                        long long maxExp = 0;
-                        for (auto const& [neighbor_id, expiry] : subs) if (expiry > maxExp) maxExp = expiry;
-                        if (maxExp > now) {
-                            conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
-                        }
-                    }
-                }
-
-                // 2. Announce Catalog to the new peer
-                json catalog = get_catalog();
-                conn->notify({{"path", "sys/schema"}}, {{"type", "CATALOG_ANNOUNCEMENT"}, {"provider", config_.id}, {"catalog", catalog["catalog"]}}, {});
-
-                // 3. Update Topology
-                notify({{"path", "sys/topo"}}, {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", get_neighbors()}}, {});
+                add_connection(std::make_shared<ForwardConnection>(id, url));
             } catch (...) {}
         }
     }

@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, Selector } from '../src/index.js';
+import { mockOp } from './vfs_test_helpers.js';
 
 test('VFS TTL Enforcement', async (t) => {
   const vfs = new VFS({ id: 'ttl-vfs', storage: new MemoryStorage() });
   await vfs.init();
 
-  vfs.registerProvider('test/op', async () => {
-    return new TextEncoder().encode('fresh');
-  });
+  vfs.registerProvider('test/op', mockOp('fresh'));
 
   await t.test('should reject request that is already expired', async () => {
     const past = Date.now() - 1000;

@@ -331,36 +331,36 @@ export class VFS {
         let resultData = null, meshInfo = {};
         if (s) {
             const provider = this.providers.get(s.path);
-            if (provider) resultData = await provider(this, s, context);
+            if (provider) {
+                const res = await provider(this, s, context);
+                if (res === null) {
+                    resultData = null;
+                } else if (isSelector(res)) {
+                    resultData = res;
+                } else {
+                    // Protocol Strictness: Providers MUST return { stream, metadata }
+                    if (!res || !res.stream || !res.metadata) {
+                        throw new Error(`VFS Protocol Violation: Provider for '${s.path}' must return { stream, metadata }. Got: ${typeof res}`);
+                    }
+                    resultData = res.stream;
+                    meshInfo = res.metadata;
+                }
+            }
         }
 
         if (resultData === null && this.mesh && !isBackflow) {
-          const meshResponse = await this.mesh.read(s || targetCID, { 
+          const meshResult = await this.mesh.read(s || targetCID, { 
               ...context, 
               stack: nextStack, 
               resolutionStack 
           });
-          if (meshResponse) {
-              const rawBody = meshResponse.body || meshResponse;
-              if (rawBody instanceof ReadableStream) {
-                  const chunks = [];
-                  const reader = rawBody.getReader();
-                  while (true) {
-                      const { done, value } = await reader.read();
-                      if (done) break;
-                      chunks.push(value);
-                  }
-                  const len = chunks.reduce((acc, c) => acc + c.length, 0);
-                  resultData = new Uint8Array(len);
-                  let offset = 0;
-                  for (const chunk of chunks) { resultData.set(chunk, offset); offset += chunk.length; }
-              } else {
-                  resultData = rawBody;
+          if (meshResult) {
+              // Protocol Strictness: MeshLink.read MUST return { stream, metadata }
+              if (!meshResult.stream || !meshResult.metadata) {
+                  throw new Error(`VFS Protocol Violation: MeshLink.read must return { stream, metadata }.`);
               }
-
-              if (meshResponse.headers) {
-                  meshInfo = decodeInfo(meshResponse.headers.get('x-vfs-info'));
-              }
+              resultData = meshResult.stream;
+              meshInfo = meshResult.metadata;
           }
         } else if (isBackflow) {
             return { success: false, error: 'Backflow' };
