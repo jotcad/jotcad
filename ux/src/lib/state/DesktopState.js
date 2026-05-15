@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Worksheet } from '../vfs/Worksheet';
 import { DEFAULT_CODE } from './Config';
+import { JotRegistry } from '../vfs/JotRegistry';
 
 export const [openWindows, setOpenWindows] = createStore([]);
 export const [desktopIcons, setDesktopIcons] = createStore([]);
@@ -109,15 +110,18 @@ export const windowActions = {
     this._save();
   },
 
-  rename(oldId, newId) {
+  updateAndRename(oldId, newId, updates) {
     const list = openWindows.map(w => {
-      if (w.id === oldId) return { ...w, id: newId };
+      if (w.id === oldId) return { ...w, ...updates, id: newId };
       return w;
     });
     setOpenWindows(list);
     this._save();
   },
 
+  rename(oldId, newId) {
+    this.updateAndRename(oldId, newId, {});
+  },
   _save() {
     if (this._saveTimer) clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => {
@@ -165,14 +169,15 @@ export const editorActions = {
     });
   },
   raiseOp: windowActions.raise.bind(windowActions),
-  createNewOp() {
-    // Initially untitled with a hidden instance ID
-    const winId = `new-op-${Date.now()}`;
+  createNewOp(initialName = '') {
+    const targetPath = initialName ? JotRegistry.normalizePath(initialName) : '';
+    const winId = targetPath || `new-op-${Date.now()}`;
+    
     windowActions.open('editor', winId, { 
         code: DEFAULT_CODE, 
         schema: { arguments: [] },
-        opName: '', // Pure empty name for new ops
-        label: 'New Operator'
+        opName: targetPath, 
+        label: targetPath || 'New Operator'
     });
   },
   closeOp: windowActions.close.bind(windowActions),

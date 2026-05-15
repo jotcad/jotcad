@@ -95,7 +95,7 @@ export const PathNode = (props) => {
     if (hasAvailable && !hasThumb && !isBusy && isGeometry) {
       setIsGenerating(true);
       try {
-        const rawData = await vfs.readData(
+        const rawData = await blackboard.readData(
           hasAvailable.path,
           hasAvailable.parameters
         );

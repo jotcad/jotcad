@@ -95,6 +95,7 @@ export const ArgumentList = (props) => {
                         {/* Name Input */}
                         <input 
                             class="bg-black/20 border border-white/5 rounded-md px-2 py-1.5 text-[13px] font-bold text-white w-24 focus:outline-none focus:border-cyan-400"
+                            data-testid={`arg-name-${item().originalIndex}`}
                             value={item().name}
                             placeholder="name"
                             onInput={e => updateItem(item(), { name: e.target.value })}

@@ -57,18 +57,19 @@ export function normalizeSelector(s) {
  * toBase64: Standard Base64 encoding for Uint8Array.
  */
 function toBase64(bytes) {
-  if (globalThis.Buffer) return Buffer.from(bytes).toString('base64');
+  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return globalThis.btoa(binary);
+  const len = (bytes.byteLength !== undefined) ? bytes.byteLength : bytes.length;
+  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
 }
 
 /**
  * fromBase64: Standard Base64 decoding to Uint8Array.
  */
 function fromBase64(base64) {
-  if (globalThis.Buffer) return new Uint8Array(Buffer.from(base64, 'base64'));
-  const binary = globalThis.atob(base64);
+  if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(base64, 'base64'));
+  const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
@@ -232,10 +233,10 @@ export function decodeSafe(base64) {
 export function decodeInfo(b64) {
     if (!b64) return {};
     try {
-        const decoded = Buffer.from(b64, 'base64');
+        const decoded = fromBase64(b64);
         // Hybrid support: check for JCB object tag (0x06) to fallback to JCB decoding
         if (decoded[0] === 0x06) return decodeDataJCB(decoded);
-        return JSON.parse(decoded.toString());
+        return JSON.parse(new TextDecoder().decode(decoded));
     } catch (e) {
         console.error(`[CID] decodeInfo CRITICAL: Failed to parse metadata header: "${b64}". Error: ${e.message}`);
         throw e;
@@ -243,8 +244,9 @@ export function decodeInfo(b64) {
 }
 
 export function encodeInfo(info) {
-    if (!info) return '';
-    return Buffer.from(JSON.stringify(info)).toString('base64');
+    const json = JSON.stringify(info);
+    const bytes = new TextEncoder().encode(json);
+    return toBase64(bytes);
 }
 
 /**

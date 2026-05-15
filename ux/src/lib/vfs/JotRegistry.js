@@ -4,8 +4,6 @@ import { setSchemas, setDynamicOps } from '../state/MeshState.js';
 import { Worksheet } from './Worksheet';
 
 const versions = new Map();
-const activePaths = new Map();
-
 let initialized = false;
 
 const initializeVersionsFromState = () => {
@@ -20,52 +18,77 @@ const initializeVersionsFromState = () => {
         const v = vStr ? parseInt(vStr) : 0;
         if (!versions.has(cleanName) || versions.get(cleanName) < v) {
             versions.set(cleanName, v);
-            activePaths.set(cleanName, path);
         }
     }
     if (Object.keys(current).length > 0) initialized = true;
 };
 
 export const JotRegistry = {
+  normalizePath(name) {
+    if (!name) return '';
+    initializeVersionsFromState();
+    
+    let cleanName = name.split(':v')[0];
+    
+    // Ensure user/ prefix
+    if (!cleanName.startsWith('jot/') && !cleanName.startsWith('user/')) {
+        cleanName = `user/${cleanName}`;
+    }
+    
+    const baseName = cleanName.replace(/^(jot|user)\//, '');
+    
+    // Parse version if present
+    const vMatch = name.match(/:v(\d+)$/);
+    let version = vMatch ? parseInt(vMatch[1]) : 0;
+
+    // If no version specified, pick the NEXT one
+    if (version === 0) {
+        const currentV = versions.get(baseName) || 0;
+        version = currentV + 1;
+    }
+
+    return `${cleanName.startsWith('jot/') ? 'jot' : 'user'}/${baseName}:v${version}`;
+  },
+
   /**
    * Registers or updates a dynamic operator.
    * Does NOT increment versions. Respects the version in the name.
    */
   publishDynamicOp(vfs, mesh, name, schema, script, persist = true) {
-    initializeVersionsFromState();
-
     const bb = window.blackboard;
-    
-    // Parse name and version (e.g. user/Foot:v3)
-    const [pathPart, vStr] = name.split(':v');
-    const cleanName = pathPart.replace(/^(jot|user)\//, '');
-    const version = vStr ? parseInt(vStr) : 1; // Default to v1 if no version specified
-    
-    const newPath = `user/${cleanName}:v${version}`;
-    activePaths.set(cleanName, newPath);
-    
-    // Keep track of latest known version for this name
-    if (!versions.has(cleanName) || versions.get(cleanName) < version) {
-        versions.set(cleanName, version);
+    const targetPath = this.normalizePath(name);
+    const [pathPart, vStr] = targetPath.split(':v');
+    const cleanName = pathPart.replace('user/', '');
+    const version = parseInt(vStr);
+
+    // 1. COLLISION DETECTION
+    const existing = bb ? bb.dynamicOps()[targetPath] : null;
+    if (existing) {
+        const existingScript = (existing.script || '').trim();
+        const newScript = (script || '').trim();
+        if (existingScript !== newScript) {
+            throw new Error(`COLLISION: Version ${targetPath} already exists on the mesh with different code. Please increment version.`);
+        }
+        console.log(`[JotRegistry] Already published: ${targetPath}`);
+        return targetPath;
     }
 
-    console.log(`[JotRegistry] Registering: ${newPath} (persist=${persist})`);
+    console.log(`[JotRegistry] Registering: ${targetPath} (persist=${persist})`);
 
     if (!schema.arguments || !Array.isArray(schema.arguments)) {
-       const msg = `CRITICAL REGISTRY VIOLATION: Attempted to publish operator '${newPath}' with a malformed (thin) schema.`;
+       const msg = `CRITICAL REGISTRY VIOLATION: Attempted to publish operator '${targetPath}' with a malformed (thin) schema.`;
        console.error(msg, schema);
        throw new Error(msg);
     }
 
     // 2. Register Provider
-    vfs.registerProvider(newPath, async (v, s) => {
-      console.log(`[JotRegistry] Executing User Op: ${newPath}`);
+    vfs.registerProvider(targetPath, async (v, s) => {
+      console.log(`[JotRegistry] Executing User Op: ${targetPath}`);
       const { JotCompiler } = await import('../../../../jot/src/compiler');
       const { JotParser } = await import('../../../../jot/src/parser');
       
       const compiler = new JotCompiler(v);
       const currentSchemas = bb ? bb.schemas() : {};
-      console.log(`[JotRegistry] Populating compiler with ${Object.keys(currentSchemas).length} schemas.`);
       for (const [p, sch] of Object.entries(currentSchemas)) {
         compiler.registerOperator(p, { path: p, schema: sch });
       }
@@ -83,20 +106,18 @@ export const JotRegistry = {
       const parser = new JotParser();
       const ast = parser.parse(script);
       
-      const result = await compiler.evaluate(ast, params, schema, newPath);
+      const result = await compiler.evaluate(ast, params, schema, targetPath);
       
       const requestedPort = s.output || '$out';
       let requestedTerminal = null;
 
-      // 1. Eager Fulfillment: satisfies all schema outputs defined by the compiler results
+      // 1. Eager Fulfillment
       for (const bundle of result) {
           const port = bundle.port;
           const terminal = bundle.selector;
-          
           if (port === requestedPort) {
               requestedTerminal = terminal;
           } else {
-              // Fulfill side ports in storage
               if (terminal instanceof Selector) {
                   await v.link(s.withOutput(port), terminal);
               } else {
@@ -106,21 +127,21 @@ export const JotRegistry = {
       }
 
       if (requestedTerminal === null) {
-          throw new Error(`Mesh Error: No output terminal found for port '${requestedPort}' in ${newPath}`);
+          throw new Error(`Mesh Error: No output terminal found for port '${requestedPort}' in ${targetPath}`);
       }
 
-      // Return the terminal directly. If it's a Selector, vfs.write will save it as a pointer.
       return requestedTerminal;
     }, { schema });
 
-    const schemaWithOrigin = { ...schema, _origin: vfs.id, path: newPath };
+    const schemaWithOrigin = { ...schema, _origin: vfs.id, path: targetPath };
     
-    // SolidJS updates - these should ideally be batched by the caller
-    setSchemas(prev => ({ ...prev, [newPath]: schemaWithOrigin }));
-    vfs.addSchema(newPath, schemaWithOrigin);
+    // SolidJS updates
+    console.log(`[JotRegistry] Updating state for ${targetPath}`);
+    setSchemas(prev => ({ ...prev, [targetPath]: schemaWithOrigin }));
+    vfs.addSchema(targetPath, schemaWithOrigin);
 
     setDynamicOps(prev => {
-      const next = { ...prev, [newPath]: { schema, script } };
+      const next = { ...prev, [targetPath]: { schema, script } };
       if (persist) {
         Worksheet.save(Worksheet.TIERS.OPERATORS, null, next);
       }
@@ -131,11 +152,16 @@ export const JotRegistry = {
         mesh.notify(new Selector('sys/schema'), {
           type: 'CATALOG_ANNOUNCEMENT',
           provider: vfs.id,
-          catalog: { [newPath]: schemaWithOrigin }
+          catalog: { [targetPath]: schemaWithOrigin }
         });
     }
 
-    return newPath;
+    // Update local version tracker
+    if (!versions.has(cleanName) || versions.get(cleanName) < version) {
+        versions.set(cleanName, version);
+    }
+
+    return targetPath;
   },
 
   /**

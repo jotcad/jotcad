@@ -185,6 +185,7 @@ export const JotNode = (props) => {
   const evaluateJot = async () => {
     if (isEvaluating()) return;
     setIsEvaluating(true);
+    console.log(`[JotNode] evaluateJot starting. Code: "${code().slice(0, 50)}...", Args: ${args().length}, Outputs: ${outputs().length}`);
     try {
       const parser = new JotParser();
       const compiler = new JotCompiler(vfs);
@@ -236,7 +237,7 @@ export const JotNode = (props) => {
       setAssociatedFiles(files);
 
       const resultList = await Promise.all(shapes.map(async (sel) => {
-        const data = await vfs.readData(sel);
+        const data = await blackboard.readData(sel);
         let finalData = data;
         if (data && typeof data === 'object' && (data.geometry || data.components)) {
           finalData = await packZFS(vfs, data);
@@ -268,6 +269,7 @@ export const JotNode = (props) => {
                 <div class="flex items-center gap-2">
                    <input 
                      class="bg-transparent border-none text-ui-label font-black tracking-tighter text-cyan-400 focus:outline-none w-48 placeholder:text-cyan-400/20"
+                     data-testid="op-name-input"
                      value={opName()}
                      placeholder="Name your op..."
                      onInput={e => setOpName(e.target.value)}
@@ -302,8 +304,13 @@ export const JotNode = (props) => {
     
               <textarea
                 class="flex-1 bg-black/80 border border-white/10 rounded-lg p-3 font-mono text-readable focus:outline-none focus:border-cyan-400/50 text-cyan-200 resize-none custom-scrollbar shadow-inner"
+                data-testid="jot-code-editor"
                 value={code()}
-                onInput={(e) => setCode(e.target.value)}
+                onInput={(e) => {
+                    const val = e.target.value;
+                    setCode(val);
+                    syncContent(); // Synchronous sync to store for test reliability
+                }}
                 onKeyDown={(e) => { if (e.shiftKey && e.key === 'Enter') { e.preventDefault(); evaluateJot(); } }}
                 spellcheck={false}
               />

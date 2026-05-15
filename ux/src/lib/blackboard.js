@@ -5,7 +5,7 @@ import {
   peerId,
   mesh,
   vfsActions
-} from './vfs/VFSManager.js';
+} from './VFSManager.js';
 
 import {
   openWindows,
@@ -95,9 +95,12 @@ export const blackboard = {
   stop: vfsActions.stop.bind(vfsActions),
   publishDynamicOp: vfsActions.publishDynamicOp.bind(vfsActions),
   getNextVersionPath: vfsActions.getNextVersionPath.bind(vfsActions),
+  normalizePath: (name) => vfsActions.normalizePath(name),
   removeDynamicOp: vfsActions.removeDynamicOp.bind(vfsActions),
   read: vfsActions.read.bind(vfsActions),
+  readData: vfsActions.readData.bind(vfsActions),
   write: vfsActions.write.bind(vfsActions),
+  writeData: vfsActions.writeData.bind(vfsActions),
   clearStorage: vfsActions.clearStorage.bind(vfsActions),
 
   // Event Bus

@@ -1,16 +1,16 @@
 console.log('[Boot] VFSManager.js loading...');
 import { reconcile } from 'solid-js/store';
-import { VFS, IndexedDBStorage, Selector } from '../../../../fs/src/vfs_browser.js';
-import { MeshLink } from '../../../../fs/src/mesh_link.js';
-import { registerJotProvider } from '../../../../jot/src/index.js';
-import { Worksheet } from './Worksheet';
-import { registerUtilityOps } from './UtilityOps';
-import { JotRegistry } from './JotRegistry';
+import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js';
+import { MeshLink } from '../../../fs/src/mesh_link.js';
+import { registerJotProvider } from '../../../jot/src/index.js';
+import { Worksheet } from './vfs/Worksheet';
+import { registerUtilityOps } from './vfs/UtilityOps';
+import { JotRegistry } from './vfs/JotRegistry';
 import {
   setGraph, setSchemas, setPulse, setMeshTopology,
   setIsConnected, setDiscoveryStatus, setDynamicOps,
   schemas
-} from '../state/MeshState.js';
+} from './state/MeshState.js';
 
 console.log('[Boot] VFSManager.js imports resolved.');
 
@@ -40,6 +40,7 @@ export const vfsActions = {
   async discoverSchemas(retryCount = 0) {
     setDiscoveryStatus('loading');
     console.log(`[MeshVFS] discoverSchemas attempt ${retryCount + 1}`);
+    console.log(`[MeshVFS] -> Subscribing to sys/schema (Catalog Discovery)`);
     try {
       await mesh.subscribe(new Selector('sys/schema'), Date.now() + 60000);
       setDiscoveryStatus('success');
@@ -116,7 +117,10 @@ export const vfsActions = {
 
     const originalNotify = mesh.notify.bind(mesh);
     mesh.notify = (selector, payload, stack = []) => {
-      if (payload.type === 'TOPOLOGY_UPDATE') meshMap.set(payload.peer, payload.neighbors);
+      if (payload.type === 'TOPOLOGY_UPDATE') {
+          console.log(`[MeshVFS] Mesh topology update from ${payload.peer}: ${payload.neighbors.length} peers visible.`);
+          meshMap.set(payload.peer, payload.neighbors);
+      }
       if (payload.type === 'CATALOG_ANNOUNCEMENT') {
         const { catalog, provider } = payload;
         console.log(`%c[MeshVFS] Received Catalog from ${provider} (${Object.keys(catalog || {}).length} ops)`, 'color: #f59e0b; font-weight: bold;');
@@ -143,6 +147,7 @@ export const vfsActions = {
     };
 
     try {
+      console.log(`[MeshVFS] Initializing mesh connection to: ${vfsUrl}`);
       await mesh.start();
       setIsConnected(true);
       console.log(`[MeshVFS] Mesh started. Discovery active.`);
@@ -183,7 +188,11 @@ export const vfsActions = {
   },
 
   publishDynamicOp(path, schema, script, persist = true) {
-    JotRegistry.publishDynamicOp(vfs, mesh, path, schema, script, persist);
+    return JotRegistry.publishDynamicOp(vfs, mesh, path, schema, script, persist);
+  },
+
+  normalizePath(name) {
+    return JotRegistry.normalizePath(name);
   },
 
   getNextVersionPath(name) {
@@ -199,12 +208,60 @@ export const vfsActions = {
     vfs.close();
   },
 
+  async readData(selector, context = {}) {
+    console.log(`[MeshVFS] readData for:`, selector);
+    const result = await vfs.read(selector, context);
+    if (!result) {
+        console.warn(`[MeshVFS] readData returned null for:`, selector);
+        return null;
+    }
+    const { stream, metadata } = result;
+    console.log(`[MeshVFS] readData got result. Metadata:`, metadata);
+    
+    // Drain stream into a single Uint8Array
+    const reader = stream.getReader();
+    const chunks = [];
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+    }
+
+    const contentType = metadata.contentType || '';
+    let parsed;
+    if (contentType.includes('application/json')) {
+        parsed = JSON.parse(new TextDecoder().decode(bytes));
+    } else if (contentType.startsWith('text/')) {
+        parsed = new TextDecoder().decode(bytes);
+    } else {
+        parsed = bytes;
+    }
+    console.log(`[MeshVFS] readData SUCCESS. Result type: ${typeof parsed}. Length: ${totalLength} bytes.`);
+    return parsed;
+  },
+
+  async writeData(selector, data, metadata = {}) {
+    return vfs.write(selector, data, metadata);
+  },
+
   async read(selector) {
     return vfs.read(selector);
   },
 
   async write(selector, data) {
-    return vfs.writeData(selector, data);
+    return vfs.write(selector, data);
   },
 
   async clearStorage() {

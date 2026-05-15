@@ -30,7 +30,7 @@ export class JOTAssets {
     if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
     if (!this.vfs) return null;
     try {
-      const data = await this.vfs.readData(id);
+      const data = await blackboard.readData(id);
       if (data) {
         const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
         this.cache.set(cacheKey, text);

@@ -82,20 +82,35 @@ export const Window = (props) => {
     windowActions.update(props.data.id, { isMaximized: !isMaximized() });
   };
 
-  const isUnpublished = createMemo(() => {
+  const handleNameBlur = (e) => {
+    const val = e.target.value.trim();
+    if (!val) return;
+    
+    // Normalize to target version (e.g. Square -> user/Square:v1)
+    const normalized = blackboard.normalizePath(val);
+    if (props.data.id !== normalized) {
+        console.log(`[Window ${props.data.id}] Targeting version: ${normalized}`);
+        windowActions.updateAndRename(props.data.id, normalized, { opName: normalized, label: normalized });
+    }
+  };
+
+  const isUnpublished = () => {
     if (props.data.type !== 'editor') return false;
-    const path = props.data.opName || '';
+    let path = props.data.opName || '';
     const code = props.data.code || '';
     if (!path) return true;
 
+    // Direct match check (Target Version Model)
     const published = blackboard.dynamicOps()[path];
-    if (!published) return true;
+    if (!published) {
+        return true;
+    }
     
     // Compare normalized scripts to avoid whitespace-only false positives
     const local = code.trim();
     const remote = (published.script || '').trim();
     return local !== remote;
-  });
+  };
 
   const handlePublish = (e) => {
     e.stopPropagation();
@@ -106,19 +121,8 @@ export const Window = (props) => {
         return;
     }
 
-    if (path && !path.includes('/')) path = `user/${path}`;
-    
-    if (!path.startsWith('user/')) {
-        alert("Please enter a valid operator path (e.g. 'user/MyOperator')");
-        return;
-    }
-
-    // Force immediate store sync for the prefixed path and unify IDs
-    windowActions.update(props.data.id, { opName: path, label: path });
-    
-    if (props.data.id.startsWith('new-op-')) {
-        blackboard.rename(props.data.id, path);
-    }
+    // Ensure we are publishing the TARGET version
+    path = blackboard.normalizePath(path);
 
     const schema = {
       path,
@@ -129,7 +133,23 @@ export const Window = (props) => {
       })),
       outputs: { "$out": { type: "shape" } }
     };
-    blackboard.publishDynamicOp(path, schema, props.data.code);
+
+    try {
+        const finalPath = blackboard.publishDynamicOp(path, schema, props.data.code);
+        console.log(`[Window ${props.data.id}] Publication successful: ${finalPath}`);
+        
+        // Final sync check
+        if (props.data.id !== finalPath) {
+            windowActions.updateAndRename(props.data.id, finalPath, { opName: finalPath, label: finalPath });
+        }
+    } catch (err) {
+        if (err.message.startsWith('COLLISION:')) {
+            alert(err.message);
+        } else {
+            console.error("Publication failed:", err);
+            alert("Mesh Publication failed. See console for details.");
+        }
+    }
   };
 
   // Memoized style to ensure reactive recalculation during zoom/pan
@@ -165,6 +185,7 @@ export const Window = (props) => {
     <div
       ref={winRef}
       onPointerDown={() => { windowActions.raise(props.data.id); }}
+      data-id={props.data.id}
       class={`jot-window absolute pointer-events-auto border-cyan-400 bg-black/95 backdrop-blur-3xl shadow-2xl flex flex-col overflow-hidden touch-none ${
         isMaximized() ? 'is-maximized' : 
         isInteracting() ? 'border-cyan-300 ring-4 ring-cyan-400/20' : 'transition-all duration-200'
@@ -187,6 +208,7 @@ export const Window = (props) => {
           }>
              <input 
                class="bg-transparent border-none text-ui-label font-black tracking-tighter text-cyan-400 focus:outline-none w-48 placeholder:text-cyan-400/20"
+               data-testid="op-name-input"
                value={props.data.opName ?? ''}
                placeholder="Name your op..."
                onPointerDown={e => e.stopPropagation()}
@@ -194,8 +216,10 @@ export const Window = (props) => {
                    const val = e.target.value;
                    windowActions.update(props.data.id, { opName: val, label: val || 'New Operator' });
                }}
+               onBlur={handleNameBlur}
                onKeyDown={e => {
                    if (e.key === 'Enter') {
+                       handleNameBlur(e);
                        e.currentTarget.blur();
                    }
                }}
@@ -209,7 +233,7 @@ export const Window = (props) => {
                  class={`relative tap-target rounded-full bg-white/5 transition-all flex items-center justify-center p-1.5 ${
                     isUnpublished() ? 'text-cyan-400' : 'text-white/20'
                  }`}
-                 title="Publish to Mesh"
+                 title={isUnpublished() ? "Publish to Mesh" : "Published to Mesh"}
                >
                  <Globe size={20} />
                  {/* Status Dot */}
