@@ -238,9 +238,17 @@ export class JotCompiler {
     switch (node.type) {
       case 'ASSIGNMENT': {
         const val = await this._evaluateRecursive(node.value, parameters, subject);
-        this.localSymbols[node.name] = val;
         parameters[node.name] = val; // Propagate assigned values to scope
         return val;
+      }
+      case 'BLOCK': {
+        const s = await this._evaluateRecursive(node.subject, parameters, subject);
+        const blockParams = Object.create(parameters);
+        const topLevelNodes = Array.isArray(node.body) ? node.body : [node.body];
+        for (const innerNode of topLevelNodes) {
+            await this._evaluateRecursive(innerNode, blockParams, s);
+        }
+        return s; // Subject passthrough
       }
       case 'CALL': return this._dispatchCall(node, parameters, subject);
       case 'METHOD': return this._evaluateMethod(node, parameters, subject);

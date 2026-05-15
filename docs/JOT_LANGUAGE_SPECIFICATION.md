@@ -71,31 +71,34 @@ structures.
 - **No Recursion:** Functions cannot call themselves.
 - **No Conditionals:** Logic is applied via **Selectors** and **Explicit Mapping** over data sets.
 
-### 1.4. Graph-based Terminal Analysis (Leaf Discovery)
+### 1.4. Strict Explicit Wiring (Assignment Model)
 
-JotCAD avoids manual "passthrough" hacks or side-effect "lifting." Instead, the compiler implements **Graph-based Terminal Analysis**.
+JotCAD avoids "magic" discovery of unconsumed values. Instead, the compiler
+enforces a **Strict Assignment Model**. 
 
-- **Consumption Tracking:** Every time a `Selector` (and its specific output port) is used as an argument to another operator, it is marked as **Consumed**.
-- **Terminal Discovery**: After evaluation, the compiler identifies every `(Selector, Port)` pair that remains **Unconsumed**.
-- **User Presentation (Independent Terminals)**: 
-  - EVERY unconsumed port with type `jot:shape` is rendered independently in its own viewport or viewport layer. This ensures that auxiliary outputs (debug meshes, side-effects) are visible without interfering with the primary result.
-  - Unconsumed ports with type `file` (e.g., from `.pdf()` or `.stl()`) are routed to the Download List.
-- **Example:** `Box(10).pdf("out.pdf")`
-  - `Box:$out` is consumed by `pdf`.
-  - `pdf:$out` is unconsumed (Shape) -> Viewer.
-  - `pdf:file` is unconsumed (File) -> Download Button.
+- **Explicit Targets:** Only values that are explicitly assigned to a variable 
+  or wired to an output port using the arrow operator (`->`) are tracked by 
+  the compiler.
+- **Output Fulfillment:** A script is considered "successful" only if it 
+  assigns values to every output port defined in the operator's schema.
+- **Port Visibility:** Only values wired to formal schema ports (e.g., `$out`, 
+  `debug`, `file`) are returned by the evaluation engine. Unassigned expressions
+  are treated as dead code or trigger compiler errors in strict contexts.
 
 ### 1.5. Multi-Expression Support
 
-The JOT parser supports scripts containing one or more top-level expressions, optionally separated by semicolons or newlines.
+The JOT parser supports scripts containing multiple expressions. However, 
+in the context of a User Operator, each top-level statement MUST be an 
+assignment to ensure deterministic output fulfillment.
 
 ```js
-// Two independent terminals
-Box(10)
-Sphere(5)
+// Explicitly fulfilling multiple ports
+Box(10) -> $out
+Cylinder(5) -> debug
 
-// Semicolon support
-Box(20); Cylinder(10)
+// Standard assignment
+main = Box(20)
+main.cut(Orb(5)) -> $out
 ```
 
 ## 2. The Universal Sequence Principle
@@ -253,13 +256,13 @@ Measurement operators like `area()`, `z()`, and `facing()` are template operator
 - **`highest`**: Sorts Descending (Highest value = Bucket 0).
 - **`lowest`**: Sorts Ascending (Lowest value = Bucket 0).
 
-## 7. Boolean Operations
+## 8. Boolean Operations
 
 Boolean operations are foundational for CSG (Constructive Solid Geometry) and
 hierarchical assembly logic in JotCAD. All boolean operators use the
 **Exact Rational Kernel** to ensure zero-drift, topologically perfect results.
 
-### 7.1. Basic Operators
+### 8.1. Basic Operators
 
 - **`cut(tools)`**: Subtraction. Removes the volume (or area) of the `tools`
   from the subject.
@@ -268,7 +271,7 @@ hierarchical assembly logic in JotCAD. All boolean operators use the
 - **`clip(tools)`**: Intersection. Keeps only the portion of the subject that
   is *inside* the `tools`.
 
-### 7.2. Consolidating Fusion (`fuse`)
+### 8.2. Consolidating Fusion (`fuse`)
 
 The `fuse(tools)` operator is a **Flattening Union**. Unlike `join`, which
 preserves hierarchy (parent and child shapes), `fuse` merges all geometry into
@@ -280,7 +283,7 @@ a single, flat `Geometry` object.
 - **Dimensionality**: Fusing a 3D box and a 2D rectangle results in a single 
   geometry containing both types of primitives.
 
-### 7.3. Cross-Dimensional Logic
+### 8.3. Cross-Dimensional Logic
 
 JotCAD's boolean engine is **Dimensionally Aware**:
 - **Solid Tool vs. Path**: Trims the path to the part outside the solid.
@@ -289,19 +292,56 @@ JotCAD's boolean engine is **Dimensionally Aware**:
   the same plane, the engine uses 2D PWH (Polygon With Holes) logic for 
   maximum performance and exactness.
 
-## 8. Comprehensive Operation Reference
+## 9. Blocks (Scoped Execution)
+
+Blocks allow for scoped execution and non-destructive branching within a method 
+chain.
+
+### 9.1. Syntax and Passthrough
+
+A block is defined using the `.{ ... }` syntax applied to a subject. 
+The block **always returns its original subject**, acting as a "Tee" in the 
+pipeline.
+
+```js
+// Box(10) is moved and scaled independently for 'debug', 
+// but the main chain continues with the original Box(10).
+Box(10).{
+  move(5).scale(2) -> debug
+}.cut(Orb(2)) -> $out
+```
+
+### 9.2. Subject Inheritance
+
+Every top-level statement inside a block automatically inherits the block's 
+subject as its ambient `$in`.
+
+### 9.3. Lexical Scoping
+
+Variables assigned inside a block are local to that block and do not persist 
+in the parent scope.
+
+```js
+Box(10).{
+  temp = move(5)
+  temp.scale(2) -> debug
+}
+// 'temp' is no longer accessible here
+```
+
+## 10. Comprehensive Operation Reference
 
 (Standard operators: Arc, Box, Orb, Tri, Part, rotate, move, size, etc.)
 
-## 8. VFS Providers & Parametric Symbols
+## 11. VFS Providers & Parametric Symbols
 
-### 8.1. Late-Bound Symbols
+### 11.1. Late-Bound Symbols
 
 VFS request parameters are bound as symbols within the evaluation context.
 
 - **Syntax:** `Box(10, 10, length)`
 - **Resolution:** `length` is resolved from the VFS `parameters` object during evaluation.
 
-### 8.2. Deterministic Identity (CID)
+### 11.2. Deterministic Identity (CID)
 
 The Mesh-VFS calculates the Content-ID based on the **Canonical Selector**, ensuring that logically equivalent requests share the same address.

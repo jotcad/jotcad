@@ -89,6 +89,11 @@ export class JotParser {
 
     while (this._peek() === '.') {
       this._consume('.');
+      if (this._peek() === '{') {
+        const body = this._parseBlock();
+        expr = { type: 'BLOCK', subject: expr, body };
+        continue;
+      }
       const name = this._consume();
       if (this._peek() === '(') {
         const args = this._parseArguments();
@@ -100,6 +105,20 @@ export class JotParser {
     }
 
     return expr;
+  }
+
+  _parseBlock() {
+    this._consume('{');
+    const statements = [];
+    while (this._peek() && this._peek() !== '}') {
+      if (this._peek() === ';') {
+        this._consume(';');
+        continue;
+      }
+      statements.push(this._parseExpression());
+    }
+    this._consume('}');
+    return statements;
   }
 
   _parsePrimary() {
