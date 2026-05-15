@@ -171,11 +171,15 @@ void VFSNode::listen() {
             res.set_header("x-vfs-info", info_b64);
             res.set_content((const char*)result.data.data(), result.data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
+            json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "POST /read"}};
+            std::string msg = e.what();
+            if (msg.empty() || msg[0] != '{') msg = json({{"error", msg}}).dump();
             res.status = e.code;
-            res.set_content(e.what(), "text/plain");
+            res.set_content(ctx.dump() + "\n" + msg, "application/x-jsonlines");
         } catch (const std::exception& e) {
+            json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /read (std)"}};
             res.status = 500;
-            res.set_content(e.what(), "text/plain");
+            res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
         }
     });
 
@@ -189,9 +193,9 @@ void VFSNode::listen() {
             subscribe(s.to_json(), body.at("expiresAt"), body.value("stack", std::vector<std::string>{}));
             res.status = 200;
         } catch (const std::exception& e) {
-            std::cerr << "[REST " << config_.id << "] /subscribe Error: " << e.what() << std::endl;
+            json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /subscribe"}};
             res.status = 500;
-            res.set_content(e.what(), "text/plain");
+            res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
         }
     });
 
@@ -206,8 +210,9 @@ void VFSNode::listen() {
             notify(selector_json, body.at("payload"), body.value("stack", std::vector<std::string>{}));
             res.status = 200;
         } catch (const std::exception& e) {
+            json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /notify"}};
             res.status = 500;
-            res.set_content(e.what(), "text/plain");
+            res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
         }
     });
 
@@ -311,16 +316,28 @@ VFSResult VFSNode::read_impl(const VFSRequest& req) {
             }
         }
 
+        std::string last_404_msg = "";
         for (const auto& conn : targets) {
             VFSRequest forwardReq = req;
             forwardReq.stack.push_back(config_.id);
             try {
                 return conn->read(forwardReq);
-            } catch (...) {}
+            } catch (const VFSException& e) {
+                if (e.code == 404) {
+                    last_404_msg = e.what();
+                    continue;
+                }
+                // Prepend local context for non-404 errors
+                json ctx = {{"vfsId", config_.id}, {"target", conn->neighbor_id}, {"path", req.selector.path}};
+                std::string newMsg = ctx.dump() + "\n" + e.what();
+                throw VFSException(newMsg, e.code);
+            } catch (const std::exception& e) {
+                std::cerr << "[VFSNode " << config_.id << "] Peer Exception: " << e.what() << std::endl;
+            }
         }
+        
+        throw VFSException(last_404_msg.empty() ? ("Content not found for " + (req.is_cid() ? ("CID: " + req.cid) : ("Selector: " + req.selector.path))) : last_404_msg, 404);
     }
-
-    throw VFSException("Content not found for " + (req.is_cid() ? ("CID: " + req.cid) : ("Selector: " + req.selector.path)), 404);
 }
 
 std::string VFSNode::get_cid(const Selector& sel) {
@@ -452,9 +469,14 @@ VFSResult VFSNode::ForwardConnection::read(const VFSRequest& req) {
                 result.metadata = {{"state", "AVAILABLE"}};
             }
             return result;
+        } else {
+            // JSON Lines error propagation
+            json ctx = {{"vfsId", neighbor_id}, {"status", res->status}, {"action", "read_peer"}};
+            std::string newBody = ctx.dump() + "\n" + res->body;
+            throw VFSException(newBody, res->status);
         }
     }
-    throw VFSException("Forward read failed", 500);
+    throw VFSException(json({{"vfsId", neighbor_id}, {"error", "Network failure"}, {"url", url}}).dump(), 503);
 }
 
 void VFSNode::ReverseConnection::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {

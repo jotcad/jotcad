@@ -63,7 +63,8 @@ export class ForwardConnection extends Connection {
         if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
         
         const errText = await resp.text().catch(() => 'no body');
-        throw new Error(`POST /read failed with status ${resp.status}: ${errText}`);
+        const ctxLine = JSON.stringify({ vfsId: this.neighborId, status: resp.status, action: 'mesh_read', url: this.url });
+        throw new Error(ctxLine + '\n' + errText);
     } catch (err) {
         console.log(`[MeshLink ${this.neighborId}] read error: ${err.message}`);
         throw err;

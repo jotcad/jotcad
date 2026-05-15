@@ -156,10 +156,22 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         return res.end(JSON.stringify({ version: vfs.version || 'unknown', id: vfs.id }));
       }
     } catch (err) {
-      console.error(`[MeshServer ${vfs.id}] REST Error:`, err);
+      const vfsCtx = { vfsId: vfs.id, action: req.method + ' ' + req.url };
+      const ctxLine = JSON.stringify(vfsCtx);
+      
+      let msg = err.message;
+      // If the message is already a set of JSON lines, just prepend.
+      // Otherwise, wrap the message in a JSON object.
+      if (!msg.trim().startsWith('{')) {
+          msg = JSON.stringify({ error: msg });
+      }
+      
+      const fullError = ctxLine + '\n' + msg;
+      console.error(`[VFS ${vfs.id}] REST Error:\n${fullError}`);
+      
       if (!res.writableEnded) {
-        res.writeHead(500);
-        res.end(err.message);
+        res.writeHead(500, { 'Content-Type': 'application/x-jsonlines' });
+        res.end(fullError);
       }
     }
   };
