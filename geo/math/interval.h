@@ -10,6 +10,8 @@ struct Interval {
     double size() const { return empty() ? 0.0 : (max - min); }
     double center() const { return empty() ? 0.0 : (min + max) * 0.5; }
 
+    static Interval centered(double v) { return {-v * 0.5, v * 0.5}; }
+
     void expand(double v) {
         if (v < min) min = v;
         if (v > max) max = v;

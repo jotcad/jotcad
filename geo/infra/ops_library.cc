@@ -3,6 +3,7 @@
 #include "disk_op.h"
 #include "arc_op.h"
 #include "orb_op.h"
+#include "cone_op.h"
 #include "triangle_op.h"
 #include "offset_op.h"
 #include "outline_op.h"
@@ -60,6 +61,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     disk_init(vfs);
     arc_init(vfs);
     orb_init(vfs);
+    cone_init(vfs);
     triangle_init(vfs);
     offset_init(vfs);
     outline_init(vfs);
