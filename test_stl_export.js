@@ -20,12 +20,11 @@ async function test() {
         path: 'jot/stl',
         schema: {
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
+                { name: '$in', type: 'jot:shape' },
                 { name: 'path', type: 'jot:string', default: 'export.stl' }
             ],
             outputs: {
-                "$out": { type: 'jot:shape' },
-                "file": { type: 'file' }
+                "$out": { type: 'file' }
             }
         }
     });
@@ -43,7 +42,7 @@ async function test() {
     const ast = parser.parse(code);
     const terminals = await compiler.evaluate(ast);
     
-    const stlBundle = terminals.find(t => t.selector.output === 'file');
+    const stlBundle = terminals.find(t => t.selector.output === '$out');
     const stlTerminal = stlBundle?.selector;
     if (!stlTerminal) {
         console.error("Failed to find STL file terminal");

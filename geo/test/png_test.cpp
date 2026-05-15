@@ -18,9 +18,9 @@ int main() {
     Selector png_addr = Selector{"jot/png", {{"$in", box_addr}, {"ax", 0.61547}, {"ay", 0.78539}}}.with_output("$out");
     Processor::execute(&vfs, png_addr);
 
-    // 3. Verify 'file' port
+    // 3. Verify '$out' port has binary PNG data
     try {
-        std::vector<uint8_t> png_file_bytes = vfs.read<std::vector<uint8_t>>(png_addr.with_output("file"));
+        std::vector<uint8_t> png_file_bytes = vfs.read<std::vector<uint8_t>>(png_addr);
         std::string actual_hash = vfs_hash256(png_file_bytes);
         std::string golden_hash = "6bd8fd0d23d90f749db33bd8153e1cf11bd2983f88c3abaca70bb2728b99a1c9";
         

@@ -53,7 +53,7 @@ int main() {
         std::cout << "  - Generating verification PNG (actual/trace_test_final.png)..." << std::endl;
         Processor::execute(&vfs, png_addr);
         
-        std::vector<uint8_t> png_bytes = vfs->read<std::vector<uint8_t>>(png_addr.with_output("file"));
+        std::vector<uint8_t> png_bytes = vfs->read<std::vector<uint8_t>>(png_addr);
         std::filesystem::create_directories("actual");
         std::ofstream out("actual/trace_test_final.png", std::ios::binary);
         out.write((char*)png_bytes.data(), png_bytes.size());

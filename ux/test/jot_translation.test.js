@@ -131,10 +131,9 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('pdf', {
       path: 'jot/pdf',
       schema: {
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'path', type: 'jot:string' }],
-        outputs: { $out: { type: 'jot:shape' } }
+        arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'path', type: 'jot:string' }],
+        outputs: { $out: { type: 'file' } }
       },
-      metadata: { aliases: { $out: '$in' } },
     });
     c.registerOperator('box', {
       path: 'jot/box',
@@ -331,12 +330,6 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     it('should handle optimized chain (optimizeAliases: true)', async () => {
       const res = await compile('Box(10).pdf("out.pdf") -> $out');
       expect(res.path).toBe('jot/pdf');
-    });
-
-    it('should handle complex optimized chain: Box(10).pdf("out.pdf").offset(2)', async () => {
-      const res = await compile('Box(10).pdf("out.pdf").offset(2) -> $out');
-      expect(res.path).toBe('jot/offset');
-      expect(res.parameters.$in.path).toBe('jot/pdf');
     });
   });
 

@@ -1,7 +1,7 @@
 # JotCAD Operator Tests Makefile
 
 CXX = g++
-CXXFLAGS = -O3 -std=c++17
+CXXFLAGS = -O1 -std=c++17
 INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../render -I../infra \
            -I../../fs/cpp -I../../fs/cpp/vendor \
            -I../cgal -I../cgal/boost \

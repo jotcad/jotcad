@@ -6,7 +6,7 @@ using namespace jotcad::geo;
 void render_to(fs::VFSNode* vfs, const fs::Selector& sel, const std::string& name) {
     fs::Selector png_addr = fs::Selector{"jot/png", {{"$in", sel}}}.with_output("$out");
     Processor::execute(vfs, png_addr);
-    std::vector<uint8_t> png_bytes = vfs->read<std::vector<uint8_t>>(png_addr.with_output("file"));
+    std::vector<uint8_t> png_bytes = vfs->read<std::vector<uint8_t>>(png_addr);
     
     if (!png_bytes.empty()) {
         std::filesystem::create_directories("actual");

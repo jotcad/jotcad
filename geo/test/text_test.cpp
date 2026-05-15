@@ -38,7 +38,7 @@ int main() {
 
     // 4. Verify results
     try {
-        std::vector<uint8_t> png_file_bytes = vfs.read<std::vector<uint8_t>>(png_addr.with_output("file"));
+        std::vector<uint8_t> png_file_bytes = vfs.read<std::vector<uint8_t>>(png_addr);
         std::string actual_hash = vfs_hash256(png_file_bytes);
         
         std::cout << "  - PNG generated OK (" << png_file_bytes.size() << " bytes)" << std::endl;

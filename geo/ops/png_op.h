@@ -11,10 +11,7 @@ struct PngOp : P {
     static constexpr const char* path = "jot/png";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        // Pass-through the shape (primary result)
-        vfs->write(fulfilling.with_output("$out"), in);
-        
-        // Generate the PNG (secondary result into the 'file' port)
+        // Generate the PNG directly to the primary '$out' port
         PngOpImpl::execute(vfs, fulfilling, in);
     }
 
@@ -23,13 +20,12 @@ struct PngOp : P {
     static typename P::json schema() {
         return {
             {"path", "jot/png"},
-            {"description", "Generates a PNG thumbnail for the input shape and stores it in the 'file' port."},
+            {"description", "Generates a PNG thumbnail for the input shape and returns it via the '$out' port."},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
+                {{"name", "$in"}, {"type", "jot:shape"}}
             }},
             {"outputs", {
-                {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
-                {"file", {{"type", "file"}, {"mimeType", "image/png"}, {"description", "The generated PNG thumbnail."}}}
+                {"$out", {{"type", "file"}, {"mimeType", "image/png"}, {"description", "The generated PNG thumbnail."}}}
             }}
         };
     }

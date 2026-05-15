@@ -89,7 +89,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       const pdf = new Selector('jot/pdf', { $in: offset, path: 'sector.pdf' }).withOutput('$out');
 
       console.log('[Test Sector] Requesting complex expression...');
-      const result = await vfs.read(pdf.withOutput('file'));
+      const result = await vfs.read(pdf);
       assert.ok(result, 'Should return result');
       const pdfData = await consumeBytes(result.stream);
       assert.ok(pdfData, 'Should return PDF data');

@@ -16,9 +16,9 @@ void PngOpImpl::execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const 
         std::vector<uint8_t> bytes = Rasterizer::render_png(vfs, in_shape, width, height, ax, ay);
         
         if (!bytes.empty()) {
-            vfs->write(fulfilling.with_output("file"), bytes);
+            vfs->write(fulfilling.with_output("$out"), bytes);
         } else {
-            vfs->write(fulfilling.with_output("file"), std::vector<uint8_t>());
+            vfs->write(fulfilling.with_output("$out"), std::vector<uint8_t>());
         }
     } catch (const std::exception& e) {
         std::cerr << "[PngOp] Error: " << e.what() << std::endl;

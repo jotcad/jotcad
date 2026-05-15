@@ -23,7 +23,7 @@ int main() {
     Selector png_corners = Selector{"jot/png", {{"$in", corners_addr}, {"ax", 0.5}, {"ay", 0.5}}}.with_output("$out");
     Processor::execute(&vfs, png_corners);
     
-    std::vector<uint8_t> png1 = vfs.read<std::vector<uint8_t>>(png_corners.with_output("file"));
+    std::vector<uint8_t> png1 = vfs.read<std::vector<uint8_t>>(png_corners);
     std::filesystem::create_directories("actual");
     std::ofstream out1("actual/corners_test.png", std::ios::binary);
     out1.write((char*)png1.data(), png1.size());
@@ -45,7 +45,7 @@ int main() {
     Selector png_each = Selector{"jot/png", {{"$in", each_addr}, {"ax", 0.5}, {"ay", 0.5}}}.with_output("$out");
     Processor::execute(&vfs, png_each);
 
-    std::vector<uint8_t> png2 = vfs.read<std::vector<uint8_t>>(png_each.with_output("file"));
+    std::vector<uint8_t> png2 = vfs.read<std::vector<uint8_t>>(png_each);
     std::ofstream out2("actual/corners_components_test.png", std::ios::binary);
     out2.write((char*)png2.data(), png2.size());
     out2.close();

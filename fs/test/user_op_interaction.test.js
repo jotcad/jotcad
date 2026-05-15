@@ -104,7 +104,7 @@ test('User Operator Interaction Integration', { timeout: 120000 }, async (t) => 
     'rx': { path: 'jot/rx', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
     'ry': { path: 'jot/ry', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
     'rz': { path: 'jot/rz', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
-    'pdf': { path: 'jot/pdf', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'path', type: 'string' }], outputs: { $out: 'shape', file: 'file' } } }
+    'pdf': { path: 'jot/pdf', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'path', type: 'string' }], outputs: { $out: 'file' } } }
   };
 
   for (const [name, def] of Object.entries(builtInOps)) {
@@ -129,7 +129,7 @@ H .by(C.o())
   };
 
   const testScript = `
-Hexagon(edgeToEdge=248).Foot().pdf('hex_foot2.pdf').file -> $hex
+Hexagon(edgeToEdge=248).Foot().pdf('hex_foot2.pdf') -> $hex
   `;
   const testSchema = {
     path: 'user/Test',

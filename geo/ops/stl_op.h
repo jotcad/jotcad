@@ -34,11 +34,8 @@ struct StlOp : P {
         walk(vfs, in, writer);
         auto stl_bytes = writer.write_binary();
         
-        // 1. Primary Output: Shape Pass-through
-        vfs->write(fulfilling.with_output("$out"), in);
-
-        // 2. Secondary Output: STL bytes in 'file' port
-        vfs->write(fulfilling.with_output("file"), stl_bytes);
+        // Output: STL bytes in the primary '$out' port
+        vfs->write(fulfilling.with_output("$out"), stl_bytes);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "path"}; }
@@ -48,12 +45,11 @@ struct StlOp : P {
             {"path", "jot/stl"},
             {"description", "Generates a binary STL file from the spatial representation of the input shape."},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "$in"}, {"type", "jot:shape"}},
                 {{"name", "path"}, {"type", "jot:string"}, {"default", "export.stl"}}
             }},
             {"outputs", {
-                {"$out", {{"type", "jot:shape"}, {"description", "The input shape (pass-through)."}}},
-                {"file", {{"type", "file"}, {"mimeType", "model/stl"}, {"description", "The generated STL blob."}}}
+                {"$out", {{"type", "file"}, {"mimeType", "model/stl"}, {"description", "The generated STL blob."}}}
             }}
         };
     }

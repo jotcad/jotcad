@@ -29,7 +29,7 @@ int main() {
     Selector png_each = Selector{"jot/png", {{"$in", each_addr}, {"ax", 0.5}, {"ay", 0.5}}}.with_output("$out");
     Processor::execute(&vfs, png_each);
 
-    std::vector<uint8_t> png2 = vfs.read<std::vector<uint8_t>>(png_each.with_output("file"));
+    std::vector<uint8_t> png2 = vfs.read<std::vector<uint8_t>>(png_each);
     std::filesystem::create_directories("actual");
     std::ofstream out2("actual/edges_test.png", std::ios::binary);
     out2.write((char*)png2.data(), png2.size());

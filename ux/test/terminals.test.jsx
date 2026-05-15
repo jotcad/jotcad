@@ -38,12 +38,11 @@ vi.mock('../src/lib/blackboard', () => {
         },
         'jot/pdf': {
           arguments: [
-            { name: '$in', type: 'shape', affiliate: '$in' },
+            { name: '$in', type: 'shape' },
             { name: 'path', type: 'string' }
           ],
           outputs: {
-            '$out': { type: 'shape' },
-            'file': { type: 'file', mimeType: 'application/pdf' }
+            '$out': { type: 'file', mimeType: 'application/pdf' }
           }
         }
       }),
