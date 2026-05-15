@@ -47,7 +47,8 @@ test('ReverseConnection should drain ReadableStream into Uint8Array', async (t) 
             };
         }
 
-        // On subsequent polls, return 204
+        // On subsequent polls, return 204 after yielding the event loop
+        await new Promise(resolve => setTimeout(resolve, 10));
         return { status: 204 };
     };
 
@@ -64,13 +65,23 @@ test('ReverseConnection should drain ReadableStream into Uint8Array', async (t) 
     const pollPromise = rev.startPolling('http://mock-server/vfs', mockFetch);
 
     // Give it enough time to complete multiple iterations
+    console.log('[Test] Entering wait loop...');
     for (let i = 0; i < 10; i++) {
+        console.log(`[Test] Wait iteration ${i}, capturedBodies: ${capturedBodies.length}`);
         await new Promise(resolve => setTimeout(resolve, 50));
-        if (capturedBodies.length > 0) break;
+        if (capturedBodies.length > 0) {
+            console.log('[Test] Found captured body, breaking wait loop.');
+            break;
+        }
     }
     
+    console.log('[Test] Stopping ReverseConnection...');
     rev.stop(); 
-    try { await pollPromise; } catch(e) {}
+    console.log('[Test] Waiting for pollPromise to resolve...');
+    try { await pollPromise; } catch(e) {
+        console.log('[Test] pollPromise rejected (expected on stop):', e.message);
+    }
+    console.log('[Test] pollPromise resolved/settled.');
 
     // 4. Verify results
     console.log('[Test] Captured Bodies:', capturedBodies.length);

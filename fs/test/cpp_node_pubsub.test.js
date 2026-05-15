@@ -28,7 +28,7 @@ function waitForLog(proc, pattern, timeout = 5000) {
 test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
     const CPP_PORT = 9095;
     const STORAGE_DIR = './.test_cpp_integration';
-    const BIN_PATH = './fs/cpp/test_server';
+    const BIN_PATH = fs.existsSync('./cpp/test_server') ? './cpp/test_server' : './fs/cpp/test_server';
 
     if (!fs.existsSync(BIN_PATH)) {
         throw new Error(`C++ Test Server not found at ${BIN_PATH}. Please run 'make -C fs/cpp' first.`);

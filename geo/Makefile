@@ -23,6 +23,8 @@ LIBS = ./cgal/freetype/build/libfreetype.a -lpthread -lssl -lcrypto -lz -ldl
 LIB_JOTGEO = $(BIN_DIR)/libjotgeo.a
 OPS_BIN = $(BIN_DIR)/ops
 
+all: $(OPS_BIN)
+
 # Object files
 OBJS = $(OBJ_DIR)/vfs_core.o $(OBJ_DIR)/vfs_primitives.o $(OBJ_DIR)/vfs_geo_adapter.o \
        $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o \
@@ -35,8 +37,6 @@ DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
 DEPS = $(OBJS:.o=.d) $(DRIVER_OBJ:.o=.d)
-
-all: $(OPS_BIN)
 
 # Create static library
 $(LIB_JOTGEO): $(OBJS)

@@ -17,7 +17,7 @@ int main() {
         fs::Selector box_sel = fs::Selector("jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}).with_output("$out");
         Shape box = vfs.read<Shape>(box_sel);
         
-        fs::Selector each_face_sel = fs::Selector("jot/eachFace", {{"$in", box}}).with_output("$out");
+        fs::Selector each_face_sel = fs::Selector("jot/faces", {{"$in", box}}).with_output("$out");
         Shape faces_group = vfs.read<Shape>(each_face_sel);
         
         std::cout << "    Components: " << faces_group.components.size() << " (Expected: 6)" << std::endl;
@@ -48,7 +48,7 @@ int main() {
             std::cout << "      Face Loop size: " << f.loops[0].size() << std::endl;
         }
 
-        fs::Selector each_face_sel = fs::Selector("jot/eachFace", {{"$in", clipped}}).with_output("$out");
+        fs::Selector each_face_sel = fs::Selector("jot/faces", {{"$in", clipped}}).with_output("$out");
         Shape faces_group = vfs.read<Shape>(each_face_sel);
         
         std::cout << "    Merged Components: " << faces_group.components.size() << " (Expected: 1)" << std::endl;
@@ -80,7 +80,7 @@ int main() {
         fs::Selector and_sel = fs::Selector("jot/and", {{"shapes", nlohmann::json::array({vfs.materialize(tri).value})}});
         
         // Target: eachFace() needs $in to be provided
-        fs::Selector target_sel = fs::Selector("jot/eachFace", {{"$in", vfs.materialize(box).value}}).with_output("$out");
+        fs::Selector target_sel = fs::Selector("jot/faces", {{"$in", vfs.materialize(box).value}}).with_output("$out");
 
         // Operation: Box.at(eachFace(), and(Triangle(5)))
         fs::Selector at_sel = fs::Selector("jot/at", {
