@@ -6,6 +6,21 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
+async function consumeText(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return new TextDecoder().decode(bytes);
+}
+
 test('VFS DiskStorage and Sessions', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vfs-test-'));
 
@@ -20,14 +35,16 @@ test('VFS DiskStorage and Sessions', async (t) => {
     await vfs.init();
 
     const content = 'large-data-on-disk';
-    await vfs.writeData(new Selector('big-file'), content);
+    await vfs.write(new Selector('big-file'), content, { encoding: 'string' });
 
     // Verify files exist on disk (.meta and .data)
     const files = fs.readdirSync(root);
     assert.ok(files.length >= 2, 'Should have at least meta and data files');
 
     // Read it back
-    const result = await vfs.readText(new Selector('big-file'));
+    const { stream, metadata } = await vfs.read(new Selector('big-file'));
+    assert.strictEqual(metadata.encoding, 'string');
+    const result = await consumeText(stream);
     assert.strictEqual(result, content);
 
     await vfs.close();
@@ -42,13 +59,15 @@ test('VFS DiskStorage and Sessions', async (t) => {
     await vfsA.init();
     await vfsB.init();
 
-    await vfsA.writeData(new Selector('shared-path'), 'data-A');
-    await vfsB.writeData(new Selector('shared-path'), 'data-B');
+    await vfsA.write(new Selector('shared-path'), 'data-A', { encoding: 'string' });
+    await vfsB.write(new Selector('shared-path'), 'data-B', { encoding: 'string' });
 
-    const resA = await vfsA.readText(new Selector('shared-path'));
+    const { stream: streamA } = await vfsA.read(new Selector('shared-path'));
+    const resA = await consumeText(streamA);
     assert.strictEqual(resA, 'data-A');
 
-    const resB = await vfsB.readText(new Selector('shared-path'));
+    const { stream: streamB } = await vfsB.read(new Selector('shared-path'));
+    const resB = await consumeText(streamB);
     assert.strictEqual(resB, 'data-B');
 
     await vfsA.close();

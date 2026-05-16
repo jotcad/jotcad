@@ -3,7 +3,7 @@
 .DELETE_ON_ERROR:
 
 CXX = g++
-CXXFLAGS = -O3 -std=c++17 -fPIC -MMD -MP
+CXXFLAGS = -O1 -std=c++17 -fPIC -MMD -MP
 AR = ar
 ARFLAGS = rcs
 
@@ -17,22 +17,26 @@ INCLUDES = -I. -I./ops -I./core -I./data -I./math -I./algorithms -I./render -I./
            -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include \
            -I./cgal/freetype/include
 DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
-LIBS = ./cgal/freetype/build/libfreetype.a -lpthread -lcrypto -lssl
+LIBS = ./cgal/freetype/build/libfreetype.a -lpthread -lssl -lcrypto -lz -ldl
 
 # Library and Binary
 LIB_JOTGEO = $(BIN_DIR)/libjotgeo.a
 OPS_BIN = $(BIN_DIR)/ops
 
+all: $(OPS_BIN)
+
 # Object files
 OBJS = $(OBJ_DIR)/vfs_core.o $(OBJ_DIR)/vfs_primitives.o $(OBJ_DIR)/vfs_geo_adapter.o \
        $(OBJ_DIR)/cid.o $(OBJ_DIR)/ops_library.o $(OBJ_DIR)/registry.o $(OBJ_DIR)/png_op.o \
-       $(OBJ_DIR)/rasterizer.o $(OBJ_DIR)/triangulation.o
+       $(OBJ_DIR)/rasterizer.o $(OBJ_DIR)/triangulation.o $(OBJ_DIR)/stb_impl.o
+
+$(OBJ_DIR)/stb_impl.o: infra/stb_impl.cc
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
 DEPS = $(OBJS:.o=.d) $(DRIVER_OBJ:.o=.d)
-
-all: $(OPS_BIN)
 
 # Create static library
 $(LIB_JOTGEO): $(OBJS)
@@ -54,18 +58,18 @@ $(OBJ_DIR)/logic_verification.o: test/logic_verification.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
 $(TEST_LOGIC_BIN): $(TEST_LOGIC_OBJ) $(LIB_JOTGEO)
-	$(CXX) $(CXXFLAGS) $(TEST_LOGIC_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
 
 $(OBJ_DIR)/text_test.o: test/text_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
 $(TEST_TEXT_BIN): $(TEST_TEXT_OBJ) $(LIB_JOTGEO)
-	$(CXX) $(CXXFLAGS) $(TEST_TEXT_OBJ) $(LIB_JOTGEO) $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
 
 # Generic Test Rule
 $(BIN_DIR)/%: $(OBJ_DIR)/%.o $(LIB_JOTGEO)
-	$(CXX) $(CXXFLAGS) $< $(LIB_JOTGEO) $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
 
 $(OBJ_DIR)/%.o: test/%.cpp
 	@mkdir -p $(OBJ_DIR)

@@ -5,6 +5,21 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
+async function consumeJSON(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 test('Multi-Environment Mesh Coordination', async (t) => {
   let nodeNode, browserVfs, nodeServer, stopServer;
   const storageDir = path.resolve('.test_vfs_multi_env');
@@ -47,8 +62,9 @@ test('Multi-Environment Mesh Coordination', async (t) => {
     const p = 'env/sharing/test';
     const data = { msg: 'from node to simulated browser' };
 
-    await vfsNode.writeData(new Selector(p), data);
-    const result = await browserVfs.readData(new Selector(p), {});
+    await vfsNode.write(new Selector(p), data, { encoding: 'json' });
+    const { stream } = await browserVfs.read(new Selector(p), {});
+    const result = await consumeJSON(stream);
 
     assert.deepStrictEqual(result, data);
   });

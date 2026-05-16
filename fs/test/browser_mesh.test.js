@@ -5,49 +5,18 @@ import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
-import { launchOpsNode } from './ops_helper.js';
+import { launchSystem, PROFILES } from '../../orchestrator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
-const UX_ROOT = path.resolve(__dirname, '../../ux');
-const VITE_BIN = path.resolve(__dirname, '../../node_modules/.bin/vite');
-const PORT_OPS = parseInt(process.env.TEST_OPS_PORT || '9092');
-const PORT_UX = parseInt(process.env.TEST_UX_PORT || '3033');
 
 test('Browser Mesh Integration: Catalog & Execution', async (t) => {
-  let opsNode, uxServer, browser;
+  let cluster, browser;
 
   t.before(async () => {
-    await fs.rm('.vfs_storage_browser_test_ops', { recursive: true, force: true }).catch(() => {});
+    // 1. Launch Isolated Test Cluster
+    cluster = await launchSystem(PROFILES.TEST);
 
-    // 1. Launch C++ Ops Node
-    console.log('[Test Browser] Launching C++ Native Node...');
-    opsNode = await launchOpsNode(OPS_PATH, PORT_OPS, '.vfs_storage_browser_test_ops');
-
-    // 2. Launch UX Vite Server
-    console.log('[Test Browser] Launching UX Vite Server...');
-    uxServer = spawn(VITE_BIN, ['--port', PORT_UX, '--strictPort'], {
-      cwd: UX_ROOT,
-      stdio: 'pipe',
-      env: { ...process.env, VITE_VFS_URL: `http://localhost:${PORT_OPS}` }
-    });
-    
-    // Forward UX logs with prefix
-    uxServer.stdout.on('data', d => process.stdout.write(`[UX] ${d}`));
-    uxServer.stderr.on('data', d => process.stderr.write(`[UX ERR] ${d}`));
-
-    // 3. Wait for UX to be up
-    let uxUp = false;
-    for (let i = 0; i < 50; i++) {
-      try {
-        const resp = await fetch(`http://localhost:${PORT_UX}`);
-        if (resp.ok) { uxUp = true; break; }
-      } catch (e) {}
-      await new Promise(r => setTimeout(r, 200));
-    }
-    if (!uxUp) throw new Error('UX Server failed to start');
-
-    // 4. Launch Puppeteer
+    // 2. Launch Puppeteer
     console.log('[Test Browser] Launching Puppeteer...');
     browser = await puppeteer.launch({ 
       headless: true,
@@ -57,25 +26,14 @@ test('Browser Mesh Integration: Catalog & Execution', async (t) => {
 
   t.after(async () => {
     console.log('[Test Browser] Cleaning up...');
-    if (browser) {
-      console.log('[Test Browser] Closing browser...');
-      await browser.close();
-    }
-    if (uxServer) {
-      console.log('[Test Browser] Killing UX server...');
-      uxServer.kill();
-    }
-    if (opsNode) {
-      console.log('[Test Browser] Stopping Ops node...');
-      await opsNode.stop();
-    }
-    console.log('[Test Browser] Removing temporary storage...');
-    await fs.rm('.vfs_storage_browser_test_ops', { recursive: true, force: true }).catch(() => {});
-    console.log('[Test Browser] Cleanup complete.');
+    if (browser) await browser.close();
+    if (cluster) await cluster.stop();
   });
 
 await t.test('should deliver catalog, define dynamic op, and execute it via mesh', async () => {
+  const PORT_UX = cluster.ports.ux;
   const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 1024 });
 
   // Capture ALL browser console logs
   page.on('console', msg => {
@@ -83,84 +41,131 @@ await t.test('should deliver catalog, define dynamic op, and execute it via mesh
   });
 
   await page.goto(`http://localhost:${PORT_UX}`);
-  console.log('[Test Browser] Page loaded, waiting for catalog...');
+  console.log('[Test Browser] Clearing state for clean run...');
+  await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.reload();
+  });
+  // Use a shorter/more reliable wait for navigation
+  await page.waitForNavigation({ waitUntil: 'load', timeout: 30000 });
+
+  console.log('[Test Browser] Page reloaded, waiting for catalog...');
 
   // 1. Wait for Catalog
   await page.waitForFunction(() => {
       const b = window.blackboard;
       return b && b.schemas && b.schemas()['jot/Box'];
   }, { timeout: 20000 });
+  console.log('[Test Browser] Catalog loaded.');
 
-  // 2. Define Dynamic Op: user/Square(side)
-  console.log('[Test Browser] Defining dynamic op...');
+  // 2. Define user/Square:v1
+  console.log('[Test Browser] Defining user/Square:v1...');
   await page.evaluate(() => {
-      const nameInput = document.querySelector('[data-testid="op-name-input"]');
-      nameInput.value = 'user/Square';
-      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-      const argNameInput = document.querySelector('[data-testid="arg-name-0"]');
-      argNameInput.value = 'side';
-      argNameInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-      const codeEditor = document.querySelector('textarea');
-      codeEditor.value = 'Box(side, side, side).rotate(45)';
-      codeEditor.dispatchEvent(new Event('input', { bubbles: true }));
+      window.blackboard.createNewOp('user/Square:v1');
+  });
+  await page.waitForSelector('div[data-id="user/Square:v1"]', { timeout: 10000 });
+  await page.evaluate(() => {
+      window.blackboard.updateEditorState('user/Square:v1', {
+          code: 'Box(10) -> $out',
+          args: [],
+          outputs: [{ name: '$out', type: 'jot:shape' }]
+      });
   });
 
+  // 3. Define user/Square:v2
+  console.log('[Test Browser] Defining user/Square:v2...');
+  await page.evaluate(() => {
+      window.blackboard.createNewOp('user/Square:v2');
+  });
+  await page.waitForSelector('div[data-id="user/Square:v2"]', { timeout: 10000 });
+  await page.evaluate(() => {
+      window.blackboard.updateEditorState('user/Square:v2', {
+          code: 'Box(20) -> $out',
+          args: [],
+          outputs: [{ name: '$out', type: 'jot:shape' }]
+      });
+  });
 
-    // 3. Publish to Mesh
-    console.log('[Test Browser] Publishing to mesh...');
-    await page.click('button[title="Publish to Mesh"]');
+  // 4. Print User Ops in Catalog
+  await page.evaluate(() => {
+      const allSchemas = window.blackboard.schemas();
+      const userOps = Object.keys(allSchemas).filter(k => k.startsWith('user/'));
+      console.log(`[Test Catalog] Current User Ops: ${JSON.stringify(userOps)}`);
+  });
 
-    // 4. Verify catalog update
-    await page.waitForFunction(() => {
-        const b = window.blackboard;
-        return b && b.schemas()['user/Square'];
-    }, { timeout: 5000 });
-    console.log('[Test Browser] Dynamic op published and visible in catalog.');
+  // 5. Publish v2 to Mesh
+  console.log('[Test Browser] Publishing v2 to mesh...');
+  await page.evaluate(() => {
+      const win = document.querySelector('div[data-id="user/Square:v2"]');
+      const pubBtn = Array.from(win.querySelectorAll('button')).find(b => b.title && b.title.includes('Publish'));
+      if (pubBtn) pubBtn.click();
+      else console.error('[Test Browser] Could not find Publish button for v2');
+  });
 
-    // 5. Execute custom op via mesh
-    console.log('[Test Browser] Executing custom op...');
+  await page.waitForFunction(() => {
+      const win = document.querySelector('div[data-id="user/Square:v2"]');
+      const btn = Array.from(win.querySelectorAll('button')).find(b => b.title && b.title.includes('Published to Mesh'));
+      return !!btn;
+  }, { timeout: 15000 });
+
+  // 6. Evaluate v2
+  console.log('[Test Browser] Evaluating user/Square:v2...');
+  await page.evaluate(() => {
+      const win = document.querySelector('div[data-id="user/Square:v2"]');
+      const evalBtn = Array.from(win.querySelectorAll('button')).find(b => b.textContent.includes('Evaluate'));
+      if (evalBtn) evalBtn.click();
+      else console.error('[Test Browser] Could not find Evaluate button for v2');
+  });
+
+  // 7. Wait for result
+  await page.waitForFunction(() => {
+      const win = document.querySelector('div[data-id="user/Square:v2"]');
+      const btn = Array.from(win.querySelectorAll('button')).find(b => b.textContent === 'Evaluate Jot');
+      return btn && !btn.disabled;
+  }, { timeout: 30000 });
+    
+    // 7. Click the viewport to activate the shared renderer/canvas
+    console.log('[Test Browser] Activating viewport for v2...');
     await page.evaluate(() => {
-        const codeEditor = document.querySelector('textarea');
-        codeEditor.value = 'user/Square(50)';
-        codeEditor.dispatchEvent(new Event('input', { bubbles: true }));
-        
-        const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('EVALUATE JOT'));
-        if (btn) btn.click();
+        const win = document.querySelector('div[data-id="user/Square:v2"]');
+        const viewport = win.querySelector('.viewport-container');
+        if (viewport) viewport.click();
+        else console.error('[Test Browser] Could not find viewport-container in v2 window');
     });
 
-    // 6. Wait for result and render stability
-    await page.waitForFunction(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'EVALUATE JOT');
-        return btn && !btn.disabled;
-    }, { timeout: 30000 });
-    
     // Give Three.js a moment to upload geometry and render a frame
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 2000));
 
-    // 7. Capture rendered result from Canvas
+    // 8. Capture full screen for documentation BEFORE assertion
+    const screenPath = path.resolve(__dirname, '../../ux/browser_integration_screenshot.png');
+    await page.screenshot({ path: screenPath, fullPage: true });
+    console.log(`[Test Browser] UI screenshot captured to ${screenPath}`);
+
+    // 9. Capture rendered result (Canvas or Img)
     console.log('[Test Browser] Capturing rendered result...');
-    const pngDataUrl = await page.evaluate(async () => {
-        const canvas = document.querySelector('canvas');
-        if (!canvas) return null;
+    const result = await page.evaluate(async () => {
+        const win = document.querySelector('div[data-id="user/Square:v2"]');
+        const canvas = win.querySelector('canvas');
+        const img = win.querySelector('img');
         
-        // Force a synchronous render loop completion if possible
-        // but since we are external, we'll just capture.
-        return canvas.toDataURL('image/png');
+        if (canvas) return { type: 'canvas', data: canvas.toDataURL('image/png') };
+        if (img) return { type: 'img', data: img.src };
+        
+        return { error: 'Neither Canvas nor Img found in viewport' };
     });
 
-    assert.ok(pngDataUrl, 'Canvas should be present with rendered result');
+    if (result.error) {
+        console.error(`[Test Browser] ERROR: ${result.error}`);
+        console.log(`[Test Browser] Elements found: ${JSON.stringify(result.elements, null, 2)}`);
+    }
+
+    assert.ok(result.data, 'Result data (canvas or img) should be present');
     
-    const base64Data = pngDataUrl.replace(/^data:image\/png;base64,/, "");
+    const base64Data = result.data.replace(/^data:image\/png;base64,/, "");
     const pngPath = path.resolve(__dirname, '../../ux/user_square_result.png');
     await fs.writeFile(pngPath, base64Data, 'base64');
     
-    // 8. Capture full screen for documentation
-    const screenPath = path.resolve(__dirname, '../../ux/browser_integration_screenshot.png');
-    await page.screenshot({ path: screenPath, fullPage: true });
-    
-    console.log(`[Test Browser] SUCCESS: UI screenshot captured to ${screenPath}`);
     console.log(`[Test Browser] SUCCESS: Dynamic op result captured to ${pngPath}`);
   });
 });

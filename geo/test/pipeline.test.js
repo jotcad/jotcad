@@ -103,7 +103,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
   await t.test(
     'should execute full structured pipeline across multiple language nodes',
     async () => {
-      const hex = new Selector('jot/Hexagon/full', { diameter: 50 }).withOutput('$out');
+      const hex = new Selector('jot/Hexagon/diameter', { diameter: 50 }).withOutput('$out');
       const offset = new Selector('jot/offset', { diameter: 5.0, $in: hex }).withOutput('$out');
       const outline = new Selector('jot/outline', { $in: offset }).withOutput('$out');
       const pipeline = new Selector('jot/pdf', { path: filename, $in: outline }).withOutput('$out');
@@ -120,7 +120,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
   );
 
   await t.test('should reject underconstrained request to C++ op', async () => {
-    clientVfs.addSchema('jot/Hexagon/full', {
+    clientVfs.addSchema('jot/Hexagon/diameter', {
       arguments: [
         { name: 'diameter', type: 'jot:number' }
       ]
@@ -131,7 +131,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
     );
     try {
       // Use a Selector with empty parameters to trigger 'Missing required parameter'
-      await clientVfs.read(new Selector('jot/Hexagon/full', {}), {});
+      await clientVfs.read(new Selector('jot/Hexagon/diameter', {}), {});
       assert.fail('Should have been rejected locally');
     } catch (err) {
       assert.ok(err.message.includes("Missing required parameter"), `Expected validation error, got: ${err.message}`);
@@ -148,7 +148,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         selector: {
-            path: 'jot/Hexagon/full',
+            path: 'jot/Hexagon/diameter',
             parameters: { diameter: 10 },
         },
         expiresAt: past,

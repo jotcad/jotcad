@@ -38,10 +38,13 @@ test('JotCompiler: Integration Mapping (Hexagon.cut)', async (t) => {
     }
   });
 
+  const defaultSchema = { outputs: { "$out": { type: "jot:shape" } } };
+
   await t.test('Hexagon(30).cut(Triangle(5)) - Correct Plural & Affiliate Mapping', async () => {
-    const code = 'Hexagon(30).cut(Triangle(5))';
+    const code = 'Hexagon(30).cut(Triangle(5)) -> $out';
     const ast = parser.parse(code);
-    const sel = await compiler.evaluate(ast);
+    const res = await compiler.evaluate(ast, {}, defaultSchema);
+    const sel = res[0].selector;
 
     // Verify 'tools' is automatically wrapped in an array (Plural awareness)
     assert.ok(Array.isArray(sel.parameters.tools), "'tools' must be an array");
@@ -56,9 +59,10 @@ test('JotCompiler: Integration Mapping (Hexagon.cut)', async (t) => {
   });
 
   await t.test('Hexagon(30).cut([Triangle(5), Triangle(10)]) - Multi-Plural Mapping', async () => {
-    const code = 'Hexagon(30).cut([Triangle(5), Triangle(10)])';
+    const code = 'Hexagon(30).cut([Triangle(5), Triangle(10)]) -> $out';
     const ast = parser.parse(code);
-    const sel = await compiler.evaluate(ast);
+    const res = await compiler.evaluate(ast, {}, defaultSchema);
+    const sel = res[0].selector;
 
     assert.ok(Array.isArray(sel.parameters.tools), "'tools' must be an array");
     assert.strictEqual(sel.parameters.tools.length, 2);

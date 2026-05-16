@@ -1,0 +1,42 @@
+import { For, Show } from 'solid-js';
+import { openWindows } from '../../../lib/state/DesktopState';
+import { Window } from './Window';
+import { JotNode } from '../../editor/JotNode';
+import { CatalogNode } from '../../discovery/CatalogNode';
+import { MeshGraphApp } from '../../discovery/MeshGraphApp';
+import { Console } from '../../system/Console';
+import { FolderWindow } from './FolderWindow';
+import { SettingsApp } from '../../system/SettingsApp';
+
+export const WindowManager = (props) => {
+  return (
+    <div class="absolute inset-0 pointer-events-none z-50">
+      <For each={openWindows} by="id">
+        {(win) => {
+          return (
+            <Window data={win}>
+              <Show when={win.type === 'editor'}>
+                <JotNode data={win} isWindowed={true} />
+              </Show>
+              <Show when={win.type === 'catalog'}>
+                <CatalogNode isWindowed={true} />
+              </Show>
+              <Show when={win.type === 'mesh'}>
+                <MeshGraphApp />
+              </Show>
+              <Show when={win.type === 'console'}>
+                 <Console isWindowed={true} />
+              </Show>
+              <Show when={win.type === 'folder'}>
+                 <FolderWindow data={win} />
+              </Show>
+              <Show when={win.type === 'settings'}>
+                 <SettingsApp />
+              </Show>
+            </Window>
+          );
+        }}
+      </For>
+    </div>
+  );
+};

@@ -85,6 +85,23 @@ struct Shape {
         }
         return s;
     }
+
+    static Shape group(const std::vector<Shape>& components) {
+        Shape s;
+        s.components = components;
+        return s;
+    }
+
+    /**
+     * Recursively applies a relative transformation matrix to this shape and all its children.
+     * This maintains the "Independent Matrix" mandate where every component's tf is its absolute world-space matrix.
+     */
+    void apply_transform(const Matrix& m) {
+        tf = m * tf;
+        for (auto& c : components) {
+            c.apply_transform(m);
+        }
+    }
 };
 
 // ADL helpers for nlohmann::json

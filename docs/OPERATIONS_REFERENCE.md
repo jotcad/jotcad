@@ -37,30 +37,71 @@ MyPath.hull().fill()
 
 ## 3. Primitives
 
+Primitives generate basic geometric shapes. Most dimensions support the **`jot:interval`** type, enabling both symmetric and asymmetric positioning.
+- **Symmetric**: `10` -> `[-5, 5]` (centered on origin)
+- **Asymmetric**: `[10]` -> `[0, 10]` or `[20, 30]` -> `[20, 30]`
+
+### `Box(width=10, height=10, depth=0)`
+Generates a 2D rectangle or 3D cuboid.
+- **`width`**, **`height`**, **`depth`**: Dimensions as `jot:interval`.
+
+### `Disk(diameter=10, width=0, height=0, start=0, end=1, zag=0.1)`
+Generates a circular or elliptical disk/sector.
+- **`diameter`**, **`width`**, **`height`**: Dimensions as `jot:interval`. `width`/`height` override diameter if non-zero.
+- **`start`**, **`end`**: Angular range in turns (tau).
+- **`zag`**: Resolution tolerance.
+
+### `Arc(...)`
+Generates a circular or elliptical open arc. Supports multiple construction variants:
+
+#### Variant 1: Bounds-based (Legacy)
+`Arc(diameter=10, width=0, height=0, start=0, end=1, zag=0.1)`
+- **`diameter`**, **`width`**, **`height`**: Dimensions as `jot:interval`.
+- **`start`**, **`end`**: Angular range in turns (tau).
+
+#### Variant 2: 2-Point + Radius (SVG Style)
+`Arc(p1, p2, radius, large=false, cw=false, zag=0.1)`
+- **`p1`**, **`p2`**: Anchor points (shapes).
+- **`radius`**: Arc radius.
+- **`large`**: If `true`, uses the large arc (spanning > 180 degrees).
+- **`cw`**: If `true`, draws the arc in a clockwise direction.
+- **Exact Endpoints**: This variant explicitly aligns vertices to the input anchors to prevent floating-point drift.
+
+#### Variant 3: 3-Point
+`Arc(p1, p2, p3, zag=0.1)`
+- **`p1`**, **`p2`**, **`p3`**: Points the arc must pass through. `p1` is the start, `p3` is the end, and `p2` defines the curvature and plane.
+
+
+### `Orb(diameter=10, width=0, height=0, depth=0, zag=0.1)`
+Generates a 3D sphere or ellipsoid solid.
+- **`diameter`**, **`width`**, **`height`**, **`depth`**: Dimensions as `jot:interval`.
+
+### `Cone(diameter=10, height=10, zag=0.1)`
+Generates a sharp cone oriented along the X-axis (Base at X-min, Tip at X-max).
+- **`diameter`**: Base diameter as `jot:interval`.
+- **`height`**: X-axis extent (length from base to tip) as `jot:interval`.
+- **`zag`**: Resolution tolerance.
+
+#### Variant: `Cone/fit(width=10, height=10, depth=10, zag=0.1)`
+Generates a cone that fits a specific bounding box.
+- **`width`**: X-axis extent (height of cone).
+- **`height`**: Y-axis base extent.
+- **`depth`**: Z-axis base extent.
+
+#### Variant: `Cone/angle(diameter=10, angle=0.125, zag=0.1)`
+Generates a cone with a specific taper angle.
+- **`angle`**: Half-angle in turns (e.g., `0.125` is 45 degrees).
+
+### `Triangle(va, vb, vc)`
+Generates a 2D triangle.
+- **`va`**: Side length along the local X-axis.
+- **`vb`**: Side length opposite the first vertex.
+- **`vc`**: Side length from the origin to the second vertex.
+- **Centering**: The triangle is automatically centered on its **Centroid** at `(0,0,0)`.
+
 ### `Hexagon(...)`
-Generates a regular 2D hexagon. The operator supports multiple dimensioning variants, which are automatically selected based on the provided arguments.
-
-#### Common Arguments
-- **`turns`**: Rotation in Tau (default `0.0`). `0.0` is flat-topped; `1/12` (30 deg) is pointy-topped.
-
-#### Variants
-| Variant | Argument | Description | VFS Path |
-| :--- | :--- | :--- | :--- |
-| **Radius** | `radius` | Center-to-corner distance. | `jot/Hexagon/radius` |
-| **Diameter** | `diameter` | Corner-to-corner distance (diagonal). | `jot/Hexagon/diameter` |
-| **Apothem** | `apothem` | Center-to-flat distance. | `jot/Hexagon/apothem` |
-| **Edge-to-Edge** | `edgeToEdge`| Flat-to-flat distance. | `jot/Hexagon/edgeToEdge` |
-| **Diagonal** | `diagonal` | Alias for diameter. | `jot/Hexagon/diagonal` |
-| **Edge-Length** | `edgeLength`| Length of a single side. | `jot/Hexagon/edgeLength` |
-
-#### Example
-```js
-// Flat-topped hexagon by radius
-Hexagon(radius=10)
-
-// Pointy-topped hexagon by edge-to-edge distance
-Hexagon(edgeToEdge=20, turns=1/12)
-```
+Generates a regular 2D hexagon.
+- **`turns`**: Rotation in Tau (default `0.0`).
 
 ## 4. Promoters (Dimensional Upgrades)
 
@@ -114,31 +155,49 @@ Extrudes one or more 2D profiles along a 3D path.
 - **`solid`**: If `true`, generates a manifold solid with start/end caps. If `false`, generates a wireframe/surface assembly.
 - **RMF (Rotation Minimizing Frames)**: Uses the Double Reflection method to ensure the profile does not twist unexpectedly along complex curves.
 
+### `sweepBy(profile, closed_path=false, solid=true)`
+A path-centric version of sweep where the subject (`$in`) is the path and the tool is the profile.
+
+- **`profile`**: The 2D shape to use as the cross-section.
+- **`closed_path`**, **`solid`**: Same as above.
+
 #### Example
 ```js
-// Create a pipe
-Sweep(profiles=[Circle(5)], path=CubicPath(), solid=true)
-
-// Sweep a square along a closed loop
-Square(2).sweep(path=MyLoop, closed_path=true)
+// Create a pipe by sweeping a circle along a path
+MyPath.sweepBy(Circle(5))
 ```
 
 ## 5. Export and Rendering
 
-### `pdf(path='export.pdf')`
+### `stitch(repeat=[10, 3], start=[], end=[], offset=0)`
+Applies a recurring on/off length pattern to a segment chain (polylines).
+- **repeat**: The core pattern applied to the gap between start and end zones. If any value is negative, the repeat cycle anchors to the **end** of the path.
+- **start**: A specific pattern applied from the beginning of the path.
+- **end**: A specific pattern applied from the end of the path. Values are relative to the end (e.g., `[-5]` creates a 5mm stitch at the very end).
+- **offset**: Shifts the repeat pattern phase.
+
+---
+
+### `pdf(path="export.pdf", width=0, height=0)`
+
 Generates a PDF document from the spatial representation of the input shape.
 
-- **`path`**: The filename for the download.
+- **`path`**: The suggested filename for the download.
 - **Outputs**:
-  - **`$out`**: The input shape (pass-through).
-  - **`file`**: The generated PDF blob (triggers download in the UX).
+  - **`$out`**: The generated PDF binary blob (triggers download in the UX).
 
 ### `png()`
 Generates a PNG thumbnail for the input shape.
 
 - **Outputs**:
-  - **`$out`**: The input shape (pass-through).
-  - **`file`**: The generated PNG blob.
+  - **`$out`**: The generated PNG binary blob.
+
+### `stl(path="export.stl")`
+Generates a binary STL file from the spatial representation of the input shape.
+
+- **`path`**: The suggested filename for the download.
+- **Outputs**:
+  - **`$out`**: The generated STL binary blob (triggers download in the UX).
 
 ### `section(planes=[])`
 Extracts 2D cross-sections of the input shape at specified planes.
@@ -237,19 +296,72 @@ Axis-specific shorthands for revolving around the local X, Y, or Z axes.
 ## 9. Selection and Querying
 
 ### `faces()`
-Returns a collection of all faces in the subject as individual shapes.
+Returns a **Generator** of contiguous coplanar patches (Polygons with Holes). It automatically merges contiguous triangles and N-gons into clean surfaces. (Formerly `eachFace`).
+- **Anchor**: Each patch is anchored at its **Centroid**.
+- **Orientation**: The local **Z-axis** is aligned to the face **Normal**, and the local **X-axis** is aligned to the **first edge** of the outer boundary.
+- **Type**: Produced components are tagged as `surface` and have local geometry at $Z=0$.
 
-### `eachFace()`
-Returns a **Generator** of all faces. When used with `at()` or `on()`, it sequentially targets every face of the subject.
-- **Anchor**: Each face is anchored at its **Centroid**, with the local Z-axis aligned to the face **Normal**.
+### `asFaces()`
+Returns the subject's faces materialized into a single mesh shape. (Formerly `faces`).
 
-### `eachEdge()`
-Returns a generator of all edges.
+### `edges()`
+Returns a generator of all edges as individual oriented components. (Formerly `eachEdge`).
 - **Anchor**: Centered at the **Midpoint**, with the Z-axis aligned to the edge normal (interpolated from incident faces).
 
-### `eachCorner()`
-Returns a generator of all vertices.
+### `asEdges()`
+Returns the subject's edges materialized into a single wireframe shape.
+
+### `corners()`
+Returns a generator of all vertices as individual oriented components. (Formerly `eachCorner`).
 - **Anchor**: At the **Vertex coordinate**, with the Z-axis aligned to the vertex normal.
+
+### `asCorners()`
+Returns the subject's vertices materialized into a single point cloud shape.
+
+### `length()`
+**Measurement Operator.**
+- **Subject**: A shape with 1D segments (Outlines/Wireframes).
+- **Output**: Returns the total Euclidean length of all segments as a `jot:number`.
+
+### `area()`
+**Measurement Operator.**
+- **Subject**: A shape with 2D or 3D geometry.
+- **Output**: Returns the total surface area of the subject as a `jot:number`.
+
+### `volume()`
+**Measurement Operator.**
+- **Subject**: A shape with a closed 3D shell.
+- **Output**: Returns the enclosed volume as a `jot:number`.
+
+### `facing(vector)`
+**Measurement Operator.**
+- **Subject**: A shape or oriented component.
+- **Output**: Returns the **Dot Product** between the subject's local **Z-axis** (normal) and the target vector.
+- **Values**: `1.0` (Aligned), `0.0` (Perpendicular), `-1.0` (Opposite).
+- **Example**: `faces().highest(facing(UP), 0)` targets the top face.
+
+### `highest(measure, bucket=0, epsilon=null, ratio=null)`
+**Selection Operator.**
+Ranks the components of a group by a measurement and selects a logically equivalent "bucket" of features, starting from the **highest** value.
+
+- **`measure`**: A partial operator (e.g., `z()`, `area()`, `facing(UP)`). If the measure returns an **Interval** (like `z()`), `highest` implicitly sorts by the **Maximum** value.
+- **`bucket`**: The cluster index (0 = Highest cluster).
+
+### `lowest(measure, bucket=0, epsilon=null, ratio=null)`
+**Selection Operator.**
+Ranks components starting from the **lowest** value. If the measure returns an **Interval**, `lowest` implicitly sorts by the **Minimum** value.
+
+#### Example
+```js
+// Select the largest face (Highest Area)
+MyBox.faces().highest(area(), 0)
+
+// Select the lowest corners (Lowest Z-min)
+Table.corners().lowest(z(), 0, ratio=0.01)
+
+// Round only the top-most corners (Highest Z-max)
+Box(10).at(corners().highest(z(), 0)).smooth(limit=1/36)
+```
 
 ### `smooth(limit=1/24, iterations=20, resolution=1.0, region=null)`
 Smooths geometry until dihedral angles approach a specified limit.
@@ -265,10 +377,60 @@ Smooths geometry until dihedral angles approach a specified limit.
 Box(10).smooth(limit=1/24, resolution=2.0)
 
 // Round only the top-most corners
-Box(10).at(eachCorner().top()).smooth(limit=1/36)
+Box(10).at(corners().highest(z(), 0)).smooth(limit=1/36)
 ```
 
-## 10. Transformation
+## 10. Constants and Directions
+
+To support alignment and selection, the following world-space direction vectors are provided as global constants:
+
+- **`UP`** / **`Z()`**: `[0, 0, 1]`
+- **`DOWN`**: `[0, 0, -1]`
+- **`RIGHT`** / **`X()`**: `[1, 0, 0]`
+- **`LEFT`**: `[-1, 0, 0]`
+- **`FRONT`** / **`Y()`**: `[0, 1, 0]`
+- **`BACK`**: `[0, -1, 0]`
+
+## 11. Movement
+
+### `m(x, y, z)` / `move(x, y, z)`
+Translates the subject by the specified X, Y, and Z offsets.
+
+- **`x`, `y`, `z`**: Numeric offsets.
+- **Example**: `Box(10).m(0, 10, 0)`
+
+### `mx(val)`, `my(val)`, `mz(val)`
+Axis-specific shorthands for translation. These operators align with the **Universal Sequence Principle**.
+
+- **`val`**: Can be a single `jot:number` or a `jot:numbers` sequence (Array).
+- **Sequence Behavior**: If an array is provided, the operator generates a **Group** containing one translated instance for each offset in the sequence.
+- **Example**: `Box(10).mx([0, 20, 40])` results in a group of three boxes spaced at 20mm intervals.
+
+## 11. Transformation
+
+### `by(target)`
+Transforms the subject's matrix by the matrix of the target shape. 
+- **Algebra**: $T_{result} = T_{target} \times T_{subject}$
+- **Use Case**: Relative movement or applying a complex frame stored in another object.
+
+### `to(target)`
+Moves the subject to the frame of the target shape, resetting any local transformation.
+- **Algebra**: $T_{result} = T_{target}$
+- **Identity**: `a.to(b)` is equivalent to `a.origin().by(b)`.
+
+### `origin()` (alias: `o()`)
+- **Method**: `X.origin()` or `X.o()`
+  Returns the shape with its transformation matrix inverted ($tf = X.tf^{-1}$). This is the primary tool for "un-moving" a shape or calculating an inverse delta.
+- **Constructor**: `origin()` or `o()`
+  Returns an identity frame (a shape at the world origin with no geometry). Useful as a target for `.to()`.
+
+**Example: Feature Snapping**
+To move a shape so its corner lands on the world origin:
+```javascript
+H = Box(100, 100).mx(50).my(50)
+C = H.corners().nth(0)
+H.by(C.o()) // "Drags" H by its corner C back to (0,0,0)
+```
 
 ### `s(x, y, z)` / `scale(x, y, z)`
 Scales the subject along the local axes.
@@ -313,6 +475,34 @@ Text("JotCAD", size=20)
 
 // Custom font from URL
 Text("Hello", font="https://example.com/MyFont.ttf", size=50).ez(5)
+```
+
+### `Image(url)`
+Downloads and validates a raster image (PNG/JPG) from a remote URL.
+
+- **`url`**: The full HTTPS/HTTP path to the raw image file.
+- **Security**: Validates file headers (magic numbers) to ensure it is a valid image before ingestion.
+- **VFS Integration**: Images are automatically cached by the VFS; subsequent uses of the same URL are instant.
+
+### `Trace(image, colors=8, smooth=1.0)`
+Converts a raster image into vector geometry using automatic color quantization.
+
+- **`image`**: An `Image()` object or direct URL to a bitmap.
+- **`colors`**: Number of color buckets to automatically identify using K-Means clustering.
+- **`smooth`**: Simplification tolerance (Douglas-Peucker). Higher values result in fewer vertices and smoother curves.
+- **HSV Quantization**: Automatically identifies the most dominant colors in the image using HSV space, preserving color separation across varying brightness.
+- **Boundary Injection**: Automatically pads image edges to ensure large regions (like the sky) are correctly closed into manifold loops.
+- **Despeckling**: Includes a noise-reduction pass and area-based filtering to eliminate small, jagged "speckle" polygons.
+- **Output**: A `Group` containing one child shape for each identified color. Each child is tagged with its average hex color.
+
+#### Example
+```js
+// Automatically trace a landscape with 12 colors and high smoothing
+Photo = Image("landscape.jpg");
+Vector = Trace(Photo, colors=12, smooth=2.0);
+
+// Select and extrude the specific color region
+Vector.on("#bcd3ee").ez(5);
 ```
 
 ## 13. Infinite Planes (Orientations)

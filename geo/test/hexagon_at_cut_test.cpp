@@ -6,7 +6,7 @@ using namespace jotcad::geo;
 void render_to(fs::VFSNode* vfs, const fs::Selector& sel, const std::string& name) {
     fs::Selector png_addr = fs::Selector{"jot/png", {{"$in", sel}}}.with_output("$out");
     Processor::execute(vfs, png_addr);
-    std::vector<uint8_t> png_bytes = vfs->read<std::vector<uint8_t>>(png_addr.with_output("file"));
+    std::vector<uint8_t> png_bytes = vfs->read<std::vector<uint8_t>>(png_addr);
     
     if (!png_bytes.empty()) {
         std::filesystem::create_directories("actual");
@@ -27,12 +27,12 @@ int main() {
     std::cout << "Testing Hexagon(30).at(eachCorner(), cut(Triangle(2))) Stage-by-Stage..." << std::endl;
     
     // 1. Hexagon(30)
-    fs::Selector hex_addr = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    fs::Selector hex_addr = fs::Selector{"jot/Hexagon/diameter", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_addr);
     render_to(&vfs, hex_addr, "step1_hexagon");
     
-    // 2. eachCorner() frame
-    fs::Selector corners_addr = fs::Selector{"jot/eachCorner", {{"$in", hex_addr}}}.with_output("$out");
+    // 2. corners() frame
+    fs::Selector corners_addr = fs::Selector{"jot/corners", {{"$in", hex_addr}}}.with_output("$out");
     Processor::execute(&vfs, corners_addr);
     render_to(&vfs, corners_addr, "step2_corners");
 

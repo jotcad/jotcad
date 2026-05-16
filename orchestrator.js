@@ -4,114 +4,152 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Initial Launch
-console.log('[Orchestrator] Starting JotCAD System...');
+export const PROFILES = {
+  LIVE: {
+    name: 'LIVE',
+    ports: { ops: 9091, export: 9092, ux: 3030 },
+    storagePrefix: '.vfs_storage_live_',
+    ux: {
+        command: 'npx',
+        args: ['http-server', 'ux/dist', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
+    }
+  },
+  TEST: {
+    name: 'TEST',
+    ports: { ops: 9191, export: 9192, ux: 3131 },
+    storagePrefix: '.vfs_storage_test_',
+    ux: {
+        command: 'npx',
+        args: ['vite', '--port', '3131', '--strictPort'],
+        cwd: path.join(__dirname, 'ux')
+    }
+  }
+};
 
-try {
-  console.log('[Orchestrator] Cleaning up ports 3030, 9091, 9092 and VFS storage...');
-  // Force kill anything on these ports before starting
-  execSync('fuser -k 3030/tcp 9091/tcp 9092/tcp || true', { stdio: 'ignore' });
-  // Clear VFS storage
-  execSync('rm -rf .vfs_storage_geo-ops-node .vfs_storage_export-node || true');
-  // Give it a moment to release
-  execSync('sleep 2');
-} catch (e) {}
+export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
+  const config = typeof profileOrConfig === 'string' ? PROFILES[profileOrConfig] : profileOrConfig;
+  const { ports, storagePrefix, ux, env = {} } = config;
 
-const components = [
-  {
-    name: 'Ops Node (9091)',
-    command: './geo/bin/ops',
-    args: [],
-    cwd: __dirname,
-    env: { 
-        ...process.env, 
-        PORT: '9091',
-        PEER_ID: 'geo-ops-node',
-        NEIGHBORS: '' 
+  console.log(`[Orchestrator] Launching ${config.name} Cluster...`);
+
+  try {
+    const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
+    console.log(`[Orchestrator] Cleaning up ports: ${portList}`);
+    execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
+    // Clear storage for this specific profile
+    execSync(`rm -rf ${storagePrefix}* || true`);
+    execSync('sleep 1');
+  } catch (e) {}
+
+  const components = [
+    {
+      name: `Ops Node (${ports.ops})`,
+      command: './geo/bin/ops',
+      args: [],
+      cwd: __dirname,
+      env: { 
+          ...process.env, 
+          PORT: String(ports.ops),
+          PEER_ID: 'geo-ops-node',
+          NEIGHBORS: '',
+          ...env
+      }
+    },
+    {
+        name: `Export Node (${ports.export})`,
+        command: 'node',
+        args: ['geo/export_service.js'],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            PORT: String(ports.export),
+            PEER_ID: 'export-node',
+            NEIGHBORS: `http://localhost:${ports.ops}`,
+            ...env
         }
-
-  },
-  {
-    name: 'Export Node (9092)',
-    command: 'node',
-    args: ['geo/export_service.js'], // We should update this to be a native VFS node too
-    cwd: __dirname,
-    env: { 
-        ...process.env, 
-        PORT: '9092',
-        PEER_ID: 'export-node',
-        NEIGHBORS: 'http://localhost:9091' // Export uses Ops
+    },
+    {
+      name: `UX (${ports.ux})`,
+      command: ux.command,
+      args: ux.args,
+      cwd: ux.cwd || __dirname,
+      env: {
+          ...process.env,
+          VITE_VFS_URL: `http://localhost:${ports.ops}`,
+          VITE_HTTPS: String(!!ux.args.includes('--ssl')),
+          ...env
+      }
     }
-  },
-  {
-    name: 'Interactive UX',
-    command: 'npm',
-    args: ['run', 'dev', '--', '--port', '3030'],
-    cwd: path.join(__dirname, 'ux'),
-    env: {
-        ...process.env
-    }
+  ];
 
-  }
-];
+  const processes = new Map();
+  let shuttingDown = false;
 
-const processes = new Map();
-let shuttingDown = false;
-
-function shutdown(reason) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  if (reason) console.error(`\n[Orchestrator] FATAL FAILURE: ${reason}`);
-  console.log('\n[Orchestrator] Shutting down all components...');
-  for (const [name, child] of processes) {
-    console.log(`[Orchestrator] Killing ${name}...`);
-    child.kill();
-  }
-  process.exit(reason ? 1 : 0);
-}
-
-function launch(component) {
-  console.log(`[Orchestrator] Launching ${component.name}...`);
-  const child = spawn(component.command, component.args, {
-    cwd: component.cwd,
-    env: component.env || process.env,
-    stdio: 'pipe'
-  });
-
-  child.stdout.on('data', (data) => {
-    process.stdout.write(`[${component.name}] ${data}`);
-  });
-
-  child.stderr.on('data', (data) => {
-    process.stderr.write(`[${component.name} ERROR] ${data}`);
-  });
-
-  child.on('error', (err) => {
-    shutdown(`${component.name} failed to start: ${err.message}`);
-  });
-
-  child.on('close', (code) => {
-    if (!shuttingDown && code !== 0) {
-        shutdown(`${component.name} exited unexpectedly with code ${code}`);
-    }
-    processes.delete(component.name);
-  });
-
-  processes.set(component.name, child);
-}
-
-// Initial Launch
-console.log('[Orchestrator] Starting JotCAD Mesh-VFS...');
-components.forEach(launch);
-
-process.on('SIGINT', () => shutdown());
-process.on('SIGTERM', () => shutdown());
-
-setInterval(() => {
+  const shutdown = async () => {
     if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n[Orchestrator] Shutting down ${config.name} cluster...`);
     for (const [name, child] of processes) {
-        if (child.exitCode !== null) {
-            shutdown(`${name} died with exit code ${child.exitCode}`);
-        }
+      console.log(`[Orchestrator] Killing ${name}...`);
+      child.kill('SIGTERM');
     }
-}, 1000);
+    // Final port sweep
+    try {
+        const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
+        execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
+    } catch (e) {}
+  };
+
+  const launch = (component) => {
+    console.log(`[Orchestrator] Starting ${component.name}...`);
+    const child = spawn(component.command, component.args, {
+      cwd: component.cwd,
+      env: component.env || process.env,
+      stdio: 'pipe'
+    });
+
+    child.stdout.on('data', (data) => process.stdout.write(`[${config.name}:${component.name}] ${data}`));
+    child.stderr.on('data', (data) => process.stderr.write(`[${config.name}:${component.name} ERROR] ${data}`));
+
+    child.on('error', (err) => {
+      console.error(`[Orchestrator] ${component.name} failed to start: ${err.message}`);
+    });
+
+    child.on('close', (code) => {
+      if (!shuttingDown && code !== 0 && code !== null) {
+          console.error(`[Orchestrator] ${component.name} exited unexpectedly with code ${code}`);
+      }
+      processes.delete(component.name);
+    });
+
+    processes.set(component.name, child);
+  };
+
+  components.forEach(launch);
+
+  // Wait for UX to be healthy
+  console.log(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
+  let uxReady = false;
+  for (let i = 0; i < 50; i++) {
+    try {
+      const resp = await fetch(`http://localhost:${ports.ux}`);
+      if (resp.ok) { uxReady = true; break; }
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, 200));
+  }
+  if (!uxReady) console.warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
+
+  return { 
+      processes, 
+      ports,
+      stop: shutdown 
+  };
+}
+
+// CLI Mode
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    const isTest = process.argv.includes('--test');
+    const sys = await launchSystem(isTest ? PROFILES.TEST : PROFILES.LIVE);
+    process.on('SIGINT', () => sys.stop().then(() => process.exit(0)));
+    process.on('SIGTERM', () => sys.stop().then(() => process.exit(0)));
+}

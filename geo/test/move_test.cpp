@@ -25,7 +25,7 @@ int main() {
     if ((parts[3] != "10/1" && parts[3] != "10") || (parts[7] != "20/1" && parts[7] != "20")) return 1;
 
     // 2. moveX / mx
-    Selector mx1 = Selector{"jot/mx", {{"$in", box1}, {"x", 5.0}}}.with_output("$out");
+    Selector mx1 = Selector{"jot/mx", {{"$in", box1}, {"x", {5.0}}}}.with_output("$out");
     Processor::execute(&vfs, mx1);
     Shape s2 = vfs.read<Shape>(mx1);
     std::cout << "  - mx(5): " << s2.tf.to_vec() << std::endl;
@@ -34,7 +34,15 @@ int main() {
     while(ss2 >> p) parts.push_back(p);
     if (parts[3] != "5/1" && parts[3] != "5") return 1;
 
-    // 3. m (alias)
+    // 3. Linear Array (mx with multiple values)
+    Selector mx_array = Selector{"jot/mx", {{"$in", box1}, {"x", {0.0, 10.0, 20.0}}}}.with_output("$out");
+    Processor::execute(&vfs, mx_array);
+    Shape s_array = vfs.read<Shape>(mx_array);
+    std::cout << "  - mx([0, 10, 20]) components: " << s_array.components.size() << std::endl;
+    if (s_array.components.size() != 3) return 1;
+    if (s_array.components[2].tf.to_vec().find("20") == std::string::npos) return 1;
+
+    // 4. m (alias)
     Selector m1 = Selector{"jot/m", {{"$in", box1}, {"x", -2.0}}}.with_output("$out");
     Processor::execute(&vfs, m1);
     Shape s3 = vfs.read<Shape>(m1);

@@ -2,6 +2,7 @@
 #include "geometry.h"
 #include "shape.h"
 #include "../math/matrix.h"
+#include "../render/triangulation.h"
 
 namespace jotcad {
 namespace geo {
@@ -83,7 +84,32 @@ Selector VFSNode::write(const Selector& sel, const jotcad::geo::Shape& data) {
 }
 
 template<> CID VFSNode::materialize<jotcad::geo::Geometry>(const jotcad::geo::Geometry& data) {
-    return materialize<std::string>(data.encode_text());
+    jotcad::geo::Geometry copy = data;
+
+    // Redundant Triangulation Pass: Populate triangles (T tags) for rendering
+    // while preserving original faces (F tags) for kernel topology.
+    if (!copy.faces.empty()) {
+        std::vector<jotcad::geo::Vec3> pts;
+        for (const auto& v : copy.vertices) {
+            pts.push_back({CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)});
+        }
+
+        for (const auto& face : copy.faces) {
+            if (face.loops.empty()) continue;
+            
+            if (face.loops.size() == 1 && face.loops[0].size() == 3) {
+                // Optimization: Simple 3-sided face with no holes
+                copy.triangles.push_back({face.loops[0][0], face.loops[0][1], face.loops[0][2]});
+            } else {
+                // Complex face or PWH: Use CDT triangulation
+                jotcad::geo::Triangulation::triangulate_face(face, pts, [&](int i0, int i1, int i2) {
+                    copy.triangles.push_back({i0, i1, i2});
+                });
+            }
+        }
+    }
+
+    return materialize<std::string>(copy.encode_text());
 }
 
 template<> CID VFSNode::materialize<jotcad::geo::Shape>(const jotcad::geo::Shape& data) {

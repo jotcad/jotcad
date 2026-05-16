@@ -12,7 +12,9 @@ namespace geo {
 
 struct PDFConfig {
     double scale = 2.83464567; // 1mm -> 72/25.4 pts
-    double trim = 5.0; // 5mm margin
+    double trim = 5.0; // 5mm margin (used if page size is 0)
+    double page_width = 0.0; // 0 means auto-size to content
+    double page_height = 0.0;
 };
 
 class PDFWriter {
@@ -39,14 +41,22 @@ public:
     }
 
     std::vector<unsigned char> write() {
-        if (geos_.empty()) return {};
+        if (geos_.empty() && config_.page_width <= 0) return {};
 
-        double width_mm = CGAL::to_double(max_.x - min_.x);
-        double height_mm = CGAL::to_double(max_.y - min_.y);
-        
+        double w_pt, h_pt;
         scale_ = config_.scale;
-        double w_pt = (width_mm + 2 * config_.trim) * scale_;
-        double h_pt = (height_mm + 2 * config_.trim) * scale_;
+
+        bool auto_size = (config_.page_width <= 0 || config_.page_height <= 0);
+
+        if (auto_size) {
+            double width_mm = CGAL::to_double(max_.x - min_.x);
+            double height_mm = CGAL::to_double(max_.y - min_.y);
+            w_pt = (width_mm + 2 * config_.trim) * scale_;
+            h_pt = (height_mm + 2 * config_.trim) * scale_;
+        } else {
+            w_pt = config_.page_width * scale_;
+            h_pt = config_.page_height * scale_;
+        }
 
         std::stringstream ss;
         ss << "%PDF-1.4\n";
@@ -65,8 +75,16 @@ public:
                     
                     auto get_pt = [&](int idx) {
                         const auto& v = geo.vertices[idx];
-                        double sx = CGAL::to_double(v.x - min_.x) * scale_ + (config_.trim * scale_);
-                        double sy = CGAL::to_double(v.y - min_.y) * scale_ + (config_.trim * scale_);
+                        double sx, sy;
+                        if (auto_size) {
+                            sx = CGAL::to_double(v.x - min_.x) * scale_ + (config_.trim * scale_);
+                            sy = CGAL::to_double(v.y - min_.y) * scale_ + (config_.trim * scale_);
+                        } else {
+                            // Map world (0,0) to top-left (0, h_pt)
+                            // PDF Y is bottom-up.
+                            sx = CGAL::to_double(v.x) * scale_;
+                            sy = h_pt - (CGAL::to_double(v.y) * scale_);
+                        }
                         return std::make_pair(sx, sy);
                     };
 
@@ -85,8 +103,14 @@ public:
                 const auto& v2 = geo.vertices[seg[1]];
                 
                 auto get_v_scaled = [&](const Vertex& v) {
-                    double sx = CGAL::to_double(v.x - min_.x) * scale_ + (config_.trim * scale_);
-                    double sy = CGAL::to_double(v.y - min_.y) * scale_ + (config_.trim * scale_);
+                    double sx, sy;
+                    if (auto_size) {
+                        sx = CGAL::to_double(v.x - min_.x) * scale_ + (config_.trim * scale_);
+                        sy = CGAL::to_double(v.y - min_.y) * scale_ + (config_.trim * scale_);
+                    } else {
+                        sx = CGAL::to_double(v.x) * scale_;
+                        sy = h_pt - (CGAL::to_double(v.y) * scale_);
+                    }
                     return std::make_pair(sx, sy);
                 };
                 

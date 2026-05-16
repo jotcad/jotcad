@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
+import { schemaToTypeMap } from './test_helpers.js';
 
 test('JotCompiler Terminal Discovery', async (t) => {
     const parser = new JotParser();
@@ -16,36 +17,44 @@ test('JotCompiler Terminal Discovery', async (t) => {
         }
     });
 
-    // 2. Register PDF (Tee Op with multiple outputs)
+    // 2. Register PDF (Single output Op)
     compiler.registerOperator('pdf', {
         path: 'jot/pdf',
         schema: {
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$in' },
+                { name: '$in', type: 'jot:shape' },
                 { name: 'path', type: 'jot:string' }
             ],
             outputs: { 
-                "$out": { type: "jot:shape" },
-                "file": { type: "file" }
+                "$out": { type: "file" }
             }
         }
     });
 
-    await t.test('Box(10).pdf("x") produces both shape and file terminals', async () => {
-        const ast = parser.parse('Box(10).pdf("x")');
-        const terminals = await compiler.evaluate(ast);
+    await t.test('Box(10).pdf("x") produces a file terminal on $out', async () => {
+        const script = `
+            res = Box(10).pdf("x");
+            res -> $out;
+        `;
+        const ast = parser.parse(script);
         
-        // We expect exactly TWO terminals:
-        // 1. jot/pdf:$out (The shape passthrough)
-        // 2. jot/pdf:file (The PDF artifact)
+        // Document the expected outputs of this test script
+        const schema = {
+            outputs: {
+                "$out": { type: "file" }
+            }
+        };
+
+        const results = await compiler.evaluate(ast, {}, schema);
+        const terminals = results.map(r => r.selector);
         
-        assert.strictEqual(terminals.length, 2, 'Should have exactly 2 terminal outputs');
+        // We expect exactly ONE terminal:
+        // 1. jot/pdf:$out (The PDF artifact)
         
-        const shapeTerm = terminals.find(t => t.path === 'jot/pdf' && (t.output === '$out' || !t.output));
-        const fileTerm = terminals.find(t => t.path === 'jot/pdf' && t.output === 'file');
+        assert.strictEqual(terminals.length, 1, 'Should have exactly 1 terminal output');
         
-        assert.ok(shapeTerm, 'Should have a jot/pdf:$out terminal');
-        assert.ok(fileTerm, 'Should have a jot/pdf:file terminal');
+        const fileTerm = terminals.find(t => t.path === 'jot/pdf' && (t.output === '$out' || !t.output));
+        assert.ok(fileTerm, 'Should have a jot/pdf:$out terminal');
         
         // Ensure Box:$out is CONSUMED (not a terminal)
         const boxTerm = terminals.find(t => t.path === 'jot/Box');
@@ -53,8 +62,12 @@ test('JotCompiler Terminal Discovery', async (t) => {
     });
 
     await t.test('Multiple shapes Box(10); Box(20) produces two terminals', async () => {
-        const ast = parser.parse('Box(10); Box(20)');
-        const terminals = await compiler.evaluate(ast);
+        // In strict mode, we collect multiple terminals into a single port via array
+        const ast = parser.parse('[Box(10), Box(20)] -> $out');
+        const schema = { outputs: { "$out": { type: "jot:shape" } } };
+
+        const res = await compiler.evaluate(ast, {}, schema);
+        const terminals = res.map(r => r.selector);
         
         assert.strictEqual(terminals.length, 2, 'Should have 2 terminal shapes');
         assert.ok(terminals.some(t => t.parameters.size === 10));
@@ -71,8 +84,11 @@ test('JotCompiler Terminal Discovery', async (t) => {
             }
         });
 
-        const ast = parser.parse('BoxWrap(Box(10))');
-        const terminals = await compiler.evaluate(ast);
+        const ast = parser.parse('BoxWrap(Box(10)) -> $out');
+        const schema = { outputs: { "$out": { type: "jot:shape" } } };
+
+        const res = await compiler.evaluate(ast, {}, schema);
+        const terminals = res.map(r => r.selector);
         
         assert.strictEqual(terminals.length, 1, 'Only the outer BoxWrap should be a terminal');
         assert.strictEqual(terminals[0].path, 'jot/BoxWrap');

@@ -1,8 +1,11 @@
 #pragma once
 #include "protocols.h"
 #include "processor.h"
+#include "boolean/engine.h"
+#include "fix/repair.h"
 #include "math/zag.h"
 #include "math/rational_approx.h"
+#include "math/interval.h"
 #include <vector>
 
 namespace jotcad {
@@ -11,11 +14,18 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct OrbOp : P {
     static constexpr const char* path = "jot/Orb";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double diameter, double width, double height, double depth, double zag_val) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Interval diameter, Interval width, Interval height, Interval depth, double zag_val) {
         Geometry res;
-        double w = (width > 0) ? width : diameter;
-        double h = (height > 0) ? height : diameter;
-        double d = (depth > 0) ? depth : diameter;
+        Interval x_range = (width.size() > 0) ? width : diameter;
+        Interval y_range = (height.size() > 0) ? height : diameter;
+        Interval z_range = (depth.size() > 0) ? depth : diameter;
+
+        double w = x_range.size();
+        double h = y_range.size();
+        double d = z_range.size();
+        double cx = x_range.center();
+        double cy = y_range.center();
+        double cz = z_range.center();
 
         double max_dim = std::max({w, h, d});
         int lon_sides = zag(max_dim, zag_val);
@@ -24,6 +34,9 @@ struct OrbOp : P {
         FT w2 = FT(w) / FT(2);
         FT h2 = FT(h) / FT(2);
         FT d2 = FT(d) / FT(2);
+        FT f_cx = FT(cx);
+        FT f_cy = FT(cy);
+        FT f_cz = FT(cz);
 
         // 1. Generate Vertices (UV Grid)
         std::vector<std::vector<int>> grid(lat_sides + 1, std::vector<int>(lon_sides));
@@ -38,9 +51,9 @@ struct OrbOp : P {
 
                 grid[i][j] = (int)res.vertices.size();
                 res.vertices.push_back({
-                    c_phi * c_theta * w2,
-                    c_phi * s_theta * h2,
-                    s_phi * d2
+                    f_cx + c_phi * c_theta * w2,
+                    f_cy + c_phi * s_theta * h2,
+                    f_cz + s_phi * d2
                 });
             }
         }
@@ -64,8 +77,11 @@ struct OrbOp : P {
                 }
             }
         }
+        
+        // Assert closure and manifoldness
+        assert(fix::is_geometry_solid(boolean::Engine::geometry_to_mesh(res)));
 
-        Shape out = P::make_shape(vfs, res, {{"type", "orb"}});
+        Shape out = P::make_shape(vfs, res, {{"type", "closed"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
@@ -75,10 +91,10 @@ struct OrbOp : P {
             {"path", "jot/Orb"},
             {"description", "Generates a 3D sphere or ellipsoid solid."},
             {"arguments", {
-                {{"name", "diameter"}, {"type", "jot:number"}, {"default", 10.0}},
-                {{"name", "width"}, {"type", "jot:number"}, {"default", 0.0}},
-                {{"name", "height"}, {"type", "jot:number"}, {"default", 0.0}},
-                {{"name", "depth"}, {"type", "jot:number"}, {"default", 0.0}},
+                {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
+                {{"name", "width"}, {"type", "jot:interval"}, {"default", 0.0}},
+                {{"name", "height"}, {"type", "jot:interval"}, {"default", 0.0}},
+                {{"name", "depth"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
@@ -87,7 +103,7 @@ struct OrbOp : P {
 };
 
 static void orb_init(fs::VFSNode* vfs) {
-    Processor::register_op<OrbOp<>, double, double, double, double, double>(vfs, "jot/Orb");
+    Processor::register_op<OrbOp<>, Interval, Interval, Interval, Interval, double>(vfs, "jot/Orb");
 }
 
 } // namespace geo

@@ -27,7 +27,7 @@ struct FillOp : P {
 
         // 1. Determine Projection Plane
         EK::Plane_3 plane(0, 0, 1, 0); // Default XY
-        if (plane_shape.tags.contains("is_plane")) {
+        if (plane_shape.tags.value("type", "") == "plane") {
             Matrix tf = plane_shape.tf;
             Point_3 origin = tf.t.transform(Point_3(0, 0, 0));
             Vector_3 normal = tf.t.transform(Vector_3(0, 0, 1));
@@ -139,7 +139,7 @@ struct FillOp : P {
             }
         }
 
-        Shape out = P::make_shape(vfs, out_geo, {{"type", "face"}});
+        Shape out = P::make_shape(vfs, out_geo, {{"type", "surface"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

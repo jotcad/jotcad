@@ -57,7 +57,7 @@ int main() {
     VFSNode vfs(cfg);
     
     // Register Ops
-    Processor::register_op<BoxOp<>, double, double, double>("jot/Box");
+    Processor::register_op<BoxOp<>, Interval, Interval, Interval>("jot/Box");
     Processor::register_op<XOp<>>("jot/X");
     Processor::register_op<YOp<>>("jot/Y");
     Processor::register_op<ZOp<>>("jot/Z");
@@ -69,8 +69,8 @@ int main() {
 
     // 1. Mesh-Mesh: Box Subtraction
     {
-        BoxOp<>::execute(&vfs, {"jot/Box/Target", {}}, 10.0, 10.0, 10.0);
-        BoxOp<>::execute(&vfs, {"jot/Box/Tool", {}}, 5.0, 5.0, 20.0);
+        BoxOp<>::execute(&vfs, {"jot/Box/Target", {}}, Interval{-5.0, 5.0}, Interval{-5.0, 5.0}, Interval{-5.0, 5.0});
+        BoxOp<>::execute(&vfs, {"jot/Box/Tool", {}}, Interval{-2.5, 2.5}, Interval{-2.5, 2.5}, Interval{-10.0, 10.0});
         Shape target = vfs.read<Shape>({"jot/Box/Target", {}});
         Shape tool = vfs.read<Shape>({"jot/Box/Tool", {}});
         tool.tf = Matrix::translate(2, 2, 0).to_vec();
@@ -88,7 +88,7 @@ int main() {
 
     // 2. Mesh-Plane: Box Clipping
     {
-        BoxOp<>::execute(&vfs, {"jot/Box/Target2", {}}, 10.0, 10.0, 10.0);
+        BoxOp<>::execute(&vfs, {"jot/Box/Target2", {}}, Interval{-5.0, 5.0}, Interval{-5.0, 5.0}, Interval{-5.0, 5.0});
         ZOp<>::execute(&vfs, {"jot/Z/Tool", {}});
         Shape target = vfs.read<Shape>({"jot/Box/Target2", {}});
         Shape tool = vfs.read<Shape>({"jot/Z/Tool", {}});

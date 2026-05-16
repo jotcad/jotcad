@@ -1,5 +1,5 @@
 import { render } from '@solidjs/testing-library';
-import { MeshMap } from '../src/components/MeshMap';
+import { MeshMap } from '../src/components/discovery/MeshMap';
 import { describe, it, expect } from 'vitest';
 
 // Minimal mock for Blackboard to allow rendering

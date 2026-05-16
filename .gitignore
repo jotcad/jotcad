@@ -13,6 +13,7 @@ legacy/
 # Ignore build artifacts
 **/obj/
 **/bin/
+ux/dist/
 *.o
 *.d
 *.a

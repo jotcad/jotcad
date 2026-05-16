@@ -9,7 +9,7 @@ int main() {
     std::cout << "Testing At (Anchor Pattern) & On (Targeted Replacement)..." << std::endl;
     
     // Setup: A Hexagon and a Box
-    fs::Selector hex_addr = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    fs::Selector hex_addr = fs::Selector{"jot/Hexagon/diameter", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_addr);
     
     fs::Selector box_addr = fs::Selector{"jot/Box", {{"width", 5.0}, {"height", 5.0}, {"depth", 0.0}}}.with_output("$out");

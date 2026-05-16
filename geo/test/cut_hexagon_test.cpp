@@ -8,7 +8,7 @@ int main() {
     
     std::cout << "Testing Cut Hexagon Operation..." << std::endl;
     
-    fs::Selector base_sel = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    fs::Selector base_sel = fs::Selector{"jot/Hexagon/diameter", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, base_sel);
 
     fs::Selector tool_sel = fs::Selector{"jot/Triangle/equilateral", {{"side", 2.0}}}.with_output("$out");

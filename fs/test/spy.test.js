@@ -5,6 +5,21 @@ import { MeshLink } from '../src/mesh_link.js';
 import { registerVFSRoutes } from '../src/vfs_rest_server.js';
 import http from 'node:http';
 
+async function consumeJSON(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 test('Discovery Protocol (Spy)', async (t) => {
   let serverA, serverB;
   let vfsA, vfsB;
@@ -46,46 +61,69 @@ test('Discovery Protocol (Spy)', async (t) => {
     await meshB.start();
   });
 
-  await t.test('spy returns multiplexed VFS bundle', async () => {
-    // Proactively provision data on both nodes
-    await vfsA.writeData(new Selector('shape/box', { w: 10 }), { from: 'A' });
+  await t.test('spy returns multiplexed VFS metadata bundle', async () => {
+    // Proactively provision data on both nodes with discoverable tags
+    await vfsA.write(new Selector('shape/box', { w: 10 }), { tags: { from: 'A' } }, { encoding: 'json' });
 
-    await vfsB.writeData(new Selector('shape/box', { w: 20 }), { from: 'B' });
-    await vfsB.writeData(new Selector('shape/sphere', { r: 5 }), { from: 'B' });
+    await vfsB.write(new Selector('shape/box', { w: 20 }), { tags: { from: 'B' } }, { encoding: 'json' });
+    await vfsB.write(new Selector('shape/sphere', { r: 5 }), { tags: { from: 'B' } }, { encoding: 'json' });
+
+    // Wait for mesh propagation
+    await new Promise(r => setTimeout(r, 500));
 
     // Query Node A. It should gather from A and B using passive storage scanning.
     const stream = await vfsA.spy(new Selector('shape/*'), {});
     assert.ok(stream, 'Spy should return a stream');
 
-    // Read the stream and verify the chunks
     const reader = stream.getReader();
-    const chunks = [];
-    try {
-      while (true) {
+    const results = [];
+    let buffer = '';
+    
+    while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
-      }
-    } finally {
-      reader.releaseLock();
+        buffer += new TextDecoder().decode(value);
+        
+        // Very basic VFS bundle parser
+        while (buffer.includes('\n=')) {
+            const start = buffer.indexOf('\n=');
+            const headerEnd = buffer.indexOf('\n', start + 2);
+            if (headerEnd === -1) break;
+            
+            const header = buffer.slice(start + 2, headerEnd);
+            const [lenStr, cid] = header.split(' ');
+            const len = parseInt(lenStr);
+            
+            if (buffer.length < headerEnd + 1 + len) break;
+            
+            const content = buffer.slice(headerEnd + 1, headerEnd + 1 + len);
+            results.push({ cid, metadata: JSON.parse(content) });
+            buffer = buffer.slice(headerEnd + 1 + len);
+        }
     }
 
-    const combined = Buffer.concat(
-      chunks.map((c) => Buffer.from(c))
-    ).toString();
+    console.log('RESULTS FOUND:', results.length);
+    for (const r of results) {
+        console.log(` - ${r.cid}: ${r.metadata.selector.path}`);
+    }
 
-    console.log('COMBINED:', combined);
+    // Ensure both Node A and Node B results are present in metadata
+    const paths = results.map(r => r.metadata.selector.path);
+    assert.ok(paths.includes('shape/box'), 'Should contain box selector');
+    assert.ok(paths.includes('shape/sphere'), 'Should contain sphere selector');
 
-    // Ensure both Node A and Node B results are present
-    assert.ok(combined.includes('"shape/box"'), 'Should contain box selector');
-    assert.ok(
-      combined.includes('"shape/sphere"'),
-      'Should contain sphere selector'
-    );
-    assert.ok(combined.includes('"from":"A"') || combined.includes('"from": "A"'), 'Should contain data from A');
-    assert.ok(combined.includes('"from":"B"') || combined.includes('"from": "B"'), 'Should contain data from B');
+    // To verify the tags, we must READ the data (Pure Router Model)
+    let foundA = false;
+    let foundB = false;
 
-    // Verify VFS bundle structure (\n=LEN NAME\nCONTENT)
-    assert.ok(combined.startsWith('\n='), 'Should start with VFS header');
+    for (const res of results) {
+        const { stream: dataStream } = await vfsA.read(res.cid);
+        const data = await consumeJSON(dataStream);
+        if (data.tags?.from === 'A') foundA = true;
+        if (data.tags?.from === 'B') foundB = true;
+    }
+
+    assert.ok(foundA, 'Should have found data from Node A via subsequent read');
+    assert.ok(foundB, 'Should have found data from Node B via subsequent read');
   });
 });

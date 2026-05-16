@@ -8,7 +8,7 @@ int main() {
     
     std::cout << "Testing Offset Operation..." << std::endl;
     
-    fs::Selector hex_fulfilling = fs::Selector{"jot/Hexagon/full", {{"diameter", 30.0}}}.with_output("$out");
+    fs::Selector hex_fulfilling = fs::Selector{"jot/Hexagon/diameter", {{"diameter", 30.0}}}.with_output("$out");
     Processor::execute(&vfs, hex_fulfilling);
     
     fs::Selector offset_fulfilling = fs::Selector{"jot/offset", {{"$in", hex_fulfilling}, {"diameter", 5.0}}}.with_output("$out");

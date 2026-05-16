@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { normalizeSelector, Selector, decodeSafe } from './vfs_core.js';
+import { normalizeSelector, Selector, decodeSafe, decodeInfo } from './cid.js';
 
 /**
  * Connection: Abstract interface for a direct communication pipe to a neighbor.
@@ -27,7 +27,7 @@ class Connection {
 /**
  * ForwardConnection: A pipe using outgoing HTTP requests to a stable neighbor URL.
  */
-class ForwardConnection extends Connection {
+export class ForwardConnection extends Connection {
   constructor(neighborId, url, fetch, options = {}) {
     super(neighborId);
     this.url = url.replace(/\/$/, '');
@@ -63,7 +63,8 @@ class ForwardConnection extends Connection {
         if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
         
         const errText = await resp.text().catch(() => 'no body');
-        throw new Error(`POST /read failed with status ${resp.status}: ${errText}`);
+        const ctxLine = JSON.stringify({ vfsId: this.neighborId, status: resp.status, action: 'mesh_read', url: this.url });
+        throw new Error(ctxLine + '\n' + errText);
     } catch (err) {
         console.log(`[MeshLink ${this.neighborId}] read error: ${err.message}`);
         throw err;
@@ -119,7 +120,7 @@ class ForwardConnection extends Connection {
  * ReverseConnection: A pipe reached by replying to a neighbor's pending /listen poll.
  * Encapsulates BOTH the server-side pool management and the client-side poll loop.
  */
-class ReverseConnection extends Connection {
+export class ReverseConnection extends Connection {
   constructor(neighborId, mesh, options = {}) {
     super(neighborId);
     this.mesh = mesh;
@@ -136,10 +137,14 @@ class ReverseConnection extends Connection {
     this.abortController = new AbortController();
   }
 
+  stop() {
+    this.abortController.abort();
+  }
+
   /**
    * SERVER SIDE: Handle an incoming /listen poll.
    */
-  addScanner(res, replyTo = null, stream = null) {
+  addScanner(res, replyTo = null, stream = null, info = null) {
     // CRITICAL ASSERTION: No hidden errors. 
     // If a node tries to open a second poll line, it's a protocol violation or zombie.
     if (this.pool.length > 0) {
@@ -155,7 +160,11 @@ class ReverseConnection extends Connection {
       const resolve = this.replies.get(replyTo);
       if (resolve) {
         this.replies.delete(replyTo);
-        resolve(stream, new Map(stream.length ? [['Content-Length', stream.length.toString()]] : []));
+        // Protocol Fix: ReadableStream does not have .length. 
+        // We omit Content-Length for streamed replies.
+        const headers = new Map();
+        if (info) headers.set('x-vfs-info', info);
+        resolve(stream, headers);
       }
     }
 
@@ -260,38 +269,67 @@ class ReverseConnection extends Connection {
    */
   async startPolling(baseUrl, fetch) {
     console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} starting Poll-based Receiver for ${baseUrl}`);
-    let replyTo = null, stream = null;
+    let replyTo = null, stream = null, metadata = null;
     
     while (!this.abortController.signal.aborted) {
       console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- ENTERING LOOP ITERATION ---`);
       try {
         const headers = { 'x-vfs-peer-id': this.vfs.id };
         if (replyTo) headers['x-vfs-reply-to'] = replyTo;
+        if (metadata) headers['x-vfs-info'] = Buffer.from(JSON.stringify(metadata)).toString('base64');
         
-        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
-        const resp = await fetch(`${baseUrl}/listen`, { 
+        let bodyToSend = stream;
+        const fetchOptions = { 
             method: 'POST', 
             headers, 
-            signal: this.abortController.signal, 
-            body: stream 
-        });
-        replyTo = null; stream = null;
+            signal: this.abortController.signal
+        };
+
+        // Browser Compatibility: Streaming bodies REQUIRE HTTP/2 in Chrome.
+        // Since our nodes are HTTP/1.1, we must "drain" the stream into a buffer first
+        // to use a standard buffered POST.
+        if (stream instanceof ReadableStream || (stream && typeof stream.getReader === 'function')) {
+            console.log(`[ReverseConn ${this.neighborId}] Draining stream for HTTP/1.1 compatibility...`);
+            const reader = stream.getReader();
+            const chunks = [];
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+            const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+            const merged = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+            bodyToSend = merged;
+        }
+
+        if (bodyToSend !== undefined) fetchOptions.body = bodyToSend;
         
+        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
+        const resp = await fetch(`${baseUrl}/listen`, fetchOptions);
+        replyTo = null; stream = null; metadata = null;
+
         console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} <- GOT SOMETHING (status ${resp.status}) from ${baseUrl}`);
         if (resp.status === 200) {
           const cmdText = await resp.text();
           const cmd = JSON.parse(cmdText);
-          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - STARTING execution of ${cmd.op || cmd.type}`);
-          
+          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - RECEIVED COMMAND:`, cmdText);
+
           if (cmd.type === 'COMMAND') {
             const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;
             if (cmd.op === 'READ') {
-              stream = await this.vfs.read(sel || cmd.cid, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
+              const result = await this.vfs.read(sel || cmd.cid, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
+              if (result) {
+                  stream = result.stream;
+                  metadata = result.metadata;
+              }
               replyTo = cmd.id;
             } else if (cmd.op === 'SPY') {
               stream = await this.vfs.spy(sel, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
               replyTo = cmd.id;
-            } else if (cmd.op === 'SUB') {
+            }
+ else if (cmd.op === 'SUB') {
               this.mesh.addInterest(cmd.stack[0] || 'unknown', sel, cmd.expiresAt, cmd.stack);
             }
           } else if (cmd.type === 'NOTIFY') {
@@ -305,7 +343,6 @@ class ReverseConnection extends Connection {
         } else { 
           if (resp.status !== 204) console.log(`[ReverseConn ${this.neighborId}] poll non-200 response: ${resp.status}`);
           console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- IDLE. Looping. ---`);
-          await new Promise(r => setTimeout(r, 1000)); 
         }
       } catch (err) { 
         if (this.abortController.signal.aborted) break; 
@@ -435,6 +472,14 @@ export class MeshLinkBase {
     for (const entry of this.interests.values()) {
       if (this._matches(entry.selector, s)) {
         entry.lastValue = payload;
+
+        // 1. Local Delivery
+        if (entry.localExpiresAt > Date.now()) {
+          console.log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
+          this.vfs.events.emit('notify', s, payload);
+        }
+
+        // 2. Neighbor Propagation
         for (const [neighborId, expiry] of entry.subs.entries()) {
           if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
           if (stack.includes(neighborId)) continue;
@@ -488,34 +533,43 @@ export class MeshLinkBase {
         const info = await resp.json();
         console.log(`[MeshLink ${this.vfs.id}] Registration successful for ${url}:`, info);
         if (info.id && info.id !== this.vfs.id) {
+          let newConn = null;
+
           if (!this.peers.has(info.id)) {
-            const conn = new ForwardConnection(info.id, url, this.fetch, { 
+            newConn = new ForwardConnection(info.id, url, this.fetch, { 
                 localUrl: this.localUrl, 
                 signal: this.abortController.signal,
                 reachability: info.reachability
             });
-            this._setPeer(info.id, conn);
-            console.log(`[MeshLink ${this.vfs.id}] Peer added to registry: ${info.id} (reachability: ${info.reachability})`);
-            this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
-            for (const entry of this.interests.values()) {
-              let maxExp = entry.localExpiresAt || 0;
-              for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
-              if (maxExp > Date.now()) {
-                conn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
-              }
-            }
+            this._setPeer(info.id, newConn);
+            console.log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id} (${info.reachability})`);
           }
+
           // Browser Rule: If we have no local URL, we MUST poll for mesh events
           if (info.reachability === 'REVERSE' || !this.localUrl) {
-            // Unify: Create a ReverseConnection for the poll link
             const pollerId = `${info.id}-poller`;
             if (!this.peers.has(pollerId)) {
                 console.log(`[MeshLink ${this.vfs.id}] Starting reverse poll line for ${info.id}`);
                 const poller = new ReverseConnection(pollerId, this, { instanceId: this.instanceId });
                 this._setPeer(pollerId, poller);
                 poller.startPolling(url, this.fetch);
+                newConn = poller; // Ensure interests are synced to the poller too
             }
           }
+
+          // SYNC INTERESTS TO NEW CONNECTION
+          if (newConn) {
+              for (const entry of this.interests.values()) {
+                let maxExp = entry.localExpiresAt || 0;
+                for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+                if (maxExp > Date.now()) {
+                  console.log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new peer ${newConn.neighborId}`);
+                  newConn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
+                }
+              }
+          }
+
+          this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
           return info.id;
         }
       } else {
@@ -548,7 +602,7 @@ export class MeshLinkBase {
   /**
    * SERVER SIDE: Entry point for a hidden peer calling /listen.
    */
-  registerReversePeer(neighborId, res, replyTo = null, stream = null) {
+  registerReversePeer(neighborId, res, replyTo = null, stream = null, info = null) {
     console.log(`[MeshLink ${this.vfs.id}] registerReversePeer: ${neighborId} (replyTo: ${replyTo || 'none'})`);
     if (!this.peers.has(neighborId)) {
       const conn = new ReverseConnection(neighborId, this, { instanceId: this.instanceId });
@@ -566,7 +620,7 @@ export class MeshLinkBase {
     if (!(conn instanceof ReverseConnection)) {
         throw new Error(`CRITICAL PROTOCOL VIOLATION: registerReversePeer called for ${neighborId} but connection is ${conn.constructor.name}`);
     }
-    conn.addScanner(res, replyTo, stream);
+    conn.addScanner(res, replyTo, stream, info);
   }
 
   async read(target, context = {}) {
@@ -578,9 +632,16 @@ export class MeshLinkBase {
     const fetchPromises = targetConns.map(async (conn) => {
       console.log(`[MeshLink ${this.vfs.id}] Requesting ${target.path || target} from peer: ${conn.neighborId}`);
       const resp = await conn.read(target, { ...context, stack, resolutionStack, expiresAt });
-      if (resp) return resp;
-      throw new Error('Conn failed');
+      
+      if (resp && resp.body) {
+          return {
+              stream: resp.body,
+              metadata: decodeInfo(resp.headers.get('x-vfs-info'))
+          };
+      }
+      throw new Error(`Connection ${conn.neighborId} failed to return a valid response body.`);
     });
+
     try { 
         return await Promise.any(fetchPromises); 
     } catch (e) { 

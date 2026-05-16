@@ -30,24 +30,29 @@ test('Typography DSL Integration (Exact Type Match)', async (t) => {
   // 2. Compile a DSL expression that nests them
   const code = 'Text("Hole Test", font=Font("https://example.com/font.ttf"), size=25)';
   const ast = {
-    type: 'CALL',
-    name: 'Text',
-    args: [
-      { type: 'ANNOTATED_ARG', nameHint: 'text', value: "Hole Test" },
-      { type: 'ANNOTATED_ARG', nameHint: 'font', value: {
-          type: 'CALL',
-          name: 'Font',
-          args: [{ type: 'ANNOTATED_ARG', nameHint: 'url', value: "https://example.com/font.ttf" }]
-      }},
-      { type: 'ANNOTATED_ARG', nameHint: 'size', value: 25 }
-    ]
+    type: 'ASSIGNMENT',
+    name: '$out',
+    value: {
+      type: 'CALL',
+      name: 'Text',
+      args: [
+        { type: 'ANNOTATED_ARG', nameHint: 'text', value: "Hole Test" },
+        { type: 'ANNOTATED_ARG', nameHint: 'font', value: {
+            type: 'CALL',
+            name: 'Font',
+            args: [{ type: 'ANNOTATED_ARG', nameHint: 'url', value: "https://example.com/font.ttf" }]
+        }},
+        { type: 'ANNOTATED_ARG', nameHint: 'size', value: 25 }
+      ]
+    }
   };
 
-  const results = await compiler.evaluate(ast);
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
+  const results = await compiler.evaluate(ast, {}, schema);
   
   // 3. Verify the resulting selector structure
   assert.strictEqual(results.length, 1);
-  const textSelector = results[0];
+  const textSelector = results[0].selector;
   assert.strictEqual(textSelector.path, 'jot/text');
   assert.strictEqual(textSelector.parameters.text, 'Hole Test');
   assert.strictEqual(textSelector.parameters.size, 25);

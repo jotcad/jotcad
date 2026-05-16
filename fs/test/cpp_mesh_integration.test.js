@@ -22,6 +22,26 @@ const PORT_JS = 20102;
 const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');
 const STORAGE_CPP = path.resolve('.vfs_storage_cpp-test-node');
 
+async function consumeBytes(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return bytes;
+}
+
+async function consumeJSON(stream) {
+    const bytes = await consumeBytes(stream);
+    return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
   const failsafe = setTimeout(() => {
     console.error('[Test Error] Failsafe timeout reached. Forcefully exiting...');
@@ -105,7 +125,7 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
     // Note: box op with these params produces a deterministic CID
     const selector = new Selector('jot/Box', { depth: 0, height: 10, width: 10 }).withOutput('$out');
     const jsAddrKey = await getSelectorKey(selector);
-    await jsVfs.readData(selector);
+    await jsVfs.read(selector);
 
     // In the new architecture:
     // The selector hash identifies BOTH the .meta and .data files
@@ -120,16 +140,19 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
   });
 
   await t.test('Provisioning: Box', async () => {
-    const result = await jsVfs.readData(new Selector('jot/Box', {
+    const { stream: sStream } = await jsVfs.read(new Selector('jot/Box', {
       width: 20,
       height: 20,
       depth: 0,
     }).withOutput('$out'));
+    const result = await consumeJSON(sStream);
     console.log('[Test] Box provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Box provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
-    assert.strictEqual(result.tags?.type, 'box');
-    const geo = await jsVfs.readData(result.geometry);
+    assert.strictEqual(result.tags?.type, 'surface');
+    
+    const { stream: gStream } = await jsVfs.read(result.geometry);
+    const geo = await consumeBytes(gStream);
     console.log('[Test] Geometry result type:', typeof geo, 'instanceof Uint8Array:', geo instanceof Uint8Array);
     assert.ok(geo, 'Should be able to read geometry by CID');
     const geoText = new TextDecoder().decode(geo);
@@ -140,12 +163,13 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
   });
 
   await t.test('Provisioning: Triangle', async () => {
-    const result = await jsVfs.readData(new Selector('jot/Triangle/equilateral', {
+    const { stream } = await jsVfs.read(new Selector('jot/Triangle/equilateral', {
       size: [50],
     }).withOutput('$out'));
+    const result = await consumeJSON(stream);
     console.log('[Test] Triangle provisioning result:', JSON.stringify(result));
     assert.ok(result, 'Triangle provisioning should return a Shape');
     assert.strictEqual(typeof result, 'object', 'Result should be an object (Shape)');
-    assert.strictEqual(result.tags?.type, 'triangle');
+    assert.strictEqual(result.tags?.type, 'surface');
   });
 });

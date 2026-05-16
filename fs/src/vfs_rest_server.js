@@ -10,6 +10,9 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
     return data ? JSON.parse(data) : {};
   };
 
+  const encodeInfo = (info) => info ? Buffer.from(JSON.stringify(info)).toString('base64') : '';
+  const decodeInfo = (b64) => b64 ? JSON.parse(Buffer.from(b64, 'base64').toString()) : null;
+
   const pump = async (stream, res) => {
     try {
       await pipeline(Readable.fromWeb(stream), res);
@@ -41,6 +44,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/read') {
         const body = await getBody(req);
         const { selector: selObj, cid, stack = [], resolutionStack = [], expiresAt } = body;
+        console.log(`[MeshServer ${vfs.id}] POST /read: ${selObj ? selObj.path : cid} (stack: ${stack.join('->')})`);
         if (!selObj && !cid) {
             res.writeHead(400);
             return res.end('Missing selector or cid');
@@ -48,15 +52,13 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const selector = selObj ? Selector.fromObject(selObj) : null;
         if (selector) vfs.validateSelector(selector); // CRITICAL: FAIL VISIBLY
         const target = selector || cid;
-        const stream = await vfs.read(target, { stack, resolutionStack, expiresAt });
-        if (stream) {
-          const addrKey = typeof target === 'string' ? target : await getSelectorKey(target);
-          const info = await vfs._getStorageInfo(addrKey);
-          
+        const result = await vfs.read(target, { stack, resolutionStack, expiresAt });
+        if (result) {
+          const { stream, metadata } = result;
           res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
             'x-vfs-id': vfs.id,
-            'x-vfs-info': info ? encodeSafe(info) : '',
+            'x-vfs-info': encodeInfo(metadata),
           });
           return await pump(stream, res);
         }
@@ -129,13 +131,15 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/listen') {
         const peerId = req.headers['x-vfs-peer-id'];
         const replyTo = req.headers['x-vfs-reply-to'];
+        const info = decodeInfo(req.headers['x-vfs-info']);
         console.log(`[MeshServer ${vfs.id}] POST /listen from ${peerId} (replyTo: ${replyTo || 'none'})`);
         if (!peerId) {
           res.writeHead(400);
           return res.end('Missing x-vfs-peer-id');
         }
         if (meshLink) {
-          meshLink.registerReversePeer(peerId, res, replyTo, req);
+          // Protocol Integrity: Convert Node IncomingMessage to Web ReadableStream
+          meshLink.registerReversePeer(peerId, res, replyTo, Readable.toWeb(req), info);
           return;
         }
         res.writeHead(501);
@@ -152,10 +156,22 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         return res.end(JSON.stringify({ version: vfs.version || 'unknown', id: vfs.id }));
       }
     } catch (err) {
-      console.error(`[MeshServer ${vfs.id}] REST Error:`, err);
+      const vfsCtx = { vfsId: vfs.id, action: req.method + ' ' + req.url };
+      const ctxLine = JSON.stringify(vfsCtx);
+      
+      let msg = err.message;
+      // If the message is already a set of JSON lines, just prepend.
+      // Otherwise, wrap the message in a JSON object.
+      if (!msg.trim().startsWith('{')) {
+          msg = JSON.stringify({ error: msg });
+      }
+      
+      const fullError = ctxLine + '\n' + msg;
+      console.error(`[VFS ${vfs.id}] REST Error:\n${fullError}`);
+      
       if (!res.writableEnded) {
-        res.writeHead(500);
-        res.end(err.message);
+        res.writeHead(500, { 'Content-Type': 'application/x-jsonlines' });
+        res.end(fullError);
       }
     }
   };

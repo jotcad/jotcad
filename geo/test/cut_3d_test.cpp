@@ -30,10 +30,11 @@ int main() {
 
     std::cout << "  - Result vertices: " << res_geo.vertices.size() << std::endl;
     std::cout << "  - Result faces: " << res_geo.faces.size() << std::endl;
+    std::cout << "  - Result triangles: " << res_geo.triangles.size() << std::endl;
 
-    // A 10x10 cube with an offset 5x5 square hole should have significantly more vertices and faces.
+    // A 10x10 cube with an offset 5x5 square hole should have significantly more vertices and surface elements.
     assert(res_geo.vertices.size() > 8);
-    assert(res_geo.faces.size() > 6);
+    assert(res_geo.faces.size() + res_geo.triangles.size() > 6);
     
     std::cout << "✅ 3D Cut PASS" << std::endl;
     return 0;

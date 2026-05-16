@@ -3,6 +3,7 @@
 #include "disk_op.h"
 #include "arc_op.h"
 #include "orb_op.h"
+#include "cone_op.h"
 #include "triangle_op.h"
 #include "offset_op.h"
 #include "outline_op.h"
@@ -21,6 +22,7 @@
 #include "fuse_op.h"
 #include "disjoint_op.h"
 #include "pdf_op.h"
+#include "stl_op.h"
 #include "png_op.h"
 #include "rule_op.h"
 #include "move_op.h"
@@ -41,8 +43,14 @@
 #include "smooth_op.h"
 #include "separate_op.h"
 #include "deform_op.h"
-#include "font_op.h"
 #include "text_op.h"
+#include "trace_op.h"
+#include "transform_ops.h"
+#include "asset_ops.h"
+#include "stitch_op.h"
+
+#include "measure_ops.h"
+#include "sort_ops.h"
 
 namespace jotcad {
 namespace geo {
@@ -53,6 +61,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     disk_init(vfs);
     arc_init(vfs);
     orb_init(vfs);
+    cone_init(vfs);
     triangle_init(vfs);
     offset_init(vfs);
     outline_init(vfs);
@@ -71,6 +80,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     fuse_init(vfs);
     disjoint_init(vfs);
     pdf_init(vfs);
+    stl_init(vfs);
     png_init(vfs);
     rule_init(vfs);
     move_init(vfs);
@@ -91,8 +101,13 @@ void register_all_ops(fs::VFSNode* vfs) {
     smooth_init(vfs);
     separate_init(vfs);
     deform_init(vfs);
-    font_init(vfs);
+    assets_init(vfs);
     text_init(vfs);
+    trace_init(vfs);
+    transform_ops_init(vfs);
+    stitch_init(vfs);
+    measure_init(vfs);
+    selection_init(vfs);
 }
 
 } // namespace geo

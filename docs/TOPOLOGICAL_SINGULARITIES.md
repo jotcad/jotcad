@@ -75,7 +75,21 @@ For 2D operations using `General_polygon_set_2` (which uses `Arrangement_2` inte
 - **Exact Predicates**: Using `EK` (Exact Kernel) allows us to identify *exact* coordinate identity before any floating-point noise is introduced.
 - **Subdivision Locality**: To maintain exact planarity, we should split the incident edges at a small distance $\delta$ from the singularity before perturbing the apex. This creates a "transition triangle" that absorbs the non-planarity.
 
-## 6. Legacy Reference (Implementation Guide)
+## 6. The Redundancy Paradox (Shared Face Failure)
+
+In 3D boolean kernels (like CGAL's PMP or Corefinement), a common failure mode arises when a mesh contains **redundant connectivity**—specifically, representing the same surface area with multiple overlapping faces (e.g., both a Quad and its Triangulated constituents).
+
+### The Mechanism of Failure
+1.  **Over-Sharing**: If an edge is shared by 3+ faces (e.g., two triangles and one quad covering the same area), the mesh is **Non-Manifold**.
+2.  **Kernel Rejection**: Most boolean algorithms (union, intersect, cut) strictly require manifold input. Redundant faces cause the kernel to detect self-intersections or "open" boundaries where none physically exist.
+3.  **Hole Inversion**: Redundancy can cause the winding-order logic to fail, leading to 3D holes being filled or solids being treated as hollow shells.
+
+### Resolution: Manifold Preservation Protocol
+To ensure boolean stability, the 3D bridge (`geometry_to_mesh`) must enforce a "Single Responsibility" rule for every spatial region:
+- **Triangle Preference**: If a geometric shape contains both `triangles` (T-code) and `faces` (F-code), the bridge MUST prioritize the triangles and ignore the redundant faces.
+- **Deduplication**: Every facet in the CGAL `Surface_mesh` must represent a unique topological boundary.
+
+## 7. Legacy Reference (Implementation Guide)
 
 The `legacy/geometry/repair_util.h` file contains a mature implementation of these strategies:
 

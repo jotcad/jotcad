@@ -3,6 +3,21 @@ import assert from 'node:assert';
 import http from 'node:http';
 import { VFS, MeshLink, registerVFSRoutes, MemoryStorage, Selector } from '../src/index.js';
 
+async function consumeJSON(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 test('Decentralized Mesh-VFS Integration', async (t) => {
   const vfsA = new VFS({ id: 'node-A', storage: new MemoryStorage() });
   const vfsB = new VFS({ id: 'node-B', storage: new MemoryStorage() });
@@ -15,7 +30,7 @@ test('Decentralized Mesh-VFS Integration', async (t) => {
   // Provision terminal data on Node C
   const target = new Selector('far-end/data', { secret: 'gold' });
   const payload = { message: 'Hello from the far end!' };
-  await vfsC.writeData(target, payload);
+  await vfsC.write(target, payload, { encoding: 'json' });
 
   const meshA = new MeshLink(vfsA, ['http://localhost:25002'], { localUrl: 'http://localhost:25001' });
   const meshB = new MeshLink(vfsB, ['http://localhost:25001', 'http://localhost:25003'], { localUrl: 'http://localhost:25002' });
@@ -40,8 +55,10 @@ test('Decentralized Mesh-VFS Integration', async (t) => {
 
   await t.test('should fulfill a recursive Bread-crumb READ (A -> B -> C)', async () => {
     console.log('[Test Mesh] Triggering recursive READ from Node A...');
-    const result = await vfsA.readData(target);
-    assert.deepStrictEqual(result, payload);
+    const result = await vfsA.read(target);
+    assert.ok(result, 'Result should exist');
+    const data = await consumeJSON(result.stream);
+    assert.deepStrictEqual(data, payload);
   });
 
   await t.test('should implement Auto-Peering (Symmetry)', async () => {

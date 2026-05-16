@@ -3,13 +3,15 @@ import { MemoryStorage } from './memory_storage.js';
 import { 
   normalizeSelector, 
   Selector,
+  isSelector,
   isString,
   getCID, 
   getSelectorKey, 
   encodeSafe, 
   decodeSafe, 
   encodeJCB, 
-  decodeJCB 
+  decodeJCB,
+  decodeInfo
 } from './cid.js';
 
 export class VFSClosedError extends Error {
@@ -148,14 +150,13 @@ export class VFS {
   }
 
   async getCID(data) { return getCID(data); }
-
   async read(target, context = {}) {
     this._checkClosed();
     const packetContext = { 
         ...context, 
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
-        expiresAt: context.expiresAt || Date.now() + 10000 
+        expiresAt: context.expiresAt || (Date.now() + 10000) 
     };
     if (Date.now() > packetContext.expiresAt) return null;
 
@@ -166,11 +167,17 @@ export class VFS {
     }
     if (result.cid === null) return null;
 
-    return this.storage.get(result.cid);
+    const stream = await this.storage.get(result.cid);
+    return { stream, metadata: result.metadata };
   }
 
   async write(target, streamOrBytes, context = {}) {
     this._checkClosed();
+    // Protocol Integrity: Prevent leaking request objects into storage
+    if (streamOrBytes && streamOrBytes.constructor && streamOrBytes.constructor.name === 'IncomingMessage') {
+        throw new Error(`CRITICAL PROTOCOL VIOLATION: VFS.write received an 'IncomingMessage' request object as data. This indicates an unconsumed request stream.`);
+    }
+
     let s = null;
     let cid = null;
 
@@ -181,7 +188,8 @@ export class VFS {
         cid = await getSelectorKey(s);
     }
     
-    let bytes, dataCID, type = 'bytes';
+    let bytes, dataCID;
+    let encoding = context.encoding || 'bytes';
 
     if (streamOrBytes instanceof Uint8Array) {
         bytes = streamOrBytes;
@@ -189,11 +197,11 @@ export class VFS {
     } else if (typeof streamOrBytes === 'string') {
         bytes = new TextEncoder().encode(streamOrBytes);
         dataCID = await getCID(streamOrBytes);
-        type = 'string';
+        encoding = context.encoding || 'string';
     } else if (streamOrBytes === null) {
         bytes = new Uint8Array();
         dataCID = await getCID(bytes);
-        type = 'null';
+        encoding = context.encoding || 'null';
     } else if (streamOrBytes && typeof streamOrBytes.getReader === 'function') {
         const chunks = [];
         const reader = streamOrBytes.getReader();
@@ -209,34 +217,26 @@ export class VFS {
         let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
         dataCID = await getCID(bytes);
+    } else if (isSelector(streamOrBytes)) {
+        return this.link(target, streamOrBytes);
     } else {
         dataCID = await getCID(streamOrBytes);
         bytes = new TextEncoder().encode(JSON.stringify(streamOrBytes));
-        type = 'json';
+        encoding = context.encoding || 'json';
     }
 
+    if (context.size !== undefined && bytes.length !== context.size) {
+        throw new Error(`VFS.write: Size mismatch. Expected ${context.size} bytes, got ${bytes.length}`);
+    }
+
+    // THE GATEKEEPER: Persistent metadata MUST be a pure manifest
     const info = {
-        type,
-        ...context,
         state: 'AVAILABLE',
-        cid
+        encoding,
+        ...(s ? { selector: s.toJSON() } : {})
     };
-    if (s) info.selector = s;
-    if (type === 'json' && info.type !== 'bytes') info.type = 'json';
-    delete info.expiresAt;
 
-    // Proper Linkage: Only store literal data in metadata if it's not a stream
-    if ((type === 'json' || type === 'string') && !(streamOrBytes && typeof streamOrBytes.getReader === 'function')) {
-        info.data = streamOrBytes;
-    }
-    
-    // Store by the CID derived from the Selector
     await this.storage.set(cid, bytes, info);
-    
-    // If it's heavy data (Geometry), also store it by its data hash for deduplication
-    if (type === 'bytes' || type === 'string') {
-        await this.storage.set(dataCID, bytes, { state: 'AVAILABLE', type });
-    }
 
     if (s) {
         this.events.emit('state', { selector: s, cid, state: 'AVAILABLE' });
@@ -245,106 +245,22 @@ export class VFS {
     return { cid };
   }
 
-  async writeData(selector, data, context = {}) { 
-    if (typeof selector === 'string' && !/^[0-9a-f]{64}$/i.test(selector)) {
-        throw new Error(`Protocol Violation: writeData requires a Selector for paths. Got string: "${selector}"`);
-    }
-    return await this.write(selector, data, context); 
-  }
-
-  async readData(target, context = {}) {
-    if (target === undefined || target === null) throw new Error('VFS.readData: Missing required target (CID or Selector)');
-    if (typeof target === 'string' && !/^[0-9a-f]{64}$/i.test(target)) {
-        throw new Error(`Protocol Violation: readData requires a Selector for paths. Got string: "${target}"`);
-    }
-    const result = await this._readResult(target, { ...context, stack: [], resolutionStack: context.resolutionStack || [] });
-    if (!result || !result.success) {
-        throw new Error(`VFS ReadData Failure: ${result?.error || 'Content not found'}`);
-    }
-    if (result.cid === null) return null;
-    
-    const stream = await this.storage.get(result.cid);
-    if (!stream) throw new Error(`VFS.readData: Failed to read stream for CID ${result.cid}`);
-
-    const chunks = [];
-    const reader = stream.getReader();
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    const len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    const meta = result.metadata || {};
-
-    // Protocol Invariant Check: 0-byte artifacts marked AVAILABLE are a terminal error
-    if (len === 0 && meta.state === 'AVAILABLE' && meta.type !== 'null') {
-        throw new Error(`CRITICAL PROTOCOL ERROR: Stream Ownership Bug. CID ${result.cid.slice(0, 8)} returned 0 bytes but is marked AVAILABLE. This usually means a stream was double-consumed.`);
-    }
-
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    
-    // console.log(`[VFS] readData(${result.cid.slice(0,8)}) meta.type:`, meta.type);
-    if (meta.type === 'null') return null;
-    
-    // Check for raw JCB binary first
-    if (bytes[0] === 6 || bytes[0] === 5) {
-        try {
-            return decodeJCB(bytes);
-        } catch (e) {
-            console.error('[VFS] decodeJCB failed:', e.message, 'First 10 bytes:', bytes.slice(0, 10));
-        }
-    }
-
-    if (meta.type === 'bytes') {
-        return bytes;
-    } else if (meta.type === 'json') {
-        if (meta.data && typeof meta.data === 'object' && !(meta.data.getReader)) {
-            return meta.data;
-        }
-        try {
-            return JSON.parse(new TextDecoder().decode(bytes));
-        } catch (e) {
-            return bytes;
-        }
-    } else if (meta.type === 'string') {
-        if (typeof meta.data === 'string') return meta.data;
-        return new TextDecoder().decode(bytes);
-    }
-    
-    return bytes;
-  }
-
-  async readText(target, context = {}) {
-    if (typeof target === 'string' && !/^[0-9a-f]{64}$/i.test(target)) {
-        throw new Error(`Protocol Violation: readText requires a Selector for paths. Got string: "${target}"`);
-    }
-    const data = await this.readData(target, context);
-    if (data === undefined || data === null) return null;
-    const serializeShape = async (shape) => {
-      if (shape.geometry) return await this.readText(shape.geometry, context);
-      let out = '';
-      if (shape.components && Array.isArray(shape.components)) {
-        for (const child of shape.components) out += await serializeShape(child);
-      }
-      return out;
-    };
-    if (typeof data === 'string') return data;
-    if (data instanceof Uint8Array) return new TextDecoder().decode(data);
-    if (typeof data === 'object' && !Array.isArray(data)) return await serializeShape(data);
-    return JSON.stringify(data);
-  }
-
   async link(src, tgt) {
     this._checkClosed();
     const s_src = normalizeSelector(src);
     const s_tgt = normalizeSelector(tgt);
-    const targetKey = await getSelectorKey(s_src);
-    const info = { selector: s_src, target: s_tgt, state: 'LINKED' };
-    const linkText = `vfs:/${s_tgt.path}${Object.keys(s_tgt.parameters).length ? '?' + JSON.stringify(s_tgt.parameters) : ''}`;
-    await this.storage.set(targetKey, new TextEncoder().encode(linkText), info);
-    this.events.emit('state', { selector: s_src, cid: targetKey, state: 'LINKED', target: s_tgt });
+    const sourceKey = await getSelectorKey(s_src);
+    
+    const info = { 
+        state: 'AVAILABLE', 
+        encoding: 'link',
+        selector: s_src.toJSON() 
+    };
+    const targetData = new TextEncoder().encode(JSON.stringify(s_tgt.toJSON()));
+    
+    await this.storage.set(sourceKey, targetData, info);
+    this.events.emit('state', { selector: s_src, cid: sourceKey, state: 'AVAILABLE' });
+    return { cid: sourceKey };
   }
 
   async _readResult(target, context = {}) {
@@ -370,7 +286,6 @@ export class VFS {
     if (depth > 20) throw new Error(`Maximum recursion depth exceeded for ${targetCID}`);
     if (Date.now() > expiresAt) return { success: false, error: 'Expired' };
 
-    // Protocol Cycle Protection: resolutionStack contains target CIDs to detect circular links.
     if (resolutionStack.includes(targetCID)) {
          throw new Error(`Circular link detected for ${targetCID}`);
     }
@@ -379,24 +294,28 @@ export class VFS {
 
     const workPromise = (async () => {
       try {
-        if (s && s.path.endsWith('.jot') && s.path !== 'jot/eval') {
-            const hasParams = Object.keys(s.parameters).length > 0;
-            if (hasParams) {
-                const expression = await this.readText(new Selector(s.path), { ...context, followLinks: false });
-                if (expression) {
-                    return await this._readResult(new Selector('jot/eval', { 
-                        expression, 
-                        params: s.parameters 
-                    }), context);
-                }
-            }
-        }
-
         if (await this.storage.has(targetCID)) {
           const info = await this._getStorageInfo(targetCID);
-          if (followLinks && info?.state === 'LINKED' && info?.target) {
-            // Resolve Link: Pass updated resolutionStack to the recursion
-            return await this._readResult(info.target, { 
+          if (followLinks && info?.encoding === 'link') {
+            const stream = await this.storage.get(targetCID);
+            if (!stream) throw new Error(`VFS Link Failure: Missing data for link ${targetCID}`);
+            
+            const reader = stream.getReader();
+            const chunks = [];
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+            const len = chunks.reduce((acc, c) => acc + c.length, 0);
+            const bytes = new Uint8Array(len);
+            let offset = 0;
+            for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+            
+            const targetObj = JSON.parse(new TextDecoder().decode(bytes));
+            const s_target = Selector.fromObject(targetObj);
+
+            return await this._readResult(s_target, { 
                 ...context, 
                 depth: depth + 1, 
                 resolutionStack: [...resolutionStack, targetCID] 
@@ -406,68 +325,66 @@ export class VFS {
           }
         }
 
-        // Remote packet logic
         const isBackflow = stack.includes(this.id);
         const nextStack = [...stack, this.id]; 
 
         let resultData = null, meshInfo = {};
         if (s) {
-            // Provider Lookup
             const provider = this.providers.get(s.path);
             if (provider) {
-                resultData = await provider(this, s, context);
+                const res = await provider(this, s, context);
+                if (res === null) {
+                    resultData = null;
+                } else if (isSelector(res)) {
+                    resultData = res;
+                } else {
+                    // Protocol Strictness: Providers MUST return { stream, metadata }
+                    if (!res || !res.stream || !res.metadata) {
+                        throw new Error(`VFS Protocol Violation: Provider for '${s.path}' must return { stream, metadata }. Got: ${typeof res}`);
+                    }
+                    resultData = res.stream;
+                    meshInfo = res.metadata;
+                }
             }
         }
 
-        if (resultData === null && this.mesh && (!isBackflow || s)) {
-          const meshResponse = await this.mesh.read(s || targetCID, { 
+        if (resultData === null && this.mesh && !isBackflow) {
+          const meshResult = await this.mesh.read(s || targetCID, { 
               ...context, 
               stack: nextStack, 
-              resolutionStack // Pass current stack as-is (no new addition here)
+              resolutionStack 
           });
-          if (meshResponse) {
-              const rawBody = meshResponse.body || meshResponse;
-              if (rawBody instanceof ReadableStream) {
-                  const chunks = [];
-                  const reader = rawBody.getReader();
-                  while (true) {
-                      const { done, value } = await reader.read();
-                      if (done) break;
-                      chunks.push(value);
-                  }
-                  const len = chunks.reduce((acc, c) => acc + c.length, 0);
-                  resultData = new Uint8Array(len);
-                  let offset = 0;
-                  for (const chunk of chunks) { resultData.set(chunk, offset); offset += chunk.length; }
-              } else {
-                  resultData = rawBody;
+          if (meshResult) {
+              // Protocol Strictness: MeshLink.read MUST return { stream, metadata }
+              if (!meshResult.stream || !meshResult.metadata) {
+                  throw new Error(`VFS Protocol Violation: MeshLink.read must return { stream, metadata }.`);
               }
-
-              if (meshResponse.headers) {
-                  const infoHeader = meshResponse.headers.get('x-vfs-info');
-                  if (infoHeader) { try { meshInfo = decodeSafe(infoHeader); } catch (e) {} }
-              }
+              resultData = meshResult.stream;
+              meshInfo = meshResult.metadata;
           }
         } else if (isBackflow) {
             return { success: false, error: 'Backflow' };
         }
 
         if (resultData !== null && resultData !== undefined) {
-          // If we have a selector, write it properly to its computational CID
+          if (s && isSelector(resultData)) {
+              await this.link(s, resultData);
+              return await this._readResult(resultData, context);
+          }
+
           if (s) {
               const { cid } = await this.write(s, resultData, { ...meshInfo, ...context });
               const meta = await this._getStorageInfo(cid);
               return { success: true, cid, metadata: meta || {} };
           } else {
-              // Direct CID write (anonymous)
-              // Ensure we use the specialized writeData which handles streams and metadata
-              const { cid } = await this.writeData(targetCID, resultData, { ...meshInfo, ...context, state: 'AVAILABLE' });
+              const { cid } = await this.write(targetCID, resultData, { ...meshInfo, ...context, state: 'AVAILABLE' });
               const meta = await this._getStorageInfo(cid);
               return { success: true, cid, metadata: meta || {} };
           }
         }
         return { success: true, cid: null };
       } catch (err) {
+        console.error(`[VFS ${this.id}] _readResult Error:`, err);
         return { success: false, error: err.message };
       } finally { this.activeWait.delete(targetCID); }
     })();
@@ -494,9 +411,6 @@ export class VFS {
     }
     
     if (info) {
-        if (info.target && !(info.target instanceof Selector)) {
-            info.target = Selector.fromObject(info.target);
-        }
         if (info.selector && !(info.selector instanceof Selector)) {
             info.selector = Selector.fromObject(info.selector);
         }

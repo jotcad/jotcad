@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, Selector } from '../src/index.js';
+import { vfsResult } from './vfs_test_helpers.js';
 
 test('VFS Fail-Fast Validation', async (t) => {
   const vfs = new VFS({ id: 'test-vfs', storage: new MemoryStorage() });
@@ -9,7 +10,7 @@ test('VFS Fail-Fast Validation', async (t) => {
   vfs.registerProvider(
     'test/op',
     async (v, s) => {
-      return new TextEncoder().encode('success');
+      return vfsResult('success', { encoding: 'binary' });
     },
     {
       schema: {
@@ -57,8 +58,9 @@ test('VFS Fail-Fast Validation', async (t) => {
   });
 
   await t.test('should allow valid request', async () => {
-    const stream = await vfs.read(new Selector('test/op', { diameter: 20, variant: 'a' }));
-    assert.ok(stream !== null);
+    const result = await vfs.read(new Selector('test/op', { diameter: 20, variant: 'a' }));
+    assert.ok(result !== null);
+    const { stream } = result;
     const reader = stream.getReader();
     const { value } = await reader.read();
     assert.strictEqual(new TextDecoder().decode(value), 'success');

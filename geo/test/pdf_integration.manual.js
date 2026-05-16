@@ -21,7 +21,7 @@ async function main() {
                 parameters: {
                     color: 'green',
                     $in: {
-                        path: 'jot/Hexagon/full',
+                        path: 'jot/Hexagon/diameter',
                         parameters: {
                             diameter: 100
                         }
@@ -33,21 +33,11 @@ async function main() {
 
     console.log('[Test] Reading PDF Selector:', JSON.stringify(pdfSelector, null, 2));
     
-    // This triggers the chain
-    const shapeResult = await vfs.readData(pdfSelector);
+    // This triggers the chain and returns the PDF bytes directly
+    const pdfBytes = await vfs.readData(pdfSelector);
     
-    if (!shapeResult) {
-        console.error('[Test] FAILED: Could not resolve PDF op chain');
-        process.exit(1);
-    }
-
-    console.log('[Test] PDF Op returned Shape (Tee):', JSON.stringify(shapeResult, null, 2));
-
-    console.log('[Test] Retrieving PDF bytes from VFS...');
-    const pdfBytes = await vfs.readData('green_hex.pdf', {});
-
     if (!pdfBytes) {
-        console.error('[Test] FAILED: PDF file not found in VFS after op execution');
+        console.error('[Test] FAILED: Could not resolve PDF op chain or retrieve bytes');
         process.exit(1);
     }
 

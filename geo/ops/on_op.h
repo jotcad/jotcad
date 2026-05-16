@@ -25,9 +25,9 @@ struct OnOp : P {
             // 1. Store the original attachment transform.
             Matrix attachment = current.tf;
             
-            // 2. Normalize the component to its local origin.
+            // 2. Normalize the component tree to its local origin.
             Shape local_comp = current;
-            local_comp.tf = Matrix::identity();
+            local_comp.apply_transform(attachment.inverse());
             
             // 3. Apply the operation to the normalized component.
             fs::Selector call = op;
@@ -35,9 +35,7 @@ struct OnOp : P {
             Shape transformed = vfs->read<Shape>(call);
             
             // 4. Re-apply the original attachment to the transformed result.
-            // (attachment * transformed.tf) preserves any transformation 
-            // introduced by 'op' while maintaining the original placement.
-            transformed.tf = attachment * transformed.tf;
+            transformed.apply_transform(attachment);
             
             current = transformed;
             return true; 

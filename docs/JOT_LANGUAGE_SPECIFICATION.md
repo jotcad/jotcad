@@ -12,9 +12,9 @@ from the actual computation.
 - **Parsed, Not Executed:** Expressions are parsed into an Abstract Syntax Tree
   (AST) that maps to a VFS Selector chain. There is no runtime environment,
   avoiding arbitrary code execution risks.
-- **Symbols as Literals:** Unquoted identifiers (e.g., `length` in
-  `Box(length)`) are treated as native **Symbol Literals**, acting as late-bound
-  placeholders for VFS parameters.
+- **Typed Symbols:** Unquoted identifiers (e.g., `length` in `Box(length)`) are
+  treated as native **Symbol Literals**. To ensure VFS stability, symbols are
+  **re-typed** during evaluation to match their target slots (e.g., `jot:number`).
 - **Expressions as Addresses:** Every line of JotCAD code resolves to a
   deterministic **Mesh-VFS Selector**.
 - **Silent Construction:** Writing an expression does not execute work. It only
@@ -24,6 +24,14 @@ from the actual computation.
 - **Diameter Standard:** Standardize on **Diameter** (Width/Bounding Envelope)
   for all primitives. Diameter is a universal property of every shape and aligns
   with physical measurement tools.
+- **Interval Normalization:** Dimensional scalar values (like diameter) are
+  automatically normalized into symmetric **Intervals** (e.g., `10` -> `[-5, 5]`)
+  before reaching the VFS.
+- **Standardized evaluate() Return:** `JotCompiler.evaluate()` strictly returns
+  an **Array of Terminal Bundles** (`{ selector: Selector, schema: OutputPortSchema }[]`), 
+  even for single expressions. This ensures consistent discovery of all 
+  computational terminals and provides the associated schema metadata (e.g., type) 
+  for each discovered port.
 - **Angular Turns:** Use **Turns** (Tau) where `1.0` is a full rotation
   ($360^\circ$).
 - **Demand-Driven:** Work is only triggered when a requester performs a `READ`.
@@ -63,31 +71,34 @@ structures.
 - **No Recursion:** Functions cannot call themselves.
 - **No Conditionals:** Logic is applied via **Selectors** and **Explicit Mapping** over data sets.
 
-### 1.4. Graph-based Terminal Analysis (Leaf Discovery)
+### 1.4. Strict Explicit Wiring (Assignment Model)
 
-JotCAD avoids manual "passthrough" hacks or side-effect "lifting." Instead, the compiler implements **Graph-based Terminal Analysis**.
+JotCAD avoids "magic" discovery of unconsumed values. Instead, the compiler
+enforces a **Strict Assignment Model**. 
 
-- **Consumption Tracking:** Every time a `Selector` (and its specific output port) is used as an argument to another operator, it is marked as **Consumed**.
-- **Terminal Discovery:** After evaluation, the compiler identifies every `(Selector, Port)` pair that remains **Unconsumed**.
-- **User Presentation:**
-  - Unconsumed ports with type `jot:shape` are routed to the 3D Viewer.
-  - Unconsumed ports with type `file` (e.g., from `.pdf()` or `.stl()`) are routed to the Download List.
-- **Example:** `Box(10).pdf("out.pdf")`
-  - `Box:$out` is consumed by `pdf`.
-  - `pdf:$out` is unconsumed (Shape) -> Viewer.
-  - `pdf:file` is unconsumed (File) -> Download Button.
+- **Explicit Targets:** Only values that are explicitly assigned to a variable 
+  or wired to an output port using the arrow operator (`->`) are tracked by 
+  the compiler.
+- **Output Fulfillment:** A script is considered "successful" only if it 
+  assigns values to every output port defined in the operator's schema.
+- **Port Visibility:** Only values wired to formal schema ports (e.g., `$out`, 
+  `debug`, `file`) are returned by the evaluation engine. Unassigned expressions
+  are treated as dead code or trigger compiler errors in strict contexts.
 
 ### 1.5. Multi-Expression Support
 
-The JOT parser supports scripts containing one or more top-level expressions, optionally separated by semicolons or newlines.
+The JOT parser supports scripts containing multiple expressions. However, 
+in the context of a User Operator, each top-level statement MUST be an 
+assignment to ensure deterministic output fulfillment.
 
 ```js
-// Two independent terminals
-Box(10)
-Sphere(5)
+// Explicitly fulfilling multiple ports
+Box(10) -> $out
+Cylinder(5) -> debug
 
-// Semicolon support
-Box(20); Cylinder(10)
+// Standard assignment
+main = Box(20)
+main.cut(Orb(5)) -> $out
 ```
 
 ## 2. The Universal Sequence Principle
@@ -208,19 +219,50 @@ All logical anchors (`corners`, `edges`, `faces`) are normalized to a standard w
 - **Y-Axis:** The **Secondary Direction**.
 - **Z-Axis:** The **Normal Direction**.
 
-## 6. Spatial Alignment (`.origin()`)
+### 5.1 `at(query, recipe)` — Scoped Reduction
+The `at` operator implements **Sequential Subject Reduction**. It transforms the entire subject into the inverse frame of the queried feature, applies the `recipe`, and projects the result back to world space. 
 
-Every object maintains its **Birth Orientation**. The `.origin()` operator uses
-the inverted transformation matrix to return the shape to its birth frame at
-(0,0,0).
+```js
+// Temporarily reorient to each corner to perform a local cut
+Box(10).at(eachCorner(), cut(Cylinder(1)))
+```
 
-## 7. Boolean Operations
+### 5.2 `by(ref)` vs `to(dest)` — Movement
+- **`by(ref)`**: Relative Composition. Appends the reference's transform to the current one ($T_{new} = T_{ref} \times T_{old}$).
+- **`to(dest)`**: Absolute Placement. Overwrites the current transform with the destination frame ($T_{new} = T_{dest}$). Equivalent to `.o().by(dest)`.
+
+## 6. Spatial Alignment (`.o()`)
+
+The `.o()` (or `.origin()`) operator is the primary tool for frame inversion. 
+- **Method**: `X.o()` returns a shape with the inverse matrix of `X`.
+- **Constructor**: `O()` or `Origin()` returns the identity frame.
+
+This allows for **Feature Snapping**: `H.by(C.o())` drags the entire shape `H` so that its feature `C` lands at the world origin.
+
+## 7. Functional Selection (`highest`/`lowest`)
+
+Collections (Groups) can be filtered and sorted using the **Functional Measurement** model.
+
+```js
+// Select the largest child component
+group.highest(area(), 0)
+
+// Select the highest bucket of components
+group.highest(z(), 0)
+```
+
+Measurement operators like `area()`, `z()`, and `facing()` are template operators applied to each component to produce a ranking value. Selection is performed using **Epsilon Bucketing**, which groups components with logically equivalent measurements. 
+
+- **`highest`**: Sorts Descending (Highest value = Bucket 0).
+- **`lowest`**: Sorts Ascending (Lowest value = Bucket 0).
+
+## 8. Boolean Operations
 
 Boolean operations are foundational for CSG (Constructive Solid Geometry) and
 hierarchical assembly logic in JotCAD. All boolean operators use the
 **Exact Rational Kernel** to ensure zero-drift, topologically perfect results.
 
-### 7.1. Basic Operators
+### 8.1. Basic Operators
 
 - **`cut(tools)`**: Subtraction. Removes the volume (or area) of the `tools`
   from the subject.
@@ -229,7 +271,7 @@ hierarchical assembly logic in JotCAD. All boolean operators use the
 - **`clip(tools)`**: Intersection. Keeps only the portion of the subject that
   is *inside* the `tools`.
 
-### 7.2. Consolidating Fusion (`fuse`)
+### 8.2. Consolidating Fusion (`fuse`)
 
 The `fuse(tools)` operator is a **Flattening Union**. Unlike `join`, which
 preserves hierarchy (parent and child shapes), `fuse` merges all geometry into
@@ -241,7 +283,7 @@ a single, flat `Geometry` object.
 - **Dimensionality**: Fusing a 3D box and a 2D rectangle results in a single 
   geometry containing both types of primitives.
 
-### 7.3. Cross-Dimensional Logic
+### 8.3. Cross-Dimensional Logic
 
 JotCAD's boolean engine is **Dimensionally Aware**:
 - **Solid Tool vs. Path**: Trims the path to the part outside the solid.
@@ -250,19 +292,56 @@ JotCAD's boolean engine is **Dimensionally Aware**:
   the same plane, the engine uses 2D PWH (Polygon With Holes) logic for 
   maximum performance and exactness.
 
-## 8. Comprehensive Operation Reference
+## 9. Blocks (Scoped Execution)
+
+Blocks allow for scoped execution and non-destructive branching within a method 
+chain.
+
+### 9.1. Syntax and Passthrough
+
+A block is defined using the `.{ ... }` syntax applied to a subject. 
+The block **always returns its original subject**, acting as a "Tee" in the 
+pipeline.
+
+```js
+// Box(10) is moved and scaled independently for 'debug', 
+// but the main chain continues with the original Box(10).
+Box(10).{
+  move(5).scale(2) -> debug
+}.cut(Orb(2)) -> $out
+```
+
+### 9.2. Subject Inheritance
+
+Every top-level statement inside a block automatically inherits the block's 
+subject as its ambient `$in`.
+
+### 9.3. Lexical Scoping
+
+Variables assigned inside a block are local to that block and do not persist 
+in the parent scope.
+
+```js
+Box(10).{
+  temp = move(5)
+  temp.scale(2) -> debug
+}
+// 'temp' is no longer accessible here
+```
+
+## 10. Comprehensive Operation Reference
 
 (Standard operators: Arc, Box, Orb, Tri, Part, rotate, move, size, etc.)
 
-## 8. VFS Providers & Parametric Symbols
+## 11. VFS Providers & Parametric Symbols
 
-### 8.1. Late-Bound Symbols
+### 11.1. Late-Bound Symbols
 
 VFS request parameters are bound as symbols within the evaluation context.
 
 - **Syntax:** `Box(10, 10, length)`
 - **Resolution:** `length` is resolved from the VFS `parameters` object during evaluation.
 
-### 8.2. Deterministic Identity (CID)
+### 11.2. Deterministic Identity (CID)
 
 The Mesh-VFS calculates the Content-ID based on the **Canonical Selector**, ensuring that logically equivalent requests share the same address.

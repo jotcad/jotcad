@@ -161,7 +161,16 @@ struct SweepOp : P {
 
         Shape out;
         out.tags = base_tags;
-        out.add_tag("type", "sweep");
+        if (solid) {
+            // Check if profile was a surface or just segments
+            if (profile.faces.empty() && profile.triangles.empty()) {
+                out.add_tag("type", "open");
+            } else {
+                out.add_tag("type", "closed");
+            }
+        } else {
+            out.add_tag("type", "segments");
+        }
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }
@@ -221,11 +230,43 @@ struct SweepOp : P {
             };
         }
     };
+
+    struct SweepBy {
+        static constexpr const char* path = "jot/sweepBy";
+        static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, 
+                           const Shape& in, const Shape& profile_shape, 
+                           bool closed_path = false, bool solid = true) {
+            // Subject is the PATH
+            std::vector<Point_3> path_pts;
+            collect_path(vfs, in, Matrix::identity(), path_pts);
+            
+            // Tool is the PROFILE
+            Geometry profile_geo;
+            collect_profile(vfs, profile_shape, Matrix::identity(), profile_geo);
+            
+            execute_sweep(vfs, fulfilling, profile_geo, path_pts, closed_path, solid, in.tags);
+        }
+        static std::vector<std::string> argument_keys() { return {"$in", "profile", "closed_path", "solid"}; }
+        static typename P::json schema() {
+            return {
+                {"path", path},
+                {"description", "Extrudes a profile along the subject path."},
+                {"arguments", {
+                    {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                    {{"name", "profile"}, {"type", "jot:shape"}},
+                    {{"name", "closed_path"}, {"type", "jot:boolean"}, {"default", false}},
+                    {{"name", "solid"}, {"type", "jot:boolean"}, {"default", true}}
+                }},
+                {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+            };
+        }
+    };
 };
 
 static void sweep_init(fs::VFSNode* vfs) {
     Processor::register_op<SweepOp<>::Constructor, std::vector<Shape>, Shape, bool, bool>(vfs, "jot/Sweep");
     Processor::register_op<SweepOp<>::Method, Shape, Shape, bool, bool>(vfs, "jot/sweep");
+    Processor::register_op<SweepOp<>::SweepBy, Shape, Shape, bool, bool>(vfs, "jot/sweepBy");
 }
 
 } // namespace geo

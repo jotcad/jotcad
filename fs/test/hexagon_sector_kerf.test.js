@@ -13,6 +13,21 @@ const PORT_OPS = 9301;
 const STORAGE_OPS = path.resolve('.vfs_storage_sector_ops');
 const STORAGE_CLIENT = path.resolve('.vfs_storage_sector_client');
 
+async function consumeBytes(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return bytes;
+}
+
 test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
   const PORT_CLIENT = 9302;
   let opsNode, vfs, mesh, server;
@@ -58,7 +73,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       // THE EXPRESSION:
       // pdf(offset(loop(group(origin, nth(points(hexagon), 0), nth(points(hexagon), 1))), diameter=5))
 
-      const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }).withOutput('$out');
+      const hexagon = new Selector('jot/Hexagon/diameter', { diameter: 200 }).withOutput('$out');
       const points = new Selector('jot/eachPoint', { $in: hexagon }).withOutput('$out');
       const point0 = new Selector('jot/nth', { $in: points, index: [0] }).withOutput('$out');
       const point1 = new Selector('jot/nth', { $in: points, index: [1] }).withOutput('$out');
@@ -74,7 +89,9 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       const pdf = new Selector('jot/pdf', { $in: offset, path: 'sector.pdf' }).withOutput('$out');
 
       console.log('[Test Sector] Requesting complex expression...');
-      const pdfData = await vfs.readData(pdf.withOutput('file'));
+      const result = await vfs.read(pdf);
+      assert.ok(result, 'Should return result');
+      const pdfData = await consumeBytes(result.stream);
       assert.ok(pdfData, 'Should return PDF data');
       
       // Check for PDF magic number

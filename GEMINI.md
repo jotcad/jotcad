@@ -14,6 +14,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 ## Protocol Invariants (TERMINAL RULES)
 
 - **IDENTITY DUALITY (CRITICAL)**: **CID** and **Selector** are top-level alternatives. NEVER wrap a CID in a "fake" Selector. Requests must explicitly signal whether they target a content-hash (CID) or a computational-recipe (Selector).
+- **INDEPENDENT MATRIX MANDATE (CRITICAL)**: Shape matrices (`tf`) represent absolute world-space transforms. No scene-graph multiplication (parent-child accumulation) is allowed. All transformations MUST be applied recursively to child components.
 - **STRICT SELECTOR ENFORCEMENT**: `normalizeSelector` is a non-coercive type guard. It MUST throw a fatal error if passed a raw object. Hydration MUST happen at the boundary (REST/UX).
 - **STABLE HASHING**: The CID of a Selector is `hash(Safe-JCB(Selector_JSON))`. NEVER alter the Selector's structure (keys/paths) during hashing. Standardization (normalization) must happen *before* the Selector reaches the VFS.
 - **IMMUTABILITY**: Input artifacts are strictly read-only. Transformation results must be written as NEW anonymous geometry CIDs.
@@ -23,6 +24,10 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
   1. **Cognitive Limit**: If a file's purpose cannot be described in a single sentence, or if it exceeds ~300 lines, it MUST be refactored.
   2. **Subdirectory Conversion**: "Fat" files MUST be converted into a subdirectory. The new directory must contain a `README.md` index and finer-grained files for discrete tasks.
   3. **Explicit Dependencies**: Logic must be moved into these discrete units to ensure all dependencies are explicitly visible via `include` or `import` statements, rather than hidden by proximity in a large file.
+- **VFS METADATA PURITY (CRITICAL)**: Persistent metadata (`.meta`) MUST ONLY contain whitelisted fields: `state` (AVAILABLE|PENDING), `encoding` (link|json|string|bytes|null), and `selector` (JSON). 
+- **NO PERSISTENT CONTEXT**: Request-level context (e.g., `expiresAt`, `depth`, `tags`, `stack`) MUST NEVER be saved to disk. The VFS is a data router, not a request logger.
+- **LINK SYMMETRY**: A "Link" is an artifact with `encoding: "link"`. Its `.data` payload is a serialized Selector. The legacy `vfs:/` URI hack and "link-guessing" in raw data are strictly prohibited.
+- **UNAMBIGUOUS RESOLUTION**: The VFS MUST resolve links based on the `encoding` hint in metadata. It MUST NOT perform structural analysis (e.g. checking for a `.path` key) on `json` artifacts to decide whether to resolve them.
 
 ## Documentation Index
 
@@ -32,6 +37,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 | `fs/cpp/cid.cpp` | `docs/CORE_DATA_MODELS.md` | JCB & Cryptographic Identity |
 | `fs/cpp/selector.h` | `docs/VFS_SPECIFICATION.md` | Universal Addressing |
 | `geo/impl/processor.h` | `docs/JOT_LANGUAGE_SPECIFICATION.md` | Port Injection & Typed Execution |
+| `geo/ops/stl_op.h` | `docs/DYNAMIC_OPERATIONS.md` | STL Binary Export |
 | `geo/ops/*.h` | `docs/DYNAMIC_OPERATIONS.md` | Kernel Logic & Tolerances |
 | `docs/TODO_SIMPLIFICATION.md` | `legacy/` | Edge-Collapse & Garland-Heckbert |
 
@@ -40,6 +46,8 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 - **STABILITY MANDATE (CRITICAL)**: JS unit tests MUST be executed sequentially (`--test-concurrency=1`) to prevent port deadlocks and race conditions in mesh-heavy tests.
 - **PROTOCOL INTEGRITY (CRITICAL)**: Every structured address MUST be a formal `Selector` instance. "String-path guessing" or deconstructing Selectors into top-level keys in metadata or network messages is strictly prohibited.
 - **BOUNDARY HYDRATION**: All REST handlers, mesh ingress points, and UI entry points MUST explicitly hydrate incoming JSON into formal `Selector` instances using `Selector.fromObject()`.
+- **SEMANTIC GEOMETRY TAGGING (MANDATORY)**: All CAD-produced geometry (Meshes, LineSegments) MUST be tagged with `userData.isJot = true`. Bounding box and auto-zoom calculations MUST exclusively filter for this tag to ignore system helpers (grids, labels).
+- **HITCHHIKER OVERLAY GRID**: The shared WebGL context features a dynamic, transparent overlay grid. System objects MUST be tagged with `userData.isSystem = true` and utilize high `renderOrder` with `depthTest: false` to ensure persistent visibility as a scale reference.
 - **CONTEXT-SAFE IDENTIFICATION**: Use robust string detection (`Object.prototype.toString.call(val) === '[object String]'`) to identify CID strings and bypass normalization, ensuring stability across bundlers (Vite) and test environments (Puppeteer).
 - **ATOMIC STATE EVENTS**: The VFS MUST emit entire `Selector` objects in its events, adhering to the atomic addressing model.
 - **JOTCAD CANONICAL BINARY (JCB)**: Tag-prefixed binary format used EXCLUSIVELY to generate stable hashes (CIDs).

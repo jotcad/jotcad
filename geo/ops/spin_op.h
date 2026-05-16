@@ -126,6 +126,12 @@ struct SpinOpBase : P {
         }
 
         Shape out = in;
+        std::string in_type = in.tags.value("type", "");
+        if (in_type == "points") out.add_tag("type", "segments");
+        else if (in_type == "segments") out.add_tag("type", "open");
+        else if (in_type == "surface") out.add_tag("type", "closed");
+        else if (in_type == "open") out.add_tag("type", "closed");
+        
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }

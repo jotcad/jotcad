@@ -33,15 +33,19 @@ export class JotParser {
 
   _tokenize(text) {
     const tokens = [];
-    const cleanText = text.replace(/\/\/.*$/gm, '');
+    // Only strip // comments if they are at start of line or preceded by whitespace.
+    // Preserve the newline character to avoid merging lines.
+    const cleanText = text.replace(/(^|\s)\/\/.*(?=\n|$)/g, '$1');
     const regex =
-      /\s*([a-zA-Z_][a-zA-Z0-9_/]*|[0-9]+(?:\.[0-9]+)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;)\s*/g;
+      /\s*([a-zA-Z_\$][a-zA-Z0-9_/]*|\->|-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/|\-|\+)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);
     }
     return tokens;
   }
+
+
 
   _peek() {
     return this.tokens[this.pos];
@@ -59,19 +63,62 @@ export class JotParser {
   }
 
   _parseExpression() {
+    // 1. Standard Assignment (B = A)
+    if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_\$]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
+      const name = this._consume();
+      this._consume('=');
+      const value = this._parseExpression();
+      return { type: 'ASSIGNMENT', name, value };
+    }
+
+    let expr = this._parseChaining();
+
+    // 2. Arrow Assignment (A -> B)
+    if (this._peek() === '->') {
+        this._consume('->');
+        const name = this._consume();
+        if (!/^[a-zA-Z_\$]/.test(name)) throw new Error(`Expected identifier after ->, got ${name}`);
+        return { type: 'ASSIGNMENT', name, value: expr };
+    }
+
+    return expr;
+  }
+
+  _parseChaining() {
     let expr = this._parsePrimary();
 
     while (this._peek() === '.') {
       this._consume('.');
-      const name = this._consume();
-      if (this._peek() !== '(') {
-        throw new Error(`Expected ( after method name, got ${this._peek()}`);
+      if (this._peek() === '{') {
+        const body = this._parseBlock();
+        expr = { type: 'BLOCK', subject: expr, body };
+        continue;
       }
-      const args = this._parseArguments();
-      expr = this._wrapInOp(name, expr, args);
+      const name = this._consume();
+      if (this._peek() === '(') {
+        const args = this._parseArguments();
+        expr = this._wrapInOp(name, expr, args);
+      } else {
+        // Output Port Access (e.g. res.$out)
+        expr = { type: 'OUTPUT_ACCESS', subject: expr, output: name };
+      }
     }
 
     return expr;
+  }
+
+  _parseBlock() {
+    this._consume('{');
+    const statements = [];
+    while (this._peek() && this._peek() !== '}') {
+      if (this._peek() === ';') {
+        this._consume(';');
+        continue;
+      }
+      statements.push(this._parseExpression());
+    }
+    this._consume('}');
+    return statements;
   }
 
   _parsePrimary() {
@@ -91,10 +138,17 @@ export class JotParser {
 
     if (token === '{') return this._parseObject();
 
-    if (/^[0-9]/.test(token)) return parseFloat(this._consume());
+    if (/^-?[0-9]/.test(token)) {
+        const raw = this._consume();
+        if (raw.includes('/')) {
+            const parts = raw.split('/');
+            return parseFloat(parts[0]) / parseFloat(parts[1]);
+        }
+        return parseFloat(raw);
+    }
     if (/^["']/.test(token)) return this._consume().slice(1, -1);
 
-    if (/^[a-zA-Z_]/.test(token)) {
+    if (/^[a-zA-Z_\$]/.test(token)) {
       const name = this._consume();
       if (name === 'true') return true;
       if (name === 'false') return false;
@@ -209,7 +263,7 @@ export class JotParser {
       // 1. Check for Type Hint (Greedy identifier:identifier:... sequence)
       let p = this.pos;
       let hintParts = [];
-      while (p + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[p]) && this.tokens[p+1] === ':') {
+      while (p + 1 < this.tokens.length && /^[a-zA-Z_\$]/.test(this.tokens[p]) && this.tokens[p+1] === ':') {
           if (p + 2 < this.tokens.length && this.tokens[p+2] === '=') break;
           hintParts.push(this.tokens[p]);
           p += 2;
@@ -220,7 +274,7 @@ export class JotParser {
       }
 
       // 2. Check for Named Argument (identifier =)
-      if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
+      if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_\$]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
         nameHint = this._consume();
         this._consume('=');
       }

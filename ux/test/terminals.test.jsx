@@ -1,16 +1,27 @@
 import { render, fireEvent, waitFor, screen } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { JotNode } from '../src/components/JotNode';
+import { JotNode } from '../src/components/editor/JotNode';
 import { blackboard, vfs } from '../src/lib/blackboard';
 
+// Mock ResizeObserver for JSDOM
+global.ResizeObserver = vi.fn().mockImplementation(() => ({
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+}));
+
 // Mock interactjs
-vi.mock('interactjs', () => ({
-  default: vi.fn().mockReturnValue({
+vi.mock('interactjs', () => {
+  const mock = vi.fn().mockReturnValue({
     draggable: vi.fn().mockReturnThis(),
     resizable: vi.fn().mockReturnThis(),
     on: vi.fn().mockReturnThis()
-  })
-}));
+  });
+  mock.modifiers = {
+    restrictSize: vi.fn().mockReturnValue({})
+  };
+  return { default: mock };
+});
 
 // Mock Blackboard and VFS
 vi.mock('../src/lib/blackboard', () => {
@@ -27,17 +38,18 @@ vi.mock('../src/lib/blackboard', () => {
         },
         'jot/pdf': {
           arguments: [
-            { name: '$in', type: 'shape', affiliate: '$in' },
+            { name: '$in', type: 'shape' },
             { name: 'path', type: 'string' }
           ],
           outputs: {
-            '$out': { type: 'shape' },
-            'file': { type: 'file', mimeType: 'application/pdf' }
+            '$out': { type: 'file', mimeType: 'application/pdf' }
           }
         }
       }),
-      setError: vi.fn()
-    }
+      setError: vi.fn(),
+      dynamicOps: vi.fn().mockReturnValue({})
+    },
+    DEFAULT_CODE: 'Box(10)'
   };
 });
 
@@ -46,7 +58,7 @@ vi.mock('../src/lib/three_utils', () => ({
   packZFS: vi.fn().mockResolvedValue({ type: 'packed-geometry' })
 }));
 
-vi.mock('../src/components/Viewport', () => ({
+vi.mock('../src/components/viewport/Viewport', () => ({
   Viewport: () => <div data-testid="mock-viewport">Viewport</div>
 }));
 
@@ -55,13 +67,13 @@ describe('JotNode Terminal Integration', () => {
     const { unmount } = render(() => <JotNode id="test-node" />);
     
     // 1. Find the code editor (text area)
-    const editor = screen.getByDisplayValue(/Box\(width, 10, 0\)/);
+    const editor = screen.getByDisplayValue(/Box\(10\)/);
     
     // 2. Update code to produce a PDF terminal
     fireEvent.input(editor, { target: { value: 'Box(10).pdf("foo.pdf")' } });
     
     // 3. Trigger evaluation
-    const evaluateBtn = screen.getByText('EVALUATE JOT');
+    const evaluateBtn = screen.getByText('Evaluate Jot');
     fireEvent.click(evaluateBtn);
     
     // 4. Wait for the download button to appear

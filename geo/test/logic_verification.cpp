@@ -6,6 +6,7 @@
 #include "vfs_node.h"
 #include "processor.h"
 #include "box_op.h"
+#include "hexagon_op.h"
 #include "nth_op.h"
 #include "rotate_op.h"
 #include "shape.h"
@@ -66,12 +67,10 @@ void test_vectorized_expansion() {
     std::filesystem::remove_all(config.storage_dir);
     VFSNode vfs(config);
 
-    Processor::register_op<BoxOp<>, double, double, double>(&vfs, "jot/Box");
+    Processor::register_op<BoxOp<>, Interval, Interval, Interval>(&vfs, "jot/Box");
 
-    // "Explicit Sequences" - pass index as array if required, but BoxOp takes doubles.
-    // The previous test was likely testing cartesian expansion which was REMOVED.
-    // We now just test that a basic call works via Processor.
-    Selector sel("jot/Box", {{"width", 10.0}, {"height", 20.0}, {"depth", 0.0}});
+    // BoxOp now takes Intervals. Testing basic call via Processor.
+    Selector sel("jot/Box", {{"width", 10.0}, {"height", 20.0}, {"depth", 0.1}});
     Shape s = vfs.read<Shape>(sel.with_output("$out"));
     
     assert(s.tags["type"] == "box");
@@ -110,12 +109,48 @@ void test_nth_resolution() {
     std::filesystem::remove_all(config.storage_dir);
 }
 
+void test_hexagon_scale() {
+    std::cout << "Running test_hexagon_scale..." << std::endl;
+    VFSNode::Config config;
+    config.id = "test-node";
+    config.storage_dir = ".vfs_storage_logic_test_hexagon";
+    std::filesystem::remove_all(config.storage_dir);
+    VFSNode vfs(config);
+
+    Processor::register_op<HexagonOp<>::ByEdgeToEdge, double, double>(&vfs, "jot/Hexagon/edgeToEdge");
+
+    double e2e = 248.0;
+    Selector sel("jot/Hexagon/edgeToEdge", {{"edgeToEdge", e2e}, {"turns", 0.0}});
+    Shape s = vfs.read<Shape>(sel.with_output("$out"));
+    
+    // Read the geometry to check vertex coordinates
+    assert(s.geometry.has_value());
+    Geometry g = vfs.read<Geometry>(*s.geometry);
+    
+    std::cout << "Hexagon vertices count: " << g.vertices.size() << std::endl;
+    double r = 0;
+    for (size_t i = 0; i < g.vertices.size(); ++i) {
+        double x = CGAL::to_double(g.vertices[i].x);
+        double y = CGAL::to_double(g.vertices[i].y);
+        std::cout << "Vertex " << i << ": (" << x << ", " << y << ")" << std::endl;
+        if (i == 0) r = x; 
+    }
+
+    // Radius should be e2e / sqrt(3) approx 143.18
+    std::cout << "Calculated Radius: " << r << " (Expected ~143.18)" << std::endl;
+    assert(std::abs(r - 143.18) < 0.1);
+    
+    std::cout << "✅ Hexagon Scale PASS" << std::endl;
+    std::filesystem::remove_all(config.storage_dir);
+}
+
 int main() {
     try {
         test_throwing_read();
         test_formal_links();
         test_vectorized_expansion();
         test_nth_resolution();
+        test_hexagon_scale();
         std::cout << "\nALL LOGIC TESTS PASSED" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "\nTEST FAILED: " << e.what() << std::endl;
