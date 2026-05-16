@@ -369,7 +369,7 @@ export class VFS {
         if (resultData !== null && resultData !== undefined) {
           if (s && isSelector(resultData)) {
               await this.link(s, resultData);
-              return await this._readResult(s, context);
+              return await this._readResult(resultData, context);
           }
 
           if (s) {

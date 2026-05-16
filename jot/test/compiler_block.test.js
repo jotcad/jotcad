@@ -38,6 +38,33 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
         }
     });
 
+    compiler.registerOperator('Hexagon', {
+        path: 'jot/Hexagon',
+        schema: {
+            arguments: [{ name: 'edgeToEdge', type: 'jot:number' }],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('Foot', {
+        path: 'jot/Foot',
+        schema: {
+            arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$in' }],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('pdf', {
+        path: 'jot/pdf',
+        schema: {
+            arguments: [
+                { name: '$in', type: 'jot:shape', affiliate: '$in' },
+                { name: 'path', type: 'jot:string' }
+            ],
+            outputs: { "$out": { type: "jot:file" } }
+        }
+    });
+
     await t.test('Basic block inheritance and passthrough', async () => {
         // Box(10).{ move(5) }.scale(2)
         // move(5) should inherit Box(10)
@@ -95,5 +122,26 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
 
         const res = await compiler.evaluate(ast, {}, schema);
         assert.strictEqual(res[0].selector.path, 'jot/scale');
+    });
+
+    await t.test('Scoped block with internal port assignment (Multi-output)', async () => {
+        const script = `Hexagon(edgeToEdge=248).Foot().{
+  pdf('hex_foot2.pdf') -> $hex
+} -> $out`;
+        
+        const schema = {
+            outputs: {
+                "$out": { "type": "jot:shape" },
+                "$hex": { "type": "jot:file" }
+            }
+        };
+
+        const ast = parser.parse(script);
+        const res = await compiler.evaluate(ast, {}, schema);
+        
+        assert.ok(res.find(r => r.port === '$out'), 'Should fulfill $out');
+        assert.ok(res.find(r => r.port === '$hex'), 'Should fulfill $hex');
+        assert.strictEqual(res.find(r => r.port === '$out').selector.path, 'jot/Foot');
+        assert.strictEqual(res.find(r => r.port === '$hex').selector.path, 'jot/pdf');
     });
 });

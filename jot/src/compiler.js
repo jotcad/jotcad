@@ -157,7 +157,7 @@ export class JotCompiler {
         }
     }
 
-    const requiredOutputs = new Set(Object.keys(schema.outputs || {}));
+    this.requiredOutputs = new Set(Object.keys(schema.outputs || {}));
     const topLevelNodes = Array.isArray(ast) ? [...ast] : [ast];
 
     try {
@@ -180,12 +180,7 @@ export class JotCompiler {
 
       // EXECUTION: Evaluate assignments sequentially
       for (const node of topLevelNodes) {
-          const val = await this._evaluateRecursive(node, this.localSymbols, null);
-          
-          // If this assignment targets a schema output, track it
-          if (requiredOutputs.has(node.name)) {
-              requiredOutputs.delete(node.name);
-          }
+          await this._evaluateRecursive(node, this.localSymbols, null);
       }
 
       const results = [];
@@ -211,8 +206,8 @@ export class JotCompiler {
       }
 
       // PASS 1.5: Missing Output Check
-      if (requiredOutputs.size > 0) {
-          const missing = Array.from(requiredOutputs).join(', ');
+      if (this.requiredOutputs.size > 0) {
+          const missing = Array.from(this.requiredOutputs).join(', ');
           throw new Error(`Compiler Error: Operator script failed to assign values to output port(s): ${missing}`);
       }
 
@@ -223,6 +218,7 @@ export class JotCompiler {
       return results;
     } finally {
       this.symbolTypes = {};
+      this.requiredOutputs = null;
     }
   }
 
@@ -238,7 +234,15 @@ export class JotCompiler {
     switch (node.type) {
       case 'ASSIGNMENT': {
         const val = await this._evaluateRecursive(node.value, parameters, subject);
-        parameters[node.name] = val; // Propagate assigned values to scope
+        
+        // Protocol Rule: If the assignment targets a schema-defined output port, 
+        // propagate it to the top-level symbols (global scope) regardless of lexical depth.
+        if (this.requiredOutputs && this.requiredOutputs.has(node.name)) {
+            this.localSymbols[node.name] = val;
+            this.requiredOutputs.delete(node.name);
+        } else {
+            parameters[node.name] = val; // Standard local propagation
+        }
         return val;
       }
       case 'BLOCK': {
