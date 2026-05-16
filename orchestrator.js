@@ -45,7 +45,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
     {
       name: `Ops Node (${ports.ops})`,
       command: './geo/bin/ops',
-      args: [],
+      args: [String(ports.ops), `${storagePrefix}ops`],
       cwd: __dirname,
       env: { 
           ...process.env, 
@@ -63,7 +63,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
         env: { 
             ...process.env, 
             PORT: String(ports.export),
-            PEER_ID: 'export-node',
+            VFS_ID: config.name === 'LIVE' ? 'live_export' : 'test_export',
             NEIGHBORS: `http://localhost:${ports.ops}`,
             ...env
         }
@@ -132,7 +132,16 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   let uxReady = false;
   for (let i = 0; i < 50; i++) {
     try {
-      const resp = await fetch(`http://localhost:${ports.ux}`);
+      const isHttps = ux.args.includes('--ssl');
+      const url = `${isHttps ? 'https' : 'http'}://localhost:${ports.ux}`;
+      const options = {};
+      
+      if (isHttps) {
+          // Disable SSL verification for the health check probe since we use self-signed certs
+          options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
+      }
+
+      const resp = await fetch(url, options);
       if (resp.ok) { uxReady = true; break; }
     } catch (e) {}
     await new Promise(r => setTimeout(r, 200));

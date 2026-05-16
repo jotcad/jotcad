@@ -60,7 +60,7 @@ struct PointsOp : P {
 
 template <typename P = JotVfsProtocol>
 struct PointsExtractOp : P {
-    static constexpr const char* path = "jot/points";
+    static constexpr const char* path = "jot/asPoints";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
@@ -75,8 +75,8 @@ struct PointsExtractOp : P {
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
         return {
-            {"path", "jot/points"},
-            {"description", "Extracts vertices from a shape as a point cloud."},
+            {"path", "jot/asPoints"},
+            {"description", "Extracts vertices from a shape as a single point cloud shape."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
             }},
@@ -87,7 +87,7 @@ struct PointsExtractOp : P {
 
 template <typename P = JotVfsProtocol>
 struct EachPointOp : P {
-    static constexpr const char* path = "jot/eachPoint";
+    static constexpr const char* path = "jot/points";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
@@ -115,7 +115,7 @@ struct EachPointOp : P {
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
         return {
-            {"path", "jot/eachPoint"},
+            {"path", "jot/points"},
             {"description", "Extracts vertices from a shape as individual child components."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
@@ -128,8 +128,8 @@ struct EachPointOp : P {
 static void points_init(fs::VFSNode* vfs) {
     Processor::register_op<PointOp<>, double, double, double>(vfs, "jot/Point");
     Processor::register_op<PointsOp<>, std::vector<std::vector<double>>>(vfs, "jot/Points");
-    Processor::register_op<PointsExtractOp<>, Shape>(vfs, "jot/points");
-    Processor::register_op<EachPointOp<>, Shape>(vfs, "jot/eachPoint");
+    Processor::register_op<PointsExtractOp<>, Shape>(vfs, "jot/asPoints");
+    Processor::register_op<EachPointOp<>, Shape>(vfs, "jot/points");
 }
 
 } // namespace geo

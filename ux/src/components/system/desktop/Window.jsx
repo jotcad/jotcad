@@ -32,6 +32,7 @@ export const Window = (props) => {
           move(event) {
             if (isMaximized()) return;
             const s = view().scale;
+            if (!props.data.pos) return;
             windowActions.update(props.data.id, {
               pos: { 
                 x: props.data.pos.x + event.dx / s, 
@@ -55,6 +56,7 @@ export const Window = (props) => {
           },
           move(event) {
             if (isMaximized()) return;
+            if (!event.deltaRect || !props.data.pos) return;
             const s = view().scale;
             windowActions.update(props.data.id, {
               size: {
@@ -194,8 +196,8 @@ export const Window = (props) => {
     >
       {/* Header */}
       <div 
-        class={`win-header shrink-0 flex items-center justify-between px-4 cursor-move border-b border-white/10 bg-white/5 ${
-          isMaximized() ? 'h-14 md:h-16' : 'h-10 md:h-12'
+        class={`win-header shrink-0 flex items-center justify-between px-4 border-b border-white/10 bg-white/5 ${
+          isMaximized() ? 'h-14 md:h-16' : 'h-10 md:h-12 cursor-grab active:cursor-grabbing'
         }`}
       >
         <div class="flex items-center gap-3">
@@ -284,6 +286,20 @@ export const Window = (props) => {
 
       {/* Resize Handle (Bottom-Right) */}
       <Show when={!isMaximized()}>
+          {/* Top Edge */}
+          <div class="absolute top-0 left-4 right-4 h-1.5 cursor-ns-resize z-[1001] pointer-events-auto" />
+          {/* Bottom Edge */}
+          <div class="absolute bottom-0 left-4 right-4 h-1.5 cursor-ns-resize z-[1001] pointer-events-auto" />
+          {/* Left Edge */}
+          <div class="absolute left-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-[1001] pointer-events-auto" />
+          {/* Right Edge */}
+          <div class="absolute right-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-[1001] pointer-events-auto" />
+          
+          {/* Corners */}
+          <div class="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize z-[1001] pointer-events-auto" />
+          <div class="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize z-[1001] pointer-events-auto" />
+          <div class="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize z-[1001] pointer-events-auto" />
+
           <div 
             class="absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize z-[1001] flex items-end justify-end p-1.5 group/resize pointer-events-auto touch-none"
           >

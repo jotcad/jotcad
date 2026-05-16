@@ -1,0 +1,65 @@
+import test from 'node:test';
+import assert from 'node:assert';
+import { JotParser } from '../src/parser.js';
+import { JotCompiler } from '../src/compiler.js';
+
+test('Stitch Operator Regression: start=[0,10], end=[0,20]', async (t) => {
+    const parser = new JotParser();
+    const compiler = new JotCompiler();
+
+    // Register necessary ops
+    compiler.registerOperator('Point', {
+        path: 'jot/Point',
+        schema: {
+            arguments: [{ name: 'x', type: 'jot:number' }, { name: 'y', type: 'jot:number' }, { name: 'z', type: 'jot:number' }],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('Link', {
+        path: 'jot/Link',
+        schema: {
+            arguments: [
+                { name: 'shapes', type: 'jot:shapes' },
+                { name: 'smooth', type: 'jot:boolean', default: false },
+                { name: 'zag', type: 'jot:number', default: 0 }
+            ],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('stitch', {
+        path: 'jot/stitch',
+        schema: {
+            arguments: [
+                { name: '$in', type: 'jot:shape' },
+                { name: 'repeat', type: 'jot:numbers', default: [] },
+                { name: 'start', type: 'jot:numbers', default: [] },
+                { name: 'end', type: 'jot:numbers', default: [] },
+                { name: 'offset', type: 'jot:number', default: 0 }
+            ],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('color', {
+        path: 'jot/color',
+        schema: {
+            arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'name', type: 'jot:string' }],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    await t.test('Complex Stitch Pattern should produce correct selector', async () => {
+        const script = "Link(Point(0,0,0), Point(100,0,0)).stitch(start=[0, 10], end=[0, 20]).color('red') -> $out";
+        const ast = parser.parse(script);
+        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+        
+        const sel = res[0].selector;
+        assert.strictEqual(sel.path, 'jot/color');
+        const stitch = sel.parameters.$in;
+        assert.strictEqual(stitch.path, 'jot/stitch');
+        assert.deepStrictEqual(stitch.parameters.start, [0, 10]);
+        assert.deepStrictEqual(stitch.parameters.end, [0, 20]);
+    });
+});

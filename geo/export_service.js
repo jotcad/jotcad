@@ -92,10 +92,4 @@ registerVFSRoutes(vfs, server, '', meshLink);
 server.listen(port, '0.0.0.0', async () => {
     console.log(`[Export Node ${id}] Listening on ${protocol}://0.0.0.0:${port}`);
     await meshLink.start();
-    
-    // Periodically log peer status
-    setInterval(() => {
-        const peerIds = [...meshLink.peers.keys()];
-        console.log(`[Export Node ${id}] Mesh Status: ${peerIds.length} peers connected: [${peerIds.join(', ')}]`);
-    }, 10000);
 });

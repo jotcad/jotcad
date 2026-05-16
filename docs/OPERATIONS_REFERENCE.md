@@ -153,28 +153,18 @@ Extrudes one or more 2D profiles along a 3D path.
 - **`path`**: A shape containing 1D segments defining the trajectory.
 - **`closed_path`**: If `true`, connects the end of the sweep back to the start with twist correction.
 - **`solid`**: If `true`, generates a manifold solid with start/end caps. If `false`, generates a wireframe/surface assembly.
+- **Disconnected Paths**: Correctly handles disconnected path components by generating separate swept volumes (no "ghost" connections).
+- **Junction Handling**: Decomposes complex graphs (Y-junctions, etc.) into simple chains that meet at shared vertices, ensuring full coverage.
 - **RMF (Rotation Minimizing Frames)**: Uses the Double Reflection method to ensure the profile does not twist unexpectedly along complex curves.
 
-### `sweepBy(profile, closed_path=false, solid=true)`
-A path-centric version of sweep where the subject (`$in`) is the path and the tool is the profile.
-
-- **`profile`**: The 2D shape to use as the cross-section.
-- **`closed_path`**, **`solid`**: Same as above.
-
-#### Example
-```js
-// Create a pipe by sweeping a circle along a path
-MyPath.sweepBy(Circle(5))
-```
-
-## 5. Export and Rendering
+---
 
 ### `stitch(repeat=[10, 3], start=[], end=[], offset=0)`
 Applies a recurring on/off length pattern to a segment chain (polylines).
-- **repeat**: The core pattern applied to the gap between start and end zones. If any value is negative, the repeat cycle anchors to the **end** of the path.
-- **start**: A specific pattern applied from the beginning of the path.
-- **end**: A specific pattern applied from the end of the path. Values are relative to the end (e.g., `[-5]` creates a 5mm stitch at the very end).
-- **offset**: Shifts the repeat pattern phase.
+- **`repeat`**: The core pattern applied to the gap between start and end zones. 
+- **`start`**: A specific pattern (lengths) applied from the beginning of the path. Alternates ON/OFF.
+- **`end`**: A specific pattern (lengths) applied **backward from the end** of the path. Alternates ON/OFF (measured from the tip).
+- **`offset`**: Shifts the repeat pattern phase.
 
 ---
 

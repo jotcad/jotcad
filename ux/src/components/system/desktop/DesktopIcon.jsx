@@ -164,7 +164,7 @@ export const DesktopIcon = (props) => {
            <IconComponent size={32} />
         </div>
       </div>
-      <span class="text-[12px] md:text-[10px] font-black text-white/70 group-hover:text-cyan-200 text-center truncate w-full px-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] uppercase tracking-wider">
+      <span class="text-[12px] md:text-[10px] font-black text-white/70 group-hover:text-cyan-200 text-center w-full px-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] tracking-wider break-words leading-tight">
         {props.data.label}
       </span>
     </div>

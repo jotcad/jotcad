@@ -14,9 +14,9 @@ static const FT TRI_SQRT3_2 = FT(86602540378LL) / FT(100000000000LL);
 template <typename P = JotVfsProtocol>
 struct TriangleEquilateralOp : P {
     static constexpr const char* path = "jot/Triangle/equilateral";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<double>& size) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double size) {
         Geometry res;
-        FT w = size.size() > 0 ? FT(size[0]) : FT(10);
+        FT w = FT(size);
         FT h = w * TRI_SQRT3_2;
 
         res.vertices.push_back({-w/FT(2), FT(0), FT(0)});
@@ -32,7 +32,7 @@ struct TriangleEquilateralOp : P {
         return {
             {"path", "jot/Triangle/equilateral"},
             {"description", "Generates an equilateral triangle."},
-            {"arguments", {{{"name", "size"}, {"type", "jot:numbers"}, {"default", {10}}}}},
+            {"arguments", {{{"name", "size"}, {"type", "jot:number"}, {"default", 10.0}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -64,7 +64,7 @@ struct TriangleOp : P {
 
 static void triangle_init(fs::VFSNode* vfs) {
     Processor::register_op<TriangleOp<JotVfsProtocol>, double, double, double>(vfs, "jot/Triangle");
-    Processor::register_op<TriangleEquilateralOp<JotVfsProtocol>, std::vector<double>>(vfs, "jot/Triangle/equilateral");
+    Processor::register_op<TriangleEquilateralOp<JotVfsProtocol>, double>(vfs, "jot/Triangle/equilateral");
 }
 
 } // namespace geo

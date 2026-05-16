@@ -130,26 +130,18 @@ struct StitchOp : P {
                 start_on = !start_on;
             }
 
-            // End Pattern (Negative numbers are offsets from L)
+            // End Pattern (Lengths working backward from L)
             double t_end_limit = L;
             if (!end.empty()) {
-                // We handle end pattern by sorting and determining intervals
-                // e.g. [-10, -5] means ON from L-10 to L-5.
-                // e.g. [-5] means ON from L-5 to L.
-                std::vector<double> sorted_end = end;
-                std::sort(sorted_end.begin(), sorted_end.end());
-                
-                for (size_t i = 0; i < sorted_end.size(); ++i) {
-                    double t0 = L + sorted_end[i];
-                    double t1 = (i + 1 < sorted_end.size()) ? (L + sorted_end[i+1]) : L;
-                    // Alternating ON/OFF logic for end:
-                    // If one number [-5], it's ON from L-5 to L.
-                    // If two numbers [-10, -5], it's ON from L-10 to L-5.
-                    if ((sorted_end.size() - i) % 2 != 0) {
-                        on_intervals.push_back({t0, t1});
-                    }
-                    if (i == 0) t_end_limit = t0;
+                double t_curr = L;
+                bool end_on = true;
+                for (double len : end) {
+                    double t_prev = t_curr - std::abs(len);
+                    if (end_on) on_intervals.push_back({t_prev, t_curr});
+                    t_curr = t_prev;
+                    end_on = !end_on;
                 }
+                t_end_limit = t_curr;
             }
 
             // Repeat Pattern
@@ -245,9 +237,9 @@ struct StitchOp : P {
             {"description", "Applies a complex recurring on/off pattern to a segment chain."},
             {"arguments", {
                 {{"name", "$in"}, {"type", "jot:shape"}},
-                {{"name", "repeat"}, {"type", "jot:numbers"}, {"default", {10.0, 3.0}}},
-                {{"name", "start"}, {"type", "jot:numbers"}, {"default", {}}},
-                {{"name", "end"}, {"type", "jot:numbers"}, {"default", {}}},
+                {{"name", "repeat"}, {"type", "jot:numbers"}, {"default", std::vector<double>{}}},
+                {{"name", "start"}, {"type", "jot:numbers"}, {"default", std::vector<double>{}}},
+                {{"name", "end"}, {"type", "jot:numbers"}, {"default", std::vector<double>{}}},
                 {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
