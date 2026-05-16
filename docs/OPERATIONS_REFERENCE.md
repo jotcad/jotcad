@@ -76,6 +76,22 @@ Generates a circular or elliptical open arc. Supports multiple construction vari
 Generates a 3D sphere or ellipsoid solid.
 - **`diameter`**, **`width`**, **`height`**, **`depth`**: Dimensions as `jot:interval`.
 
+### `Cone(diameter=10, height=10, zag=0.1)`
+Generates a sharp cone oriented along the X-axis (Base at X-min, Tip at X-max).
+- **`diameter`**: Base diameter as `jot:interval`.
+- **`height`**: X-axis extent (length from base to tip) as `jot:interval`.
+- **`zag`**: Resolution tolerance.
+
+#### Variant: `Cone/fit(width=10, height=10, depth=10, zag=0.1)`
+Generates a cone that fits a specific bounding box.
+- **`width`**: X-axis extent (height of cone).
+- **`height`**: Y-axis base extent.
+- **`depth`**: Z-axis base extent.
+
+#### Variant: `Cone/angle(diameter=10, angle=0.125, zag=0.1)`
+Generates a cone with a specific taper angle.
+- **`angle`**: Half-angle in turns (e.g., `0.125` is 45 degrees).
+
 ### `Triangle(va, vb, vc)`
 Generates a 2D triangle.
 - **`va`**: Side length along the local X-axis.
@@ -166,17 +182,22 @@ Applies a recurring on/off length pattern to a segment chain (polylines).
 
 Generates a PDF document from the spatial representation of the input shape.
 
-- **`path`**: The filename for the download.
+- **`path`**: The suggested filename for the download.
 - **Outputs**:
-  - **`$out`**: The input shape (pass-through).
-  - **`file`**: The generated PDF blob (triggers download in the UX).
+  - **`$out`**: The generated PDF binary blob (triggers download in the UX).
 
 ### `png()`
 Generates a PNG thumbnail for the input shape.
 
 - **Outputs**:
-  - **`$out`**: The input shape (pass-through).
-  - **`file`**: The generated PNG blob.
+  - **`$out`**: The generated PNG binary blob.
+
+### `stl(path="export.stl")`
+Generates a binary STL file from the spatial representation of the input shape.
+
+- **`path`**: The suggested filename for the download.
+- **Outputs**:
+  - **`$out`**: The generated STL binary blob (triggers download in the UX).
 
 ### `section(planes=[])`
 Extracts 2D cross-sections of the input shape at specified planes.
