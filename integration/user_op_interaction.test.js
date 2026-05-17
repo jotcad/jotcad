@@ -13,13 +13,13 @@ import {
   DiskStorage,
   getSelectorKey,
   Selector,
-} from '../src/index.js';
+} from '../fs/src/index.js';
 
-import { JotParser } from '../../jot/src/parser.js';
-import { JotCompiler } from '../../jot/src/compiler.js';
+import { JotParser } from '../jot/src/parser.js';
+import { JotCompiler } from '../jot/src/compiler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CPP_OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
+const CPP_OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
 const PORT_CPP = 20301;
 const PORT_JS = 20302;
 const STORAGE_JS = path.resolve('.test_vfs_user_op_js');

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import http from 'node:http';
-import { VFS, MeshLink, registerVFSRoutes, MemoryStorage, Selector } from '../src/index.js';
+import { VFS, MeshLink, registerVFSRoutes, MemoryStorage, Selector } from '../fs/src/index.js';
 
 async function consumeJSON(stream) {
     const reader = stream.getReader();

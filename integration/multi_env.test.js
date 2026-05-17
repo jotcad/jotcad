@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MeshLink, registerVFSRoutes, DiskStorage, MemoryStorage, Selector } from '../src/index.js';
+import { VFS, MeshLink, registerVFSRoutes, DiskStorage, MemoryStorage, Selector } from '../fs/src/index.js';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';

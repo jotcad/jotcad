@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
-import { VFS } from '../src/vfs.js';
-import { MeshLink } from '../src/mesh_link.js';
-import { Selector } from '../src/cid.js';
+import { VFS } from '../fs/src/vfs.js';
+import { MeshLink } from '../fs/src/mesh_link.js';
+import { Selector } from '../fs/src/cid.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -28,10 +28,10 @@ function waitForLog(proc, pattern, timeout = 5000) {
 test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
     const CPP_PORT = 9095;
     const STORAGE_DIR = './.test_cpp_integration';
-    const BIN_PATH = fs.existsSync('./cpp/test_server') ? './cpp/test_server' : './fs/cpp/test_server';
+    const BIN_PATH = './geo/bin/ops'; // Use the consolidated ops binary
 
     if (!fs.existsSync(BIN_PATH)) {
-        throw new Error(`C++ Test Server not found at ${BIN_PATH}. Please run 'make -C fs/cpp' first.`);
+        throw new Error(`C++ Test Server not found at ${BIN_PATH}. Please run './build.sh' first.`);
     }
 
     if (fs.existsSync(STORAGE_DIR)) fs.rmSync(STORAGE_DIR, { recursive: true });

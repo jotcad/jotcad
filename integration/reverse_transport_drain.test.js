@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage } from '../src/index.js';
-import { MeshLink, Selector } from '../src/index.js';
+import { VFS, MemoryStorage, MeshLink, Selector } from '../fs/src/index.js';
 
 test('ReverseConnection should drain ReadableStream into Uint8Array', async (t) => {
     const vfs = new VFS({ id: 'browser', storage: new MemoryStorage() });
@@ -53,7 +52,7 @@ test('ReverseConnection should drain ReadableStream into Uint8Array', async (t) 
     };
 
     // 3. Manually create and start a ReverseConnection
-    const { ReverseConnection } = await import('../src/mesh_link.js');
+    const { ReverseConnection } = await import('../fs/src/mesh_link.js');
     const rev = new ReverseConnection('server-poller', mesh, { instanceId: 'test-inst' });
     
     // Mock vfs.read to return our stream

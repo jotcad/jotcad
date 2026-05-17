@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import http from 'node:http';
-import { VFS, DiskStorage, MeshLink, registerVFSRoutes, Selector } from '../src/index.js';
+import { VFS, DiskStorage, MeshLink, registerVFSRoutes, Selector } from '../fs/src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { launchOpsNode } from './ops_helper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
+const OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
 const PORT_OPS = 9301;
 const STORAGE_OPS = path.resolve('.vfs_storage_sector_ops');
 const STORAGE_CLIENT = path.resolve('.vfs_storage_sector_client');
@@ -74,11 +74,11 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
       // pdf(offset(loop(group(origin, nth(points(hexagon), 0), nth(points(hexagon), 1))), diameter=5))
 
       const hexagon = new Selector('jot/Hexagon/diameter', { diameter: 200 }).withOutput('$out');
-      const points = new Selector('jot/eachPoint', { $in: hexagon }).withOutput('$out');
+      const points = new Selector('jot/points', { $in: hexagon }).withOutput('$out');
       const point0 = new Selector('jot/nth', { $in: points, index: [0] }).withOutput('$out');
       const point1 = new Selector('jot/nth', { $in: points, index: [1] }).withOutput('$out');
       const origin = new Selector('jot/nth', { 
-        $in: new Selector('jot/eachPoint', { 
+        $in: new Selector('jot/points', { 
           $in: new Selector('jot/Box', { width: 1, height: 1, depth: 1 }).withOutput('$out') 
         }).withOutput('$out'), 
         index: [0] 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage, Selector } from '../src/index.js';
-import { MeshLink } from '../src/mesh_link.js';
+import { VFS, MemoryStorage, Selector } from '../fs/src/index.js';
+import { MeshLink } from '../fs/src/mesh_link.js';
 
 test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
   // Setup a 3-node chain: A <-> B <-> C

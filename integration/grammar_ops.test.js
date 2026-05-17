@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { spawnOpsNode } from './ops_helper.js';
-import { VFS, MeshLink, registerVFSRoutes, DiskStorage, Selector } from '../src/index.js';
+import { VFS, MeshLink, registerVFSRoutes, DiskStorage, Selector } from '../fs/src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
+const OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
 
 const OPS_PORT = 9200;
 const OPS_URL = `http://localhost:${OPS_PORT}`;
@@ -82,10 +82,10 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
       // loop(group(origin, nth(points(hexagon), index=0), nth(points(hexagon), index=1)))
       
       const hexagon = new Selector('jot/Hexagon/full', { diameter: 200 }).withOutput('$out');
-      const points = new Selector('jot/eachPoint', { $in: hexagon }).withOutput('$out');
+      const points = new Selector('jot/points', { $in: hexagon }).withOutput('$out');
       const point0 = new Selector('jot/nth', { $in: points, index: [0] }).withOutput('$out');
       const point1 = new Selector('jot/nth', { $in: points, index: [1] }).withOutput('$out');
-      const origin = new Selector('jot/eachPoint', {
+      const origin = new Selector('jot/points', {
         $in: new Selector('jot/Box', { width: 0, height: 0, depth: 0 }).withOutput('$out'),
       }).withOutput('$out'); 
 

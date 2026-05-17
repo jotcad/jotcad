@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
-import { launchSystem, PROFILES } from '../../orchestrator.js';
+import { launchSystem, PROFILES } from '../orchestrator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

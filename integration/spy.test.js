@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage, Selector } from '../src/index.js';
-import { MeshLink } from '../src/mesh_link.js';
-import { registerVFSRoutes } from '../src/vfs_rest_server.js';
+import { VFS, MemoryStorage, Selector } from '../fs/src/index.js';
+import { MeshLink } from '../fs/src/mesh_link.js';
+import { registerVFSRoutes } from '../fs/src/vfs_rest_server.js';
 import http from 'node:http';
 
 async function consumeJSON(stream) {

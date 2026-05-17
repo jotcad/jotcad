@@ -11,12 +11,12 @@ import {
   DiskStorage,
   getSelectorKey,
   Selector,
-} from '../src/index.js';
+} from '../fs/src/index.js';
 
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CPP_OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
+const CPP_OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
 const PORT_CPP = 20101;
 const PORT_JS = 20102;
 const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');
