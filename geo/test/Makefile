@@ -31,7 +31,9 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                each_face_test.cpp \
                selection_test.cpp \
                unfold_test.cpp \
-               diag_unfold_math.cpp
+               grow_flat_test.cpp \
+               diag_unfold_math.cpp \
+               cid_consistency_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 TEST_DEPS = $(TEST_BINS:=.d)
 
@@ -40,6 +42,7 @@ TEST_RUNS = $(addprefix run-, $(TEST_SOURCES:.cpp=))
 all: $(LIB_GEO) $(TEST_BINS)
 
 # Ensure the library is built first
+.PHONY: $(LIB_GEO)
 $(LIB_GEO):
 	$(MAKE) -C ..
 

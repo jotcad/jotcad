@@ -124,6 +124,4 @@ $(OBJ_DIR)/ops.o: infra/ops.cc
 clean:
 	rm -rf $(BIN_DIR) $(OBJ_DIR)
 
--include $(DEPS)
-
 .PHONY: all clean

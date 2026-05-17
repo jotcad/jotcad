@@ -1,10 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 
 import {
   VFS,
@@ -15,17 +13,9 @@ import {
 } from '../fs/src/index.js';
 
 import { vfsResult } from './vfs_test_helpers.js';
-
-
 import { JotParser } from '../jot/src/parser.js';
 import { JotCompiler } from '../jot/src/compiler.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CPP_OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
-const PORT_CPP = 20401;
-const PORT_JS = 20402;
-const STORAGE_JS = path.resolve('.test_vfs_multi_out_js');
-const STORAGE_CPP = path.resolve('.vfs_storage_multi_out_cpp');
+import { launchSystem, PROFILES } from '../orchestrator.js';
 
 async function consumeBytes(stream) {
     const reader = stream.getReader();
@@ -43,40 +33,27 @@ async function consumeBytes(stream) {
 }
 
 test('Multi-Output Scoped Block Integration', { timeout: 60000 }, async (t) => {
-  let cppNode;
+  let sys;
   let server;
   let jsVfs;
   let stopServer;
 
   t.after(async () => {
-    if (cppNode) cppNode.kill();
     if (stopServer) stopServer();
     if (server) server.close();
     if (jsVfs) await jsVfs.close();
-    await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STORAGE_CPP, { recursive: true, force: true }).catch(() => {});
+    if (sys) await sys.stop();
   });
 
-  // 1. Start C++ Native Node
-  cppNode = spawn(CPP_OPS_PATH, [PORT_CPP.toString(), STORAGE_CPP], {
-    env: { ...process.env, PEER_ID: 'cpp-node' },
-    stdio: 'inherit',
-  });
-
-  let healthy = false;
-  for (let i = 0; i < 20; i++) {
-    try {
-      const resp = await fetch(`http://localhost:${PORT_CPP}/health`);
-      if (resp.ok) { healthy = true; break; }
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, 500));
-  }
-  if (!healthy) throw new Error('C++ Node failed to start');
+  // 1. Launch the TEST system
+  sys = await launchSystem(PROFILES.TEST);
+  const PORT_CPP = sys.ports.ops;
+  const PORT_JS = 20402;
 
   // 2. Start JS Node
   jsVfs = new VFS({
     id: 'js-node',
-    storage: new DiskStorage(STORAGE_JS),
+    storage: new DiskStorage('.vfs_storage_multi_out_js'),
   });
   const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
     localUrl: `http://localhost:${PORT_JS}`,
@@ -98,11 +75,6 @@ test('Multi-Output Scoped Block Integration', { timeout: 60000 }, async (t) => {
   compiler.registerOperator('mz', { path: 'jot/mz', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'z', type: 'numbers' }], outputs: { $out: 'shape' } } });
 
   await t.test('Scoped block with multiple outputs correctly resolves ports', async () => {
-    // SCRIPT:
-    // B = Box(20)
-    // D = Disk(10)
-    // B.cut(D) -> $out
-    // D.mx(5) -> extra
     const script = 'B = Box(20); D = Disk(10); B.cut(D) -> $out; D.mx(5) -> extra';
     const ast = parser.parse(script);
 
@@ -163,8 +135,6 @@ test('Multi-Output Scoped Block Integration', { timeout: 60000 }, async (t) => {
     const sideSelector = new Selector('user/MultiOut').withOutput('side');
     const { stream } = await jsVfs.read(sideSelector);
     const shape = JSON.parse(new TextDecoder().decode(await consumeBytes(stream)));
-    
-    console.log('[Test] Side port shape:', JSON.stringify(shape, null, 2));
     
     assert.strictEqual(shape.tags.port, 'side', 'Result should be from the requested side port');
     assert.strictEqual(shape.tags.type, 'surface', 'Result should be a surface (Disk)');

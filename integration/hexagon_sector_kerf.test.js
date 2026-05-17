@@ -4,14 +4,7 @@ import http from 'node:http';
 import { VFS, DiskStorage, MeshLink, registerVFSRoutes, Selector } from '../fs/src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { launchOpsNode } from './ops_helper.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
-const PORT_OPS = 9301;
-const STORAGE_OPS = path.resolve('.vfs_storage_sector_ops');
-const STORAGE_CLIENT = path.resolve('.vfs_storage_sector_client');
+import { launchSystem, PROFILES } from '../orchestrator.js';
 
 async function consumeBytes(stream) {
     const reader = stream.getReader();
@@ -28,25 +21,23 @@ async function consumeBytes(stream) {
     return bytes;
 }
 
-test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
+test('Complex Mesh Expression: Hexagon Sector with Kerf', { timeout: 30000 }, async (t) => {
   const PORT_CLIENT = 9302;
-  let opsNode, vfs, mesh, server;
+  let sys, vfs, mesh, server;
 
   t.before(async () => {
-    await fs.rm(STORAGE_OPS, { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STORAGE_CLIENT, { recursive: true, force: true }).catch(() => {});
-    
-    console.log('[Test Sector] Launching C++ Native Node...');
-    opsNode = await launchOpsNode(OPS_PATH, PORT_OPS, STORAGE_OPS);
+    // 1. Launch the TEST system
+    sys = await launchSystem(PROFILES.TEST);
+    const OPS_URL = `http://localhost:${sys.ports.ops}`;
     
     console.log('[Test Sector] Starting Node.js Test Client...');
     vfs = new VFS({
       id: 'sector-js-node',
-      storage: new DiskStorage(STORAGE_CLIENT)
+      storage: new DiskStorage('.vfs_storage_sector_client')
     });
     await vfs.init();
     
-    mesh = new MeshLink(vfs, [`http://localhost:${PORT_OPS}`], {
+    mesh = new MeshLink(vfs, [OPS_URL], {
         localUrl: `http://localhost:${PORT_CLIENT}`
     });
 
@@ -59,12 +50,10 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', async (t) => {
 
   t.after(async () => {
     console.log('[Test Sector] Cleaning up...');
-    if (opsNode) await opsNode.stop();
     if (mesh) await mesh.stop();
     if (server) await new Promise(resolve => server.close(resolve));
-    await vfs.close();
-    await fs.rm(STORAGE_OPS, { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STORAGE_CLIENT, { recursive: true, force: true }).catch(() => {});
+    if (vfs) await vfs.close();
+    if (sys) await sys.stop();
   });
 
   await t.test(

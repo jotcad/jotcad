@@ -1,29 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 
 import {
   VFS,
   MeshLink,
   registerVFSRoutes,
   DiskStorage,
-  getSelectorKey,
   Selector,
 } from '../fs/src/index.js';
 
 import { JotParser } from '../jot/src/parser.js';
 import { JotCompiler } from '../jot/src/compiler.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CPP_OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
-const PORT_CPP = 20301;
-const PORT_JS = 20302;
-const STORAGE_JS = path.resolve('.test_vfs_user_op_js');
-const STORAGE_CPP = path.resolve('.vfs_storage_user_op_cpp');
+import { launchSystem, PROFILES } from '../orchestrator.js';
 
 async function consumeBytes(stream) {
     const reader = stream.getReader();
@@ -41,40 +32,27 @@ async function consumeBytes(stream) {
 }
 
 test('User Operator Interaction Integration', { timeout: 120000 }, async (t) => {
-  let cppNode;
+  let sys;
   let server;
   let jsVfs;
   let stopServer;
 
   t.after(async () => {
-    if (cppNode) cppNode.kill();
     if (stopServer) stopServer();
     if (server) server.close();
     if (jsVfs) await jsVfs.close();
-    await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STORAGE_CPP, { recursive: true, force: true }).catch(() => {});
+    if (sys) await sys.stop();
   });
 
-  // 1. Start C++ Native Node
-  cppNode = spawn(CPP_OPS_PATH, [PORT_CPP.toString(), STORAGE_CPP], {
-    env: { ...process.env, PEER_ID: 'cpp-node' },
-    stdio: 'inherit',
-  });
-
-  let healthy = false;
-  for (let i = 0; i < 20; i++) {
-    try {
-      const resp = await fetch(`http://localhost:${PORT_CPP}/health`);
-      if (resp.ok) { healthy = true; break; }
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, 500));
-  }
-  if (!healthy) throw new Error('C++ Node failed to start');
+  // 1. Launch the TEST system
+  sys = await launchSystem(PROFILES.TEST);
+  const PORT_CPP = sys.ports.ops;
+  const PORT_JS = 20302;
 
   // 2. Start JS Node
   jsVfs = new VFS({
     id: 'js-node',
-    storage: new DiskStorage(STORAGE_JS),
+    storage: new DiskStorage('.vfs_storage_user_op_js'),
   });
   const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
     localUrl: `http://localhost:${PORT_JS}`,
@@ -142,19 +120,15 @@ Hexagon(edgeToEdge=248).Foot().pdf('hex_foot2.pdf') -> $hex
 
   // 4. VFS Providers
   jsVfs.registerProvider('user/Foot', async (vfs, selector) => {
-    console.log('[Test] user/Foot evaluation start');
     const ast = parser.parse(footScript);
     const results = await compiler.evaluate(ast, selector.parameters, footSchema, 'user/Foot');
-    console.log('[Test] user/Foot results:', JSON.stringify(results, null, 2));
     if (!results || results.length === 0) throw new Error('user/Foot failed to produce output');
     return await vfs.read(results[0].selector);
   });
 
   jsVfs.registerProvider('user/Test', async (vfs, selector) => {
-    console.log('[Test] user/Test evaluation start');
     const ast = parser.parse(testScript);
     const results = await compiler.evaluate(ast, selector.parameters, testSchema, 'user/Test');
-    console.log('[Test] user/Test results:', JSON.stringify(results, null, 2));
     const hexResult = results.find(r => r.port === '$hex');
     if (!hexResult) throw new Error('user/Test failed to produce $hex output');
     return await vfs.read(hexResult.selector);
@@ -164,11 +138,9 @@ Hexagon(edgeToEdge=248).Foot().pdf('hex_foot2.pdf') -> $hex
   console.log('[Test] Requesting user/Test output...');
   try {
     const { stream, metadata } = await jsVfs.read(new Selector('user/Test').withOutput('$hex'));
-    console.log('[Test] Metadata:', metadata);
     assert.strictEqual(metadata.state, 'AVAILABLE');
     
     const pdfData = await consumeBytes(stream);
-    console.log('[Test] PDF length:', pdfData.length);
     assert.ok(pdfData.length > 0, 'PDF should not be empty');
     assert.strictEqual(new TextDecoder().decode(pdfData.slice(0, 5)), '%PDF-', 'Valid PDF header');
   } catch (err) {

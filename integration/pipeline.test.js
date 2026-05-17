@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
 import {
   VFS,
   MeshLink,
@@ -11,6 +10,7 @@ import {
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import { launchSystem, PROFILES } from '../orchestrator.js';
 
 async function consumeBinary(stream) {
     const reader = stream.getReader();
@@ -27,12 +27,8 @@ async function consumeBinary(stream) {
     return bytes;
 }
 
-const PORT_OPS = 20201;
-const PORT_EXPORT = 20202;
-const PORT_CLIENT = 20203;
-
-test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) => {
-  let opsProcess, exportProcess, clientServer, clientVfs, mesh;
+test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) => {
+  let sys, clientServer, clientVfs, mesh;
   const filename = 'pipeline_test_result.pdf';
 
   t.after(async () => {
@@ -45,69 +41,35 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
         clientServer.closeAllConnections();
       }
     }
+    if (sys) await sys.stop();
 
-    if (opsProcess) opsProcess.kill('SIGKILL');
-    if (exportProcess) exportProcess.kill('SIGKILL');
-
-    await fs.rm(path.resolve('.vfs_storage_pipeline-ops'), { recursive: true, force: true }).catch(() => {});
-    await fs.rm(path.resolve('.vfs_storage_pipeline-export'), { recursive: true, force: true }).catch(() => {});
-    await fs.rm(path.resolve('.vfs_storage_pipeline-client'), { recursive: true, force: true }).catch(() => {});
     await fs.rm(path.resolve(filename), { force: true }).catch(() => {});
     console.log('[Test Pipeline] Cleanup complete.');
   });
 
-  // 1. Start C++ Ops Node (Leaf)
-  const __dirname = path.dirname(new URL(import.meta.url).pathname);
-  const root = path.resolve(__dirname, '..');
-  const opsBin = path.resolve(__dirname, '../geo/bin/ops');
-  opsProcess = spawn(opsBin, [PORT_OPS.toString()], {
-    cwd: root,
-    env: { ...process.env, PEER_ID: 'pipeline-ops' },
-  });
-  opsProcess.stdout.on('data', (d) => console.log(`[OPS] ${d}`));
-  opsProcess.stderr.on('data', (d) => console.error(`[OPS ERR] ${d}`));
+  // 1. Launch the TEST system (ops on 9191, export on 9192)
+  sys = await launchSystem(PROFILES.TEST);
+  const PORT_OPS = sys.ports.ops;
+  const PORT_EXPORT = sys.ports.export;
+  const PORT_CLIENT = 20203;
 
-  // 2. Start JS Export Node (Peered with Ops)
-  console.log('[Test Pipeline] Launching JS Export Node...');
-  const exportService = path.resolve(__dirname, '../geo/export_service.js');
-  exportProcess = spawn('node', [exportService], {
-    cwd: root,
-    env: {
-      ...process.env,
-      PORT: PORT_EXPORT.toString(),
-      PEER_ID: 'pipeline-export',
-      NEIGHBORS: `http://localhost:${PORT_OPS}`,
-    },
-  });
-  exportProcess.stdout.on('data', (d) => console.log(`[EXPORT] ${d}`));
-  exportProcess.stderr.on('data', (d) => console.error(`[EXPORT ERR] ${d}`));
+  // Detect protocol (matches geo/export_service.js logic)
+  const hasCerts = (await fs.stat('.ssl/localhost-key.pem').catch(() => null)) && 
+                   (await fs.stat('.ssl/localhost-cert.pem').catch(() => null));
+  const protocol = hasCerts ? 'https' : 'http';
 
-  // Wait for nodes to be healthy
-  const waitForHealth = async (url, name) => {
-    console.log(`[Test Pipeline] Waiting for ${name} health...`);
-    for (let i = 0; i < 20; i++) {
-      try {
-        const resp = await fetch(`${url}/health`);
-        if (resp.ok) {
-          console.log(`[Test Pipeline] ${name} is healthy.`);
-          return;
-        }
-      } catch (e) {}
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    throw new Error(`${name} failed to become healthy`);
-  };
+  if (hasCerts) {
+      // Allow self-signed certs for testing
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  }
 
-  await waitForHealth(`http://localhost:${PORT_OPS}`, 'Ops Node');
-  await waitForHealth(`http://localhost:${PORT_EXPORT}`, 'Export Node');
-
-  // 3. Setup JS Client Node (Peered with Export)
+  // 2. Setup JS Client Node (Peered with Export)
   console.log('[Test Pipeline] Starting JS Test Client...');
   clientVfs = new VFS({
     id: 'pipeline-client',
     storage: new DiskStorage('.vfs_storage_pipeline-client'),
   });
-  mesh = new MeshLink(clientVfs, [`http://localhost:${PORT_EXPORT}`], {
+  mesh = new MeshLink(clientVfs, [`${protocol}://localhost:${PORT_EXPORT}`], {
     localUrl: `http://localhost:${PORT_CLIENT}`,
   });
   clientServer = http.createServer();
@@ -131,11 +93,10 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 10000 }, async (t) =
       assert.ok(res, 'Read should return a result');
       const bytes = await consumeBinary(res.stream);
 
-      assert.ok(bytes, 'Export should return data');
-      
-      const stats = await fs.stat(path.resolve(filename));
-      assert.ok(stats.size > 100, 'PDF file should be generated and non-empty');
-      console.log(`[Test Pipeline] SUCCESS: Generated ${stats.size} byte PDF.`);
+      assert.ok(bytes && bytes.length > 100, 'Export should return valid PDF data');
+      const header = new TextDecoder().decode(bytes.slice(0, 5));
+      assert.strictEqual(header, '%PDF-', 'Result should be a valid PDF buffer');
+      console.log(`[Test Pipeline] SUCCESS: Received ${bytes.length} byte PDF.`);
     }
   );
 

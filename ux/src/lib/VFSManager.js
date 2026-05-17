@@ -28,9 +28,10 @@ export const vfs = new VFS({
 
 registerJotProvider(vfs);
 
-const vfsPort = import.meta.env.VITE_OPS_PORT || '9191';
-const vfsUrl =
-  import.meta.env.VITE_VFS_URL || `${window.location.protocol}//${window.location.hostname}:${vfsPort}`;
+const vfsUrl = import.meta.env.VITE_VFS_URL;
+if (!vfsUrl) {
+    throw new Error('[VFSManager] CRITICAL: VITE_VFS_URL is not defined in the environment. The mesh gateway must be explicitly configured at build time.');
+}
 
 export const mesh = new MeshLink(vfs, [vfsUrl]);
 

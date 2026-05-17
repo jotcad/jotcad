@@ -11,7 +11,7 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_live_',
     ux: {
         command: 'npx',
-        args: ['http-server', 'ux/dist', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
+        args: ['http-server', 'ux/dist/live', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
     }
   },
   TEST: {
@@ -20,7 +20,7 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_test_',
     ux: {
         command: 'npx',
-        args: ['http-server', 'ux/dist', '-p', '3131']
+        args: ['http-server', 'ux/dist/test', '-p', '3131']
     }
   }
 };
@@ -74,7 +74,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
       cwd: ux.cwd || __dirname,
       env: {
           ...process.env,
-          VITE_VFS_URL: `http://localhost:${ports.ops}`,
+          VITE_VFS_URL: `http://localhost:${ports.export}`,
           VITE_HTTPS: String(!!ux.args.includes('--ssl')),
           ...env
       }

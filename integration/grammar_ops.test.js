@@ -1,20 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { spawnOpsNode } from './ops_helper.js';
 import { VFS, MeshLink, registerVFSRoutes, DiskStorage, Selector } from '../fs/src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const OPS_PATH = path.resolve(__dirname, '../geo/bin/ops');
-
-const OPS_PORT = 9200;
-const OPS_URL = `http://localhost:${OPS_PORT}`;
-const STORAGE_OPS = path.resolve('.vfs_storage_grammar-ops');
-const STORAGE_JS = path.resolve('.vfs_storage_grammar-js');
+import { launchSystem, PROFILES } from '../orchestrator.js';
 
 async function consumeBytes(stream) {
     const reader = stream.getReader();
@@ -31,41 +21,28 @@ async function consumeBytes(stream) {
     return bytes;
 }
 
-async function consumeText(stream) {
-    const bytes = await consumeBytes(stream);
-    return new TextDecoder().decode(bytes);
-}
-
 test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
-  let opsProcess;
+  let sys;
   let vfs;
   let mesh;
   let server;
 
   t.after(async () => {
-    console.log('[Test Grammar] Cleaning up (PROCESS ONLY)...');
-    if (opsProcess) opsProcess.kill();
+    console.log('[Test Grammar] Cleaning up...');
     if (server) server.close();
     if (vfs) await vfs.close();
+    if (sys) await sys.stop();
   });
 
-  // 1. Start Native C++ Node
-  console.log('[Test Grammar] Launching C++ Native Node...');
-  opsProcess = await spawnOpsNode(
-    OPS_PATH,
-    [OPS_PORT.toString(), STORAGE_OPS],
-    OPS_PORT,
-    {
-      env: { PEER_ID: 'grammar-ops-node' },
-      stdio: 'pipe', // Pipe output to avoid noise but let helper monitor
-    }
-  );
+  // 1. Launch the TEST system
+  sys = await launchSystem(PROFILES.TEST);
+  const OPS_URL = `http://localhost:${sys.ports.ops}`;
 
   // 2. Start JS Node
   console.log('[Test Grammar] Starting Node.js Test Client...');
   vfs = new VFS({
     id: 'grammar-js-node',
-    storage: new DiskStorage(STORAGE_JS),
+    storage: new DiskStorage('.vfs_storage_grammar-js'),
   });
   mesh = new MeshLink(vfs, [OPS_URL], { localUrl: 'http://localhost:9201' });
   server = http.createServer();
@@ -120,10 +97,6 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
       console.log(
         `[Test Grammar] Result has ${vCount} vertices and ${sCount} segments.`
       );
-      console.log('--- GEOMETRY START ---');
-      console.log(geoText);
-      console.log('--- GEOMETRY END ---');
-
       assert.strictEqual(
         vCount,
         3,

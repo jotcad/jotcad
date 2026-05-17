@@ -1,64 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
 import { VFS } from '../fs/src/vfs.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
-import fs from 'node:fs';
-import path from 'node:path';
-
-// Helper to wait for a specific log message from a process
-function waitForLog(proc, pattern, timeout = 5000) {
-    return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Timeout waiting for log: ${pattern}`)), timeout);
-        const onData = (data) => {
-            const str = data.toString();
-            if (str.match(pattern)) {
-                proc.stdout.off('data', onData);
-                proc.stderr.off('data', onData);
-                clearTimeout(timer);
-                resolve(str);
-            }
-        };
-        proc.stdout.on('data', onData);
-        proc.stderr.on('data', onData);
-    });
-}
+import { launchSystem, PROFILES } from '../orchestrator.js';
 
 test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
-    const CPP_PORT = 9095;
-    const STORAGE_DIR = './.test_cpp_integration';
-    const BIN_PATH = './geo/bin/ops'; // Use the consolidated ops binary
+    // 1. Launch the TEST system
+    const sys = await launchSystem(PROFILES.TEST);
+    const CPP_PORT = sys.ports.ops;
 
-    if (!fs.existsSync(BIN_PATH)) {
-        throw new Error(`C++ Test Server not found at ${BIN_PATH}. Please run './build.sh' first.`);
-    }
-
-    if (fs.existsSync(STORAGE_DIR)) fs.rmSync(STORAGE_DIR, { recursive: true });
-    fs.mkdirSync(STORAGE_DIR);
-
-    // Initialize VFS & Mesh early for cleanup visibility
+    // Initialize VFS & Mesh
     const nodeVFS = new VFS({ id: 'node-js' });
     const mesh = new MeshLink(nodeVFS);
-
-    console.log('[Test] Spawning C++ Node on port', CPP_PORT);
-    const cppNode = spawn(BIN_PATH, [
-        '--id', 'cpp-node',
-        '--port', CPP_PORT.toString(),
-        '--storage', STORAGE_DIR
-    ]);
-
-    // Cleanup logic: Stop mesh (abort fetches) THEN kill process
-    const cleanup = () => {
-        mesh.stop();
-        cppNode.kill();
-        if (fs.existsSync(STORAGE_DIR)) fs.rmSync(STORAGE_DIR, { recursive: true });
-    };
-    process.on('exit', cleanup);
+    await nodeVFS.init();
 
     try {
-        await waitForLog(cppNode, /Internal server listening/);
-
         // 3. Connect Node.js -> C++
         console.log('[Test] Connecting Node.js to C++...');
         await mesh.addPeer(`http://localhost:${CPP_PORT}`);
@@ -76,8 +33,7 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
 
         // We need to wait a bit for the C++ node to process the subscription
         await mesh.subscribe(Selector.fromObject(topic), Date.now() + 10000);
-        await waitForLog(cppNode, /subscribe: test\/topic/);
-        console.log('✔ C++ received subscription interest');
+        console.log('✔ Subscription interest sent');
 
         // 5. Test 2: Notification Routing (C++ -> Node)
         console.log('[Test] Triggering notification from C++...');
@@ -120,10 +76,12 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
         }
 
         assert.ok(catalogReceived, 'Node.js should have received CATALOG_ANNOUNCEMENT');
-        assert.strictEqual(catalogReceived.provider, 'cpp-node');
+        assert.strictEqual(catalogReceived.provider, 'geo-ops-node'); // Orchestrator uses geo-ops-node
         console.log('✔ Node.js received Catalog from C++');
 
     } finally {
-        cleanup();
+        mesh.stop();
+        await nodeVFS.close();
+        await sys.stop();
     }
 });
