@@ -65,6 +65,19 @@ int main() {
         for (const auto& p : patches) {
             assert(p.geometry.faces.size() == 1 && "Each island should be one face");
             assert(p.geometry.vertices.size() == 4 && "Each island should be a square (4 vertices)");
+
+            // Verification: Edge lengths should be exactly 10.0
+            for (size_t i = 0; i < p.geometry.vertices.size(); ++i) {
+                const auto& v1 = p.geometry.vertices[i];
+                const auto& v2 = p.geometry.vertices[(i + 1) % p.geometry.vertices.size()];
+                FT dx = v1.x - v2.x;
+                FT dy = v1.y - v2.y;
+                FT d2 = dx*dx + dy*dy;
+                if (CGAL::to_double(d2) < 99.9 || CGAL::to_double(d2) > 100.1) {
+                    std::cerr << "  - [FAIL] Edge length mismatch: expected 100 (squared), got " << CGAL::to_double(d2) << std::endl;
+                    return 1;
+                }
+            }
         }
     } catch (const std::exception& e) {
         std::cerr << "  - [CRASH] Cube failed: " << e.what() << std::endl;

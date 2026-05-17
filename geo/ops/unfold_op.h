@@ -32,6 +32,7 @@ struct UnfoldOp : P {
 
             // A. The 2D faces
             Shape faces;
+            faces.tf = patch.tf.inverse();
             faces.tags["type"] = "surface";
             faces.tags["isJot"] = true;
             faces.geometry = vfs->materialize<Geometry>(patch.geometry);

@@ -27,6 +27,7 @@ public:
 
             UnfoldPatch patch;
             EK::Plane_3 island_plane = Flattener::get_face_plane(mesh, f_start);
+            patch.tf = Matrix::lookAt(island_plane.point(), island_plane.orthogonal_vector());
             
             std::queue<Face> queue;
             queue.push(f_start);
@@ -36,7 +37,7 @@ public:
                 Face fi = queue.front();
                 queue.pop();
 
-                add_face_to_patch_plane(mesh, fi, island_plane, patch);
+                add_face_to_patch_plane(mesh, fi, patch);
 
                 auto h_start = mesh.halfedge(fi);
                 auto h = h_start;
@@ -74,7 +75,7 @@ private:
         return {std::min(u, v), std::max(u, v)};
     }
 
-    static void add_face_to_patch_plane(const Mesh& mesh, Face f, const EK::Plane_3& plane, UnfoldPatch& patch) {
+    static void add_face_to_patch_plane(const Mesh& mesh, Face f, UnfoldPatch& patch) {
         patch.face_indices.push_back((size_t)f);
         
         boolean::Polygon_2 poly;
@@ -82,8 +83,8 @@ private:
         auto h = h_start;
         do {
             auto p3d = mesh.point(mesh.source(h));
-            auto p2d = plane.to_2d(p3d);
-            poly.push_back(p2d);
+            auto lp = patch.tf.transform(p3d);
+            poly.push_back(EK::Point_2(lp.x(), lp.y()));
             h = mesh.next(h);
         } while (h != h_start);
 
@@ -104,10 +105,6 @@ private:
         patch.geometry.vertices.clear();
         patch.geometry.faces.clear();
         
-        // We'll regenerate edge_tags to refer to the NEW 2D vertex indices
-        // but only for the boundaries (cuts). 
-        // Internal folds are harder to recover from the GPS, so we'll 
-        // keep the original ones from the growth loop if they exist.
         std::map<std::pair<int, int>, std::string> new_tags;
 
         for (const auto& pwh : pwhs) {
@@ -115,7 +112,6 @@ private:
             
             auto process_loop = [&](const boolean::Polygon_2& poly) {
                 std::vector<int> indices;
-                int start_idx = (int)patch.geometry.vertices.size();
                 for (auto it = poly.vertices_begin(); it != poly.vertices_end(); ++it) {
                     indices.push_back((int)patch.geometry.vertices.size());
                     patch.geometry.vertices.push_back({it->x(), it->y(), FT(0)});
@@ -135,7 +131,6 @@ private:
             patch.geometry.faces.push_back(std::move(face));
         }
         
-        // Replace old tags with new boundary tags
         patch.edge_tags = std::move(new_tags);
     }
 };

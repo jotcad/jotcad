@@ -20,6 +20,9 @@ struct UnfoldPatch {
     // The 2D geometry of this patch
     Geometry geometry;
     
+    // The coordinate system of this patch (world to local)
+    Matrix tf;
+    
     // Mapping from original edges to fold/cut tags
     // Key: pair of vertex indices (sorted), Value: tag ("fold" or "cut")
     std::map<std::pair<int, int>, std::string> edge_tags;
