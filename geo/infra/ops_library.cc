@@ -48,6 +48,7 @@
 #include "transform_ops.h"
 #include "asset_ops.h"
 #include "stitch_op.h"
+#include "unfold_op.h"
 
 #include "measure_ops.h"
 #include "sort_ops.h"
@@ -106,6 +107,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     trace_init(vfs);
     transform_ops_init(vfs);
     stitch_init(vfs);
+    unfold_init(vfs);
     measure_init(vfs);
     selection_init(vfs);
 }

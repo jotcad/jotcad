@@ -37,8 +37,10 @@ DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
 DEPS = $(OBJS:.o=.d) $(DRIVER_OBJ:.o=.d)
+-include $(DEPS)
 
 # Create static library
+
 $(LIB_JOTGEO): $(OBJS)
 	@mkdir -p $(BIN_DIR)
 	$(AR) $(ARFLAGS) $@ $^

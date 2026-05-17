@@ -1,7 +1,7 @@
 # JotCAD Operator Tests Makefile
 
 CXX = g++
-CXXFLAGS = -O1 -std=c++17
+CXXFLAGS = -O1 -std=c++17 -MMD -MP
 INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../render -I../infra \
            -I../../fs/cpp -I../../fs/cpp/vendor \
            -I../cgal -I../cgal/boost \
@@ -29,8 +29,11 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                boolean_visual_test.cpp \
                transform_test.cpp \
                each_face_test.cpp \
-               selection_test.cpp
+               selection_test.cpp \
+               unfold_test.cpp \
+               diag_unfold_math.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
+TEST_DEPS = $(TEST_BINS:=.d)
 
 TEST_RUNS = $(addprefix run-, $(TEST_SOURCES:.cpp=))
 
@@ -44,6 +47,8 @@ $(LIB_GEO):
 $(BIN_DIR)/%: %.cpp $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) $< -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+-include $(TEST_DEPS)
 
 # Run an individual test
 run-%: $(BIN_DIR)/%
