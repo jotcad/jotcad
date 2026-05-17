@@ -28,8 +28,9 @@ export const vfs = new VFS({
 
 registerJotProvider(vfs);
 
+const vfsPort = import.meta.env.VITE_OPS_PORT || '9191';
 const vfsUrl =
-  import.meta.env.VITE_VFS_URL || `${window.location.protocol}//${window.location.hostname}:9092`;
+  import.meta.env.VITE_VFS_URL || `${window.location.protocol}//${window.location.hostname}:${vfsPort}`;
 
 export const mesh = new MeshLink(vfs, [vfsUrl]);
 

@@ -20,8 +20,7 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_test_',
     ux: {
         command: 'npx',
-        args: ['vite', '--port', '3131', '--strictPort'],
-        cwd: path.join(__dirname, 'ux')
+        args: ['http-server', 'ux/dist', '-p', '3131']
     }
   }
 };
@@ -93,10 +92,14 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
       console.log(`[Orchestrator] Killing ${name}...`);
       child.kill('SIGTERM');
     }
-    // Final port sweep
+    // Give child processes time to gracefully exit and release ports
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Force cleanup ports
     try {
         const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
         execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
+        await new Promise(r => setTimeout(r, 500));
     } catch (e) {}
   };
 

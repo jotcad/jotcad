@@ -136,9 +136,44 @@ Operators should throw `VFSException` (defined in `geo/impl/vfs_node.h`) for una
 - `508`: Loop detected (handled by MeshLink).
 - `429`: Rate limited/Resource exhausted.
 
-## 5. HTTPS & Mobile Debugging
+## 6. Test Orchestration & Stability
 
-To support the **WebCrypto API** (required for CID generation and mesh handshakes) on mobile devices, the development environment must run over **HTTPS**.
+JotCAD uses a unified **Test Orchestrator** to manage the execution of multiple test suites across different languages (JS, C++) and environments (Node.js, Browser/Puppeteer).
+
+### 6.1 Unified Test Entry Point
+
+The primary way to run tests is via the top-level `npm` scripts:
+
+```bash
+# Run all verified stable tests (JOT, GEO, FS, Integration)
+npm test
+
+# Run all tests, including Puppeteer browser-side integration
+npm run tests
+```
+
+Both scripts utilize `test_orchestrator.js`, which ensures that each suite is run in a clean environment.
+
+### 6.2 Resource Cleanup Protocol
+
+To prevent network port collisions (`EADDRINUSE`) and file system locks, the orchestrator implements a strict **Resource Cleanup Protocol**:
+
+1.  **Port Scrubbing**: Before launching a test cluster, the orchestrator uses `fuser -k` to forcibly release ports `9191` (Ops), `9192` (Export), and `3131` (UX).
+2.  **Storage Purge**: Temporary VFS storage directories (prefixed with `.vfs_storage_test_`) are deleted between suite runs.
+3.  **Graceful Teardown**: The `sys.stop()` method ensures child processes are killed and network sockets are fully released by the OS (enforced via explicit sleep intervals) before the next test begins.
+
+### 6.3 Puppeteer Integration Tests
+
+Browser-side integration tests are isolated in `integration/puppeteer/`. These tests validate the "Final Mile" of the system:
+
+- **Mesh Handshake**: Confirms the browser can discover and synchronize the JOT Catalog from the native C++ ops node.
+- **Log-Based Synchronization**: Because Puppeteer context-bridges can be fragile in bundled environments, these tests use **Console Log Detection** (`msg.text().includes(...)`) as the authoritative signal for system readiness.
+- **Static Build Testing**: Integration tests run against the **Production Build** (`ux/dist`) served via a static server, ensuring that bundling, code-splitting, and minification haven't introduced runtime errors.
+
+### 6.4 Mandatory Sequential Execution
+
+Due to the heavy resource usage of native clusters (C++ kernels and browser instances), all JS integration tests **MUST** be run with `--test-concurrency=1`. This is enforced automatically by the orchestrator.
+
 
 ### 5.1 Certificate Generation
 
