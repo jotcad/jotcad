@@ -13,7 +13,7 @@ struct UnfoldOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Shape subject) {
         // 1. Convert subject to a single consolidated mesh
         boolean::ExactMesh mesh;
-        collect_and_merge_mesh(vfs, subject, Matrix::identity(), mesh);
+        collect_and_merge_mesh(vfs, subject, mesh);
 
         if (mesh.is_empty()) return;
 
@@ -89,13 +89,11 @@ struct UnfoldOp : P {
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
-    static void collect_and_merge_mesh(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, boolean::ExactMesh& target) {
-        Matrix world_tf = parent_tf * s.tf;
-        
+    static void collect_and_merge_mesh(fs::VFSNode* vfs, const Shape& s, boolean::ExactMesh& target) {
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             boolean::ExactMesh mesh = boolean::Engine::geometry_to_mesh(geo);
-            boolean::Engine::transform_mesh(mesh, world_tf);
+            boolean::Engine::transform_mesh(mesh, s.tf);
             
             if (target.is_empty()) {
                 target = std::move(mesh);
@@ -104,7 +102,7 @@ struct UnfoldOp : P {
             }
         }
         for (const auto& child : s.components) {
-            collect_and_merge_mesh(vfs, child, world_tf, target);
+            collect_and_merge_mesh(vfs, child, target);
         }
     }
 

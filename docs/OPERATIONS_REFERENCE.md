@@ -92,12 +92,21 @@ Generates a cone that fits a specific bounding box.
 Generates a cone with a specific taper angle.
 - **`angle`**: Half-angle in turns (e.g., `0.125` is 45 degrees).
 
-### `Triangle(va, vb, vc)`
-Generates a 2D triangle.
+### `Triangle(...)`
+Generates a 2D triangle. Supports multiple construction variants:
+
+#### Variant 1: Geometric (Side Lengths)
+`Triangle(va, vb, vc)`
 - **`va`**: Side length along the local X-axis.
 - **`vb`**: Side length opposite the first vertex.
 - **`vc`**: Side length from the origin to the second vertex.
-- **Centering**: The triangle is automatically centered on its **Centroid** at `(0,0,0)`.
+
+#### Variant 2: Equilateral (Height)
+`Triangle(height=10.0)`
+- **`height`**: The vertical distance from the base to the opposite vertex.
+- **Logic**: Automatically calculates side lengths for a perfect equilateral triangle.
+
+- **Centering**: All triangles are automatically centered on their **Centroid** at `(0,0,0)`.
 
 ### `Hexagon(...)`
 Generates a regular 2D hexagon.

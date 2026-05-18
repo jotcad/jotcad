@@ -62,6 +62,14 @@ struct Matrix {
         return Matrix(Transformation(cos_alpha, -sin_alpha, 0, 0, sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0, w));
     }
 
+    Matrix rotateZ(double turns) const {
+        return rotationZ(turns) * (*this);
+    }
+
+    Matrix translated(FT x, FT y, FT z) const {
+        return translate(x, y, z) * (*this);
+    }
+
     static Matrix scale(FT x, FT y, FT z) {
         return Matrix(Transformation(x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0));
     }

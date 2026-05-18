@@ -491,7 +491,7 @@ export class JotCompiler {
 
     // PASS 3: Validation
     for (const argDef of argList) {
-        if (params[argDef.name] === undefined && argDef.default === undefined) {
+        if (params[argDef.name] === undefined && argDef.default === undefined && !argDef.optional) {
              throw new Error(`Compiler Error: Missing required argument '${argDef.name}' for '${opName}'`);
         }
     }

@@ -40,7 +40,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                unfold_test.cpp \
                grow_flat_test.cpp \
                diag_unfold_math.cpp \
-               cid_consistency_test.cpp
+               cid_consistency_test.cpp \
+               pack_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 TEST_DEPS = $(TEST_BINS:=.d)
 

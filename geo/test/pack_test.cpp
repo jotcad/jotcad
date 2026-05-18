@@ -1,73 +1,164 @@
-#include <iostream>
-#include <vector>
-#include <cassert>
-#include "data/geometry.h"
-#include "data/shape.h"
-#include "pack/engine.h"
-#include "vfs_node.h"
+#include "test_base.h"
+#include "../ops/pack_op.h"
 
-using namespace jotcad;
-using namespace geo;
+using namespace jotcad::geo;
 
-/**
- * UNIT TEST: pack::Engine
- * Verifies that multiple 2D shapes are packed into a sheet.
- */
-int main() {
-    std::cout << "Unit Test: pack::Engine" << std::endl;
-
-    // 0. Setup VFS
-    fs::VFSNode::Config vfs_cfg;
-    vfs_cfg.storage_dir = "./.vfs_storage_pack_test";
-    fs::VFSNode vfs(vfs_cfg);
-
-    // 1. Create a set of triangles
-    std::vector<Shape> shapes;
-    for (int i = 0; i < 10; ++i) {
-        Shape s;
-        Geometry geo;
-        geo.vertices = {
-            {FT(0), FT(0), FT(0)}, {FT(20), FT(0), FT(0)}, {FT(0), FT(20), FT(0)}
-        };
-        Geometry::Face face;
-        face.loops = {{0, 1, 2}};
-        geo.faces = {face};
-        
-        // Materialize geometry to get a CID
-        s.geometry = vfs.materialize<Geometry>(geo);
-        s.tf = Matrix::identity();
-        shapes.push_back(std::move(s));
-    }
-
-    // 2. Pack them into a small sheet (e.g., 100x100)
-    pack::Engine::Config config;
-    config.sheet_width = 100.0;
-    config.sheet_height = 100.0;
-    config.spacing = 2.0;
-    config.margin = 5.0;
-
-    std::cout << "  - Packing " << shapes.size() << " triangles..." << std::endl;
-    try {
-        pack::Engine::pack(&vfs, shapes, config);
-    } catch (const std::exception& e) {
-        std::cerr << "  - [CRASH] Packing failed: " << e.what() << std::endl;
-        return 1;
-    }
-
-    // 3. Verify that they were moved
-    int moved = 0;
-    for (size_t i = 0; i < shapes.size(); ++i) {
-        // If the translation is non-zero, it was moved.
-        auto tr = shapes[i].tf.transform(EK::Point_3(0, 0, 0));
-        if (std::abs(CGAL::to_double(tr.x())) > 0.001 || std::abs(CGAL::to_double(tr.y())) > 0.001) {
-            moved++;
-        }
-        std::cout << "  - Triangle " << i << " moved to: " 
-                  << CGAL::to_double(tr.x()) << ", " << CGAL::to_double(tr.y()) << std::endl;
-    }
-
-    assert(moved > 0 && "At least some triangles should have been moved");
+Shape create_triangle(fs::VFSNode* vfs, double size) {
+    Geometry geo;
+    geo.vertices = {
+        {FT(0), FT(0), FT(0)},
+        {FT(size), FT(0), FT(0)},
+        {FT(0), FT(size), FT(0)}
+    };
+    geo.faces.push_back({{{0, 1, 2}}});
     
-    std::cout << "✅ Unit Test Passed" << std::endl;
+    Shape s;
+    s.geometry = vfs->materialize(geo);
+    s.tags["type"] = "surface";
+    return s;
+}
+
+Shape create_box(fs::VFSNode* vfs, double w, double h) {
+    Geometry geo;
+    geo.vertices = {
+        {FT(0), FT(0), FT(0)},
+        {FT(w), FT(0), FT(0)},
+        {FT(w), FT(h), FT(0)},
+        {FT(0), FT(h), FT(0)}
+    };
+    geo.faces.push_back({{{0, 1, 2, 3}}});
+    
+    Shape s;
+    s.geometry = vfs->materialize(geo);
+    s.tags["type"] = "surface";
+    return s;
+}
+
+void test_multi_sheet() {
+    MockVFS vfs("pack_test");
+    pack_init(&vfs);
+
+    std::cout << "Testing Multi-Sheet Packing..." << std::endl;
+
+    Shape group;
+    group.tags["type"] = "group";
+    for (int i = 0; i < 5; ++i) {
+        group.components.push_back(create_triangle(&vfs, 50));
+    }
+
+    Shape sheets_group;
+    sheets_group.tags["type"] = "group";
+    sheets_group.components.push_back(create_box(&vfs, 60, 60));
+    sheets_group.components.push_back(create_box(&vfs, 60, 60));
+
+    fs::Selector sel("jot/pack");
+    sel.parameters["$in"] = group;
+    sel.parameters["sheet"] = sheets_group;
+    sel.parameters["spacing"] = 2.0;
+    sel.output = "$out";
+
+    Processor::execute(&vfs, sel);
+
+    Shape out = vfs.read<Shape>(sel);
+    assert(out.tags["type"] == "group");
+    
+    bool found_sheet_0 = false;
+    bool found_sheet_1 = false;
+    int total_placed_parts = 0;
+
+    for (const auto& comp : out.components) {
+        if (comp.tags["name"] == "sheet_0") {
+            found_sheet_0 = true;
+            total_placed_parts += (int)comp.components.size() - 1;
+        } else if (comp.tags["name"] == "sheet_1") {
+            found_sheet_1 = true;
+            total_placed_parts += (int)comp.components.size() - 1;
+        }
+    }
+
+    assert(found_sheet_0);
+    assert(found_sheet_1);
+    std::cout << "  - Total placed parts: " << total_placed_parts << " / 5" << std::endl;
+}
+
+void test_alignment_and_bias() {
+    MockVFS vfs("pack_align");
+    pack_init(&vfs);
+    std::cout << "Testing Centered Sheet Alignment and Top-Left Bias..." << std::endl;
+
+    // 1. Create a 10x10 Box (centered at 0,0)
+    // Bounds: [-5, 5]
+    Geometry box_geo;
+    box_geo.vertices = {
+        {FT(-5), FT(-5), FT(0)},
+        {FT(5), FT(-5), FT(0)},
+        {FT(5), FT(5), FT(0)},
+        {FT(-5), FT(5), FT(0)}
+    };
+    box_geo.faces.push_back({{{0, 1, 2, 3}}});
+    Shape part;
+    part.geometry = vfs.materialize(box_geo);
+
+    // 2. Create a 50x50 Sheet (centered at 0,0)
+    // Bounds: [-25, 25]
+    Geometry sheet_geo;
+    sheet_geo.vertices = {
+        {FT(-25), FT(-25), FT(0)},
+        {FT(25), FT(-25), FT(0)},
+        {FT(25), FT(25), FT(0)},
+        {FT(-25), FT(25), FT(0)}
+    };
+    sheet_geo.faces.push_back({{{0, 1, 2, 3}}});
+    Shape sheet;
+    sheet.geometry = vfs.materialize(sheet_geo);
+
+    // 3. Pack
+    fs::Selector sel("jot/pack");
+    sel.parameters["$in"] = part;
+    sel.parameters["sheet"] = sheet;
+    sel.parameters["spacing"] = 0.0;
+    sel.parameters["margin"] = 0.0;
+    sel.output = "$out";
+
+    Processor::execute(&vfs, sel);
+
+    // 4. Verify part is INSIDE sheet bounds [-25, 25]
+    Shape out = vfs.read<Shape>(sel);
+    Shape sheet_grp = out.components[0];
+    Shape placed_part = sheet_grp.components[1];
+    
+    Geometry p_geo = vfs.read<Geometry>(placed_part.geometry.value());
+    p_geo.apply_tf(placed_part.tf);
+    
+    auto bbox = p_geo.bounds();
+    double xmin = CGAL::to_double(bbox.xmin());
+    double xmax = CGAL::to_double(bbox.xmax());
+    double ymin = CGAL::to_double(bbox.ymin());
+    double ymax = CGAL::to_double(bbox.ymax());
+
+    std::cout << "  - Placed part bounds: [" << xmin << ", " << xmax << "] x [" << ymin << ", " << ymax << "]" << std::endl;
+    
+    // Check inside bounds
+    assert(xmin >= -25.0001);
+    assert(xmax <= 25.0001);
+    assert(ymin >= -25.0001);
+    assert(ymax <= 25.0001);
+
+    // Check Top-Left Bias
+    // With spacing 0, it should be exactly at the top-left corner.
+    // Sheet x is [-25, 25], Sheet y is [-25, 25].
+    // Top-Left corner is (-25, 25).
+    // Part size is 10x10.
+    // So part should be at [-25, -15] x [15, 25].
+    
+    std::cout << "  - Verifying Top-Left Bias..." << std::endl;
+    assert(std::abs(xmin - (-25)) < 0.1);
+    assert(std::abs(ymax - 25) < 0.1);
+}
+
+int main() {
+    test_multi_sheet();
+    test_alignment_and_bias();
+    std::cout << "✨ All Pack tests passed!" << std::endl;
     return 0;
 }
