@@ -1,7 +1,7 @@
 #pragma once
 #include "protocols.h"
 #include "processor.h"
-#include "pack/engine.h"
+#include "pack/packaide_engine.h"
 
 namespace jotcad {
 namespace geo {
@@ -15,7 +15,6 @@ struct PackOp : P {
                        double spacing, double margin) {
         
         // 1. Identify input parts
-        // Collect from both the subject '$in' and the supplemental 'parts' argument.
         std::vector<Shape> parts;
         if (in.has_value()) {
             collect_leaf_shapes(in.value(), parts);
@@ -36,58 +35,50 @@ struct PackOp : P {
         }
 
         // 3. Execute Nesting
-        pack::Engine::Config config;
-        config.spacing = spacing;
-        config.margin = margin;
+        pack::PackaideEngine::Config config;
+        config.spacing = FT(spacing);
+        config.margin = FT(margin);
 
-        pack::PackResult res = pack::Engine::pack(vfs, parts, sheets, config);
+        pack::PackaideEngine::PackResult res = pack::PackaideEngine::pack(vfs, parts, sheets, config);
 
         // 4. Construct Output Assembly
-        std::map<int, std::vector<pack::PackResult::Placement>> bin_map;
-        for (const auto& p : res.placements) {
-            bin_map[p.bin_index].push_back(p);
-        }
-
         Shape out;
-        out.tags["type"] = "group";
+        out.add_tag("type", "group");
         
-        double current_x_offset = 0;
-        double sheet_gap = spacing * 5; 
+        FT current_x_offset = FT(0);
+        FT sheet_gap = FT(spacing) * FT(5.0); 
 
-        int num_bins = sheets.empty() ? 1 : (int)sheets.size();
+        for (size_t b = 0; b < res.bins.size(); ++b) {
+            Shape sheet_group = res.bins[b];
+            
+            // The sheet itself MUST be the first component of the group for tests to pass
+            // In the current PackaideEngine, res.bins[b] is the sheet shape itself 
+            // but its components were cleared and filled with parts.
+            // We need to re-insert the sheet geometry as the first component.
+            
+            Shape sheet_background;
+            sheet_background.geometry = sheets[b % sheets.size()].geometry; // Use original sheet geo
+            sheet_background.tags = sheets[b % sheets.size()].tags;
+            sheet_background.tags["name"] = "sheet_background";
+            
+            // Insert at beginning
+            sheet_group.components.insert(sheet_group.components.begin(), sheet_background);
 
-        for (int b = 0; b < num_bins; ++b) {
-            Shape sheet_group;
-            sheet_group.tags["type"] = "group";
-            sheet_group.tags["name"] = "sheet_" + std::to_string(b);
-
-            if (b < (int)sheets.size()) {
-                Shape s = sheets[b];
-                s.tf = Matrix::identity(); 
-                sheet_group.components.push_back(std::move(s));
-            }
-
-            for (const auto& p : bin_map[b]) {
-                Shape part = parts[p.part_index];
-                part.tf = p.tf; 
-                sheet_group.components.push_back(std::move(part));
-            }
-
-            double sw = 1000;
-            if (b < (int)sheets.size() && sheets[b].geometry.has_value()) {
-                auto geo = vfs->read<Geometry>(sheets[b].geometry.value());
+            FT sw = FT(1000);
+            if (sheet_group.geometry.has_value()) {
+                auto geo = vfs->read<Geometry>(sheet_group.geometry.value());
                 auto box = geo.bounds();
-                sw = box.xmax() - box.xmin();
+                sw = FT(box.xmax() - box.xmin());
             }
             
-            sheet_group.tf = Matrix::identity().translate(FT(current_x_offset), FT(0), FT(0));
-            current_x_offset += sw + sheet_gap;
+            sheet_group.tf = Matrix::translate(current_x_offset, FT(0), FT(0));
+            current_x_offset = current_x_offset + sw + sheet_gap;
 
             out.components.push_back(std::move(sheet_group));
         }
 
-        if (!res.unplaced_parts.empty()) {
-            throw std::runtime_error("Nesting Failure: " + std::to_string(res.unplaced_parts.size()) + 
+        if (!res.unplaced.empty()) {
+            throw std::runtime_error("Nesting Failure: " + std::to_string(res.unplaced.size()) + 
                                    " part(s) could not fit within the provided sheet(s).");
         }
         
@@ -121,7 +112,7 @@ struct PackOp : P {
                 {{"name", "parts"}, {"type", "jot:shape"}, {"optional", true}},
                 {{"name", "sheet"}, {"type", "jot:shape"}, {"optional", true}},
                 {{"name", "spacing"}, {"type", "number"}, {"default", 2.0}},
-                {{"name", "margin"}, {"type", "number"}, {"default", 5.0}}
+                {{"name", "margin"}, {"type", "number"}, {"default", 0.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };

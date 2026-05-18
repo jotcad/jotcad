@@ -7,7 +7,7 @@ INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../rend
            -I../cgal -I../cgal/boost \
            -I../cgal/cgal/include -I../cgal/cgal/include/CGAL/include \
            -I../cgal/freetype/include \
-           -I../pack/libnest2d/include \
+           -I../pack \
            -I../vendor/clipper \
            -I../vendor/nlopt/src/api \
            -I../vendor/nlopt/build

@@ -16,7 +16,7 @@ INCLUDES = -I. -I./ops -I./core -I./data -I./math -I./algorithms -I./render -I./
            -I./cgal -I./cgal/boost \
            -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include \
            -I./cgal/freetype/include \
-           -I./pack/libnest2d/include \
+           -I./pack \
            -I./vendor/clipper \
            -I./vendor/nlopt/src/api \
            -I./vendor/nlopt/build
@@ -81,12 +81,17 @@ $(TEST_TEXT_BIN): $(TEST_TEXT_OBJ) $(LIB_JOTGEO)
 $(BIN_DIR)/%: $(OBJ_DIR)/%.o $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
 
-$(OBJ_DIR)/%.o: test/%.cpp
+$(OBJ_DIR)/test_engine.o: pack/test_engine.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-test: $(OPS_BIN) $(TEST_LOGIC_BIN)
+TEST_ENGINE_BIN = $(BIN_DIR)/test_engine
+$(TEST_ENGINE_BIN): $(OBJ_DIR)/test_engine.o $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
+
+test: $(OPS_BIN) $(TEST_LOGIC_BIN) $(TEST_ENGINE_BIN)
 	$(TEST_LOGIC_BIN)
+	$(TEST_ENGINE_BIN)
 
 # Explicit compilation rules
 $(OBJ_DIR)/vfs_core.o: ../fs/cpp/vfs_core.cpp

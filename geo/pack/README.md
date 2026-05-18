@@ -8,14 +8,19 @@ JotCAD uses a two-stage approach to flat-pattern generation:
 2.  **Packing (`geo/pack`)**: Arranges these clusters efficiently onto one or more 2D sheets.
 
 ## Architecture
-- `engine.h`: High-level wrapper for the `libnest2d` nesting library.
-- `sheet.h`: Defines sheet dimensions, margins, and placement constraints.
+- `packaide_engine.h`: The primary nesting engine based on the Packaide algorithm.
+- `packaide_core.h`: Low-level geometric primitives for No-Fit Polygons (NFP) and Inner-Fit Polygons (IFP).
+- `packaide_types.h`: CGAL-to-JotCAD bridge types using the exact construction kernel (`FT`).
 
-## Interleaving (Future)
-The packing engine is designed to be "interleavable" with the unfolding process. Instead of a linear pipeline (Unfold -> Pack), the `unfold::Clusterer` can query the `pack::Engine` during its greedy growth phase to decide whether joining a face into a cluster will result in a shape that is too large or too inefficient to pack.
+## Precision & Stability
+The engine utilizes **CGAL's Exact Construction Kernel (`FT`)** for all internal calculations. This ensures that exact-fit scenarios (e.g., a 10.0 unit part in a 10.0 unit sheet) are handled with mathematical certainty, preventing the numerical instability that commonly plagues nesting algorithms.
 
-## Library: libnest2d
-We utilize `libnest2d` (header-only) for its robust support for:
-- **Irregular Nesting**: Uses No-Fit Polygons (NFP) for precise placement of non-convex shapes.
-- **Multiple Bins**: Automatically overflows into additional sheets if the primary sheet is full.
-- **Custom Backends**: Currently configured to use a compatible exact-kernel logic for stability.
+### Protocol Invariants
+- **Strict Integrity**: Input geometry is never "fixed" or "sanitized" silently. The engine asserts that all input polygons are simple and free of duplicate sequential vertices.
+- **2D Primacy**: All packing operations are performed in the XY plane. 3D transforms are projected before processing.
+- **Top-Down Results**: Results are returned as an assembly where the sheet geometry itself is the first component (`components[0]`), providing a clear spatial context for the placed parts.
+
+## Algorithms
+- **No-Fit Polygons (NFP)**: Computed via Minkowski Sums of the stationary and orbiting parts.
+- **Inner-Fit Polygons (IFP)**: Defines the boundary of the feasible placement region within the sheet.
+- **Greedy Placement**: Parts are ordered by area and placed sequentially in the location that minimizes the current bounding box of the assembly (bottom-left bias).

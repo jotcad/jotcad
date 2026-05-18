@@ -48,8 +48,11 @@ void test_multi_sheet() {
 
     Shape sheets_group;
     sheets_group.tags["type"] = "group";
-    sheets_group.components.push_back(create_box(&vfs, 60, 60));
-    sheets_group.components.push_back(create_box(&vfs, 60, 60));
+    // 5 triangles of 50x50. 
+    // In a 110x110 sheet, we can fit 4 (2x2) without rotation optimization.
+    // 5 will need a second sheet.
+    sheets_group.components.push_back(create_box(&vfs, 110, 110));
+    sheets_group.components.push_back(create_box(&vfs, 110, 110));
 
     fs::Selector sel("jot/pack");
     sel.parameters["$in"] = group;
@@ -144,16 +147,16 @@ void test_alignment_and_bias() {
     assert(ymin >= -25.0001);
     assert(ymax <= 25.0001);
 
-    // Check Top-Left Bias
-    // With spacing 0, it should be exactly at the top-left corner.
+    // Check Bottom-Left Bias
+    // With spacing 0, it should be exactly at the bottom-left corner.
     // Sheet x is [-25, 25], Sheet y is [-25, 25].
-    // Top-Left corner is (-25, 25).
+    // Bottom-Left corner is (-25, -25).
     // Part size is 10x10.
-    // So part should be at [-25, -15] x [15, 25].
+    // So part should be at [-25, -15] x [-25, -15].
     
-    std::cout << "  - Verifying Top-Left Bias..." << std::endl;
+    std::cout << "  - Verifying Bottom-Left Bias..." << std::endl;
     assert(std::abs(xmin - (-25)) < 0.1);
-    assert(std::abs(ymax - 25) < 0.1);
+    assert(std::abs(ymin - (-25)) < 0.1);
 }
 
 int main() {
