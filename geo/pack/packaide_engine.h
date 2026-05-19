@@ -87,31 +87,39 @@ public:
             bin_sheet.material.polygons_with_holes(std::back_inserter(islands));
             
             packaide::Polygon_set_2 feasible_region;
-            std::vector<packaide::Point_2> point_candidates;
+            struct Candidate {
+                packaide::Point_2 pos;
+                packaide::FT island_area;
+            };
+            std::vector<Candidate> candidates;
 
             for (const auto& island : islands) {
+                packaide::FT island_area = island.outer_boundary().area();
                 auto island_ifp = packaide::compute_ifp_pwh(island, info.cgal_poly);
+                
+                auto add_candidates = [&](const packaide::Polygon_set_2& set) {
+                    if (set.is_empty()) return;
+                    std::vector<packaide::Polygon_with_holes_2> pwhs;
+                    set.polygons_with_holes(std::back_inserter(pwhs));
+                    for (const auto& pwh : pwhs) {
+                        for (auto v = pwh.outer_boundary().vertices_begin(); v != pwh.outer_boundary().vertices_end(); ++v) 
+                            candidates.push_back({*v, island_area});
+                        for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
+                            for (auto v = hit->vertices_begin(); v != hit->vertices_end(); ++v) 
+                                candidates.push_back({*v, island_area});
+                        }
+                    }
+                };
+
                 if (!island_ifp.is_empty()) {
-                    feasible_region.join(island_ifp);
+                    add_candidates(island_ifp);
                 } else {
-                    // Exact fit check for this island
+                    // Exact fit check
                     auto bb_A = island.outer_boundary().bbox();
                     auto bb_B = info.cgal_poly.outer_boundary().bbox();
                     if (packaide::FT(bb_A.xmax() - bb_A.xmin()) >= packaide::FT(bb_B.xmax() - bb_B.xmin()) &&
                         packaide::FT(bb_A.ymax() - bb_A.ymin()) >= packaide::FT(bb_B.ymax() - bb_B.ymin())) {
-                        point_candidates.push_back(packaide::Point_2(bb_A.xmin(), bb_A.ymin()));
-                    }
-                }
-            }
-
-            std::vector<packaide::Point_2> candidates = point_candidates;
-            if (!feasible_region.is_empty()) {
-                std::vector<packaide::Polygon_with_holes_2> pwhs;
-                feasible_region.polygons_with_holes(std::back_inserter(pwhs));
-                for (const auto& pwh : pwhs) {
-                    for (auto v = pwh.outer_boundary().vertices_begin(); v != pwh.outer_boundary().vertices_end(); ++v) candidates.push_back(*v);
-                    for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
-                        for (auto v = hit->vertices_begin(); v != hit->vertices_end(); ++v) candidates.push_back(*v);
+                        candidates.push_back({packaide::Point_2(bb_A.xmin(), bb_A.ymin()), island_area});
                     }
                 }
             }
@@ -119,26 +127,45 @@ public:
             if (candidates.empty()) continue;
 
             packaide::Point_2 best_pos;
-            packaide::FT best_score = packaide::FT(1e18); 
+            packaide::FT best_score = packaide::FT(1e36); // Area * Area scale
             bool found = false;
 
-            for (const auto& v : candidates) {
-                packaide::Transformation tr(CGAL::TRANSLATION, packaide::Vector_2(v.x(), v.y()));
+            // We use the overall sheet bounds for the Top-Left bias calculation
+            std::vector<packaide::Polygon_with_holes_2> all_sheet_islands;
+            bin_sheet.material.polygons_with_holes(std::back_inserter(all_sheet_islands));
+            packaide::FT sheet_min_x(1e18), sheet_max_y(-1e18);
+            for (const auto& i : all_sheet_islands) {
+                auto ibb = i.outer_boundary().bbox();
+                sheet_min_x = std::min(sheet_min_x, packaide::FT(ibb.xmin()));
+                sheet_max_y = std::max(sheet_max_y, packaide::FT(ibb.ymax()));
+            }
+
+            for (const auto& cand : candidates) {
+                packaide::Transformation tr(CGAL::TRANSLATION, packaide::Vector_2(cand.pos.x(), cand.pos.y()));
                 auto candidate_poly = CGAL::transform(tr, info.cgal_poly);
                 
-                // Final collision check: Candidate MUST be fully within current material
                 packaide::Polygon_set_2 candidate_set(candidate_poly);
                 candidate_set.intersection(bin_sheet.material);
-                
-                // If intersection is empty or smaller than part, it's not valid
                 if (candidate_set.is_empty()) continue;
-                // Note: For strictness, we could check area, but usually if it's not empty 
-                // and it was derived from an IFP, it's correct.
 
-                packaide::FT score = heuristic.score_after_adding(candidate_poly);
-                if (score < best_score) {
-                    best_score = score;
-                    best_pos = v;
+                // RANKING FORMULA (Lexicographical weights):
+                // 1. Bounding Box Area Expansion (Weight: 10^18)
+                packaide::FT bb_area = heuristic.score_after_adding(candidate_poly);
+                
+                // 2. Island Area (Weight: 10^9) - Prefer smallest hole
+                packaide::FT island_area = cand.island_area;
+
+                // 3. Top-Left Penalty (Weight: 1) - Prefer Min X, Max Y
+                // Penalty = (x - sheet_min_x) + (sheet_max_y - y)
+                packaide::FT top_left_penalty = (cand.pos.x() - sheet_min_x) + (sheet_max_y - cand.pos.y());
+
+                packaide::FT current_score = (bb_area * packaide::FT(1e18)) + 
+                                           (island_area * packaide::FT(1e9)) + 
+                                           top_left_penalty;
+
+                if (current_score < best_score) {
+                    best_score = current_score;
+                    best_pos = cand.pos;
                     found = true;
                 }
             }

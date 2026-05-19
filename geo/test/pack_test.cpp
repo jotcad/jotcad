@@ -147,16 +147,16 @@ void test_alignment_and_bias() {
     assert(ymin >= -25.0001);
     assert(ymax <= 25.0001);
 
-    // Check Bottom-Left Bias
-    // With spacing 0, it should be exactly at the bottom-left corner.
+    // Check Top-Left Bias
+    // With spacing 0, it should be exactly at the top-left corner.
     // Sheet x is [-25, 25], Sheet y is [-25, 25].
-    // Bottom-Left corner is (-25, -25).
+    // Top-Left corner is (-25, 25).
     // Part size is 10x10.
-    // So part should be at [-25, -15] x [-25, -15].
+    // So part should be at [-25, -15] x [15, 25].
     
-    std::cout << "  - Verifying Bottom-Left Bias..." << std::endl;
+    std::cout << "  - Verifying Top-Left Bias..." << std::endl;
     assert(std::abs(xmin - (-25)) < 0.1);
-    assert(std::abs(ymin - (-25)) < 0.1);
+    assert(std::abs(ymax - 25) < 0.1);
 }
 
 int main() {
