@@ -80,38 +80,39 @@ public:
 
     static std::vector<Placement> pack_geometric(const std::vector<PartInfo>& parts, packaide::Sheet& bin_sheet, const Config& config) {
         std::vector<Placement> placements;
-        std::vector<packaide::Polygon_with_holes_2> placed_polys;
         packaide::BoundingBoxHeuristic heuristic;
 
         for (const auto& info : parts) {
-            auto ifp = packaide::compute_ifp(bin_sheet, info.cgal_poly);
+            std::vector<packaide::Polygon_with_holes_2> islands;
+            bin_sheet.material.polygons_with_holes(std::back_inserter(islands));
             
-            std::vector<packaide::Point_2> candidates;
-            bool has_2d_region = false;
+            packaide::Polygon_set_2 feasible_region;
+            std::vector<packaide::Point_2> point_candidates;
 
-            if (!ifp.is_empty()) {
-                packaide::Polygon_set_2 feasible_region(ifp);
-                for (const auto& placed_poly : placed_polys) {
-                    auto nfp = packaide::compute_nfp(placed_poly, info.cgal_poly, config.spacing);
-                    feasible_region.difference(nfp);
-                }
-                if (!feasible_region.is_empty()) {
-                    has_2d_region = true;
-                    std::vector<packaide::Polygon_with_holes_2> pwhs;
-                    feasible_region.polygons_with_holes(std::back_inserter(pwhs));
-                    for (const auto& pwh : pwhs) {
-                        for (auto v = pwh.outer_boundary().vertices_begin(); v != pwh.outer_boundary().vertices_end(); ++v) candidates.push_back(*v);
-                        for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
-                            for (auto v = hit->vertices_begin(); v != hit->vertices_end(); ++v) candidates.push_back(*v);
-                        }
+            for (const auto& island : islands) {
+                auto island_ifp = packaide::compute_ifp_pwh(island, info.cgal_poly);
+                if (!island_ifp.is_empty()) {
+                    feasible_region.join(island_ifp);
+                } else {
+                    // Exact fit check for this island
+                    auto bb_A = island.outer_boundary().bbox();
+                    auto bb_B = info.cgal_poly.outer_boundary().bbox();
+                    if (packaide::FT(bb_A.xmax() - bb_A.xmin()) >= packaide::FT(bb_B.xmax() - bb_B.xmin()) &&
+                        packaide::FT(bb_A.ymax() - bb_A.ymin()) >= packaide::FT(bb_B.ymax() - bb_B.ymin())) {
+                        point_candidates.push_back(packaide::Point_2(bb_A.xmin(), bb_A.ymin()));
                     }
                 }
-            } else {
-                // Potential exact fit check
-                auto bb = info.cgal_poly.outer_boundary().bbox();
-                if (packaide::FT(bb.xmax() - bb.xmin()) <= bin_sheet.width && 
-                    packaide::FT(bb.ymax() - bb.ymin()) <= bin_sheet.height) {
-                    candidates.push_back(packaide::Point_2(0, 0));
+            }
+
+            std::vector<packaide::Point_2> candidates = point_candidates;
+            if (!feasible_region.is_empty()) {
+                std::vector<packaide::Polygon_with_holes_2> pwhs;
+                feasible_region.polygons_with_holes(std::back_inserter(pwhs));
+                for (const auto& pwh : pwhs) {
+                    for (auto v = pwh.outer_boundary().vertices_begin(); v != pwh.outer_boundary().vertices_end(); ++v) candidates.push_back(*v);
+                    for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
+                        for (auto v = hit->vertices_begin(); v != hit->vertices_end(); ++v) candidates.push_back(*v);
+                    }
                 }
             }
 
@@ -122,21 +123,18 @@ public:
             bool found = false;
 
             for (const auto& v : candidates) {
-                if (!has_2d_region) {
-                    bool collision = false;
-                    packaide::Transformation tr(CGAL::TRANSLATION, packaide::Vector_2(v.x(), v.y()));
-                    auto candidate_poly = CGAL::transform(tr, info.cgal_poly);
-                    for (const auto& placed : placed_polys) {
-                        if (CGAL::do_intersect(candidate_poly, placed)) {
-                            collision = true;
-                            break;
-                        }
-                    }
-                    if (collision) continue;
-                }
-
                 packaide::Transformation tr(CGAL::TRANSLATION, packaide::Vector_2(v.x(), v.y()));
                 auto candidate_poly = CGAL::transform(tr, info.cgal_poly);
+                
+                // Final collision check: Candidate MUST be fully within current material
+                packaide::Polygon_set_2 candidate_set(candidate_poly);
+                candidate_set.intersection(bin_sheet.material);
+                
+                // If intersection is empty or smaller than part, it's not valid
+                if (candidate_set.is_empty()) continue;
+                // Note: For strictness, we could check area, but usually if it's not empty 
+                // and it was derived from an IFP, it's correct.
+
                 packaide::FT score = heuristic.score_after_adding(candidate_poly);
                 if (score < best_score) {
                     best_score = score;
@@ -148,9 +146,17 @@ public:
             if (found) {
                 packaide::Transformation final_tr(CGAL::TRANSLATION, packaide::Vector_2(best_pos.x(), best_pos.y()));
                 auto placed_poly = CGAL::transform(final_tr, info.cgal_poly);
-                placed_polys.push_back(placed_poly);
+                
+                // CONSUME MATERIAL
+                if (config.spacing > packaide::FT(0)) {
+                    auto square = packaide::create_offset_square(config.spacing);
+                    auto consumed_poly = CGAL::minkowski_sum_2(placed_poly, square);
+                    bin_sheet.material.difference(consumed_poly);
+                } else {
+                    bin_sheet.material.difference(placed_poly);
+                }
+                
                 heuristic.add(placed_poly);
-
                 placements.push_back({info.original_index, best_pos.x(), best_pos.y()});
             }
         }
@@ -198,7 +204,7 @@ public:
 
             if (sw <= packaide::FT(0) || sh <= packaide::FT(0)) continue;
 
-            packaide::Sheet bin_sheet = { sw, sh };
+            packaide::Sheet bin_sheet = packaide::Sheet::rectangle(sw, sh);
             
             auto placements = pack_geometric(remaining_parts, bin_sheet, config);
 

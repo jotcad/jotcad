@@ -21,14 +21,19 @@ using Transformation = CGAL::Aff_transformation_2<K>;
 using Polygon_set_2 = CGAL::Polygon_set_2<K>;
 
 struct Sheet {
-    FT width, height;
-    std::vector<Polygon_with_holes_2> holes;
+    Polygon_set_2 material;
 
-    Polygon_2 get_boundary() const {
-        std::vector<Point_2> vertices = {
-            Point_2(0, 0), Point_2(width, 0), Point_2(width, height), Point_2(0, height)
-        };
-        return Polygon_2(vertices.begin(), vertices.end());
+    // Helper for rectangular creation
+    static Sheet rectangle(FT w, FT h) {
+        Polygon_2 rect;
+        rect.push_back(Point_2(0, 0));
+        rect.push_back(Point_2(w, 0));
+        rect.push_back(Point_2(w, h));
+        rect.push_back(Point_2(0, h));
+        
+        Sheet s;
+        s.material.insert(rect);
+        return s;
     }
 };
 

@@ -33,37 +33,54 @@ inline Polygon_with_holes_2 compute_nfp(const Polygon_with_holes_2& poly_A, cons
 }
 
 /**
- * @brief Computes the Inner-Fit Polygon (IFP) of B within a rectangular Sheet A.
+ * @brief Computes the Inner-Fit Polygon (IFP) of B within a Polygon with holes A.
+ * This is effectively the Minkowski Difference (A - B).
  */
-inline Polygon_2 compute_ifp(const Sheet& sheet, const Polygon_with_holes_2& poly_B) {
-    auto bb = poly_B.outer_boundary().bbox();
-    FT w_B = FT(bb.xmax() - bb.xmin());
-    FT h_B = FT(bb.ymax() - bb.ymin());
+inline Polygon_set_2 compute_ifp_pwh(const Polygon_with_holes_2& poly_A, const Polygon_with_holes_2& poly_B) {
+    // For a general PWH, the IFP is:
+    // IFP(A_outer, B) - Union(NFP(A_hole_i, B))
+    
+    // 1. Compute IFP of B within outer boundary of A
+    auto bb_A = poly_A.outer_boundary().bbox();
+    auto bb_B = poly_B.outer_boundary().bbox();
+    
+    FT w_A = FT(bb_A.xmax() - bb_A.xmin());
+    FT h_A = FT(bb_A.ymax() - bb_A.ymin());
+    FT w_B = FT(bb_B.xmax() - bb_B.xmin());
+    FT h_B = FT(bb_B.ymax() - bb_B.ymin());
 
-    if (w_B > sheet.width || h_B > sheet.height) {
-        return Polygon_2();
+    if (w_B > w_A || h_B > h_A) return Polygon_set_2();
+
+    // For now, we assume rectangular outer boundaries for sheets, 
+    // centered at their own bounding boxes for the IFP calculation.
+    FT dx = w_A - w_B;
+    FT dy = h_A - h_B;
+    
+    if (dx < FT(0) || dy < FT(0)) return Polygon_set_2();
+
+    // If dx and dy are both 0, the feasible region is a single point.
+    // However, Polygon_set_2 requires 2D regions. We handle point-fit in the engine.
+    if (dx == FT(0) || dy == FT(0)) return Polygon_set_2();
+
+    Polygon_2 rect_ifp;
+    rect_ifp.push_back(Point_2(bb_A.xmin(), bb_A.ymin()));
+    rect_ifp.push_back(Point_2(bb_A.xmin() + dx, bb_A.ymin()));
+    rect_ifp.push_back(Point_2(bb_A.xmin() + dx, bb_A.ymin() + dy));
+    rect_ifp.push_back(Point_2(bb_A.xmin(), bb_A.ymin() + dy));
+
+    if (!is_good_polygon(rect_ifp)) return Polygon_set_2();
+    
+    Polygon_set_2 result(rect_ifp);
+
+    // 2. Subtract NFPs of all holes in A
+    for (auto hit = poly_A.holes_begin(); hit != poly_A.holes_end(); ++hit) {
+        Polygon_with_holes_2 hole_pwh(*hit);
+        auto nfp = compute_nfp(hole_pwh, poly_B);
+        result.difference(nfp);
     }
 
-    FT dx = sheet.width - w_B;
-    FT dy = sheet.height - h_B;
-
-    // Protocol: compute_ifp MUST only return a 2D region for use with Polygon_set_2.
-    // If dx or dy is 0, the feasible region is a line or point, which is handled 
-    // as a special case in the engine.
-    if (dx == FT(0) || dy == FT(0)) {
-        return Polygon_2();
-    }
-
-    Polygon_2 ifp;
-    ifp.push_back(Point_2(0, 0));
-    ifp.push_back(Point_2(dx, 0));
-    ifp.push_back(Point_2(dx, dy));
-    ifp.push_back(Point_2(0, dy));
-
-    assert(is_good_polygon(ifp));
-
-    return ifp;
-    }
+    return result;
+}
 
 
 struct BoundingBoxHeuristic {
