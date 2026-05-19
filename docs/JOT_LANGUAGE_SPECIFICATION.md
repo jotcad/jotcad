@@ -285,12 +285,17 @@ a single, flat `Geometry` object.
 
 ### 8.3. Cross-Dimensional Logic
 
-JotCAD's boolean engine is **Dimensionally Aware**:
+JotCAD's boolean engine is **Dimensionally Aware** and supports all combinations of 0D (Points), 1D (Segments), 2D (Surfaces), and 3D (Solids):
+
 - **Solid Tool vs. Path**: Trims the path to the part outside the solid.
 - **Solid Tool vs. Points**: Removes points that fall inside the solid volume.
-- **Coplanar Optimization**: If the subject and tool are both flat and lie on
-  the same plane, the engine uses 2D PWH (Polygon With Holes) logic for 
-  maximum performance and exactness.
+- **Surface Tool vs. Path**: Splits the path at the point of intersection with the surface.
+- **Segment Tool vs. Segment (Collinear)**:
+    - **Cut**: Subtracts overlapping portions.
+    - **Join**: Merges overlapping collinear segments into a single minimal segment (interval merging).
+- **Point Tool vs. Segment**: Splits the segment into two parts at the point's location (if the point lies exactly on the segment).
+- **Segment Tool vs. Point**: Removes points that lie exactly on the segment.
+- **Coplanar Optimization**: If the subject and tool are both flat and lie on the same plane, the engine uses 2D PWH (Polygon With Holes) logic for maximum performance and exactness.
 
 ## 9. Blocks (Scoped Execution)
 

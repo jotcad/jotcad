@@ -23,7 +23,10 @@ A **CID** is a strongly-typed identifier representing a cryptographic hash (SHA-
 - **Structured Geometry Format (V F P S T):** JotCAD uses a header-prefixed text format for stable persistence:
   - `V <count>`: Exact rational vertices (`x y z`).
   - `F <count>`: Atomic face definitions (`num_loops loop1_len idx...`).
-  - `P, S, T`: Point, Segment, and Triangle primitives.
+  - `P <count>`: 0D Discrete Points. Indices into the vertex pool.
+  - `S <count>`: 1D Line Segments. Pairs of indices into the vertex pool.
+  - `T <count>`: Atomic Triangles (sub-faces).
+- **The Point Geometry Mandate (CRITICAL)**: To maintain topological purity, raw `vertices` represent only a pool of coordinates. 0D geometry (Point Clouds) MUST be explicitly defined in the `points` (P) index array. Boolean operations and selectors like `points()` MUST exclusively target these indexed points, ignoring unreferenced vertices.
 - **Why:** This guarantees perfect deduplication. If two completely different operations (e.g., `Box(10)` and `Rectangle(10, 10)`) produce the exact same mathematical geometry, they will independently hash to the exact same CID, and the heavy data is only stored once.
 - **VFS Interaction:** Geometry is written *anonymously* to the VFS. The VFS hashes the geometry bytes, writes them to `<CID>.data`, and returns the `CID`.
 

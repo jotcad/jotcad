@@ -55,6 +55,7 @@ int main() {
     points_geo.vertices = {
         {0, 0, 0}, {2, 2, 2}, {10, 10, 10}
     };
+    points_geo.points = {0, 1, 2};
     Shape point_cloud;
     point_cloud.geometry = vfs.materialize(points_geo);
     

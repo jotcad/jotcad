@@ -39,7 +39,10 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                pdf_linewidth_test.cpp \
                repro_empty_pdf.cpp \
                cut_surface_solid_test.cpp \
-               clip_surface_solid_test.cpp
+               clip_surface_solid_test.cpp \
+               segments_boolean_test.cpp \
+               points_boolean_test.cpp \
+               lower_dim_boolean_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 TEST_DEPS = $(TEST_BINS:=.d)
 

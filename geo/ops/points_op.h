@@ -12,6 +12,7 @@ struct PointOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double x, double y, double z) {
         Geometry res;
         res.vertices.push_back({FT(x), FT(y), FT(z)});
+        res.points.push_back(0);
         Shape out = P::make_shape(vfs, res, {{"type", "point"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
@@ -36,10 +37,13 @@ struct PointsOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<std::vector<double>>& points) {
         Geometry res;
         for (const auto& p : points) {
+            int idx = (int)res.vertices.size();
             if (p.size() >= 3) {
                 res.vertices.push_back({FT(p[0]), FT(p[1]), FT(p[2])});
+                res.points.push_back(idx);
             } else if (p.size() == 2) {
                 res.vertices.push_back({FT(p[0]), FT(p[1]), FT(0.0)});
+                res.points.push_back(idx);
             }
         }
         Shape out = P::make_shape(vfs, res, {{"type", "points"}});
@@ -69,6 +73,7 @@ struct PointsExtractOp : P {
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
         Geometry res;
         res.vertices = geo.vertices;
+        for (int i = 0; i < (int)res.vertices.size(); ++i) res.points.push_back(i);
         Shape out = P::make_shape(vfs, res, {{"type", "points"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
@@ -106,6 +111,7 @@ struct EachPointOp : P {
             // Give each point a terminal geometry (origin) so it's reifiable as a vertex
             Geometry p_geo;
             p_geo.vertices.push_back({FT(0), FT(0), FT(0)});
+            p_geo.points.push_back(0);
             p.geometry = vfs->materialize<Geometry>(p_geo);
             
             out.components.push_back(p);
