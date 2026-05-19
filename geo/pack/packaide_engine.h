@@ -14,21 +14,47 @@
 #include "matrix.h"
 #include "shape.h"
 
+#include <CGAL/Constrained_Delaunay_triangulation_2.h>
+#include <CGAL/Constrained_triangulation_plus_2.h>
+#include <CGAL/Polyline_simplification_2/simplify.h>
+#include <CGAL/Polyline_simplification_2/Squared_distance_cost.h>
+
 namespace pack {
 
 using namespace jotcad::geo;
+
+namespace PS = CGAL::Polyline_simplification_2;
 
 class PackaideEngine {
 public:
     struct Config {
         packaide::FT spacing = packaide::FT(2.0);
         packaide::FT margin = packaide::FT(5.0);
+        packaide::FT simplification_tolerance = packaide::FT(0.1);
     };
 
     struct PackResult {
         std::vector<Shape> bins;
         std::vector<std::string> unplaced;
     };
+
+    typedef PS::Vertex_base_2<packaide::K> Vb;
+    typedef CGAL::Constrained_triangulation_face_base_2<packaide::K> Fb;
+    typedef CGAL::Triangulation_data_structure_2<Vb, Fb> TDS;
+    typedef CGAL::Constrained_Delaunay_triangulation_2<packaide::K, TDS, CGAL::Exact_intersections_tag> CDT;
+    typedef CGAL::Constrained_triangulation_plus_2<CDT> CT;
+
+    /**
+     * @brief Simplifies a Polygon_with_holes_2 using topology-preserving vertex removal.
+     */
+    static packaide::Polygon_with_holes_2 simplify_pwh(const packaide::Polygon_with_holes_2& pwh, packaide::FT tolerance) {
+        if (tolerance <= packaide::FT(0)) return pwh;
+        
+        // Standard topology-preserving simplification.
+        // This removes points that don't contribute significantly to the shape
+        // based on the Squared Distance Cost.
+        return PS::simplify(pwh, PS::Squared_distance_cost(), PS::Stop_above_cost_threshold(CGAL::to_double(tolerance)));
+    }
 
     static packaide::Polygon_with_holes_2 geometry_to_cgal(const Geometry& geo) {
         if (geo.faces.empty()) return {};
@@ -201,6 +227,11 @@ public:
             auto geo = vfs->read<Geometry>(parts[i].geometry.value());
             auto cgal_poly = geometry_to_cgal(geo);
             if (cgal_poly.outer_boundary().is_empty()) continue;
+
+            // Simplify part into a conservative outer envelope for performance
+            if (config.simplification_tolerance > packaide::FT(0)) {
+                cgal_poly = simplify_pwh(cgal_poly, config.simplification_tolerance);
+            }
 
             auto bb = cgal_poly.outer_boundary().bbox();
             packaide::Transformation translate(CGAL::TRANSLATION, packaide::Vector_2(-bb.xmin(), -bb.ymin()));

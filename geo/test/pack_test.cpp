@@ -1,7 +1,9 @@
 #include "test_base.h"
 #include "../ops/pack_op.h"
+#include "packaide_engine.h"
 
 using namespace jotcad::geo;
+using namespace pack;
 
 Shape create_triangle(fs::VFSNode* vfs, double size) {
     Geometry geo;
@@ -159,9 +161,94 @@ void test_alignment_and_bias() {
     assert(std::abs(ymax - 25) < 0.1);
 }
 
+void test_geometric_nesting() {
+    std::cout << "Testing Pure Geometric Nesting (Russian Doll)..." << std::endl;
+
+    // 1. 80x80 Sheet
+    packaide::Sheet sheet = packaide::Sheet::rectangle(packaide::FT(80.0), packaide::FT(80.0));
+
+    // 2. Part A: 80x80 Square with a 40x40 Hole
+    packaide::Polygon_2 outer;
+    outer.push_back(packaide::Point_2(0, 0));
+    outer.push_back(packaide::Point_2(80, 0));
+    outer.push_back(packaide::Point_2(80, 80));
+    outer.push_back(packaide::Point_2(0, 80));
+
+    packaide::Polygon_2 hole;
+    hole.push_back(packaide::Point_2(20, 20));
+    hole.push_back(packaide::Point_2(20, 60));
+    hole.push_back(packaide::Point_2(60, 60));
+    hole.push_back(packaide::Point_2(60, 20));
+
+    packaide::Polygon_with_holes_2 pwh_A(outer);
+    pwh_A.add_hole(hole);
+
+    PackaideEngine::PartInfo info_A;
+    info_A.original_index = 0;
+    info_A.cgal_poly = pwh_A;
+    info_A.area = packaide::FT(80*80 - 40*40);
+    info_A.xmin_off = 0; info_A.ymin_off = 0;
+
+    // 3. Part B: 20x20 Solid Square (Should go in the hole)
+    packaide::Polygon_2 p_B;
+    p_B.push_back(packaide::Point_2(0, 0));
+    p_B.push_back(packaide::Point_2(20, 0));
+    p_B.push_back(packaide::Point_2(20, 20));
+    p_B.push_back(packaide::Point_2(0, 20));
+
+    PackaideEngine::PartInfo info_B;
+    info_B.original_index = 1;
+    info_B.cgal_poly = packaide::Polygon_with_holes_2(p_B);
+    info_B.area = packaide::FT(400.0);
+    info_B.xmin_off = 0; info_B.ymin_off = 0;
+
+    std::vector<PackaideEngine::PartInfo> parts = { info_A, info_B };
+
+    PackaideEngine::Config config;
+    config.margin = packaide::FT(0.0);
+    config.spacing = packaide::FT(0.0);
+    config.simplification_tolerance = packaide::FT(0.0);
+
+    auto placements = PackaideEngine::pack_geometric(parts, sheet, config);
+
+    assert(placements.size() == 2);
+    bool found_in_hole = false;
+    for (const auto& p : placements) {
+        if (p.original_index == 1) {
+            // Top-Left bias: Hole is [20, 60] x [20, 60]. 
+            // For 20x20 part, top-left anchor is (20, 40).
+            if (p.x == packaide::FT(20) && p.y == packaide::FT(40)) found_in_hole = true;
+        }
+    }
+    assert(found_in_hole);
+    std::cout << "  - SUCCESS: Nesting verified." << std::endl;
+}
+
+void test_simplification() {
+    std::cout << "Testing Standard Polyline Simplification..." << std::endl;
+
+    packaide::Polygon_2 jagged;
+    jagged.push_back(packaide::Point_2(0, 0));
+    jagged.push_back(packaide::Point_2(5, 0.1));  // Nearly collinear
+    jagged.push_back(packaide::Point_2(10, 0));
+    jagged.push_back(packaide::Point_2(10, 10));
+    jagged.push_back(packaide::Point_2(0, 10));
+
+    packaide::Polygon_with_holes_2 pwh(jagged);
+    
+    // With 5.0 tolerance, the (5, 0.1) point should be removed
+    auto simplified = PackaideEngine::simplify_pwh(pwh, packaide::FT(5.0));
+    
+    std::cout << "  - Vertices: " << jagged.size() << " -> " << simplified.outer_boundary().size() << std::endl;
+    assert(simplified.outer_boundary().size() < jagged.size());
+    std::cout << "  - SUCCESS: Simplification verified." << std::endl;
+}
+
 int main() {
     test_multi_sheet();
     test_alignment_and_bias();
+    test_geometric_nesting();
+    test_simplification();
     std::cout << "✨ All Pack tests passed!" << std::endl;
     return 0;
 }
