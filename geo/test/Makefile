@@ -7,14 +7,9 @@ INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../rend
            -I../cgal -I../cgal/boost \
            -I../cgal/cgal/include -I../cgal/cgal/include/CGAL/include \
            -I../cgal/freetype/include \
-           -I../pack \
-           -I../vendor/clipper \
-           -I../vendor/nlopt/src/api \
-           -I../vendor/nlopt/build
+           -I../pack
 DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
 LIBS = ../cgal/freetype/build/libfreetype.a \
-       ../vendor/clipper/libclipper.a \
-       ../vendor/nlopt/build/libnlopt.a \
        -lpthread -lssl -lcrypto -lz -ldl
 
 BIN_DIR = bin
@@ -39,11 +34,12 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                selection_test.cpp \
                unfold_test.cpp \
                grow_flat_test.cpp \
-               diag_unfold_math.cpp \
                cid_consistency_test.cpp \
                pack_test.cpp \
                pdf_linewidth_test.cpp \
-               repro_empty_pdf.cpp
+               repro_empty_pdf.cpp \
+               cut_surface_solid_test.cpp \
+               clip_surface_solid_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 TEST_DEPS = $(TEST_BINS:=.d)
 

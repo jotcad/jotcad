@@ -40,16 +40,11 @@ typedef CGAL::Polygon_with_holes_2<EK> Polygon_with_holes_2;
 
 struct Engine {
     /**
-     * cut_mesh_by_mesh: 3D Volume-Volume subtraction.
+     * cut_mesh_by_mesh: 3D Volume-Volume subtraction OR Surface-Volume subtraction.
      */
     static bool cut_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
-        if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) {
-            return CGAL::Polygon_mesh_processing::clip(
-                target, tool, 
-                CGAL::parameters::use_compact_clipper(true).clip_volume(false)
-            );
-        }
-
+        // corefine_and_compute_difference works even if target is open (a surface)
+        // as long as the tool is closed.
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
@@ -65,7 +60,8 @@ struct Engine {
     static bool join_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
         if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) {
             // Cannot union open meshes easily in 3D without clear inside/outside.
-            // For now, we return false or just merge if they don't overlap properly.
+            // But we can try corefined union for open meshes if needed.
+            // For now, stick to the safer check.
             return false;
         }
 
@@ -79,13 +75,10 @@ struct Engine {
     }
 
     /**
-     * clip_mesh_by_mesh: 3D Volume-Volume intersection.
+     * clip_mesh_by_mesh: 3D Volume-Volume intersection OR Surface-Volume intersection.
      */
     static bool clip_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
-        if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) {
-            return false;
-        }
-
+        // corefine_and_compute_intersection works for open target and closed tool.
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
@@ -789,9 +782,7 @@ struct Engine {
                             Matrix rel_tf = subject_world_inv * tool.world_tf;
                             transform_mesh(tool_mesh, rel_tf);
                             
-                            if (CGAL::is_closed(target_mesh) && CGAL::is_closed(tool_mesh)) {
-                                clip_mesh_by_mesh(target_mesh, tool_mesh);
-                            }
+                            clip_mesh_by_mesh(target_mesh, tool_mesh);
                         }
                     }
                     target_geo = mesh_to_geometry(target_mesh);

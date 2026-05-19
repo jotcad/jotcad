@@ -16,15 +16,10 @@ INCLUDES = -I. -I./ops -I./core -I./data -I./math -I./algorithms -I./render -I./
            -I./cgal -I./cgal/boost \
            -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include \
            -I./cgal/freetype/include \
-           -I./pack \
-           -I./vendor/clipper \
-           -I./vendor/nlopt/src/api \
-           -I./vendor/nlopt/build
+           -I./pack
 
 DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
 LIBS = ./cgal/freetype/build/libfreetype.a \
-       ./vendor/clipper/libclipper.a \
-       ./vendor/nlopt/build/libnlopt.a \
        -lpthread -lssl -lcrypto -lz -ldl
 
 # Library and Binary
