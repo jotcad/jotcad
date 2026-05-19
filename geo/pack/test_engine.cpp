@@ -202,12 +202,86 @@ void test_geometric_nest_in_hole() {
     std::cout << "  - SUCCESS: Part B nested inside Part A's void." << std::endl;
 }
 
+void test_geometric_complex_voids() {
+    std::cout << "Testing Complex Voids (Nesting inside a bridged Russian Doll)..." << std::endl;
+
+    // 1. 100x100 Sheet
+    packaide::Sheet sheet = packaide::Sheet::rectangle(packaide::FT(100.0), packaide::FT(100.0));
+
+    // 2. Create the "Russian Doll" (Single Piece)
+    // - Outer Ring: 100x100, hole 80x80
+    // - Inner Ring: 60x60, hole 40x40
+    // - Bridge: 10x20 connecting them at the bottom
+    
+    packaide::Polygon_set_2 rd_set;
+    
+    auto make_rect = [](double x, double y, double w, double h) {
+        packaide::Polygon_2 p;
+        p.push_back(packaide::Point_2(x, y));
+        p.push_back(packaide::Point_2(x + w, y));
+        p.push_back(packaide::Point_2(x + w, y + h));
+        p.push_back(packaide::Point_2(x, y + h));
+        return p;
+    };
+
+    rd_set.insert(make_rect(0, 0, 100, 100));
+    rd_set.difference(make_rect(10, 10, 80, 80));
+    rd_set.join(make_rect(20, 20, 60, 60));
+    rd_set.difference(make_rect(30, 30, 40, 40));
+    rd_set.join(make_rect(45, 10, 10, 10)); // The Bridge
+
+    std::vector<packaide::Polygon_with_holes_2> pwhs;
+    rd_set.polygons_with_holes(std::back_inserter(pwhs));
+    assert(pwhs.size() == 1); // Should be one single bridged piece
+
+    PackaideEngine::PartInfo info_A;
+    info_A.original_index = 0;
+    info_A.cgal_poly = pwhs[0];
+    info_A.area = packaide::FT(100*100 - 80*80 + 60*60 - 40*40 + 10*10); // Approx
+    info_A.xmin_off = 0; info_A.ymin_off = 0;
+
+    // 3. Subsequent parts to fit in voids
+    // Part B (10x10) to fit in the OUTER void (between 80x80 and 60x60)
+    PackaideEngine::PartInfo info_B;
+    info_B.original_index = 1;
+    info_B.cgal_poly = packaide::Polygon_with_holes_2(make_rect(0, 0, 10, 10));
+    info_B.area = packaide::FT(100.0);
+    info_B.xmin_off = 0; info_B.ymin_off = 0;
+
+    // Part C (10x10) to fit in the INNER void (center 40x40)
+    PackaideEngine::PartInfo info_C;
+    info_C.original_index = 2;
+    info_C.cgal_poly = packaide::Polygon_with_holes_2(make_rect(0, 0, 10, 10));
+    info_C.area = packaide::FT(100.0);
+    info_C.xmin_off = 0; info_C.ymin_off = 0;
+
+    std::vector<PackaideEngine::PartInfo> parts = { info_A, info_B, info_C };
+
+    PackaideEngine::Config config;
+    config.margin = packaide::FT(0.0);
+    config.spacing = packaide::FT(2.0); 
+
+    // 4. Pack
+    auto placements = PackaideEngine::pack_geometric(parts, sheet, config);
+
+    // 5. Verify
+    std::cout << "  - Placed " << placements.size() << " parts" << std::endl;
+    assert(placements.size() == 3);
+    
+    for (const auto& p : placements) {
+        std::cout << "    * Part " << p.original_index << " placed at (" << p.x << ", " << p.y << ")" << std::endl;
+    }
+    
+    std::cout << "  - SUCCESS: Multi-level void nesting verified." << std::endl;
+}
+
 int main() {
     try {
         test_geometric_align();
         test_geometric_exact_fit();
         test_geometric_islands();
         test_geometric_nest_in_hole();
+        test_geometric_complex_voids();
         std::cout << "✨ Pure Geometric Engine Test Passed!" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "❌ Test failed with exception: " << e.what() << std::endl;
