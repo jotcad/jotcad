@@ -18,7 +18,7 @@ const certPath = path.join(sslDir, 'localhost-cert.pem');
 let server;
 let protocol = 'http';
 
-if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+if (process.env.DISABLE_SSL !== '1' && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     console.log(`[Export Node ${id}] Certificates found. Starting in HTTPS mode...`);
     const options = {
         key: fs.readFileSync(keyPath),
@@ -27,7 +27,11 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     server = https.createServer(options);
     protocol = 'https';
 } else {
-    console.log(`[Export Node ${id}] No certificates found. Starting in HTTP mode...`);
+    if (process.env.DISABLE_SSL === '1') {
+        console.log(`[Export Node ${id}] SSL disabled via environment variable. Starting in HTTP mode...`);
+    } else {
+        console.log(`[Export Node ${id}] No certificates found. Starting in HTTP mode...`);
+    }
     server = http.createServer();
 }
 

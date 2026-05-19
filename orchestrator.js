@@ -20,7 +20,7 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_test_',
     ux: {
         command: 'npx',
-        args: ['http-server', 'ux/dist/test', '-p', '3131']
+        args: ['http-server', 'ux/dist/test', '-p', '3131', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
     }
   }
 };

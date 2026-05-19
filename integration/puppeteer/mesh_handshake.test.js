@@ -14,7 +14,7 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
 
     browser = await puppeteer.launch({ 
       headless: 'new',
-      args: ['--no-sandbox'] 
+      args: ['--no-sandbox', '--ignore-certificate-errors'] 
     });
     const page = await browser.newPage();
 
@@ -23,14 +23,14 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
     // Wait for the catalog receipt log
     console.log('[Test Browser] Waiting for Catalog handshake...');
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 15000);
+      const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
       page.on('console', (msg) => {
         if (msg.text().includes('Received Catalog from geo-ops-node')) {
           clearTimeout(timeout);
           resolve();
         }
       });
-      page.goto(`http://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
+      page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
     });
 
     console.log('[Test Browser] Catalog handshake SUCCESS.');

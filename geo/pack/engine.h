@@ -106,29 +106,44 @@ public:
             }
         }
 
-        // 3. Perform Nesting (Multi-bin loop)
+        // 3. Perform Nesting
         for (size_t b = 0; b < available_bins.size(); ++b) {
             std::vector<std::reference_wrapper<Item>> batch;
-            std::vector<size_t> batch_indices;
             for (size_t i = 0; i < items.size(); ++i) {
                 if (items[i].binId() == BIN_ID_UNSET) {
-                    batch.push_back(items[i]);
-                    batch_indices.push_back(i);
+                    batch.push_back(std::ref(items[i]));
                 }
             }
             if (batch.empty()) break;
 
-            // Use BottomLeftPlacer for stability
-            _Nester<BottomLeftPlacer, FirstFitSelection> nester(available_bins[b], static_cast<Coord>(config.spacing * SCALE));
-            nester.execute(batch.begin(), batch.end());
+            // Try NFP first as it is high quality.
+            bool success = false;
+            try {
+                NfpPlacer::Config nfp_cfg;
+                nfp_cfg.alignment = NfpPlacer::Config::Alignment::BOTTOM_LEFT;
+                nfp_cfg.starting_point = NfpPlacer::Config::Alignment::BOTTOM_LEFT;
+                nfp_cfg.accuracy = 0.5f;
 
-            // IMPORTANT: Only accept items placed in bin 0 of THIS nester.
-            // Items with binId > 0 overflowed and should be tried in the NEXT sheet.
+                _Nester<NfpPlacer, FirstFitSelection> nester(available_bins[b], static_cast<Coord>(config.spacing * SCALE), nfp_cfg);
+                nester.execute(batch.begin(), batch.end());
+                success = true;
+            } catch (const std::exception& e) {
+                std::cerr << "[Engine::pack] NfpPlacer failed: " << e.what() << ". Falling back to BottomLeftPlacer." << std::endl;
+                for (auto& item_ref : batch) item_ref.get().binId(BIN_ID_UNSET);
+            }
+
+            if (!success) {
+                BottomLeftPlacer::Config bl_cfg;
+                bl_cfg.allow_rotations = true;
+                _Nester<BottomLeftPlacer, FirstFitSelection> nester(available_bins[b], static_cast<Coord>(config.spacing * SCALE), bl_cfg);
+                nester.execute(batch.begin(), batch.end());
+            }
+
             for (auto& item_ref : batch) {
-                if (item_ref.get().binId() == 0) {
-                    item_ref.get().binId(static_cast<int>(b));
-                } else {
-                    item_ref.get().binId(BIN_ID_UNSET);
+                Item& item = item_ref.get();
+                if (item.binId() != BIN_ID_UNSET) {
+                    // Mark as placed in our world-space bin index 'b'
+                    item.binId(static_cast<int>(b));
                 }
             }
         }
@@ -159,9 +174,10 @@ public:
             m = m.rotateZ(turns);
             
             // 3. Place at packed position in world space
-            // Top-Left Bias: Use (xmin + tx) and (ymax - ty)
+            // NATURAL BIAS: Bottom-Left.
             double world_x = bin_info.xmin + config.margin + tx;
-            double world_y = bin_info.ymax - config.margin - ty; 
+            double world_y = bin_info.ymin + config.margin + ty; 
+
             m = m.translated(FT(world_x), FT(world_y), FT(0));
 
             result.placements.push_back({part_idx, item.binId(), m});
@@ -202,25 +218,33 @@ private:
                     static_cast<ClipperLib::cInt>(vy * scale)
                 ));
             }
-            if (!path.empty() && (path.front().X != path.back().X || path.front().Y != path.back().Y)) {
-                path.push_back(path.front());
-            }
             return path;
         };
 
         PathImpl contour = process_loop(geo.faces[0].loops[0]);
         if (contour.empty() || contour.size() < 3) return std::nullopt;
 
-        // libnest2d internal Clipper usage expects Outer contours to be CCW (standard orientation).
-        if (!ClipperLib::Orientation(contour)) {
+        // Clean the polygon to remove redundant vertices and micro-segments
+        ClipperLib::CleanPolygon(contour, 1.0); 
+
+        // libnest2d expects CLOCKWISE for outer contours in Cartesian Y-up.
+        // ClipperLib::Orientation returns TRUE for CCW in Cartesian Y-up.
+        if (ClipperLib::Orientation(contour)) {
             ClipperLib::ReversePath(contour);
+        }
+
+        std::cerr << "[shape_to_nest_poly] Processed Contour (" << (ClipperLib::Orientation(contour) ? "CCW" : "CW") << "):" << std::endl;
+        for (const auto& p : contour) {
+            std::cerr << "  (" << p.X << ", " << p.Y << ")" << std::endl;
         }
 
         HoleStore holes;
         for (size_t l = 1; l < geo.faces[0].loops.size(); ++l) {
             PathImpl hole = process_loop(geo.faces[0].loops[l]);
             if (hole.size() >= 3) {
-                if (ClipperLib::Orientation(hole)) ClipperLib::ReversePath(hole);
+                ClipperLib::CleanPolygon(hole, 1.0);
+                // Holes should be CCW (opposite of outer).
+                if (!ClipperLib::Orientation(hole)) ClipperLib::ReversePath(hole);
                 holes.push_back(std::move(hole));
             }
         }

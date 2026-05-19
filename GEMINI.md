@@ -13,6 +13,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 
 ## Protocol Invariants (TERMINAL RULES)
 
+- **WIRE-TO-FACE TRANSITION (MANDATORY)**: 1D Segments (Wires) MUST be explicitly promoted to 2D Faces using `jot/fill` before being passed to operators that expect regions (e.g., `jot/offset`, `jot/pdf`). Silent "guessing" of faces from segments is strictly prohibited.
 - **IDENTITY DUALITY (CRITICAL)**: **CID** and **Selector** are top-level alternatives. NEVER wrap a CID in a "fake" Selector. Requests must explicitly signal whether they target a content-hash (CID) or a computational-recipe (Selector).
 - **INDEPENDENT MATRIX MANDATE (CRITICAL)**: Shape matrices (`tf`) represent absolute world-space transforms. No scene-graph multiplication (parent-child accumulation) is allowed. All transformations MUST be applied recursively to child components.
 - **STRICT SELECTOR ENFORCEMENT**: `normalizeSelector` is a non-coercive type guard. It MUST throw a fatal error if passed a raw object. Hydration MUST happen at the boundary (REST/UX).

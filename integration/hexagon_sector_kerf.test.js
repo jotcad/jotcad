@@ -74,7 +74,8 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', { timeout: 30000 }, as
       }).withOutput('$out');
       const group = new Selector('jot/group', { $in: origin, shapes: [point0, point1] }).withOutput('$out');
       const loop = new Selector('jot/loop', { $in: group }).withOutput('$out');
-      const offset = new Selector('jot/offset', { $in: loop, diameter: 5.0 }).withOutput('$out');
+      const fill = new Selector('jot/fill', { $in: loop }).withOutput('$out');
+      const offset = new Selector('jot/offset', { $in: fill, diameter: 5.0 }).withOutput('$out');
       const pdf = new Selector('jot/pdf', { $in: offset, path: 'sector.pdf' }).withOutput('$out');
 
       console.log('[Test Sector] Requesting complex expression...');

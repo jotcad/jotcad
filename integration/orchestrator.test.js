@@ -30,7 +30,13 @@ test('Orchestrator Lifecycle: Cluster Launch and Shutdown', async (t) => {
         });
 
         await t.test('UX should be reachable', async () => {
-            const resp = await fetch(`http://localhost:${ports.ux}/`);
+            const isHttps = PROFILES.TEST.ux.args.includes('--ssl');
+            const protocol = isHttps ? 'https' : 'http';
+            const options = {};
+            if (isHttps) {
+                options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
+            }
+            const resp = await fetch(`${protocol}://localhost:${ports.ux}/`, options);
             assert.ok(resp.ok, 'UX reachability check failed');
         });
 

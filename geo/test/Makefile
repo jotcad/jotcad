@@ -41,7 +41,9 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                grow_flat_test.cpp \
                diag_unfold_math.cpp \
                cid_consistency_test.cpp \
-               pack_test.cpp
+               pack_test.cpp \
+               pdf_linewidth_test.cpp \
+               repro_empty_pdf.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 TEST_DEPS = $(TEST_BINS:=.d)
 
