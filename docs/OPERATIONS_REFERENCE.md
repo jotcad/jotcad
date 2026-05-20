@@ -175,7 +175,35 @@ Applies a recurring on/off length pattern to a segment chain (polylines).
 - **`end`**: A specific pattern (lengths) applied **backward from the end** of the path. Alternates ON/OFF (measured from the tip).
 - **`offset`**: Shifts the repeat pattern phase.
 
----
+## 5. Booleans and Nesting
+
+### `join(tools=[])`
+Combines the subject with one or more tool shapes into a single manifold solid. Overlapping volumes are merged.
+
+### `cut(tools=[])`
+Subtracts one or more tool shapes from the subject.
+
+### `clip(tools=[])`
+Intersects the subject with one or more tool shapes, keeping only the overlapping volume.
+
+### `fuse(tools=[])`
+Flattens a complex assembly into a set of disjoint manifolds. It merges overlapping solids and resolves intersections without removing material (unless `gap()` tags are present).
+
+### `disjoint(tools=[])`
+Ensures the subject and tools are topologically disjoint by subtracting the intersection from the subject.
+
+### `pack(parts=null, sheet=null, spacing=2.0, margin=0.0)`
+Packs multiple shapes into one or more sheets using a 2D nesting algorithm.
+- **`parts`**: A shape or group of shapes to be packed. If omitted, uses the subject.
+- **`sheet`**: A shape or group of shapes representing the available material bins.
+- **`spacing`**: The minimum distance between parts and the clearance subtracted from the sheet.
+- **`margin`**: The minimum distance from the edge of the sheet.
+- **Behavior**: Returns an assembly of **Bins**. Each bin is tagged with a numeric `sheet` ID (e.g. `1.0`, `2.0`).
+- **Disjoint Geometry**: Each bin contains a **subtracted sheet** as its first component (also tagged with the `sheet` ID). This geometry is the result of subtracting all placed parts from the original sheet, ensuring the material and parts are topologically disjoint.
+- **Nesting**: Supports complex geometric nesting, including placing parts inside the holes of other parts.
+- **Example**: `Layout = Parts.pack(sheet=Sheet(48, 96), spacing=0.25)`
+
+## 6. Export and Post-Processing
 
 ### `pdf(path="export.pdf", width=0, height=0)`
 
@@ -218,7 +246,7 @@ Splits the input geometry into separate shapes based on connected components (di
 Box(10).cut(Plane().m(0, 0, 5)).separate()
 ```
 
-## 6. Plane and Normal Extraction
+## 7. Plane and Normal Extraction
 
 ### `plane()`
 Extracts the coordinate system from the first face of a shape.
@@ -244,7 +272,7 @@ Extracts the wireframe outlines of the subject.
 - **Feature Extraction**: Only keeps boundary edges (shared by 1 face) or feature edges (shared by 2 faces with different normals).
 - **Coplanar Filter**: Automatically ignores edges between coplanar faces (zero-degree bends) to produce clean silhouettes.
 
-## 7. Distribution
+## 8. Distribution
 
 ### `place(template_shape)`
 Instantiates a template shape at every anchor point in the subject collection.
@@ -261,7 +289,7 @@ Plate.eachCorner().place(Disk(2))
 Pattern.place(Bolt())
 ```
 
-## 8. Extrusion
+## 9. Extrusion
 
 ### `e(target)` / `extrude(target)`
 The primary tool for promoting geometry along a vector or between coordinate systems.
@@ -292,7 +320,7 @@ Revolves geometry around the local Z axis to create circular features or solids 
 ### `spx(start, end)`, `spy(start, end)`, `spz(start, end)`
 Axis-specific shorthands for revolving around the local X, Y, or Z axes.
 
-## 9. Selection and Querying
+## 10. Selection and Querying
 
 ### `faces()`
 Returns a **Generator** of contiguous coplanar patches (Polygons with Holes). It automatically merges contiguous triangles and N-gons into clean surfaces. (Formerly `eachFace`).
@@ -379,7 +407,7 @@ Box(10).smooth(limit=1/24, resolution=2.0)
 Box(10).at(corners().highest(z(), 0)).smooth(limit=1/36)
 ```
 
-## 10. Constants and Directions
+## 11. Constants and Directions
 
 To support alignment and selection, the following world-space direction vectors are provided as global constants:
 
@@ -390,7 +418,7 @@ To support alignment and selection, the following world-space direction vectors 
 - **`FRONT`** / **`Y()`**: `[0, 1, 0]`
 - **`BACK`**: `[0, -1, 0]`
 
-## 11. Movement
+## 12. Movement
 
 ### `m(x, y, z)` / `move(x, y, z)`
 Translates the subject by the specified X, Y, and Z offsets.
@@ -405,7 +433,7 @@ Axis-specific shorthands for translation. These operators align with the **Unive
 - **Sequence Behavior**: If an array is provided, the operator generates a **Group** containing one translated instance for each offset in the sequence.
 - **Example**: `Box(10).mx([0, 20, 40])` results in a group of three boxes spaced at 20mm intervals.
 
-## 11. Transformation
+## 13. Transformation
 
 ### `by(target)`
 Transforms the subject's matrix by the matrix of the target shape. 
@@ -453,7 +481,7 @@ Scales the subject along the local axes.
 ### `sx(val)`, `sy(val)`, `sz(val)`
 Axis-specific shorthands for scaling along X, Y, or Z.
 
-## 11. Mesh Optimization
+## 14. Mesh Optimization
 
 ### `simplify(ratio=0.5, count=0, threshold=1/6)`
 Reduces mesh complexity while preserving sharp features using edge-collapse.
@@ -462,7 +490,7 @@ Reduces mesh complexity while preserving sharp features using edge-collapse.
 - **`count`**: Explicit target face count (overrides ratio if > 0).
 - **`threshold`**: Dihedral angle (in turns/tau) used to identify and protect sharp features.
 
-## 12. Typography
+## 15. Typography
 
 ### `Font(url)`
 Downloads and validates a font file (TTF/OTF/WOFF) from a remote URL.
@@ -517,7 +545,7 @@ Vector = Trace(Photo, colors=12, smooth=2.0);
 Vector.on("#bcd3ee").ez(5);
 ```
 
-## 13. Infinite Planes (Orientations)
+## 16. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
 - **`Y(offset=0)`**: Infinite plane on the XZ axis (normal +Y).
