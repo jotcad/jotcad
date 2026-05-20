@@ -35,6 +35,7 @@ public:
 
     struct PackResult {
         std::vector<Shape> bins;
+        std::vector<Geometry> remainders;
         std::vector<std::string> unplaced;
     };
 
@@ -268,8 +269,11 @@ public:
 
             Shape out_bin = sheets[s_idx];
             out_bin.add_tag("type", "group");
-            out_bin.add_tag("name", "sheet_" + std::to_string(s_idx));
+            out_bin.add_tag("sheet", (double)(s_idx + 1));
             out_bin.components.clear();
+
+            packaide::Polygon_set_2 sheet_remainder;
+            sheet_remainder.insert(geometry_to_cgal(sheet_geo));
 
             std::set<size_t> placed_indices;
             for (const auto& p : placements) {
@@ -280,13 +284,47 @@ public:
                 });
 
                 Shape comp = parts[p.original_index];
-                Matrix m = Matrix::translate(FT(p.x + packaide::FT(s_bb.xmin()) + config.margin), 
-                                           FT(p.y + packaide::FT(s_bb.ymin()) + config.margin), 
-                                           FT(0));
+                packaide::FT tx = p.x + packaide::FT(s_bb.xmin()) + config.margin;
+                packaide::FT ty = p.y + packaide::FT(s_bb.ymin()) + config.margin;
+                Matrix m = Matrix::translate(FT(tx), FT(ty), FT(0));
                 m = m * Matrix::translate(FT(-it->xmin_off), FT(-it->ymin_off), FT(0));
                 comp.tf = m;
                 out_bin.components.push_back(comp);
+
+                // Subtract from remainder
+                packaide::Transformation final_tr(CGAL::TRANSLATION, packaide::Vector_2(tx - it->xmin_off, ty - it->ymin_off));
+                auto placed_poly = CGAL::transform(final_tr, it->cgal_poly);
+                if (config.spacing > packaide::FT(0)) {
+                    auto square = packaide::create_offset_square(config.spacing);
+                    auto consumed_poly = CGAL::minkowski_sum_2(placed_poly, square);
+                    sheet_remainder.difference(consumed_poly);
+                } else {
+                    sheet_remainder.difference(placed_poly);
+                }
             }
+
+            // Convert remainder back to Geometry
+            Geometry remainder_geo;
+            std::vector<packaide::Polygon_with_holes_2> pwhs; 
+            sheet_remainder.polygons_with_holes(std::back_inserter(pwhs));
+            for (const auto& pwh : pwhs) {
+                Geometry::Face face; std::vector<int> outer;
+                for (auto it = pwh.outer_boundary().vertices_begin(); it != pwh.outer_boundary().vertices_end(); ++it) { 
+                    outer.push_back((int)remainder_geo.vertices.size()); 
+                    remainder_geo.vertices.push_back({FT(it->x()), FT(it->y()), FT(0)}); 
+                }
+                if (!outer.empty()) face.loops.push_back(outer);
+                for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) { 
+                    std::vector<int> hole; 
+                    for (auto it = hit->vertices_begin(); it != hit->vertices_end(); ++it) { 
+                        hole.push_back((int)remainder_geo.vertices.size()); 
+                        remainder_geo.vertices.push_back({FT(it->x()), FT(it->y()), FT(0)}); 
+                    } 
+                    if (!hole.empty()) face.loops.push_back(hole); 
+                }
+                remainder_geo.faces.push_back(face);
+            }
+            result.remainders.push_back(remainder_geo);
 
             std::vector<PartInfo> next_remaining;
             for (const auto& info : remaining_parts) {

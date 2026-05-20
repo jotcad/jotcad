@@ -51,15 +51,10 @@ struct PackOp : P {
         for (size_t b = 0; b < res.bins.size(); ++b) {
             Shape sheet_group = res.bins[b];
             
-            // The sheet itself MUST be the first component of the group for tests to pass
-            // In the current PackaideEngine, res.bins[b] is the sheet shape itself 
-            // but its components were cleared and filled with parts.
-            // We need to re-insert the sheet geometry as the first component.
-            
             Shape sheet_background;
-            sheet_background.geometry = sheets[b % sheets.size()].geometry; // Use original sheet geo
+            sheet_background.geometry = vfs->materialize(res.remainders[b]); // Use subtracted sheet geo
             sheet_background.tags = sheets[b % sheets.size()].tags;
-            sheet_background.tags["name"] = "sheet_background";
+            sheet_background.tags["sheet"] = (double)(b + 1);
             
             // Insert at beginning
             sheet_group.components.insert(sheet_group.components.begin(), sheet_background);

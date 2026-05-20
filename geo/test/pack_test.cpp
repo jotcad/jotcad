@@ -72,10 +72,10 @@ void test_multi_sheet() {
     int total_placed_parts = 0;
 
     for (const auto& comp : out.components) {
-        if (comp.tags["name"] == "sheet_0") {
+        if (comp.tags.contains("sheet") && comp.tags["sheet"] == 1.0) {
             found_sheet_0 = true;
             total_placed_parts += (int)comp.components.size() - 1;
-        } else if (comp.tags["name"] == "sheet_1") {
+        } else if (comp.tags.contains("sheet") && comp.tags["sheet"] == 2.0) {
             found_sheet_1 = true;
             total_placed_parts += (int)comp.components.size() - 1;
         }
