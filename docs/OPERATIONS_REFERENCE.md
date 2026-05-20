@@ -203,7 +203,38 @@ Packs multiple shapes into one or more sheets using a 2D nesting algorithm.
 - **Nesting**: Supports complex geometric nesting, including placing parts inside the holes of other parts.
 - **Example**: `Layout = Parts.pack(sheet=Sheet(48, 96), spacing=0.25)`
 
-## 6. Export and Post-Processing
+## 6. Metadata and Filtering
+
+Metadata allows you to attach non-geometric information (tags) to shapes, which can later be used for identification, logical branching, or selective filtering.
+
+### `set(key, value)`
+Attaches a tag to the subject shape.
+- **`key`**: The name of the tag (String).
+- **`value`**: The value to store (String or Number).
+- **Collision Logic**: Last-write-wins. Setting a value for an existing key overwrites the previous value.
+- **Example**: `Part = Box(10).set("material", "aluminum")`
+
+### `get(key)`
+Retrieves the value of a tag from the subject.
+- **`key`**: The name of the tag to look up.
+- **Returns**: The stored value or `null` if not found.
+
+### `has(key, value=null)`
+**Selection Generator.** Creates a query to find components with specific tags. Used inside `keep()`, `drop()`, `at()`, or `on()`.
+- **`key`**: The tag name to search for.
+- **`value`**: Optional. If provided, matches only components where the tag value exactly matches.
+- **Example**: `Layout.keep(has("sheet", 1.0))`
+
+### `keep(selector)`
+Prunes the subject tree, retaining only the components that match the provided selector.
+- **Preservation**: Parents of matching components are retained to preserve world-space transforms, but their other children (which don't contain matches) are removed.
+- **Example**: `Assembly.keep(has("part", "bolt"))`
+
+### `drop(selector)`
+The inverse of `keep`. Removes all components from the tree that match the provided selector.
+- **Example**: `Assembly.drop(has("part", "bracket"))`
+
+## 7. Export and Post-Processing
 
 ### `pdf(path="export.pdf", width=0, height=0)`
 
@@ -246,7 +277,7 @@ Splits the input geometry into separate shapes based on connected components (di
 Box(10).cut(Plane().m(0, 0, 5)).separate()
 ```
 
-## 7. Plane and Normal Extraction
+## 8. Plane and Normal Extraction
 
 ### `plane()`
 Extracts the coordinate system from the first face of a shape.
@@ -272,7 +303,7 @@ Extracts the wireframe outlines of the subject.
 - **Feature Extraction**: Only keeps boundary edges (shared by 1 face) or feature edges (shared by 2 faces with different normals).
 - **Coplanar Filter**: Automatically ignores edges between coplanar faces (zero-degree bends) to produce clean silhouettes.
 
-## 8. Distribution
+## 9. Distribution
 
 ### `place(template_shape)`
 Instantiates a template shape at every anchor point in the subject collection.
@@ -289,7 +320,7 @@ Plate.eachCorner().place(Disk(2))
 Pattern.place(Bolt())
 ```
 
-## 9. Extrusion
+## 10. Extrusion
 
 ### `e(target)` / `extrude(target)`
 The primary tool for promoting geometry along a vector or between coordinate systems.
@@ -320,7 +351,7 @@ Revolves geometry around the local Z axis to create circular features or solids 
 ### `spx(start, end)`, `spy(start, end)`, `spz(start, end)`
 Axis-specific shorthands for revolving around the local X, Y, or Z axes.
 
-## 10. Selection and Querying
+## 11. Selection and Querying
 
 ### `faces()`
 Returns a **Generator** of contiguous coplanar patches (Polygons with Holes). It automatically merges contiguous triangles and N-gons into clean surfaces. (Formerly `eachFace`).
@@ -407,7 +438,7 @@ Box(10).smooth(limit=1/24, resolution=2.0)
 Box(10).at(corners().highest(z(), 0)).smooth(limit=1/36)
 ```
 
-## 11. Constants and Directions
+## 12. Constants and Directions
 
 To support alignment and selection, the following world-space direction vectors are provided as global constants:
 
@@ -418,7 +449,7 @@ To support alignment and selection, the following world-space direction vectors 
 - **`FRONT`** / **`Y()`**: `[0, 1, 0]`
 - **`BACK`**: `[0, -1, 0]`
 
-## 12. Movement
+## 13. Movement
 
 ### `m(x, y, z)` / `move(x, y, z)`
 Translates the subject by the specified X, Y, and Z offsets.
@@ -433,7 +464,7 @@ Axis-specific shorthands for translation. These operators align with the **Unive
 - **Sequence Behavior**: If an array is provided, the operator generates a **Group** containing one translated instance for each offset in the sequence.
 - **Example**: `Box(10).mx([0, 20, 40])` results in a group of three boxes spaced at 20mm intervals.
 
-## 13. Transformation
+## 14. Transformation
 
 ### `by(target)`
 Transforms the subject's matrix by the matrix of the target shape. 
@@ -481,7 +512,7 @@ Scales the subject along the local axes.
 ### `sx(val)`, `sy(val)`, `sz(val)`
 Axis-specific shorthands for scaling along X, Y, or Z.
 
-## 14. Mesh Optimization
+## 15. Mesh Optimization
 
 ### `simplify(ratio=0.5, count=0, threshold=1/6)`
 Reduces mesh complexity while preserving sharp features using edge-collapse.
@@ -490,7 +521,7 @@ Reduces mesh complexity while preserving sharp features using edge-collapse.
 - **`count`**: Explicit target face count (overrides ratio if > 0).
 - **`threshold`**: Dihedral angle (in turns/tau) used to identify and protect sharp features.
 
-## 15. Typography
+## 16. Typography
 
 ### `Font(url)`
 Downloads and validates a font file (TTF/OTF/WOFF) from a remote URL.
@@ -545,7 +576,7 @@ Vector = Trace(Photo, colors=12, smooth=2.0);
 Vector.on("#bcd3ee").ez(5);
 ```
 
-## 16. Infinite Planes (Orientations)
+## 17. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
 - **`Y(offset=0)`**: Infinite plane on the XZ axis (normal +Y).
