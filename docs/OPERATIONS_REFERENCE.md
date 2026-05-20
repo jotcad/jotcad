@@ -417,6 +417,19 @@ Moves the subject to the frame of the target shape, resetting any local transfor
 - **Algebra**: $T_{result} = T_{target}$
 - **Identity**: `a.to(b)` is equivalent to `a.origin().by(b)`.
 
+### `dup(count=1)`
+Duplicates the subject `count` times in place.
+- **`count`**: The number of copies to create.
+- **Behavior**: Returns the original shape if `count` is 1. Returns a **Group** of identical components if `count` > 1.
+- **Use Case**: In-place duplication for subsequent targeted operations (e.g. duplicating a shape before applying different transformations to each copy via `nth`).
+
+### `gap()`
+Tags the subject as a **Gap** (Persistent Negative Space).
+- **Boolean Logic**: Gaps are "matter-less." They automatically subtract from any non-gap shape they intersect with during `join()`, `clip()`, `fuse()`, or `disjoint()` operations.
+- **Persistency**: Gaps are never cut by other shapes. They remain in the shape tree for visual reference but are ignored during `stl()` or `pdf()` export.
+- **Visuals**: Gaps are rendered with **30% opacity** in the interactive viewport to distinguish them from solid parts.
+- **Example**: `Assembly.join(HolePattern.gap())` ensures clearance holes are maintained regardless of assembly order.
+
 ### `origin()` (alias: `o()`)
 - **Method**: `X.origin()` or `X.o()`
   Returns the shape with its transformation matrix inverted ($tf = X.tf^{-1}$). This is the primary tool for "un-moving" a shape or calculating an inverse delta.

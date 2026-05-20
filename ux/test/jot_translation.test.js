@@ -273,6 +273,16 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
+    c.registerOperator('dup', {
+      path: 'jot/dup',
+      schema: { 
+        arguments: [
+          { name: '$in', type: 'jot:shape', affiliate: '$out' },
+          { name: 'count', type: 'jot:number' }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
     c.registerOperator('origin', {
       path: 'jot/origin',
       schema: { 
@@ -378,6 +388,15 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
       expect(res.parameters.p1.path).toBe('jot/Box');
       expect(res.parameters.p2.path).toBe('jot/Box');
       expect(res.parameters.p3.path).toBe('jot/Box');
+    });
+  });
+
+  describe('Duplication', () => {
+    it('should translate Box(10).dup(3) correctly', async () => {
+      const res = await compile('Box(10).dup(3) -> $out');
+      expect(res.path).toBe('jot/dup');
+      expect(res.parameters.count).toBe(3);
+      expect(res.parameters.$in.path).toBe('jot/Box');
     });
   });
 });

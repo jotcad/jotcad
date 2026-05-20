@@ -30,6 +30,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                extrude_interval_test.cpp \
                boolean_visual_test.cpp \
                transform_test.cpp \
+               dup_test.cpp \
+               gap_test.cpp \
                each_face_test.cpp \
                selection_test.cpp \
                unfold_test.cpp \

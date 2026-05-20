@@ -481,13 +481,14 @@ struct Engine {
         return g;
     }
 
-    struct ToolNode { Geometry geo; Matrix world_tf; std::string type; };
+    struct ToolNode { Geometry geo; Matrix world_tf; std::string type; bool is_gap = false; };
 
     static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
         Matrix current_tf = parent_tf * s.tf;
         std::string type = s.tags.value("type", "");
-        if (s.geometry.has_value()) tool_nodes.push_back({vfs->read<Geometry>(s.geometry.value()), current_tf, type});
-        else if (type == "plane") tool_nodes.push_back({Geometry(), current_tf, type});
+        bool is_gap = s.is_gap();
+        if (s.geometry.has_value()) tool_nodes.push_back({vfs->read<Geometry>(s.geometry.value()), current_tf, type, is_gap});
+        else if (type == "plane") tool_nodes.push_back({Geometry(), current_tf, type, is_gap});
         for (const auto& child : s.components) collect_tool_geometry(vfs, child, current_tf, tool_nodes);
     }
 
@@ -497,7 +498,7 @@ struct Engine {
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
-        if (s.geometry.has_value()) {
+        if (s.geometry.has_value() && !s.is_gap()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
             bool has_faces = !target_geo.faces.empty() || !target_geo.triangles.empty();
             bool has_segments = !target_geo.segments.empty();
@@ -560,11 +561,14 @@ struct Engine {
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
-        if (s.geometry.has_value()) {
+        if (s.geometry.has_value() && !s.is_gap()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
             bool has_faces = !target_geo.faces.empty() || !target_geo.triangles.empty();
             bool has_segments = !target_geo.segments.empty();
             bool has_points = !target_geo.points.empty();
+
+            std::vector<ToolNode> regular_tools, gap_tools;
+            for (const auto& t : tool_nodes) { if (t.is_gap) gap_tools.push_back(t); else regular_tools.push_back(t); }
 
             if (has_faces) {
                 bool is_target_flat = target_geo.is_plane();
@@ -574,30 +578,44 @@ struct Engine {
                     Matrix rehydrate_tf = project_tf.inverse();
                     General_polygon_set_2 subject_set; add_geometry_to_gps(target_geo, project_tf, subject_set);
                     bool used_pwh_path = true;
-                    for (const auto& tool : tool_nodes) {
+                    for (const auto& tool : regular_tools) {
                         Geometry local_tool_geo = tool.geo; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; local_tool_geo.apply_tf(tool_rel_tf);
                         if (local_tool_geo.is_coplanar_with(target_plane)) { General_polygon_set_2 tool_set; add_geometry_to_gps(local_tool_geo, project_tf, tool_set); join_gps_by_gps(subject_set, tool_set); }
                         else { used_pwh_path = false; break; }
                     }
-                    if (used_pwh_path) { target_geo = gps_to_geometry(subject_set); target_geo.apply_tf(rehydrate_tf); }
-                    else is_target_flat = false;
+                    if (used_pwh_path) {
+                        for (const auto& gap : gap_tools) {
+                            Geometry local_gap_geo = gap.geo; Matrix gap_rel_tf = subject_world_inv * gap.world_tf; local_gap_geo.apply_tf(gap_rel_tf);
+                            if (local_gap_geo.is_coplanar_with(target_plane)) { General_polygon_set_2 gap_set; add_geometry_to_gps(local_gap_geo, project_tf, gap_set); cut_gps_by_gps(subject_set, gap_set); }
+                        }
+                        target_geo = gps_to_geometry(subject_set); target_geo.apply_tf(rehydrate_tf);
+                    } else is_target_flat = false;
                 }
                 if (!is_target_flat) {
                     ExactMesh target_mesh = geometry_to_mesh(target_geo);
-                    for (const auto& tool : tool_nodes) if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { ExactMesh tool_mesh = geometry_to_mesh(tool.geo); transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); join_mesh_by_mesh(target_mesh, tool_mesh); }
+                    for (const auto& tool : regular_tools) if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { ExactMesh tool_mesh = geometry_to_mesh(tool.geo); transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); join_mesh_by_mesh(target_mesh, tool_mesh); }
+                    for (const auto& gap : gap_tools) if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_mesh_by_mesh(target_mesh, gap_mesh); }
                     target_geo = mesh_to_geometry(target_mesh);
                 }
             }
             if (has_segments) {
                 std::vector<std::pair<EK::Point_3, EK::Point_3>> local_segments;
                 for (const auto& seg : target_geo.segments) local_segments.push_back({EK::Point_3(target_geo.vertices[seg[0]].x, target_geo.vertices[seg[0]].y, target_geo.vertices[seg[0]].z), EK::Point_3(target_geo.vertices[seg[1]].x, target_geo.vertices[seg[1]].y, target_geo.vertices[seg[1]].z)});
-                for (const auto& tool : tool_nodes) if (tool.type == "segments") { std::vector<std::pair<EK::Point_3, EK::Point_3>> tool_segs; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (const auto& seg : tool.geo.segments) tool_segs.push_back({tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[0]].x, tool.geo.vertices[seg[0]].y, tool.geo.vertices[seg[0]].z)), tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[1]].x, tool.geo.vertices[seg[1]].y, tool.geo.vertices[seg[1]].z))}); join_segments_by_segments(local_segments, tool_segs); }
+                for (const auto& tool : regular_tools) if (tool.type == "segments") { std::vector<std::pair<EK::Point_3, EK::Point_3>> tool_segs; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (const auto& seg : tool.geo.segments) tool_segs.push_back({tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[0]].x, tool.geo.vertices[seg[0]].y, tool.geo.vertices[seg[0]].z)), tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[1]].x, tool.geo.vertices[seg[1]].y, tool.geo.vertices[seg[1]].z))}); join_segments_by_segments(local_segments, tool_segs); }
+                for (const auto& gap : gap_tools) {
+                    if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_segments_by_mesh(local_segments, gap_mesh, gap.type == "closed"); }
+                    else if (gap.type == "segments") { std::vector<std::pair<EK::Point_3, EK::Point_3>> gap_segs; Matrix gap_rel_tf = subject_world_inv * gap.world_tf; for (const auto& seg : gap.geo.segments) gap_segs.push_back({gap_rel_tf.transform(EK::Point_3(gap.geo.vertices[seg[0]].x, gap.geo.vertices[seg[0]].y, gap.geo.vertices[seg[0]].z)), gap_rel_tf.transform(EK::Point_3(gap.geo.vertices[seg[1]].x, gap.geo.vertices[seg[1]].y, gap.geo.vertices[seg[1]].z))}); cut_segments_by_segments(local_segments, gap_segs); }
+                }
                 target_geo.segments.clear(); if (!has_faces && !has_points) target_geo.vertices.clear();
                 for (const auto& seg : local_segments) { int v1 = (int)target_geo.vertices.size(); target_geo.vertices.push_back({seg.first.x(), seg.first.y(), seg.first.z()}); int v2 = (int)target_geo.vertices.size(); target_geo.vertices.push_back({seg.second.x(), seg.second.y(), seg.second.z()}); target_geo.segments.push_back({v1, v2}); }
             }
             if (has_points) {
                 std::vector<EK::Point_3> pts; for (int idx : target_geo.points) pts.push_back(EK::Point_3(target_geo.vertices[idx].x, target_geo.vertices[idx].y, target_geo.vertices[idx].z));
-                for (const auto& tool : tool_nodes) if (tool.type == "point" || tool.type == "points") { std::vector<EK::Point_3> tool_pts; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (int idx : tool.geo.points) tool_pts.push_back(tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[idx].x, tool.geo.vertices[idx].y, tool.geo.vertices[idx].z))); join_points_by_points(pts, tool_pts); }
+                for (const auto& tool : regular_tools) if (tool.type == "point" || tool.type == "points") { std::vector<EK::Point_3> tool_pts; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (int idx : tool.geo.points) tool_pts.push_back(tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[idx].x, tool.geo.vertices[idx].y, tool.geo.vertices[idx].z))); join_points_by_points(pts, tool_pts); }
+                for (const auto& gap : gap_tools) {
+                    if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_points_by_mesh(pts, gap_mesh); }
+                    else if (gap.type == "point" || gap.type == "points") { std::vector<EK::Point_3> gap_pts; Matrix gap_rel_tf = subject_world_inv * gap.world_tf; for (int idx : gap.geo.points) gap_pts.push_back(gap_rel_tf.transform(EK::Point_3(gap.geo.vertices[idx].x, gap.geo.vertices[idx].y, gap.geo.vertices[idx].z))); cut_points_by_points(pts, gap_pts); }
+                }
                 target_geo.points.clear(); if (!has_faces && !has_segments) target_geo.vertices.clear();
                 for (const auto& p : pts) { target_geo.points.push_back((int)target_geo.vertices.size()); target_geo.vertices.push_back({p.x(), p.y(), p.z()}); }
             }
@@ -610,11 +628,14 @@ struct Engine {
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
-        if (s.geometry.has_value()) {
+        if (s.geometry.has_value() && !s.is_gap()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
             bool has_faces = !target_geo.faces.empty() || !target_geo.triangles.empty();
             bool has_segments = !target_geo.segments.empty();
             bool has_points = !target_geo.points.empty();
+
+            std::vector<ToolNode> regular_tools, gap_tools;
+            for (const auto& t : tool_nodes) { if (t.is_gap) gap_tools.push_back(t); else regular_tools.push_back(t); }
 
             if (has_faces) {
                 bool is_target_flat = target_geo.is_plane();
@@ -624,42 +645,55 @@ struct Engine {
                     Matrix rehydrate_tf = project_tf.inverse();
                     General_polygon_set_2 subject_set; add_geometry_to_gps(target_geo, project_tf, subject_set);
                     bool used_pwh_path = true;
-                    for (const auto& tool : tool_nodes) {
+                    for (const auto& tool : regular_tools) {
                         Geometry local_tool_geo = tool.geo; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; local_tool_geo.apply_tf(tool_rel_tf);
                         if (local_tool_geo.is_coplanar_with(target_plane)) { General_polygon_set_2 tool_set; add_geometry_to_gps(local_tool_geo, project_tf, tool_set); clip_gps_by_gps(subject_set, tool_set); }
                         else { used_pwh_path = false; break; }
                     }
-                    if (used_pwh_path) { target_geo = gps_to_geometry(subject_set); target_geo.apply_tf(rehydrate_tf); }
-                    else is_target_flat = false;
+                    if (used_pwh_path) {
+                        for (const auto& gap : gap_tools) {
+                            Geometry local_gap_geo = gap.geo; Matrix gap_rel_tf = subject_world_inv * gap.world_tf; local_gap_geo.apply_tf(gap_rel_tf);
+                            if (local_gap_geo.is_coplanar_with(target_plane)) { General_polygon_set_2 gap_set; add_geometry_to_gps(local_gap_geo, project_tf, gap_set); cut_gps_by_gps(subject_set, gap_set); }
+                        }
+                        target_geo = gps_to_geometry(subject_set); target_geo.apply_tf(rehydrate_tf);
+                    } else is_target_flat = false;
                 }
                 if (!is_target_flat) {
                     ExactMesh target_mesh = geometry_to_mesh(target_geo);
-                    for (const auto& tool : tool_nodes) {
+                    for (const auto& tool : regular_tools) {
                         if (tool.type == "plane") clip_mesh_by_plane(target_mesh, (subject_world_inv * tool.world_tf).transform(EK::Plane_3(0,0,1,0)));
                         else if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { ExactMesh tool_mesh = geometry_to_mesh(tool.geo); transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); clip_mesh_by_mesh(target_mesh, tool_mesh); }
                     }
+                    for (const auto& gap : gap_tools) if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_mesh_by_mesh(target_mesh, gap_mesh); }
                     target_geo = mesh_to_geometry(target_mesh);
                 }
             }
             if (has_segments) {
                 std::vector<std::pair<EK::Point_3, EK::Point_3>> local_segments;
                 for (const auto& seg : target_geo.segments) local_segments.push_back({EK::Point_3(target_geo.vertices[seg[0]].x, target_geo.vertices[seg[0]].y, target_geo.vertices[seg[0]].z), EK::Point_3(target_geo.vertices[seg[1]].x, target_geo.vertices[seg[1]].y, target_geo.vertices[seg[1]].z)});
-                for (const auto& tool : tool_nodes) {
+                for (const auto& tool : regular_tools) {
                     if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { ExactMesh tool_mesh = geometry_to_mesh(tool.geo); transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); clip_segments_by_mesh(local_segments, tool_mesh, tool.type == "closed"); }
                     else if (tool.type == "plane") clip_segments_by_plane(local_segments, (subject_world_inv * tool.world_tf).transform(EK::Plane_3(0,0,1,0)));
                     else if (tool.type == "segments") { std::vector<std::pair<EK::Point_3, EK::Point_3>> tool_segs; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (const auto& seg : tool.geo.segments) tool_segs.push_back({tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[0]].x, tool.geo.vertices[seg[0]].y, tool.geo.vertices[seg[0]].z)), tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[1]].x, tool.geo.vertices[seg[1]].y, tool.geo.vertices[seg[1]].z))}); clip_segments_by_segments(local_segments, tool_segs); }
-                    else if (tool.type == "point" || tool.type == "points") { std::vector<EK::Point_3> tool_pts; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (int idx : tool.geo.points) tool_pts.push_back(tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[idx].x, tool.geo.vertices[idx].y, tool.geo.vertices[idx].z))); clip_segments_by_points(local_segments, tool_pts); }
+                }
+                for (const auto& gap : gap_tools) {
+                    if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_segments_by_mesh(local_segments, gap_mesh, gap.type == "closed"); }
+                    else if (gap.type == "segments") { std::vector<std::pair<EK::Point_3, EK::Point_3>> gap_segs; Matrix gap_rel_tf = subject_world_inv * gap.world_tf; for (const auto& seg : gap.geo.segments) gap_segs.push_back({gap_rel_tf.transform(EK::Point_3(gap.geo.vertices[seg[0]].x, gap.geo.vertices[seg[0]].y, gap.geo.vertices[seg[0]].z)), gap_rel_tf.transform(EK::Point_3(gap.geo.vertices[seg[1]].x, gap.geo.vertices[seg[1]].y, gap.geo.vertices[seg[1]].z))}); cut_segments_by_segments(local_segments, gap_segs); }
                 }
                 target_geo.segments.clear(); if (!has_faces && !has_points) target_geo.vertices.clear();
                 for (const auto& seg : local_segments) { int v1 = (int)target_geo.vertices.size(); target_geo.vertices.push_back({seg.first.x(), seg.first.y(), seg.first.z()}); int v2 = (int)target_geo.vertices.size(); target_geo.vertices.push_back({seg.second.x(), seg.second.y(), seg.second.z()}); target_geo.segments.push_back({v1, v2}); }
             }
             if (has_points) {
                 std::vector<EK::Point_3> pts; for (int idx : target_geo.points) pts.push_back(EK::Point_3(target_geo.vertices[idx].x, target_geo.vertices[idx].y, target_geo.vertices[idx].z));
-                for (const auto& tool : tool_nodes) {
+                for (const auto& tool : regular_tools) {
                     if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { ExactMesh tool_mesh = geometry_to_mesh(tool.geo); transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); clip_points_by_mesh(pts, tool_mesh); }
                     else if (tool.type == "plane") clip_points_by_plane(pts, (subject_world_inv * tool.world_tf).transform(EK::Plane_3(0,0,1,0)));
                     else if (tool.type == "segments") { std::vector<std::pair<EK::Point_3, EK::Point_3>> tool_segs; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (const auto& seg : tool.geo.segments) tool_segs.push_back({tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[0]].x, tool.geo.vertices[seg[0]].y, tool.geo.vertices[seg[0]].z)), tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[seg[1]].x, tool.geo.vertices[seg[1]].y, tool.geo.vertices[seg[1]].z))}); clip_points_by_segments(pts, tool_segs); }
                     else if (tool.type == "point" || tool.type == "points") { std::vector<EK::Point_3> tool_pts; Matrix tool_rel_tf = subject_world_inv * tool.world_tf; for (int idx : tool.geo.points) tool_pts.push_back(tool_rel_tf.transform(EK::Point_3(tool.geo.vertices[idx].x, tool.geo.vertices[idx].y, tool.geo.vertices[idx].z))); clip_points_by_points(pts, tool_pts); }
+                }
+                for (const auto& gap : gap_tools) {
+                    if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_points_by_mesh(pts, gap_mesh); }
+                    else if (gap.type == "point" || gap.type == "points") { std::vector<EK::Point_3> gap_pts; Matrix gap_rel_tf = subject_world_inv * gap.world_tf; for (int idx : gap.geo.points) gap_pts.push_back(gap_rel_tf.transform(EK::Point_3(gap.geo.vertices[idx].x, gap.geo.vertices[idx].y, gap.geo.vertices[idx].z))); cut_points_by_points(pts, gap_pts); }
                 }
                 target_geo.points.clear(); if (!has_faces && !has_segments) target_geo.vertices.clear();
                 for (const auto& p : pts) { target_geo.points.push_back((int)target_geo.vertices.size()); target_geo.vertices.push_back({p.x(), p.y(), p.z()}); }

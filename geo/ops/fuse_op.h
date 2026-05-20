@@ -31,7 +31,10 @@ struct FuseOp : P {
         std::map<std::string, boolean::General_polygon_set_2> plane_groups;
         Geometry remainder;
 
-        for (const auto& node : all_nodes) {
+        std::vector<boolean::Engine::ToolNode> regular_nodes, gap_nodes;
+        for (const auto& node : all_nodes) { if (node.is_gap) gap_nodes.push_back(node); else regular_nodes.push_back(node); }
+
+        for (const auto& node : regular_nodes) {
             if (node.geo.vertices.empty()) continue;
 
             if (node.type == "plane") {
@@ -69,6 +72,46 @@ struct FuseOp : P {
                         s[0] += base; s[1] += base;
                         remainder.segments.push_back(s);
                     }
+                }
+            }
+        }
+
+        // 2b. Subtract gaps from combined results
+        for (const auto& gap : gap_nodes) {
+            if (gap.geo.vertices.empty() && gap.type != "plane") continue;
+
+            if (gap.type == "plane") {
+                // Plane gaps cut everything
+                auto plane_opt = gap.geo.find_plane();
+                if (!plane_opt.has_value()) continue;
+                EK::Plane_3 world_plane = gap.world_tf.transform(*plane_opt);
+
+                if (combined_solids.number_of_vertices() > 0) {
+                    boolean::Engine::cut_mesh_by_plane(combined_solids, world_plane);
+                }
+                for (auto& [key, gps] : plane_groups) {
+                    // Logic to cut GPS by plane if coplanar... for now just simple subtraction if they match
+                    // This part is complex because it depends on plane orientation.
+                    // For now, let's focus on closed volume gaps.
+                }
+            } else {
+                boolean::Surface_mesh gap_mesh = boolean::Engine::geometry_to_mesh(gap.geo);
+                boolean::Engine::transform_mesh(gap_mesh, gap.world_tf);
+                
+                if (combined_solids.number_of_vertices() > 0) {
+                    boolean::Engine::cut_mesh_by_mesh(combined_solids, gap_mesh);
+                }
+                // Also cut from plane_groups if they are coplanar
+                for (auto& [key, gps] : plane_groups) {
+                     std::vector<FT> p_coeffs; std::stringstream ss_key(key); std::string val_str;
+                     while(std::getline(ss_key, val_str, ',')) { std::stringstream ss_val(val_str); FT val; ss_val >> val; p_coeffs.push_back(val); }
+                     EK::Plane_3 world_plane(p_coeffs[0], p_coeffs[1], p_coeffs[2], p_coeffs[3]);
+                     if (gap.geo.is_coplanar_with(world_plane.opposite())) { // Correct for relative tf
+                        Matrix project_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector());
+                        boolean::General_polygon_set_2 gap_gps;
+                        boolean::Engine::add_geometry_to_gps(gap.geo, project_tf * gap.world_tf, gap_gps);
+                        gps.difference(gap_gps);
+                     }
                 }
             }
         }

@@ -14,7 +14,7 @@ struct StlOp : P {
     static void walk(fs::VFSNode* vfs, const Shape& shape, STLWriter& writer) {
         Matrix current_tf = shape.tf;
         
-        if (shape.geometry.has_value()) {
+        if (shape.geometry.has_value() && !shape.is_gap()) {
             try {
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
                 geo.apply_tf(current_tf);

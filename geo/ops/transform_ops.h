@@ -96,6 +96,42 @@ struct ToOp : TransformOpBase<P> {
 };
 
 template <typename P = JotVfsProtocol>
+struct DupOp : TransformOpBase<P> {
+    static constexpr const char* path = "jot/dup";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double count) {
+        int c = (int)count;
+        if (c <= 0) {
+            Shape out;
+            out.tf = Matrix::identity();
+            out.add_tag("type", "group");
+            vfs->write(fulfilling.with_output("$out"), out);
+            return;
+        }
+        if (c == 1) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+        std::vector<Matrix> tfs;
+        for (int i = 0; i < c; ++i) {
+            tfs.push_back(in.tf);
+        }
+        TransformOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "count"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/dup"},
+            {"description", "Duplicates the subject 'count' times in place."},
+            {"arguments", {
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+                {{"name", "count"}, {"type", "jot:number"}, {"default", 1.0}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
 struct OriginOp : P {
     static constexpr const char* path = "jot/origin";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, std::optional<Shape> in) {
@@ -122,9 +158,32 @@ struct OriginOp : P {
     }
 };
 
+template <typename P = JotVfsProtocol>
+struct GapOp : P {
+    static constexpr const char* path = "jot/gap";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        Shape out = in;
+        out.add_tag("gap", true);
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/gap"},
+            {"description", "Tags the subject as a 'gap' (negative space). Gaps cut into other shapes but are themselves non-matter. They are rendered transparently in the UX and skipped during STL export."},
+            {"arguments", {
+                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
+            }},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
 inline void transform_ops_init(fs::VFSNode* vfs) {
     Processor::register_op<ByOp<>, Shape, std::vector<Shape>>(vfs, "jot/by");
     Processor::register_op<ToOp<>, Shape, std::vector<Shape>>(vfs, "jot/to");
+    Processor::register_op<DupOp<>, Shape, double>(vfs, "jot/dup");
+    Processor::register_op<GapOp<>, Shape>(vfs, "jot/gap");
     Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/origin");
     Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/o");
 }
