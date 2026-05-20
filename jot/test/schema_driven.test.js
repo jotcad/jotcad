@@ -80,8 +80,8 @@ test('Schema-Driven: $in Binding and Chaining', async (t) => {
     compiler.registerOperator('cut', {
         path: 'jot/cut',
         schema: { 
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
                 { name: 'tool', type: 'jot:shape' }
             ],
             outputs: { '$out': { type: 'jot:shape' } } 

@@ -38,6 +38,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                grow_flat_test.cpp \
                cid_consistency_test.cpp \
                pack_test.cpp \
+               tag_op_test.cpp \
                pdf_linewidth_test.cpp \
                repro_empty_pdf.cpp \
                cut_surface_solid_test.cpp \

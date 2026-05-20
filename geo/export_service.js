@@ -79,8 +79,8 @@ vfs.registerProvider('jot/pdf', async (v, selector) => {
     schema: {
         path: 'jot/pdf',
         description: 'Exports a shape to a PDF file on the server and provides it for download.',
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-            { name: '$in', type: 'jot:shape', affiliate: '$in' },
             { name: 'path', type: 'jot:string', default: 'export.pdf' }
         ],
         outputs: { 

@@ -169,8 +169,8 @@ struct GrowOp : P {
         return {
             {"path", "jot/grow"},
             {"description", "Grows the subject geometry by sweeping a tool shape over it."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to grow."}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "tool"}, {"type", "jot:shape"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}

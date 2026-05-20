@@ -52,7 +52,8 @@ async function test() {
     compiler.registerOperator('unfold', {
         path: 'jot/unfold',
         schema: {
-            arguments: [{ name: '$in', type: 'jot:shape' }],
+            inputs: { '$in': { type: 'jot:shape' } },
+            arguments: [],
             outputs: { "$out": { type: 'jot:shape' } }
         }
     });

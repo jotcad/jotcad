@@ -70,9 +70,9 @@ test('Multi-Output Scoped Block Integration', { timeout: 60000 }, async (t) => {
 
   compiler.registerOperator('Box', { path: 'jot/Box', schema: { arguments: [{ name: 'width', type: 'number', default: 10 }, { name: 'height', type: 'number', default: 10 }, { name: 'depth', type: 'number', default: 0 }], outputs: { $out: 'shape' } } });
   compiler.registerOperator('Disk', { path: 'jot/Disk', schema: { arguments: [{ name: 'diameter', type: 'number', default: 10 }], outputs: { $out: 'shape' } } });
-  compiler.registerOperator('cut', { path: 'jot/cut', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'other', type: 'shape' }], outputs: { $out: 'shape' } } });
-  compiler.registerOperator('mx', { path: 'jot/mx', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'x', type: 'numbers' }], outputs: { $out: 'shape' } } });
-  compiler.registerOperator('mz', { path: 'jot/mz', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'z', type: 'numbers' }], outputs: { $out: 'shape' } } });
+  compiler.registerOperator('cut', { path: 'jot/cut', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'other', type: 'shape' }], outputs: { $out: 'shape' } } });
+  compiler.registerOperator('mx', { path: 'jot/mx', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'x', type: 'numbers' }], outputs: { $out: 'shape' } } });
+  compiler.registerOperator('mz', { path: 'jot/mz', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'z', type: 'numbers' }], outputs: { $out: 'shape' } } });
 
   await t.test('Scoped block with multiple outputs correctly resolves ports', async () => {
     const script = 'B = Box(20); D = Disk(10); B.cut(D) -> $out; D.mx(5) -> extra';

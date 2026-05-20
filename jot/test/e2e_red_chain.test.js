@@ -38,10 +38,10 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
         });
 
         // 4. Setup Operator Schemas (aligned with C++ implementation)
-        const boxSchema = { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: 'shape' } };
-        const colorSchema = { arguments: [{ name: '$in', type: 'shape' }, { name: 'color', type: 'string' }], outputs: { $out: 'shape' } };
-        const rzSchema = { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } };
-        const redSchema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } };
+        const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
+        const colorSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'color', type: 'jot:string' }], outputs: { $out: 'jot:shape' } };
+        const rzSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'turns', type: 'jot:numbers' }], outputs: { $out: 'jot:shape' } };
+        const redSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } };
 
         // 5. Register User/Red Provider on the JS Test Node
         // ONE SELECTOR PER OUTPUT:
@@ -81,7 +81,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
         compiler.registerOperator('rz', { path: 'jot/rz', schema: rzSchema });
 
         const mainScript = 'Box(15).Red().rz(0.25) -> $out';
-        const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'shape' } });
+        const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'jot:shape' } });
         const finalSelector = terminals[0].selector;
 
         console.log('[E2E] Final Selector:', JSON.stringify(finalSelector, null, 2));

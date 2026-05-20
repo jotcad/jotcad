@@ -17,7 +17,8 @@ test('Operator Variant Resolution (Strict Casing)', async (t) => {
   compiler.registerOperator('rotateX', {
     path: 'op/rotateX',
     schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'angle', type: 'jot:number' }],
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [{ name: 'angle', type: 'jot:number' }],
         outputs: { "$out": { type: "jot:shape" } }
     }
   });

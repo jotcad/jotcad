@@ -31,6 +31,7 @@
 #include "plane_op.h"
 #include "extrude_op.h"
 #include "faces_op.h"
+#include "filter_ops.h"
 #include "scale_op.h"
 #include "spin_op.h"
 #include "simplify_op.h"
@@ -46,6 +47,7 @@
 #include "text_op.h"
 #include "trace_op.h"
 #include "transform_ops.h"
+#include "tag_ops.h"
 #include "asset_ops.h"
 #include "stitch_op.h"
 #include "unfold_op.h"
@@ -107,10 +109,12 @@ void register_all_ops(fs::VFSNode* vfs) {
     text_init(vfs);
     trace_init(vfs);
     transform_ops_init(vfs);
+    tag_ops_init(vfs);
     stitch_init(vfs);
     unfold_init(vfs);
     pack_init(vfs);
     measure_init(vfs);
+    filter_ops_init(vfs);
     selection_init(vfs);
 }
 

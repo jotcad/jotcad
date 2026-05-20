@@ -102,8 +102,8 @@ struct PackOp : P {
         return {
             {"path", "jot/pack"},
             {"description", "Packs multiple shapes into one or more sheets."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"optional", true}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"optional", true}, {"affiliate", "$out"}},
                 {{"name", "parts"}, {"type", "jot:shape"}, {"optional", true}},
                 {{"name", "sheet"}, {"type", "jot:shape"}, {"optional", true}},
                 {{"name", "spacing"}, {"type", "number"}, {"default", 2.0}},

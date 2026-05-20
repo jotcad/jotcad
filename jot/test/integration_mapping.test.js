@@ -30,8 +30,8 @@ test('JotCompiler: Integration Mapping (Hexagon.cut)', async (t) => {
   compiler.registerOperator('cut', {
     path: 'jot/cut',
     schema: {
+        inputs: { "$in": { type: "jot:shape" } },
         arguments: [
-            { name: "$in", type: "jot:shape", affiliate: "$out" },
             { name: "tools", type: "jot:shapes", default: [] }
         ],
         outputs: { "$out": { type: "jot:shape" } }

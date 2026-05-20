@@ -40,10 +40,10 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
     compiler.registerOperator('jot/at', {
         path: 'jot/at',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
                 { name: 'target', type: 'jot:shape' },
-                { name: 'op', type: 'jot:op<$in:shape, $out:shape>' }
+                { name: 'op', type: 'jot:op<$in:jot:shape, $out:jot:shape>' }
             ],
             outputs: { "$out": { type: "jot:shape" } }
         }
@@ -51,8 +51,8 @@ test('JotCompiler Argument Mapping & Annotations', async (t) => {
     compiler.registerOperator('jot/cut', {
         path: 'jot/cut',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
                 { name: 'tools', type: 'jot:shapes' }
             ],
             outputs: { "$out": { type: "jot:shape" } }

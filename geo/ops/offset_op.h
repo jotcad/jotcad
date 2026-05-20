@@ -31,8 +31,8 @@ struct OffsetOp : P {
         return {
             {"path", "jot/offset"},
             {"description", "Creates a Minkowski offset. Recursively processes groups."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "diameter"}, {"type", "jot:number"}, {"default", 1.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
@@ -68,8 +68,8 @@ struct OffsetClosureOp : P {
         return {
             {"path", "jot/offset/closure"},
             {"description", "Applies an outward then inward offset to close gaps. Recursively processes groups."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "diameter"}, {"type", "jot:number"}, {"default", 1.0}},
                 {{"name", "closure"}, {"type", "jot:boolean"}, {"const", true}}
             }},

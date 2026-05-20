@@ -10,13 +10,16 @@ A Dynamic Operation is a metadata-driven definition that combines a Schema with 
 {
   "path": "user/MyBracket",
   "description": "A customizable L-bracket.",
-  "arguments": {
-    "width": { "type": "number", "default": 20 },
-    "thickness": { "type": "number", "default": 2 }
+  "inputs": {
+    "$in": { "type": "jot:shape" }
   },
-  "script": "Box(width, 10, thickness).cut(Box(5, 5, thickness).at(Corners()))",
+  "arguments": [
+    { "name": "width", "type": "jot:number", "default": 20 },
+    { "name": "thickness", "type": "jot:number", "default": 2 }
+  ],
+  "script": "$in.cut(Box(width, 10, thickness).at(Corners()))",
   "outputs": {
-    "$out": { "type": "shape" }
+    "$out": { "type": "jot:shape" }
   }
 }
 ```

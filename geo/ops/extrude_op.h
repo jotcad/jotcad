@@ -156,8 +156,8 @@ struct ExtrudeOp : ExtrudeOpBase<P> {
         return {
             {"path", "jot/extrude"},
             {"description", "Extrudes geometry. If target is an interval/number, extrudes along the face normal. If target is a shape, uses it as a reference plane/axis."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "target"}, {"type", "jot:any"}, {"description", "Interval/Number (length) or Shape (reference frame)"}},
                 {{"name", "range"}, {"type", "jot:interval"}, {"optional", true}, {"description", "Optional start/end offsets along the reference axis"}}
             }},
@@ -179,8 +179,8 @@ struct ExtrudeXOp : ExtrudeOpBase<P> {
         return {
             {"path", "jot/extrudeX"},
             {"description", "Extrudes geometry along the local X axis."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 1.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
@@ -201,8 +201,8 @@ struct ExtrudeYOp : ExtrudeOpBase<P> {
         return {
             {"path", "jot/extrudeY"},
             {"description", "Extrudes geometry along the local Y axis."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 1.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
@@ -223,8 +223,8 @@ struct ExtrudeZOp : ExtrudeOpBase<P> {
         return {
             {"path", "jot/extrudeZ"},
             {"description", "Extrudes geometry along the local Z axis."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 1.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}

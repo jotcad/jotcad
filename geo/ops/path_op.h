@@ -107,8 +107,8 @@ struct LinkOp : P {
         return {
             {"path", "jot/link"},
             {"description", "Connects points into an open path, optionally with Catmull-Rom smoothing."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
                 {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
@@ -140,8 +140,8 @@ struct LoopOp : P {
         return {
             {"path", "jot/loop"},
             {"description", "Connects points into a closed loop, optionally with Catmull-Rom smoothing."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
                 {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}

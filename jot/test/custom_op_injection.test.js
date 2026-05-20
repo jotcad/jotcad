@@ -12,67 +12,69 @@ test('Compiler: Custom Operator Subject Injection ($in)', async (t) => {
     path: 'jot/Box',
     schema: {
       arguments: [
-        { name: 'width', type: 'number' },
-        { name: 'height', type: 'number' }
+        { name: 'width', type: 'jot:number' },
+        { name: 'height', type: 'jot:number' }
       ],
-      outputs: { $out: { type: 'shape' } }
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
   compiler.registerOperator('Disk', {
     path: 'jot/Disk',
     schema: {
-      arguments: [{ name: 'radius', type: 'number' }],
-      outputs: { $out: { type: 'shape' } }
+      arguments: [{ name: 'radius', type: 'jot:number' }],
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
   compiler.registerOperator('corners', {
     path: 'jot/corners',
     schema: {
-      arguments: [{ name: '$in', type: 'shape' }],
-      outputs: { $out: { type: 'shape' } }
+      inputs: { '$in': { type: 'jot:shape' } },
+      arguments: [],
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
   compiler.registerOperator('nth', {
     path: 'jot/nth',
     schema: {
+      inputs: { '$in': { type: 'jot:shape' } },
       arguments: [
-        { name: '$in', type: 'shape' },
-        { name: 'index', type: 'number' }
+        { name: 'index', type: 'jot:number' }
       ],
-      outputs: { $out: { type: 'shape' } }
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
   compiler.registerOperator('o', {
     path: 'jot/origin',
     schema: {
-      arguments: [{ name: '$in', type: 'shape' }],
-      outputs: { $out: { type: 'shape' } }
+      inputs: { '$in': { type: 'jot:shape', optional: true } },
+      arguments: [],
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
   compiler.registerOperator('by', {
     path: 'jot/by',
     schema: {
+      inputs: { '$in': { type: 'jot:shape' } },
       arguments: [
-        { name: '$in', type: 'shape' },
-        { name: 'target', type: 'shape' }
+        { name: 'target', type: 'jot:shape' }
       ],
-      outputs: { $out: { type: 'shape' } }
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
   compiler.registerOperator('clip', {
     path: 'jot/clip',
     schema: {
+      inputs: { '$in': { type: 'jot:shape' } },
       arguments: [
-        { name: '$in', type: 'shape' },
-        { name: 'tool', type: 'shape' }
+        { name: 'tool', type: 'jot:shape' }
       ],
-      outputs: { $out: { type: 'shape' } }
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
@@ -82,8 +84,9 @@ test('Compiler: Custom Operator Subject Injection ($in)', async (t) => {
     path: 'user/Foot',
     script: '$in.by(corners().nth(0).o()).clip(Disk(40)) -> $out',
     schema: {
-      arguments: [{ name: '$in', type: 'shape' }],
-      outputs: { $out: { type: 'shape' } }
+      inputs: { '$in': { type: 'jot:shape' } },
+      arguments: [],
+      outputs: { $out: { type: 'jot:shape' } }
     }
   });
 
@@ -124,7 +127,7 @@ test('Compiler: Custom Operator Subject Injection ($in)', async (t) => {
     const ast = parser.parse(script);
     
     // Outer evaluation produces the user/Foot selector
-    const terminals = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+    const terminals = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
     const footSel = terminals[0].selector;
     
     assert.strictEqual(footSel.path, 'user/Foot');
@@ -149,10 +152,10 @@ test('Compiler: Custom Operator Subject Injection ($in)', async (t) => {
     const ast = parser.parse(script);
     
     try {
-      await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+      await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
       assert.fail('Should have thrown missing $in error');
     } catch (e) {
-      assert.match(e.message, /Missing required argument '\$in'/);
+      assert.match(e.message, /Missing required input '\$in'/);
       console.log('Caught Expected Error:', e.message);
     }
   });

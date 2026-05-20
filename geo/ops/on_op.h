@@ -53,8 +53,8 @@ struct OnOp : P {
         return {
             {"path", "jot/on"},
             {"description", "Performs targeted in-place replacement of components within the subject hierarchy."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "target"}, {"type", "jot:shape"}, {"description", "The component shape to replace"}},
                 {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply to matching components"}}
             }},

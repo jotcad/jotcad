@@ -29,10 +29,10 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
             body: JSON.stringify({ id: 'geo-ops-node', url: `http://localhost:${OPS_PORT}` })
         });
 
-        const boxSchema = { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: 'shape' } };
-        const colorSchema = { arguments: [{ name: '$in', type: 'shape' }, { name: 'color', type: 'string' }], outputs: { $out: 'shape' } };
-        const opBSchema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } };
-        const opASchema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } };
+        const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
+        const colorSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'color', type: 'jot:string' }], outputs: { $out: 'jot:shape' } };
+        const opBSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } };
+        const opASchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } };
 
         // Register Op B: Wraps color("blue")
         testNode.registerProvider('user/OpB', async (vfs, selector, context) => {
@@ -54,7 +54,7 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
         const compiler = new JotCompiler();
         compiler.registerOperator('Box', { path: 'jot/Box', schema: boxSchema });
         compiler.registerOperator('user/OpA', { path: 'user/OpA', schema: opASchema });
-        const terminals = await compiler.evaluate((new JotParser()).parse('Box(10).OpA() -> $out'), {}, { outputs: { $out: 'shape' } });
+        const terminals = await compiler.evaluate((new JotParser()).parse('Box(10).OpA() -> $out'), {}, { outputs: { $out: 'jot:shape' } });
 
         const response = await fetch(`http://localhost:${OPS_PORT}/read`, {
             method: 'POST',

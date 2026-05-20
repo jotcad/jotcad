@@ -11,11 +11,11 @@ test('Compiler: Nested User Op Propagation', async (t) => {
   // 1. Mock built-ins
   compiler.registerOperator('Box', {
     path: 'jot/Box',
-    schema: { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: { type: 'shape' } } }
+    schema: { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: { type: 'jot:shape' } } }
   });
   compiler.registerOperator('Color', {
     path: 'jot/Color',
-    schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'c', type: 'string' }], outputs: { $out: { type: 'shape' } } }
+    schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'c', type: 'jot:string' }], outputs: { $out: { type: 'jot:shape' } } }
   });
 
   // 2. Mock VFS with nested execution logic
@@ -55,8 +55,8 @@ test('Compiler: Nested User Op Propagation', async (t) => {
   };
 
   // 3. Define the Chain: Box -> Step1 (Red) -> Step2 (Blue)
-  const step1Schema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: { type: 'shape' } } };
-  const step2Schema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: { type: 'shape' } } };
+  const step1Schema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: { type: 'jot:shape' } } };
+  const step2Schema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: { type: 'jot:shape' } } };
 
   compiler.registerOperator('user/Step1', { path: 'user/Step1', script: '$in.Color("red") -> $out', schema: step1Schema });
   compiler.registerOperator('user/Step2', { path: 'user/Step2', script: '$in.Step1().Color("blue") -> $out', schema: step2Schema });
@@ -100,27 +100,27 @@ test('Compiler: User Op Versioning (:vN)', async (t) => {
   const parser = new JotParser();
   const compiler = new JotCompiler();
 
-  compiler.registerOperator('Box', { path: 'jot/Box', schema: { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: 'shape' } } });
-  compiler.registerOperator('Color', { path: 'jot/Color', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'c', type: 'string' }], outputs: { $out: 'shape' } } });
+  compiler.registerOperator('Box', { path: 'jot/Box', schema: { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } } });
+  compiler.registerOperator('Color', { path: 'jot/Color', schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'c', type: 'jot:string' }], outputs: { $out: 'jot:shape' } } });
 
   // 1. Register v1
   compiler.registerOperator('user/MyOp:v1', {
     path: 'user/MyOp:v1',
-    schema: { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } }
+    schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } }
   });
 
   const script = 'Box(10).MyOp() -> $out';
   const ast = parser.parse(script);
-  const terminals1 = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+  const terminals1 = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
   assert.strictEqual(terminals1[0].selector.path, 'user/MyOp:v1', 'Should target v1');
 
   // 2. Register v2 (Replacing v1)
   compiler.registerOperator('user/MyOp:v2', {
     path: 'user/MyOp:v2',
-    schema: { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } }
+    schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } }
   });
 
-  const terminals2 = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+  const terminals2 = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
   assert.strictEqual(terminals2[0].selector.path, 'user/MyOp:v2', 'Should target v2 after replacement');
   assert.strictEqual(compiler.operators.get('MyOp').length, 1, 'Should only have one version registered for the short name');
 });

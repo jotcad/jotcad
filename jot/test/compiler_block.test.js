@@ -19,8 +19,8 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
     compiler.registerOperator('move', {
         path: 'jot/move',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$in' },
                 { name: 'v', type: 'jot:number' }
             ],
             outputs: { "$out": { type: "jot:shape" } }
@@ -30,10 +30,19 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
     compiler.registerOperator('scale', {
         path: 'jot/scale',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$in' },
                 { name: 'factor', type: 'jot:number' }
             ],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('Foot', {
+        path: 'jot/Foot',
+        schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
+            arguments: [],
             outputs: { "$out": { type: "jot:shape" } }
         }
     });
@@ -46,25 +55,16 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
         }
     });
 
-    compiler.registerOperator('Foot', {
-        path: 'jot/Foot',
-        schema: {
-            arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$in' }],
-            outputs: { "$out": { type: "jot:shape" } }
-        }
-    });
-
     compiler.registerOperator('pdf', {
         path: 'jot/pdf',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$in' },
                 { name: 'path', type: 'jot:string' }
             ],
             outputs: { "$out": { type: "jot:file" } }
         }
     });
-
     await t.test('Basic block inheritance and passthrough', async () => {
         // Box(10).{ move(5) }.scale(2)
         // move(5) should inherit Box(10)

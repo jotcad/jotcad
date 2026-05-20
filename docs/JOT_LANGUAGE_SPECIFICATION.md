@@ -101,6 +101,34 @@ main = Box(20)
 main.cut(Orb(5)) -> $out
 ```
 
+### 1.6. Formal Operator Schemas
+
+Every operator (built-in or user-defined) is governed by a formal schema that 
+defines its connectivity and parameterization. Schemas strictly distinguish 
+between **Subject Ports** (inputs) and **Configuration Parameters** (arguments).
+
+- **`inputs` (Subject Ports):** A map of ports that consume the geometric 
+  subject of a method call or injection.
+  - **MANDATE: Subject-Only Consumption:** Inputs ONLY consume the primary 
+    subject (the object to the left of the `.`). They NEVER "steal" from the 
+    argument pool.
+  - **The `$in` Port:** The standard primary subject port.
+- **`arguments` (Parameters):** An ordered list of configuration parameters 
+  provided in the parentheses `(...)`.
+- **`outputs` (Terminal Ports):** A map of available output ports (standard 
+  default is `$out`).
+
+#### Example Schema
+```json
+{
+  "inputs": { "$in": { "type": "jot:shape" } },
+  "arguments": [
+    { "name": "radius", "type": "jot:number" }
+  ],
+  "outputs": { "$out": { "type": "jot:shape" } }
+}
+```
+
 ## 2. The Universal Sequence Principle
 
 In JotCAD, every object is treated as an ordered **Sequence**. This enables

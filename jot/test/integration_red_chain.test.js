@@ -9,9 +9,9 @@ test('Integration: Box(15).Red().rz(0.25) Execution', async (t) => {
   const parser = new JotParser();
 
   // 1. Setup Built-in Schemas
-  const boxSchema = { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: 'shape' } };
-  const colorSchema = { arguments: [{ name: '$in', type: 'shape' }, { name: 'c', type: 'string' }], outputs: { $out: 'shape' } };
-  const rzSchema = { arguments: [{ name: '$in', type: 'shape' }, { name: 'a', type: 'number' }], outputs: { $out: 'shape' } };
+  const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
+  const colorSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'c', type: 'jot:string' }], outputs: { $out: 'jot:shape' } };
+  const rzSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'a', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
 
   compiler.registerOperator('Box', { path: 'jot/Box', schema: boxSchema });
   compiler.registerOperator('Color', { path: 'jot/Color', schema: colorSchema });
@@ -19,7 +19,7 @@ test('Integration: Box(15).Red().rz(0.25) Execution', async (t) => {
 
   // 2. Setup User Operator 'Red'
   const redScript = '$in.Color("red") -> $out';
-  const redSchema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } };
+  const redSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } };
   compiler.registerOperator('user/Red', { path: 'user/Red', schema: redSchema });
 
   // 3. Mock VFS that resolves User Ops recursively
@@ -60,7 +60,7 @@ test('Integration: Box(15).Red().rz(0.25) Execution', async (t) => {
 
   // 4. Compile main script
   const mainScript = 'Box(15).Red().rz(0.25) -> $out';
-  const mainTerminals = await compiler.evaluate(parser.parse(mainScript), {}, { outputs: { $out: 'shape' } });
+  const mainTerminals = await compiler.evaluate(parser.parse(mainScript), {}, { outputs: { $out: 'jot:shape' } });
   const finalSelector = mainTerminals[0].selector;
 
   // 5. Execution (Full Read Fulfillment)

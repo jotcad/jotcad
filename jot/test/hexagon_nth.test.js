@@ -22,7 +22,8 @@ test('Hexagon Points Nth Regression', async (t) => {
     compiler.registerOperator('asPoints', {
         path: 'jot/asPoints',
         schema: {
-            arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+            inputs: { '$in': { type: 'jot:shape' } },
+            arguments: [],
             outputs: { "$out": { type: "jot:shape" } }
         }
     });
@@ -30,7 +31,8 @@ test('Hexagon Points Nth Regression', async (t) => {
     compiler.registerOperator('points', {
         path: 'jot/points',
         schema: {
-            arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+            inputs: { '$in': { type: 'jot:shape' } },
+            arguments: [],
             outputs: { "$out": { type: "jot:shape" } }
         }
     });
@@ -38,8 +40,8 @@ test('Hexagon Points Nth Regression', async (t) => {
     compiler.registerOperator('nth', {
         path: 'jot/nth',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
                 { name: 'index', type: 'jot:numbers' }
             ],
             outputs: { "$out": { type: "jot:shape" } }
@@ -49,7 +51,7 @@ test('Hexagon Points Nth Regression', async (t) => {
     await t.test('Hexagon with edgeToEdge should resolve correctly', async () => {
         const script = 'Hexagon(edgeToEdge=248) -> $out';
         const ast = parser.parse(script);
-        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
         assert.strictEqual(res[0].selector.path, 'jot/Hexagon/edgeToEdge');
         assert.strictEqual(res[0].selector.parameters.edgeToEdge, 248);
     });
@@ -57,7 +59,7 @@ test('Hexagon Points Nth Regression', async (t) => {
     await t.test('asPoints() returns a cloud (0 components), causing nth to fail', async () => {
         const script = 'Hexagon(edgeToEdge=248).asPoints().nth(1) -> $out';
         const ast = parser.parse(script);
-        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
         
         const sel = res[0].selector;
         assert.strictEqual(sel.path, 'jot/nth');
@@ -67,7 +69,7 @@ test('Hexagon Points Nth Regression', async (t) => {
     await t.test('points() returns components, allowing nth to succeed', async () => {
         const script = 'Hexagon(edgeToEdge=248).points().nth(1) -> $out';
         const ast = parser.parse(script);
-        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
         
         assert.strictEqual(res[0].selector.path, 'jot/nth');
         assert.strictEqual(res[0].selector.parameters.$in.path, 'jot/points');

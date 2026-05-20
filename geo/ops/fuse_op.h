@@ -162,8 +162,8 @@ struct FuseOp : P {
     static typename P::json schema() {
         return { 
             {"path", "jot/fuse"}, 
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to fuse."}}}}},
             {"arguments", { 
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
             }}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 

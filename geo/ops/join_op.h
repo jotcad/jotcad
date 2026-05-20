@@ -31,8 +31,8 @@ struct JoinOp : P {
     static typename P::json schema() {
         return { 
             {"path", "jot/join"}, 
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to join to."}}}}},
             {"arguments", { 
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
             }}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 

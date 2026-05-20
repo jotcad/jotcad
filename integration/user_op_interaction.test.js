@@ -70,19 +70,19 @@ test('User Operator Interaction Integration', { timeout: 120000 }, async (t) => 
   const builtInOps = {
     'Hexagon': { path: 'jot/Hexagon/edgeToEdge', schema: { arguments: [{ name: 'edgeToEdge', type: 'number', default: 248 }, { name: 'turns', type: 'number', default: 0 }], outputs: { $out: 'shape' } } },
     'Disk': { path: 'jot/Disk', schema: { arguments: [{ name: 'diameter', type: 'interval', default: 10 }, { name: 'zag', type: 'number', default: 0.1 }], outputs: { $out: 'shape' } } },
-    'corners': { path: 'jot/corners', schema: { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } } },
-    'nth': { path: 'jot/nth', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'index', type: 'numbers' }], outputs: { $out: 'shape' } } },
-    'o': { path: 'jot/o', schema: { arguments: [{ name: '$in', type: 'shape', optional: true }], outputs: { $out: 'shape' } } },
-    'by': { path: 'jot/by', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'targets', type: 'shapes' }], outputs: { $out: 'shape' } } },
-    'clip': { path: 'jot/clip', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'other', type: 'shape' }], outputs: { $out: 'shape' } } },
-    'ez': { path: 'jot/ez', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'height', type: 'interval' }], outputs: { $out: 'shape' } } },
-    'cut': { path: 'jot/cut', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'other', type: 'shape' }], outputs: { $out: 'shape' } } },
-    'mx': { path: 'jot/mx', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'x', type: 'numbers' }], outputs: { $out: 'shape' } } },
-    'mz': { path: 'jot/mz', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'z', type: 'numbers' }], outputs: { $out: 'shape' } } },
-    'rx': { path: 'jot/rx', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
-    'ry': { path: 'jot/ry', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
-    'rz': { path: 'jot/rz', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
-    'pdf': { path: 'jot/pdf', schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'path', type: 'string' }], outputs: { $out: 'file' } } }
+    'corners': { path: 'jot/corners', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [], outputs: { $out: 'shape' } } },
+    'nth': { path: 'jot/nth', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'index', type: 'numbers' }], outputs: { $out: 'shape' } } },
+    'o': { path: 'jot/o', schema: { inputs: { '$in': { type: 'shape', optional: true } }, arguments: [], outputs: { $out: 'shape' } } },
+    'by': { path: 'jot/by', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'targets', type: 'shapes' }], outputs: { $out: 'shape' } } },
+    'clip': { path: 'jot/clip', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'other', type: 'shape' }], outputs: { $out: 'shape' } } },
+    'ez': { path: 'jot/ez', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'height', type: 'interval' }], outputs: { $out: 'shape' } } },
+    'cut': { path: 'jot/cut', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'other', type: 'shape' }], outputs: { $out: 'shape' } } },
+    'mx': { path: 'jot/mx', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'x', type: 'numbers' }], outputs: { $out: 'shape' } } },
+    'mz': { path: 'jot/mz', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'z', type: 'numbers' }], outputs: { $out: 'shape' } } },
+    'rx': { path: 'jot/rx', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
+    'ry': { path: 'jot/ry', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
+    'rz': { path: 'jot/rz', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'turns', type: 'numbers' }], outputs: { $out: 'shape' } } },
+    'pdf': { path: 'jot/pdf', schema: { inputs: { '$in': { type: 'shape' } }, arguments: [{ name: 'path', type: 'string' }], outputs: { $out: 'file' } } }
   };
 
   for (const [name, def] of Object.entries(builtInOps)) {
@@ -102,7 +102,8 @@ H .by(C.o())
   `;
   const footSchema = {
     path: 'user/Foot',
-    arguments: [{ name: '$in', type: 'jot:shape' }],
+    inputs: { '$in': { type: 'jot:shape' } },
+    arguments: [],
     outputs: { '$out': { type: 'jot:shape' } }
   };
 

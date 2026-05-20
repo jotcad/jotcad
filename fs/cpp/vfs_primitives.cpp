@@ -35,6 +35,13 @@ template<> int VFSNode::read<int>(const Selector& sel) {
     return 0;
 }
 
+template<> std::string VFSNode::read<std::string>(const Selector& sel) {
+    auto j = read<json>(sel);
+    if (j.is_string()) return j.get<std::string>();
+    auto data = read<std::vector<uint8_t>>(sel);
+    return std::string(data.begin(), data.end());
+}
+
 // --- read(VFSRequest) ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req) {
@@ -61,6 +68,13 @@ template<> int VFSNode::read<int>(const VFSRequest& req) {
     auto data = read<json>(req);
     if (data.is_number()) return data.get<int>();
     return 0;
+}
+
+template<> std::string VFSNode::read<std::string>(const VFSRequest& req) {
+    auto j = read<json>(req);
+    if (j.is_string()) return j.get<std::string>();
+    auto data = read<std::vector<uint8_t>>(req);
+    return std::string(data.begin(), data.end());
 }
 
 // --- read(CID) ---
@@ -91,6 +105,13 @@ template<> int VFSNode::read<int>(const CID& cid) {
     auto data = read<json>(cid);
     if (data.is_number()) return data.get<int>();
     return 0;
+}
+
+template<> std::string VFSNode::read<std::string>(const CID& cid) {
+    auto j = read<json>(cid);
+    if (j.is_string()) return j.get<std::string>();
+    auto data = read<std::vector<uint8_t>>(cid);
+    return std::string(data.begin(), data.end());
 }
 
 // --- write implementations ---

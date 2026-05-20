@@ -21,9 +21,10 @@ struct DisjointOp : P {
     static typename P::json schema() {
         return { 
             {"path", "jot/disjoint"}, 
-            {"arguments", { 
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
-            }}, 
+            {"inputs", {
+                {"$in", {{"type", "jot:shape"}}}
+            }},
+            {"arguments", nlohmann::json::array()}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }

@@ -32,9 +32,12 @@ export class JotCompiler {
   // --- Core API ---
 
   registerOperator(name, config) {
-    if (!config.schema || !config.schema.arguments || !Array.isArray(config.schema.arguments)) {
+    const hasArgs = config.schema && Array.isArray(config.schema.arguments);
+    const hasInputs = config.schema && typeof config.schema.inputs === 'object' && config.schema.inputs !== null;
+
+    if (!hasArgs && !hasInputs) {
        const path = config.path || name;
-       const msg = `Compiler Error: Operator '${name}' (path: ${path}) must provide a formal schema with an array-based 'arguments' property. Received: ${JSON.stringify(config.schema)}`;
+       const msg = `Compiler Error: Operator '${name}' (path: ${path}) must provide a formal schema with 'arguments' (array) or 'inputs' (object). Received: ${JSON.stringify(config.schema)}`;
        console.error(`[JotCompiler] FATAL REGISTRATION ERROR: ${msg}`);
        throw new Error(msg);
     }
@@ -424,31 +427,49 @@ export class JotCompiler {
   }
 
   async _satisfySchema(schema, pool, parameters, subject, opName, ctx) {
-    const params = {}, argList = schema?.arguments || [];
+    const params = {}, argList = schema?.arguments || [], inputList = schema?.inputs || {};
     let subjectConsumed = false;
 
-    const evaluateHelper = async (node) => {
-        return this._evaluateRecursive(node, parameters, subject, ctx);
+    const evaluateHelper = async (node, subCtx = {}) => {
+        return await this._evaluateRecursive(node, parameters, subject, { ...ctx, ...subCtx });
     };
 
-    // PASS 1: Explicit Binding
-    // We bind all named arguments first so they don't get "stolen" by greedy unnamed consumers.
+    // PASS 0: Formal Inputs
+    // MANDATE: Inputs ONLY consume the subject. They NEVER touch the argument pool.
+    for (const [name, inputDef] of Object.entries(inputList)) {
+        const type = inputDef.type?.toLowerCase() || 'jot:any';
+        const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
+        const consumer = this.consumers[fullType.split('<')[0]];
+
+        if (name === '$in' && subject) {
+            if (consumer) {
+                const res = await consumer([], inputDef, { ...ctx, fullType, evaluate: evaluateHelper }, subject);
+                if (res !== undefined) {
+                    params[name] = res;
+                    subjectConsumed = true;
+                }
+            } else if (this._isSubtype(this._getTypeOfValue(subject, ctx), fullType)) {
+                params[name] = subject;
+                subjectConsumed = true;
+            }
+        }
+    }
+
+    // PASS 1: Explicit Binding for regular arguments
     for (const p of pool) {
         if (p.nameHint && !p.consumed) {
             const argDef = argList.find(a => a.name === p.nameHint);
             if (argDef) {
-                const type = argDef.type?.toLowerCase() || '';
+                const type = argDef.type?.toLowerCase() || 'jot:any';
                 const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
                 const consumer = this.consumers[fullType.split('<')[0]];
 
                 if (consumer) {
-                    // Let the consumer handle the named candidate and any greedy neighbors
-                    const res = await consumer(pool, argDef, { ...ctx, evaluate: evaluateHelper }, null);
+                    const res = await consumer(pool, argDef, { ...ctx, fullType, evaluate: evaluateHelper }, null);
                     if (res !== undefined) {
-                        params[argDef.name] = (res?.type === 'SYMBOL') ? { ...res, type: fullType } : res;
+                        params[argDef.name] = res;
                     }
                 } else {
-                    // Fallback for simple types
                     const val = await evaluateHelper(p.node);
                     params[argDef.name] = this._normalize(val, fullType);
                     p.consumed = true;
@@ -457,46 +478,44 @@ export class JotCompiler {
         }
     }
 
-    // PASS 2: Positional / Greedy / Subject / Defaults
+    // PASS 2: Positional / Greedy / Defaults for regular arguments
     for (const argDef of argList) {
       if (params[argDef.name] !== undefined) continue;
 
-      const type = argDef.type?.toLowerCase() || '';
+      const type = argDef.type?.toLowerCase() || 'jot:any';
       const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
-      const isInput = argDef.name === '$in' || argDef.affiliate === '$out' || argDef.affiliate === '$in';
 
-      // 1. Preferential Subject Consumption for Inputs
-      if (isInput && subject && !subjectConsumed) {
-        if (this._isSubtype(this._getTypeOfValue(subject, ctx), fullType)) {
-          params[argDef.name] = subject;
-          subjectConsumed = true;
-          continue;
-        }
-      }
-
-      // 2. Greedy Consumer Pass (Checks pool for remaining UNNAMED matches)
+      // Greedy Consumer Pass
       const consumer = this.consumers[fullType.split('<')[0]];
       if (consumer) {
-        const res = await consumer(pool, argDef, { ...ctx, evaluate: evaluateHelper }, null);
+        const res = await consumer(pool, argDef, { ...ctx, fullType, evaluate: evaluateHelper }, null);
         if (res !== undefined) {
-          params[argDef.name] = (res?.type === 'SYMBOL') ? { ...res, type: fullType } : res;
+          params[argDef.name] = res;
         }
       }
 
-      // 3. Default Value Pass
+      // Default Value Pass
       if (params[argDef.name] === undefined && argDef.default !== undefined) {
         params[argDef.name] = argDef.default;
       }
     }
 
     // PASS 3: Validation
+    // Protocol Exception: Required inputs ($in) can be missing if the operator is being evaluated 
+    // as a template (no subject) AND we are inside a context that permits it (higher-order op).
+    const isInsideHigherOrder = ctx.allowTemplates === true;
+    for (const [name, inputDef] of Object.entries(inputList)) {
+        if (params[name] === undefined && !inputDef.optional && !isInsideHigherOrder) {
+            throw new Error(`Compiler Error: Missing required input '${name}' for '${opName}'`);
+        }
+    }
     for (const argDef of argList) {
         if (params[argDef.name] === undefined && argDef.default === undefined && !argDef.optional) {
              throw new Error(`Compiler Error: Missing required argument '${argDef.name}' for '${opName}'`);
         }
     }
 
-    // PASS 4: Strict Overload Check (Ensure all provided arguments were consumed)
+    // PASS 4: Strict Overload Check
     for (const p of pool) {
       if (!p.consumed) {
          throw new Error(`Compiler Error: Argument ${p.nameHint ? `'${p.nameHint}' ` : ''}was not consumed by '${opName}'`);
@@ -527,8 +546,17 @@ export class JotCompiler {
   }
 
   _isSubtype(actual, expected) {
-    if (actual === expected) return true;
-    if (actual === 'jot:any' || expected === 'jot:any') return true;
+    const a = (actual || 'jot:any').startsWith('jot:') ? actual : 'jot:' + actual;
+    const e = (expected || 'jot:any').startsWith('jot:') ? expected : 'jot:' + expected;
+    
+    if (a === e) return true;
+    if (a === 'jot:any' || e === 'jot:any') return true;
+    
+    // Singular -> Plural Promotion
+    if (a === 'jot:shape' && e === 'jot:shapes') return true;
+    if (a === 'jot:number' && e === 'jot:numbers') return true;
+    if (a === 'jot:string' && e === 'jot:strings') return true;
+
     return false;
   }
 
@@ -682,140 +710,135 @@ export class JotCompiler {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node, false);
+        const val = await ctx.evaluate(p.node);
         if (this._isJotNumber(val, argDef, ctx)) { 
           p.consumed = true; 
-          return val; 
+          return this._normalize(val, ctx.fullType); 
         }
         if (p.nameHint === argDef.name) return undefined;
     }
-    return (subject !== null && this._isJotNumber(subject, argDef, ctx)) ? subject : undefined;
+    return (subject !== null && this._isJotNumber(subject, argDef, ctx)) ? this._normalize(subject, ctx.fullType) : undefined;
   }
 
   async JotNumbersConsumer(pool, argDef, ctx, subject) {
     const results = [];
-    const startIndex = pool.findIndex(p => !p.consumed);
-    if (startIndex === -1) {
-        return (subject !== null && this._isJotNumber(subject, argDef, ctx)) ? [subject] : undefined;
+    if (subject !== null && this._isJotNumber(subject, argDef, ctx)) {
+        results.push(subject);
     }
 
-    for (let i = startIndex; i < pool.length; i++) {
-        const p = pool[i];
-        if (p.consumed) continue;
-        if (p.nameHint && p.nameHint !== argDef.name) break;
+    const startIndex = pool.findIndex(p => !p.consumed);
+    if (startIndex !== -1) {
+        for (let i = startIndex; i < pool.length; i++) {
+            const p = pool[i];
+            if (p.consumed) continue;
+            if (p.nameHint && p.nameHint !== argDef.name) break;
 
-        const val = await ctx.evaluate(p.node, false);
-        if (this._isJotNumber(val, argDef, ctx)) {
-            results.push(val);
-            p.consumed = true;
-        } else if (Array.isArray(val) && val.every(v => this._isJotNumber(v, argDef, ctx))) {
-            results.push(...val);
-            p.consumed = true;
-        } else {
-            break;
+            const val = await ctx.evaluate(p.node);
+            if (this._isJotNumber(val, argDef, ctx)) {
+                results.push(val);
+                p.consumed = true;
+            } else if (Array.isArray(val) && val.every(v => this._isJotNumber(v, argDef, ctx))) {
+                results.push(...val);
+                p.consumed = true;
+            } else {
+                break;
+            }
         }
     }
 
-    if (results.length === 0 && subject !== null && this._isJotNumber(subject, argDef, ctx)) {
-        return [subject];
-    }
-    return results.length > 0 ? results : undefined;
+    return results.length > 0 ? this._normalize(results, ctx.fullType) : undefined;
   }
 
   async JotStringConsumer(pool, argDef, ctx, subject) {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node, false);
+        const val = await ctx.evaluate(p.node);
         if (this._isJotString(val, argDef, ctx)) { 
           p.consumed = true; 
-          return val; 
+          return this._normalize(val, ctx.fullType); 
         }
         if (p.nameHint === argDef.name) return undefined;
     }
-    return (subject !== null && this._isJotString(subject, argDef, ctx)) ? subject : undefined;
+    return (subject !== null && this._isJotString(subject, argDef, ctx)) ? this._normalize(subject, ctx.fullType) : undefined;
   }
 
   async JotStringsConsumer(pool, argDef, ctx, subject) {
     const results = [];
+    if (subject !== null && this._isJotString(subject, argDef, ctx)) {
+        results.push(subject);
+    }
+
     const startIndex = pool.findIndex(p => !p.consumed);
-    if (startIndex === -1) {
-        return (subject !== null && this._isJotString(subject, argDef, ctx)) ? [subject] : undefined;
-    }
+    if (startIndex !== -1) {
+        for (let i = startIndex; i < pool.length; i++) {
+            const p = pool[i];
+            if (p.consumed) continue;
+            if (p.nameHint && p.nameHint !== argDef.name) break;
 
-    for (let i = startIndex; i < pool.length; i++) {
-        const p = pool[i];
-        if (p.consumed) continue;
-        if (p.nameHint && p.nameHint !== argDef.name) break;
-
-        const val = await ctx.evaluate(p.node, false);
-        if (this._isJotString(val, argDef, ctx)) {
-            results.push(val);
-            p.consumed = true;
-        } else break;
+            const val = await ctx.evaluate(p.node);
+            if (this._isJotString(val, argDef, ctx)) {
+                results.push(val);
+                p.consumed = true;
+            } else break;
+        }
     }
-    if (results.length === 0 && subject !== null && this._isJotString(subject, argDef, ctx)) {
-        return [subject];
-    }
-    return results.length > 0 ? results : undefined;
+    return results.length > 0 ? this._normalize(results, ctx.fullType) : undefined;
   }
 
   async JotBooleanConsumer(pool, argDef, ctx, subject) {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node, false);
+        const val = await ctx.evaluate(p.node);
         if (this._isJotBoolean(val, argDef, ctx)) { 
           p.consumed = true; 
-          return val; 
+          return this._normalize(val, ctx.fullType); 
         }
         if (p.nameHint === argDef.name) return undefined;
     }
-    return (subject !== null && this._isJotBoolean(subject, argDef, ctx)) ? subject : undefined;
+    return (subject !== null && this._isJotBoolean(subject, argDef, ctx)) ? this._normalize(subject, ctx.fullType) : undefined;
   }
 
   async JotShapeConsumer(pool, argDef, ctx, subject) {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node, false);
+        const val = await ctx.evaluate(p.node);
         if (this._isJotShape(val, argDef, ctx)) { 
           p.consumed = true; 
-          return val; 
+          return this._normalize(val, ctx.fullType); 
         }
         if (p.nameHint === argDef.name) return undefined;
     }
-    return (subject !== null && this._isJotShape(subject, argDef, ctx)) ? subject : undefined;
+    return (subject !== null && this._isJotShape(subject, argDef, ctx)) ? this._normalize(subject, ctx.fullType) : undefined;
   }
 
   async JotShapesConsumer(pool, argDef, ctx, subject) {
     const results = [];
+    if (subject !== null && (this._isJotShape(subject, argDef, ctx) || this._isJotShapeList(subject, argDef, ctx))) {
+        if (Array.isArray(subject)) results.push(...subject);
+        else results.push(subject);
+    }
+
     const startIndex = pool.findIndex(p => !p.consumed);
-    if (startIndex === -1) {
-        if (subject !== null && (this._isJotShape(subject, argDef, ctx) || this._isJotShapeList(subject, argDef, ctx))) {
-            return Array.isArray(subject) ? subject : [subject];
+    if (startIndex !== -1) {
+        for (let i = startIndex; i < pool.length; i++) {
+            const p = pool[i];
+            if (p.consumed) continue;
+            if (p.nameHint && p.nameHint !== argDef.name) break;
+
+            const val = await ctx.evaluate(p.node);
+            if (this._isJotShape(val, argDef, ctx)) {
+                results.push(val);
+                p.consumed = true;
+            } else if (this._isJotShapeList(val, argDef, ctx)) {
+                results.push(...(Array.isArray(val) ? val : [val]));
+                p.consumed = true;
+            } else break;
         }
-        return undefined;
     }
-
-    for (let i = startIndex; i < pool.length; i++) {
-        const p = pool[i];
-        if (p.consumed) continue;
-        if (p.nameHint && p.nameHint !== argDef.name) break;
-
-        const val = await ctx.evaluate(p.node, false);
-        if (this._isJotShape(val, argDef, ctx)) {
-            results.push(val);
-            p.consumed = true;
-        } else if (this._isJotShapeList(val, argDef, ctx)) {
-            results.push(...(Array.isArray(val) ? val : [val]));
-            p.consumed = true;
-        } else break;
-    }
-    if (results.length === 0 && subject !== null && (this._isJotShape(subject, argDef, ctx) || this._isJotShapeList(subject, argDef, ctx))) {
-        return Array.isArray(subject) ? subject : [subject];
-    }
-    return results.length > 0 ? this._normalize(results, 'jot:shapes') : undefined;
+    return results.length > 0 ? this._normalize(results, ctx.fullType) : undefined;
   }
 
   async JotFlagsConsumer(pool, argDef, ctx, subject) {
@@ -828,27 +851,27 @@ export class JotCompiler {
         if (p.consumed) continue;
         if (p.nameHint && p.nameHint !== argDef.name) break;
 
-        const val = await ctx.evaluate(p.node, false);
+        const val = await ctx.evaluate(p.node);
         if (typeof val === 'string' || val?.type === 'SYMBOL') {
             results.push(val);
             p.consumed = true;
         } else break;
     }
-    return results.length > 0 ? this._normalize(results, 'jot:flags') : undefined;
+    return results.length > 0 ? this._normalize(results, ctx.fullType) : undefined;
   }
 
   async JotVec3Consumer(pool, argDef, ctx, subject) {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node, false);
+        const val = await ctx.evaluate(p.node);
         if (this._isJotVec3(val, argDef, ctx)) { 
           p.consumed = true; 
-          return val; 
+          return this._normalize(val, ctx.fullType); 
         }
         if (p.nameHint === argDef.name) return undefined;
     }
-    if (subject !== null && this._isJotVec3(subject, argDef, ctx)) return subject;
+    if (subject !== null && this._isJotVec3(subject, argDef, ctx)) return this._normalize(subject, ctx.fullType);
     return undefined;
   }
 
@@ -856,15 +879,15 @@ export class JotCompiler {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node, false);
+        const val = await ctx.evaluate(p.node);
         if (this._isJotInterval(val, argDef, ctx)) {
           p.consumed = true;
-          return this._normalize(val, 'jot:interval');
+          return this._normalize(val, ctx.fullType);
         }
         if (p.nameHint === argDef.name) return undefined;
     }
     if (subject !== null && this._isJotInterval(subject, argDef, ctx)) {
-        return this._normalize(subject, 'jot:interval');
+        return this._normalize(subject, ctx.fullType);
     }
     return undefined;
   }
@@ -873,12 +896,16 @@ export class JotCompiler {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node);
+        
+        // Protocol: If this is an operator-expecting port (template), allow missing required inputs 
+        // in nested evaluation (they will be satisfied later by higher-order injection).
+        const subCtx = (argDef.type || '').startsWith('jot:op') ? { allowTemplates: true } : {};
+        const val = await ctx.evaluate(p.node, subCtx);
         p.consumed = true;
-        return val;
+        return this._normalize(val, ctx.fullType);
     }
     if (subject !== null) {
-        return subject;
+        return this._normalize(subject, ctx.fullType);
     }
     return undefined;
   }

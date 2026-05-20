@@ -40,7 +40,8 @@ test('JotCAD Parser: Method Chaining', async (t) => {
   compiler.registerOperator('jot/rotateX', {
     path: 'jot/rotateX',
     schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'angle', type: 'jot:number' }],
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [{ name: 'angle', type: 'jot:number' }],
         outputs: { "$out": { type: "jot:shape" } }
     }
   });
@@ -93,12 +94,13 @@ test('JotCAD Parser: Deep Method Chaining', async (t) => {
   const compiler = new JotCompiler();
   
   const noopSchema = { 
-    arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }], 
+    inputs: { '$in': { type: 'jot:shape' } },
+    arguments: [], 
     outputs: { "$out": { type: "jot:shape" } } 
   };
   compiler.registerOperator('jot/box', { path: 'jot/box', schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
-  compiler.registerOperator('jot/rotateX', { path: 'jot/rotateX', schema: { arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'a', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
-  compiler.registerOperator('jot/offset', { path: 'jot/offset', schema: { arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'r', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
+  compiler.registerOperator('jot/rotateX', { path: 'jot/rotateX', schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'a', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
+  compiler.registerOperator('jot/offset', { path: 'jot/offset', schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'r', type: 'jot:number' }], outputs: { "$out": { type: "jot:shape" } } } });
   compiler.registerOperator('jot/outline', { path: 'jot/outline', schema: noopSchema });
 
   const ast = parser.parse('box(100).rotateX(0.1).offset(5).outline() -> $out');
@@ -115,7 +117,7 @@ test('JotCAD Parser: Array of Expressions', async (t) => {
   const compiler = new JotCompiler();
   compiler.registerOperator('jot/box', { path: 'jot/box', schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { "$out": { type: 'jot:shape' } } } });
   compiler.registerOperator('jot/arc', { path: 'jot/arc', schema: { arguments: [{ name: 's', type: 'jot:number' }], outputs: { "$out": { type: 'jot:shape' } } } });
-  compiler.registerOperator('jot/rotateX', { path: 'jot/rotateX', schema: { arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'a', type: 'jot:number' }], outputs: { "$out": { type: 'jot:shape' } } } });
+  compiler.registerOperator('jot/rotateX', { path: 'jot/rotateX', schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'a', type: 'jot:number' }], outputs: { "$out": { type: 'jot:shape' } } } });
 
   const ast = parser.parse('[box(10), arc(20).rotateX(0.5)] -> $out');
   const schema = { outputs: { "$out": { type: "jot:shapes" } } };
@@ -171,7 +173,8 @@ test('JotCAD Evaluator: Deep Symbol Resolution', async (t) => {
   compiler.registerOperator('jot/rotateX', {
     path: 'jot/rotateX',
     schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }, { name: 'angle', type: 'any' }],
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [{ name: 'angle', type: 'any' }],
         outputs: { "$out": { type: "jot:shape" } }
     }
   });
@@ -197,8 +200,8 @@ test('JotCAD Evaluator: .spec() Canonicalization', async (t) => {
     compiler.registerOperator('jot/spec', {
         path: 'jot/spec',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
                 { name: 'definition', type: 'any' }
             ],
             outputs: { "$out": { type: "jot:shape" } }

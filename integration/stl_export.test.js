@@ -41,8 +41,8 @@ async function test() {
     compiler.registerOperator('stl', {
         path: 'jot/stl',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape' },
                 { name: 'path', type: 'jot:string', default: 'export.stl' }
             ],
             outputs: {

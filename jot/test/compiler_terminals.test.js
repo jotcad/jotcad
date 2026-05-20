@@ -21,16 +21,15 @@ test('JotCompiler Terminal Discovery', async (t) => {
     compiler.registerOperator('pdf', {
         path: 'jot/pdf',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape' },
                 { name: 'path', type: 'jot:string' }
             ],
-            outputs: { 
+            outputs: {
                 "$out": { type: "file" }
             }
         }
     });
-
     await t.test('Box(10).pdf("x") produces a file terminal on $out', async () => {
         const script = `
             res = Box(10).pdf("x");
@@ -79,12 +78,13 @@ test('JotCompiler Terminal Discovery', async (t) => {
         compiler.registerOperator('BoxWrap', {
             path: 'jot/BoxWrap',
             schema: {
-                arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$in' }],
+                inputs: { '$in': { type: 'jot:shape' } },
+                arguments: [],
                 outputs: { "$out": { type: "jot:shape" } }
             }
         });
 
-        const ast = parser.parse('BoxWrap(Box(10)) -> $out');
+        const ast = parser.parse('Box(10).BoxWrap() -> $out');
         const schema = { outputs: { "$out": { type: "jot:shape" } } };
 
         const res = await compiler.evaluate(ast, {}, schema);

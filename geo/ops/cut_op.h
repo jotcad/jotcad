@@ -31,8 +31,10 @@ struct CutOp : P {
     static typename P::json schema() {
         return { 
             {"path", "jot/cut"}, 
+            {"inputs", {
+                {"$in", {{"type", "jot:shape"}}}
+            }},
             {"arguments", { 
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}, 
                 {{"name", "open"}, {"type", "jot:boolean"}, {"default", false}} 
             }}, 

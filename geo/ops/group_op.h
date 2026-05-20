@@ -32,8 +32,8 @@ struct GroupOp : P {
         return {
             {"path", "jot/group"},
             {"description", "Combines multiple shapes into a single hierarchical group."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The base shape for the group."}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The base shape for the group."}, {"affiliate", "$out"}},
                 {{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "Additional shapes to group together."}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting group shape."}}}}}

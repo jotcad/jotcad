@@ -132,7 +132,7 @@ struct HullOp : P {
             return {
                 {"path", path},
                 {"description", "Generates the convex hull of the input shape (including children)."},
-                {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}},
+                {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to hull."}}}}},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }

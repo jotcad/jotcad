@@ -162,7 +162,8 @@ struct DeformOp : P {
         static typename P::json schema() {
             return {
                 {"path", "jot/bend"},
-                {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}}, {{"name", "tau"}, {"type", "jot:number"}, {"default", 0.25}}, {{"name", "radius"}, {"type", "jot:number"}, {"default", 0.0}}}},
+                {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+                {"arguments", {{{"name", "tau"}, {"type", "jot:number"}, {"default", 0.25}}, {{"name", "radius"}, {"type", "jot:number"}, {"default", 0.0}}}},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -206,7 +207,8 @@ struct DeformOp : P {
         static typename P::json schema() {
             return {
                 {"path", "jot/twist"},
-                {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}}, {{"name", "turns"}, {"type", "jot:number"}, {"default", 1.0}}}},
+                {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+                {"arguments", {{{"name", "turns"}, {"type", "jot:number"}, {"default", 1.0}}}},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }

@@ -11,19 +11,19 @@ test('Compiler: User Op in Chain (A = Box.Red.rz)', async (t) => {
   // 1. Register Built-ins
   compiler.registerOperator('Box', {
     path: 'jot/Box',
-    schema: { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: 'shape' } }
+    schema: { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } }
   });
   compiler.registerOperator('Color', {
     path: 'jot/Color',
-    schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'c', type: 'string' }], outputs: { $out: 'shape' } }
+    schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'c', type: 'jot:string' }], outputs: { $out: 'jot:shape' } }
   });
   compiler.registerOperator('rz', {
     path: 'jot/rz',
-    schema: { arguments: [{ name: '$in', type: 'shape' }, { name: 'a', type: 'number' }], outputs: { $out: 'shape' } }
+    schema: { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'a', type: 'jot:number' }], outputs: { $out: 'jot:shape' } }
   });
 
   // 2. Register User Op 'Red'
-  const redSchema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } };
+  const redSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } };
   compiler.registerOperator('user/Red', {
     path: 'user/Red',
     schema: redSchema
@@ -33,7 +33,7 @@ test('Compiler: User Op in Chain (A = Box.Red.rz)', async (t) => {
   const script = 'Box(15).Red().rz(0.25) -> $out';
   const ast = parser.parse(script);
   
-  const terminals = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+  const terminals = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
   
   assert.strictEqual(terminals.length, 1);
   const sel = terminals[0].selector;

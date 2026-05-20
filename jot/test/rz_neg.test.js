@@ -7,8 +7,8 @@ const compiler = new JotCompiler();
 compiler.registerOperator('jot/rz', {
     path: 'jot/rz',
     schema: {
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-            { name: '$in', type: 'jot:shape', affiliate: '$out' },
             { name: 'turns', type: 'jot:numbers' }
         ],
         outputs: { "$out": { type: "jot:shape" } }

@@ -31,8 +31,8 @@ test('Stitch Operator Regression: start=[0,10], end=[0,20]', async (t) => {
     compiler.registerOperator('stitch', {
         path: 'jot/stitch',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape' },
                 { name: 'repeat', type: 'jot:numbers', default: [] },
                 { name: 'start', type: 'jot:numbers', default: [] },
                 { name: 'end', type: 'jot:numbers', default: [] },
@@ -45,7 +45,8 @@ test('Stitch Operator Regression: start=[0,10], end=[0,20]', async (t) => {
     compiler.registerOperator('color', {
         path: 'jot/color',
         schema: {
-            arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'name', type: 'jot:string' }],
+            inputs: { '$in': { type: 'jot:shape' } },
+            arguments: [{ name: 'name', type: 'jot:string' }],
             outputs: { "$out": { type: "jot:shape" } }
         }
     });
@@ -53,7 +54,7 @@ test('Stitch Operator Regression: start=[0,10], end=[0,20]', async (t) => {
     await t.test('Complex Stitch Pattern should produce correct selector', async () => {
         const script = "Link(Point(0,0,0), Point(100,0,0)).stitch(start=[0, 10], end=[0, 20]).color('red') -> $out";
         const ast = parser.parse(script);
-        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'shape' } });
+        const res = await compiler.evaluate(ast, {}, { outputs: { $out: 'jot:shape' } });
         
         const sel = res[0].selector;
         assert.strictEqual(sel.path, 'jot/color');

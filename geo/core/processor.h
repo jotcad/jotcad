@@ -69,14 +69,23 @@ struct Processor {
             return decode<typename T::value_type>(vfs, key, params, schema, stack, opPath);
         } else {
             if (!params.contains(key)) {
-                // Find default in array-based arguments
+                // 1. Check formal 'inputs' (map)
+                if (schema.contains("inputs") && schema.at("inputs").contains(key)) {
+                    const auto& input = schema.at("inputs").at(key);
+                    if (input.contains("default")) {
+                        try { return input.at("default").get<T>(); }
+                        catch (const std::exception& e) { throw wrap_err(std::string("Input default value invalid: ") + e.what()); }
+                    }
+                }
+                
+                // 2. Check formal 'arguments' (array)
                 if (schema.contains("arguments") && schema.at("arguments").is_array()) {
                     for (const auto& arg : schema.at("arguments")) {
                         if (arg.contains("name") && arg.at("name") == key && arg.contains("default")) {
                             try {
                                 return arg.at("default").get<T>();
                             } catch (const std::exception& e) {
-                                throw wrap_err(std::string("Default value invalid: ") + e.what());
+                                throw wrap_err(std::string("Argument default value invalid: ") + e.what());
                             }
                         }
                     }
