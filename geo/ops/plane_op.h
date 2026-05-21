@@ -34,7 +34,10 @@ struct XOp : PlaneOpBase<P> {
         return { 
             {"path", "jot/X"}, 
             {"description", "Infinite plane on the YZ axis (normal +X)."}, 
-            {"arguments", {{{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}}},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", json::array({
+                {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }
@@ -54,7 +57,10 @@ struct YOp : PlaneOpBase<P> {
         return { 
             {"path", "jot/Y"}, 
             {"description", "Infinite plane on the XZ axis (normal +Y)."}, 
-            {"arguments", {{{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}}},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", json::array({
+                {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }
@@ -73,7 +79,10 @@ struct ZOp : PlaneOpBase<P> {
         return { 
             {"path", "jot/Z"}, 
             {"description", "Infinite plane on the XY axis (normal +Z)."}, 
-            {"arguments", {{{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}}},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", json::array({
+                {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }
@@ -115,10 +124,10 @@ struct PlaneOp : P {
         return { 
             {"path", "jot/plane"}, 
             {"description", "Extracts the coordinate system of the first face as a plane shape."}, 
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({
                 {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }
@@ -162,10 +171,10 @@ struct NormalOp : P {
         return { 
             {"path", "jot/normal"}, 
             {"description", "Extracts the normal vector of the first face as an oriented normal shape."}, 
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({
                 {{"name", "length"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }

@@ -47,11 +47,11 @@ struct PdfOp : P {
             {"path", "jot/pdf"},
             {"description", "Generates a PDF document from the spatial representation of the input shape."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", json::array({
                 {{"name", "path"}, {"type", "jot:string"}, {"default", "export.pdf"}},
                 {{"name", "width"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Page width in mm (0 = auto)"}},
                 {{"name", "height"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Page height in mm (0 = auto)"}}
-            }},
+            })},
             {"outputs", {
                 {"$out", {{"type", "file"}, {"mimeType", "application/pdf"}, {"description", "The generated PDF blob."}}}
             }}

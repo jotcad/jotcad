@@ -100,10 +100,10 @@ struct SectionOp : P {
         return {
             {"path", "jot/section"},
             {"description", "Generates 2D cross-sections of the input shape at the specified planes (or local Z=0)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "planes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "Shapes whose transforms define the sectioning planes."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

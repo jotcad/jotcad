@@ -235,13 +235,13 @@ struct StitchOp : P {
         return {
             {"path", "jot/stitch"},
             {"description", "Applies a complex recurring on/off pattern to a segment chain."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "repeat"}, {"type", "jot:numbers"}, {"default", std::vector<double>{}}},
                 {{"name", "start"}, {"type", "jot:numbers"}, {"default", std::vector<double>{}}},
                 {{"name", "end"}, {"type", "jot:numbers"}, {"default", std::vector<double>{}}},
                 {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

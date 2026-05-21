@@ -65,12 +65,12 @@ struct ScaleOp : ScaleOpBase<P> {
         return {
             {"path", "jot/scale"},
             {"description", "Scales the shape. Supports scale(s) and scale(x, y, z)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "x"}, {"type", "jot:number"}, {"optional", true}, {"description", "X factor (or uniform s)"}},
                 {{"name", "y"}, {"type", "jot:number"}, {"optional", true}, {"description", "Y factor"}},
                 {{"name", "z"}, {"type", "jot:number"}, {"optional", true}, {"description", "Z factor"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -114,10 +114,10 @@ struct ScaleXOp : ScaleAxisOp<P> {
         return {
             {"path", "jot/scaleX"},
             {"description", "Scales along the X axis. Supports sequences (e.g. sx(1, -1))."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "factors"}, {"type", "jot:numbers"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -134,10 +134,10 @@ struct ScaleYOp : ScaleAxisOp<P> {
         return {
             {"path", "jot/scaleY"},
             {"description", "Scales along the Y axis. Supports sequences."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "factors"}, {"type", "jot:numbers"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -154,10 +154,10 @@ struct ScaleZOp : ScaleAxisOp<P> {
         return {
             {"path", "jot/scaleZ"},
             {"description", "Scales along the Z axis. Supports sequences."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "factors"}, {"type", "jot:numbers"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

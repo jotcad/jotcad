@@ -41,10 +41,10 @@ struct PlaceOp : P {
         return {
             {"path", "jot/place"},
             {"description", "Instantiates a template shape at every anchor point in the input collection."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "Collection of anchor shapes (e.g. from eachCorner())"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "Collection of anchor shapes (e.g. from eachCorner())"}}}}},
+            {"arguments", json::array({
                 {{"name", "template_shape"}, {"type", "jot:shape"}, {"description", "The shape to instantiate at each anchor."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "A group containing the instantiated shapes."}}}}}
         };
     }

@@ -35,7 +35,8 @@ struct AsFacesOp : P {
         return {
             {"path", "jot/asFaces"},
             {"description", "Materializes the subject's faces into a single mesh shape."},
-            {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -180,10 +181,10 @@ struct FacesOp : P {
         return {
             {"path", "jot/faces"},
             {"description", "Extracts faces from a shape as individual oriented components. Merges contiguous coplanar patches."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({
                 {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

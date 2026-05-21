@@ -87,11 +87,12 @@ struct BoxOp : P {
         return {
             {"path", "jot/Box"},
             {"description", "Generates a box using symmetric or asymmetric intervals."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "width"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "depth"}, {"type", "jot:interval"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

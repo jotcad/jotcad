@@ -34,10 +34,10 @@ struct NthOp : P {
         return {
             {"path", "jot/nth"},
             {"description", "Selects the N-th component shape from a group."},
-            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
                 {{"name", "index"}, {"type", "jot:numbers"}, {"default", {0}}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

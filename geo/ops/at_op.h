@@ -51,10 +51,10 @@ struct AtOp : P {
             {"inputs", {
                 {"$in", {{"type", "jot:shape"}}}
             }},
-            {"arguments", {
+            {"arguments", nlohmann::json::array({
                 {{"name", "target"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Anchor provider (e.g., eachCorner())"}},
                 {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply at each anchor"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

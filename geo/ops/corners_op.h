@@ -40,6 +40,7 @@ struct AsCornersOp : P {
             {"path", "jot/asCorners"},
             {"description", "Materializes the subject's vertices into a point cloud shape."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -108,7 +109,7 @@ struct CornersOp : P {
             {"path", "jot/corners"},
             {"description", "Extracts vertices from a shape as individual oriented components."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {{{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}}},
+            {"arguments", nlohmann::json::array({ {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}} })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -138,6 +139,7 @@ struct AsEdgesOp : P {
             {"path", "jot/asEdges"},
             {"description", "Materializes the subject's edges into a wireframe shape."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -195,7 +197,7 @@ struct EdgesOp : P {
             {"path", "jot/edges"},
             {"description", "Extracts edges from a shape as individual oriented child components."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {{{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}}},
+            {"arguments", nlohmann::json::array({ {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}} })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

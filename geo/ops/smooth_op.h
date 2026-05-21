@@ -173,13 +173,13 @@ struct SmoothOp : P {
         return {
             {"path", "jot/smooth"},
             {"description", "Smooths the geometry until dihedral angles approach the specified limit (Angle-Limited Smoothing)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({
                 {{"name", "limit"}, {"type", "jot:number"}, {"default", 1.0/24.0}, {"description", "Target dihedral angle limit in turns (tau). Smoothing stops when angles hit this threshold."}},
                 {{"name", "iterations"}, {"type", "jot:number"}, {"default", 20}, {"description", "Maximum relaxation steps."}},
                 {{"name", "resolution"}, {"type", "jot:number"}, {"default", 1.0}, {"description", "Subdivision factor. Higher values create denser meshes to support tighter curves."}},
                 {{"name", "region"}, {"type", "jot:shape"}, {"optional", true}, {"description", "Optional bounding shape to limit smoothing to a specific region."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

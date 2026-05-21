@@ -178,10 +178,11 @@ struct RuleOp : P {
         return {
             {"path", "jot/Rule"},
             {"description", "Generates a ruled surface triangulating between two sets of boundary loops, supporting holes."},
-            {"arguments", {
-                {{"name", "$a"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "$b"}, {"type", "jot:shape"}}
+            {"inputs", {
+                {"$a", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
+                {"$b", {{"type", "jot:shape"}}}
             }},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}}}
             }}

@@ -75,6 +75,10 @@ void VFSNode::listen() {
         res.set_content(json({{"status", "OK"}, {"id", config_.id}}).dump(), "application/json");
     });
 
+    svr->Get("/catalog", [this](const httplib::Request&, httplib::Response& res) {
+        res.set_content(get_catalog().dump(), "application/json");
+    });
+
     svr->Post("/register", [this](const httplib::Request& req, httplib::Response& res) {
         try {
             std::string peerId;

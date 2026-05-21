@@ -21,11 +21,12 @@ struct PointOp : P {
         return {
             {"path", "jot/Point"},
             {"description", "Generates a single point."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", json::array({
                 {{"name", "x"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "y"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "z"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -54,9 +55,10 @@ struct PointsOp : P {
         return {
             {"path", "jot/Points"},
             {"description", "Generates a point cloud from a list of coordinates."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", json::array({
                 {{"name", "points"}, {"type", "array"}, {"items", {{"type", "array"}, {"items", {{"type", "jot:number"}}}}}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -82,9 +84,8 @@ struct PointsExtractOp : P {
         return {
             {"path", "jot/asPoints"},
             {"description", "Extracts vertices from a shape as a single point cloud shape."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -123,9 +124,8 @@ struct EachPointOp : P {
         return {
             {"path", "jot/points"},
             {"description", "Extracts vertices from a shape as individual child components."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

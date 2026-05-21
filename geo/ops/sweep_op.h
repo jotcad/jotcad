@@ -258,12 +258,13 @@ struct SweepOp : P {
         static typename P::json schema() {
             return {
                 {"path", path},
-                {"arguments", {
+                {"inputs", nlohmann::json::object()},
+                {"arguments", json::array({
                     {{"name", "profiles"}, {"type", "jot:shapes"}},
                     {{"name", "path"}, {"type", "jot:shape"}},
                     {{"name", "closed_path"}, {"type", "jot:boolean"}, {"default", false}},
                     {{"name", "solid"}, {"type", "jot:boolean"}, {"default", true}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -287,11 +288,11 @@ struct SweepOp : P {
             return {
                 {"path", path},
                 {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-                {"arguments", {
+                {"arguments", json::array({
                     {{"name", "path"}, {"type", "jot:shape"}},
                     {{"name", "closed_path"}, {"type", "jot:boolean"}, {"default", false}},
                     {{"name", "solid"}, {"type", "jot:boolean"}, {"default", true}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }

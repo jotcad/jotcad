@@ -114,7 +114,8 @@ struct HullOp : P {
             return {
                 {"path", path},
                 {"description", "Generates the convex hull of multiple shapes."},
-                {"arguments", {{{"name", "shapes"}, {"type", "jot:shapes"}}}},
+                {"inputs", nlohmann::json::object()},
+                {"arguments", nlohmann::json::array({ {{"name", "shapes"}, {"type", "jot:shapes"}} })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -133,6 +134,7 @@ struct HullOp : P {
                 {"path", path},
                 {"description", "Generates the convex hull of the input shape (including children)."},
                 {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to hull."}}}}},
+                {"arguments", nlohmann::json::array()},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }

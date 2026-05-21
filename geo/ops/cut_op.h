@@ -34,10 +34,10 @@ struct CutOp : P {
             {"inputs", {
                 {"$in", {{"type", "jot:shape"}}}
             }},
-            {"arguments", { 
+            {"arguments", nlohmann::json::array({ 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}, 
                 {{"name", "open"}, {"type", "jot:boolean"}, {"default", false}} 
-            }}, 
+            })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }

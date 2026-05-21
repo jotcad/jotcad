@@ -31,10 +31,10 @@ struct OffsetOp : P {
         return {
             {"path", "jot/offset"},
             {"description", "Creates a Minkowski offset. Recursively processes groups."},
-            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
                 {{"name", "diameter"}, {"type", "jot:number"}, {"default", 1.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -68,11 +68,11 @@ struct OffsetClosureOp : P {
         return {
             {"path", "jot/offset/closure"},
             {"description", "Applies an outward then inward offset to close gaps. Recursively processes groups."},
-            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
                 {{"name", "diameter"}, {"type", "jot:number"}, {"default", 1.0}},
                 {{"name", "closure"}, {"type", "jot:boolean"}, {"const", true}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

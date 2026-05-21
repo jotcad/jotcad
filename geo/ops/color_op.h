@@ -21,9 +21,9 @@ struct ColorOp : P {
             {"inputs", {
                 {"$in", {{"type", "jot:shape"}, {"description", "The shape to color."}}}
             }},
-            {"arguments", {
+            {"arguments", nlohmann::json::array({
                 {{"name", "color"}, {"type", "jot:string"}, {"default", "red"}, {"description", "The color name or CSS hex value."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The colored shape."}}}}}
         };
     }

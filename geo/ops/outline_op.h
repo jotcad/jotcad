@@ -90,7 +90,7 @@ struct OutlineOp : P {
             {"path", "jot/outline"},
             {"description", "Extracts the boundary edges of the input shape as line segments."},
             {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to outline."}}}}},
-            {"arguments", {}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting wireframe/outline shape."}}}}}
         };
     }

@@ -1,0 +1,100 @@
+import test from 'node:test';
+import assert from 'node:assert';
+import http from 'node:http';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import {
+  VFS,
+  MeshLink,
+  registerVFSRoutes,
+  DiskStorage,
+  Selector,
+} from '../fs/src/index.js';
+
+import { JotCompiler } from '../jot/src/compiler.js';
+import { launchSystem, PROFILES } from '../orchestrator.js';
+
+test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 }, async (t) => {
+  let sys;
+  let server;
+  let jsVfs;
+  let stopServer;
+
+  const PORT_JS = 20105;
+  const STORAGE_JS = path.resolve('.test_vfs_pack_repro_js');
+
+  t.after(async () => {
+    if (stopServer) stopServer();
+    if (server) server.close();
+    if (jsVfs) await jsVfs.close();
+    if (sys) await sys.stop();
+    await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
+  });
+
+  // 1. Launch the TEST system
+  sys = await launchSystem(PROFILES.TEST);
+  const PORT_CPP = sys.ports.ops;
+
+  // 2. Start JS Node
+  jsVfs = new VFS({
+    id: 'js-test-client',
+    storage: new DiskStorage(STORAGE_JS),
+  });
+  const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
+    localUrl: `http://localhost:${PORT_JS}`,
+  });
+  server = http.createServer();
+  stopServer = registerVFSRoutes(jsVfs, server, '', mesh);
+
+  await new Promise((resolve) => server.listen(PORT_JS, '0.0.0.0', resolve));
+  await jsVfs.init();
+  await mesh.start();
+
+  // 3. Register remote operators in compiler
+  const compiler = new JotCompiler(jsVfs);
+  const catalogUrl = `http://localhost:${PORT_CPP}/catalog`;
+  console.log(`[Test] Fetching catalog from ${catalogUrl}`);
+  const resp = await fetch(catalogUrl);
+  if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[Test] Catalog fetch failed (${resp.status}): ${text}`);
+      throw new Error(`Catalog fetch failed: ${resp.status}`);
+  }
+  const catalog = await resp.json();
+  console.log(`[Test] Catalog loaded with ${Object.keys(catalog.catalog).length} operators`);
+  
+  for (const [name, schema] of Object.entries(catalog.catalog)) {
+      compiler.registerOperator(name, { path: name, schema: schema });
+  }
+
+  await t.test('Reproduction Case', async () => {
+    const code = "Triangle(20).color('blue').dup(20).pack(sheet=Disk(100).color('red'), rotations=2).keep(has('sheet')) -> $out";
+    console.log(`[Test] Evaluating: ${code}`);
+    
+    try {
+        const parser = new (await import('../jot/src/parser.js')).JotParser();
+        const ast = parser.parse(code);
+        const results = await compiler.evaluate(ast, {}, { outputs: { '$out': 'jot:shape' } });
+        
+        const selector = results[0].selector;
+        console.log(`[Test] Result Selector: ${JSON.stringify(selector, null, 2)}`);
+
+        // Generate PNG
+        const pngSelector = new Selector('jot/png', { '$in': selector }).withOutput('$out');
+        const { stream } = await jsVfs.read(pngSelector);
+        
+        // Consume stream into buffer
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        const pngBytes = Buffer.concat(chunks);
+        
+        await fs.writeFile('pack_repro_result.png', pngBytes);
+        console.log('[Test] Wrote pack_repro_result.png');
+
+        assert.ok(pngBytes.length > 0, 'PNG should not be empty');
+    } catch (e) {
+        console.error('[Test] Evaluation failed:', e);
+        throw e;
+    }
+  });
+});

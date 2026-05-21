@@ -32,9 +32,9 @@ struct JoinOp : P {
         return { 
             {"path", "jot/join"}, 
             {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to join to."}}}}},
-            {"arguments", { 
+            {"arguments", json::array({ 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
-            }}, 
+            })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }

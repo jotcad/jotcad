@@ -149,10 +149,10 @@ struct FillOp : P {
             {"path", "jot/fill"},
             {"description", "Promotes 1D segments to 2D faces using arrangement-based filling rules."},
             {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to fill."}}}}},
-            {"arguments", {
+            {"arguments", nlohmann::json::array({
                 {{"name", "rule"}, {"type", "jot:string"}, {"default", "odd"}},
                 {{"name", "plane"}, {"type", "jot:shape"}, {"default", {{"tags", {{"type", "plane"}}}, {"tf", "1/1 0/1 0/1 0/1 0/1 1/1 0/1 0/1 0/1 0/1 1/1 0/1 0/1 0/1 0/1 1/1"}}}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

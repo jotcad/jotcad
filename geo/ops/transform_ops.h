@@ -59,9 +59,9 @@ struct ByOp : TransformOpBase<P> {
             {"path", "jot/by"},
             {"description", "Transforms the subject by the matrices of the target shapes. Supports sequences."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", json::array({
                 {{"name", "targets"}, {"type", "jot:shapes"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -87,9 +87,9 @@ struct ToOp : TransformOpBase<P> {
             {"path", "jot/to"},
             {"description", "Moves the subject to the frames of the target shapes (resets local transform). Supports sequences."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", json::array({
                 {{"name", "targets"}, {"type", "jot:shapes"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -123,9 +123,9 @@ struct DupOp : TransformOpBase<P> {
             {"path", "jot/dup"},
             {"description", "Duplicates the subject 'count' times in place."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", json::array({
                 {{"name", "count"}, {"type", "jot:number"}, {"default", 1.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

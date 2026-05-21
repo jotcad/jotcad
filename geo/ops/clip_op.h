@@ -34,9 +34,9 @@ struct ClipOp : P {
             {"inputs", {
                 {"$in", {{"type", "jot:shape"}}}
             }},
-            {"arguments", { 
+            {"arguments", nlohmann::json::array({ 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
-            }}, 
+            })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }

@@ -111,9 +111,8 @@ struct UnfoldOp : P {
         return {
             {"path", "jot/unfold"},
             {"description", "Unfolds a 3D polyhedral mesh into 2D patches."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

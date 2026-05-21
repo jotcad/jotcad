@@ -166,13 +166,7 @@ export class JotCompiler {
     const topLevelNodes = Array.isArray(ast) ? [...ast] : [ast];
 
     try {
-      // 1. AUTO-ASSIGNMENT: If it's a single expression and the schema has a single output, treat it as an assignment.
-      const outputNames = Object.keys(schema.outputs || {});
-      if (topLevelNodes.length === 1 && topLevelNodes[0]?.type !== 'ASSIGNMENT' && outputNames.length === 1) {
-          topLevelNodes[0] = { type: 'ASSIGNMENT', name: outputNames[0], value: topLevelNodes[0] };
-      }
-
-      // 2. VALIDATION: Every top-level statement MUST be an assignment
+      // 1. VALIDATION: Every top-level statement MUST be an assignment
       for (const node of topLevelNodes) {
           if (node?.type !== 'ASSIGNMENT') {
               const codeSnippet = this.stringifyAST(node);

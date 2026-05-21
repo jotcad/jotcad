@@ -39,29 +39,33 @@ struct Processor {
 
     static void validate_schema(const json& s) {
         std::string path = s.value("path", "unknown");
-        auto err = [&](const std::string& msg) {
-            throw std::runtime_error("Schema Validation Error for '" + path + "': " + msg);
-        };
+        std::vector<std::string> errors;
 
         if (s.contains("arguments") && !s["arguments"].is_array()) {
-            err("'arguments' must be an array.");
+            errors.push_back("'arguments' must be an array.");
         }
 
         if (s.contains("inputs") && !s["inputs"].is_object()) {
-            err("'inputs' must be a map.");
+            errors.push_back("'inputs' must be a map.");
         }
 
         // Enforce the Subject-Only mandate for $in
-        if (s.contains("arguments")) {
+        if (s.contains("arguments") && s["arguments"].is_array()) {
             for (const auto& arg : s["arguments"]) {
                 if (arg.contains("name") && arg["name"] == "$in") {
-                    err("'$in' found in 'arguments' array. It MUST be moved to the formal 'inputs' map.");
+                    errors.push_back("'$in' found in 'arguments' array. It MUST be moved to the formal 'inputs' map.");
                 }
             }
         }
 
         if (!s.contains("outputs") || !s["outputs"].is_object()) {
-            err("'outputs' map is missing or invalid.");
+            errors.push_back("'outputs' map is missing or invalid.");
+        }
+
+        if (!errors.empty()) {
+            std::string msg = "Schema Validation Errors for '" + path + "':\n";
+            for (const auto& e : errors) msg += "  - " + e + "\n";
+            throw std::runtime_error(msg);
         }
     }
 

@@ -39,11 +39,12 @@ struct TriangleOp : P {
             return {
                 {"path", path},
                 {"description", "Generates a 2D triangle centered on its centroid."},
-                {"arguments", {
+                {"inputs", nlohmann::json::object()},
+                {"arguments", json::array({
                     {{"name", "va"}, {"type", "jot:number"}},
                     {{"name", "vb"}, {"type", "jot:number"}},
                     {{"name", "vc"}, {"type", "jot:number"}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -59,9 +60,10 @@ struct TriangleOp : P {
             return {
                 {"path", path},
                 {"description", "Generates an equilateral triangle by side length."},
-                {"arguments", {
+                {"inputs", nlohmann::json::object()},
+                {"arguments", json::array({
                     {{"name", "size"}, {"type", "jot:number"}, {"default", 10.0}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -78,9 +80,10 @@ struct TriangleOp : P {
             return {
                 {"path", path},
                 {"description", "Generates an equilateral triangle by height."},
-                {"arguments", {
+                {"inputs", nlohmann::json::object()},
+                {"arguments", json::array({
                     {{"name", "height"}, {"type", "jot:number"}, {"default", 8.660254}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }

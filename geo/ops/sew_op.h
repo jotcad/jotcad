@@ -111,7 +111,7 @@ struct SewOp : P {
                             faces[neighbor.face_idx].flip = (b_natural_is_rev == a_is_rev);
                             faces[neighbor.face_idx].visited = true;
                             q.push(neighbor.face_idx);
-                        } else if (b_natural_is_rev ^ faces[neighbor.face_idx].flip == a_is_rev) {
+                        } else if ((b_natural_is_rev ^ faces[neighbor.face_idx].flip) == a_is_rev) {
                             throw std::runtime_error("jot/sew: Non-orientable surface (Möbius strip) detected.");
                         }
                     }
@@ -175,7 +175,14 @@ struct SewOp : P {
         }
         static std::vector<std::string> argument_keys() { return {"shapes"}; }
         static typename P::json schema() {
-            return { {"path", path}, {"arguments", {{{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
+            return { 
+                {"path", path}, 
+                {"inputs", nlohmann::json::object()},
+                {"arguments", nlohmann::json::array({
+                    {{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
+                })}, 
+                {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
+            };
         }
     };
 
@@ -188,7 +195,14 @@ struct SewOp : P {
         }
         static std::vector<std::string> argument_keys() { return {"$in", "shapes"}; }
         static typename P::json schema() {
-            return { {"path", path}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, {{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}}}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
+            return { 
+                {"path", path}, 
+                {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+                {"arguments", nlohmann::json::array({ 
+                    {{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}} 
+                })}, 
+                {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
+            };
         }
     };
 };

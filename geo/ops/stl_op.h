@@ -44,10 +44,10 @@ struct StlOp : P {
         return {
             {"path", "jot/stl"},
             {"description", "Generates a binary STL file from the spatial representation of the input shape."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "path"}, {"type", "jot:string"}, {"default", "export.stl"}}
-            }},
+            })},
             {"outputs", {
                 {"$out", {{"type", "file"}, {"mimeType", "model/stl"}, {"description", "The generated STL blob."}}}
             }}

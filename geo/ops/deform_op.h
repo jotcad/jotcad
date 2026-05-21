@@ -163,7 +163,10 @@ struct DeformOp : P {
             return {
                 {"path", "jot/bend"},
                 {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-                {"arguments", {{{"name", "tau"}, {"type", "jot:number"}, {"default", 0.25}}, {{"name", "radius"}, {"type", "jot:number"}, {"default", 0.0}}}},
+                {"arguments", nlohmann::json::array({
+                    {{"name", "tau"}, {"type", "jot:number"}, {"default", 0.25}},
+                    {{"name", "radius"}, {"type", "jot:number"}, {"default", 0.0}}
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -208,7 +211,7 @@ struct DeformOp : P {
             return {
                 {"path", "jot/twist"},
                 {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-                {"arguments", {{{"name", "turns"}, {"type", "jot:number"}, {"default", 1.0}}}},
+                {"arguments", nlohmann::json::array({ {{"name", "turns"}, {"type", "jot:number"}, {"default", 1.0}} })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }

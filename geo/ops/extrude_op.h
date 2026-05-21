@@ -157,10 +157,10 @@ struct ExtrudeOp : ExtrudeOpBase<P> {
             {"path", "jot/extrude"},
             {"description", "Extrudes geometry. If target is an interval/number, extrudes along the face normal. If target is a shape, uses it as a reference plane/axis."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", nlohmann::json::array({
                 {{"name", "target"}, {"type", "jot:any"}, {"description", "Interval/Number (length) or Shape (reference frame)"}},
                 {{"name", "range"}, {"type", "jot:interval"}, {"optional", true}, {"description", "Optional start/end offsets along the reference axis"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -180,9 +180,9 @@ struct ExtrudeXOp : ExtrudeOpBase<P> {
             {"path", "jot/extrudeX"},
             {"description", "Extrudes geometry along the local X axis."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", nlohmann::json::array({
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 1.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -202,9 +202,9 @@ struct ExtrudeYOp : ExtrudeOpBase<P> {
             {"path", "jot/extrudeY"},
             {"description", "Extrudes geometry along the local Y axis."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", nlohmann::json::array({
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 1.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -224,9 +224,9 @@ struct ExtrudeZOp : ExtrudeOpBase<P> {
             {"path", "jot/extrudeZ"},
             {"description", "Extrudes geometry along the local Z axis."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", {
+            {"arguments", nlohmann::json::array({
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 1.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

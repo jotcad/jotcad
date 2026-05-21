@@ -21,9 +21,8 @@ struct PngOp : P {
         return {
             {"path", "jot/png"},
             {"description", "Generates a PNG thumbnail for the input shape and returns it via the '$out' port."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {
                 {"$out", {{"type", "file"}, {"mimeType", "image/png"}, {"description", "The generated PNG thumbnail."}}}
             }}
