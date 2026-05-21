@@ -286,8 +286,8 @@ struct SweepOp : P {
         static typename P::json schema() {
             return {
                 {"path", path},
+                {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
                 {"arguments", {
-                    {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                     {{"name", "path"}, {"type", "jot:shape"}},
                     {{"name", "closed_path"}, {"type", "jot:boolean"}, {"default", false}},
                     {{"name", "solid"}, {"type", "jot:boolean"}, {"default", true}}
@@ -317,8 +317,8 @@ struct SweepOp : P {
             return {
                 {"path", path},
                 {"description", "Extrudes a profile along the subject path."},
+                {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
                 {"arguments", {
-                    {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                     {{"name", "profile"}, {"type", "jot:shape"}},
                     {{"name", "closed_path"}, {"type", "jot:boolean"}, {"default", false}},
                     {{"name", "solid"}, {"type", "jot:boolean"}, {"default", true}}

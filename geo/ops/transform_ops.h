@@ -58,8 +58,8 @@ struct ByOp : TransformOpBase<P> {
         return {
             {"path", "jot/by"},
             {"description", "Transforms the subject by the matrices of the target shapes. Supports sequences."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "targets"}, {"type", "jot:shapes"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
@@ -86,8 +86,8 @@ struct ToOp : TransformOpBase<P> {
         return {
             {"path", "jot/to"},
             {"description", "Moves the subject to the frames of the target shapes (resets local transform). Supports sequences."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "targets"}, {"type", "jot:shapes"}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
@@ -122,8 +122,8 @@ struct DupOp : TransformOpBase<P> {
         return {
             {"path", "jot/dup"},
             {"description", "Duplicates the subject 'count' times in place."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
                 {{"name", "count"}, {"type", "jot:number"}, {"default", 1.0}}
             }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
@@ -150,9 +150,8 @@ struct OriginOp : P {
         return {
             {"path", "jot/origin"},
             {"description", "Resets the subject's transformation to the identity matrix (birth origin), or returns an identity frame if no subject is provided."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}, {"optional", true}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"optional", true}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -171,9 +170,8 @@ struct GapOp : P {
         return {
             {"path", "jot/gap"},
             {"description", "Tags the subject as a 'gap' (negative space). Gaps cut into other shapes but are themselves non-matter. They are rendered transparently in the UX and skipped during STL export."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

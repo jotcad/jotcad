@@ -31,7 +31,38 @@ struct Processor {
         };
         json s = Op::schema();
         s["path"] = path; // Force schema path to match registration key
+        
+        validate_schema(s);
+
         vfs->register_op(path, handler, s);
+    }
+
+    static void validate_schema(const json& s) {
+        std::string path = s.value("path", "unknown");
+        auto err = [&](const std::string& msg) {
+            throw std::runtime_error("Schema Validation Error for '" + path + "': " + msg);
+        };
+
+        if (s.contains("arguments") && !s["arguments"].is_array()) {
+            err("'arguments' must be an array.");
+        }
+
+        if (s.contains("inputs") && !s["inputs"].is_object()) {
+            err("'inputs' must be a map.");
+        }
+
+        // Enforce the Subject-Only mandate for $in
+        if (s.contains("arguments")) {
+            for (const auto& arg : s["arguments"]) {
+                if (arg.contains("name") && arg["name"] == "$in") {
+                    err("'$in' found in 'arguments' array. It MUST be moved to the formal 'inputs' map.");
+                }
+            }
+        }
+
+        if (!s.contains("outputs") || !s["outputs"].is_object()) {
+            err("'outputs' map is missing or invalid.");
+        }
     }
 
     /**
