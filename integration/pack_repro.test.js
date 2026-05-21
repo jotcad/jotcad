@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import crypto from 'node:crypto';
 import {
   VFS,
   MeshLink,
@@ -68,7 +69,7 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
   }
 
   await t.test('Reproduction Case', async () => {
-    const code = "Triangle(20).color('blue').dup(20).pack(sheet=Disk(100).color('red'), rotations=2).keep(has('sheet')) -> $out";
+    const code = "Triangle(20).color('blue').dup(20).pack(sheet=Disk(100).color('red'), rotations=2) -> $out";
     console.log(`[Test] Evaluating: ${code}`);
     
     try {
@@ -92,6 +93,14 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
         console.log('[Test] Wrote pack_repro_result.png');
 
         assert.ok(pngBytes.length > 0, 'PNG should not be empty');
+
+        const hash = crypto.createHash('sha256').update(pngBytes).digest('hex');
+        console.log(`[Test] PNG Hash: ${hash}`);
+        
+        // This baseline hash represents 20 blue triangles packed into a red Disk(100) sheet.
+        // If the geometric packing, subtraction, or triangulation changes, this will fail.
+        const EXPECTED_HASH = '419b5d2ca3006046b102ebe7de26856b41cef24ab1118f960d2357e8cccb1389';
+        assert.strictEqual(hash, EXPECTED_HASH, 'PNG content hash mismatch - visual regression detected!');
     } catch (e) {
         console.error('[Test] Evaluation failed:', e);
         throw e;
