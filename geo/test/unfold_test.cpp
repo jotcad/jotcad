@@ -60,25 +60,36 @@ int main() {
     try {
         std::vector<unfold::UnfoldPatch> patches = unfold::Clusterer::unfold(mesh);
         std::cout << "  - Success! Cube produced " << patches.size() << " patches." << std::endl;
-        assert(patches.size() == 6 && "Cube should have 6 coplanar islands");
         
-        for (const auto& p : patches) {
-            assert(p.geometry.faces.size() == 1 && "Each island should be one face");
-            assert(p.geometry.vertices.size() == 4 && "Each island should be a square (4 vertices)");
+        // New Jigsaw Merge behavior: should ideally produce 1 single net for a cube.
+        assert(patches.size() == 1 && "Cube should be unfolded into a single net");
+        
+        const auto& p = patches[0];
+        // 6 faces of 2 triangles each = 12 triangles total.
+        // Our Atom welder might have reduced this to 6 square faces.
+        // The important part is that the result is a valid 2D net.
+        assert(p.geometry.faces.size() >= 1 && "Net should have geometry");
+        
+        std::cout << "  - Net faces: " << p.geometry.faces.size() << std::endl;
 
-            // Verification: Edge lengths should be exactly 10.0
-            for (size_t i = 0; i < p.geometry.vertices.size(); ++i) {
-                const auto& v1 = p.geometry.vertices[i];
-                const auto& v2 = p.geometry.vertices[(i + 1) % p.geometry.vertices.size()];
-                FT dx = v1.x - v2.x;
-                FT dy = v1.y - v2.y;
-                FT d2 = dx*dx + dy*dy;
-                if (CGAL::to_double(d2) < 99.9 || CGAL::to_double(d2) > 100.1) {
-                    std::cerr << "  - [FAIL] Edge length mismatch: expected 100 (squared), got " << CGAL::to_double(d2) << std::endl;
-                    return 1;
-                }
+        // Verification: Total area should be 6 * (10*10) = 600
+        FT total_area = 0;
+        for (const auto& face : p.geometry.faces) {
+            // Simplified area check for triangles/quads in XY plane
+            if (face.loops.empty()) continue;
+            const auto& loop = face.loops[0];
+            for (size_t i = 0; i < loop.size(); ++i) {
+                const auto& v1 = p.geometry.vertices[loop[i]];
+                const auto& v2 = p.geometry.vertices[loop[(i + 1) % loop.size()]];
+                total_area = total_area + (v1.x * v2.y - v2.x * v1.y);
             }
         }
+        total_area = total_area / FT(2.0);
+        if (total_area < FT(0)) total_area = -total_area;
+
+        std::cout << "  - Total net area: " << CGAL::to_double(total_area) << std::endl;
+        assert(std::abs(CGAL::to_double(total_area) - 600.0) < 0.1 && "Total area should be 600");
+
     } catch (const std::exception& e) {
         std::cerr << "  - [CRASH] Cube failed: " << e.what() << std::endl;
         return 1;

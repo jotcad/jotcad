@@ -85,7 +85,7 @@ struct PackOp : P {
     }
 
     static void collect_leaf_shapes(const Shape& s, std::vector<Shape>& leaves) {
-        if (s.geometry.has_value()) {
+        if (s.geometry.has_value() || (s.tags.contains("type") && s.tags.at("type") == "item")) {
             leaves.push_back(s);
         } else {
             for (const auto& child : s.components) {

@@ -33,13 +33,18 @@ private:
         double avg_z;
     };
 
+    struct RenderLine {
+        Vec3 p0, p1;
+        ColorRGBA color;
+    };
+
     static void rasterize_triangle(
         const RenderTriangle& tri,
         std::vector<unsigned char>& pixels, std::vector<double>& z_buffer,
         int width, int height, double scale, double offset_x, double offset_y);
-        
+
     static void rasterize_line(
-        int x0, int y0, int x1, int y1, ColorRGBA col, 
+        int x0, int y0, int x1, int y1, ColorRGBA col,
         std::vector<unsigned char>& pixels, int width, int height);
 };
 

@@ -49,7 +49,7 @@ inline Polygon_set_2 compute_ifp_pwh(const Polygon_with_holes_2& poly_A, const P
     // This ensures the part B (normalized to its own BB min at 0,0) stays within the sheet's BB.
     FT dx = w_A - w_B;
     FT dy = h_A - h_B;
-    if (dx < FT(0) || dy < FT(0)) return Polygon_set_2();
+    if (dx <= FT(0) || dy <= FT(0)) return Polygon_set_2();
 
     Polygon_2 rect_initial;
     rect_initial.push_back(Point_2(bb_A.xmin(), bb_A.ymin()));

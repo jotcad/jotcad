@@ -2,6 +2,7 @@ import { VFS, MeshLink } from '../fs/src/index.js';
 import { JotCompiler } from '../jot/src/compiler.js';
 import { JotParser } from '../jot/src/parser.js';
 import { launchSystem, PROFILES } from '../orchestrator.js';
+import { captureAndVerifyPNG } from './png_helper.js';
 
 async function consumeJSON(stream) {
     const reader = stream.getReader();
@@ -16,6 +17,55 @@ async function consumeJSON(stream) {
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
     return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+async function consumeText(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return new TextDecoder().decode(bytes);
+}
+
+function parseGeometry(text) {
+    const lines = text.split('\n');
+    const vertices = [];
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i].trim();
+        if (line.startsWith('V ')) {
+            const count = parseInt(line.substring(2).trim(), 10);
+            i++;
+            for (let c = 0; c < count && i < lines.length; c++) {
+                const parts = lines[i].trim().split(/\s+/);
+                if (parts.length >= 3) {
+                    const parseCoord = (s) => {
+                        if (s.includes('/')) {
+                            const [num, den] = s.split('/');
+                            return parseFloat(num) / parseFloat(den);
+                        }
+                        return parseFloat(s);
+                    };
+                    vertices.push({
+                        x: parseCoord(parts[0]),
+                        y: parseCoord(parts[1]),
+                        z: parseCoord(parts[2])
+                    });
+                }
+                i++;
+            }
+        } else {
+            i++;
+        }
+    }
+    return { vertices };
 }
 
 async function test() {
@@ -36,55 +86,54 @@ async function test() {
     const compiler = new JotCompiler(vfs);
     const parser = new JotParser();
     
-    // Manual registration with FORMAL schemas
-    compiler.registerOperator('Box', {
-        path: 'jot/Box',
-        schema: {
-            arguments: [
-                { name: 'width', type: 'jot:interval', default: 10.0 },
-                { name: 'height', type: 'jot:interval', default: 10.0 },
-                { name: 'depth', type: 'jot:interval', default: 10.0 }
-            ],
-            outputs: { "$out": { type: 'jot:shape' } }
-        }
-    });
-
-    compiler.registerOperator('unfold', {
-        path: 'jot/unfold',
-        schema: {
-            inputs: { '$in': { type: 'jot:shape' } },
-            arguments: [],
-            outputs: { "$out": { type: 'jot:shape' } }
-        }
-    });
+    // 3. Load all catalog operators from the ops server
+    const catalogUrl = `${opsUrl}/catalog`;
+    console.log("Fetching catalog from:", catalogUrl);
+    const resp = await fetch(catalogUrl);
+    if (!resp.ok) {
+        throw new Error(`Catalog fetch failed: ${resp.status}`);
+    }
+    const catalog = await resp.json();
+    for (const [name, schema] of Object.entries(catalog.catalog)) {
+        compiler.registerOperator(name, { path: name, schema: schema });
+    }
 
     try {
-        const code = 'Box(10).unfold()';
-        console.log("Evaluating:", code);
-        const ast = parser.parse(code);
+        // --- Test 1: Box Unfold ---
+        const code1 = "Box(10, 10, 10).color('red').unfold() -> $out";
+        console.log("Evaluating Test 1:", code1);
+        const ast1 = parser.parse(code1);
         
-        const terminals = await compiler.evaluate(ast, {}, {
+        const terminals1 = await compiler.evaluate(ast1, {}, {
             outputs: { "$out": { type: "jot:shape" } }
         });
         
-        const unfoldResult = terminals.find(t => t.port === '$out');
-        if (!unfoldResult) {
-            throw new Error("Failed to find unfold terminal output");
-        }
-
-        console.log("Fetching Unfold result via vfs.read()...");
-        const result = await vfs.read(unfoldResult.selector);
-        if (!result) throw new Error("VFS read returned null");
-
-        const shape = await consumeJSON(result.stream);
+        const unfoldResult1 = terminals1.find(t => t.port === '$out');
+        const shape1 = await consumeJSON((await vfs.read(unfoldResult1.selector)).stream);
         
-        console.log("Result Tags:", JSON.stringify(shape.tags));
-        console.log("Number of islands:", (shape.components || []).length);
+        console.log("Box Unfold - Number of islands:", (shape1.components || []).length);
+        await captureAndVerifyPNG(vfs, unfoldResult1.selector, 'unfold_box_result.png', 'f91a9e705eee023bdbd8f4ed43026368a46aa9f40d5d01fe4a6c322e50085e85');
 
-        // Verification: A cube (Box(10)) has 6 faces.
-        if (!shape.components || shape.components.length !== 6) {
-            throw new Error(`Expected 6 islands for a cube, got ${shape.components ? shape.components.length : 0}`);
+        if (!shape1.components || shape1.components.length !== 1) {
+            throw new Error(`Expected 1 island for a cube net, got ${shape1.components ? shape1.components.length : 0}`);
         }
+
+        // --- Test 2: Orb Unfold ---
+        const code2 = "Orb(1).color('blue').unfold().pack(sheet=Box(4, 4).color('grey')) -> $out";
+        console.log("\nEvaluating Test 2:", code2);
+        const ast2 = parser.parse(code2);
+        
+        const terminals2 = await compiler.evaluate(ast2, {}, {
+            outputs: { "$out": { type: "jot:shape" } }
+        });
+        
+        const unfoldResult2 = terminals2.find(t => t.port === '$out');
+        const shape2 = await consumeJSON((await vfs.read(unfoldResult2.selector)).stream);
+        
+        console.log("Packed Orb Unfold - Bins:", (shape2.components || []).length);
+        
+        // We don't have a hash for the packed orb yet, so we just capture it
+        await captureAndVerifyPNG(vfs, unfoldResult2.selector, 'unfold_orb_result.png');
 
         console.log("SUCCESS: Unfold integration test passed.");
     } finally {

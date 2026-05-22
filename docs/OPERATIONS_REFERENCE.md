@@ -201,6 +201,7 @@ Packs multiple shapes into one or more sheets using a 2D nesting algorithm.
 - **Behavior**: Returns an assembly of **Bins**. Each bin is tagged with a numeric `sheet` ID (e.g. `1.0`, `2.0`).
 - **Disjoint Geometry**: Each bin contains a **subtracted sheet** as its first component (also tagged with the `sheet` ID). This geometry is the result of subtracting all placed parts from the original sheet, ensuring the material and parts are topologically disjoint.
 - **Nesting**: Supports complex geometric nesting, including placing parts inside the holes of other parts.
+- **Rigid Items**: If a component is tagged with `"type": "item"` (using `.set("type", "item")`), the packing engine treats it as a single indivisible rigid assembly. The engine will not unpack its children recursively; instead, it packs the entire assembly as one unit. All absolute coordinate transforms (`tf`) within the item are recursively updated, fully preserving local relative translation offsets in absolute space, complying with the **Independent Matrix Mandate**.
 - **Example**: `Layout = Parts.pack(sheet=Sheet(48, 96), spacing=0.25)`
 
 ## 6. Metadata and Filtering
