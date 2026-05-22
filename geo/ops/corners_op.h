@@ -39,7 +39,8 @@ struct AsCornersOp : P {
         return {
             {"path", "jot/asCorners"},
             {"description", "Materializes the subject's vertices into a point cloud shape."},
-            {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -107,7 +108,8 @@ struct CornersOp : P {
         return {
             {"path", "jot/corners"},
             {"description", "Extracts vertices from a shape as individual oriented components."},
-            {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({ {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}} })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -136,7 +138,8 @@ struct AsEdgesOp : P {
         return {
             {"path", "jot/asEdges"},
             {"description", "Materializes the subject's edges into a wireframe shape."},
-            {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -193,7 +196,8 @@ struct EdgesOp : P {
         return {
             {"path", "jot/edges"},
             {"description", "Extracts edges from a shape as individual oriented child components."},
-            {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({ {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}} })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

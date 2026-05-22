@@ -136,9 +136,69 @@ Operators should throw `VFSException` (defined in `geo/impl/vfs_node.h`) for una
 - `508`: Loop detected (handled by MeshLink).
 - `429`: Rate limited/Resource exhausted.
 
-## 5. HTTPS & Mobile Debugging
+## 6. Test Orchestration & Stability
 
-To support the **WebCrypto API** (required for CID generation and mesh handshakes) on mobile devices, the development environment must run over **HTTPS**.
+JotCAD uses a unified **Test Orchestrator** to manage the execution of multiple test suites across different languages (JS, C++) and environments (Node.js, Browser/Puppeteer).
+
+### 6.1 Unified Test Entry Point
+
+The primary way to run tests is via the top-level `npm` scripts:
+
+```bash
+# Run all verified stable tests (JOT, GEO, FS, Integration)
+npm test
+
+# Run all tests, including Puppeteer browser-side integration
+npm run tests
+```
+
+Both scripts utilize `test_orchestrator.js`, which ensures that each suite is run in a clean environment.
+
+### 6.2 Resource Cleanup Protocol
+
+To prevent network port collisions (`EADDRINUSE`) and file system locks, the orchestrator implements a strict **Resource Cleanup Protocol**:
+
+1.  **Port Scrubbing**: Before launching a test cluster, the orchestrator uses `fuser -k` to forcibly release ports `9191` (Ops), `9192` (Export), and `3131` (UX).
+2.  **Storage Purge**: Temporary VFS storage directories (prefixed with `.vfs_storage_test_`) are deleted between suite runs.
+3.  **Graceful Teardown**: The `sys.stop()` method ensures child processes are killed and network sockets are fully released by the OS (enforced via explicit sleep intervals) before the next test begins.
+
+### 6.3 Puppeteer Integration Tests
+
+Browser-side integration tests are isolated in `integration/puppeteer/`. These tests validate the "Final Mile" of the system:
+
+- **Mesh Handshake**: Confirms the browser can discover and synchronize the JOT Catalog from the native C++ ops node.
+- **Log-Based Synchronization**: Because Puppeteer context-bridges can be fragile in bundled environments, these tests use **Console Log Detection** (`msg.text().includes(...)`) as the authoritative signal for system readiness.
+- **Static Build Testing**: Integration tests run against the **Production Build** (`ux/dist`) served via a static server, ensuring that bundling, code-splitting, and minification haven't introduced runtime errors.
+
+### 6.5 Secure Contexts & HTTPS
+
+JotCAD utilizes the WebCrypto API (`crypto.subtle`) and other browser features that are restricted to **Secure Contexts**.
+
+1.  **Mandatory HTTPS for Mesh Communication**: To ensure cross-origin requests between the UX and the Export/Ops nodes are permitted, all nodes in the `TEST` and `LIVE` profiles must run over HTTPS when accessed from a network IP.
+2.  **Self-Signed Certificates**: Development uses self-signed certificates. The `Orchestrator` automatically detects the `.ssl/` directory and configures nodes for HTTPS.
+3.  **Integration Test Protocol**:
+    *   The UX test build (`npm run build:test`) is hardcoded to use `https://localhost:9192`.
+    *   The `orchestrator.js` `TEST` profile MUST include the `--ssl` flag for the UX server.
+    *   Puppeteer tests MUST be launched with the `--ignore-certificate-errors` flag to permit communication with self-signed native nodes.
+
+## 7. Topological Mandates
+
+### 7.1 Wire-to-Face Transition
+
+Operators in JotCAD have strict topological domains. Specifically, **`jot/offset`** and **`jot/pdf`** operate on **Regions (Faces)**, not **Wires (Segments)**.
+
+- **Mandate**: 1D Segments (produced by `Link` or `Loop`) MUST be explicitly promoted to 2D Faces before being passed to an offset or export engine that requires surface area.
+- **Operator**: Use **`jot/fill()`** to perform this promotion.
+- **Rationale**: This prevents silent failures where an offset of a line results in empty geometry, and ensures that the user's intent regarding winding rules and parity (holes) is explicitly declared.
+
+```js
+// CORRECT: Explicit fill before offset
+loop(points).fill().offset(diameter=5)
+
+// INCORRECT: Offset will return empty geometry for segments
+loop(points).offset(diameter=5)
+```
+
 
 ### 5.1 Certificate Generation
 

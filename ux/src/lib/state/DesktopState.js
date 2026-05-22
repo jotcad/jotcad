@@ -152,20 +152,23 @@ export const desktopActions = {
 // Compatibility for JotNode
 export const editorActions = {
   openOp(id, initialCode = null, initialSchema = null) {
-    // Priority: 1. dynamicOps library, 2. provided code, 3. DEFAULT_CODE
     const ops = window.blackboard?.dynamicOps();
     const existing = ops ? ops[id] : null;
+
+    // DRAFT-ON-OPEN: Target the NEXT version automatically
+    // This ensures we start with the latest content but edit as a new draft.
+    const targetId = JotRegistry.getNextVersionPath(id);
 
     const code = initialCode || existing?.script || DEFAULT_CODE;
     const schema = initialSchema || existing?.schema || { arguments: [] };
 
-    console.log(`[DesktopState] openOp: ${id}. Script source: ${existing ? 'Library' : (initialCode ? 'Param' : 'Default')}`);
+    console.log(`[DesktopState] openOp: Starting draft ${targetId} from ${id}`);
     
-    windowActions.open('editor', id, { 
+    windowActions.open('editor', targetId, { 
         code, 
         schema,
-        opName: id, // Established ops always have a name
-        label: id
+        opName: targetId, 
+        label: targetId
     });
   },
   raiseOp: windowActions.raise.bind(windowActions),

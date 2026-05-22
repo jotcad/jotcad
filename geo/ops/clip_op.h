@@ -31,10 +31,12 @@ struct ClipOp : P {
     static typename P::json schema() {
         return { 
             {"path", "jot/clip"}, 
-            {"arguments", { 
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, 
+            {"inputs", {
+                {"$in", {{"type", "jot:shape"}}}
+            }},
+            {"arguments", nlohmann::json::array({ 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
-            }}, 
+            })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }

@@ -127,7 +127,8 @@ struct SeparateOp : P {
         return {
             {"path", "jot/separate"},
             {"description", "Splits the input geometry into separate shapes based on connected components (disconnected geometric islands)."},
-            {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

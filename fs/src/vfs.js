@@ -101,7 +101,7 @@ export class VFS {
               const val = params[argDef.name];
               const isMissing = val === undefined || val === null;
               
-              if (isMissing && argDef.default === undefined) {
+              if (isMissing && argDef.default === undefined && !argDef.optional) {
                   // If it's an affiliate, it might be a hole, but for VFS-level 
                   // fail-fast, we usually expect them to be bound or have a default.
                   // However, jot/eval might pass holes.

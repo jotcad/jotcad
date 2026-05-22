@@ -101,6 +101,34 @@ main = Box(20)
 main.cut(Orb(5)) -> $out
 ```
 
+### 1.6. Formal Operator Schemas
+
+Every operator (built-in or user-defined) is governed by a formal schema that 
+defines its connectivity and parameterization. Schemas strictly distinguish 
+between **Subject Ports** (inputs) and **Configuration Parameters** (arguments).
+
+- **`inputs` (Subject Ports):** A map of ports that consume the geometric 
+  subject of a method call or injection.
+  - **MANDATE: Subject-Only Consumption:** Inputs ONLY consume the primary 
+    subject (the object to the left of the `.`). They NEVER "steal" from the 
+    argument pool.
+  - **The `$in` Port:** The standard primary subject port.
+- **`arguments` (Parameters):** An ordered list of configuration parameters 
+  provided in the parentheses `(...)`.
+- **`outputs` (Terminal Ports):** A map of available output ports (standard 
+  default is `$out`).
+
+#### Example Schema
+```json
+{
+  "inputs": { "$in": { "type": "jot:shape" } },
+  "arguments": [
+    { "name": "radius", "type": "jot:number" }
+  ],
+  "outputs": { "$out": { "type": "jot:shape" } }
+}
+```
+
 ## 2. The Universal Sequence Principle
 
 In JotCAD, every object is treated as an ordered **Sequence**. This enables
@@ -285,12 +313,17 @@ a single, flat `Geometry` object.
 
 ### 8.3. Cross-Dimensional Logic
 
-JotCAD's boolean engine is **Dimensionally Aware**:
+JotCAD's boolean engine is **Dimensionally Aware** and supports all combinations of 0D (Points), 1D (Segments), 2D (Surfaces), and 3D (Solids):
+
 - **Solid Tool vs. Path**: Trims the path to the part outside the solid.
 - **Solid Tool vs. Points**: Removes points that fall inside the solid volume.
-- **Coplanar Optimization**: If the subject and tool are both flat and lie on
-  the same plane, the engine uses 2D PWH (Polygon With Holes) logic for 
-  maximum performance and exactness.
+- **Surface Tool vs. Path**: Splits the path at the point of intersection with the surface.
+- **Segment Tool vs. Segment (Collinear)**:
+    - **Cut**: Subtracts overlapping portions.
+    - **Join**: Merges overlapping collinear segments into a single minimal segment (interval merging).
+- **Point Tool vs. Segment**: Splits the segment into two parts at the point's location (if the point lies exactly on the segment).
+- **Segment Tool vs. Point**: Removes points that lie exactly on the segment.
+- **Coplanar Optimization**: If the subject and tool are both flat and lie on the same plane, the engine uses 2D PWH (Polygon With Holes) logic for maximum performance and exactness.
 
 ## 9. Blocks (Scoped Execution)
 

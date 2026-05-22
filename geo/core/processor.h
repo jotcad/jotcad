@@ -31,7 +31,42 @@ struct Processor {
         };
         json s = Op::schema();
         s["path"] = path; // Force schema path to match registration key
+        
+        validate_schema(s);
+
         vfs->register_op(path, handler, s);
+    }
+
+    static void validate_schema(const json& s) {
+        std::string path = s.value("path", "unknown");
+        std::vector<std::string> errors;
+
+        if (s.contains("arguments") && !s["arguments"].is_array()) {
+            errors.push_back("'arguments' must be an array.");
+        }
+
+        if (s.contains("inputs") && !s["inputs"].is_object()) {
+            errors.push_back("'inputs' must be a map.");
+        }
+
+        // Enforce the Subject-Only mandate for $in
+        if (s.contains("arguments") && s["arguments"].is_array()) {
+            for (const auto& arg : s["arguments"]) {
+                if (arg.contains("name") && arg["name"] == "$in") {
+                    errors.push_back("'$in' found in 'arguments' array. It MUST be moved to the formal 'inputs' map.");
+                }
+            }
+        }
+
+        if (!s.contains("outputs") || !s["outputs"].is_object()) {
+            errors.push_back("'outputs' map is missing or invalid.");
+        }
+
+        if (!errors.empty()) {
+            std::string msg = "Schema Validation Errors for '" + path + "':\n";
+            for (const auto& e : errors) msg += "  - " + e + "\n";
+            throw std::runtime_error(msg);
+        }
     }
 
     /**
@@ -69,14 +104,23 @@ struct Processor {
             return decode<typename T::value_type>(vfs, key, params, schema, stack, opPath);
         } else {
             if (!params.contains(key)) {
-                // Find default in array-based arguments
+                // 1. Check formal 'inputs' (map)
+                if (schema.contains("inputs") && schema.at("inputs").contains(key)) {
+                    const auto& input = schema.at("inputs").at(key);
+                    if (input.contains("default")) {
+                        try { return input.at("default").get<T>(); }
+                        catch (const std::exception& e) { throw wrap_err(std::string("Input default value invalid: ") + e.what()); }
+                    }
+                }
+                
+                // 2. Check formal 'arguments' (array)
                 if (schema.contains("arguments") && schema.at("arguments").is_array()) {
                     for (const auto& arg : schema.at("arguments")) {
                         if (arg.contains("name") && arg.at("name") == key && arg.contains("default")) {
                             try {
                                 return arg.at("default").get<T>();
                             } catch (const std::exception& e) {
-                                throw wrap_err(std::string("Default value invalid: ") + e.what());
+                                throw wrap_err(std::string("Argument default value invalid: ") + e.what());
                             }
                         }
                     }

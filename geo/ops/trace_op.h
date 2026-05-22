@@ -176,7 +176,7 @@ struct TraceOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"image", "colors", "smooth"}; }
     static typename P::json schema() {
-        return { {"path", "jot/trace"}, {"arguments", { {{"name", "image"}, {"type", "jot:image"}}, {{"name", "colors"}, {"type", "jot:number"}, {"default", 12}}, {{"name", "smooth"}, {"type", "jot:number"}, {"default", 1.0}} }}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
+        return { {"path", "jot/trace"}, {"arguments", nlohmann::json::array({ {{"name", "image"}, {"type", "jot:image"}}, {{"name", "colors"}, {"type", "jot:number"}, {"default", 12}}, {{"name", "smooth"}, {"type", "jot:number"}, {"default", 1.0}} })}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
     }
 };
 

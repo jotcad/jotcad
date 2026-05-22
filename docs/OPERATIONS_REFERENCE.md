@@ -92,12 +92,21 @@ Generates a cone that fits a specific bounding box.
 Generates a cone with a specific taper angle.
 - **`angle`**: Half-angle in turns (e.g., `0.125` is 45 degrees).
 
-### `Triangle(va, vb, vc)`
-Generates a 2D triangle.
+### `Triangle(...)`
+Generates a 2D triangle. Supports multiple construction variants:
+
+#### Variant 1: Geometric (Side Lengths)
+`Triangle(va, vb, vc)`
 - **`va`**: Side length along the local X-axis.
 - **`vb`**: Side length opposite the first vertex.
 - **`vc`**: Side length from the origin to the second vertex.
-- **Centering**: The triangle is automatically centered on its **Centroid** at `(0,0,0)`.
+
+#### Variant 2: Equilateral (Height)
+`Triangle(height=10.0)`
+- **`height`**: The vertical distance from the base to the opposite vertex.
+- **Logic**: Automatically calculates side lengths for a perfect equilateral triangle.
+
+- **Centering**: All triangles are automatically centered on their **Centroid** at `(0,0,0)`.
 
 ### `Hexagon(...)`
 Generates a regular 2D hexagon.
@@ -153,30 +162,79 @@ Extrudes one or more 2D profiles along a 3D path.
 - **`path`**: A shape containing 1D segments defining the trajectory.
 - **`closed_path`**: If `true`, connects the end of the sweep back to the start with twist correction.
 - **`solid`**: If `true`, generates a manifold solid with start/end caps. If `false`, generates a wireframe/surface assembly.
+- **Disconnected Paths**: Correctly handles disconnected path components by generating separate swept volumes (no "ghost" connections).
+- **Junction Handling**: Decomposes complex graphs (Y-junctions, etc.) into simple chains that meet at shared vertices, ensuring full coverage.
 - **RMF (Rotation Minimizing Frames)**: Uses the Double Reflection method to ensure the profile does not twist unexpectedly along complex curves.
 
-### `sweepBy(profile, closed_path=false, solid=true)`
-A path-centric version of sweep where the subject (`$in`) is the path and the tool is the profile.
-
-- **`profile`**: The 2D shape to use as the cross-section.
-- **`closed_path`**, **`solid`**: Same as above.
-
-#### Example
-```js
-// Create a pipe by sweeping a circle along a path
-MyPath.sweepBy(Circle(5))
-```
-
-## 5. Export and Rendering
+---
 
 ### `stitch(repeat=[10, 3], start=[], end=[], offset=0)`
 Applies a recurring on/off length pattern to a segment chain (polylines).
-- **repeat**: The core pattern applied to the gap between start and end zones. If any value is negative, the repeat cycle anchors to the **end** of the path.
-- **start**: A specific pattern applied from the beginning of the path.
-- **end**: A specific pattern applied from the end of the path. Values are relative to the end (e.g., `[-5]` creates a 5mm stitch at the very end).
-- **offset**: Shifts the repeat pattern phase.
+- **`repeat`**: The core pattern applied to the gap between start and end zones. 
+- **`start`**: A specific pattern (lengths) applied from the beginning of the path. Alternates ON/OFF.
+- **`end`**: A specific pattern (lengths) applied **backward from the end** of the path. Alternates ON/OFF (measured from the tip).
+- **`offset`**: Shifts the repeat pattern phase.
 
----
+## 5. Booleans and Nesting
+
+### `join(tools=[])`
+Combines the subject with one or more tool shapes into a single manifold solid. Overlapping volumes are merged.
+
+### `cut(tools=[])`
+Subtracts one or more tool shapes from the subject.
+
+### `clip(tools=[])`
+Intersects the subject with one or more tool shapes, keeping only the overlapping volume.
+
+### `fuse(tools=[])`
+Flattens a complex assembly into a set of disjoint manifolds. It merges overlapping solids and resolves intersections without removing material (unless `gap()` tags are present).
+
+### `disjoint(tools=[])`
+Ensures the subject and tools are topologically disjoint by subtracting the intersection from the subject.
+
+### `pack(parts=null, sheet=null, spacing=2.0, margin=0.0)`
+Packs multiple shapes into one or more sheets using a 2D nesting algorithm.
+- **`parts`**: A shape or group of shapes to be packed. If omitted, uses the subject.
+- **`sheet`**: A shape or group of shapes representing the available material bins.
+- **`spacing`**: The minimum distance between parts and the clearance subtracted from the sheet.
+- **`margin`**: The minimum distance from the edge of the sheet.
+- **Behavior**: Returns an assembly of **Bins**. Each bin is tagged with a numeric `sheet` ID (e.g. `1.0`, `2.0`).
+- **Disjoint Geometry**: Each bin contains a **subtracted sheet** as its first component (also tagged with the `sheet` ID). This geometry is the result of subtracting all placed parts from the original sheet, ensuring the material and parts are topologically disjoint.
+- **Nesting**: Supports complex geometric nesting, including placing parts inside the holes of other parts.
+- **Example**: `Layout = Parts.pack(sheet=Sheet(48, 96), spacing=0.25)`
+
+## 6. Metadata and Filtering
+
+Metadata allows you to attach non-geometric information (tags) to shapes, which can later be used for identification, logical branching, or selective filtering.
+
+### `set(key, value)`
+Attaches a tag to the subject shape.
+- **`key`**: The name of the tag (String).
+- **`value`**: The value to store (String or Number).
+- **Collision Logic**: Last-write-wins. Setting a value for an existing key overwrites the previous value.
+- **Example**: `Part = Box(10).set("material", "aluminum")`
+
+### `get(key)`
+Retrieves the value of a tag from the subject.
+- **`key`**: The name of the tag to look up.
+- **Returns**: The stored value or `null` if not found.
+
+### `has(key, value=null)`
+**Selection Generator.** Creates a query to find components with specific tags. Used inside `keep()`, `drop()`, `at()`, or `on()`.
+- **`key`**: The tag name to search for.
+- **`value`**: Optional. If provided, matches only components where the tag value exactly matches.
+- **Example**: `Layout.keep(has("sheet", 1.0))`
+
+### `keep(selector)`
+Prunes the subject tree, retaining only the components that match the provided selector.
+- **Preservation**: Parents of matching components are retained to preserve world-space transforms, but their other children (which don't contain matches) are removed.
+- **Example**: `Assembly.keep(has("part", "bolt"))`
+
+### `drop(selector)`
+The inverse of `keep`. Removes all components from the tree that match the provided selector.
+- **Example**: `Assembly.drop(has("part", "bracket"))`
+
+## 7. Export and Post-Processing
 
 ### `pdf(path="export.pdf", width=0, height=0)`
 
@@ -219,7 +277,7 @@ Splits the input geometry into separate shapes based on connected components (di
 Box(10).cut(Plane().m(0, 0, 5)).separate()
 ```
 
-## 6. Plane and Normal Extraction
+## 8. Plane and Normal Extraction
 
 ### `plane()`
 Extracts the coordinate system from the first face of a shape.
@@ -245,7 +303,7 @@ Extracts the wireframe outlines of the subject.
 - **Feature Extraction**: Only keeps boundary edges (shared by 1 face) or feature edges (shared by 2 faces with different normals).
 - **Coplanar Filter**: Automatically ignores edges between coplanar faces (zero-degree bends) to produce clean silhouettes.
 
-## 7. Distribution
+## 9. Distribution
 
 ### `place(template_shape)`
 Instantiates a template shape at every anchor point in the subject collection.
@@ -262,7 +320,7 @@ Plate.eachCorner().place(Disk(2))
 Pattern.place(Bolt())
 ```
 
-## 8. Extrusion
+## 10. Extrusion
 
 ### `e(target)` / `extrude(target)`
 The primary tool for promoting geometry along a vector or between coordinate systems.
@@ -293,7 +351,7 @@ Revolves geometry around the local Z axis to create circular features or solids 
 ### `spx(start, end)`, `spy(start, end)`, `spz(start, end)`
 Axis-specific shorthands for revolving around the local X, Y, or Z axes.
 
-## 9. Selection and Querying
+## 11. Selection and Querying
 
 ### `faces()`
 Returns a **Generator** of contiguous coplanar patches (Polygons with Holes). It automatically merges contiguous triangles and N-gons into clean surfaces. (Formerly `eachFace`).
@@ -380,7 +438,7 @@ Box(10).smooth(limit=1/24, resolution=2.0)
 Box(10).at(corners().highest(z(), 0)).smooth(limit=1/36)
 ```
 
-## 10. Constants and Directions
+## 12. Constants and Directions
 
 To support alignment and selection, the following world-space direction vectors are provided as global constants:
 
@@ -391,7 +449,7 @@ To support alignment and selection, the following world-space direction vectors 
 - **`FRONT`** / **`Y()`**: `[0, 1, 0]`
 - **`BACK`**: `[0, -1, 0]`
 
-## 11. Movement
+## 13. Movement
 
 ### `m(x, y, z)` / `move(x, y, z)`
 Translates the subject by the specified X, Y, and Z offsets.
@@ -406,7 +464,7 @@ Axis-specific shorthands for translation. These operators align with the **Unive
 - **Sequence Behavior**: If an array is provided, the operator generates a **Group** containing one translated instance for each offset in the sequence.
 - **Example**: `Box(10).mx([0, 20, 40])` results in a group of three boxes spaced at 20mm intervals.
 
-## 11. Transformation
+## 14. Transformation
 
 ### `by(target)`
 Transforms the subject's matrix by the matrix of the target shape. 
@@ -417,6 +475,19 @@ Transforms the subject's matrix by the matrix of the target shape.
 Moves the subject to the frame of the target shape, resetting any local transformation.
 - **Algebra**: $T_{result} = T_{target}$
 - **Identity**: `a.to(b)` is equivalent to `a.origin().by(b)`.
+
+### `dup(count=1)`
+Duplicates the subject `count` times in place.
+- **`count`**: The number of copies to create.
+- **Behavior**: Returns the original shape if `count` is 1. Returns a **Group** of identical components if `count` > 1.
+- **Use Case**: In-place duplication for subsequent targeted operations (e.g. duplicating a shape before applying different transformations to each copy via `nth`).
+
+### `gap()`
+Tags the subject as a **Gap** (Persistent Negative Space).
+- **Boolean Logic**: Gaps are "matter-less." They automatically subtract from any non-gap shape they intersect with during `join()`, `clip()`, `fuse()`, or `disjoint()` operations.
+- **Persistency**: Gaps are never cut by other shapes. They remain in the shape tree for visual reference but are ignored during `stl()` or `pdf()` export.
+- **Visuals**: Gaps are rendered with **30% opacity** in the interactive viewport to distinguish them from solid parts.
+- **Example**: `Assembly.join(HolePattern.gap())` ensures clearance holes are maintained regardless of assembly order.
 
 ### `origin()` (alias: `o()`)
 - **Method**: `X.origin()` or `X.o()`
@@ -441,7 +512,7 @@ Scales the subject along the local axes.
 ### `sx(val)`, `sy(val)`, `sz(val)`
 Axis-specific shorthands for scaling along X, Y, or Z.
 
-## 11. Mesh Optimization
+## 15. Mesh Optimization
 
 ### `simplify(ratio=0.5, count=0, threshold=1/6)`
 Reduces mesh complexity while preserving sharp features using edge-collapse.
@@ -450,7 +521,7 @@ Reduces mesh complexity while preserving sharp features using edge-collapse.
 - **`count`**: Explicit target face count (overrides ratio if > 0).
 - **`threshold`**: Dihedral angle (in turns/tau) used to identify and protect sharp features.
 
-## 12. Typography
+## 16. Typography
 
 ### `Font(url)`
 Downloads and validates a font file (TTF/OTF/WOFF) from a remote URL.
@@ -505,7 +576,7 @@ Vector = Trace(Photo, colors=12, smooth=2.0);
 Vector.on("#bcd3ee").ez(5);
 ```
 
-## 13. Infinite Planes (Orientations)
+## 17. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
 - **`Y(offset=0)`**: Infinite plane on the XZ axis (normal +Y).

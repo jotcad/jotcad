@@ -24,7 +24,12 @@ struct FontOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"url"}; }
     static typename P::json schema() {
-        return { {"path", "jot/Font"}, {"arguments", {{{"name", "url"}, {"type", "jot:string"}}}}, {"outputs", {{"$out", {{"type", "jot:font"}}}}} };
+        return {
+            {"path", "jot/Font"},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({{{"name", "url"}, {"type", "jot:string"}}})},
+            {"outputs", {{"$out", {{"type", "jot:font"}}}}}
+        };
     }
 };
 
@@ -43,7 +48,12 @@ struct ImageOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"url"}; }
     static typename P::json schema() {
-        return { {"path", "jot/Image"}, {"arguments", {{{"name", "url"}, {"type", "jot:string"}}}}, {"outputs", {{"$out", {{"type", "jot:image"}}}}} };
+        return {
+            {"path", "jot/Image"},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({{{"name", "url"}, {"type", "jot:string"}}})},
+            {"outputs", {{"$out", {{"type", "jot:image"}}}}}
+        };
     }
 };
 

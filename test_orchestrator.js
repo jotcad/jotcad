@@ -1,117 +1,149 @@
-import { spawn, execSync } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import process from 'node:process';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Ports for Test Cluster
-const PORT_OPS = process.env.TEST_OPS_PORT || '9099';
-const PORT_EXPORT = process.env.TEST_EXPORT_PORT || '9098';
-const PORT_UX = process.env.TEST_UX_PORT || '3033';
-
-console.log(`[Test Orchestrator] Starting JotCAD Test Cluster...`);
-console.log(`[Test Orchestrator] Ports: Ops=${PORT_OPS}, Export=${PORT_EXPORT}, UX=${PORT_UX}`);
-
-try {
-  console.log(`[Test Orchestrator] Cleaning up ports ${PORT_UX}, ${PORT_OPS}, ${PORT_EXPORT} and VFS storage...`);
-  execSync(`fuser -k ${PORT_UX}/tcp ${PORT_OPS}/tcp ${PORT_EXPORT}/tcp || true`, { stdio: 'ignore' });
-  // Clear VFS storage
-  execSync(`rm -rf .vfs_storage_test-geo-ops-node .vfs_storage_test-export-node || true`);
-  execSync('sleep 1');
-} catch (e) {}
-
-const components = [
-  {
-    name: 'Test Ops Node',
-    command: './geo/bin/ops',
-    args: [PORT_OPS, '.vfs_storage_test-geo-ops-node'],
-    cwd: __dirname,
-    env: { 
-        ...process.env, 
-        PORT: PORT_OPS,
-        PEER_ID: 'test-geo-ops-node'
-    }
-  },
-  {
-    name: 'Test Export Node',
+const suites = {
+  jot: {
+    name: 'JOT Unit Tests',
     command: 'node',
-    args: ['geo/export_service.js'],
-    cwd: __dirname,
-    env: { 
-        ...process.env, 
-        PORT: PORT_EXPORT,
-        VFS_ID: 'test-export-node',
-        NEIGHBORS: `http://localhost:${PORT_OPS}`
-    }
+    args: ['--test', '--test-concurrency=1', 'jot/test/*.js'],
+    env: {}
   },
-  {
-    name: 'Test UX',
-    command: 'npm',
-    args: ['run', 'dev', '--', '--port', PORT_UX, '--strictPort'],
-    cwd: path.join(__dirname, 'ux'),
-    env: {
-        ...process.env,
-        VITE_STORAGE_PREFIX: 'test',
-        VITE_VFS_URL: `http://localhost:${PORT_EXPORT}` // Connect UX to Export node (which peers with Ops)
-    }
-  }
-];
+  geo: {
+    name: 'GEO C++ Unit Tests',
+    command: './run_unit_tests.sh',
+    args: [],
+    cwd: 'geo/test',
+    env: {}
+  },
+  fs: {
+    name: 'FS Unit Tests',
+    command: 'node',
+    args: ['--test', '--test-concurrency=1', 'fs/test/*.js'],
+    env: { TEST_UX_PORT: '3039', TEST_OPS_PORT: '9099' }
+  },
+  integration: {
+    name: 'Integration Tests',
+    command: 'node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/*.test.js',
+    args: [],
+    env: {}
+  },
+  puppeteer: {
+    name: 'Puppeteer Integration Tests',
+    command: 'npm run build:ux && node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/puppeteer/*.test.js',
+    args: [],
+    env: {}
+  }};
 
-const processes = new Map();
-let shuttingDown = false;
+async function runSuite(id, suite) {
+  console.log(`\n[RUNNING] ${suite.name} (${id})...`);
+  return new Promise((resolve) => {
+    const child = spawn(suite.command, suite.args, {
+      cwd: suite.cwd || process.cwd(),
+      env: { ...process.env, ...suite.env },
+      shell: true
+    });
 
-function shutdown(reason) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  if (reason) console.error(`\n[Test Orchestrator] FATAL FAILURE: ${reason}`);
-  console.log('\n[Test Orchestrator] Shutting down all test components...');
-  for (const [name, child] of processes) {
-    console.log(`[Test Orchestrator] Killing ${name}...`);
-    child.kill();
-  }
-  process.exit(reason ? 1 : 0);
+    let output = '';
+    const failures = [];
+    const stats = { tests: 0, pass: 0, fail: 0 };
+
+    child.stdout.on('data', (data) => {
+      const str = data.toString();
+      output += str;
+      process.stdout.write(str);
+    });
+    child.stderr.on('data', (data) => {
+      const str = data.toString();
+      output += str;
+      process.stderr.write(str);
+    });
+
+    child.on('close', (code) => {
+      const lines = output.split('\n');
+      for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('✖') && !trimmed.includes('failing tests:')) {
+              failures.push(trimmed);
+          }
+          if (trimmed.startsWith('ℹ tests ')) stats.tests = parseInt(trimmed.replace('ℹ tests ', ''), 10);
+          if (trimmed.startsWith('ℹ pass ')) stats.pass = parseInt(trimmed.replace('ℹ pass ', ''), 10);
+          if (trimmed.startsWith('ℹ fail ')) stats.fail = parseInt(trimmed.replace('ℹ fail ', ''), 10);
+          
+          // Legacy/Custom format support
+          if (trimmed.startsWith('Testing ')) {
+              // Only count if not already using 'ℹ' format
+              if (stats.tests === 0) {
+                  stats.tests++;
+                  stats.pass++;
+              }
+          }
+      }
+
+      if (code !== 0) {
+        console.error(`\n[FAILED] ${suite.name} (Exit Code: ${code})`);
+        if (stats.fail === 0) stats.fail = 1; // Ensure failure is reflected in stats
+        if (stats.tests === 0) stats.tests = 1;
+        resolve({ passed: false, failures, stats });
+      } else {
+        console.log(`\n[PASSED] ${suite.name}`);
+        resolve({ passed: true, failures: [], stats });
+      }
+    });
+  });
 }
 
-function launch(component) {
-  console.log(`[Test Orchestrator] Launching ${component.name}...`);
-  const child = spawn(component.command, component.args, {
-    cwd: component.cwd,
-    env: component.env || process.env,
-    stdio: 'pipe'
-  });
+async function main() {
+  const args = process.argv.slice(2);
+  let selectedIds = args.length > 0 ? args.filter(id => suites[id] || id === 'all') : Object.keys(suites);
 
-  child.stdout.on('data', (data) => {
-    process.stdout.write(`[${component.name}] ${data}`);
-  });
+  if (selectedIds.includes('all')) {
+      selectedIds = Object.keys(suites);
+  }
 
-  child.stderr.on('data', (data) => {
-    process.stderr.write(`[${component.name} ERROR] ${data}`);
-  });
+  if (args.length > 0 && selectedIds.length === 0) {
+    console.error(`Unknown suites: ${args.join(', ')}`);
+    console.error(`Available suites: ${Object.keys(suites).join(', ')}`);
+    process.exit(1);
+  }
 
-  child.on('error', (err) => {
-    shutdown(`${component.name} failed to start: ${err.message}`);
-  });
+  const results = [];
+  for (const id of selectedIds) {
+    const suite = suites[id];
+    const res = await runSuite(id, suite);
+    results.push({ name: suite.name, ...res });
+  }
 
-  child.on('close', (code) => {
-    if (!shuttingDown && code !== 0) {
-        shutdown(`${component.name} exited unexpectedly with code ${code}`);
-    }
-    processes.delete(component.name);
-  });
+  console.log('\n' + '='.repeat(60));
+  console.log('FINAL TEST SUMMARY');
+  console.log('='.repeat(60));
+  
+  let totalTests = 0;
+  let totalPass = 0;
+  let totalFail = 0;
+  let allPassed = true;
 
-  processes.set(component.name, child);
-}
-
-components.forEach(launch);
-
-process.on('SIGINT', () => shutdown());
-process.on('SIGTERM', () => shutdown());
-
-setInterval(() => {
-    if (shuttingDown) return;
-    for (const [name, child] of processes) {
-        if (child.exitCode !== null) {
-            shutdown(`${name} died with exit code ${child.exitCode}`);
+  for (const res of results) {
+    const { tests, pass, fail } = res.stats;
+    totalTests += tests;
+    totalPass += pass;
+    totalFail += fail;
+    
+    const statStr = `[Pass: ${pass}, Fail: ${fail}, Total: ${tests}]`;
+    if (res.passed) {
+        console.log(`✅ PASSED: ${res.name} ${statStr}`);
+    } else {
+        console.log(`❌ FAILED: ${res.name} ${statStr}`);
+        allPassed = false;
+        if (res.failures.length > 0) {
+            res.failures.forEach(f => console.log(`   ${f}`));
         }
     }
-}, 1000);
+  }
+  
+  console.log('-'.repeat(60));
+  console.log(`TOTAL: ${totalPass} Passed, ${totalFail} Failed, ${totalTests} Total`);
+  console.log('='.repeat(60));
+  process.exit(allPassed ? 0 : 1);
+}
+
+main();

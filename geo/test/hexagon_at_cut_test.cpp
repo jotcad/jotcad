@@ -37,7 +37,7 @@ int main() {
     render_to(&vfs, corners_addr, "step2_corners");
 
     // 3. Triangle(5) - Larger for visibility
-    fs::Selector tri_addr = fs::Selector{"jot/Triangle/equilateral", {{"size", std::vector<double>{5.0}}}} .with_output("$out");
+    fs::Selector tri_addr = fs::Selector{"jot/Triangle/equilateral", {{"size", 5.0}}} .with_output("$out");
     Processor::execute(&vfs, tri_addr);
     render_to(&vfs, tri_addr, "step3_triangle");
 

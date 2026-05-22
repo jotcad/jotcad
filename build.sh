@@ -2,7 +2,7 @@
 set -e
 
 echo "[Root] Building C++ Geo Ops..."
-(cd geo && ./build.sh)
+./geo/compile.sh
 
 echo "[Root] Building C++ CID Consistency Test..."
 (cd geo/test && make bin/cid_consistency_test)

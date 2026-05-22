@@ -122,11 +122,11 @@ struct WrapOp : P {
         return {
             {"path", "jot/wrap"},
             {"description", "Generates a tight manifold 'alpha wrap' around the input geometry."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "alpha"}, {"type", "jot:number"}, {"default", 1.0}, {"description", "The alpha parameter (tightness). Smaller is tighter."}},
                 {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.1}, {"description", "Offset from the input points."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

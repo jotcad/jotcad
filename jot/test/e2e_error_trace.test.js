@@ -29,16 +29,16 @@ test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
             body: JSON.stringify({ id: 'geo-ops-node', url: `http://localhost:${OPS_PORT}` })
         });
 
-        const boxSchema = { arguments: [{ name: 'size', type: 'number' }], outputs: { $out: 'shape' } };
+        const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
         // INTENTIONAL ERROR: 'number' (singular) instead of 'numbers'
-        const rzSchema = { arguments: [{ name: '$in', type: 'shape' }, { name: 'turns', type: 'number' }], outputs: { $out: 'shape' } };
+        const rzSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'turns', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
 
         const compiler = new JotCompiler();
         compiler.registerOperator('Box', { path: 'jot/Box', schema: boxSchema });
         compiler.registerOperator('rz', { path: 'jot/rz', schema: rzSchema });
 
         const mainScript = 'Box(15).rz(0.25) -> $out';
-        const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'shape' } });
+        const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'jot:shape' } });
         const finalSelector = terminals[0].selector;
 
         const response = await fetch(`http://localhost:${OPS_PORT}/read`, {

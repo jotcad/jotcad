@@ -1,5 +1,6 @@
 #include "triangulation.h"
 #include <CGAL/mark_domain_in_triangulation.h>
+#include <CGAL/normal_vector_newell_3.h>
 
 namespace jotcad {
 namespace geo {
@@ -11,26 +12,18 @@ void Triangulation::triangulate_face(
     
     if (f.loops.empty() || f.loops[0].size() < 3) return;
 
-    // 1. Determine local plane from the first loop (robustly)
-    int i0 = f.loops[0][0], i1 = f.loops[0][1], i2 = f.loops[0][2];
-    EK::Point_3 p0(pts[i0].x, pts[i0].y, pts[i0].z);
-    EK::Point_3 p1(pts[i1].x, pts[i1].y, pts[i1].z);
-    EK::Point_3 p2(pts[i2].x, pts[i2].y, pts[i2].z);
-    EK::Plane_3 plane(p0, p1, p2);
-
-    if (plane.is_degenerate()) {
-        // Fallback for nearly collinear start: search for a valid triangle
-        bool found = false;
-        for (size_t i = 1; i < f.loops[0].size() - 1 && !found; ++i) {
-            for (size_t j = i + 1; j < f.loops[0].size(); ++j) {
-                p1 = EK::Point_3(pts[f.loops[0][i]].x, pts[f.loops[0][i]].y, pts[f.loops[0][i]].z);
-                p2 = EK::Point_3(pts[f.loops[0][j]].x, pts[f.loops[0][j]].y, pts[f.loops[0][j]].z);
-                plane = EK::Plane_3(p0, p1, p2);
-                if (!plane.is_degenerate()) { found = true; break; }
-            }
-        }
-        if (!found) return;
+    // 1. Determine local plane using Newell's Method (robust for non-convex polygons)
+    std::vector<EK::Point_3> loop_pts;
+    loop_pts.reserve(f.loops[0].size());
+    for (int idx : f.loops[0]) {
+        loop_pts.emplace_back(pts[idx].x, pts[idx].y, pts[idx].z);
     }
+    
+    EK::Vector_3 normal;
+    CGAL::normal_vector_newell_3(loop_pts.begin(), loop_pts.end(), normal);
+
+    if (normal == CGAL::NULL_VECTOR) return; // Degenerate face
+    EK::Plane_3 plane(loop_pts[0], normal);
 
     // 2. Project 3D points to local 2D space for stable CDT
     CDT cdt;

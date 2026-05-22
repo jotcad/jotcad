@@ -10,16 +10,15 @@ test('JotCompiler Port Preservation Repro', async (t) => {
   compiler.registerOperator('pdf', {
     path: 'jot/pdf',
     schema: {
+      inputs: { '$in': { type: 'jot:shape' } },
       arguments: [
-        { name: '$in', type: 'jot:shape' },
         { name: 'path', type: 'jot:string' }
       ],
-      outputs: { 
+      outputs: {
         "$out": { type: "file" }
       }
     }
   });
-
   const schema = {
     outputs: { 
       "$hex": { type: "file" } 

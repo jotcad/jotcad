@@ -14,7 +14,7 @@ struct StlOp : P {
     static void walk(fs::VFSNode* vfs, const Shape& shape, STLWriter& writer) {
         Matrix current_tf = shape.tf;
         
-        if (shape.geometry.has_value()) {
+        if (shape.geometry.has_value() && !shape.is_gap()) {
             try {
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
                 geo.apply_tf(current_tf);
@@ -44,10 +44,10 @@ struct StlOp : P {
         return {
             {"path", "jot/stl"},
             {"description", "Generates a binary STL file from the spatial representation of the input shape."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "path"}, {"type", "jot:string"}, {"default", "export.stl"}}
-            }},
+            })},
             {"outputs", {
                 {"$out", {{"type", "file"}, {"mimeType", "model/stl"}, {"description", "The generated STL blob."}}}
             }}

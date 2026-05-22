@@ -39,12 +39,12 @@ struct MoveOp : MoveOpBase<P> {
         return {
             {"path", "jot/move"},
             {"description", "Translates the input shape by the given x, y, z offsets."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The shape to move."}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to move."}}}}},
+            {"arguments", json::array({
                 {{"name", "x"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Offset along the X-axis."}},
                 {{"name", "y"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Offset along the Y-axis."}},
                 {{"name", "z"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Offset along the Z-axis."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The moved shape."}}}}}
         };
     }
@@ -80,10 +80,10 @@ struct MoveXOp : MoveAxisOp<P> {
         return {
             {"path", "jot/moveX"},
             {"description", "Translates the input shape along the X-axis. Supports sequences (e.g. mx(1, 10))."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "x"}, {"type", "jot:numbers"}, {"default", {0.0}}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -100,10 +100,10 @@ struct MoveYOp : MoveAxisOp<P> {
         return {
             {"path", "jot/moveY"},
             {"description", "Translates the input shape along the Y-axis. Supports sequences."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "y"}, {"type", "jot:numbers"}, {"default", {0.0}}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -120,10 +120,10 @@ struct MoveZOp : MoveAxisOp<P> {
         return {
             {"path", "jot/moveZ"},
             {"description", "Translates the input shape along the Z-axis. Supports sequences."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}}},
+            {"arguments", json::array({
                 {{"name", "z"}, {"type", "jot:numbers"}, {"default", {0.0}}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

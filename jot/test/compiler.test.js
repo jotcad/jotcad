@@ -79,8 +79,8 @@ test('JotCompiler Argument Mapping', async (t) => {
     compiler.registerOperator('offset', {
       path: 'jot/offset',
       schema: {
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: '$out', type: 'jot:shape', default: null }, // default prevents blocking
           { name: 'radius', type: 'jot:number' }
         ],

@@ -18,10 +18,12 @@ struct ColorOp : P {
         return {
             {"path", "jot/color"},
             {"description", "Applies a color tag to the input shape."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"description", "The shape to color."}, {"affiliate", "$out"}},
-                {{"name", "color"}, {"type", "jot:string"}, {"default", "red"}, {"description", "The color name or CSS hex value."}}
+            {"inputs", {
+                {"$in", {{"type", "jot:shape"}, {"description", "The shape to color."}}}
             }},
+            {"arguments", nlohmann::json::array({
+                {{"name", "color"}, {"type", "jot:string"}, {"default", "red"}, {"description", "The color name or CSS hex value."}}
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The colored shape."}}}}}
         };
     }

@@ -18,8 +18,8 @@ test('JotCAD Next-Gen: Template Modes', async (t) => {
     compiler.registerOperator('cut', {
         path: 'op/cut',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
                 { name: 'tools', type: 'jot:shapes' }
             ],
             outputs: { "$out": { type: "jot:shape" } }
@@ -29,10 +29,10 @@ test('JotCAD Next-Gen: Template Modes', async (t) => {
     compiler.registerOperator('at', {
         path: 'op/at',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$out' },
                 { name: 'target', type: 'jot:vec3' },
-                { name: 'op', type: 'jot:op<$in:shape, $out:shape>' }
+                { name: 'op', type: 'jot:op<$in:jot:shape, $out:jot:shape>' }
             ],
             outputs: { "$out": { type: "jot:shape" } }
         }

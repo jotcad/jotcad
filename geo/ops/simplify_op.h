@@ -125,12 +125,12 @@ struct SimplifyOp : P {
         return {
             {"path", "jot/simplify"},
             {"description", "Simplifies a mesh using edge-collapse reduction while preserving sharp features."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({
                 {{"name", "ratio"}, {"type", "jot:number"}, {"default", 0.5}, {"description", "Target face reduction ratio (0.1 = 10% of original faces)"}},
                 {{"name", "count"}, {"type", "jot:number"}, {"default", 0}, {"description", "Explicit target face count (if > 0, ratio is ignored)"}},
                 {{"name", "threshold"}, {"type", "jot:number"}, {"default", 60.0/360.0}, {"description", "Dihedral angle threshold for sharp feature preservation in turns (tau)."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

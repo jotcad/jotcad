@@ -11,13 +11,13 @@ struct AtOp : P {
     static constexpr const char* path = "jot/at";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& target, const fs::Selector& op) {
         Shape current = in;
-        apply_at_recursive(vfs, current, target, Matrix::identity(), op);
+        apply_at_recursive(vfs, current, target, op);
         vfs->write(fulfilling.with_output("$out"), current);
     }
 
-    static void apply_at_recursive(fs::VFSNode* vfs, Shape& subject, const Shape& target, const Matrix& parent_frame, const fs::Selector& op) {
-        Matrix world_frame = parent_frame * target.tf;
+    static void apply_at_recursive(fs::VFSNode* vfs, Shape& subject, const Shape& target, const fs::Selector& op) {
         if (target.geometry.has_value()) {
+            Matrix world_frame = target.tf;
             // Anchor Pattern:
             // 1. Invert the anchor's matrix to reach its local origin.
             Matrix world_inv = world_frame.inverse();
@@ -38,7 +38,7 @@ struct AtOp : P {
             subject = local_result;
         } else {
             for (const auto& child : target.components) {
-                apply_at_recursive(vfs, subject, child, world_frame, op);
+                apply_at_recursive(vfs, subject, child, op);
             }
         }
     }
@@ -48,11 +48,13 @@ struct AtOp : P {
         return {
             {"path", "jot/at"},
             {"description", "Applies an operation to the subject relative to one or more anchor locations (The Anchor Pattern)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {
+                {"$in", {{"type", "jot:shape"}}}
+            }},
+            {"arguments", nlohmann::json::array({
                 {{"name", "target"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Anchor provider (e.g., eachCorner())"}},
                 {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply at each anchor"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

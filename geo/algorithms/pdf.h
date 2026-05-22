@@ -66,7 +66,7 @@ public:
         
         std::stringstream stream;
         stream << "q\n";
-        stream << "0.1 w\n"; // 0.1pt line width
+        stream << "0.072 w\n"; // CRITICAL: 0.072pt is the required hairline for most laser cutters. DO NOT CHANGE.
 
         for (const auto& geo : geos_) {
             for (const auto& face : geo.faces) {

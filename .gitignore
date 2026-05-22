@@ -37,6 +37,10 @@ geometry/Eigen/
 geometry/glm/
 geometry/cgal/
 
+# Ignore vendor dependencies
+geo/vendor/
+!geo/vendor/*.sh
+
 # Ignore test output images
 **/actual/
 !geo/*.png

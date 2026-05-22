@@ -138,6 +138,13 @@ struct Geometry {
         }
         return true;
     }
+
+    CGAL::Bbox_3 bounds() const {
+        if (vertices.empty()) return CGAL::Bbox_3(0, 0, 0, 0, 0, 0);
+        std::vector<EK::Point_3> pts;
+        for (const auto& v : vertices) pts.emplace_back(v.x, v.y, v.z);
+        return CGAL::bbox_3(pts.begin(), pts.end());
+    }
 };
 
 } // namespace geo

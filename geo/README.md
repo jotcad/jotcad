@@ -13,4 +13,10 @@ This directory is responsible for the JotCAD geometry engine, including its VFS 
 - **[infra/](./infra)**: Build infrastructure and shared library glue code.
 - **[test/](./test)**: Verification suite for the geometry domain.
 - **[boolean/](./boolean)**: 3D CSG (Union, Cut, Clip) logic via CGAL.
-- **[fix/](./fix)**: Repair and ambiguity resolution for mesh data.
+- **[pack/](./pack)**: Geometric binning and nesting solver for 2D sheet optimization.
+
+## Recent Improvements
+
+- **New Operators**: Added `dup` (efficient duplication) and `gap` (padding) operators.
+- **Robust Triangulation**: Implemented Newell's Method for polygon normal calculation in the triangulation engine. This ensures consistent lighting and correct domain identification for non-convex islands and split remainder geometries.
+- **Sheet Packing**: Enhanced the `pack` operator with support for arbitrary sheet shapes (Exterior Subtraction IFP) and multiple orientations (rotations).

@@ -10,8 +10,8 @@ test('JotCompiler Error Context: Should show problematic code in User Op error',
   compiler.registerOperator('Box', {
     path: 'jot/Box',
     schema: {
-      arguments: [{ name: 'size', type: 'number' }],
-      outputs: { "$out": { type: "shape" } }
+      arguments: [{ name: 'size', type: 'jot:number' }],
+      outputs: { "$out": { type: "jot:shape" } }
     }
   });
 
@@ -19,7 +19,7 @@ test('JotCompiler Error Context: Should show problematic code in User Op error',
   // We use two calls to bypass the single-expression auto-assignment convenience.
   const script = 'Box(10); Box(20)'; 
   const ast = parser.parse(script);
-  const schema = { outputs: { "$out": { type: "shape" } } };
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
 
   try {
     await compiler.evaluate(ast, {}, schema, 'user/TestOp');
@@ -34,12 +34,12 @@ test('JotCompiler Error Context: Multi-line error context', async (t) => {
   const parser = new JotParser();
   const compiler = new JotCompiler();
 
-  compiler.registerOperator('Box', { path: 'jot/Box', schema: { arguments: [], outputs: { $out: 'shape' } } });
-  compiler.registerOperator('Orb', { path: 'jot/Orb', schema: { arguments: [], outputs: { $out: 'shape' } } });
+  compiler.registerOperator('Box', { path: 'jot/Box', schema: { arguments: [], outputs: { $out: 'jot:shape' } } });
+  compiler.registerOperator('Orb', { path: 'jot/Orb', schema: { arguments: [], outputs: { $out: 'jot:shape' } } });
 
   const script = 'Box() -> $out; Orb()'; 
   const ast = parser.parse(script);
-  const schema = { outputs: { "$out": { type: "shape" } } };
+  const schema = { outputs: { "$out": { type: "jot:shape" } } };
 
   try {
     await compiler.evaluate(ast, {}, schema, 'user/TestOp');

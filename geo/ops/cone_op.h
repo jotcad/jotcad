@@ -79,11 +79,12 @@ struct ConeOp : ConeOpBase<P> {
         return {
             {"path", "jot/Cone"},
             {"description", "Generates a sharp cone oriented along the X axis."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -100,12 +101,13 @@ struct ConeFitOp : ConeOpBase<P> {
         return {
             {"path", "jot/Cone/fit"},
             {"description", "Generates a cone that fits the given bounding box, base in YZ, tip at X-max."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "width"}, {"type", "jot:interval"}, {"default", 10.0}, {"description", "X-axis extent (height of cone)"}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 10.0}, {"description", "Y-axis base extent"}},
                 {{"name", "depth"}, {"type", "jot:interval"}, {"default", 10.0}, {"description", "Z-axis base extent"}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -128,11 +130,12 @@ struct ConeAngleOp : ConeOpBase<P> {
         return {
             {"path", "jot/Cone/angle"},
             {"description", "Generates a cone with base diameter and a specific taper angle."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "angle"}, {"type", "jot:number"}, {"default", 0.125}, {"description", "Half-angle in turns (0.125 = 45 deg)"}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

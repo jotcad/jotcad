@@ -148,12 +148,12 @@ struct SpinOp : SpinOpBase<P> {
         return {
             {"path", "jot/spin"},
             {"description", "Spins geometry around the local Z axis."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}},
                 {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -167,7 +167,16 @@ struct SpinXOp : SpinOpBase<P> {
     }
     static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
     static typename P::json schema() {
-        return { {"path", "jot/spinX"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}}}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
+        return { 
+            {"path", "jot/spinX"}, 
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
+                {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, 
+                {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, 
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+            })}, 
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
+        };
     }
 };
 
@@ -179,7 +188,16 @@ struct SpinYOp : SpinOpBase<P> {
     }
     static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
     static typename P::json schema() {
-        return { {"path", "jot/spinY"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}}}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
+        return { 
+            {"path", "jot/spinY"}, 
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
+                {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, 
+                {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, 
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+            })}, 
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
+        };
     }
 };
 

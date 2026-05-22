@@ -10,13 +10,16 @@ A Dynamic Operation is a metadata-driven definition that combines a Schema with 
 {
   "path": "user/MyBracket",
   "description": "A customizable L-bracket.",
-  "arguments": {
-    "width": { "type": "number", "default": 20 },
-    "thickness": { "type": "number", "default": 2 }
+  "inputs": {
+    "$in": { "type": "jot:shape" }
   },
-  "script": "Box(width, 10, thickness).cut(Box(5, 5, thickness).at(Corners()))",
+  "arguments": [
+    { "name": "width", "type": "jot:number", "default": 20 },
+    { "name": "thickness", "type": "jot:number", "default": 2 }
+  ],
+  "script": "$in.cut(Box(width, 10, thickness).at(Corners()))",
   "outputs": {
-    "$out": { "type": "shape" }
+    "$out": { "type": "jot:shape" }
   }
 }
 ```
@@ -69,9 +72,21 @@ Dynamic operations are first-class mesh citizens:
 - **Announcement:** The node broadcasts a `CATALOG_ANNOUNCEMENT` to neighbors.
 - **Discovery:** Other nodes (including C++ kernels and remote browsers) see the new operation in their catalog and can invoke it via standard mesh routing.
 
-## 5. UX Workflow
+## 6. Native Operation: Grow (Minkowski Sum)
 
-1. **Argument Definition:** The user explicitly defines names and types (e.g., `radius: number`).
-2. **Bound Variables:** These names are automatically injected as identifiers into the Jot expression editor.
-3. **Sandbox Evaluation:** An "Evaluate" button allows the user to test the logic using the current "Test Values" defined in the UI.
-4. **Global Availability:** Once defined, the operation can be called by name in any other `JotNode` or script across the mesh.
+The `jot/grow` operator implements the Minkowski sum of a subject shape and a tool shape. It utilizes a robust **"Single Hull of Summed Points"** strategy to ensure manifold integrity across mixed dimensionality.
+
+### 6.1 The "Single Hull" Strategy
+Unlike fragmented boolean unions, `jot/grow` calculates the Minkowski sum for each convex component (primitive) by:
+1. Collecting all vertices of the subject primitive ($V_s$) and the tool ($V_t$).
+2. Computing the combined point cloud $V_{sum} = \{ v_s + v_t \mid v_s \in V_s, v_t \in V_t \}$.
+3. Generating a single **3D Convex Hull** of the combined set.
+
+### 6.2 Dimensional Integrity
+The operator automatically adapts to the dimensionality of the result:
+- **3D Solid**: If the summed points form a volume, the result is tagged as `type: "closed"` and returned as a manifold 3D mesh.
+- **2D Surface**: If all summed points are coplanar (e.g., 2D subject + 2D tool), the operator extracts the faces of the hull and returns it as a formal `type: "surface"`, avoiding "pancake" instabilities in the 3D unioner.
+
+### 6.3 Mixed-Dimensionality Support
+- **Solid Subject + Flat Tool**: Correctly produces a 3D solid (e.g., a $12 \times 12 \times 10$ box from a $10 \times 10 \times 10$ cube grown by a $2 \times 2$ square).
+- **Flat Subject + Solid Tool**: Correctly promotes the result to a 3D solid.

@@ -20,8 +20,8 @@ describe('SweepBy Syntax', () => {
   compiler.registerOperator('sweepBy', {
     path: 'jot/sweepBy',
     schema: { 
+      inputs: { '$in': { type: 'jot:shape' } },
       arguments: [
-        { name: '$in', type: 'jot:shape', affiliate: '$out' },
         { name: 'profile', type: 'jot:shape' }
       ],
       outputs: { $out: { type: 'jot:shape' } }

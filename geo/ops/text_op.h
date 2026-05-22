@@ -134,7 +134,7 @@ struct TextOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"text", "font", "size"}; }
     static typename P::json schema() {
-        return { {"path", "jot/text"}, {"arguments", { {{"name", "text"}, {"type", "jot:string"}}, {{"name", "font"}, {"type", "jot:font"}}, {{"name", "size"}, {"type", "jot:number"}, {"default", 10}} }}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
+        return { {"path", "jot/text"}, {"arguments", nlohmann::json::array({ {{"name", "text"}, {"type", "jot:string"}}, {{"name", "font"}, {"type", "jot:font"}}, {{"name", "size"}, {"type", "jot:number"}, {"default", 10}} })}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
     }
 };
 

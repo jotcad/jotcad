@@ -90,13 +90,14 @@ struct OrbOp : P {
         return {
             {"path", "jot/Orb"},
             {"description", "Generates a 3D sphere or ellipsoid solid."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "width"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "depth"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

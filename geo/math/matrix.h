@@ -62,6 +62,14 @@ struct Matrix {
         return Matrix(Transformation(cos_alpha, -sin_alpha, 0, 0, sin_alpha, cos_alpha, 0, 0, 0, 0, w, 0, w));
     }
 
+    Matrix rotateZ(double turns) const {
+        return rotationZ(turns) * (*this);
+    }
+
+    Matrix translated(FT x, FT y, FT z) const {
+        return translate(x, y, z) * (*this);
+    }
+
     static Matrix scale(FT x, FT y, FT z) {
         return Matrix(Transformation(x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0));
     }
@@ -105,51 +113,72 @@ struct Matrix {
         return t.transform(p);
     }
 
-    // Creates an EXACT orthogonal matrix that transforms world coordinates into the local space of a plane.
+    // Creates an EXACTLY ORTHOGONAL matrix that transforms world coordinates into the local space of a plane.
+    // Uses a high-precision weight to simulate an orthonormal basis, preventing aspect ratio distortion.
     static Matrix lookAt(const EK::Point_3& origin, const EK::Vector_3& normal) {
-        // Use an un-normalized but EXACT orthogonal basis.
-        EK::Vector_3 Z = normal;
+        EK::Vector_3 Z_dir = normal;
         
-        // Find an arbitrary vector that is not parallel to Z
         EK::Vector_3 arbitrary(1, 0, 0);
-        if (std::abs(CGAL::to_double(Z.x())) > 0.9) {
+        if (std::abs(CGAL::to_double(Z_dir.x())) > 0.9) {
             arbitrary = EK::Vector_3(0, 1, 0);
         }
 
-        // Exact cross products for orthogonal basis
-        EK::Vector_3 X = CGAL::cross_product(Z, arbitrary);
-        EK::Vector_3 Y = CGAL::cross_product(Z, X);
+        EK::Vector_3 X_dir = CGAL::cross_product(Z_dir, arbitrary);
+        EK::Vector_3 Y_dir = CGAL::cross_product(Z_dir, X_dir);
 
-        // Construct the transformation: This matrix takes (1,0,0) to X, (0,1,0) to Y, etc.
+        double dx = std::sqrt(CGAL::to_double(X_dir.squared_length()));
+        double dy = std::sqrt(CGAL::to_double(Y_dir.squared_length()));
+        double dz = std::sqrt(CGAL::to_double(Z_dir.squared_length()));
+
+        FT w(1000000);
+        auto scale_v = [&](const EK::Vector_3& v, double len) {
+            double s = 1000000.0 / len;
+            return std::array<FT, 3>{FT(v.x() * s), FT(v.y() * s), FT(v.z() * s)};
+        };
+
+        auto nx = scale_v(X_dir, dx);
+        auto ny = scale_v(Y_dir, dy);
+        auto nz = scale_v(Z_dir, dz);
+
         Transformation m(
-            X.x(), Y.x(), Z.x(), origin.x(),
-            X.y(), Y.y(), Z.y(), origin.y(),
-            X.z(), Y.z(), Z.z(), origin.z()
+            nx[0], ny[0], nz[0], origin.x() * w,
+            nx[1], ny[1], nz[1], origin.y() * w,
+            nx[2], ny[2], nz[2], origin.z() * w, w
         );
         
-        // The lookAt matrix is the INVERSE: it takes world points into this local frame.
         return Matrix(m.inverse());
     }
 
-    // Creates an EXACT orthogonal matrix where the Z-axis is aligned with the given normal.
+    // Creates an EXACTLY ORTHOGONAL matrix where the Z-axis is aligned with the given normal.
     static Matrix fromNormal(const EK::Point_3& origin, const EK::Vector_3& normal) {
-        EK::Vector_3 Z = normal;
+        EK::Vector_3 Z_dir = normal;
         
-        // Find an arbitrary vector that is not parallel to Z
         EK::Vector_3 arbitrary(1, 0, 0);
-        if (std::abs(CGAL::to_double(Z.x())) > 0.9) {
+        if (std::abs(CGAL::to_double(Z_dir.x())) > 0.9) {
             arbitrary = EK::Vector_3(0, 1, 0);
         }
 
-        // Exact cross products for orthogonal basis
-        EK::Vector_3 X = CGAL::cross_product(Z, arbitrary);
-        EK::Vector_3 Y = CGAL::cross_product(Z, X);
+        EK::Vector_3 X_dir = CGAL::cross_product(Z_dir, arbitrary);
+        EK::Vector_3 Y_dir = CGAL::cross_product(Z_dir, X_dir);
 
-        // Construct the transformation: This matrix takes (1,0,0) to X, (0,1,0) to Y, etc.
+        double dx = std::sqrt(CGAL::to_double(X_dir.squared_length()));
+        double dy = std::sqrt(CGAL::to_double(Y_dir.squared_length()));
+        double dz = std::sqrt(CGAL::to_double(Z_dir.squared_length()));
+
+        FT w(1000000);
+        auto scale_v = [&](const EK::Vector_3& v, double len) {
+            double s = 1000000.0 / len;
+            return std::array<FT, 3>{FT(v.x() * s), FT(v.y() * s), FT(v.z() * s)};
+        };
+
+        auto nx = scale_v(X_dir, dx);
+        auto ny = scale_v(Y_dir, dy);
+        auto nz = scale_v(Z_dir, dz);
+
         return Matrix(Transformation(
-            X.x(), Y.x(), Z.x(), origin.x(),
-            X.y(), Y.y(), Z.y(), origin.y(),
-            X.z(), Y.z(), Z.z(), origin.z()
+            nx[0], ny[0], nz[0], origin.x() * w,
+            nx[1], ny[1], nz[1], origin.y() * w,
+            nx[2], ny[2], nz[2], origin.z() * w, w
         ));
     }
 

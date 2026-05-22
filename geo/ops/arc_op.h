@@ -57,14 +57,15 @@ struct ArcBoundsOp : P {
         return {
             {"path", "jot/Arc"},
             {"description", "Generates an elliptical arc within a bounding box."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "width"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -155,14 +156,15 @@ struct Arc2POp : P {
         return {
             {"path", "jot/Arc/2p"},
             {"description", "Generates an arc between two points with a given radius (SVG style)."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "p1"}, {"type", "jot:shape"}},
                 {{"name", "p2"}, {"type", "jot:shape"}},
                 {{"name", "radius"}, {"type", "jot:number"}},
                 {{"name", "large"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "cw"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -243,12 +245,13 @@ struct Arc3POp : P {
         return {
             {"path", "jot/Arc/3p"},
             {"description", "Generates an arc passing through three points."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "p1"}, {"type", "jot:shape"}},
                 {{"name", "p2"}, {"type", "jot:shape"}},
                 {{"name", "p3"}, {"type", "jot:shape"}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

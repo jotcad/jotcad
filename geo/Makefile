@@ -15,9 +15,12 @@ INCLUDES = -I. -I./ops -I./core -I./data -I./math -I./algorithms -I./render -I./
            -I../fs/cpp -I../fs/cpp/vendor \
            -I./cgal -I./cgal/boost \
            -I./cgal/cgal/include -I./cgal/cgal/include/CGAL/include \
-           -I./cgal/freetype/include
+           -I./cgal/freetype/include \
+           -I./pack
+
 DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
-LIBS = ./cgal/freetype/build/libfreetype.a -lpthread -lssl -lcrypto -lz -ldl
+LIBS = ./cgal/freetype/build/libfreetype.a \
+       -lpthread -lssl -lcrypto -lz -ldl
 
 # Library and Binary
 LIB_JOTGEO = $(BIN_DIR)/libjotgeo.a
@@ -37,8 +40,10 @@ DRIVER_OBJ = $(OBJ_DIR)/ops.o
 
 # Include all generated dependency files
 DEPS = $(OBJS:.o=.d) $(DRIVER_OBJ:.o=.d)
+-include $(DEPS)
 
 # Create static library
+
 $(LIB_JOTGEO): $(OBJS)
 	@mkdir -p $(BIN_DIR)
 	$(AR) $(ARFLAGS) $@ $^
@@ -71,12 +76,17 @@ $(TEST_TEXT_BIN): $(TEST_TEXT_OBJ) $(LIB_JOTGEO)
 $(BIN_DIR)/%: $(OBJ_DIR)/%.o $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
 
-$(OBJ_DIR)/%.o: test/%.cpp
+$(OBJ_DIR)/test_engine.o: pack/test_engine.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-test: $(OPS_BIN) $(TEST_LOGIC_BIN)
+TEST_ENGINE_BIN = $(BIN_DIR)/test_engine
+$(TEST_ENGINE_BIN): $(OBJ_DIR)/test_engine.o $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
+
+test: $(OPS_BIN) $(TEST_LOGIC_BIN) $(TEST_ENGINE_BIN)
 	$(TEST_LOGIC_BIN)
+	$(TEST_ENGINE_BIN)
 
 # Explicit compilation rules
 $(OBJ_DIR)/vfs_core.o: ../fs/cpp/vfs_core.cpp
@@ -121,7 +131,5 @@ $(OBJ_DIR)/ops.o: infra/ops.cc
 
 clean:
 	rm -rf $(BIN_DIR) $(OBJ_DIR)
-
--include $(DEPS)
 
 .PHONY: all clean

@@ -61,14 +61,15 @@ struct DiskOp : P {
         return {
             {"path", "jot/Disk"},
             {"description", "Generates a circular or elliptical disk/sector."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "width"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

@@ -53,11 +53,11 @@ struct OnOp : P {
         return {
             {"path", "jot/on"},
             {"description", "Performs targeted in-place replacement of components within the subject hierarchy."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
                 {{"name", "target"}, {"type", "jot:shape"}, {"description", "The component shape to replace"}},
                 {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply to matching components"}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

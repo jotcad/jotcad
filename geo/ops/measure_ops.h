@@ -27,7 +27,7 @@ struct AreaMeasurementOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
-        return {{"path", "jot/area"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
+        return {{"path", "jot/area"}, {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to measure."}}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
     }
 };
 
@@ -48,7 +48,7 @@ struct LengthMeasurementOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
-        return {{"path", "jot/length"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
+        return {{"path", "jot/length"}, {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to measure."}}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
     }
 };
 
@@ -82,7 +82,7 @@ struct VolumeMeasurementOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
     static typename P::json schema() {
-        return {{"path", "jot/volume"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
+        return {{"path", "jot/volume"}, {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to measure."}}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
     }
 };
 
@@ -114,7 +114,7 @@ struct XMeasurementOp : P {
         vfs->write(fulfilling.with_output("$out"), nlohmann::json{iv.min, iv.max});
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() { return {{"path", "jot/x"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:interval"}}}}}}; }
+    static typename P::json schema() { return {{"path", "jot/x"}, {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to measure."}}}}}, {"outputs", {{"$out", {{"type", "jot:interval"}}}}}}; }
 };
 
 template <typename P>
@@ -125,7 +125,7 @@ struct YMeasurementOp : P {
         vfs->write(fulfilling.with_output("$out"), nlohmann::json{iv.min, iv.max});
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() { return {{"path", "jot/y"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:interval"}}}}}}; }
+    static typename P::json schema() { return {{"path", "jot/y"}, {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to measure."}}}}}, {"outputs", {{"$out", {{"type", "jot:interval"}}}}}}; }
 };
 
 template <typename P>
@@ -136,7 +136,7 @@ struct ZMeasurementOp : P {
         vfs->write(fulfilling.with_output("$out"), nlohmann::json{iv.min, iv.max});
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() { return {{"path", "jot/z"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:interval"}}}}}}; }
+    static typename P::json schema() { return {{"path", "jot/z"}, {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to measure."}}}}}, {"outputs", {{"$out", {{"type", "jot:interval"}}}}}}; }
 };
 
 // --- REDUCTION OPERATORS ---
@@ -148,7 +148,7 @@ struct MaxReductionOp : P {
         vfs->write(fulfilling.with_output("$out"), Interval::from_json(in).max);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() { return {{"path", "jot/max"}, {"arguments", {{{"name", "$in"}, {"type", "jot:interval"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
+    static typename P::json schema() { return {{"path", "jot/max"}, {"inputs", {{"$in", {{"type", "jot:interval"}, {"description", "The interval to reduce."}}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
 };
 
 template <typename P>
@@ -158,7 +158,7 @@ struct MinReductionOp : P {
         vfs->write(fulfilling.with_output("$out"), Interval::from_json(in).min);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() { return {{"path", "jot/min"}, {"arguments", {{{"name", "$in"}, {"type", "jot:interval"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
+    static typename P::json schema() { return {{"path", "jot/min"}, {"inputs", {{"$in", {{"type", "jot:interval"}, {"description", "The interval to reduce."}}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
 };
 
 template <typename P>
@@ -168,7 +168,7 @@ struct MidReductionOp : P {
         vfs->write(fulfilling.with_output("$out"), Interval::from_json(in).center());
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() { return {{"path", "jot/mid"}, {"arguments", {{{"name", "$in"}, {"type", "jot:interval"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
+    static typename P::json schema() { return {{"path", "jot/mid"}, {"inputs", {{"$in", {{"type", "jot:interval"}, {"description", "The interval to reduce."}}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
 };
 
 template <typename P>
@@ -178,7 +178,7 @@ struct SpanReductionOp : P {
         vfs->write(fulfilling.with_output("$out"), Interval::from_json(in).size());
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() { return {{"path", "jot/span"}, {"arguments", {{{"name", "$in"}, {"type", "jot:interval"}, {"affiliate", "$out"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
+    static typename P::json schema() { return {{"path", "jot/span"}, {"inputs", {{"$in", {{"type", "jot:interval"}, {"description", "The interval to reduce."}}}}}, {"arguments", nlohmann::json::array()}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}}; }
 };
 
 template <typename P>
@@ -194,7 +194,7 @@ struct FacingOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"$in", "vec"}; }
     static typename P::json schema() {
-        return {{"path", "jot/facing"}, {"arguments", {{{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, {{"name", "vec"}, {"type", "jot:numbers"}}}}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
+        return {{"path", "jot/facing"}, {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to measure."}}}}}, {"arguments", nlohmann::json::array({ {{"name", "vec"}, {"type", "jot:numbers"}} })}, {"outputs", {{"$out", {{"type", "jot:number"}}}}}};
     }
 };
 

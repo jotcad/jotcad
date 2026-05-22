@@ -81,7 +81,7 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
         Matrix current_tf = s.tf;
         std::string next_color = s.tags.value("color", current_color);
 
-        if (s.geometry.has_value()) {
+        if (s.geometry.has_value() && !s.is_gap()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             ColorRGBA base_color = {200, 200, 200, 255};
             if (!next_color.empty()) {

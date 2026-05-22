@@ -58,10 +58,10 @@ struct RotateXOp : RotateAxisOp<P> {
         return {
             {"path", "jot/rotateX"},
             {"description", "Rotates the input shape around the X-axis (Tau-based turns)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", {0.0}}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
+                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", json::array({0.0})}}
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -78,10 +78,10 @@ struct RotateYOp : RotateAxisOp<P> {
         return {
             {"path", "jot/rotateY"},
             {"description", "Rotates the input shape around the Y-axis (Tau-based turns)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", {0.0}}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
+                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", json::array({0.0})}}
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -98,10 +98,10 @@ struct RotateZOp : RotateAxisOp<P> {
         return {
             {"path", "jot/rotateZ"},
             {"description", "Rotates the input shape around the Z-axis (Tau-based turns)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", {0.0}}}
-            }},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
+                {{"name", "turns"}, {"type", "jot:numbers"}, {"default", json::array({0.0})}}
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

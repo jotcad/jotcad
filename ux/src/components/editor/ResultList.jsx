@@ -6,8 +6,9 @@ import { vfs } from '../../lib/blackboard';
 export const ResultList = (props) => {
   const downloadFile = async (file) => {
     try {
-      const stream = await vfs.read(file.selector);
-      if (!stream) throw new Error('Failed to read file from VFS');
+      const res = await vfs.read(file.selector);
+      if (!res || !res.stream) throw new Error('Failed to read file from VFS');
+      const { stream } = res;
 
       // Drain stream into a Blob
       const reader = stream.getReader();

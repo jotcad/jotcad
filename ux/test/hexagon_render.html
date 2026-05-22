@@ -4,19 +4,17 @@
     <title>Hexagon Render Test</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; }
-        #viewport { width: 512px; height: 512px; border: 1px solid red; }
+        #viewport { width: 512px; height: 512px; }
     </style>
 </head>
 <body>
-    <canvas id="viewport"></canvas>
+    <div id="viewport"></div>
     <script type="module">
         import * as THREE from 'three';
         import { 
-            initSharedRenderer, 
+            getSharedRenderer, 
             renderJotToScene, 
-            updateViewports, 
-            registerViewport,
-            createScene
+            activateViewport
         } from '../src/lib/three_utils.js';
 
         const ZFS_DATA = `
@@ -33,35 +31,24 @@ f 0 1 2 3 4 5
 `.trim();
 
         async function run() {
-            const renderer = initSharedRenderer();
-            document.body.appendChild(renderer.domElement);
-            renderer.domElement.style.pointerEvents = 'auto';
-
-            const scene = createScene();
-            scene.background = new THREE.Color(0x222222); // Dark grey background
+            const renderer = getSharedRenderer();
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222); 
             
             const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
             camera.position.set(30, 30, 30);
             camera.lookAt(0, 0, 0);
 
-            // Lighting
-            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-            const dl = new THREE.DirectionalLight(0xffffff, 0.8);
-            dl.position.set(10, 10, 10);
-            scene.add(dl);
-
-            const viewportCanvas = document.getElementById('viewport');
-            registerViewport('test-hexagon', viewportCanvas, scene, camera);
+            const viewportContainer = document.getElementById('viewport');
+            activateViewport('test-hexagon', viewportContainer, scene, camera);
 
             console.log('[Test] Rendering Hexagon...');
             await renderJotToScene(null, ZFS_DATA, scene);
             
-            // Loop update for a few frames to ensure render
             let frames = 0;
             function animate() {
-                updateViewports();
                 frames++;
-                if (frames < 10) {
+                if (frames < 20) {
                     requestAnimationFrame(animate);
                 } else {
                     console.log('[Test] Render Complete');

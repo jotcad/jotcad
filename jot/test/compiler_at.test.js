@@ -12,7 +12,7 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   compiler.registerOperator('Hexagon', {
     path: 'jot/Hexagon/full',
     schema: {
-        arguments: [{ name: 'diameter', type: 'jot:number', affiliate: '$out' }],
+        arguments: [{ name: 'diameter', type: 'jot:number' }],
         outputs: { "$out": { type: "jot:shape" } }
     }
   });
@@ -20,7 +20,7 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   compiler.registerOperator('Triangle', {
     path: 'jot/Triangle/equilateral',
     schema: {
-        arguments: [{ name: 'size', type: 'jot:number', affiliate: '$out' }],
+        arguments: [{ name: 'size', type: 'jot:number' }],
         outputs: { "$out": { type: "jot:shape" } }
     }
   });
@@ -28,7 +28,8 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   compiler.registerOperator('eachCorner', {
     path: 'jot/eachCorner',
     schema: {
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [],
         outputs: { "$out": { type: "jot:shape" } }
     }
   });
@@ -36,8 +37,8 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   compiler.registerOperator('cut', {
     path: 'jot/cut',
     schema: {
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-            { name: '$in', type: 'jot:shape', affiliate: '$out' }, 
             { name: 'tools', type: 'jot:shapes' }
         ],
         outputs: { "$out": { type: "jot:shape" } }
@@ -47,10 +48,10 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   compiler.registerOperator('at', {
     path: 'jot/at',
     schema: {
+      inputs: { '$in': { type: 'jot:shape' } },
       arguments: [
-        { name: '$in', type: 'jot:shape', affiliate: '$out' },
-        { name: 'target', type: 'jot:op<$in:shape, $out:shape>' },
-        { name: 'op', type: 'jot:op<$in:shape, $out:shape>' }
+        { name: 'target', type: 'jot:op<$in:jot:shape, $out:jot:shape>' },
+        { name: 'op', type: 'jot:op<$in:jot:shape, $out:jot:shape>' }
       ],
       outputs: { "$out": { type: "jot:shape" } }
     }

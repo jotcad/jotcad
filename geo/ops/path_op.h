@@ -107,12 +107,12 @@ struct LinkOp : P {
         return {
             {"path", "jot/link"},
             {"description", "Connects points into an open path, optionally with Catmull-Rom smoothing."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
                 {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -140,12 +140,12 @@ struct LoopOp : P {
         return {
             {"path", "jot/loop"},
             {"description", "Connects points into a closed loop, optionally with Catmull-Rom smoothing."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
                 {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -172,11 +172,12 @@ struct LinkConstructorOp : P {
         return {
             {"path", "jot/Link"},
             {"description", "Creates an open path from a sequence of shapes or points."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "shapes"}, {"type", "jot:shapes"}},
                 {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -203,11 +204,12 @@ struct LoopConstructorOp : P {
         return {
             {"path", "jot/Loop"},
             {"description", "Creates a closed loop from a sequence of shapes or points."},
-            {"arguments", {
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
                 {{"name", "shapes"}, {"type", "jot:shapes"}},
                 {{"name", "smooth"}, {"type", "jot:boolean"}, {"default", false}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

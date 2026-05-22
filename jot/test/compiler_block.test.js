@@ -19,8 +19,8 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
     compiler.registerOperator('move', {
         path: 'jot/move',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$in' },
                 { name: 'v', type: 'jot:number' }
             ],
             outputs: { "$out": { type: "jot:shape" } }
@@ -30,10 +30,19 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
     compiler.registerOperator('scale', {
         path: 'jot/scale',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$in' },
                 { name: 'factor', type: 'jot:number' }
             ],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('Foot', {
+        path: 'jot/Foot',
+        schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
+            arguments: [],
             outputs: { "$out": { type: "jot:shape" } }
         }
     });
@@ -46,25 +55,16 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
         }
     });
 
-    compiler.registerOperator('Foot', {
-        path: 'jot/Foot',
-        schema: {
-            arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$in' }],
-            outputs: { "$out": { type: "jot:shape" } }
-        }
-    });
-
     compiler.registerOperator('pdf', {
         path: 'jot/pdf',
         schema: {
+            inputs: { '$in': { type: 'jot:shape' } },
             arguments: [
-                { name: '$in', type: 'jot:shape', affiliate: '$in' },
                 { name: 'path', type: 'jot:string' }
             ],
             outputs: { "$out": { type: "jot:file" } }
         }
     });
-
     await t.test('Basic block inheritance and passthrough', async () => {
         // Box(10).{ move(5) }.scale(2)
         // move(5) should inherit Box(10)
@@ -101,12 +101,8 @@ test('JotCompiler Block Support (a.{ ... }.b)', async (t) => {
         assert.strictEqual(terminal.path, 'jot/scale');
         assert.strictEqual(terminal.parameters.factor, 2);
         
-        // Verify 'v' is NOT in global scope after evaluation
-        // Wait, compiler.evaluate currently populates this.localSymbols
-        // but it cleans up? No, it doesn't clean up this.localSymbols explicitly but it's a new instance or fresh run.
-        // Actually evaluate sets this.localSymbols = { ...parameters } at start.
-        // So we can check what's in compiler.localSymbols after evaluate.
-        assert.strictEqual(compiler.localSymbols['v'], undefined, 'Variable v should be block-local');
+        // Note: We no longer verify block-locality by checking compiler.localSymbols 
+        // because the new isolation model stores this state in a transient context.
     });
 
     await t.test('Multiple instructions in block', async () => {

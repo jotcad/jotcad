@@ -11,13 +11,11 @@ template <typename P = JotVfsProtocol>
 struct PdfOp : P {
     static constexpr const char* path = "jot/pdf";
 
-    static void walk(fs::VFSNode* vfs, const Shape& shape, const Matrix& parent_tf, PDFWriter& writer) {
-        Matrix current_tf = parent_tf * shape.tf;
-        
+    static void walk(fs::VFSNode* vfs, const Shape& shape, PDFWriter& writer) {
         if (shape.geometry.has_value()) {
             try {
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
-                geo.apply_tf(current_tf);
+                geo.apply_tf(shape.tf);
                 writer.add_geometry(geo);
             } catch (const std::exception& e) {
                 std::cerr << "[PdfOp::walk] Error reading geometry: " << e.what() << std::endl;
@@ -25,7 +23,7 @@ struct PdfOp : P {
         }
         
         for (const auto& child : shape.components) {
-            walk(vfs, child, current_tf, writer);
+            walk(vfs, child, writer);
         }
     }
 
@@ -35,7 +33,7 @@ struct PdfOp : P {
         config.page_height = height;
         
         PDFWriter writer(config);
-        walk(vfs, in, Matrix::identity(), writer);
+        walk(vfs, in, writer);
         auto pdf_bytes = writer.write();
         
         // Output: PDF bytes in the primary '$out' port
@@ -48,12 +46,12 @@ struct PdfOp : P {
         return {
             {"path", "jot/pdf"},
             {"description", "Generates a PDF document from the spatial representation of the input shape."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "path"}, {"type", "jot:string"}, {"default", "export.pdf"}},
                 {{"name", "width"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Page width in mm (0 = auto)"}},
                 {{"name", "height"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Page height in mm (0 = auto)"}}
-            }},
+            })},
             {"outputs", {
                 {"$out", {{"type", "file"}, {"mimeType", "application/pdf"}, {"description", "The generated PDF blob."}}}
             }}

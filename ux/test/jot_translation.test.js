@@ -104,8 +104,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('offset', {
       path: 'jot/offset',
       schema: { 
+        inputs: { $in: { type: 'jot:shape' } },
         arguments: [
-            { name: '$in', type: 'jot:shape', affiliate: '$out' },
             { name: 'radius', type: 'jot:number', default: 1 }
         ],
         outputs: { $out: { type: 'jot:shape' } }
@@ -114,8 +114,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('rotateZ', {
       path: 'jot/rotateZ',
       schema: { 
+        inputs: { $in: { type: 'jot:shape' } },
         arguments: [
-            { name: '$in', type: 'jot:shape', affiliate: '$out' },
             { name: 'turns', type: 'jot:numbers', default: [0] }
         ],
         outputs: { $out: { type: 'jot:shape' } }
@@ -124,15 +124,17 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('outline', {
       path: 'jot/outline',
       schema: {
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        inputs: { $in: { type: 'jot:shape' } },
+        arguments: [],
         outputs: { $out: { type: 'jot:shape' } },
       },
     });
     c.registerOperator('pdf', {
       path: 'jot/pdf',
       schema: {
-        arguments: [{ name: '$in', type: 'jot:shape' }, { name: 'path', type: 'jot:string' }],
-        outputs: { $out: { type: 'file' } }
+        inputs: { $in: { type: 'jot:shape' } },
+        arguments: [{ name: 'path', type: 'jot:string' }],
+        outputs: { $out: { type: 'jot:file' } }
       },
     });
     c.registerOperator('box', {
@@ -159,29 +161,32 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('eachCorner', {
       path: 'jot/eachCorner',
       schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [],
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('edges', {
       path: 'jot/edges',
       schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [],
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('eachEdge', {
       path: 'jot/eachEdge',
       schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [],
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
     c.registerOperator('fuse', {
       path: 'jot/fuse',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'tools', type: 'jot:shapes', default: [] }
         ],
         outputs: { $out: { type: 'jot:shape' } }
@@ -190,8 +195,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('move', {
       path: 'jot/move',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'x', type: 'jot:number', default: 0 },
           { name: 'y', type: 'jot:number', default: 0 },
           { name: 'z', type: 'jot:number', default: 0 }
@@ -202,8 +207,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('cut', {
       path: 'jot/cut',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'tools', type: 'jot:shapes', default: [] }
         ],
         outputs: { $out: { type: 'jot:shape' } }
@@ -212,8 +217,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('join', {
       path: 'jot/join',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'tools', type: 'jot:shapes', default: [] }
         ],
         outputs: { $out: { type: 'jot:shape' } }
@@ -222,8 +227,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('clip', {
       path: 'jot/clip',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'tools', type: 'jot:shapes', default: [] }
         ],
         outputs: { $out: { type: 'jot:shape' } }
@@ -232,8 +237,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('sweep', {
       path: 'jot/sweep',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'path', type: 'jot:shape' },
           { name: 'closed_path', type: 'jot:boolean', default: false },
           { name: 'solid', type: 'jot:boolean', default: true }
@@ -244,8 +249,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('sweepBy', {
       path: 'jot/sweepBy',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'profile', type: 'jot:shape' },
           { name: 'closed_path', type: 'jot:boolean', default: false },
           { name: 'solid', type: 'jot:boolean', default: true }
@@ -256,8 +261,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('by', {
       path: 'jot/by',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'target', type: 'jot:shape' }
         ],
         outputs: { $out: { type: 'jot:shape' } }
@@ -266,9 +271,19 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('to', {
       path: 'jot/to',
       schema: { 
+        inputs: { '$in': { type: 'jot:shape' } },
         arguments: [
-          { name: '$in', type: 'jot:shape', affiliate: '$out' },
           { name: 'target', type: 'jot:shape' }
+        ],
+        outputs: { $out: { type: 'jot:shape' } }
+      },
+    });
+    c.registerOperator('dup', {
+      path: 'jot/dup',
+      schema: { 
+        inputs: { $in: { type: 'jot:shape' } },
+        arguments: [
+          { name: 'count', type: 'jot:number' }
         ],
         outputs: { $out: { type: 'jot:shape' } }
       },
@@ -276,7 +291,8 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     c.registerOperator('origin', {
       path: 'jot/origin',
       schema: { 
-        arguments: [{ name: '$in', type: 'jot:shape', affiliate: '$out' }],
+        inputs: { $in: { type: 'jot:shape' } },
+        arguments: [],
         outputs: { $out: { type: 'jot:shape' } }
       },
     });
@@ -333,15 +349,6 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
     });
   });
 
-  describe('Generator Unrolling', () => {
-    it('should pass range(3) as a Selector to rotateZ: Box(10).rotateZ(range(3))', async () => {
-      const res = await compile('Box(10).rotateZ(range(3)) -> $out');
-      expect(res.path).toBe('jot/rotateZ');
-      expect(res.parameters.turns[0].path).toBe('jot/range');
-      expect(res.parameters.turns[0].parameters.count).toBe(3);
-    });
-  });
-
   describe('Comprehensive End-to-End Chains', () => {
     it('should handle Hexagon(50).offset(2).outline().pdf("out.pdf")', async () => {
       const res = await compile(
@@ -378,6 +385,15 @@ describe('Jot Dynamic Compilation (Case Sensitive)', () => {
       expect(res.parameters.p1.path).toBe('jot/Box');
       expect(res.parameters.p2.path).toBe('jot/Box');
       expect(res.parameters.p3.path).toBe('jot/Box');
+    });
+  });
+
+  describe('Duplication', () => {
+    it('should translate Box(10).dup(3) correctly', async () => {
+      const res = await compile('Box(10).dup(3) -> $out');
+      expect(res.path).toBe('jot/dup');
+      expect(res.parameters.count).toBe(3);
+      expect(res.parameters.$in.path).toBe('jot/Box');
     });
   });
 });

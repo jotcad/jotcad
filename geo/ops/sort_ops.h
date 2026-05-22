@@ -71,13 +71,17 @@ struct HighestOp : P {
 
     static std::vector<std::string> argument_keys() { return {"$in", "measure", "bucket", "epsilon", "ratio"}; }
     static typename P::json schema() {
-        return {{"path", "jot/highest"}, {"arguments", {
-            {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-            {{"name", "measure"}, {"type", "jot:op<$in:shape, $out:number>"}},
-            {{"name", "bucket"}, {"type", "jot:number"}, {"optional", true}},
-            {{"name", "epsilon"}, {"type", "jot:number"}, {"optional", true}},
-            {{"name", "ratio"}, {"type", "jot:number"}, {"optional", true}}
-        }}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}}};
+        return {
+            {"path", "jot/highest"},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}}},
+            {"arguments", json::array({
+                {{"name", "measure"}, {"type", "jot:op<$in:shape, $out:number>"}},
+                {{"name", "bucket"}, {"type", "jot:number"}, {"optional", true}},
+                {{"name", "epsilon"}, {"type", "jot:number"}, {"optional", true}},
+                {{"name", "ratio"}, {"type", "jot:number"}, {"optional", true}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
     }
 };
 
@@ -144,13 +148,17 @@ struct LowestOp : P {
 
     static std::vector<std::string> argument_keys() { return {"$in", "measure", "bucket", "epsilon", "ratio"}; }
     static typename P::json schema() {
-        return {{"path", "jot/lowest"}, {"arguments", {
-            {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
-            {{"name", "measure"}, {"type", "jot:op<$in:shape, $out:number>"}},
-            {{"name", "bucket"}, {"type", "jot:number"}, {"optional", true}},
-            {{"name", "epsilon"}, {"type", "jot:number"}, {"optional", true}},
-            {{"name", "ratio"}, {"type", "jot:number"}, {"optional", true}}
-        }}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}}};
+        return {
+            {"path", "jot/lowest"},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}}},
+            {"arguments", json::array({
+                {{"name", "measure"}, {"type", "jot:op<$in:shape, $out:number>"}},
+                {{"name", "bucket"}, {"type", "jot:number"}, {"optional", true}},
+                {{"name", "epsilon"}, {"type", "jot:number"}, {"optional", true}},
+                {{"name", "ratio"}, {"type", "jot:number"}, {"optional", true}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
     }
 };
 

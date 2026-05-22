@@ -14,7 +14,7 @@ struct NthOp : P {
             if (index >= 0 && index < (int)in.components.size()) {
                 vfs->write(fulfilling.with_output("$out"), in.components[index]);
             } else {
-                throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds (size " + std::to_string(in.components.size()) + ")");
+                throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds. Components: " + std::to_string(in.components.size()));
             }
         } else {
             Shape out;
@@ -23,7 +23,7 @@ struct NthOp : P {
                 if (index >= 0 && index < (int)in.components.size()) {
                     out.components.push_back(in.components[index]);
                 } else {
-                    throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds (size " + std::to_string(in.components.size()) + ")");
+                    throw std::runtime_error("[NthOp] Index " + std::to_string(index) + " out of bounds. Components: " + std::to_string(in.components.size()));
                 }
             }
             vfs->write(fulfilling.with_output("$out"), out);
@@ -34,10 +34,10 @@ struct NthOp : P {
         return {
             {"path", "jot/nth"},
             {"description", "Selects the N-th component shape from a group."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
                 {{"name", "index"}, {"type", "jot:numbers"}, {"default", {0}}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

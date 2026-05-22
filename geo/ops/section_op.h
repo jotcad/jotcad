@@ -14,18 +14,17 @@ template <typename P = JotVfsProtocol>
 struct SectionOp : P {
     static constexpr const char* path = "jot/section";
 
-    static void collect_planes(const Shape& s, const Matrix& parent_tf, std::vector<Matrix>& frames) {
-        Matrix current_tf = parent_tf * s.tf;
+    static void collect_planes(const Shape& s, std::vector<Matrix>& frames) {
         // If the shape has geometry or is tagged as a plane, use its transform
         if (s.geometry.has_value() || (s.tags.contains("type") && s.tags["type"] == "plane")) {
-            frames.push_back(current_tf);
+            frames.push_back(s.tf);
         }
         for (const auto& child : s.components) {
-            collect_planes(child, current_tf, frames);
+            collect_planes(child, frames);
         }
         // If it's a completely empty group, use its transform as a plane anyway
         if (!s.geometry.has_value() && s.components.empty()) {
-            frames.push_back(current_tf);
+            frames.push_back(s.tf);
         }
     }
 
@@ -83,7 +82,7 @@ struct SectionOp : P {
         } else {
             std::vector<Matrix> frames;
             for (const auto& p_shape : planes) {
-                collect_planes(p_shape, Matrix::identity(), frames);
+                collect_planes(p_shape, frames);
             }
             for (const auto& f : frames) {
                 execute_single(vfs, in, f, res_combined);
@@ -101,10 +100,10 @@ struct SectionOp : P {
         return {
             {"path", "jot/section"},
             {"description", "Generates 2D cross-sections of the input shape at the specified planes (or local Z=0)."},
-            {"arguments", {
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
                 {{"name", "planes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "Shapes whose transforms define the sectioning planes."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

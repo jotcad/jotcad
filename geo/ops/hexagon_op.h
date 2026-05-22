@@ -41,10 +41,11 @@ struct HexagonOp : P {
             return {
                 {"path", path},
                 {"description", "Generates a hexagon by radius (center-to-corner)."},
-                {"arguments", {
+                {"inputs", nlohmann::json::object()},
+                {"arguments", nlohmann::json::array({
                     {{"name", "radius"}, {"type", "jot:number"}, {"default", 5.0}},
                     {{"name", "turns"}, {"type", "jot:number"}, {"default", 0.0}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -61,6 +62,7 @@ struct HexagonOp : P {
             return {
                 {"path", path},
                 {"description", "Generates a hexagon by diameter (corner-to-corner)."},
+                {"inputs", nlohmann::json::object()},
                 {"arguments", {
                     {{"name", "diameter"}, {"type", "jot:number"}, {"default", 10.0}},
                     {{"name", "turns"}, {"type", "jot:number"}, {"default", 0.0}}
@@ -82,6 +84,7 @@ struct HexagonOp : P {
             return {
                 {"path", path},
                 {"description", "Generates a hexagon by apothem (center-to-flat distance)."},
+                {"inputs", nlohmann::json::object()},
                 {"arguments", {
                     {{"name", "apothem"}, {"type", "jot:number"}, {"default", 4.330127}},
                     {{"name", "turns"}, {"type", "jot:number"}, {"default", 0.0}}
@@ -103,6 +106,7 @@ struct HexagonOp : P {
             return {
                 {"path", path},
                 {"description", "Generates a hexagon by edge-to-edge distance."},
+                {"inputs", nlohmann::json::object()},
                 {"arguments", {
                     {{"name", "edgeToEdge"}, {"type", "jot:number"}, {"default", 8.660254}},
                     {{"name", "turns"}, {"type", "jot:number"}, {"default", 0.0}}
@@ -123,10 +127,11 @@ struct HexagonOp : P {
             return {
                 {"path", path},
                 {"description", "Generates a hexagon by corner-to-corner distance."},
-                {"arguments", {
+                {"inputs", nlohmann::json::object()},
+                {"arguments", nlohmann::json::array({
                     {{"name", "corner_to_corner"}, {"type", "jot:number"}, {"default", 10.0}},
                     {{"name", "turns"}, {"type", "jot:number"}, {"default", 0.0}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }
@@ -144,10 +149,11 @@ struct HexagonOp : P {
             return {
                 {"path", path},
                 {"description", "Generates a hexagon by edge length (side)."},
-                {"arguments", {
+                {"inputs", nlohmann::json::object()},
+                {"arguments", nlohmann::json::array({
                     {{"name", "edgeLength"}, {"type", "jot:number"}, {"default", 5.0}},
                     {{"name", "turns"}, {"type", "jot:number"}, {"default", 0.0}}
-                }},
+                })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
         }

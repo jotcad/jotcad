@@ -72,8 +72,8 @@ int main() {
         fs::Selector box_sel = fs::Selector("jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}}).with_output("$out");
         Shape box = vfs.read<Shape>(box_sel);
 
-        // Fixed: size must be an array for jot:numbers
-        fs::Selector tri_sel = fs::Selector("jot/Triangle/equilateral", {{"size", {5.0}}}).with_output("$out");
+        // Use scalar double for jot:number
+        fs::Selector tri_sel = fs::Selector("jot/Triangle/equilateral", {{"size", 5.0}}).with_output("$out");
         Shape tri = vfs.read<Shape>(tri_sel);
 
         // Recipe: and(Triangle(5))

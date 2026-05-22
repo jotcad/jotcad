@@ -9,13 +9,13 @@ test('Reproduction: Foot5 Passthrough', async (t) => {
 
   // 1. Mock Operators
   const ops = {
-    'Hexagon': { arguments: [{ name: 'edgeToEdge', type: 'number' }], outputs: { $out: 'shape' } },
-    'Box': { arguments: [{ name: 'w', type: 'number' }, { name: 'h', type: 'number' }], outputs: { $out: 'shape' } },
-    'corners': { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } },
-    'nth': { arguments: [{ name: '$in', type: 'shape' }, { name: 'index', type: 'number' }], outputs: { $out: 'shape' } },
-    'o': { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } },
-    'origin': { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: 'shape' } },
-    'by': { arguments: [{ name: '$in', type: 'shape' }, { name: 'target', type: 'shape' }], outputs: { $out: 'shape' } }
+    'Hexagon': { arguments: [{ name: 'edgeToEdge', type: 'jot:number' }], outputs: { $out: 'jot:shape' } },
+    'Box': { arguments: [{ name: 'w', type: 'jot:number' }, { name: 'h', type: 'jot:number' }], outputs: { $out: 'jot:shape' } },
+    'corners': { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } },
+    'nth': { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'index', type: 'jot:number' }], outputs: { $out: 'jot:shape' } },
+    'o': { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } },
+    'origin': { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } },
+    'by': { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'target', type: 'jot:shape' }], outputs: { $out: 'jot:shape' } }
   };
 
   for (const [name, schema] of Object.entries(ops)) {
@@ -39,7 +39,7 @@ test('Reproduction: Foot5 Passthrough', async (t) => {
     C = H.corners().nth(0)
     H.by(C.o()) -> $out
   `;
-  const foot5Schema = { arguments: [{ name: '$in', type: 'shape' }], outputs: { $out: { type: 'shape' } } };
+  const foot5Schema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: { type: 'jot:shape' } } };
   compiler.registerOperator('user/Foot5', { path: 'user/Foot5', script: foot5Script, schema: foot5Schema });
 
   mockVfs.registerProvider('user/Foot5', async (v, s) => {
@@ -55,7 +55,7 @@ test('Reproduction: Foot5 Passthrough', async (t) => {
   // 4. Evaluate Test: Hexagon(edgeToEdge=246).Foot5()
   const testScript = 'Hexagon(edgeToEdge=246).Foot5() -> $out';
   const testAst = parser.parse(testScript);
-  const terminals = await compiler.evaluate(testAst, {}, { outputs: { $out: 'shape' } });
+  const terminals = await compiler.evaluate(testAst, {}, { outputs: { $out: 'jot:shape' } });
   
   console.log('Outer Terminal Count:', terminals.length);
   assert.strictEqual(terminals.length, 1, 'Outer evaluation should produce exactly ONE terminal (Foot5)');

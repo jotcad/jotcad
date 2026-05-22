@@ -83,7 +83,8 @@ test('Sequential Declaration Safety (No recursion)', async (t) => {
     await compiler.evaluate(ast, {}, schema);
     assert.fail('Should have thrown an error for unresolved symbol A');
   } catch (e) {
-    assert.ok(e.message.includes("Missing required argument 'font'"), 'Should fail on missing font because A is unresolved');
+    console.log('ACTUAL ERROR MESSAGE:', e.message);
+    assert.ok(e.message.includes("Undefined variable 'A' (recursive reference detected)"), 'Should fail with recursion error');
     console.log('✅ Declaration safety verified: Recursive declaration is prevented.');
   }
 });

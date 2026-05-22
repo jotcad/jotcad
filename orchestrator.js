@@ -11,7 +11,7 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_live_',
     ux: {
         command: 'npx',
-        args: ['http-server', 'ux/dist', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
+        args: ['http-server', 'ux/dist/live', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
     }
   },
   TEST: {
@@ -20,8 +20,7 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_test_',
     ux: {
         command: 'npx',
-        args: ['vite', '--port', '3131', '--strictPort'],
-        cwd: path.join(__dirname, 'ux')
+        args: ['http-server', 'ux/dist/test', '-p', '3131', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
     }
   }
 };
@@ -45,7 +44,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
     {
       name: `Ops Node (${ports.ops})`,
       command: './geo/bin/ops',
-      args: [],
+      args: [String(ports.ops), `${storagePrefix}ops`],
       cwd: __dirname,
       env: { 
           ...process.env, 
@@ -63,7 +62,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
         env: { 
             ...process.env, 
             PORT: String(ports.export),
-            PEER_ID: 'export-node',
+            VFS_ID: config.name === 'LIVE' ? 'live_export' : 'test_export',
             NEIGHBORS: `http://localhost:${ports.ops}`,
             ...env
         }
@@ -75,7 +74,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
       cwd: ux.cwd || __dirname,
       env: {
           ...process.env,
-          VITE_VFS_URL: `http://localhost:${ports.ops}`,
+          VITE_VFS_URL: `http://localhost:${ports.export}`,
           VITE_HTTPS: String(!!ux.args.includes('--ssl')),
           ...env
       }
@@ -93,10 +92,14 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
       console.log(`[Orchestrator] Killing ${name}...`);
       child.kill('SIGTERM');
     }
-    // Final port sweep
+    // Give child processes time to gracefully exit and release ports
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Force cleanup ports
     try {
         const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
         execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
+        await new Promise(r => setTimeout(r, 500));
     } catch (e) {}
   };
 
@@ -132,7 +135,16 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   let uxReady = false;
   for (let i = 0; i < 50; i++) {
     try {
-      const resp = await fetch(`http://localhost:${ports.ux}`);
+      const isHttps = ux.args.includes('--ssl');
+      const url = `${isHttps ? 'https' : 'http'}://localhost:${ports.ux}`;
+      const options = {};
+      
+      if (isHttps) {
+          // Disable SSL verification for the health check probe since we use self-signed certs
+          options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
+      }
+
+      const resp = await fetch(url, options);
       if (resp.ok) { uxReady = true; break; }
     } catch (e) {}
     await new Promise(r => setTimeout(r, 200));

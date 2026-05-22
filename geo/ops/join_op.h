@@ -31,10 +31,10 @@ struct JoinOp : P {
     static typename P::json schema() {
         return { 
             {"path", "jot/join"}, 
-            {"arguments", { 
-                {{"name", "$in"}, {"type", "jot:shape"}, {"affiliate", "$out"}}, 
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to join to."}}}}},
+            {"arguments", json::array({ 
                 {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}
-            }}, 
+            })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
     }

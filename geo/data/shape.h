@@ -44,6 +44,10 @@ struct Shape {
         tags[key] = value;
     }
 
+    bool is_gap() const {
+        return tags.value("gap", false);
+    }
+
     nlohmann::json to_json() const {
         nlohmann::json j = {{"tf", tf.to_vec()}, {"tags", tags}};
         if (geometry.has_value()) j["geometry"] = geometry->to_json();
