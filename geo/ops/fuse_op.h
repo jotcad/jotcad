@@ -127,6 +127,10 @@ struct FuseOp : P {
                 for (auto& loop : f.loops) for (auto& idx : loop) idx += base;
                 final_geo.faces.push_back(f);
             }
+            for (auto t : solid_geo.triangles) {
+                t[0] += base; t[1] += base; t[2] += base;
+                final_geo.triangles.push_back(t);
+            }
         }
 
         for (auto& [key, gps] : plane_groups) {
