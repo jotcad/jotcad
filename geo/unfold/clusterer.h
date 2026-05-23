@@ -9,6 +9,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <chrono>
 
 namespace jotcad {
 namespace geo {
@@ -20,8 +21,10 @@ using Halfedge = Mesh::Halfedge_index;
 
 class Clusterer {
 public:
-    static std::vector<UnfoldPatch> unfold(const Mesh& mesh, double min_fold_deg = 1.0) {
+    static std::vector<UnfoldPatch> unfold(const Mesh& mesh, double min_fold_deg = 1.0, std::string rule = "grow") {
+        auto overall_start_time = std::chrono::high_resolution_clock::now();
         std::cout << "[Unfold] Starting unfold for mesh with " << mesh.number_of_faces() << " faces." << std::endl;
+        std::cout << "[Unfold] Rule selected: " << rule << std::endl;
 
         // 1. Phase 1: Group Coplanar Faces into "Atoms"
         std::vector<UnfoldPatch> patches;
@@ -105,6 +108,7 @@ public:
             size_t patch1, patch2;
             size_t h1, h2;
             double distance_sq;
+            size_t size_sum;
         };
         std::vector<Hinge> hinges;
         for (size_t i = 0; i < patches.size(); ++i) {
@@ -124,19 +128,13 @@ public:
                         if (i < j) {
                             auto p1 = mesh.point(mesh.source(h1));
                             double d2 = CGAL::to_double((p1 - EK::Point_3(0,0,0)).squared_length());
-                            hinges.push_back({i, j, (size_t)h1, (size_t)h2, d2});
+                            hinges.push_back({i, j, (size_t)h1, (size_t)h2, d2, 2});
                         }
                         break;
                     }
                 }
             }
         }
-        
-        std::sort(hinges.begin(), hinges.end(), [](const Hinge& a, const Hinge& b) {
-            return a.distance_sq < b.distance_sq;
-        });
-
-        std::cout << "[Unfold] Phase 2: Processing jigsaw merge on " << hinges.size() << " candidate hinges..." << std::endl;
 
         auto start_time = std::chrono::high_resolution_clock::now();
         size_t processed = 0;
@@ -144,35 +142,30 @@ public:
         size_t topological_cuts = 0;
         size_t intersection_skips = 0;
 
-        for (const auto& hinge : hinges) {
-            processed++;
-            size_t remaining = hinges.size() - processed;
+        auto print_progress = [&](size_t total_size) {
+            auto now = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double, std::milli> elapsed = now - start_time;
+            double elapsed_s = elapsed.count() / 1000.0;
+            double avg_ms = (processed > 0) ? (elapsed.count() / processed) : 0.0;
+            size_t remaining = (total_size > processed) ? (total_size - processed) : 0;
+            double est_remaining_s = (remaining * avg_ms) / 1000.0;
 
-            auto print_progress = [&]() {
-                auto now = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double, std::milli> elapsed = now - start_time;
-                double elapsed_s = elapsed.count() / 1000.0;
-                double avg_ms = (processed > 0) ? (elapsed.count() / processed) : 0.0;
-                double est_remaining_s = (remaining * avg_ms) / 1000.0;
+            std::cout << "[Unfold] Progress: " << processed << "/" << total_size 
+                      << " processed (" << remaining << " remaining). "
+                      << "Merges: " << successful_merges 
+                      << ", Cuts: " << topological_cuts 
+                      << ", Intersection Skips: " << intersection_skips 
+                      << " | Time: " << std::fixed << std::setprecision(2) << elapsed_s << "s"
+                      << " (Avg: " << std::fixed << std::setprecision(1) << avg_ms << "ms/cand,"
+                      << " Est. Remain: " << std::fixed << std::setprecision(2) << est_remaining_s << "s)" << std::endl;
+        };
 
-                std::cout << "[Unfold] Progress: " << processed << "/" << hinges.size() 
-                          << " processed (" << remaining << " remaining). "
-                          << "Merges: " << successful_merges 
-                          << ", Cuts: " << topological_cuts 
-                          << ", Intersection Skips: " << intersection_skips 
-                          << " | Time: " << std::fixed << std::setprecision(2) << elapsed_s << "s"
-                          << " (Avg: " << std::fixed << std::setprecision(1) << avg_ms << "ms/cand,"
-                          << " Est. Remain: " << std::fixed << std::setprecision(2) << est_remaining_s << "s)" << std::endl;
-            };
-
+        auto apply_merge = [&](const Hinge& hinge) -> bool {
             size_t root1 = find(find, hinge.patch1);
             size_t root2 = find(find, hinge.patch2);
             if (root1 == root2) {
                 topological_cuts++;
-                if (hinges.size() < 50 || processed % (hinges.size() / 10 + 1) == 0 || processed == hinges.size()) {
-                    print_progress();
-                }
-                continue;
+                return false;
             }
 
             UnfoldPatch& p1 = patches[root1];
@@ -188,10 +181,7 @@ public:
 
             if (p1.gps.do_intersect(p2_gps_transformed)) {
                 intersection_skips++;
-                if (hinges.size() < 50 || processed % (hinges.size() / 10 + 1) == 0 || processed == hinges.size()) {
-                    print_progress();
-                }
-                continue;
+                return false;
             }
 
             successful_merges++;
@@ -223,9 +213,63 @@ public:
             p1.boundary_halfedges.erase(hinge.h1);
 
             parent[root2] = root1;
+            return true;
+        };
 
-            if (hinges.size() < 50 || processed % (hinges.size() / 10 + 1) == 0 || processed == hinges.size()) {
-                print_progress();
+        if (rule == "pair") {
+            auto compare = [&](const Hinge& a, const Hinge& b) {
+                if (a.size_sum != b.size_sum) return a.size_sum > b.size_sum;
+                return a.distance_sq > b.distance_sq;
+            };
+            std::priority_queue<Hinge, std::vector<Hinge>, decltype(compare)> pq(compare);
+            for (const auto& h : hinges) pq.push(h);
+
+            std::cout << "[Unfold] Phase 2: Processing Jigsaw Merge using 'pair' rule..." << std::endl;
+
+            while (!pq.empty()) {
+                Hinge hinge = pq.top();
+                pq.pop();
+
+                size_t root1 = find(find, hinge.patch1);
+                size_t root2 = find(find, hinge.patch2);
+                if (root1 == root2) {
+                    processed++;
+                    topological_cuts++;
+                    if (candidate_hinges_count < 50 || processed % (candidate_hinges_count / 10 + 1) == 0) {
+                        print_progress(candidate_hinges_count);
+                    }
+                    continue;
+                }
+
+                size_t current_size_sum = patches[root1].face_indices.size() + patches[root2].face_indices.size();
+                if (current_size_sum > hinge.size_sum) {
+                    Hinge updated = hinge;
+                    updated.size_sum = current_size_sum;
+                    pq.push(updated);
+                    continue;
+                }
+
+                processed++;
+                apply_merge(hinge);
+
+                if (candidate_hinges_count < 50 || processed % (candidate_hinges_count / 10 + 1) == 0) {
+                    print_progress(candidate_hinges_count);
+                }
+            }
+        } else {
+            std::sort(hinges.begin(), hinges.end(), [](const Hinge& a, const Hinge& b) {
+                return a.distance_sq < b.distance_sq;
+            });
+
+            std::cout << "[Unfold] Phase 2: Processing Jigsaw Merge using 'grow' rule on " << hinges.size() << " candidate hinges..." << std::endl;
+
+            for (const auto& hinge : hinges) {
+                processed++;
+                apply_merge(hinge);
+
+                if (hinges.size() < 50 || processed % (hinges.size() / 10 + 1) == 0 || processed == hinges.size()) {
+                    print_progress(hinges.size());
+                }
             }
         }
 
@@ -233,7 +277,11 @@ public:
         double total_solid_area = 0.0;
         double total_bbox_area = 0.0;
         
-        std::cout << "[Unfold] Jigsaw complete. Generated " << std::count_if(parent.begin(), parent.end(), [&](size_t i){ return parent[i] == i; }) << " final island(s)." << std::endl;
+        size_t actual_islands_count = 0;
+        for (size_t i = 0; i < parent.size(); ++i) {
+            if (parent[i] == i) actual_islands_count++;
+        }
+        std::cout << "[Unfold] Jigsaw complete. Generated " << actual_islands_count << " final island(s)." << std::endl;
 
         for (size_t i = 0; i < patches.size(); ++i) {
             if (parent[i] == i) {
@@ -285,8 +333,13 @@ public:
         }
         
         double overall_wastage = (total_bbox_area > 0.0) ? (1.0 - (total_solid_area / total_bbox_area)) * 100.0 : 0.0;
+        auto overall_end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> overall_elapsed = overall_end_time - overall_start_time;
+        double total_s = overall_elapsed.count() / 1000.0;
+
         std::cout << "[Unfold] Unfolding complete. Total Islands: " << final_patches.size()
-                  << ", Overall Wastage: " << std::fixed << std::setprecision(1) << overall_wastage << "%" << std::endl;
+                  << ", Overall Wastage: " << std::fixed << std::setprecision(1) << overall_wastage << "%"
+                  << " | Total Time: " << std::fixed << std::setprecision(3) << total_s << "s" << std::endl;
 
         return final_patches;
     }
@@ -305,6 +358,8 @@ private:
         patch.gps.polygons_with_holes(std::back_inserter(pwhs));
         patch.geometry.vertices.clear();
         patch.geometry.faces.clear();
+        patch.geometry.segments.clear();
+
         for (const auto& pwh : pwhs) {
             Geometry::Face face;
             auto process_loop = [&](const boolean::Polygon_2& poly) {
@@ -320,6 +375,15 @@ private:
                 face.loops.push_back(process_loop(*hit));
             }
             patch.geometry.faces.push_back(std::move(face));
+        }
+
+        // Add fold line segments into the finalized patch geometry
+        for (const auto& seg : patch.fold_segments) {
+            int idx1 = (int)patch.geometry.vertices.size();
+            patch.geometry.vertices.push_back(Vertex{seg.first.x(), seg.first.y(), FT(0)});
+            int idx2 = (int)patch.geometry.vertices.size();
+            patch.geometry.vertices.push_back(Vertex{seg.second.x(), seg.second.y(), FT(0)});
+            patch.geometry.segments.push_back({idx1, idx2});
         }
     }
 };

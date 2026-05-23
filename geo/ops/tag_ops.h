@@ -32,25 +32,51 @@ struct SetOp : P {
 template <typename P = JotVfsProtocol>
 struct HasOp : P {
     static constexpr const char* path = "jot/has";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& key, std::optional<typename P::json> value) {
+
+    static std::optional<Shape> has_recursive(const Shape& in, const std::string& key, const std::optional<typename P::json>& value) {
         fs::Selector sel("jot/has");
         sel.parameters["key"] = key;
         if (value.has_value()) sel.parameters["value"] = value.value();
         
-        bool result = Matcher::matches(in, sel);
-        vfs->write(fulfilling.with_output("$out"), result);
+        bool self_matches = Matcher::matches(in, sel);
+        
+        std::vector<Shape> kept_children;
+        for (const auto& c : in.components) {
+            auto res = has_recursive(c, key, value);
+            if (res) kept_children.push_back(*res);
+        }
+
+        if (self_matches || !kept_children.empty()) {
+            Shape out = in;
+            out.components = kept_children;
+            return out;
+        }
+        return std::nullopt;
     }
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& key, std::optional<typename P::json> value) {
+        auto res = has_recursive(in, key, value);
+        if (res) {
+            vfs->write(fulfilling.with_output("$out"), *res);
+        } else {
+            Shape out;
+            out.tf = in.tf;
+            out.add_tag("type", "group");
+            vfs->write(fulfilling.with_output("$out"), out);
+        }
+    }
+
     static std::vector<std::string> argument_keys() { return {"$in", "key", "value"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/has"},
-            {"description", "Checks if a shape has a specific tag (and optionally a specific value). Returns a boolean."},
+            {"description", "Filters the shape tree, returning only components that have the specified tag (and optionally a matching value)."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", json::array({
                 {{"name", "key"}, {"type", "string"}},
                 {{"name", "value"}, {"type", "any"}, {"optional", true}}
             })},
-            {"outputs", {{"$out", {{"type", "jot:boolean"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };

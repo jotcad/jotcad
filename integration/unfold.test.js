@@ -112,7 +112,7 @@ async function test() {
         const shape1 = await consumeJSON((await vfs.read(unfoldResult1.selector)).stream);
         
         console.log("Box Unfold - Number of islands:", (shape1.components || []).length);
-        await captureAndVerifyPNG(vfs, unfoldResult1.selector, 'unfold_box_result.png', 'f91a9e705eee023bdbd8f4ed43026368a46aa9f40d5d01fe4a6c322e50085e85');
+        await captureAndVerifyPNG(vfs, unfoldResult1.selector, 'unfold_box_result.png', '091de468804708b16ade93cddd046d9ad7aa325a91dd04caac0ed101cb549531');
 
         if (!shape1.components || shape1.components.length !== 1) {
             throw new Error(`Expected 1 island for a cube net, got ${shape1.components ? shape1.components.length : 0}`);
@@ -134,6 +134,21 @@ async function test() {
         
         // We don't have a hash for the packed orb yet, so we just capture it
         await captureAndVerifyPNG(vfs, unfoldResult2.selector, 'unfold_orb_result.png');
+
+        // --- Test 3: Hollow Box Unfold (Regression Test) ---
+        const code3 = "U = Box(20, 20, 20).cut(Box(10, 10, 20)).unfold(strategy=\"pair\"); Cuts = U.has(\"unfold\", \"cut\").color('red'); Folds = U.has(\"unfold\", \"fold\").color('green'); Folds.and(Cuts).pack(sheet=Box(100, 100)) -> $out";
+        console.log("\nEvaluating Test 3:", code3);
+        const ast3 = parser.parse(code3);
+        
+        const terminals3 = await compiler.evaluate(ast3, {}, {
+            outputs: { "$out": { type: "jot:shape" } }
+        });
+        
+        const unfoldResult3 = terminals3.find(t => t.port === '$out');
+        const shape3 = await consumeJSON((await vfs.read(unfoldResult3.selector)).stream);
+        
+        console.log("Hollow Box Unfold & Pack - Components:", (shape3.components || []).length);
+        await captureAndVerifyPNG(vfs, unfoldResult3.selector, 'unfold_hollow_box_result.png');
 
         console.log("SUCCESS: Unfold integration test passed.");
     } finally {

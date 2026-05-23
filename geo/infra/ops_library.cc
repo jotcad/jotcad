@@ -52,6 +52,7 @@
 #include "stitch_op.h"
 #include "unfold_op.h"
 #include "pack_op.h"
+#include "item_ops.h"
 
 #include "measure_ops.h"
 #include "sort_ops.h"
@@ -113,6 +114,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     stitch_init(vfs);
     unfold_init(vfs);
     pack_init(vfs);
+    item_init(vfs);
     measure_init(vfs);
     filter_ops_init(vfs);
     selection_init(vfs);

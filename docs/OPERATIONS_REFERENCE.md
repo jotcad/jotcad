@@ -204,12 +204,18 @@ Packs multiple shapes into one or more sheets using a 2D nesting algorithm.
 - **Rigid Items**: If a component is tagged with `"type": "item"` (using `.set("type", "item")`), the packing engine treats it as a single indivisible rigid assembly. The engine will not unpack its children recursively; instead, it packs the entire assembly as one unit. All absolute coordinate transforms (`tf`) within the item are recursively updated, fully preserving local relative translation offsets in absolute space, complying with the **Independent Matrix Mandate**.
 - **Example**: `Layout = Parts.pack(sheet=Sheet(48, 96), spacing=0.25)`
 
-### `unfold(minFold=1.0)`
+### `unfold(rule="grow", minFold=1.0)`
 Unfolds a 3D polyhedral mesh into one or more flat 2D patches (islands).
+- **`rule`**: The merge algorithm ruleset to apply:
+  - **`"grow"`**: Progressively grows islands by merging adjacent co-planar or eligible faces in sequence.
+  - **`"pair"`**: Uses a jigsaw merging algorithm that pairs components iteratively.
+  - *Note*: `"strategy"` is accepted as a backwards-compatible alias for `"rule"`.
 - **`minFold`**: The elasticity/coplanarity threshold in degrees (default `1.0` or $1/360$ of a circle). If the dihedral angle deviation from flat between two adjacent faces is less than `minFold` degrees, the fold/score line is suppressed (omitted from the flat pattern), reflecting material elasticity.
-- **Behavior**: Returns a group of flat **Islands** (tagged as `"type": "surface"`). Each island represents a cluster of faces that has been flattened isometrically (zero geometric deformation or stretch) using a greedy jigsaw merge. If a face cannot be merged without causing a 2D self-intersection/overlap, it is split into a separate island.
+- **Behavior**: Returns a group of flat **Islands** (tagged as `"type": "surface"`). Inside each island group, the output is cleanly isolated into sibling tagged components:
+  - **Cut Templates**: The actual flattened faces, tagged with `"unfold": "cut"`.
+  - **Fold Lines**: The boundary lines between adjacent folded faces that were not suppressed by `minFold`, preserved as 1D segments and tagged with `"unfold": "fold"`.
 - **Progressive Logging**: Outputs live candidate predictions, topological cuts, 2D intersection skips, and high-resolution timing details (elapsed time, candidate averages, ETA) alongside detailed material wastage metrics (solid area vs. bounding box) to `stdout` during execution.
-- **Example**: `FlatPattern = Part.unfold(minFold=1.5)`
+- **Example**: `FlatPattern = Part.unfold(rule="pair", minFold=1.5)`
 
 ## 6. Metadata and Filtering
 
@@ -228,18 +234,19 @@ Retrieves the value of a tag from the subject.
 - **Returns**: The stored value or `null` if not found.
 
 ### `has(key, value=null)`
-**Selection Generator.** Creates a query to find components with specific tags. Used inside `keep()`, `drop()`, `at()`, or `on()`.
+**Recursive Shape Filter.** Dynamically filters the subject tree, returning a new `Shape` containing only the sub-components that match the specified tags. Because it eagerly evaluates to a shape, it can be chained with style or geometric operations.
 - **`key`**: The tag name to search for.
 - **`value`**: Optional. If provided, matches only components where the tag value exactly matches.
-- **Example**: `Layout.keep(has("sheet", 1.0))`
+- **Example**: `unfolded.has("unfold", "fold").color("green")`
 
-### `keep(selector)`
-Prunes the subject tree, retaining only the components that match the provided selector.
+### `keep(target)`
+Prunes the subject tree, retaining only the components that match the provided target (a shape query, selector, or sub-shape).
+- **Deep Semantic Matching**: Evaluates exact structure equality (comparing geometry CIDs, tags, and children) to safely distinguish and filter identical primitives (like multiple identical boxes) in complex assemblies without CID collision.
 - **Preservation**: Parents of matching components are retained to preserve world-space transforms, but their other children (which don't contain matches) are removed.
 - **Example**: `Assembly.keep(has("part", "bolt"))`
 
-### `drop(selector)`
-The inverse of `keep`. Removes all components from the tree that match the provided selector.
+### `drop(target)`
+The inverse of `keep`. Removes all components from the tree that match the provided target (a shape query, selector, or sub-shape) using deep semantic matching.
 - **Example**: `Assembly.drop(has("part", "bracket"))`
 
 ## 7. Export and Post-Processing

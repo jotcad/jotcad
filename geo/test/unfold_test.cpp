@@ -130,6 +130,38 @@ int main() {
         return 1;
     }
 
+    // 6. Test grow and pair rules on Cube mesh
+    std::cout << "  - Testing 'grow' and 'pair' rules on Cube mesh..." << std::endl;
+    geo.vertices = {
+        {0,0,0}, {10,0,0}, {10,10,0}, {0,10,0},
+        {0,0,10}, {10,0,10}, {10,10,10}, {0,10,10}
+    };
+    geo.triangles = {
+        {0,1,2}, {0,2,3}, // Bottom
+        {4,5,6}, {4,6,7}, // Top
+        {0,1,5}, {0,5,4}, // Front
+        {1,2,6}, {1,6,5}, // Right
+        {2,3,7}, {2,7,6}, // Back
+        {3,0,4}, {3,4,7}  // Left
+    };
+    mesh = boolean::Engine::geometry_to_mesh(geo);
+
+    try {
+        // Run with "grow" rule
+        std::cout << "    * Running 'grow' rule..." << std::endl;
+        std::vector<unfold::UnfoldPatch> patches_grow = unfold::Clusterer::unfold(mesh, 1.0, "grow");
+        assert(patches_grow.size() == 1 && "Cube should unfold to 1 island under 'grow'");
+        
+        // Run with "pair" rule
+        std::cout << "    * Running 'pair' rule..." << std::endl;
+        std::vector<unfold::UnfoldPatch> patches_pair = unfold::Clusterer::unfold(mesh, 1.0, "pair");
+        assert(patches_pair.size() == 1 && "Cube should unfold to 1 island under 'pair'");
+        
+    } catch (const std::exception& e) {
+        std::cerr << "  - [CRASH] grow/pair rule test failed: " << e.what() << std::endl;
+        return 1;
+    }
+
     std::cout << "✅ Unit Test Passed" << std::endl;
     return 0;
 }

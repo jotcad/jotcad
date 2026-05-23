@@ -54,8 +54,12 @@ void test_keep_drop(MockVFS& vfs) {
     CID group_cid = vfs.materialize(group);
 
     // 3. Keep only A
-    Selector hasA("jot/has", {{"key", "id"}, {"value", "A"}});
-    Selector keepA("jot/keep", {{"$in", group_cid.value}, {"selector", hasA}});
+    Selector hasA("jot/has", {{"$in", group_cid.value}, {"key", "id"}, {"value", "A"}});
+    hasA.output = "$out";
+    Shape hasA_shape = vfs.read<Shape>(hasA);
+    CID hasA_cid = vfs.materialize(hasA_shape);
+
+    Selector keepA("jot/keep", {{"$in", group_cid.value}, {"selector", hasA_cid.value}});
     keepA.output = "$out";
     Shape keptA = vfs.read<Shape>(keepA);
 
@@ -65,7 +69,7 @@ void test_keep_drop(MockVFS& vfs) {
     }
 
     // 4. Drop A
-    Selector dropA("jot/drop", {{"$in", group_cid.value}, {"selector", hasA}});
+    Selector dropA("jot/drop", {{"$in", group_cid.value}, {"selector", hasA_cid.value}});
     dropA.output = "$out";
     Shape droppedA = vfs.read<Shape>(dropA);
 
@@ -102,16 +106,68 @@ void test_recursive_pruning(MockVFS& vfs) {
     CID root_cid = vfs.materialize(root);
 
     // Keep "find_me"
-    Selector query("jot/has", {{"key", "find_me"}});
-    Selector keep_sel("jot/keep", {{"$in", root_cid.value}, {"selector", query}});
+    Selector query("jot/has", {{"$in", root_cid.value}, {"key", "find_me"}});
+    query.output = "$out";
+    Shape query_shape = vfs.read<Shape>(query);
+    CID query_cid = vfs.materialize(query_shape);
+
+    Selector keep_sel("jot/keep", {{"$in", root_cid.value}, {"selector", query_cid.value}});
     keep_sel.output = "$out";
     Shape result = vfs.read<Shape>(keep_sel);
+
+    std::cout << "[DEBUG] result components size: " << result.components.size() << std::endl;
+    if (result.components.size() > 0) {
+        std::cout << "[DEBUG] result[0] components size: " << result.components[0].components.size() << std::endl;
+        for (const auto& child : result.components[0].components) {
+            std::cout << "[DEBUG] child name: " << child.tags.value("name", "unnamed") << std::endl;
+        }
+    }
 
     // Result should be Group([ Group([A]) ])
     if (result.components.size() != 1 || result.components[0].components.size() != 1 || result.components[0].components[0].tags["name"] != "A") {
         std::cerr << "FAIL: Recursive pruning failed." << std::endl;
         exit(1);
     }
+    std::cout << "  SUCCESS" << std::endl;
+}
+
+void test_item_ops(MockVFS& vfs) {
+    std::cout << "Testing Item and item Ops..." << std::endl;
+    
+    // 1. Create a box
+    Selector box_sel("jot/Box", {{"width", 10.0}});
+    box_sel.output = "$out";
+    Shape box = vfs.read<Shape>(box_sel);
+    CID box_cid = vfs.materialize(box);
+
+    // 2. Wrap as an Item constructor: Item('bracket', [box])
+    Selector item_constructor("jot/Item", {{"name", "bracket"}, {"shapes", std::vector<Shape>{box}}});
+    item_constructor.output = "$out";
+    Shape item1 = vfs.read<Shape>(item_constructor);
+    
+    if (item1.tags["type"] != "item" || item1.tags["item:name"] != "bracket") {
+        std::cerr << "FAIL: Item constructor tags not set correctly." << std::endl;
+        exit(1);
+    }
+    if (item1.components.size() != 1) {
+        std::cerr << "FAIL: Item constructor did not include shapes." << std::endl;
+        exit(1);
+    }
+
+    // 3. Wrap using method: box.item('bracket_method')
+    Selector item_method("jot/item", {{"$in", box_cid.value}, {"name", "bracket_method"}, {"shapes", std::vector<Shape>()}});
+    item_method.output = "$out";
+    Shape item2 = vfs.read<Shape>(item_method);
+    
+    if (item2.tags["type"] != "item" || item2.tags["item:name"] != "bracket_method") {
+        std::cerr << "FAIL: Item method tags not set correctly." << std::endl;
+        exit(1);
+    }
+    if (item2.components.size() != 1) {
+        std::cerr << "FAIL: Item method did not wrap the subject." << std::endl;
+        exit(1);
+    }
+    
     std::cout << "  SUCCESS" << std::endl;
 }
 
@@ -122,6 +178,7 @@ int main() {
     test_set_get(vfs);
     test_keep_drop(vfs);
     test_recursive_pruning(vfs);
+    test_item_ops(vfs);
     
     return 0;
 }
