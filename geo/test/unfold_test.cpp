@@ -95,6 +95,41 @@ int main() {
         return 1;
     }
 
+    // 5. Test minFold suppression on a slightly bent roof (~0.57 degrees)
+    std::cout << "  - Testing minFold suppression on slightly bent roof (~0.57 degrees)..." << std::endl;
+    geo.vertices = {
+        {0, 0, 0}, {10, 0, 0}, {0, 10, 0.05}, {0, -10, 0.05}
+    };
+    geo.triangles = {
+        {0, 1, 2},
+        {0, 3, 1}
+    };
+    mesh = boolean::Engine::geometry_to_mesh(geo);
+
+    try {
+        // Run with threshold = 1.0 (should suppress the fold tag)
+        std::vector<unfold::UnfoldPatch> patches_suppressed = unfold::Clusterer::unfold(mesh, 1.0);
+        assert(patches_suppressed.size() == 1);
+        const auto& p_sup = patches_suppressed[0];
+        std::cout << "    * minFold = 1.0 -> Edge tags size: " << p_sup.edge_tags.size() << std::endl;
+        assert(p_sup.edge_tags.empty() && "Hinge should not be tagged as fold with minFold=1.0");
+
+        // Run with threshold = 0.1 (should NOT suppress the fold tag)
+        std::vector<unfold::UnfoldPatch> patches_tagged = unfold::Clusterer::unfold(mesh, 0.1);
+        assert(patches_tagged.size() == 1);
+        const auto& p_tag = patches_tagged[0];
+        std::cout << "    * minFold = 0.1 -> Edge tags size: " << p_tag.edge_tags.size() << std::endl;
+        assert(p_tag.edge_tags.size() == 1 && "Hinge should be tagged as fold with minFold=0.1");
+
+        // Run with default threshold = 1.0
+        std::vector<unfold::UnfoldPatch> patches_default = unfold::Clusterer::unfold(mesh);
+        assert(patches_default[0].edge_tags.empty() && "Default minFold=1.0 should suppress the fold tag");
+
+    } catch (const std::exception& e) {
+        std::cerr << "  - [CRASH] minFold suppression test failed: " << e.what() << std::endl;
+        return 1;
+    }
+
     std::cout << "✅ Unit Test Passed" << std::endl;
     return 0;
 }

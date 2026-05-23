@@ -204,6 +204,13 @@ Packs multiple shapes into one or more sheets using a 2D nesting algorithm.
 - **Rigid Items**: If a component is tagged with `"type": "item"` (using `.set("type", "item")`), the packing engine treats it as a single indivisible rigid assembly. The engine will not unpack its children recursively; instead, it packs the entire assembly as one unit. All absolute coordinate transforms (`tf`) within the item are recursively updated, fully preserving local relative translation offsets in absolute space, complying with the **Independent Matrix Mandate**.
 - **Example**: `Layout = Parts.pack(sheet=Sheet(48, 96), spacing=0.25)`
 
+### `unfold(minFold=1.0)`
+Unfolds a 3D polyhedral mesh into one or more flat 2D patches (islands).
+- **`minFold`**: The elasticity/coplanarity threshold in degrees (default `1.0` or $1/360$ of a circle). If the dihedral angle deviation from flat between two adjacent faces is less than `minFold` degrees, the fold/score line is suppressed (omitted from the flat pattern), reflecting material elasticity.
+- **Behavior**: Returns a group of flat **Islands** (tagged as `"type": "surface"`). Each island represents a cluster of faces that has been flattened isometrically (zero geometric deformation or stretch) using a greedy jigsaw merge. If a face cannot be merged without causing a 2D self-intersection/overlap, it is split into a separate island.
+- **Progressive Logging**: Outputs live candidate predictions, topological cuts, 2D intersection skips, and high-resolution timing details (elapsed time, candidate averages, ETA) alongside detailed material wastage metrics (solid area vs. bounding box) to `stdout` during execution.
+- **Example**: `FlatPattern = Part.unfold(minFold=1.5)`
+
 ## 6. Metadata and Filtering
 
 Metadata allows you to attach non-geometric information (tags) to shapes, which can later be used for identification, logical branching, or selective filtering.

@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <CGAL/Polygon_mesh_processing/compute_normal.h>
 
+#include <iostream>
+#include <iomanip>
+
 namespace jotcad {
 namespace geo {
 namespace unfold {
@@ -17,10 +20,13 @@ using Halfedge = Mesh::Halfedge_index;
 
 class Clusterer {
 public:
-    static std::vector<UnfoldPatch> unfold(const Mesh& mesh) {
+    static std::vector<UnfoldPatch> unfold(const Mesh& mesh, double min_fold_deg = 1.0) {
+        std::cout << "[Unfold] Starting unfold for mesh with " << mesh.number_of_faces() << " faces." << std::endl;
+
         // 1. Phase 1: Group Coplanar Faces into "Atoms"
         std::vector<UnfoldPatch> patches;
         std::set<Face> visited;
+        std::map<Face, size_t> face_to_atom;
         
         for (auto f : mesh.faces()) {
             if (visited.count(f)) continue;
@@ -37,6 +43,7 @@ public:
                 queue.pop();
                 
                 patch.face_indices.push_back((size_t)fi);
+                face_to_atom[fi] = patches.size();
                 
                 boolean::Polygon_2 poly;
                 auto h_start = mesh.halfedge(fi);
@@ -72,6 +79,20 @@ public:
             }
             patches.push_back(std::move(patch));
         }
+
+        size_t candidate_hinges_count = 0;
+        for (auto e : mesh.edges()) {
+            if (mesh.is_border(e)) continue;
+            Halfedge h = mesh.halfedge(e, 0);
+            Face f1 = mesh.face(h);
+            Face f2 = mesh.face(mesh.opposite(h));
+            if (face_to_atom[f1] != face_to_atom[f2]) {
+                candidate_hinges_count++;
+            }
+        }
+
+        std::cout << "[Unfold] Phase 1 complete: grouped " << mesh.number_of_faces() << " faces into " << patches.size() << " coplanar atoms." << std::endl;
+        std::cout << "[Unfold] Predicted candidate hinges: " << candidate_hinges_count << std::endl;
 
         // 2. Phase 2: Jigsaw Merge
         std::vector<size_t> parent(patches.size());
@@ -115,10 +136,44 @@ public:
             return a.distance_sq < b.distance_sq;
         });
 
+        std::cout << "[Unfold] Phase 2: Processing jigsaw merge on " << hinges.size() << " candidate hinges..." << std::endl;
+
+        auto start_time = std::chrono::high_resolution_clock::now();
+        size_t processed = 0;
+        size_t successful_merges = 0;
+        size_t topological_cuts = 0;
+        size_t intersection_skips = 0;
+
         for (const auto& hinge : hinges) {
+            processed++;
+            size_t remaining = hinges.size() - processed;
+
+            auto print_progress = [&]() {
+                auto now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double, std::milli> elapsed = now - start_time;
+                double elapsed_s = elapsed.count() / 1000.0;
+                double avg_ms = (processed > 0) ? (elapsed.count() / processed) : 0.0;
+                double est_remaining_s = (remaining * avg_ms) / 1000.0;
+
+                std::cout << "[Unfold] Progress: " << processed << "/" << hinges.size() 
+                          << " processed (" << remaining << " remaining). "
+                          << "Merges: " << successful_merges 
+                          << ", Cuts: " << topological_cuts 
+                          << ", Intersection Skips: " << intersection_skips 
+                          << " | Time: " << std::fixed << std::setprecision(2) << elapsed_s << "s"
+                          << " (Avg: " << std::fixed << std::setprecision(1) << avg_ms << "ms/cand,"
+                          << " Est. Remain: " << std::fixed << std::setprecision(2) << est_remaining_s << "s)" << std::endl;
+            };
+
             size_t root1 = find(find, hinge.patch1);
             size_t root2 = find(find, hinge.patch2);
-            if (root1 == root2) continue;
+            if (root1 == root2) {
+                topological_cuts++;
+                if (hinges.size() < 50 || processed % (hinges.size() / 10 + 1) == 0 || processed == hinges.size()) {
+                    print_progress();
+                }
+                continue;
+            }
 
             UnfoldPatch& p1 = patches[root1];
             UnfoldPatch& p2 = patches[root2];
@@ -131,14 +186,31 @@ public:
             boolean::General_polygon_set_2 p2_gps_transformed = p2.gps;
             Flattener::transform_gps(p2_gps_transformed, snap_tf);
 
-            if (p1.gps.do_intersect(p2_gps_transformed)) continue;
+            if (p1.gps.do_intersect(p2_gps_transformed)) {
+                intersection_skips++;
+                if (hinges.size() < 50 || processed % (hinges.size() / 10 + 1) == 0 || processed == hinges.size()) {
+                    print_progress();
+                }
+                continue;
+            }
 
+            successful_merges++;
             p1.gps.join(p2_gps_transformed);
             p1.face_indices.insert(p1.face_indices.end(), p2.face_indices.begin(), p2.face_indices.end());
             
-            p1.edge_tags[{std::min((int)mesh.source(Halfedge(hinge.h1)), (int)mesh.target(Halfedge(hinge.h1))), 
-                         std::max((int)mesh.source(Halfedge(hinge.h1)), (int)mesh.target(Halfedge(hinge.h1)))}] = "fold";
-            p1.fold_segments.push_back({seg1.first, seg1.second});
+            auto h = Halfedge(hinge.h1);
+            auto pt1 = mesh.point(mesh.source(h));
+            auto pt2 = mesh.point(mesh.target(h));
+            auto pt3 = mesh.point(mesh.target(mesh.next(h)));
+            auto pt4 = mesh.point(mesh.target(mesh.next(mesh.opposite(h))));
+            double angle_deg = std::abs(CGAL::to_double(CGAL::approximate_dihedral_angle(pt1, pt2, pt3, pt4)));
+            double fold_deviation_deg = std::abs(180.0 - angle_deg);
+
+            if (fold_deviation_deg >= min_fold_deg) {
+                p1.edge_tags[{std::min((int)mesh.source(h), (int)mesh.target(h)), 
+                             std::max((int)mesh.source(h), (int)mesh.target(h))}] = "fold";
+                p1.fold_segments.push_back({seg1.first, seg1.second});
+            }
             
             for (auto const& fold : p2.fold_segments) {
                 p1.fold_segments.push_back({snap_tf.transform_2d(fold.first), snap_tf.transform_2d(fold.second)});
@@ -151,15 +223,71 @@ public:
             p1.boundary_halfedges.erase(hinge.h1);
 
             parent[root2] = root1;
+
+            if (hinges.size() < 50 || processed % (hinges.size() / 10 + 1) == 0 || processed == hinges.size()) {
+                print_progress();
+            }
         }
 
         std::vector<UnfoldPatch> final_patches;
+        double total_solid_area = 0.0;
+        double total_bbox_area = 0.0;
+        
+        std::cout << "[Unfold] Jigsaw complete. Generated " << std::count_if(parent.begin(), parent.end(), [&](size_t i){ return parent[i] == i; }) << " final island(s)." << std::endl;
+
         for (size_t i = 0; i < patches.size(); ++i) {
             if (parent[i] == i) {
                 finalize_patch(patches[i]);
+                
+                std::vector<boolean::Polygon_with_holes_2> pwhs;
+                patches[i].gps.polygons_with_holes(std::back_inserter(pwhs));
+                double solid_area = 0.0;
+                double min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
+                for (const auto& pwh : pwhs) {
+                    double area = CGAL::to_double(pwh.outer_boundary().area());
+                    solid_area += area;
+                    for (auto it = pwh.outer_boundary().vertices_begin(); it != pwh.outer_boundary().vertices_end(); ++it) {
+                        double x = CGAL::to_double(it->x());
+                        double y = CGAL::to_double(it->y());
+                        if (x < min_x) min_x = x;
+                        if (x > max_x) max_x = x;
+                        if (y < min_y) min_y = y;
+                        if (y > max_y) max_y = y;
+                    }
+                    for (auto hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit) {
+                        solid_area -= std::abs(CGAL::to_double(hit->area()));
+                        for (auto it = hit->vertices_begin(); it != hit->vertices_end(); ++it) {
+                            double x = CGAL::to_double(it->x());
+                            double y = CGAL::to_double(it->y());
+                            if (x < min_x) min_x = x;
+                            if (x > max_x) max_x = x;
+                            if (y < min_y) min_y = y;
+                            if (y > max_y) max_y = y;
+                        }
+                    }
+                }
+                double w = max_x - min_x;
+                double h = max_y - min_y;
+                double bbox_area = (w > 0 && h > 0) ? (w * h) : 0.0;
+                double wastage = (bbox_area > 0.0) ? (1.0 - (solid_area / bbox_area)) * 100.0 : 0.0;
+                
+                total_solid_area += solid_area;
+                total_bbox_area += bbox_area;
+
+                std::cout << "[Unfold] Island " << final_patches.size() << ": "
+                          << patches[i].face_indices.size() << " faces, "
+                          << "Solid Area: " << solid_area << " mm², "
+                          << "Bounding Box: " << w << " x " << h << " (Area: " << bbox_area << " mm²), "
+                          << "Wastage: " << std::fixed << std::setprecision(1) << wastage << "%" << std::endl;
+
                 final_patches.push_back(std::move(patches[i]));
             }
         }
+        
+        double overall_wastage = (total_bbox_area > 0.0) ? (1.0 - (total_solid_area / total_bbox_area)) * 100.0 : 0.0;
+        std::cout << "[Unfold] Unfolding complete. Total Islands: " << final_patches.size()
+                  << ", Overall Wastage: " << std::fixed << std::setprecision(1) << overall_wastage << "%" << std::endl;
+
         return final_patches;
     }
 

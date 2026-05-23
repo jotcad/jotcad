@@ -10,12 +10,12 @@ template <typename P = JotVfsProtocol>
 struct UnfoldOp : P {
     static constexpr const char* path = "jot/unfold";
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Shape subject) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Shape subject, double minFold = 1.0) {
         boolean::ExactMesh mesh;
         collect_and_merge_mesh(vfs, subject, mesh);
         if (mesh.is_empty()) return;
 
-        std::vector<unfold::UnfoldPatch> patches = unfold::Clusterer::unfold(mesh);
+        std::vector<unfold::UnfoldPatch> patches = unfold::Clusterer::unfold(mesh, minFold);
 
         Shape out;
         out.tags = subject.tags;
@@ -47,20 +47,22 @@ struct UnfoldOp : P {
         for (const auto& child : s.components) collect_and_merge_mesh(vfs, child, target);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "minFold"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/unfold"},
             {"description", "Unfolds a 3D polyhedral mesh into 2D patches."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", nlohmann::json::array()},
+            {"arguments", {
+                {{"name", "minFold"}, {"type", "jot:number"}, {"default", 1.0}, {"description", "Elasticity threshold in degrees. Bends under this angle are not marked as fold lines."}}
+            }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
 static void unfold_init(fs::VFSNode* vfs) {
-    Processor::register_op<UnfoldOp<>, Shape>(vfs, "jot/unfold");
+    Processor::register_op<UnfoldOp<>, Shape, double>(vfs, "jot/unfold");
 }
 
 } // namespace geo
