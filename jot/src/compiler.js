@@ -482,9 +482,13 @@ export class JotCompiler {
       // Greedy Consumer Pass
       const consumer = this.consumers[fullType.split('<')[0]];
       if (consumer) {
-        const res = await consumer(pool, argDef, { ...ctx, fullType, evaluate: evaluateHelper }, null);
+        const sub = subjectConsumed ? null : subject;
+        const res = await consumer(pool, argDef, { ...ctx, fullType, evaluate: evaluateHelper }, sub);
         if (res !== undefined) {
           params[argDef.name] = res;
+          if (sub !== null) {
+              subjectConsumed = true;
+          }
         }
       }
 

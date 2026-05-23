@@ -8,14 +8,36 @@ namespace geo {
 
 template <typename P = JotVfsProtocol>
 struct PlaneOpBase : P {
-    static void execute_plane(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Matrix& orientation) {
+    static Shape make_plane(fs::VFSNode* vfs, const Matrix& orientation) {
         Geometry res;
         res.vertices.push_back({FT(0), FT(0), FT(0)});
-        
         typename P::json tags = {{"type", "plane"}};
         Shape out = P::make_shape(vfs, res, tags);
         out.tf = orientation;
-        
+        return out;
+    }
+
+    static void execute_plane(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Matrix& orientation) {
+        Shape out = make_plane(vfs, orientation);
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+
+    static void execute_planes(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Matrix>& orientations) {
+        if (orientations.empty()) {
+            execute_plane(vfs, fulfilling, Matrix::identity());
+            return;
+        }
+        if (orientations.size() == 1) {
+            execute_plane(vfs, fulfilling, orientations[0]);
+            return;
+        }
+
+        Shape out;
+        out.tf = Matrix::identity();
+        out.add_tag("type", "group");
+        for (const auto& m : orientations) {
+            out.components.push_back(make_plane(vfs, m));
+        }
         vfs->write(fulfilling.with_output("$out"), out);
     }
 };
@@ -23,11 +45,17 @@ struct PlaneOpBase : P {
 template <typename P = JotVfsProtocol>
 struct XOp : PlaneOpBase<P> {
     static constexpr const char* path = "jot/X";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double offset = 0.0) {
-        // Rotate local Z (0,0,1) to world X (1,0,0) -> Rotation around Y by 0.25 turns
-        Matrix m = Matrix::rotationY(0.25);
-        if (offset != 0.0) m = m * Matrix::translate(0, 0, FT(offset));
-        PlaneOpBase<P>::execute_plane(vfs, fulfilling, m);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<double>& offset) {
+        std::vector<double> actual_offsets = offset;
+        if (actual_offsets.empty()) actual_offsets.push_back(0.0);
+
+        std::vector<Matrix> orientations;
+        for (double d : actual_offsets) {
+            Matrix m = Matrix::rotationY(0.25);
+            if (d != 0.0) m = m * Matrix::translate(0, 0, FT(d));
+            orientations.push_back(m);
+        }
+        PlaneOpBase<P>::execute_planes(vfs, fulfilling, orientations);
     }
     static std::vector<std::string> argument_keys() { return {"offset"}; }
     static typename P::json schema() {
@@ -36,7 +64,7 @@ struct XOp : PlaneOpBase<P> {
             {"description", "Infinite plane on the YZ axis (normal +X)."}, 
             {"inputs", nlohmann::json::object()},
             {"arguments", json::array({
-                {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
+                {{"name", "offset"}, {"type", "jot:numbers"}, {"default", {0.0}}}
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
@@ -46,11 +74,17 @@ struct XOp : PlaneOpBase<P> {
 template <typename P = JotVfsProtocol>
 struct YOp : PlaneOpBase<P> {
     static constexpr const char* path = "jot/Y";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double offset = 0.0) {
-        // Rotate local Z (0,0,1) to world Y (0,1,0) -> Rotation around X by -0.25 turns
-        Matrix m = Matrix::rotationX(-0.25);
-        if (offset != 0.0) m = m * Matrix::translate(0, 0, FT(offset));
-        PlaneOpBase<P>::execute_plane(vfs, fulfilling, m);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<double>& offset) {
+        std::vector<double> actual_offsets = offset;
+        if (actual_offsets.empty()) actual_offsets.push_back(0.0);
+
+        std::vector<Matrix> orientations;
+        for (double d : actual_offsets) {
+            Matrix m = Matrix::rotationX(-0.25);
+            if (d != 0.0) m = m * Matrix::translate(0, 0, FT(d));
+            orientations.push_back(m);
+        }
+        PlaneOpBase<P>::execute_planes(vfs, fulfilling, orientations);
     }
     static std::vector<std::string> argument_keys() { return {"offset"}; }
     static typename P::json schema() {
@@ -59,7 +93,7 @@ struct YOp : PlaneOpBase<P> {
             {"description", "Infinite plane on the XZ axis (normal +Y)."}, 
             {"inputs", nlohmann::json::object()},
             {"arguments", json::array({
-                {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
+                {{"name", "offset"}, {"type", "jot:numbers"}, {"default", {0.0}}}
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
@@ -69,10 +103,17 @@ struct YOp : PlaneOpBase<P> {
 template <typename P = JotVfsProtocol>
 struct ZOp : PlaneOpBase<P> {
     static constexpr const char* path = "jot/Z";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double offset = 0.0) {
-        Matrix m = Matrix::identity();
-        if (offset != 0.0) m = Matrix::translate(0, 0, FT(offset));
-        PlaneOpBase<P>::execute_plane(vfs, fulfilling, m);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<double>& offset) {
+        std::vector<double> actual_offsets = offset;
+        if (actual_offsets.empty()) actual_offsets.push_back(0.0);
+
+        std::vector<Matrix> orientations;
+        for (double d : actual_offsets) {
+            Matrix m = Matrix::identity();
+            if (d != 0.0) m = Matrix::translate(0, 0, FT(d));
+            orientations.push_back(m);
+        }
+        PlaneOpBase<P>::execute_planes(vfs, fulfilling, orientations);
     }
     static std::vector<std::string> argument_keys() { return {"offset"}; }
     static typename P::json schema() {
@@ -81,7 +122,7 @@ struct ZOp : PlaneOpBase<P> {
             {"description", "Infinite plane on the XY axis (normal +Z)."}, 
             {"inputs", nlohmann::json::object()},
             {"arguments", json::array({
-                {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}}
+                {{"name", "offset"}, {"type", "jot:numbers"}, {"default", {0.0}}}
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
@@ -181,9 +222,9 @@ struct NormalOp : P {
 };
 
 static void plane_init(fs::VFSNode* vfs) {
-    Processor::register_op<XOp<>, double>(vfs, "jot/X");
-    Processor::register_op<YOp<>, double>(vfs, "jot/Y");
-    Processor::register_op<ZOp<>, double>(vfs, "jot/Z");
+    Processor::register_op<XOp<>, std::vector<double>>(vfs, "jot/X");
+    Processor::register_op<YOp<>, std::vector<double>>(vfs, "jot/Y");
+    Processor::register_op<ZOp<>, std::vector<double>>(vfs, "jot/Z");
     Processor::register_op<PlaneOp<>, Shape, double>(vfs, "jot/plane");
     Processor::register_op<NormalOp<>, Shape, double>(vfs, "jot/normal");
 }
