@@ -6,6 +6,18 @@
 namespace jotcad {
 namespace geo {
 
+
+inline Shape MaybeGroup(std::vector<Shape>& results) {
+  if (results.size() == 1) {
+    return results[0];
+  } else {
+    Shape group;
+    group.components = results;
+    group.add_tag("type", "group");
+    return group;
+  }
+}
+
 template <typename P = JotVfsProtocol>
 struct SetOp : P {
     static constexpr const char* path = "jot/set";
@@ -29,51 +41,60 @@ struct SetOp : P {
     }
 };
 
+inline bool wildcard_match(const std::string& pattern, const std::string& str) {
+    if (pattern == "*") return true;
+    const char* pat = pattern.c_str();
+    const char* s = str.c_str();
+    const char* cp = nullptr;
+    const char* mp = nullptr;
+    while (*s) {
+        if (*pat == '*') {
+            if (!*++pat) return true;
+            mp = pat;
+            cp = s + 1;
+        } else if (*pat == *s || *pat == '?') {
+            pat++;
+            s++;
+        } else if (mp) {
+            pat = mp;
+            s = cp++;
+        } else {
+            return false;
+        }
+    }
+    while (*pat == '*') {
+        pat++;
+    }
+    return !*pat;
+}
+
 template <typename P = JotVfsProtocol>
 struct HasOp : P {
     static constexpr const char* path = "jot/has";
 
-    static std::optional<Shape> has_recursive(const Shape& in, const std::string& key, const std::optional<typename P::json>& value, bool in_item = false) {
-        fs::Selector sel("jot/has");
-        sel.parameters["key"] = key;
-        if (value.has_value()) sel.parameters["value"] = value.value();
-        
-        bool self_matches = Matcher::matches(in, sel);
-        
-        bool is_current_item = (in.tags.is_object() && in.tags.contains("type") && in.tags.at("type") == "item");
-        if (is_current_item && in_item) {
-            if (self_matches) {
-                return in;
-            }
-            return std::nullopt;
+    static void has_recursive(const Shape& in, fs::Selector& sel, std::vector<Shape>& results) {
+        if (Matcher::matches(in, sel)) {
+            results.push_back(in);
         }
 
-        bool next_in_item = in_item || is_current_item;
+        if (in.tags.is_object() && in.tags.contains("type") && in.tags.at("type") == "item") {
+            return;
+        }
 
-        std::vector<Shape> kept_children;
         for (const auto& c : in.components) {
-            auto res = has_recursive(c, key, value, next_in_item);
-            if (res) kept_children.push_back(*res);
+            has_recursive(c, sel, results);
         }
-
-        if (self_matches || !kept_children.empty()) {
-            Shape out = in;
-            out.components = kept_children;
-            return out;
-        }
-        return std::nullopt;
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& key, std::optional<typename P::json> value) {
-        auto res = has_recursive(in, key, value);
-        if (res) {
-            vfs->write(fulfilling.with_output("$out"), *res);
-        } else {
-            Shape out;
-            out.tf = in.tf;
-            out.add_tag("type", "group");
-            vfs->write(fulfilling.with_output("$out"), out);
+        fs::Selector sel("jot/has");
+        sel.parameters["key"] = key;
+        if (value.has_value()) {
+            sel.parameters["value"] = value.value();
         }
+        std::vector<Shape> results;
+        has_recursive(in, sel, results);
+        vfs->write(fulfilling.with_output("$out"), MaybeGroup(results));
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "key", "value"}; }
@@ -95,7 +116,7 @@ template <typename P = JotVfsProtocol>
 struct GetOp : P {
     static constexpr const char* path = "jot/get";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& key) {
-        if (in.tags.contains(key)) {
+        if (in.tags.is_object() && in.tags.contains(key)) {
             vfs->write(fulfilling.with_output("$out"), in.tags[key]);
         } else {
             vfs->write(fulfilling.with_output("$out"), nlohmann::json(nullptr));
@@ -119,36 +140,27 @@ template <typename P = JotVfsProtocol>
 struct InItemOp : P {
     static constexpr const char* path = "jot/inItem";
 
-    static std::optional<Shape> in_item_recursive(const Shape& in, const std::string& name) {
+    static void in_item_recursive(const Shape& in, const std::string& name, std::vector<Shape>& results) {
         if (in.tags.is_object() && in.tags.contains("type") && in.tags.at("type") == "item" && 
-            in.tags.contains("item:name") && in.tags.at("item:name") == name) {
-            return in; 
+            in.tags.contains("item:name") && in.tags.at("item:name").is_string()) {
+            std::string item_name = in.tags.at("item:name").get<std::string>();
+            if (wildcard_match(name, item_name)) {
+                for (const auto& c : in.components) {
+                    results.push_back(c);
+                }
+                return;
+            }
         }
 
-        std::vector<Shape> kept_children;
         for (const auto& c : in.components) {
-            auto res = in_item_recursive(c, name);
-            if (res) kept_children.push_back(*res);
+            in_item_recursive(c, name, results);
         }
-
-        if (!kept_children.empty()) {
-            Shape out = in;
-            out.components = kept_children;
-            return out;
-        }
-        return std::nullopt;
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& name) {
-        auto res = in_item_recursive(in, name);
-        if (res) {
-            vfs->write(fulfilling.with_output("$out"), *res);
-        } else {
-            Shape out;
-            out.tf = in.tf;
-            out.add_tag("type", "group");
-            vfs->write(fulfilling.with_output("$out"), out);
-        }
+        std::vector<Shape> results;
+        in_item_recursive(in, name, results);
+        vfs->write(fulfilling.with_output("$out"), MaybeGroup(results));
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "name"}; }

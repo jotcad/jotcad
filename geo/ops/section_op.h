@@ -38,20 +38,63 @@ struct SectionOp : P {
         
         EK::Plane_3 local_plane(EK::Point_3(0, 0, 0), EK::Vector_3(0, 0, 1));
         
-        if (!geo.faces.empty()) {
+        if (!geo.faces.empty() || !geo.triangles.empty()) {
             boolean::Surface_mesh mesh = boolean::Engine::geometry_to_mesh(geo);
             CGAL::Polygon_mesh_slicer<boolean::Surface_mesh, EK> slicer(mesh);
             std::vector<std::vector<EK::Point_3>> polylines;
             slicer(local_plane, std::back_inserter(polylines));
 
-            boolean::General_polygon_set_2 gps;
+            std::vector<boolean::Polygon_2> ccw_polygons;
             for (const auto& poly : polylines) {
                 if (poly.size() < 3) continue;
                 boolean::Polygon_2 p2d;
-                for (const auto& p3d : poly) p2d.push_back(EK::Point_2(p3d.x(), p3d.y()));
+                for (size_t i = 0; i < poly.size(); ++i) {
+                    if (i == poly.size() - 1 && poly[i] == poly[0]) continue;
+                    EK::Point_2 pt(poly[i].x(), poly[i].y());
+                    if (p2d.size() > 0 && p2d[p2d.size() - 1] == pt) continue;
+                    p2d.push_back(pt);
+                }
                 if (p2d.size() < 3) continue;
+                if (!p2d.is_simple()) continue;
                 if (p2d.is_clockwise_oriented()) p2d.reverse_orientation();
-                gps.join(p2d);
+                ccw_polygons.push_back(p2d);
+            }
+
+            size_t n = ccw_polygons.size();
+            std::vector<std::vector<size_t>> contained_by(n);
+            for (size_t i = 0; i < n; ++i) {
+                for (size_t j = 0; j < n; ++j) {
+                    if (i == j) continue;
+                    if (ccw_polygons[j].bounded_side(ccw_polygons[i].vertex(0)) == CGAL::ON_BOUNDED_SIDE) {
+                        contained_by[i].push_back(j);
+                    }
+                }
+            }
+
+            boolean::General_polygon_set_2 gps;
+            for (size_t i = 0; i < n; ++i) {
+                // Loops contained by an even number of other loops are Islands (outer boundaries)
+                if (contained_by[i].size() % 2 == 0) {
+                    boolean::Polygon_with_holes_2 pwh(ccw_polygons[i]);
+                    // Find direct holes nested inside this island
+                    for (size_t h = 0; h < n; ++h) {
+                        if (contained_by[h].size() == contained_by[i].size() + 1) {
+                            bool is_contained = false;
+                            for (size_t parent : contained_by[h]) {
+                                if (parent == i) {
+                                    is_contained = true;
+                                    break;
+                                }
+                            }
+                            if (is_contained) {
+                                boolean::Polygon_2 hole = ccw_polygons[h];
+                                hole.reverse_orientation(); // Holes in CGAL PWH must be clockwise
+                                pwh.add_hole(hole);
+                            }
+                        }
+                    }
+                    gps.join(pwh);
+                }
             }
             
             Geometry res = boolean::Engine::gps_to_geometry(gps);
