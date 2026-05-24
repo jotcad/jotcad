@@ -11,23 +11,31 @@ export const PROFILES = {
     name: 'LIVE',
     ports: { ops: 9091, export: 9092, ux: 3030 },
     storagePrefix: '.vfs_storage_live_',
-    ux: {
-        dist: 'ux/dist/live'
-    }
+    gateway: 'export',
+    components: ['ops', 'export', 'ux'],
+    ux: { dist: 'ux/dist/live' }
   },
   TEST: {
     name: 'TEST',
     ports: { ops: 9191, export: 9192, ux: 3131 },
     storagePrefix: '.vfs_storage_test_',
-    ux: {
-        dist: 'ux/dist/test'
-    }
+    gateway: 'export',
+    components: ['ops', 'export', 'ux'],
+    ux: { dist: 'ux/dist/test' }
+  },
+  DIRECT_CPP: {
+    name: 'DIRECT_CPP',
+    ports: { ops: 9291, ux: 3232 },
+    storagePrefix: '.vfs_storage_direct_cpp_',
+    gateway: 'ops',
+    components: ['ops', 'ux'],
+    ux: { dist: 'ux/dist/test' }
   }
 };
 
 export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const config = typeof profileOrConfig === 'string' ? PROFILES[profileOrConfig] : profileOrConfig;
-  const { ports, storagePrefix, ux, env = {} } = config;
+  const { ports, storagePrefix, ux, gateway, components: componentList, env = {} } = config;
 
   const sslDir = path.join(__dirname, '.ssl');
   const keyPath = path.join(sslDir, 'localhost-key.pem');
@@ -52,8 +60,10 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
       console.warn(`[Orchestrator] SSL certificates not found in .ssl/. Falling back to HTTP for UX.`);
   }
 
-  const components = [
-    {
+  const gatewayUrl = `${hasCerts ? 'https' : 'http'}://localhost:${ports[gateway]}`;
+
+  const componentConfigs = {
+    ops: {
       name: `Ops Node (${ports.ops})`,
       command: './geo/bin/ops',
       args: [String(ports.ops), `${storagePrefix}ops`],
@@ -66,32 +76,35 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
           ...env
       }
     },
-    {
-        name: `Export Node (${ports.export})`,
-        command: 'node',
-        args: ['geo/export_service.js'],
-        cwd: __dirname,
-        env: { 
-            ...process.env, 
-            PORT: String(ports.export),
-            VFS_ID: config.name === 'LIVE' ? 'live_export' : 'test_export',
-            NEIGHBORS: `http://localhost:${ports.ops}`,
-            ...env
-        }
+    export: {
+      name: `Export Node (${ports.export})`,
+      command: 'node',
+      args: ['geo/export_service.js'],
+      cwd: __dirname,
+      env: { 
+          ...process.env, 
+          PORT: String(ports.export),
+          VFS_ID: config.name === 'LIVE' ? 'live_export' : 'test_export',
+          NEIGHBORS: `http://localhost:${ports.ops}`,
+          ...env
+      }
     },
-    {
+    ux: {
       name: `UX (${ports.ux})`,
       command: 'npx',
       args: uxArgs,
       cwd: ux.cwd || __dirname,
       env: {
           ...process.env,
-          VITE_VFS_URL: `${hasCerts ? 'https' : 'http'}://localhost:${ports.export}`,
+          VITE_VFS_URL: gatewayUrl,
           VITE_HTTPS: String(hasCerts),
           ...env
       }
     }
-  ];
+  };
+
+  const components = componentList.map(id => componentConfigs[id]);
+
 
   const processes = new Map();
   let shuttingDown = false;
