@@ -7,17 +7,18 @@ sudo apt-get install -y libboost-all-dev libssl-dev build-essential libxi-dev li
 echo "[Geo] Installing Local Project Dependencies..."
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-# Run CGAL local install script if cgal folder is not present
-if [ ! -d "$SCRIPT_DIR/cgal/cgal" ]; then
-    echo "[Geo] Running CGAL local installer..."
-    (cd "$SCRIPT_DIR/cgal" && ./install_cgal.sh)
-fi
+# Run local installer scripts for native C++ dependencies
+echo "[Geo] Running CGAL local installer..."
+(cd "$SCRIPT_DIR/cgal" && ./install_cgal.sh)
 
-# Run FreeType local install script if freetype library is not present
-if [ ! -f "$SCRIPT_DIR/cgal/freetype/build/libfreetype.a" ]; then
-    echo "[Geo] Running FreeType local installer..."
-    (cd "$SCRIPT_DIR/cgal" && ./install_freetype.sh)
-fi
+echo "[Geo] Running Eigen local installer..."
+(cd "$SCRIPT_DIR/cgal" && ./install_eigen.sh)
+
+echo "[Geo] Running GLM local installer..."
+(cd "$SCRIPT_DIR/cgal" && ./install_glm.sh)
+
+echo "[Geo] Running FreeType local installer..."
+(cd "$SCRIPT_DIR/cgal" && ./install_freetype.sh)
 
 "$SCRIPT_DIR/vendor/install_clipper.sh"
 "$SCRIPT_DIR/vendor/install_nlopt.sh"
