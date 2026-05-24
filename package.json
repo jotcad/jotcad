@@ -15,6 +15,8 @@
     "cli": "node cli/cli.js",
     "rollup": "npm run rollup --workspaces --if-present",
     "install:cpp_libraries": "./geo/install_deps.sh",
+    "install_deps": "./geo/install_deps.sh",
+    "setup": "npm run build:cpp",
     "build:cpp": "./geo/compile.sh",
     "build:cpp_clean": "./geo/compile.sh clean",
     "build:ux": "npm run build:live -w ux && npm run build:test -w ux",
