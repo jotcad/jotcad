@@ -23,6 +23,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
+      - name: Install JS Deps
+        run: npm ci
       - name: Setup & Build Native Ops
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb libgbm1
@@ -30,8 +32,6 @@ jobs:
           npm run install_deps
           npm run setup
           npm run build:test --workspace=ux
-      - name: Install JS Deps
-        run: npm ci
       - name: Run CI Suite
         run: npm run ci
         env:
