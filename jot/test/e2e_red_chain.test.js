@@ -48,7 +48,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
                     resolve();
                 }
             });
-            testNode.meshLink.addLocalInterest(new Selector('sys/schema'));
+            testNode.meshLink.subscribe(new Selector('sys/schema'));
         });
         log('[E2E] Mesh Ready.');
 
