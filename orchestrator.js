@@ -2,6 +2,7 @@ import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { info, warn, error, debug } from './fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,11 +34,11 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const certPath = path.join(sslDir, 'localhost-cert.pem');
   const hasCerts = fs.existsSync(keyPath) && fs.existsSync(certPath);
 
-  console.log(`[Orchestrator] Launching ${config.name} Cluster...`);
+  info(`[Orchestrator] Launching ${config.name} Cluster...`);
 
   try {
     const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
-    console.log(`[Orchestrator] Cleaning up ports: ${portList}`);
+    info(`[Orchestrator] Cleaning up ports: ${portList}`);
     execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
     // Clear storage for this specific profile
     execSync(`rm -rf ${storagePrefix}* || true`);
@@ -98,9 +99,9 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`\n[Orchestrator] Shutting down ${config.name} cluster...`);
+    info(`\n[Orchestrator] Shutting down ${config.name} cluster...`);
     for (const [name, child] of processes) {
-      console.log(`[Orchestrator] Killing ${name}...`);
+      info(`[Orchestrator] Killing ${name}...`);
       child.kill('SIGTERM');
     }
     // Give child processes time to gracefully exit and release ports
@@ -115,23 +116,23 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   };
 
   const launch = (component) => {
-    console.log(`[Orchestrator] Starting ${component.name}...`);
+    info(`[Orchestrator] Starting ${component.name}...`);
     const child = spawn(component.command, component.args, {
       cwd: component.cwd,
       env: component.env || process.env,
       stdio: 'pipe'
     });
 
-    child.stdout.on('data', (data) => process.stdout.write(`[${config.name}:${component.name}] ${data}`));
-    child.stderr.on('data', (data) => process.stderr.write(`[${config.name}:${component.name} ERROR] ${data}`));
+    child.stdout.on('data', (data) => debug(`[${config.name}:${component.name}] ${data.toString().trim()}`));
+    child.stderr.on('data', (data) => warn(`[${config.name}:${component.name} ERROR] ${data.toString().trim()}`));
 
     child.on('error', (err) => {
-      console.error(`[Orchestrator] ${component.name} failed to start: ${err.message}`);
+      error(`[Orchestrator] ${component.name} failed to start: ${err.message}`);
     });
 
     child.on('close', (code) => {
       if (!shuttingDown && code !== 0 && code !== null) {
-          console.error(`[Orchestrator] ${component.name} exited unexpectedly with code ${code}`);
+          error(`[Orchestrator] ${component.name} exited unexpectedly with code ${code}`);
       }
       processes.delete(component.name);
     });
@@ -142,7 +143,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   components.forEach(launch);
 
   // Wait for UX to be healthy
-  console.log(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
+  info(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
   let uxReady = false;
   for (let i = 0; i < 50; i++) {
     try {
@@ -159,7 +160,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
     } catch (e) {}
     await new Promise(r => setTimeout(r, 200));
   }
-  if (!uxReady) console.warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
+  if (!uxReady) warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
 
   return { 
       processes, 

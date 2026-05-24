@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { launchSystem, PROFILES } from '../../orchestrator.js';
+import { log } from '../../fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,10 +21,10 @@ test('Puppeteer Sequence Section Test: Z-axis slice', { timeout: 120000 }, async
     const page = await browser.newPage();
     await page.setViewport({ width: 1024, height: 768 });
 
-    console.log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
+    log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
     
     // Wait for the catalog handshake to succeed in the browser
-    console.log('[Test Browser] Waiting for Catalog handshake...');
+    log('[Test Browser] Waiting for Catalog handshake...');
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
       page.on('console', (msg) => {
@@ -36,14 +37,14 @@ test('Puppeteer Sequence Section Test: Z-axis slice', { timeout: 120000 }, async
       page.goto(`${protocol}://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' }).catch(reject);
     });
 
-    console.log('[Test Browser] Catalog handshake SUCCESS.');
+    log('[Test Browser] Catalog handshake SUCCESS.');
 
     // Wait to ensure Blackboard state transitions are fully settled
     await new Promise(r => setTimeout(r, 2000));
 
     // Evaluate the sequence rotation and sectioning code directly inside the browser window
     const code = "Box(1, 10, 2).rz([by 1/8]).section(Z(0)) -> $out";
-    console.log(`[Test Browser] Injecting and evaluating code: ${code}`);
+    log(`[Test Browser] Injecting and evaluating code: ${code}`);
 
     const result = await page.evaluate(async (expr) => {
       const bb = window.blackboard;
@@ -82,7 +83,7 @@ test('Puppeteer Sequence Section Test: Z-axis slice', { timeout: 120000 }, async
       };
     }, code);
 
-    console.log("[Test Browser] Evaluation complete:", result);
+    log("[Test Browser] Evaluation complete:", result);
 
     if (!result.geometry) {
       throw new Error("Expected evaluated section to contain geometry CID");
@@ -92,12 +93,12 @@ test('Puppeteer Sequence Section Test: Z-axis slice', { timeout: 120000 }, async
     }
 
     // Capture browser screenshot to actual/ directory
-    console.log('[Test Browser] Capturing page screenshot...');
+    log('[Test Browser] Capturing page screenshot...');
     const targetDir = path.resolve(__dirname, '../actual');
     await fs.mkdir(targetDir, { recursive: true });
     const screenshotPath = path.join(targetDir, 'puppeteer_sequence_section_screenshot.png');
     await page.screenshot({ path: screenshotPath });
-    console.log(`[Test Browser] Captured and wrote screenshot to ${screenshotPath}`);
+    log(`[Test Browser] Captured and wrote screenshot to ${screenshotPath}`);
 
   } finally {
     if (browser) await browser.close();

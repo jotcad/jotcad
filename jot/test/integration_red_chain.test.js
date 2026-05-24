@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
+import { log } from '../../fs/src/log.js';
 import { Selector } from '../../fs/src/vfs_core.js';
 
 test('Integration: Box(15).Red().rz(0.25) Execution', async (t) => {
@@ -64,7 +65,7 @@ test('Integration: Box(15).Red().rz(0.25) Execution', async (t) => {
   const finalSelector = mainTerminals[0].selector;
 
   // 5. Execution (Full Read Fulfillment)
-  console.log('--- STARTING FULL READ ---');
+  log('--- STARTING FULL READ ---');
   const fulfillment = await mockVfs.read(finalSelector);
 
   // Assertions
@@ -73,6 +74,6 @@ test('Integration: Box(15).Red().rz(0.25) Execution', async (t) => {
   assert.strictEqual(fulfillment.parameters.$in.parameters.$in.path, 'jot/Box', 'Color subject should be Box');
   assert.strictEqual(fulfillment.parameters.$in.parameters.$in.parameters.size, 15);
   
-  console.log('--- FULL FULFILLMENT REACHED ---');
-  console.log(JSON.stringify(fulfillment, null, 2));
+  log('--- FULL FULFILLMENT REACHED ---');
+  log(JSON.stringify(fulfillment, null, 2));
 });

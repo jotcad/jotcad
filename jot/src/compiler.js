@@ -1,4 +1,5 @@
 import { normalizeSelector, Selector, getSelectorKey } from '../../fs/src/vfs_core.js';
+import { log, warn, error } from '../../fs/src/log.js';
 import { JotParser } from './parser.js';
 
 /**
@@ -38,7 +39,7 @@ export class JotCompiler {
     if (!hasArgs && !hasInputs) {
        const path = config.path || name;
        const msg = `Compiler Error: Operator '${name}' (path: ${path}) must provide a formal schema with 'arguments' (array) or 'inputs' (object). Received: ${JSON.stringify(config.schema)}`;
-       console.error(`[JotCompiler] FATAL REGISTRATION ERROR: ${msg}`);
+       error(`[JotCompiler] FATAL REGISTRATION ERROR: ${msg}`);
        throw new Error(msg);
     }
 
@@ -48,7 +49,7 @@ export class JotCompiler {
     const register = (n) => {
       // 1. Version-Qualified Names (user/Test:v74) always match exactly
       if (n.includes(':v')) {
-          console.log(`[JotCompiler] Registering (Exact): ${n} -> ${config.path}`);
+          log(`[JotCompiler] Registering (Exact): ${n} -> ${config.path}`);
           this.operators.set(n, [config]);
           return;
       }
@@ -63,13 +64,13 @@ export class JotCompiler {
                   return;
               }
           }
-          console.log(`[JotCompiler] Registering (Latest): ${n} -> ${config.path}`);
+          log(`[JotCompiler] Registering (Latest): ${n} -> ${config.path}`);
           this.operators.set(n, [config]);
           return;
       }
 
       // 3. Standard Operators (built-ins) support multi-variant dispatch
-      console.log(`[JotCompiler] Registering: ${n} -> ${config.path}`);
+      log(`[JotCompiler] Registering: ${n} -> ${config.path}`);
       const list = this.operators.get(n) || [];
       if (!list.includes(config)) {
         list.push(config);
@@ -110,8 +111,8 @@ export class JotCompiler {
   }
 
   async evaluate(ast, parameters = {}, schema = null, contextName = null) {
-    console.log(`[JotCompiler] Evaluating AST${contextName ? ` (${contextName})` : ''}:`, JSON.stringify(ast, null, 2));
-    console.log(`[JotCompiler] Parameters${contextName ? ` (${contextName})` : ''}:`, JSON.stringify(parameters, null, 2));
+    log(`[JotCompiler] Evaluating AST${contextName ? ` (${contextName})` : ''}:`, JSON.stringify(ast, null, 2));
+    log(`[JotCompiler] Parameters${contextName ? ` (${contextName})` : ''}:`, JSON.stringify(parameters, null, 2));
 
     if (!schema || typeof schema !== 'object' || (!schema.outputs && !schema.arguments)) {
         throw new Error(`JotCompiler Error: A formal schema is now mandatory. Received: ${JSON.stringify(schema)}`);
@@ -172,7 +173,7 @@ export class JotCompiler {
               const codeSnippet = this.stringifyAST(node);
               const ctxStr = contextName ? ` in '${contextName}'` : '';
               const msg = `Compiler Error${ctxStr}: Each top-level statement in a User Operator must be an assignment (e.g., 'A = Op()' or 'Op() -> $out'). Found ${node?.type || typeof node}: "${codeSnippet}"`;
-              console.error(`[JotCompiler] ${msg}`, node);
+              log(`[JotCompiler] ${msg}`, node);
               throw new Error(msg);
           }
       }
@@ -211,7 +212,7 @@ export class JotCompiler {
       }
 
       if (results.length > 1) {
-          console.warn(`[JotCompiler] Warning: Evaluation produced ${results.length} terminal results.`, results);
+          log(`[JotCompiler] Warning: Evaluation produced ${results.length} terminal results.`, results);
       }
 
       return results;
@@ -386,9 +387,9 @@ export class JotCompiler {
         }));
         const params = await this._satisfySchema(op.schema, pool, parameters, subject, node.name, ctx);
         
-        console.log(`[JotCompiler] Dispatching: ${node.name} -> ${op.path}`);
+        log(`[JotCompiler] Dispatching: ${node.name} -> ${op.path}`);
         if (op.path.startsWith('user/')) {
-          console.log(`[JotCompiler] Calling User Op: ${op.path}`, params);
+          log(`[JotCompiler] Calling User Op: ${op.path}`, params);
         }
 
         const port = op.schema.outputs ? Object.keys(op.schema.outputs)[0] : '$out';
@@ -403,20 +404,20 @@ export class JotCompiler {
   }
 
   _resolveOperator(name) {
-    console.log(`[JotCompiler] Resolving: ${name}`);
+    log(`[JotCompiler] Resolving: ${name}`);
     if (this.operators.has(name)) {
-      console.log(`[JotCompiler]   Found direct: ${name}`);
+      log(`[JotCompiler]   Found direct: ${name}`);
       return this.operators.get(name);
     }
     if (this.operators.has('jot/' + name)) {
-      console.log(`[JotCompiler]   Found jot prefix: ${name}`);
+      log(`[JotCompiler]   Found jot prefix: ${name}`);
       return this.operators.get('jot/' + name);
     }
     if (this.operators.has('user/' + name)) {
-      console.log(`[JotCompiler]   Found user prefix: ${name}`);
+      log(`[JotCompiler]   Found user prefix: ${name}`);
       return this.operators.get('user/' + name);
     }
-    console.log(`[JotCompiler]   NOT FOUND: ${name}`);
+    log(`[JotCompiler]   NOT FOUND: ${name}`);
     return null;
   }
 

@@ -3,6 +3,7 @@ import puppeteer from 'puppeteer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchSystem, PROFILES } from '../../orchestrator.js';
+import { log } from '../../fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,14 +15,14 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
 
     browser = await puppeteer.launch({ 
       headless: 'new',
-      args: ['--no-sandbox', '--ignore-certificate-errors'] 
+      args: ['--no-sandbox', '--ignore-certificate-errors']
     });
     const page = await browser.newPage();
 
-    console.log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
-    
+    log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
+
     // Wait for the catalog receipt log
-    console.log('[Test Browser] Waiting for Catalog handshake...');
+    log('[Test Browser] Waiting for Catalog handshake...');
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
       page.on('console', (msg) => {
@@ -34,9 +35,8 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
       page.goto(`${protocol}://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
     });
 
-    console.log('[Test Browser] Catalog handshake SUCCESS.');
-  } finally {
-    if (browser) await browser.close();
+    log('[Test Browser] Catalog handshake SUCCESS.');
+  } finally {    if (browser) await browser.close();
     if (cluster) await cluster.stop();
   }
 });
