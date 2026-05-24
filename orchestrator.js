@@ -1,5 +1,6 @@
 import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -10,8 +11,7 @@ export const PROFILES = {
     ports: { ops: 9091, export: 9092, ux: 3030 },
     storagePrefix: '.vfs_storage_live_',
     ux: {
-        command: 'npx',
-        args: ['http-server', 'ux/dist/live', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
+        dist: 'ux/dist/live'
     }
   },
   TEST: {
@@ -19,8 +19,7 @@ export const PROFILES = {
     ports: { ops: 9191, export: 9192, ux: 3131 },
     storagePrefix: '.vfs_storage_test_',
     ux: {
-        command: 'npx',
-        args: ['http-server', 'ux/dist/test', '-p', '3131', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
+        dist: 'ux/dist/test'
     }
   }
 };
@@ -28,6 +27,11 @@ export const PROFILES = {
 export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const config = typeof profileOrConfig === 'string' ? PROFILES[profileOrConfig] : profileOrConfig;
   const { ports, storagePrefix, ux, env = {} } = config;
+
+  const sslDir = path.join(__dirname, '.ssl');
+  const keyPath = path.join(sslDir, 'localhost-key.pem');
+  const certPath = path.join(sslDir, 'localhost-cert.pem');
+  const hasCerts = fs.existsSync(keyPath) && fs.existsSync(certPath);
 
   console.log(`[Orchestrator] Launching ${config.name} Cluster...`);
 
@@ -39,6 +43,13 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
     execSync(`rm -rf ${storagePrefix}* || true`);
     execSync('sleep 1');
   } catch (e) {}
+
+  const uxArgs = ['http-server', ux.dist, '-p', String(ports.ux)];
+  if (hasCerts) {
+      uxArgs.push('--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem');
+  } else {
+      console.warn(`[Orchestrator] SSL certificates not found in .ssl/. Falling back to HTTP for UX.`);
+  }
 
   const components = [
     {
@@ -69,13 +80,13 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
     },
     {
       name: `UX (${ports.ux})`,
-      command: ux.command,
-      args: ux.args,
+      command: 'npx',
+      args: uxArgs,
       cwd: ux.cwd || __dirname,
       env: {
           ...process.env,
-          VITE_VFS_URL: `http://localhost:${ports.export}`,
-          VITE_HTTPS: String(!!ux.args.includes('--ssl')),
+          VITE_VFS_URL: `${hasCerts ? 'https' : 'http'}://localhost:${ports.export}`,
+          VITE_HTTPS: String(hasCerts),
           ...env
       }
     }
@@ -135,11 +146,10 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   let uxReady = false;
   for (let i = 0; i < 50; i++) {
     try {
-      const isHttps = ux.args.includes('--ssl');
-      const url = `${isHttps ? 'https' : 'http'}://localhost:${ports.ux}`;
+      const url = `${hasCerts ? 'https' : 'http'}://localhost:${ports.ux}`;
       const options = {};
       
-      if (isHttps) {
+      if (hasCerts) {
           // Disable SSL verification for the health check probe since we use self-signed certs
           options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
       }
@@ -154,6 +164,7 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   return { 
       processes, 
       ports,
+      isHttps: hasCerts,
       stop: shutdown 
   };
 }

@@ -211,7 +211,9 @@ Use the provided script to generate self-signed certificates for your local netw
 ### 5.2 Secure Context Requirement
 
 Browsers (Chrome, Safari) disable `crypto.subtle` on insecure HTTP IPs.
-- **Localhost:** Always counts as a Secure Context (HTTP is fine).
+- **Localhost:** Always counts as a Secure Context (HTTP is fine), but integration tests use HTTPS to ensure parity.
+- **CI Environment:** Certificates are automatically generated in GitHub Actions.
+- **Graceful Fallback:** The `orchestrator.js` automatically detects certificates in `.ssl/`. If missing, it falls back to HTTP mode for local development.
 - **Network IPs:** REQUIRES HTTPS.
 - **Handshake Rule:** When using self-signed certs, you MUST manually visit BOTH the UX port (3030) and the VFS port (9092) in your mobile browser and click "Advanced -> Proceed" for each.
 

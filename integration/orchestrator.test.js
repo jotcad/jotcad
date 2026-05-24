@@ -30,7 +30,7 @@ test('Orchestrator Lifecycle: Cluster Launch and Shutdown', async (t) => {
         });
 
         await t.test('UX should be reachable', async () => {
-            const isHttps = PROFILES.TEST.ux.args.includes('--ssl');
+            const { isHttps } = sys;
             const protocol = isHttps ? 'https' : 'http';
             const options = {};
             if (isHttps) {

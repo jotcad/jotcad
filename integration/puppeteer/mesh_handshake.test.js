@@ -30,7 +30,8 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
           resolve();
         }
       });
-      page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
+      const protocol = cluster.isHttps ? 'https' : 'http';
+      page.goto(`${protocol}://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
     });
 
     console.log('[Test Browser] Catalog handshake SUCCESS.');
