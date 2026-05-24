@@ -29,14 +29,10 @@ jobs:
           ./scripts/generate_dev_cert.sh
           npm run install_deps
           npm run setup
+          npm run build:test --workspace=ux
       - name: Install JS Deps
         run: npm ci
       - name: Run CI Suite
         run: npm run ci
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-      - name: Make wasm available
-        uses: actions/upload-artifact@v4
-        with:
-          name: cgal_browser.wasm
-          path: es6/cgal_browser.wasm
