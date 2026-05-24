@@ -57,7 +57,21 @@ void VFSNode::notify_schema() {
 }
 
 void VFSNode::listen() {
-    auto svr = new httplib::Server();
+    httplib::Server* svr = nullptr;
+    bool is_ssl = !config_.cert_path.empty() && !config_.key_path.empty();
+
+    if (is_ssl) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        svr = new httplib::SSLServer(config_.cert_path.c_str(), config_.key_path.c_str());
+        std::cout << "[VFSNode " << config_.id << "] Using SSL with cert: " << config_.cert_path << std::endl;
+#else
+        std::cerr << "[VFSNode " << config_.id << "] CRITICAL: SSL requested but CPPHTTPLIB_OPENSSL_SUPPORT is not defined. Falling back to HTTP." << std::endl;
+        svr = new httplib::Server();
+        is_ssl = false;
+#endif
+    } else {
+        svr = new httplib::Server();
+    }
     server_ptr_ = svr;
 
     svr->set_default_headers({

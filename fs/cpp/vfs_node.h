@@ -47,6 +47,8 @@ public:
         std::string version;
         std::string storage_dir;
         std::vector<std::string> neighbors;
+        std::string cert_path;
+        std::string key_path;
         int port = 9090;
     };
 

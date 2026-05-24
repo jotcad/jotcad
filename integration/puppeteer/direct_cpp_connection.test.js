@@ -7,7 +7,7 @@ import { log } from '../../fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-test('Direct C++ Connection: UX to Ops Node Discovery', async (t) => {
+test('Direct C++ Connection: UX to Ops Node Discovery', { timeout: 15000 }, async (t) => {
   let cluster, browser;
   try {
     // Launch cluster using DIRECT_CPP profile (skips Export Node)
@@ -25,9 +25,10 @@ test('Direct C++ Connection: UX to Ops Node Discovery', async (t) => {
     // Wait for the catalog receipt log from the C++ node
     log('[Test Browser] Waiting for Direct Catalog handshake from geo-ops-node...');
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Direct handshake timeout')), 60000);
+      const timeout = setTimeout(() => reject(new Error('Direct handshake timeout')), 10000);
       page.on('console', (msg) => {
         const text = msg.text();
+        log(`[Browser Console] ${msg.type()}: ${text}`);
         if (text.includes('Received Catalog from geo-ops-node')) {
           log('[Test Browser] MATCH: Received Catalog from geo-ops-node');
           clearTimeout(timeout);

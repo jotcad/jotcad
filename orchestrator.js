@@ -25,7 +25,7 @@ export const PROFILES = {
   },
   DIRECT_CPP: {
     name: 'DIRECT_CPP',
-    ports: { ops: 9291, ux: 3232 },
+    ports: { ops: 9192, ux: 3232 },
     storagePrefix: '.vfs_storage_direct_cpp_',
     gateway: 'ops',
     components: ['ops', 'ux'],
@@ -73,6 +73,8 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
           PORT: String(ports.ops),
           PEER_ID: 'geo-ops-node',
           NEIGHBORS: '',
+          SSL_CERT_PATH: hasCerts ? certPath : '',
+          SSL_KEY_PATH: hasCerts ? keyPath : '',
           ...env
       }
     },
