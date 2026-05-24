@@ -7,6 +7,7 @@ glm/
 glpk-*/
 gmp-*/
 mpfr-*/
+freetype/
 *.tar.gz
 *.tar.xz
 CGAL

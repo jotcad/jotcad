@@ -21,6 +21,5 @@ echo "[Geo] Running FreeType local installer..."
 (cd "$SCRIPT_DIR/cgal" && ./install_freetype.sh)
 
 "$SCRIPT_DIR/vendor/install_clipper.sh"
-"$SCRIPT_DIR/vendor/install_nlopt.sh"
 
 echo "[Geo] Installation Complete."
