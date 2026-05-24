@@ -1,3 +1,5 @@
+import { log } from './log.js';
+
 export class MemoryStorage {
   constructor(vfsId) {
     this.vfsId = vfsId;
@@ -7,13 +9,13 @@ export class MemoryStorage {
   async init() {}
   async has(cid) { 
     const result = this.data.has(cid) || this.info.has(cid);
-    if (result) console.log(`[MemoryStorage ${this.vfsId}] has(${cid.slice(0, 8)}) -> TRUE`);
+    if (result) log(`[MemoryStorage ${this.vfsId}] has(${cid.slice(0, 8)}) -> TRUE`);
     return result;
   }
   async get(cid) {
     const bytes = this.data.get(cid);
-    if (bytes) console.log(`[MemoryStorage ${this.vfsId}] get(${cid.slice(0, 8)}) -> HIT (${bytes.length} bytes)`);
-    else console.log(`[MemoryStorage ${this.vfsId}] get(${cid.slice(0, 8)}) -> MISS`);
+    if (bytes) log(`[MemoryStorage ${this.vfsId}] get(${cid.slice(0, 8)}) -> HIT (${bytes.length} bytes)`);
+    else log(`[MemoryStorage ${this.vfsId}] get(${cid.slice(0, 8)}) -> MISS`);
     return bytes ? new ReadableStream({ start(c) { c.enqueue(bytes); c.close(); } }) : null;
   }
   async getMeta(cid) {
@@ -21,7 +23,7 @@ export class MemoryStorage {
   }
   async set(cid, streamOrBytes, info = {}) {
     let bytes;
-    console.log(`[MemoryStorage ${this.vfsId}] set(${cid.slice(0, 8)}) called with type: ${typeof streamOrBytes}, isUint8: ${streamOrBytes instanceof Uint8Array}`);
+    log(`[MemoryStorage ${this.vfsId}] set(${cid.slice(0, 8)}) called with type: ${typeof streamOrBytes}, isUint8: ${streamOrBytes instanceof Uint8Array}`);
     if (streamOrBytes instanceof Uint8Array) {
       bytes = streamOrBytes;
     } else if (typeof streamOrBytes === 'string') {
@@ -48,13 +50,13 @@ export class MemoryStorage {
 
     const expectedSize = info.size;
     if (streamOrBytes !== null && expectedSize !== undefined && bytes.length !== expectedSize) {
-        console.log(`[MemoryStorage ${this.vfsId}] Size mismatch: expected ${expectedSize}, got ${bytes.length}`);
+        log(`[MemoryStorage ${this.vfsId}] Size mismatch: expected ${expectedSize}, got ${bytes.length}`);
         throw new Error(`MemoryStorage.set: Size mismatch. Expected ${expectedSize} bytes, got ${bytes.length}`);
     }
 
     this.data.set(cid, bytes);
     this.info.set(cid, info);
-    console.log(`[MemoryStorage ${this.vfsId}] set(${cid.slice(0, 8)}) - final size: ${bytes.length}`);
+    log(`[MemoryStorage ${this.vfsId}] set(${cid.slice(0, 8)}) - final size: ${bytes.length}`);
   }
   async delete(cid) { this.data.delete(cid); this.info.delete(cid); }
   async close() { this.data.clear(); this.info.clear(); }

@@ -1,4 +1,5 @@
 import { normalizeSelector } from '../../fs/src/vfs_core.js';
+import { log } from '../../fs/src/log.js';
 
 /**
  * JotCAD Secure Parser
@@ -13,9 +14,9 @@ export class JotParser {
 
   parse(text) {
     if (!text || !text.trim()) return null;
-    console.log('[JotParser] Tokenizing:', text);
+    log('[JotParser] Tokenizing:', text);
     this.tokens = this._tokenize(text);
-    console.log('[JotParser] Tokens:', this.tokens);
+    log('[JotParser] Tokens:', this.tokens);
     this.pos = 0;
     const results = [];
     while (this.pos < this.tokens.length) {
@@ -25,7 +26,7 @@ export class JotParser {
         continue;
       }
       const expr = this._parseExpression();
-      console.log('[JotParser] AST Chunk:', JSON.stringify(expr, null, 2));
+      log('[JotParser] AST Chunk:', JSON.stringify(expr, null, 2));
       results.push(expr);
     }
     return results.length === 1 ? results[0] : results;

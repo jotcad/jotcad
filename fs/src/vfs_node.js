@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
+import { log } from './log.js';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'node:stream';
 import { VFS as CoreVFS, normalizeSelector, Selector, VFSClosedError, getCID, getSelectorKey } from './vfs_core.js';
@@ -20,18 +21,18 @@ export class DiskStorage {
     const dataFile = path.join(this.root, `${cid}.data`);
     const metaFile = path.join(this.root, `${cid}.meta`);
     const exists = fs.existsSync(dataFile) || fs.existsSync(metaFile);
-    if (exists) console.log(`[DiskStorage ${this.root}] has(${cid.slice(0, 8)}) -> TRUE`);
+    if (exists) log(`[DiskStorage ${this.root}] has(${cid.slice(0, 8)}) -> TRUE`);
     return exists;
   }
 
   async get(cid) {
     const dataFile = path.join(this.root, `${cid}.data`);
     if (!fs.existsSync(dataFile)) {
-        console.log(`[DiskStorage ${this.root}] get(${cid.slice(0, 8)}) -> MISS`);
+        log(`[DiskStorage ${this.root}] get(${cid.slice(0, 8)}) -> MISS`);
         return null;
     }
     const stats = fs.statSync(dataFile);
-    console.log(`[DiskStorage ${this.root}] get(${cid.slice(0, 8)}) -> HIT (${stats.size} bytes)`);
+    log(`[DiskStorage ${this.root}] get(${cid.slice(0, 8)}) -> HIT (${stats.size} bytes)`);
     return Readable.toWeb(fs.createReadStream(dataFile));
   }
 
@@ -85,7 +86,7 @@ export class DiskStorage {
     }
 
     await fsPromises.writeFile(metaFile, JSON.stringify(info));
-    console.log(`[DiskStorage ${this.root}] set(${cid.slice(0, 8)}) - data size: ${bytesWritten}, info: ${Object.keys(info)}`);
+    log(`[DiskStorage ${this.root}] set(${cid.slice(0, 8)}) - data size: ${bytesWritten}, info: ${Object.keys(info)}`);
   }
 
   async delete(cid) {
@@ -125,7 +126,7 @@ export class VFS extends CoreVFS {
     const shouldWipe = process.env.VFS_EPHEMERAL_WIPE === 'true' || isTestRunner;
 
     if (shouldWipe) {
-      console.log(`[VFS ${this.id}] EPHEMERAL WIPE: Cleaning storage directory: ${this.storage.root}`);
+      log(`[VFS ${this.id}] EPHEMERAL WIPE: Cleaning storage directory: ${this.storage.root}`);
       try {
         const files = await fsPromises.readdir(this.storage.root);
         for (const file of files) {
