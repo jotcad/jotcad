@@ -84,9 +84,9 @@ async function test() {
         console.log("Capturing PNG snapshot of the section...");
         await captureAndVerifyPNG(vfs, sectionResult.selector, 'section_box_result.png');
 
-        // Validation: Verify that the shape has type: "section" tag
-        if (!shape.tags || shape.tags.type !== 'section') {
-            throw new Error(`Expected tag type 'section', got ${shape.tags ? shape.tags.type : 'none'}`);
+        // Validation: Verify that the shape has type: "surface" tag
+        if (!shape.tags || shape.tags.type !== 'surface') {
+            throw new Error(`Expected tag type 'surface', got ${shape.tags ? shape.tags.type : 'none'}`);
         }
 
         // Fetch and parse the raw geometry data

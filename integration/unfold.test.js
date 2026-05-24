@@ -136,7 +136,7 @@ async function test() {
         await captureAndVerifyPNG(vfs, unfoldResult2.selector, 'unfold_orb_result.png');
 
         // --- Test 3: Hollow Box Unfold (Regression Test) ---
-        const code3 = "U = Box(20, 20, 20).cut(Box(10, 10, 20)).unfold(strategy=\"pair\"); Cuts = U.has(\"unfold\", \"cut\").color('red'); Folds = U.has(\"unfold\", \"fold\").color('green'); Folds.and(Cuts).pack(sheet=Box(100, 100)) -> $out";
+        const code3 = "U = Box(20, 20, 20).cut(Box(10, 10, 20)).unfold(strategy=\"pair\"); Cuts = U.inItem(\"*\").has(\"unfold\", \"cut\").color('red'); Folds = U.inItem(\"*\").has(\"unfold\", \"fold\").color('green'); Folds.and(Cuts).pack(sheet=Box(100, 100)) -> $out";
         console.log("\nEvaluating Test 3:", code3);
         const ast3 = parser.parse(code3);
         

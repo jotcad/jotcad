@@ -12,13 +12,31 @@ template <typename P = JotVfsProtocol>
 struct FuseOp : P {
     static constexpr const char* path = "jot/fuse";
 
+    struct GeometryNode {
+        Geometry geo;
+        Matrix tf;
+        std::string type;
+        bool is_gap;
+    };
+
+    static void collect_geometries(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& nodes) {
+        std::string type = s.tags.value("type", "");
+        bool is_gap = s.is_gap();
+        if (s.geometry.has_value()) {
+            nodes.push_back({vfs->read<Geometry>(s.geometry.value()), s.tf, type, is_gap});
+        }
+        for (const auto& child : s.components) {
+            collect_geometries(vfs, child, nodes);
+        }
+    }
+
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        std::vector<boolean::Engine::ToolNode> all_nodes;
+        std::vector<GeometryNode> all_nodes;
         
-        // 1. Collect all geometry from subject and tools into world space
-        boolean::Engine::collect_tool_geometry(vfs, in, Matrix::identity(), all_nodes);
+        // 1. Collect all geometry from subject and tools recursively (Independent Matrix Mandate compliant)
+        collect_geometries(vfs, in, all_nodes);
         for (const auto& tool : tools) {
-            boolean::Engine::collect_tool_geometry(vfs, tool, Matrix::identity(), all_nodes);
+            collect_geometries(vfs, tool, all_nodes);
         }
 
         if (all_nodes.empty()) {
@@ -26,140 +44,128 @@ struct FuseOp : P {
             return;
         }
 
-        // 2. Cumulative results for flattening
+        // 2. Group components by type (Closed Solids vs Coplanar Surfaces)
         boolean::Surface_mesh combined_solids;
-        std::map<std::string, boolean::General_polygon_set_2> plane_groups;
-        Geometry remainder;
+        std::vector<std::pair<EK::Plane_3, boolean::General_polygon_set_2>> plane_groups;
 
-        std::vector<boolean::Engine::ToolNode> regular_nodes, gap_nodes;
-        for (const auto& node : all_nodes) { if (node.is_gap) gap_nodes.push_back(node); else regular_nodes.push_back(node); }
+        std::vector<GeometryNode> regular_nodes, gap_nodes;
+        for (const auto& node : all_nodes) {
+            if (node.is_gap) gap_nodes.push_back(node);
+            else regular_nodes.push_back(node);
+        }
 
+        // Process Regular Nodes
         for (const auto& node : regular_nodes) {
             if (node.geo.vertices.empty()) continue;
 
-            if (node.type == "plane") {
-                auto plane_opt = node.geo.find_plane();
-                EK::Plane_3 world_plane = node.world_tf.transform(*plane_opt);
-                
-                std::stringstream ss;
-                ss << world_plane.a() << "," << world_plane.b() << "," << world_plane.c() << "," << world_plane.d();
-                std::string plane_key = ss.str();
-
-                Matrix project_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector());
-                boolean::Engine::add_geometry_to_gps(node.geo, project_tf * node.world_tf, plane_groups[plane_key]);
-            } else {
+            if (node.type == "closed") {
+                // A. Watertight 3D Solids
                 boolean::Surface_mesh mesh = boolean::Engine::geometry_to_mesh(node.geo);
-                boolean::Engine::transform_mesh(mesh, node.world_tf);
+                boolean::Engine::transform_mesh(mesh, node.tf);
                 
-                if (CGAL::is_closed(mesh)) {
-                    if (combined_solids.number_of_vertices() == 0) {
-                        combined_solids = mesh;
-                    } else {
-                        boolean::Engine::join_mesh_by_mesh(combined_solids, mesh);
-                    }
+                if (combined_solids.number_of_vertices() == 0) {
+                    combined_solids = mesh;
                 } else {
-                    int base = (int)remainder.vertices.size();
-                    for (const auto& v : node.geo.vertices) {
-                        Point_3 p = node.world_tf.transform(Point_3(v.x, v.y, v.z));
-                        remainder.vertices.push_back({p.x(), p.y(), p.z()});
+                    boolean::Engine::join_mesh_by_mesh(combined_solids, mesh);
+                }
+            } else if (node.type == "surface") {
+                // B. 2D Planar Surfaces
+                // World plane is defined robustly by transforming local Z=0 plane using node.tf
+                EK::Plane_3 world_plane = node.tf.transform(EK::Plane_3(0, 0, 1, 0));
+
+                bool found_group = false;
+                for (auto& [existing_plane, gps] : plane_groups) {
+                    // Check if they represent the same 3D plane
+                    if (std::abs(CGAL::to_double(CGAL::squared_distance(existing_plane, world_plane.point()))) < 1e-6) {
+                        Vector_3 n1 = existing_plane.orthogonal_vector();
+                        Vector_3 n2 = world_plane.orthogonal_vector();
+                        if (CGAL::cross_product(n1, n2).squared_length() < 1e-6) {
+                            Matrix project_tf = Matrix::lookAt(existing_plane.point(), existing_plane.orthogonal_vector());
+                            boolean::Engine::add_geometry_to_gps(node.geo, project_tf * node.tf, gps);
+                            found_group = true;
+                            break;
+                        }
                     }
-                    for (const auto& f : node.geo.faces) {
-                        Geometry::Face nf = f;
-                        for (auto& loop : nf.loops) for (auto& idx : loop) idx += base;
-                        remainder.faces.push_back(nf);
-                    }
-                    for (auto s : node.geo.segments) {
-                        s[0] += base; s[1] += base;
-                        remainder.segments.push_back(s);
-                    }
+                }
+
+                if (!found_group) {
+                    Matrix project_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector());
+                    boolean::General_polygon_set_2 gps;
+                    boolean::Engine::add_geometry_to_gps(node.geo, project_tf * node.tf, gps);
+                    plane_groups.push_back({world_plane, gps});
                 }
             }
         }
 
-        // 2b. Subtract gaps from combined results
+        // Process Gap Nodes
         for (const auto& gap : gap_nodes) {
-            if (gap.geo.vertices.empty() && gap.type != "plane") continue;
+            if (gap.geo.vertices.empty()) continue;
 
-            if (gap.type == "plane") {
-                // Plane gaps cut everything
-                auto plane_opt = gap.geo.find_plane();
-                if (!plane_opt.has_value()) continue;
-                EK::Plane_3 world_plane = gap.world_tf.transform(*plane_opt);
-
-                if (combined_solids.number_of_vertices() > 0) {
-                    boolean::Engine::cut_mesh_by_plane(combined_solids, world_plane);
-                }
-                for (auto& [key, gps] : plane_groups) {
-                    // Logic to cut GPS by plane if coplanar... for now just simple subtraction if they match
-                    // This part is complex because it depends on plane orientation.
-                    // For now, let's focus on closed volume gaps.
-                }
-            } else {
+            if (gap.type == "closed") {
+                // Closed volume gaps cut solids
                 boolean::Surface_mesh gap_mesh = boolean::Engine::geometry_to_mesh(gap.geo);
-                boolean::Engine::transform_mesh(gap_mesh, gap.world_tf);
-                
+                boolean::Engine::transform_mesh(gap_mesh, gap.tf);
                 if (combined_solids.number_of_vertices() > 0) {
                     boolean::Engine::cut_mesh_by_mesh(combined_solids, gap_mesh);
                 }
-                // Also cut from plane_groups if they are coplanar
-                for (auto& [key, gps] : plane_groups) {
-                     std::vector<FT> p_coeffs; std::stringstream ss_key(key); std::string val_str;
-                     while(std::getline(ss_key, val_str, ',')) { std::stringstream ss_val(val_str); FT val; ss_val >> val; p_coeffs.push_back(val); }
-                     EK::Plane_3 world_plane(p_coeffs[0], p_coeffs[1], p_coeffs[2], p_coeffs[3]);
-                     if (gap.geo.is_coplanar_with(world_plane.opposite())) { // Correct for relative tf
-                        Matrix project_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector());
-                        boolean::General_polygon_set_2 gap_gps;
-                        boolean::Engine::add_geometry_to_gps(gap.geo, project_tf * gap.world_tf, gap_gps);
-                        gps.difference(gap_gps);
-                     }
+            } else if (gap.type == "surface") {
+                // Planar/2D surface gaps cut coplanar groups and solids
+                EK::Plane_3 gap_world_plane = gap.tf.transform(EK::Plane_3(0, 0, 1, 0));
+
+                if (combined_solids.number_of_vertices() > 0) {
+                    boolean::Engine::cut_mesh_by_plane(combined_solids, gap_world_plane);
+                }
+                for (auto& [existing_plane, gps] : plane_groups) {
+                    if (std::abs(CGAL::to_double(CGAL::squared_distance(existing_plane, gap_world_plane.point()))) < 1e-6) {
+                        Vector_3 n1 = existing_plane.orthogonal_vector();
+                        Vector_3 n2 = gap_world_plane.orthogonal_vector();
+                        if (CGAL::cross_product(n1, n2).squared_length() < 1e-6) {
+                            Matrix project_tf = Matrix::lookAt(existing_plane.point(), existing_plane.orthogonal_vector());
+                            boolean::General_polygon_set_2 gap_gps;
+                            boolean::Engine::add_geometry_to_gps(gap.geo, project_tf * gap.tf, gap_gps);
+                            gps.difference(gap_gps);
+                        }
+                    }
                 }
             }
         }
 
-        // 3. Merge everything into one Geometry
-        Geometry final_geo = remainder;
-        
+        // 3. Rehydrate each non-empty joined class into discrete Shapes
+        std::vector<Shape> output_shapes;
+
+        // A. Closed Solids
         if (combined_solids.number_of_vertices() > 0) {
-            Geometry solid_geo = boolean::Engine::mesh_to_geometry(combined_solids);
-            int base = (int)final_geo.vertices.size();
-            for (const auto& v : solid_geo.vertices) final_geo.vertices.push_back(v);
-            for (auto f : solid_geo.faces) {
-                for (auto& loop : f.loops) for (auto& idx : loop) idx += base;
-                final_geo.faces.push_back(f);
-            }
-            for (auto t : solid_geo.triangles) {
-                t[0] += base; t[1] += base; t[2] += base;
-                final_geo.triangles.push_back(t);
-            }
+            Shape s_solid;
+            s_solid.geometry = vfs->materialize<Geometry>(boolean::Engine::mesh_to_geometry(combined_solids));
+            s_solid.tf = Matrix::identity();
+            s_solid.add_tag("type", "closed");
+            output_shapes.push_back(s_solid);
         }
 
-        for (auto& [key, gps] : plane_groups) {
-            std::vector<FT> p_coeffs;
-            std::stringstream ss_key(key);
-            std::string val_str;
-            while(std::getline(ss_key, val_str, ',')) {
-                std::stringstream ss_val(val_str);
-                FT val; ss_val >> val;
-                p_coeffs.push_back(val);
-            }
-            
-            EK::Plane_3 world_plane(p_coeffs[0], p_coeffs[1], p_coeffs[2], p_coeffs[3]);
+        // B. Coplanar Surfaces
+        for (auto& [world_plane, gps] : plane_groups) {
+            if (gps.is_empty()) continue;
             Matrix rehydrate_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector()).inverse();
-            
             Geometry plane_geo = boolean::Engine::gps_to_geometry(gps);
-            plane_geo.apply_tf(rehydrate_tf);
-
-            int base = (int)final_geo.vertices.size();
-            for (const auto& v : plane_geo.vertices) final_geo.vertices.push_back(v);
-            for (auto f : plane_geo.faces) {
-                for (auto& loop : f.loops) for (auto& idx : loop) idx += base;
-                final_geo.faces.push_back(f);
-            }
+            
+            Shape s_plane;
+            s_plane.geometry = vfs->materialize<Geometry>(plane_geo);
+            s_plane.tf = rehydrate_tf;
+            s_plane.add_tag("type", "surface");
+            output_shapes.push_back(s_plane);
         }
 
-        Shape out;
-        out.geometry = vfs->materialize<Geometry>(final_geo);
-        vfs->write(fulfilling.with_output("$out"), out);
+        // 4. Final output routing
+        if (output_shapes.empty()) {
+            vfs->write(fulfilling.with_output("$out"), Shape());
+        } else if (output_shapes.size() == 1) {
+            vfs->write(fulfilling.with_output("$out"), output_shapes[0]);
+        } else {
+            Shape out_group;
+            out_group.components = output_shapes;
+            out_group.add_tag("type", "group");
+            vfs->write(fulfilling.with_output("$out"), out_group);
+        }
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }

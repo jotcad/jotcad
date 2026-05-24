@@ -1,6 +1,9 @@
 console.log('[Boot] VFSManager.js loading...');
 import { reconcile } from 'solid-js/store';
 import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js';
+if (typeof window !== 'undefined') {
+  window.Selector = Selector;
+}
 import { MeshLink } from '../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../jot/src/index.js';
 import { Worksheet } from './vfs/Worksheet';
