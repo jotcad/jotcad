@@ -13,6 +13,7 @@ import { setPointerCount } from '../../lib/state/SystemState';
 import { createBlackboardControls } from '../../lib/blackboard/BlackboardControls';
 
 import { DesktopIcon } from '../system/desktop/DesktopIcon';
+import { CounterWidget } from '../system/desktop/CounterWidget';
 import { WindowManager } from '../system/desktop/WindowManager';
 
 export const Canvas = () => {
@@ -136,6 +137,8 @@ export const Canvas = () => {
             <For each={throttledIcons()} by="id">
                 {(icon) => <DesktopIcon data={icon} isUserOp={true} />}
             </For>
+
+            <CounterWidget x={240} y={40} />
             
             <WindowManager />
         </div>

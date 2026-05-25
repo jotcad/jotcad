@@ -143,17 +143,24 @@ export class ReverseConnection extends Connection {
   }
 
   /**
-   * SERVER SIDE: Handle an incoming /listen poll.
+   * SERVER SIDE: Entry point for a hidden peer calling /listen.
    */
   addScanner(res, replyTo = null, stream = null, info = null) {
-    // CRITICAL ASSERTION: No hidden errors. 
-    // If a node tries to open a second poll line, it's a protocol violation or zombie.
+    // Protocol Rule: Permanent Tunnel
+    // Prevent Node.js from timing out the socket (default is 2m)
+    if (res.setTimeout) res.setTimeout(0);
+
+    // Protocol Rule: Superseding (No more 409)
+    // Clear any existing active polls from this peer
     if (this.pool.length > 0) {
-      const msg = `CRITICAL MESH VIOLATION: Duplicate /listen received for peer ${this.neighborId}. Previous poll is still active. This indicates a 'Zombie' process or multiple tabs sharing the same ID.`;
-      console.error(msg);
-      res.writeHead(409, { 'Content-Type': 'text/plain' });
-      res.end(msg);
-      throw new Error(msg);
+        log(`[ReverseConn ${this.neighborId}] Superseding active poll line.`);
+        for (const item of this.pool) {
+            try {
+                item.res.writeHead(204);
+                item.res.end();
+            } catch (e) {}
+        }
+        this.pool = [];
     }
 
     // Handle asynchronous read/spy replies via the tunnel

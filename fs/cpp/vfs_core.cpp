@@ -202,12 +202,13 @@ void VFSNode::listen() {
     });
 
     svr->Post("/subscribe", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string source_id = req.get_header_value("x-vfs-id");
         try {
             json body = json::parse(req.body);
             // Protocol Violation Check: This will throw if selector is malformed
             Selector s = Selector::from_json(body.at("selector"));
             
-            std::cout << "[REST " << config_.id << "] POST /subscribe " << s.path << std::endl;
+            std::cout << "[REST " << config_.id << "] <- SUBSCRIBE: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
             subscribe(s.to_json(), body.at("expiresAt"), body.value("stack", std::vector<std::string>{}));
             res.status = 200;
         } catch (const std::exception& e) {
@@ -218,12 +219,14 @@ void VFSNode::listen() {
     });
 
     svr->Post("/notify", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string source_id = req.get_header_value("x-vfs-id");
         try {
             json body = json::parse(req.body);
             json selector_json = body.at("selector");
             if (!selector_json.is_null()) {
                 // Protocol Violation Check: This will throw if selector is malformed
-                Selector::from_json(selector_json);
+                Selector s = Selector::from_json(selector_json);
+                std::cout << "[REST " << config_.id << "] <- NOTIFY: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
             }
             notify(selector_json, body.at("payload"), body.value("stack", std::vector<std::string>{}));
             res.status = 200;
@@ -245,19 +248,46 @@ void VFSNode::listen() {
         register_reverse_peer(peer_id, res);
     });
 
-    std::cout << "[VFSNode " << config_.id << "] Internal server listening on 0.0.0.0:" << config_.port << "..." << std::endl;
-    if (!svr->listen("0.0.0.0", config_.port)) {
-        std::cerr << "[VFSNode " << config_.id << "] CRITICAL: Failed to bind to 0.0.0.0:" << config_.port << ". The port may be in use." << std::endl;
+    int attempts = 0;
+    while (server_ptr_) {
+        std::cout << "[VFSNode " << config_.id << "] Internal server listening on 0.0.0.0:" << config_.port << "..." << std::endl;
+        if (svr->listen("0.0.0.0", config_.port)) {
+            // Success! listen() blocks until stop() is called.
+            break; 
+        }
+
+        if (!server_ptr_) break; // Server was stopped during bind attempt
+
+        attempts++;
+        int delay_sec = (attempts < 10) ? 2 : 60;
+        std::cerr << "[VFSNode " << config_.id << "] Bind failed (attempt " << attempts << "). Retrying in " << delay_sec << "s..." << std::endl;
+        
+        // Sleep in small increments to respond to stop() signal during backoff
+        for (int i = 0; i < delay_sec * 2 && server_ptr_; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
     }
     std::cout << "[VFSNode " << config_.id << "] Server has stopped." << std::endl;
 }
 
 void VFSNode::stop() {
     if (server_ptr_) {
+        // Signal-safe shutdown: Avoid logging using config_.id here as it might be corrupted/freed
+        {
+            std::lock_guard<std::mutex> lock(peer_mutex_);
+            for (auto const& [id, peer] : peers_) {
+                auto rev = std::dynamic_pointer_cast<ReverseConnection>(peer);
+                if (rev) {
+                    std::lock_guard<std::mutex> rlock(rev->mutex);
+                    rev->current_poll_id++; 
+                    rev->cv.notify_all();
+                }
+            }
+        }
+
         auto svr = (httplib::Server*)server_ptr_;
+        server_ptr_ = nullptr; // Clear before stop to signal listen loop
         svr->stop();
-        delete svr;
-        server_ptr_ = nullptr;
     }
 }
 
@@ -623,26 +653,42 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
 
     std::unique_lock<std::mutex> lock(conn->mutex);
     
-    // Zombie Trap: Reject if already polling
+    // Protocol Rule: Superseding (No more 409)
+    // If a poll is already active, signal it to exit so the new one can take over.
     if (conn->is_polling) {
-        res.status = 409;
-        res.set_content("CRITICAL MESH VIOLATION: Duplicate /listen received for peer. Previous poll is still active.", "text/plain");
-        return;
+        // std::cout << "[VFSNode " << config_.id << "] Superseding existing poll for " << peer_id << std::endl;
+        conn->current_poll_id++; // Change ID to invalidate the old thread
+        conn->cv.notify_all();
+        
+        // Wait for old thread to clear is_polling
+        conn->cv.wait_for(lock, std::chrono::seconds(2), [&conn] { return !conn->is_polling; });
     }
 
+    long long my_poll_id = ++conn->current_poll_id;
     conn->is_polling = true;
 
     if (conn->queue.empty()) {
-        conn->cv.wait_for(lock, std::chrono::seconds(30), [&conn] {
-            return !conn->queue.empty();
+        // Permanent Tunnel: Wait indefinitely for mesh commands or superseding
+        conn->cv.wait(lock, [&conn, my_poll_id] {
+            return !conn->queue.empty() || conn->current_poll_id != my_poll_id;
         });
     }
 
     conn->is_polling = false;
+    conn->cv.notify_all(); // Wake up any waiting supersede threads
+
+    // If we were superseded, return 204 so the client can try again on the new socket
+    if (conn->current_poll_id != my_poll_id) {
+        res.status = 204;
+        return;
+    }
 
     if (!conn->queue.empty()) {
         json cmd = conn->queue.front();
         conn->queue.erase(conn->queue.begin());
+        std::string type = cmd.value("type", "unknown");
+        std::string op = cmd.value("op", "none");
+        std::cout << "[REST " << config_.id << "] -> Deliver " << type << "/" << op << " to " << peer_id << " (Queue: " << conn->queue.size() << ")" << std::endl;
         res.set_content(cmd.dump(), "application/json");
         return;
     }

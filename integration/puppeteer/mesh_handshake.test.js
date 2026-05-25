@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 test('Mesh Handshake: Catalog Discovery', async (t) => {
   let cluster, browser;
   try {
-    cluster = await launchSystem(PROFILES.TEST);
+    cluster = await launchSystem('test/standard');
     const PORT_UX = cluster.ports.ux;
 
     browser = await puppeteer.launch({ 
@@ -31,8 +31,8 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
           resolve();
         }
       });
-      const protocol = cluster.isHttps ? 'https' : 'http';
-      page.goto(`${protocol}://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
+      // Force HTTPS as per orchestrator configuration
+      page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
     });
 
     log('[Test Browser] Catalog handshake SUCCESS.');

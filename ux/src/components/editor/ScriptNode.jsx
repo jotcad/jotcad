@@ -1,7 +1,6 @@
 import { createSignal, onMount, onCleanup } from 'solid-js';
 import interact from 'interactjs';
-import { vfs } from '../../lib/blackboard';
-import { Selector } from '../../../fs/src/cid';
+import { vfs, Selector } from '../../lib/VFSManager';
 
 const DEFAULT_CODE = `
 // Define your agent here using standard VFS registration

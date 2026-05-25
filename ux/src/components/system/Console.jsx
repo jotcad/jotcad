@@ -1,11 +1,21 @@
-import { createSignal, For, Show, createEffect } from 'solid-js';
+import { createSignal, For, Show, createEffect, createMemo } from 'solid-js';
 import { blackboard } from '../../lib/blackboard';
 import { logActions } from '../../lib/state/LogState';
 import { Terminal, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-solid';
 
 export const Console = (props) => {
   const [isOpen, setIsOpen] = createSignal(false);
-  const logs = () => blackboard.logs();
+  
+  const filteredLogs = createMemo(() => {
+    const raw = blackboard.logs();
+    const blacklist = ["[Sync]", "[IndexedDb]", "[requests fetch]"];
+    return raw.filter(log => {
+      const msg = String(log.msg);
+      return !blacklist.some(b => msg.includes(b));
+    });
+  });
+
+  const logs = filteredLogs;
   let logScrollRef;
 
   createEffect(() => {

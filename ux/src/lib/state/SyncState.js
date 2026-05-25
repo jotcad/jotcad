@@ -1,4 +1,4 @@
-console.log('[Trace] Executing SyncState.js');
+// console.log('[Trace] Executing SyncState.js');
 import { createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 

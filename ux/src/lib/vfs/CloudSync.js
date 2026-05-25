@@ -1,4 +1,4 @@
-console.log('[Trace] Executing CloudSync.js');
+// console.log('[Trace] Executing CloudSync.js');
 import { merge as diff3Merge } from 'node-diff3';
 import { 
     shadowOps, 
@@ -129,7 +129,7 @@ export const CloudSync = {
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
             if (isDirty()) {
-                console.log('[CloudSync] 60s Idle reached. Triggering auto-sync.');
+                // console.log('[CloudSync] 60s Idle reached. Triggering auto-sync.');
                 this.syncAll();
             }
         }, IDLE_TIME);
@@ -141,14 +141,14 @@ export const CloudSync = {
         if (syncStatus() === 'syncing') return;
 
         setSyncStatus('syncing');
-        console.group('[CloudSync] Starting Synchronization cycle');
+        // console.group('[CloudSync] Starting Synchronization cycle');
 
         try {
             const handler = window._RS_HANDLER;
             if (!handler) throw new Error('RemoteStorageHandler not initialized');
 
             // --- 1. SYNC USER OPS (Unified Catalog) ---
-            console.log('[CloudSync] Step 1: Synchronizing UserOps catalog');
+            // console.log('[CloudSync] Step 1: Synchronizing UserOps catalog');
             
             // Fetch with safety timeout
             const fetchTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('RemoteStorage timeout after 15s')), 15000));
@@ -238,7 +238,7 @@ export const CloudSync = {
             }
 
             if (catalogChanged) {
-                console.log('[CloudSync] Pushing updated catalog.');
+                // console.log('[CloudSync] Pushing updated catalog.');
                 await handler.saveUserOps(finalRemoteCatalog);
             }
 
@@ -247,7 +247,7 @@ export const CloudSync = {
             ws.save('operators', null, bb.dynamicOps(), false);
 
             // --- 2. SYNC LAYOUT ---
-            console.log('[CloudSync] Step 2: Synchronizing Layout');
+            // console.log('[CloudSync] Step 2: Synchronizing Layout');
             const remoteLayout = await handler.getLayout();
             const baseLayout = JSON.parse(JSON.stringify(shadowLayout));
 
@@ -279,10 +279,10 @@ export const CloudSync = {
             setIsDirty(false);
             setLastSyncTime(Date.now());
             if (syncStatus() === 'syncing') setSyncStatus('idle');
-            console.groupEnd();
+            // console.groupEnd();
         } catch (err) {
             console.error('[CloudSync] Sync failed:', err);
-            console.groupEnd();
+            // console.groupEnd();
             setSyncStatus('error');
             alert(`Cloud Sync Failed:\n${err.message || err}`);
         }

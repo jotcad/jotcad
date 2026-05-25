@@ -27,6 +27,8 @@
 *.tmp
 *~
 .env
+secrets.h
+pio/include/secrets.h
 .ssl/
 .vfs_test_storage_*
 actual/

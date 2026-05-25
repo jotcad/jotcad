@@ -1,6 +1,7 @@
 console.log('[Boot] VFSManager.js loading...');
 import { reconcile } from 'solid-js/store';
 import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js';
+export { Selector };
 if (typeof window !== 'undefined') {
   window.Selector = Selector;
 }
@@ -37,6 +38,30 @@ if (!vfsUrl) {
 }
 
 export const mesh = new MeshLink(vfs, [vfsUrl]);
+
+// --- MESH AUDIT & NOISE CONTROL ---
+if (typeof window !== 'undefined') {
+    window.__JOT_SUBS = [];
+    const originalSubscribe = mesh.subscribe.bind(mesh);
+    mesh.subscribe = (selector, expiresAt, stack = []) => {
+        const s = Selector.fromObject(selector);
+        window.__JOT_SUBS.push({ path: s.path, t: Date.now(), stack });
+        console.log(`%c[MeshVFS] -> SUBSCRIBE: ${s.path}`, 'color: #8b5cf6; font-weight: bold;', { selector: s, expiresAt, stack });
+        return originalSubscribe(selector, expiresAt, stack);
+    };
+
+    const originalNotify = mesh.notify.bind(mesh);
+    mesh.notify = (selector, payload, stack = []) => {
+        if (payload.type === 'TOPOLOGY_UPDATE' || payload.type === 'CATALOG_ANNOUNCEMENT') {
+            return originalNotify(selector, payload, stack);
+        }
+        const isIncoming = stack.length > 0;
+        const color = isIncoming ? '#10b981' : '#3b82f6';
+        const label = isIncoming ? '<- NOTIFY' : '-> NOTIFY';
+        console.log(`%c[MeshVFS] ${label}: ${selector?.path}`, `color: ${color}; font-weight: bold;`, { selector, payload, stack });
+        return originalNotify(selector, payload, stack);
+    };
+}
 
 let isStarted = false;
 const meshMap = new Map();
@@ -120,6 +145,13 @@ export const vfsActions = {
       setGraph((prev) => ({ ...prev, [event.cid]: { ...prev[event.cid], ...event } }));
     });
 
+    // MESH TRACING: Instrument mesh for visibility
+    const originalSubscribe = mesh.subscribe.bind(mesh);
+    mesh.subscribe = (selector, expiresAt, stack = []) => {
+        console.log(`%c[MeshVFS] -> SUBSCRIBE: ${selector.path}`, 'color: #8b5cf6; font-weight: bold;', { selector, expiresAt, stack });
+        return originalSubscribe(selector, expiresAt, stack);
+    };
+
     const originalNotify = mesh.notify.bind(mesh);
     mesh.notify = (selector, payload, stack = []) => {
       if (payload.type === 'TOPOLOGY_UPDATE') {
@@ -147,8 +179,14 @@ export const vfsActions = {
           });
         }
       }
+      
+      const isIncoming = stack.length > 0;
+      const color = isIncoming ? '#10b981' : '#3b82f6';
+      const label = isIncoming ? '<- NOTIFY' : '-> NOTIFY';
+      console.log(`%c[MeshVFS] ${label}: ${selector?.path}`, `color: ${color}; font-weight: bold;`, { selector, payload, stack });
+      
       setPulse((prev) => [...prev, { selector, payload, t: Date.now() }].slice(-20));
-      originalNotify(selector, payload, stack);
+      return originalNotify(selector, payload, stack);
     };
 
     try {

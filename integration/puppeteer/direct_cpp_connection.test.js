@@ -11,7 +11,7 @@ test('Direct C++ Connection: UX to Ops Node Discovery', { timeout: 15000 }, asyn
   let cluster, browser;
   try {
     // Launch cluster using DIRECT_CPP profile (skips Export Node)
-    cluster = await launchSystem(PROFILES.DIRECT_CPP);
+    cluster = await launchSystem('live/direct_cpp');
     const PORT_UX = cluster.ports.ux;
 
     browser = await puppeteer.launch({ 
@@ -35,8 +35,8 @@ test('Direct C++ Connection: UX to Ops Node Discovery', { timeout: 15000 }, asyn
           resolve();
         }
       });
-      const protocol = cluster.isHttps ? 'https' : 'http';
-      page.goto(`${protocol}://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
+      // Force HTTPS as per orchestrator configuration
+      page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
     });
 
     log('[Test Browser] Direct C++ Catalog handshake SUCCESS.');

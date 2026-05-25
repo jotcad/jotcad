@@ -1,4 +1,4 @@
-console.log('[Trace] Executing Worksheet.js');
+// console.log('[Trace] Executing Worksheet.js');
 import { batch } from 'solid-js';
 import { reconcile } from 'solid-js/store';
 import { shadowOps, shadowLayout, syncActions } from '../state/SyncState';

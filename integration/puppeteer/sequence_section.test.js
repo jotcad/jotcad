@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 test('Puppeteer Sequence Section Test: Z-axis slice', { timeout: 120000 }, async (t) => {
   let cluster, browser;
   try {
-    cluster = await launchSystem(PROFILES.TEST);
+    cluster = await launchSystem('test/standard');
     const PORT_UX = cluster.ports.ux;
 
     browser = await puppeteer.launch({ 
@@ -33,8 +33,8 @@ test('Puppeteer Sequence Section Test: Z-axis slice', { timeout: 120000 }, async
           resolve();
         }
       });
-      const protocol = cluster.isHttps ? 'https' : 'http';
-      page.goto(`${protocol}://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' }).catch(reject);
+      // Force HTTPS as per orchestrator configuration
+      page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' }).catch(reject);
     });
 
     log('[Test Browser] Catalog handshake SUCCESS.');
