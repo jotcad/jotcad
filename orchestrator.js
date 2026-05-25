@@ -9,33 +9,38 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PROFILES = {
   LIVE: {
     name: 'LIVE',
-    ports: { ops: 9091, export: 9092, ux: 3030 },
     storagePrefix: '.vfs_storage_live_',
     gateway: 'export',
-    components: ['ops', 'export', 'ux'],
-    ux: { dist: 'ux/dist/live' }
+    components: {
+      ops:    { protocol: 'http', port: 9091 },
+      export: { protocol: 'http', port: 9092 },
+      ux:     { protocol: 'https', port: 3030, dist: 'ux/dist/live' }
+    }
   },
   TEST: {
     name: 'TEST',
-    ports: { ops: 9191, export: 9192, ux: 3131 },
     storagePrefix: '.vfs_storage_test_',
     gateway: 'export',
-    components: ['ops', 'export', 'ux'],
-    ux: { dist: 'ux/dist/test' }
+    components: {
+      ops:    { protocol: 'http', port: 9191 },
+      export: { protocol: 'http', port: 9192 },
+      ux:     { protocol: 'https', port: 3131, dist: 'ux/dist/test' }
+    }
   },
   DIRECT_CPP: {
     name: 'DIRECT_CPP',
-    ports: { ops: 9192, ux: 3232 },
     storagePrefix: '.vfs_storage_direct_cpp_',
     gateway: 'ops',
-    components: ['ops', 'ux'],
-    ux: { dist: 'ux/dist/test' }
+    components: {
+      ops:    { protocol: 'https', port: 9192 },
+      ux:     { protocol: 'https', port: 3232, dist: 'ux/dist/test' }
+    }
   }
 };
 
 export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const config = typeof profileOrConfig === 'string' ? PROFILES[profileOrConfig] : profileOrConfig;
-  const { ports, storagePrefix, ux, gateway, components: componentList, env = {} } = config;
+  const { storagePrefix, components: componentMap, gateway, env = {} } = config;
 
   const sslDir = path.join(__dirname, '.ssl');
   const keyPath = path.join(sslDir, 'localhost-key.pem');
@@ -43,6 +48,8 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const hasCerts = fs.existsSync(keyPath) && fs.existsSync(certPath);
 
   info(`[Orchestrator] Launching ${config.name} Cluster...`);
+
+  const ports = Object.fromEntries(Object.entries(componentMap).map(([id, cfg]) => [id, cfg.port]));
 
   try {
     const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
@@ -53,59 +60,75 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
     execSync('sleep 1');
   } catch (e) {}
 
-  const uxArgs = ['http-server', ux.dist, '-p', String(ports.ux)];
-  if (hasCerts) {
-      uxArgs.push('--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem');
-  } else {
-      console.warn(`[Orchestrator] SSL certificates not found in .ssl/. Falling back to HTTP for UX.`);
-  }
-
-  const gatewayUrl = `${hasCerts ? 'https' : 'http'}://localhost:${ports[gateway]}`;
+  const gatewayNode = componentMap[gateway];
+  const gatewayUrl = `${gatewayNode.protocol}://localhost:${gatewayNode.port}`;
 
   const componentConfigs = {
-    ops: {
-      name: `Ops Node (${ports.ops})`,
-      command: './geo/bin/ops',
-      args: [String(ports.ops), `${storagePrefix}ops`],
-      cwd: __dirname,
-      env: { 
-          ...process.env, 
-          PORT: String(ports.ops),
-          PEER_ID: 'geo-ops-node',
-          NEIGHBORS: '',
-          SSL_CERT_PATH: hasCerts ? certPath : '',
-          SSL_KEY_PATH: hasCerts ? keyPath : '',
-          ...env
+    ops: () => {
+      const cfg = componentMap.ops;
+      const useSsl = cfg.protocol === 'https';
+      if (useSsl && !hasCerts) {
+          warn(`[Orchestrator] Ops Node requested HTTPS but certs are missing. Falling back to HTTP.`);
       }
+      return {
+        name: `Ops Node (${cfg.port})`,
+        command: './geo/bin/ops',
+        args: [String(cfg.port), `${storagePrefix}ops`],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            PORT: String(cfg.port),
+            PEER_ID: 'geo-ops-node',
+            NEIGHBORS: '',
+            SSL_CERT_PATH: (useSsl && hasCerts) ? certPath : '',
+            SSL_KEY_PATH: (useSsl && hasCerts) ? keyPath : '',
+            ...env
+        }
+      };
     },
-    export: {
-      name: `Export Node (${ports.export})`,
-      command: 'node',
-      args: ['geo/export_service.js'],
-      cwd: __dirname,
-      env: { 
-          ...process.env, 
-          PORT: String(ports.export),
-          VFS_ID: config.name === 'LIVE' ? 'live_export' : 'test_export',
-          NEIGHBORS: `http://localhost:${ports.ops}`,
-          ...env
-      }
+    export: () => {
+      const cfg = componentMap.export;
+      return {
+        name: `Export Node (${cfg.port})`,
+        command: 'node',
+        args: ['geo/export_service.js'],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            PORT: String(cfg.port),
+            VFS_ID: config.name === 'LIVE' ? 'live_export' : 'test_export',
+            NEIGHBORS: `${componentMap.ops.protocol}://localhost:${componentMap.ops.port}`,
+            ...env
+        }
+      };
     },
-    ux: {
-      name: `UX (${ports.ux})`,
-      command: 'npx',
-      args: uxArgs,
-      cwd: ux.cwd || __dirname,
-      env: {
-          ...process.env,
-          VITE_VFS_URL: gatewayUrl,
-          VITE_HTTPS: String(hasCerts),
-          ...env
+    ux: () => {
+      const cfg = componentMap.ux;
+      const useSsl = cfg.protocol === 'https';
+      const uxArgs = ['http-server', cfg.dist, '-p', String(cfg.port)];
+      
+      if (useSsl && hasCerts) {
+          uxArgs.push('--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem');
+      } else if (useSsl) {
+          warn(`[Orchestrator] UX requested HTTPS but certs are missing. Falling back to HTTP.`);
       }
+
+      return {
+        name: `UX (${cfg.port})`,
+        command: 'npx',
+        args: uxArgs,
+        cwd: cfg.cwd || __dirname,
+        env: {
+            ...process.env,
+            VITE_VFS_URL: gatewayUrl,
+            VITE_HTTPS: String(useSsl && hasCerts),
+            ...env
+        }
+      };
     }
   };
 
-  const components = componentList.map(id => componentConfigs[id]);
+  const components = Object.keys(componentMap).map(id => componentConfigs[id]());
 
 
   const processes = new Map();
@@ -177,10 +200,14 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   }
   if (!uxReady) warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
 
+  const uxCfg = componentMap.ux;
+  const uxProtocol = (uxCfg && uxCfg.protocol === 'https' && hasCerts) ? 'https' : 'http';
+
   return { 
       processes, 
       ports,
-      isHttps: hasCerts,
+      isHttps: uxProtocol === 'https',
+      uxProtocol,
       stop: shutdown 
   };
 }
