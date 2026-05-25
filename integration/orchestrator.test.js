@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { launchSystem, PROFILES } from '../orchestrator.js';
+import { log } from '../fs/src/log.js';
 
 test('Orchestrator Lifecycle: Cluster Launch and Shutdown', async (t) => {
-    console.log('[Test Orchestrator] Starting cluster lifecycle test...');
+    log('[Test Orchestrator] Starting cluster lifecycle test...');
     
     // 1. Launch the TEST cluster
     const sys = await launchSystem(PROFILES.TEST);
@@ -30,7 +31,7 @@ test('Orchestrator Lifecycle: Cluster Launch and Shutdown', async (t) => {
         });
 
         await t.test('UX should be reachable', async () => {
-            const isHttps = PROFILES.TEST.ux.args.includes('--ssl');
+            const { isHttps } = sys;
             const protocol = isHttps ? 'https' : 'http';
             const options = {};
             if (isHttps) {
@@ -41,7 +42,7 @@ test('Orchestrator Lifecycle: Cluster Launch and Shutdown', async (t) => {
         });
 
     } finally {
-        console.log('[Test Orchestrator] Shutting down cluster...');
+        log('[Test Orchestrator] Shutting down cluster...');
         await sys.stop();
     }
 });

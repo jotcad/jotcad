@@ -6,6 +6,7 @@ import { launchOpsNode } from '../../fs/test/ops_helper.js';
 import { TestVFSNode } from '../../fs/test/vfs_test_helpers.js';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
+import { log } from '../../fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
@@ -69,7 +70,7 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
 
         const result = await response.json();
         assert.strictEqual(result.tags?.color, 'blue', 'Nested expansion should result in blue color');
-        console.log('--- NESTED EXPANSION SUCCESS ---');
+        log('--- NESTED EXPANSION SUCCESS ---');
 
     } finally {
         await testNode.stop();

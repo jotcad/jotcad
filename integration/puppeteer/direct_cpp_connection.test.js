@@ -7,10 +7,11 @@ import { log } from '../../fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-test('Mesh Handshake: Catalog Discovery', async (t) => {
+test('Direct C++ Connection: UX to Ops Node Discovery', { timeout: 15000 }, async (t) => {
   let cluster, browser;
   try {
-    cluster = await launchSystem(PROFILES.TEST);
+    // Launch cluster using DIRECT_CPP profile (skips Export Node)
+    cluster = await launchSystem(PROFILES.DIRECT_CPP);
     const PORT_UX = cluster.ports.ux;
 
     browser = await puppeteer.launch({ 
@@ -21,12 +22,15 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
 
     log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
 
-    // Wait for the catalog receipt log
-    log('[Test Browser] Waiting for Catalog handshake...');
+    // Wait for the catalog receipt log from the C++ node
+    log('[Test Browser] Waiting for Direct Catalog handshake from geo-ops-node...');
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
+      const timeout = setTimeout(() => reject(new Error('Direct handshake timeout')), 10000);
       page.on('console', (msg) => {
-        if (msg.text().includes('Received Catalog from geo-ops-node')) {
+        const text = msg.text();
+        log(`[Browser Console] ${msg.type()}: ${text}`);
+        if (text.includes('Received Catalog from geo-ops-node')) {
+          log('[Test Browser] MATCH: Received Catalog from geo-ops-node');
           clearTimeout(timeout);
           resolve();
         }
@@ -35,8 +39,9 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
       page.goto(`${protocol}://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
     });
 
-    log('[Test Browser] Catalog handshake SUCCESS.');
-  } finally {    if (browser) await browser.close();
+    log('[Test Browser] Direct C++ Catalog handshake SUCCESS.');
+  } finally {
+    if (browser) await browser.close();
     if (cluster) await cluster.stop();
   }
 });

@@ -1,19 +1,17 @@
 import test from 'node:test';
-import assert from 'node:assert';
-import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import crypto from 'node:crypto';
+import http from 'node:http';
 import {
   VFS,
   MeshLink,
   registerVFSRoutes,
   DiskStorage,
-  Selector,
 } from '../fs/src/index.js';
 
 import { JotCompiler } from '../jot/src/compiler.js';
 import { launchSystem, PROFILES } from '../orchestrator.js';
+import { captureAndVerifyPNG } from './png_helper.js';
 
 test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 }, async (t) => {
   let sys;
@@ -80,27 +78,9 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
         const selector = results[0].selector;
         console.log(`[Test] Result Selector: ${JSON.stringify(selector, null, 2)}`);
 
-        // Generate PNG
-        const pngSelector = new Selector('jot/png', { '$in': selector }).withOutput('$out');
-        const { stream } = await jsVfs.read(pngSelector);
-        
-        // Consume stream into buffer
-        const chunks = [];
-        for await (const chunk of stream) chunks.push(chunk);
-        const pngBytes = Buffer.concat(chunks);
-        
-        await fs.writeFile('pack_repro_result.png', pngBytes);
-        console.log('[Test] Wrote pack_repro_result.png');
-
-        assert.ok(pngBytes.length > 0, 'PNG should not be empty');
-
-        const hash = crypto.createHash('sha256').update(pngBytes).digest('hex');
-        console.log(`[Test] PNG Hash: ${hash}`);
-        
-        // This baseline hash represents 20 blue triangles packed into a red Disk(100) sheet.
-        // If the geometric packing, subtraction, or triangulation changes, this will fail.
+        // Use helper for PNG generation and verification
         const EXPECTED_HASH = '419b5d2ca3006046b102ebe7de26856b41cef24ab1118f960d2357e8cccb1389';
-        assert.strictEqual(hash, EXPECTED_HASH, 'PNG content hash mismatch - visual regression detected!');
+        await captureAndVerifyPNG(jsVfs, selector, 'pack_repro_result.png', EXPECTED_HASH);
     } catch (e) {
         console.error('[Test] Evaluation failed:', e);
         throw e;

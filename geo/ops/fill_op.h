@@ -1,4 +1,5 @@
 #pragma once
+// Dependency tracking trigger
 #include "protocols.h"
 #include "processor.h"
 #include "matrix.h"
@@ -21,9 +22,43 @@ struct FillOp : P {
     typedef Arrangement::Face_handle Face_handle;
     typedef Arrangement::Halfedge_handle Halfedge_handle;
 
+    struct GeometryNode {
+        Geometry geo;
+        Matrix tf;
+    };
+
+    static void collect_geometries(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& nodes) {
+        if (s.geometry.has_value()) {
+            nodes.push_back({vfs->read<Geometry>(s.geometry.value()), s.tf});
+        }
+        for (const auto& child : s.components) {
+            collect_geometries(vfs, child, nodes);
+        }
+    }
+
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, std::string rule, const Shape& plane_shape) {
-        Geometry geo = P::read_shape_geo(vfs, in);
-        geo.apply_tf(in.tf);
+        std::vector<GeometryNode> all_nodes;
+        collect_geometries(vfs, in, all_nodes);
+
+        Geometry geo;
+        for (const auto& node : all_nodes) {
+            Geometry local_geo = node.geo;
+            local_geo.apply_tf(node.tf);
+            int base = (int)geo.vertices.size();
+            for (const auto& v : local_geo.vertices) geo.vertices.push_back(v);
+            for (const auto& seg : local_geo.segments) {
+                geo.segments.push_back({base + seg[0], base + seg[1]});
+            }
+            for (const auto& f : local_geo.faces) {
+                Geometry::Face nf;
+                for (const auto& l : f.loops) {
+                    std::vector<int> nl;
+                    for (int idx : l) nl.push_back(base + idx);
+                    nf.loops.push_back(nl);
+                }
+                geo.faces.push_back(nf);
+            }
+        }
 
         // 1. Determine Projection Plane
         EK::Plane_3 plane(0, 0, 1, 0); // Default XY

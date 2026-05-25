@@ -57,5 +57,40 @@ int main() {
     }
     std::cout << "  ✅ On (Targeted Replacement) PASS" << std::endl;
 
+    // 3. Test 'on' with tag query matching (.on(has(...), ...))
+    std::cout << "  - Testing 'on' with recursive tag matcher..." << std::endl;
+    Shape boxA = vfs.read<Shape>(box_addr);
+    boxA.tags["color"] = "red";
+    Shape boxB = vfs.read<Shape>(box_addr);
+    boxB.tags["color"] = "blue";
+    Shape group = Shape::group({boxA, boxB});
+    fs::CID group_cid = vfs.materialize(group);
+
+    // Filter blue box using has
+    fs::Selector has_blue_sel = fs::Selector{"jot/has", {
+        {"$in", group_cid.value},
+        {"key", "color"},
+        {"value", "blue"}
+    }}.with_output("$out");
+    Processor::execute(&vfs, has_blue_sel);
+    Shape query_res = vfs.read<Shape>(has_blue_sel);
+    fs::CID query_cid = vfs.materialize(query_res);
+
+    // Apply 'on' to replace/modify the blue box with green color
+    fs::Selector on_color_sel = fs::Selector{"jot/on", {
+        {"$in", group_cid.value},
+        {"target", query_cid.value},
+        {"op", fs::Selector{"jot/color", {{"color", "green"}}}.with_output("$out").to_json()}
+    }}.with_output("$out");
+
+    Processor::execute(&vfs, on_color_sel);
+    Shape s_color = vfs.read<Shape>(on_color_sel);
+
+    if (s_color.components.size() != 2 || s_color.components[1].tags.value("color", "") != "green") {
+        std::cerr << "❌ On Tag Query FAIL: Target not replaced using recursive tag matching. Got tag color: " << s_color.components[1].tags.value("color", "none") << std::endl;
+        return 1;
+    }
+    std::cout << "  ✅ On with tag query matching PASS" << std::endl;
+
     return 0;
 }

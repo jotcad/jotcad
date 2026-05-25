@@ -54,8 +54,12 @@ void test_keep_drop(MockVFS& vfs) {
     CID group_cid = vfs.materialize(group);
 
     // 3. Keep only A
-    Selector hasA("jot/has", {{"key", "id"}, {"value", "A"}});
-    Selector keepA("jot/keep", {{"$in", group_cid.value}, {"selector", hasA}});
+    Selector hasA("jot/has", {{"$in", group_cid.value}, {"key", "id"}, {"value", "A"}});
+    hasA.output = "$out";
+    Shape hasA_shape = vfs.read<Shape>(hasA);
+    CID hasA_cid = vfs.materialize(hasA_shape);
+
+    Selector keepA("jot/keep", {{"$in", group_cid.value}, {"selector", hasA_cid.value}});
     keepA.output = "$out";
     Shape keptA = vfs.read<Shape>(keepA);
 
@@ -65,7 +69,7 @@ void test_keep_drop(MockVFS& vfs) {
     }
 
     // 4. Drop A
-    Selector dropA("jot/drop", {{"$in", group_cid.value}, {"selector", hasA}});
+    Selector dropA("jot/drop", {{"$in", group_cid.value}, {"selector", hasA_cid.value}});
     dropA.output = "$out";
     Shape droppedA = vfs.read<Shape>(dropA);
 
@@ -102,16 +106,213 @@ void test_recursive_pruning(MockVFS& vfs) {
     CID root_cid = vfs.materialize(root);
 
     // Keep "find_me"
-    Selector query("jot/has", {{"key", "find_me"}});
-    Selector keep_sel("jot/keep", {{"$in", root_cid.value}, {"selector", query}});
+    Selector query("jot/has", {{"$in", root_cid.value}, {"key", "find_me"}});
+    query.output = "$out";
+    Shape query_shape = vfs.read<Shape>(query);
+    CID query_cid = vfs.materialize(query_shape);
+
+    Selector keep_sel("jot/keep", {{"$in", root_cid.value}, {"selector", query_cid.value}});
     keep_sel.output = "$out";
     Shape result = vfs.read<Shape>(keep_sel);
+
+    std::cout << "[DEBUG] result components size: " << result.components.size() << std::endl;
+    if (result.components.size() > 0) {
+        std::cout << "[DEBUG] result[0] components size: " << result.components[0].components.size() << std::endl;
+        for (const auto& child : result.components[0].components) {
+            std::cout << "[DEBUG] child name: " << child.tags.value("name", "unnamed") << std::endl;
+        }
+    }
 
     // Result should be Group([ Group([A]) ])
     if (result.components.size() != 1 || result.components[0].components.size() != 1 || result.components[0].components[0].tags["name"] != "A") {
         std::cerr << "FAIL: Recursive pruning failed." << std::endl;
         exit(1);
     }
+    std::cout << "  SUCCESS" << std::endl;
+}
+
+void test_item_ops(MockVFS& vfs) {
+    std::cout << "Testing Item and item Ops..." << std::endl;
+    
+    // 1. Create a box
+    Selector box_sel("jot/Box", {{"width", 10.0}});
+    box_sel.output = "$out";
+    Shape box = vfs.read<Shape>(box_sel);
+    CID box_cid = vfs.materialize(box);
+
+    // 2. Wrap as an Item constructor: Item('bracket', [box])
+    Selector item_constructor("jot/Item", {{"name", "bracket"}, {"shapes", std::vector<Shape>{box}}});
+    item_constructor.output = "$out";
+    Shape item1 = vfs.read<Shape>(item_constructor);
+    
+    if (item1.tags["type"] != "item" || item1.tags["item:name"] != "bracket") {
+        std::cerr << "FAIL: Item constructor tags not set correctly." << std::endl;
+        exit(1);
+    }
+    if (item1.components.size() != 1) {
+        std::cerr << "FAIL: Item constructor did not include shapes." << std::endl;
+        exit(1);
+    }
+
+    // 3. Wrap using method: box.item('bracket_method')
+    Selector item_method("jot/item", {{"$in", box_cid.value}, {"name", "bracket_method"}, {"shapes", std::vector<Shape>()}});
+    item_method.output = "$out";
+    Shape item2 = vfs.read<Shape>(item_method);
+    
+    if (item2.tags["type"] != "item" || item2.tags["item:name"] != "bracket_method") {
+        std::cerr << "FAIL: Item method tags not set correctly." << std::endl;
+        exit(1);
+    }
+    if (item2.components.size() != 1) {
+        std::cerr << "FAIL: Item method did not wrap the subject." << std::endl;
+        exit(1);
+    }
+    
+    std::cout << "  SUCCESS" << std::endl;
+}
+
+void test_in_item_ops(MockVFS& vfs) {
+    std::cout << "Testing inItem scope limiter Op..." << std::endl;
+    
+    // 1. Create a nested item hierarchy: Group([ Item('bracket', [Box(10).set('color', 'red')]), Box(20).set('color', 'blue') ])
+    Selector box_sel1("jot/Box", {{"width", 10.0}});
+    box_sel1.output = "$out";
+    Shape box1 = vfs.read<Shape>(box_sel1);
+    box1.tags["color"] = "red";
+
+    Selector item_constructor("jot/Item", {{"name", "bracket"}, {"shapes", std::vector<Shape>{box1}}});
+    item_constructor.output = "$out";
+    Shape item = vfs.read<Shape>(item_constructor);
+
+    Selector box_sel2("jot/Box", {{"width", 20.0}});
+    box_sel2.output = "$out";
+    Shape box2 = vfs.read<Shape>(box_sel2);
+    box2.tags["color"] = "blue";
+
+    Shape assembly = Shape::group({item, box2});
+    CID assembly_cid = vfs.materialize(assembly);
+
+    // 2. Extract item using inItem('bracket')
+    Selector in_item_sel("jot/inItem", {{"$in", assembly_cid.value}, {"name", "bracket"}});
+    in_item_sel.output = "$out";
+    Shape extracted = vfs.read<Shape>(in_item_sel);
+
+    // Unwrapped behavior: inItem returns the components of the matched item directly.
+    // Since 'bracket' contains only 1 component (box1), MaybeGroup returns box1 itself.
+    if (extracted.tags.value("color", "") != "red") {
+        std::cerr << "FAIL: inItem did not extract the named item contents correctly. Tag color: " 
+                  << extracted.tags.value("color", "none") << std::endl;
+        exit(1);
+    }
+    
+    // 3. Test chaining: inItem('bracket').has('color', 'red')
+    CID extracted_cid = vfs.materialize(extracted);
+    Selector chain_sel("jot/has", {{"$in", extracted_cid.value}, {"key", "color"}, {"value", "red"}});
+    chain_sel.output = "$out";
+    Shape chain_res = vfs.read<Shape>(chain_sel);
+
+    // Should return the red component directly
+    if (chain_res.tags.value("color", "") != "red") {
+        std::cerr << "FAIL: Chained tag filtering inside extracted inItem failed." << std::endl;
+        exit(1);
+    }
+
+    // 4. Test wildcards: inItem('bracket*') matching multiple items
+    Selector item1_sel("jot/Box", {{"width", 5.0}});
+    item1_sel.output = "$out";
+    Shape b1 = vfs.read<Shape>(item1_sel);
+    b1.tags["color"] = "yellow";
+    Selector item1_const("jot/Item", {{"name", "bracket_1"}, {"shapes", std::vector<Shape>{b1}}});
+    item1_const.output = "$out";
+    Shape br1 = vfs.read<Shape>(item1_const);
+
+    Selector item2_sel("jot/Box", {{"width", 6.0}});
+    item2_sel.output = "$out";
+    Shape b2 = vfs.read<Shape>(item2_sel);
+    b2.tags["color"] = "orange";
+    Selector item2_const("jot/Item", {{"name", "bracket_2"}, {"shapes", std::vector<Shape>{b2}}});
+    item2_const.output = "$out";
+    Shape br2 = vfs.read<Shape>(item2_const);
+
+    Shape nested_assembly = Shape::group({br1, br2});
+    CID nested_cid = vfs.materialize(nested_assembly);
+
+    Selector wild_sel("jot/inItem", {{"$in", nested_cid.value}, {"name", "bracket*"}});
+    wild_sel.output = "$out";
+    Shape wild_res = vfs.read<Shape>(wild_sel);
+
+    // Since name is 'bracket*', it should match both bracket_1 and bracket_2
+    // and return their unwrapped child components (b1 and b2) grouped together.
+    if (wild_res.components.size() != 2 || 
+        wild_res.components[0].tags.value("color", "") != "yellow" ||
+        wild_res.components[1].tags.value("color", "") != "orange") {
+        std::cerr << "FAIL: Wildcard matching in inItem failed. Components size: " << wild_res.components.size() << std::endl;
+        exit(1);
+    }
+
+    std::cout << "  SUCCESS" << std::endl;
+}
+
+void test_has_atomic_items(MockVFS& vfs) {
+    std::cout << "Testing that has() does not recurse through nested items..." << std::endl;
+
+    // 1. Create a nested item hierarchy: Item('assembly_item', [ Item('bracket', [Box(10).set('color', 'red')]), Box(20).set('color', 'red') ])
+    Selector box_sel1("jot/Box", {{"width", 10.0}});
+    box_sel1.output = "$out";
+    Shape box1 = vfs.read<Shape>(box_sel1);
+    box1.tags["color"] = "red";
+
+    Selector item_constructor("jot/Item", {{"name", "bracket"}, {"shapes", std::vector<Shape>{box1}}});
+    item_constructor.output = "$out";
+    Shape item = vfs.read<Shape>(item_constructor);
+
+    Selector box_sel2("jot/Box", {{"width", 20.0}});
+    box_sel2.output = "$out";
+    Shape box2 = vfs.read<Shape>(box_sel2);
+    box2.tags["color"] = "red";
+
+    // Wrap both inside a parent assembly item
+    Selector parent_constructor("jot/Item", {{"name", "assembly_item"}, {"shapes", std::vector<Shape>{item, box2}}});
+    parent_constructor.output = "$out";
+    Shape parent_item = vfs.read<Shape>(parent_constructor);
+    CID parent_cid = vfs.materialize(parent_item);
+
+    // 2. Query has('color', 'red') directly at the assembly item level
+    Selector has_sel("jot/has", {{"$in", parent_cid.value}, {"key", "color"}, {"value", "red"}});
+    has_sel.output = "$out";
+    Shape direct_res = vfs.read<Shape>(has_sel);
+
+    // STRICT ATOMIC LEAF EXPECTATION:
+    // - Since parent_item is an item itself, direct has() MUST NOT inspect its children at all.
+    // - So it should return empty (size 0).
+    if (direct_res.components.size() != 0) {
+        std::cerr << "FAIL: direct has() on an item inspected its children instead of treating it as atomic! Size: " 
+                  << direct_res.components.size() << std::endl;
+        exit(1);
+    }
+
+    // 3. Query inItem('assembly_item').has('color', 'red')
+    // This explicitly unwraps the assembly item's components so has() can search them.
+    Selector in_item_sel("jot/inItem", {{"$in", parent_cid.value}, {"name", "assembly_item"}});
+    in_item_sel.output = "$out";
+    Shape unwrapped = vfs.read<Shape>(in_item_sel);
+    CID unwrapped_cid = vfs.materialize(unwrapped);
+
+    Selector chained_has_sel("jot/has", {{"$in", unwrapped_cid.value}, {"key", "color"}, {"value", "red"}});
+    chained_has_sel.output = "$out";
+    Shape res = vfs.read<Shape>(chained_has_sel);
+
+    // EXPECTATION:
+    // - The red box (box2) is a direct child of the unwrapped group, so it MUST match.
+    // - The red box (box1) is INSIDE the nested rigid item 'bracket'. Since has() does not recurse inside nested items, it MUST NOT match!
+    // - So only box2 should be returned.
+    // - Since exactly 1 shape matches, MaybeGroup returns it directly (unwrapped).
+    if (res.tags.value("color", "") != "red" || res.geometry != box2.geometry) {
+        std::cerr << "FAIL: inItem().has() did not properly filter with atomic item boundary encapsulation. Got color: " 
+                  << res.tags.value("color", "none") << std::endl;
+        exit(1);
+    }
+
     std::cout << "  SUCCESS" << std::endl;
 }
 
@@ -122,6 +323,9 @@ int main() {
     test_set_get(vfs);
     test_keep_drop(vfs);
     test_recursive_pruning(vfs);
+    test_item_ops(vfs);
+    test_in_item_ops(vfs);
+    test_has_atomic_items(vfs);
     
     return 0;
 }

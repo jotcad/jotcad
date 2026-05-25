@@ -1,5 +1,6 @@
 import { EventEmitter } from './event_emitter.js';
 import { MemoryStorage } from './memory_storage.js';
+import { log } from './log.js';
 import { 
   normalizeSelector, 
   Selector,
@@ -35,7 +36,7 @@ export class VFS {
   _checkClosed() { if (this.closed) throw new VFSClosedError(); }
 
   registerProvider(pattern, handler, options = {}) {
-    console.log(`[VFS ${this.id}] Registering provider for: ${pattern}`);
+    log(`[VFS ${this.id}] Registering provider for: ${pattern}`);
     if (options.schema?.arguments && !Array.isArray(options.schema.arguments)) {
       throw new Error(`VFS Error: Arguments for provider '${pattern}' must be an array to preserve positional order.`);
     }

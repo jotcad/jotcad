@@ -23,19 +23,17 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
+      - name: Install JS Deps
+        run: npm ci
       - name: Setup & Build Native Ops
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb libgbm1
+          ./scripts/generate_dev_cert.sh
           npm run install_deps
           npm run setup
-      - name: Install JS Deps
-        run: npm ci
+          npm run build:test --workspace=ux
       - name: Run CI Suite
         run: npm run ci
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-      - name: Make wasm available
-        uses: actions/upload-artifact@v4
-        with:
-          name: cgal_browser.wasm
-          path: es6/cgal_browser.wasm
+          LOG_LEVEL: ERROR

@@ -60,7 +60,7 @@ async function test() {
     });
 
     try {
-        const code = 'Box(10).stl("test.stl")';
+        const code = 'Box(10).stl("test.stl") -> $out';
         console.log("Parsing & Evaluating:", code);
         const ast = parser.parse(code);
         const terminals = await compiler.evaluate(ast, {}, {

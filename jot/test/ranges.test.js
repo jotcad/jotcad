@@ -1,3 +1,4 @@
+import { log } from "../../fs/src/log.js";
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
 
@@ -17,16 +18,16 @@ compiler.registerOperator('jot/RangeTest', {
 
 const testRange = async (str) => {
     try {
-        console.log(`Input: "${str}"`);
+        log(`Input: "${str}"`);
         const ast = parser.parse(str);
         const results = await compiler.evaluate(ast, {}, {
             outputs: { "$out": { type: "jot:shape" } }
         });
-        console.log(`Resulting Range: ${JSON.stringify(results[0].selector.parameters.range)}`);
+        log(`Resulting Range: ${JSON.stringify(results[0].selector.parameters.range)}`);
     } catch (e) {
-        console.log(`Error: ${e.message}`);
+        log(`Error: ${e.message}`);
     }
-    console.log('---');
+    log('---');
 };
 
 (async () => {

@@ -53,8 +53,8 @@ void test_multi_sheet() {
     // 5 triangles of 50x50. 
     // In a 110x110 sheet, we can fit 4 (2x2) without rotation optimization.
     // 5 will need a second sheet.
-    sheets_group.components.push_back(create_box(&vfs, 110, 110));
-    sheets_group.components.push_back(create_box(&vfs, 110, 110));
+    sheets_group.components.push_back(create_box(&vfs, 120, 120));
+    sheets_group.components.push_back(create_box(&vfs, 120, 120));
 
     fs::Selector sel("jot/pack");
     sel.parameters["$in"] = group;
@@ -164,8 +164,8 @@ void test_alignment_and_bias() {
 void test_geometric_nesting() {
     std::cout << "Testing Pure Geometric Nesting (Russian Doll)..." << std::endl;
 
-    // 1. 80x80 Sheet
-    packaide::Sheet sheet = packaide::Sheet::rectangle(packaide::FT(80.0), packaide::FT(80.0));
+    // 1. 82x82 Sheet (slightly larger than Part A to allow valid placement space)
+    packaide::Sheet sheet = packaide::Sheet::rectangle(packaide::FT(82.0), packaide::FT(82.0));
 
     // 2. Part A: 80x80 Square with a 40x40 Hole
     packaide::Polygon_2 outer;
@@ -215,9 +215,10 @@ void test_geometric_nesting() {
     bool found_in_hole = false;
     for (const auto& p : placements) {
         if (p.original_index == 1) {
-            // Top-Left bias: Hole is [20, 60] x [20, 60]. 
-            // For 20x20 part, top-left anchor is (20, 40).
-            if (p.x == packaide::FT(20) && p.y == packaide::FT(40)) found_in_hole = true;
+            // Sheet is 82x82, Part A (80x80) placed at (0, 2) due to Top-Left bias.
+            // Translated hole is [20, 60] x [22, 62].
+            // For 20x20 Part B, top-left anchor in this translated hole is (20, 42).
+            if (p.x == packaide::FT(20) && p.y == packaide::FT(42)) found_in_hole = true;
         }
     }
     assert(found_in_hole);
@@ -244,11 +245,68 @@ void test_simplification() {
     std::cout << "  - SUCCESS: Simplification verified." << std::endl;
 }
 
+void test_item_support() {
+    MockVFS vfs("pack_item");
+    pack_init(&vfs);
+    std::cout << "Testing 'item' Type Support..." << std::endl;
+
+    // 1. Create a parent shape representing a rigid 'item'
+    Shape item;
+    item.tags["type"] = "item";
+
+    // 2. Add a child box component (the item's nested geometry)
+    Shape child = create_box(&vfs, 20, 20);
+    child.tf = Matrix::translate(FT(5), FT(5), FT(0)); // relative offset inside item
+    item.components.push_back(child);
+
+    // 3. Create a 50x50 Sheet
+    Shape sheet = create_box(&vfs, 50, 50);
+
+    // 4. Pack
+    fs::Selector sel("jot/pack");
+    sel.parameters["$in"] = item;
+    sel.parameters["sheet"] = sheet;
+    sel.parameters["spacing"] = 2.0;
+    sel.parameters["margin"] = 0.0;
+    sel.output = "$out";
+
+    Processor::execute(&vfs, sel);
+
+    // 5. Verify the pack result
+    Shape out = vfs.read<Shape>(sel);
+    assert(out.tags["type"] == "group");
+    assert(out.components.size() == 1); // 1 sheet group
+    
+    Shape sheet_grp = out.components[0];
+    // Components of sheet_grp: [0] = sheet background, [1] = placed part
+    assert(sheet_grp.components.size() == 2);
+    
+    Shape placed_item = sheet_grp.components[1];
+    // Check that the parent 'item' is returned intact, and not flattened!
+    assert(placed_item.tags.contains("type") && placed_item.tags["type"] == "item");
+    assert(placed_item.components.size() == 1);
+    
+    // Check relative nested transforms (under Independent Matrix Mandate, all transforms are absolute world space)
+    auto nested = placed_item.components[0];
+    double tx = CGAL::to_double(nested.tf.t.cartesian(0, 3));
+    double ty = CGAL::to_double(nested.tf.t.cartesian(1, 3));
+    
+    double p_tx = CGAL::to_double(placed_item.tf.t.cartesian(0, 3));
+    double p_ty = CGAL::to_double(placed_item.tf.t.cartesian(1, 3));
+    
+    // The relative offset within the item (5.0, 5.0) should be perfectly preserved in absolute coordinates!
+    assert(std::abs(tx - p_tx - 5.0) < 0.001);
+    assert(std::abs(ty - p_ty - 5.0) < 0.001);
+
+    std::cout << "  - SUCCESS: Item support verified." << std::endl;
+}
+
 int main() {
     test_multi_sheet();
     test_alignment_and_bias();
     test_geometric_nesting();
     test_simplification();
+    test_item_support();
     std::cout << "✨ All Pack tests passed!" << std::endl;
     return 0;
 }

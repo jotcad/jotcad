@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { normalizeSelector, Selector, decodeSafe, decodeInfo } from './cid.js';
+import { log } from './log.js';
 
 /**
  * Connection: Abstract interface for a direct communication pipe to a neighbor.
@@ -51,14 +52,14 @@ export class ForwardConnection extends Connection {
 
     const body = JSON.stringify(bodyObj);
     try {
-        console.log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/read`, body.length > 500 ? body.slice(0, 500) + '...' : body);
+        log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/read`, body.length > 500 ? body.slice(0, 500) + '...' : body);
         const resp = await this.fetch(`${this.url}/read`, {
           method: 'POST',
           headers,
           signal: this.signal || AbortSignal.timeout(5000),
           body,
         });
-        console.log(`[MeshLink ${this.neighborId}] <- ${resp.status} ${this.url}/read`);
+        log(`[MeshLink ${this.neighborId}] <- ${resp.status} ${this.url}/read`);
 
         if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
         
@@ -66,7 +67,7 @@ export class ForwardConnection extends Connection {
         const ctxLine = JSON.stringify({ vfsId: this.neighborId, status: resp.status, action: 'mesh_read', url: this.url });
         throw new Error(ctxLine + '\n' + errText);
     } catch (err) {
-        console.log(`[MeshLink ${this.neighborId}] read error: ${err.message}`);
+        log(`[MeshLink ${this.neighborId}] read error: ${err.message}`);
         throw err;
     }
   }
@@ -90,13 +91,13 @@ export class ForwardConnection extends Connection {
   async subscribe(selector, expiresAt, stack) {
     const s = normalizeSelector(selector);
     const body = JSON.stringify({ selector: s, expiresAt, stack });
-    console.log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/subscribe`, body);
+    log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/subscribe`, body);
     await this.fetch(`${this.url}/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-vfs-id': stack[stack.length - 1] },
       signal: this.signal || AbortSignal.timeout(5000),
       body,
-    }).then(r => console.log(`[MeshLink ${this.neighborId}] <- ${r.status} ${this.url}/subscribe`))
+    }).then(r => log(`[MeshLink ${this.neighborId}] <- ${r.status} ${this.url}/subscribe`))
       .catch(() => {});
   }
 
@@ -105,13 +106,13 @@ export class ForwardConnection extends Connection {
     this._pulseCount++;
     this.lastPulse = Date.now();
     const body = JSON.stringify({ selector: s, payload, stack });
-    console.log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/notify`, s.path);
+    log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/notify`, s.path);
     await this.fetch(`${this.url}/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: this.signal || AbortSignal.timeout(5000),
       body,
-    }).then(r => console.log(`[MeshLink ${this.neighborId}] <- ${r.status} ${this.url}/notify`))
+    }).then(r => log(`[MeshLink ${this.neighborId}] <- ${r.status} ${this.url}/notify`))
       .catch(() => {});
   }
 }
@@ -171,7 +172,7 @@ export class ReverseConnection extends Connection {
     // Flush any pending commands immediately
     if (this.queue.length > 0) {
       const cmd = this.queue.shift();
-      console.log(`[ReverseConn ${this.neighborId}] Delivering queued command ${cmd.op || cmd.type} immediately.`);
+      log(`[ReverseConn ${this.neighborId}] Delivering queued command ${cmd.op || cmd.type} immediately.`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(cmd));
       return;
@@ -189,7 +190,7 @@ export class ReverseConnection extends Connection {
    * SERVER SIDE: Send a command or notification by consuming a pooled /listen response.
    */
   _dispatch(command) {
-    console.log(`[ReverseConn ${this.neighborId}] Dispatching command ${command.op || command.type}`);
+    log(`[ReverseConn ${this.neighborId}] Dispatching command ${command.op || command.type}`);
     if (this.pool.length > 0) {
       const { res } = this.pool.shift();
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -268,11 +269,11 @@ export class ReverseConnection extends Connection {
    * CLIENT SIDE: Actively poll a visible neighbor to receive mesh commands.
    */
   async startPolling(baseUrl, fetch) {
-    console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} starting Poll-based Receiver for ${baseUrl}`);
+    log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} starting Poll-based Receiver for ${baseUrl}`);
     let replyTo = null, stream = null, metadata = null;
     
     while (!this.abortController.signal.aborted) {
-      console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- ENTERING LOOP ITERATION ---`);
+      log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- ENTERING LOOP ITERATION ---`);
       try {
         const headers = { 'x-vfs-peer-id': this.vfs.id };
         if (replyTo) headers['x-vfs-reply-to'] = replyTo;
@@ -289,7 +290,7 @@ export class ReverseConnection extends Connection {
         // Since our nodes are HTTP/1.1, we must "drain" the stream into a buffer first
         // to use a standard buffered POST.
         if (stream instanceof ReadableStream || (stream && typeof stream.getReader === 'function')) {
-            console.log(`[ReverseConn ${this.neighborId}] Draining stream for HTTP/1.1 compatibility...`);
+            log(`[ReverseConn ${this.neighborId}] Draining stream for HTTP/1.1 compatibility...`);
             const reader = stream.getReader();
             const chunks = [];
             while (true) {
@@ -306,15 +307,15 @@ export class ReverseConnection extends Connection {
 
         if (bodyToSend !== undefined) fetchOptions.body = bodyToSend;
         
-        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
+        log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} -> WAITING for next command from ${baseUrl}`);
         const resp = await fetch(`${baseUrl}/listen`, fetchOptions);
         replyTo = null; stream = null; metadata = null;
 
-        console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} <- GOT SOMETHING (status ${resp.status}) from ${baseUrl}`);
+        log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} <- GOT SOMETHING (status ${resp.status}) from ${baseUrl}`);
         if (resp.status === 200) {
           const cmdText = await resp.text();
           const cmd = JSON.parse(cmdText);
-          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - RECEIVED COMMAND:`, cmdText);
+          log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - RECEIVED COMMAND:`, cmdText);
 
           if (cmd.type === 'COMMAND') {
             const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;
@@ -336,13 +337,13 @@ export class ReverseConnection extends Connection {
             const s = Selector.fromObject(cmd.selector);
             this.mesh.notify(s, cmd.payload, cmd.stack);
           }
-          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- FINISHED command. Looping. ---`);
+          log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- FINISHED command. Looping. ---`);
         } else if (resp.status === 409) {
             const errText = await resp.text();
             throw new Error(`CRITICAL: Remote node rejected our poll: ${errText}`);
         } else { 
-          if (resp.status !== 204) console.log(`[ReverseConn ${this.neighborId}] poll non-200 response: ${resp.status}`);
-          console.log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- IDLE. Looping. ---`);
+          if (resp.status !== 204) log(`[ReverseConn ${this.neighborId}] poll non-200 response: ${resp.status}`);
+          log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} --- IDLE. Looping. ---`);
         }
       } catch (err) { 
         if (this.abortController.signal.aborted) break; 
@@ -370,7 +371,7 @@ export class MeshLinkBase {
     this.instanceId = Math.random().toString(36).slice(2, 8);
     this.fetch = options.fetch || globalThis.fetch.bind(globalThis);
     this.localUrl = options.localUrl;
-    console.log(`[MeshLink ${this.vfs.id}] Instance ${this.instanceId} created.`);
+    log(`[MeshLink ${this.vfs.id}] Instance ${this.instanceId} created.`);
     this.peers = new Map(); // neighborId -> Connection
     this.connecting = new Set();
     this.neighborUrls = neighborUrls.map((u) => u.replace(/\/$/, ''));
@@ -406,13 +407,13 @@ export class MeshLinkBase {
     }
     const entry = this.interests.get(topic);
     entry.localExpiresAt = Math.max(entry.localExpiresAt, expiresAt);
-    console.log(`[MeshLink ${this.vfs.id}] Local interest in ${s.path} recorded (expiresAt: ${expiresAt})`);
+    log(`[MeshLink ${this.vfs.id}] Local interest in ${s.path} recorded (expiresAt: ${expiresAt})`);
     
     // Propagate the interest (Painting the mesh)
     const nextStack = [...stack, this.vfs.id];
     for (const conn of this.peers.values()) {
       if (!nextStack.includes(conn.neighborId)) {
-        console.log(`[MeshLink ${this.vfs.id}] -> Propagating local interest in ${s.path} to peer ${conn.neighborId}`);
+        log(`[MeshLink ${this.vfs.id}] -> Propagating local interest in ${s.path} to peer ${conn.neighborId}`);
         conn.subscribe(s, expiresAt, nextStack).catch(() => {});
       }
     }
@@ -421,7 +422,7 @@ export class MeshLinkBase {
   addInterest(neighborId, selector, expiresAt, stack = []) {
     const s = normalizeSelector(selector);
     const topic = JSON.stringify(s);
-    console.log(`[MeshLink ${this.vfs.id}] addInterest: ${s.path} from ${neighborId} (stack: ${stack})`);
+    log(`[MeshLink ${this.vfs.id}] addInterest: ${s.path} from ${neighborId} (stack: ${stack})`);
     if (!this.interests.has(topic)) {
       this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null, localExpiresAt: 0 });
     }
@@ -435,7 +436,7 @@ export class MeshLinkBase {
     if (isNewNeighbor && entry.lastValue) {
       const conn = this.peers.get(neighborId);
       if (conn) {
-          console.log(`[MeshLink ${this.vfs.id}] -> Pushing cached lastValue for ${s.path} to ${neighborId}`);
+          log(`[MeshLink ${this.vfs.id}] -> Pushing cached lastValue for ${s.path} to ${neighborId}`);
           conn.notify(s, entry.lastValue, [this.vfs.id]).catch(() => {});
       }
     }
@@ -445,7 +446,7 @@ export class MeshLinkBase {
         const conn = this.peers.get(neighborId);
         if (conn) {
             const catalog = this.vfs.getCatalog();
-            console.log(`[MeshLink ${this.vfs.id}] -> Contributing local catalog to ${neighborId} (${Object.keys(catalog.catalog).length} ops)`);
+            log(`[MeshLink ${this.vfs.id}] -> Contributing local catalog to ${neighborId} (${Object.keys(catalog.catalog).length} ops)`);
             conn.notify(s, { type: 'CATALOG_ANNOUNCEMENT', ...catalog }, [this.vfs.id]).catch(() => {});
         }
     }
@@ -455,7 +456,7 @@ export class MeshLinkBase {
       const nextStack = [...stack, this.vfs.id];
       for (const conn of this.peers.values()) {
         if (!nextStack.includes(conn.neighborId) && conn.neighborId !== neighborId) {
-          console.log(`[MeshLink ${this.vfs.id}] -> Propagating interest in ${s.path} from ${neighborId} to ${conn.neighborId}`);
+          log(`[MeshLink ${this.vfs.id}] -> Propagating interest in ${s.path} from ${neighborId} to ${conn.neighborId}`);
           conn.subscribe(s, expiresAt, nextStack).catch(() => {});
         }
       }
@@ -467,7 +468,7 @@ export class MeshLinkBase {
     if (stack.includes(this.vfs.id)) return;
     const nextStack = [...stack, this.vfs.id];
 
-    console.log(`[MeshLink ${this.vfs.id}] notify: ${s.path} from stack ${stack}`);
+    log(`[MeshLink ${this.vfs.id}] notify: ${s.path} from stack ${stack}`);
 
     for (const entry of this.interests.values()) {
       if (this._matches(entry.selector, s)) {
@@ -475,7 +476,7 @@ export class MeshLinkBase {
 
         // 1. Local Delivery
         if (entry.localExpiresAt > Date.now()) {
-          console.log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
+          log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
           this.vfs.events.emit('notify', s, payload);
         }
 
@@ -486,7 +487,7 @@ export class MeshLinkBase {
           
           const conn = this.peers.get(neighborId);
           if (conn) {
-              console.log(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
+              log(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
               conn.notify(s, payload, nextStack).catch(() => {});
           }
         }
@@ -514,24 +515,24 @@ export class MeshLinkBase {
 
   async addPeer(url) {
     url = url.replace(/\/$/, '');
-    console.log(`[MeshLink ${this.vfs.id}] addPeer startup: Attempting connection to ${url}`);
+    log(`[MeshLink ${this.vfs.id}] addPeer startup: Attempting connection to ${url}`);
     if (this.connecting.has(url)) {
-        console.log(`[MeshLink ${this.vfs.id}] addPeer: Already connecting to ${url}, skipping.`);
+        log(`[MeshLink ${this.vfs.id}] addPeer: Already connecting to ${url}, skipping.`);
         return;
     }
     this.connecting.add(url);
     try {
-      console.log(`[MeshLink ${this.vfs.id}] -> POST ${url}/register (vfsId: ${this.vfs.id})`);
+      log(`[MeshLink ${this.vfs.id}] -> POST ${url}/register (vfsId: ${this.vfs.id})`);
       const resp = await this.fetch(`${url}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: this.vfs.id, url: this.localUrl }),
         signal: this.abortController.signal || AbortSignal.timeout(5000),
       });
-      console.log(`[MeshLink ${this.vfs.id}] <- ${resp.status} ${url}/register`);
+      log(`[MeshLink ${this.vfs.id}] <- ${resp.status} ${url}/register`);
       if (resp.ok) {
         const info = await resp.json();
-        console.log(`[MeshLink ${this.vfs.id}] Registration successful for ${url}:`, info);
+        log(`[MeshLink ${this.vfs.id}] Registration successful for ${url}:`, info);
         if (info.id && info.id !== this.vfs.id) {
           let newConn = null;
 
@@ -542,14 +543,14 @@ export class MeshLinkBase {
                 reachability: info.reachability
             });
             this._setPeer(info.id, newConn);
-            console.log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id} (${info.reachability})`);
+            log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id} (${info.reachability})`);
           }
 
           // Browser Rule: If we have no local URL, we MUST poll for mesh events
           if (info.reachability === 'REVERSE' || !this.localUrl) {
             const pollerId = `${info.id}-poller`;
             if (!this.peers.has(pollerId)) {
-                console.log(`[MeshLink ${this.vfs.id}] Starting reverse poll line for ${info.id}`);
+                log(`[MeshLink ${this.vfs.id}] Starting reverse poll line for ${info.id}`);
                 const poller = new ReverseConnection(pollerId, this, { instanceId: this.instanceId });
                 this._setPeer(pollerId, poller);
                 poller.startPolling(url, this.fetch);
@@ -563,7 +564,7 @@ export class MeshLinkBase {
                 let maxExp = entry.localExpiresAt || 0;
                 for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
                 if (maxExp > Date.now()) {
-                  console.log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new peer ${newConn.neighborId}`);
+                  log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new peer ${newConn.neighborId}`);
                   newConn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
                 }
               }
@@ -574,13 +575,12 @@ export class MeshLinkBase {
         }
       } else {
         const errText = await resp.text().catch(() => 'no body');
-        console.warn(`[MeshLink ${this.vfs.id}] Handshake rejected by ${url} (Status ${resp.status}): ${errText}`);
+        log(`[MeshLink ${this.vfs.id}] Handshake rejected by ${url} (Status ${resp.status}): ${errText}`);
       }
-    } catch (e) { 
+    } catch (e) {
         const msg = `Handshake failed for ${url}: ${e.message} (Type: ${e.name})`;
-        console.error(`[MeshLink ${this.vfs.id}] ${msg}`);
-    } finally { this.connecting.delete(url); }
-    return null;
+        log(`[MeshLink ${this.vfs.id}] ${msg}`);
+    } finally { this.connecting.delete(url); }    return null;
   }
 
   async probeDirectReachability(url) {
@@ -591,10 +591,10 @@ export class MeshLinkBase {
         signal: AbortSignal.timeout(1000),
       });
       const ok = resp.ok;
-      console.log(`[MeshLink ${this.vfs.id}] Probing ${target} -> ${ok ? 'DIRECT' : 'REVERSE'}`);
+      log(`[MeshLink ${this.vfs.id}] Probing ${target} -> ${ok ? 'DIRECT' : 'REVERSE'}`);
       return ok;
     } catch (e) {
-      console.log(`[MeshLink ${this.vfs.id}] Probing ${url} -> REVERSE (Error: ${e.message})`);
+      log(`[MeshLink ${this.vfs.id}] Probing ${url} -> REVERSE (Error: ${e.message})`);
       return false;
     }
   }
@@ -603,7 +603,7 @@ export class MeshLinkBase {
    * SERVER SIDE: Entry point for a hidden peer calling /listen.
    */
   registerReversePeer(neighborId, res, replyTo = null, stream = null, info = null) {
-    console.log(`[MeshLink ${this.vfs.id}] registerReversePeer: ${neighborId} (replyTo: ${replyTo || 'none'})`);
+    log(`[MeshLink ${this.vfs.id}] registerReversePeer: ${neighborId} (replyTo: ${replyTo || 'none'})`);
     if (!this.peers.has(neighborId)) {
       const conn = new ReverseConnection(neighborId, this, { instanceId: this.instanceId });
       this._setPeer(neighborId, conn);
@@ -630,7 +630,7 @@ export class MeshLinkBase {
     if (targetConns.length === 0) return null;
 
     const fetchPromises = targetConns.map(async (conn) => {
-      console.log(`[MeshLink ${this.vfs.id}] Requesting ${target.path || target} from peer: ${conn.neighborId}`);
+      log(`[MeshLink ${this.vfs.id}] Requesting ${target.path || target} from peer: ${conn.neighborId}`);
       const resp = await conn.read(target, { ...context, stack, resolutionStack, expiresAt });
       
       if (resp && resp.body) {

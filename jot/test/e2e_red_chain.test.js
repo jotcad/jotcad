@@ -6,6 +6,7 @@ import { launchOpsNode } from '../../fs/test/ops_helper.js';
 import { TestVFSNode } from '../../fs/test/vfs_test_helpers.js';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
+import { log } from '../../fs/src/log.js';
 import { Selector } from '../../fs/src/vfs_core.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,17 +18,17 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
     const STORAGE_DIR = path.resolve(__dirname, '../../.vfs_storage_e2e_test');
 
     // 1. Launch C++ Ops Node
-    console.log('[E2E] Launching C++ Ops Node...');
+    log('[E2E] Launching C++ Ops Node...');
     const ops = await launchOpsNode(OPS_PATH, OPS_PORT, STORAGE_DIR);
 
     // 2. Launch JS Test Node
-    console.log('[E2E] Launching JS Test Node...');
+    log('[E2E] Launching JS Test Node...');
     const testNode = new TestVFSNode('test-node', TEST_NODE_PORT);
     await testNode.start();
 
     try {
         // 3. Cross-Register Neighbors
-        console.log('[E2E] Registering Neighbors...');
+        log('[E2E] Registering Neighbors...');
         await fetch(`http://localhost:${OPS_PORT}/register`, {
             method: 'POST',
             body: JSON.stringify({ id: 'test-node', url: `http://localhost:${TEST_NODE_PORT}` })
@@ -36,6 +37,20 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
             method: 'POST',
             body: JSON.stringify({ id: 'geo-ops-node', url: `http://localhost:${OPS_PORT}` })
         });
+
+        // 3.5 Wait for Mesh Handshake & Catalog Exchange
+        log('[E2E] Waiting for Mesh Handshake...');
+        await new Promise((resolve) => {
+            const timeout = setTimeout(resolve, 3000); // 3s Fallback is plenty
+            testNode.vfs.events.on('notify', (selector) => {
+                if (selector.path === 'sys/schema') {
+                    clearTimeout(timeout);
+                    resolve();
+                }
+            });
+            testNode.meshLink.subscribe(new Selector('sys/schema'));
+        });
+        log('[E2E] Mesh Ready.');
 
         // 4. Setup Operator Schemas (aligned with C++ implementation)
         const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
@@ -49,7 +64,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
         // It then fulfills the specific port requested by the VFS caller.
         testNode.registerProvider('user/Red', async (vfs, selector, context) => {
             const requestedPort = selector.output || '$out';
-            console.log(`[TestNode] Fulfilling user/Red port: ${requestedPort}`);
+            log(`[TestNode] Fulfilling user/Red port: ${requestedPort}`);
             
             const innerCompiler = new JotCompiler(vfs);
             innerCompiler.registerOperator('Box', { path: 'jot/Box', schema: boxSchema });
@@ -68,7 +83,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
                 throw new Error(`Port '${requestedPort}' not fulfilled by user/Red script`);
             }
 
-            console.log(`[TestNode] Expanded ${requestedPort} to Selector:`, JSON.stringify(targetTerminal.selector, null, 2));
+            log(`[TestNode] Expanded ${requestedPort} to Selector:`, JSON.stringify(targetTerminal.selector, null, 2));
             // IMPORTANT: Clear the stack for the sub-read to allow cross-node recursion
             // for the new expanded selector.
             return await vfs.read(targetTerminal.selector, { ...context, stack: [] });
@@ -84,7 +99,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
         const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'jot:shape' } });
         const finalSelector = terminals[0].selector;
 
-        console.log('[E2E] Final Selector:', JSON.stringify(finalSelector, null, 2));
+        log('[E2E] Final Selector:', JSON.stringify(finalSelector, null, 2));
 
         // 7. Request Execution from the C++ Ops Node
         // The Ops Node will call back to the Test Node for user/Red.
@@ -112,7 +127,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
         }
 
         const result = await response.json();
-        console.log('[E2E] Execution Result:', JSON.stringify(result, null, 2));
+        log('[E2E] Execution Result:', JSON.stringify(result, null, 2));
 
         // 8. Assertions: Deep equal vs Expected Shape
         // Note: The geometry hash is for a 15x15x15 Box.
@@ -128,11 +143,11 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
 
         assert.deepStrictEqual(result, expected, 'Returned shape should exactly match the expected expansion result');
         
-        console.log('--- E2E SUCCESS ---');
-        console.log('Final Shape JSON verified successfully.');
+        log('--- E2E SUCCESS ---');
+        log('Final Shape JSON verified successfully.');
 
     } finally {
-        console.log('[E2E] Cleaning up...');
+        log('[E2E] Cleaning up...');
         await testNode.stop();
         await ops.stop();
     }

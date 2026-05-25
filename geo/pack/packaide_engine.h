@@ -107,6 +107,16 @@ public:
         packaide::BoundingBoxHeuristic heuristic;
 
         for (const auto& info : parts) {
+            // Early assertions: enforce CGAL simplicity and orientation invariants for parts
+            assert(!info.cgal_poly.outer_boundary().is_empty());
+            assert(info.cgal_poly.outer_boundary().is_simple());
+            assert(!info.cgal_poly.outer_boundary().is_clockwise_oriented());
+            for (auto hit = info.cgal_poly.holes_begin(); hit != info.cgal_poly.holes_end(); ++hit) {
+                assert(!hit->is_empty());
+                assert(hit->is_simple());
+                assert(!hit->is_counterclockwise_oriented());
+            }
+
             struct BestCand {
                 packaide::Point_2 pos;
                 double angle;
@@ -133,6 +143,16 @@ public:
 
                 for (size_t island_idx = 0; island_idx < islands.size(); ++island_idx) {
                     const auto& island = islands[island_idx];
+                    
+                    // Early assertions: enforce CGAL simplicity and orientation invariants for sheet islands
+                    assert(!island.outer_boundary().is_empty());
+                    assert(island.outer_boundary().is_simple());
+                    assert(!island.outer_boundary().is_clockwise_oriented());
+                    for (auto hit = island.holes_begin(); hit != island.holes_end(); ++hit) {
+                        assert(!hit->is_empty());
+                        assert(hit->is_simple());
+                        assert(!hit->is_counterclockwise_oriented());
+                    }
                     
                     // MANDATE: trust the IFP. It now accounts for the ACTUAL sheet geometry.
                     auto island_ifp = packaide::compute_ifp_pwh(island, oriented_poly);
@@ -189,15 +209,39 @@ public:
         return placements;
     }
 
+    static std::optional<std::pair<Geometry, Matrix>> find_packing_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf) {
+        Matrix current_tf = parent_tf * s.tf;
+        if (s.geometry.has_value()) {
+            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+            return std::make_pair(geo, current_tf);
+        }
+        for (const auto& child : s.components) {
+            auto res = find_packing_geometry(vfs, child, current_tf);
+            if (res.has_value()) return res;
+        }
+        return std::nullopt;
+    }
+
+    static void apply_transform_recursive(Shape& s, const Matrix& transform) {
+        s.tf = transform * s.tf;
+        for (auto& child : s.components) {
+            apply_transform_recursive(child, transform);
+        }
+    }
+
     static PackResult pack(fs::VFSNode* vfs, const std::vector<Shape>& parts, const std::vector<Shape>& sheets, const Config& config) {
         PackResult result;
         if (sheets.empty()) return result;
 
         std::vector<PartInfo> remaining_parts;
         for (size_t i = 0; i < parts.size(); ++i) {
-            if (!parts[i].geometry.has_value()) continue;
-            auto geo = vfs->read<Geometry>(parts[i].geometry.value());
-            auto cgal_poly = geometry_to_cgal(geo, parts[i].tf);
+            auto packing_res = find_packing_geometry(vfs, parts[i], Matrix::identity());
+            if (!packing_res.has_value()) continue;
+            
+            auto geo = packing_res->first;
+            auto combined_tf = packing_res->second;
+            
+            auto cgal_poly = geometry_to_cgal(geo, combined_tf);
             if (cgal_poly.outer_boundary().is_empty()) continue;
 
             if (config.simplification_tolerance > packaide::FT(0)) {
@@ -252,8 +296,13 @@ public:
                 double rad = p.angle * M_PI / 180.0;
                 Matrix rot_tf = Matrix::rotationZ(turns);
                 
-                Geometry oriented_geo = vfs->read<Geometry>(comp.geometry.value());
-                oriented_geo.apply_tf(rot_tf * comp.tf);
+                auto packing_res = find_packing_geometry(vfs, comp, Matrix::identity());
+                if (!packing_res.has_value()) continue;
+                
+                Geometry oriented_geo = packing_res->first;
+                Matrix orig_combined_tf = packing_res->second;
+                
+                oriented_geo.apply_tf(rot_tf * orig_combined_tf);
                 auto oriented_bb = oriented_geo.bounds();
                 
                 packaide::FT world_x = p.x + config.margin;
@@ -261,7 +310,8 @@ public:
                 
                 Matrix placement_tf = Matrix::translate(FT(world_x - FT(oriented_bb.xmin())), FT(world_y - FT(oriented_bb.ymin())), FT(0));
                 
-                comp.tf = placement_tf * rot_tf * comp.tf;
+                // Recursively apply absolute world-space transforms to maintain INDEPENDENT MATRIX MANDATE
+                apply_transform_recursive(comp, placement_tf * rot_tf);
                 out_bin.components.push_back(comp);
 
                 packaide::Transformation rotate_cgal(CGAL::ROTATION, std::sin(rad), std::cos(rad));
@@ -327,7 +377,21 @@ public:
         }
 
         for (const auto& info : remaining_parts) {
-            result.unplaced.push_back(parts[info.original_index].geometry.value().value);
+            const auto& part = parts[info.original_index];
+            if (part.geometry.has_value()) {
+                result.unplaced.push_back(part.geometry.value().value);
+            } else {
+                if (part.tags.contains("name")) {
+                    auto val = part.tags["name"];
+                    if (val.is_string()) {
+                        result.unplaced.push_back(val.get<std::string>());
+                    } else {
+                        result.unplaced.push_back("island_" + std::to_string(info.original_index));
+                    }
+                } else {
+                    result.unplaced.push_back("island_" + std::to_string(info.original_index));
+                }
+            }
         }
 
         return result;

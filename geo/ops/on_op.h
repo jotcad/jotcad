@@ -16,9 +16,29 @@ struct OnOp : P {
         vfs->write(fulfilling.with_output("$out"), result);
     }
 
+    static bool is_exact_match(const Shape& a, const Shape& b) {
+        if (a.geometry.has_value() != b.geometry.has_value()) return false;
+        if (a.geometry.has_value()) {
+            if (a.geometry.value() != b.geometry.value()) return false;
+        }
+        if (a.tags != b.tags) return false;
+        if (a.components.size() != b.components.size()) return false;
+        for (size_t i = 0; i < a.components.size(); ++i) {
+            if (!is_exact_match(a.components[i], b.components[i])) return false;
+        }
+        return true;
+    }
+
+    static bool matches_tool_tree(const Shape& s, const Shape& tool) {
+        if (is_exact_match(s, tool)) return true;
+        for (const auto& child : tool.components) {
+            if (matches_tool_tree(s, child)) return true;
+        }
+        return false;
+    }
+
     static bool find_and_replace(fs::VFSNode* vfs, Shape& current, const Shape& target, const fs::Selector& op) {
-        // Basic match by geometry CID. Future: Expand to full Selector matching.
-        bool match = (target.geometry.has_value() && current.geometry == target.geometry);
+        bool match = matches_tool_tree(current, target);
         
         if (match) {
             // Conjugation Pattern: 

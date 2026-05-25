@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { log, warn } from '../fs/src/log.js';
 
 /**
  * Robustly spawns the C++ Native Ops node and waits for it to become healthy.
@@ -116,12 +117,12 @@ export async function launchOpsNode(opsPath, port, storageDir) {
     stop: async () => {
       if (child.exitCode !== null) return;
       
-      console.log(`[Ops Helper] Sending SIGTERM to PID ${child.pid}...`);
+      log(`[Ops Helper] Sending SIGTERM to PID ${child.pid}...`);
       child.kill('SIGTERM');
       
       const exitPromise = new Promise(resolve => child.on('exit', resolve));
       const timeoutPromise = new Promise(resolve => setTimeout(() => {
-          console.warn(`[Ops Helper] PID ${child.pid} did not exit within 5s, sending SIGKILL...`);
+          warn(`[Ops Helper] PID ${child.pid} did not exit within 5s, sending SIGKILL...`);
           child.kill('SIGKILL');
           resolve();
       }, 5000));

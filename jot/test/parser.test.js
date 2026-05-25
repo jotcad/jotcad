@@ -1,3 +1,4 @@
+import { log } from "../../fs/src/log.js";
 import test from 'node:test';
 import assert from 'node:assert';
 import { JotParser } from '../src/parser.js';

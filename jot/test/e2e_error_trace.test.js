@@ -6,6 +6,7 @@ import { launchOpsNode } from '../../fs/test/ops_helper.js';
 import { TestVFSNode } from '../../fs/test/vfs_test_helpers.js';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
+import { log } from '../../fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
@@ -50,15 +51,15 @@ test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
         assert.strictEqual(response.status, 500, 'Should fail with 500');
         const errBody = await response.text();
         
-        console.log('[E2E ERROR TRACE]:');
-        errBody.split('\n').forEach((line, i) => console.log(`  [${i}] ${line}`));
+        log('[E2E ERROR TRACE]:');
+        errBody.split('\n').forEach((line, i) => log(`  [${i}] ${line}`));
 
         assert.ok(errBody.includes('geo-ops-node'), 'Trace should include the failing node ID');
         assert.ok(errBody.includes('jot/rotateZ'), 'Trace should include the failing operator');
         assert.ok(errBody.includes('turns'), 'Trace should include the failing argument name');
         assert.ok(errBody.includes('type must be array'), 'Trace should include the original JSON error');
 
-        console.log('--- ERROR TRACE VERIFIED ---');
+        log('--- ERROR TRACE VERIFIED ---');
 
     } finally {
         await testNode.stop();

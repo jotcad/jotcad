@@ -74,7 +74,7 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
 
     Camera cam(ax, ay);
     std::vector<RenderTriangle> triangles;
-    std::vector<std::pair<std::pair<Vec3, Vec3>, ColorRGBA>> wireframe;
+    std::vector<RenderLine> wireframe;
 
     // 1. Scene Collection
     auto collect = [&](auto self, const Shape& s, const std::string& current_color) -> void {
@@ -111,7 +111,7 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
             for (const auto& f : geo.faces) Triangulation::triangulate_face(f, pts, add_tri);
             for (const auto& t : geo.triangles) add_tri(t[0], t[1], t[2]);
             for (const auto& s_wire : geo.segments) {
-                wireframe.push_back({{pts[s_wire[0]], pts[s_wire[1]]}, {255, 255, 0, 255}});
+                wireframe.push_back({pts[s_wire[0]], pts[s_wire[1]], base_color});
             }
         }
         for (const auto& child : s.components) self(self, child, next_color);
@@ -129,10 +129,10 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
         }
     }
     for (const auto& wf : wireframe) {
-        min_x = std::min({min_x, wf.first.first.x, wf.first.second.x});
-        max_x = std::max({max_x, wf.first.first.x, wf.first.second.x});
-        min_y = std::min({min_y, wf.first.first.y, wf.first.second.y});
-        max_y = std::max({max_y, wf.first.first.y, wf.first.second.y});
+        min_x = std::min({min_x, wf.p0.x, wf.p1.x});
+        max_x = std::max({max_x, wf.p0.x, wf.p1.x});
+        min_y = std::min({min_y, wf.p0.y, wf.p1.y});
+        max_y = std::max({max_y, wf.p0.y, wf.p1.y});
     }
 
     double scale = 0.9 * std::min(width / (max_x - min_x + 1e-6), height / (max_y - min_y + 1e-6));
@@ -148,9 +148,9 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
         rasterize_triangle(tri, pixels, z_buffer, width, height, scale, offset_x, offset_y);
     }
     for (const auto& wf : wireframe) {
-        rasterize_line((int)(wf.first.first.x * scale + offset_x), (int)((height - 1) - (wf.first.first.y * scale + offset_y)),
-                       (int)(wf.first.second.x * scale + offset_x), (int)((height - 1) - (wf.first.second.y * scale + offset_y)),
-                       wf.second, pixels, width, height);
+        rasterize_line((int)(wf.p0.x * scale + offset_x), (int)((height - 1) - (wf.p0.y * scale + offset_y)),
+                       (int)(wf.p1.x * scale + offset_x), (int)((height - 1) - (wf.p1.y * scale + offset_y)),
+                       wf.color, pixels, width, height);
     }
 
     int len;

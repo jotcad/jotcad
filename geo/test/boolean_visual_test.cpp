@@ -86,7 +86,7 @@ void test_boolean_visuals() {
 
     // 4. Plane
     fs::Selector plane_sel("jot/Z");
-    plane_sel.parameters = {{"offset", 0.0}};
+    plane_sel.parameters = {{"offset", std::vector<double>{0.0}}};
     plane_sel.output = "$out";
     Processor::execute(&vfs, plane_sel);
     Shape plane_tool = vfs.read<Shape>(plane_sel);

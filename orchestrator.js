@@ -1,85 +1,135 @@
 import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { info, warn, error, debug } from './fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const PROFILES = {
   LIVE: {
     name: 'LIVE',
-    ports: { ops: 9091, export: 9092, ux: 3030 },
     storagePrefix: '.vfs_storage_live_',
-    ux: {
-        command: 'npx',
-        args: ['http-server', 'ux/dist/live', '-p', '3030', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
+    gateway: 'export',
+    components: {
+      ops:    { protocol: 'http', port: 9091 },
+      export: { protocol: 'http', port: 9092 },
+      ux:     { protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
   },
   TEST: {
     name: 'TEST',
-    ports: { ops: 9191, export: 9192, ux: 3131 },
     storagePrefix: '.vfs_storage_test_',
-    ux: {
-        command: 'npx',
-        args: ['http-server', 'ux/dist/test', '-p', '3131', '--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem']
+    gateway: 'export',
+    components: {
+      ops:    { protocol: 'http', port: 9191 },
+      export: { protocol: 'http', port: 9192 },
+      ux:     { protocol: 'https', port: 3131, dist: 'ux/dist/test' }
+    }
+  },
+  DIRECT_CPP: {
+    name: 'DIRECT_CPP',
+    storagePrefix: '.vfs_storage_direct_cpp_',
+    gateway: 'ops',
+    components: {
+      ops:    { protocol: 'https', port: 9192 },
+      ux:     { protocol: 'https', port: 3232, dist: 'ux/dist/test' }
     }
   }
 };
 
 export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const config = typeof profileOrConfig === 'string' ? PROFILES[profileOrConfig] : profileOrConfig;
-  const { ports, storagePrefix, ux, env = {} } = config;
+  const { storagePrefix, components: componentMap, gateway, env = {} } = config;
 
-  console.log(`[Orchestrator] Launching ${config.name} Cluster...`);
+  const sslDir = path.join(__dirname, '.ssl');
+  const keyPath = path.join(sslDir, 'localhost-key.pem');
+  const certPath = path.join(sslDir, 'localhost-cert.pem');
+  const hasCerts = fs.existsSync(keyPath) && fs.existsSync(certPath);
+
+  info(`[Orchestrator] Launching ${config.name} Cluster...`);
+
+  const ports = Object.fromEntries(Object.entries(componentMap).map(([id, cfg]) => [id, cfg.port]));
 
   try {
     const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
-    console.log(`[Orchestrator] Cleaning up ports: ${portList}`);
+    info(`[Orchestrator] Cleaning up ports: ${portList}`);
     execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
     // Clear storage for this specific profile
     execSync(`rm -rf ${storagePrefix}* || true`);
     execSync('sleep 1');
   } catch (e) {}
 
-  const components = [
-    {
-      name: `Ops Node (${ports.ops})`,
-      command: './geo/bin/ops',
-      args: [String(ports.ops), `${storagePrefix}ops`],
-      cwd: __dirname,
-      env: { 
-          ...process.env, 
-          PORT: String(ports.ops),
-          PEER_ID: 'geo-ops-node',
-          NEIGHBORS: '',
-          ...env
+  const gatewayNode = componentMap[gateway];
+  const gatewayUrl = `${gatewayNode.protocol}://localhost:${gatewayNode.port}`;
+
+  const componentConfigs = {
+    ops: () => {
+      const cfg = componentMap.ops;
+      const useSsl = cfg.protocol === 'https';
+      if (useSsl && !hasCerts) {
+          warn(`[Orchestrator] Ops Node requested HTTPS but certs are missing. Falling back to HTTP.`);
       }
+      return {
+        name: `Ops Node (${cfg.port})`,
+        command: './geo/bin/ops',
+        args: [String(cfg.port), `${storagePrefix}ops`],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            PORT: String(cfg.port),
+            PEER_ID: 'geo-ops-node',
+            NEIGHBORS: '',
+            SSL_CERT_PATH: (useSsl && hasCerts) ? certPath : '',
+            SSL_KEY_PATH: (useSsl && hasCerts) ? keyPath : '',
+            ...env
+        }
+      };
     },
-    {
-        name: `Export Node (${ports.export})`,
+    export: () => {
+      const cfg = componentMap.export;
+      return {
+        name: `Export Node (${cfg.port})`,
         command: 'node',
         args: ['geo/export_service.js'],
         cwd: __dirname,
         env: { 
             ...process.env, 
-            PORT: String(ports.export),
+            PORT: String(cfg.port),
             VFS_ID: config.name === 'LIVE' ? 'live_export' : 'test_export',
-            NEIGHBORS: `http://localhost:${ports.ops}`,
+            NEIGHBORS: `${componentMap.ops.protocol}://localhost:${componentMap.ops.port}`,
             ...env
         }
+      };
     },
-    {
-      name: `UX (${ports.ux})`,
-      command: ux.command,
-      args: ux.args,
-      cwd: ux.cwd || __dirname,
-      env: {
-          ...process.env,
-          VITE_VFS_URL: `http://localhost:${ports.export}`,
-          VITE_HTTPS: String(!!ux.args.includes('--ssl')),
-          ...env
+    ux: () => {
+      const cfg = componentMap.ux;
+      const useSsl = cfg.protocol === 'https';
+      const uxArgs = ['http-server', cfg.dist, '-p', String(cfg.port)];
+      
+      if (useSsl && hasCerts) {
+          uxArgs.push('--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem');
+      } else if (useSsl) {
+          warn(`[Orchestrator] UX requested HTTPS but certs are missing. Falling back to HTTP.`);
       }
+
+      return {
+        name: `UX (${cfg.port})`,
+        command: 'npx',
+        args: uxArgs,
+        cwd: cfg.cwd || __dirname,
+        env: {
+            ...process.env,
+            VITE_VFS_URL: gatewayUrl,
+            VITE_HTTPS: String(useSsl && hasCerts),
+            ...env
+        }
+      };
     }
-  ];
+  };
+
+  const components = Object.keys(componentMap).map(id => componentConfigs[id]());
+
 
   const processes = new Map();
   let shuttingDown = false;
@@ -87,9 +137,9 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`\n[Orchestrator] Shutting down ${config.name} cluster...`);
+    info(`\n[Orchestrator] Shutting down ${config.name} cluster...`);
     for (const [name, child] of processes) {
-      console.log(`[Orchestrator] Killing ${name}...`);
+      info(`[Orchestrator] Killing ${name}...`);
       child.kill('SIGTERM');
     }
     // Give child processes time to gracefully exit and release ports
@@ -104,23 +154,23 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   };
 
   const launch = (component) => {
-    console.log(`[Orchestrator] Starting ${component.name}...`);
+    info(`[Orchestrator] Starting ${component.name}...`);
     const child = spawn(component.command, component.args, {
       cwd: component.cwd,
       env: component.env || process.env,
       stdio: 'pipe'
     });
 
-    child.stdout.on('data', (data) => process.stdout.write(`[${config.name}:${component.name}] ${data}`));
-    child.stderr.on('data', (data) => process.stderr.write(`[${config.name}:${component.name} ERROR] ${data}`));
+    child.stdout.on('data', (data) => debug(`[${config.name}:${component.name}] ${data.toString().trim()}`));
+    child.stderr.on('data', (data) => warn(`[${config.name}:${component.name} ERROR] ${data.toString().trim()}`));
 
     child.on('error', (err) => {
-      console.error(`[Orchestrator] ${component.name} failed to start: ${err.message}`);
+      error(`[Orchestrator] ${component.name} failed to start: ${err.message}`);
     });
 
     child.on('close', (code) => {
       if (!shuttingDown && code !== 0 && code !== null) {
-          console.error(`[Orchestrator] ${component.name} exited unexpectedly with code ${code}`);
+          error(`[Orchestrator] ${component.name} exited unexpectedly with code ${code}`);
       }
       processes.delete(component.name);
     });
@@ -131,15 +181,14 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
   components.forEach(launch);
 
   // Wait for UX to be healthy
-  console.log(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
+  info(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
   let uxReady = false;
   for (let i = 0; i < 50; i++) {
     try {
-      const isHttps = ux.args.includes('--ssl');
-      const url = `${isHttps ? 'https' : 'http'}://localhost:${ports.ux}`;
+      const url = `${hasCerts ? 'https' : 'http'}://localhost:${ports.ux}`;
       const options = {};
       
-      if (isHttps) {
+      if (hasCerts) {
           // Disable SSL verification for the health check probe since we use self-signed certs
           options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
       }
@@ -149,11 +198,16 @@ export async function launchSystem(profileOrConfig = PROFILES.LIVE) {
     } catch (e) {}
     await new Promise(r => setTimeout(r, 200));
   }
-  if (!uxReady) console.warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
+  if (!uxReady) warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
+
+  const uxCfg = componentMap.ux;
+  const uxProtocol = (uxCfg && uxCfg.protocol === 'https' && hasCerts) ? 'https' : 'http';
 
   return { 
       processes, 
       ports,
+      isHttps: uxProtocol === 'https',
+      uxProtocol,
       stop: shutdown 
   };
 }

@@ -1,17 +1,18 @@
 import { JotParser } from '../src/parser.js';
+import { log } from '../../fs/src/log.js';
 
 const parser = new JotParser();
 const test = (str) => {
     try {
-        console.log(`Input: "${str}"`);
+        log(`Input: "${str}"`);
         const tokens = parser._tokenize(str);
-        console.log(`Tokens: ${JSON.stringify(tokens)}`);
+        log(`Tokens: ${JSON.stringify(tokens)}`);
         const ast = parser.parse(str);
-        console.log(`AST: ${JSON.stringify(ast, null, 2)}`);
+        log(`AST: ${JSON.stringify(ast, null, 2)}`);
     } catch (e) {
-        console.log(`Error: ${e.message}`);
+        log(`Error: ${e.message}`);
     }
-    console.log('---');
+    log('---');
 };
 
 test('1/5');

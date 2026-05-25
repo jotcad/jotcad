@@ -1,6 +1,7 @@
 import { pipeline } from 'stream/promises';
 import { Readable } from 'node:stream';
 import { normalizeSelector, Selector, encodeSafe, getSelectorKey } from './vfs_core.js';
+import { log } from './log.js';
 
 export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const getBody = async (req) => {
@@ -44,7 +45,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       if (req.method === 'POST' && vfsPath === '/read') {
         const body = await getBody(req);
         const { selector: selObj, cid, stack = [], resolutionStack = [], expiresAt } = body;
-        console.log(`[MeshServer ${vfs.id}] POST /read: ${selObj ? selObj.path : cid} (stack: ${stack.join('->')})`);
+        log(`[MeshServer ${vfs.id}] POST /read: ${selObj ? selObj.path : cid} (stack: ${stack.join('->')})`);
         if (!selObj && !cid) {
             res.writeHead(400);
             return res.end('Missing selector or cid');
@@ -62,7 +63,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
           });
           return await pump(stream, res);
         }
-        console.log(`[MeshServer ${vfs.id}] /read 404: ${target.path || target}`);
+        log(`[MeshServer ${vfs.id}] /read 404: ${target.path || target}`);
         res.writeHead(404);
         return res.end();
       }
@@ -121,7 +122,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const body = await getBody(req);
         const { selector: selObj, payload, stack } = body;
         const selector = selObj ? Selector.fromObject(selObj) : null;
-        console.log(`[MeshServer ${vfs.id}] POST /notify ${selector?.path || 'null'} from stack ${stack}`);
+        log(`[MeshServer ${vfs.id}] POST /notify ${selector?.path || 'null'} from stack ${stack}`);
         if (selector) vfs.validateSelector(selector); // CRITICAL: FAIL VISIBLY
         meshLink?.notify(selector, payload, stack || []);
         res.writeHead(200);
@@ -132,7 +133,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         const peerId = req.headers['x-vfs-peer-id'];
         const replyTo = req.headers['x-vfs-reply-to'];
         const info = decodeInfo(req.headers['x-vfs-info']);
-        console.log(`[MeshServer ${vfs.id}] POST /listen from ${peerId} (replyTo: ${replyTo || 'none'})`);
+        log(`[MeshServer ${vfs.id}] POST /listen from ${peerId} (replyTo: ${replyTo || 'none'})`);
         if (!peerId) {
           res.writeHead(400);
           return res.end('Missing x-vfs-peer-id');

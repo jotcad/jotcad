@@ -66,6 +66,25 @@ struct Matrix {
         return rotationZ(turns) * (*this);
     }
 
+    // Helper for rotating around a specific 2D point (x, y)
+    static Matrix rotateZ(double turns, FT px, FT py) {
+        return translate(px, py, 0) * rotationZ(turns) * translate(-px, -py, 0);
+    }
+
+    EK::Point_2 transform_2d(const EK::Point_2& p) const {
+        auto p3 = t.transform(EK::Point_3(p.x(), p.y(), 0));
+        return EK::Point_2(p3.x(), p3.y());
+    }
+
+    CGAL::Aff_transformation_2<EK> to_cgal_2d() const {
+        // Extract the 2x3 part of the 3x4 affine matrix
+        return CGAL::Aff_transformation_2<EK>(
+            t.cartesian(0, 0), t.cartesian(0, 1), t.cartesian(0, 3),
+            t.cartesian(1, 0), t.cartesian(1, 1), t.cartesian(1, 3),
+            t.cartesian(3, 3) // w coefficient if present
+        );
+    }
+
     Matrix translated(FT x, FT y, FT z) const {
         return translate(x, y, z) * (*this);
     }

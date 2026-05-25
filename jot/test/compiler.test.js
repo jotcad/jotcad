@@ -187,4 +187,84 @@ test('JotCompiler Argument Mapping', async (t) => {
       /Compiler Error: Missing required argument 'other' for 'Mixed'/
     );
   });
+
+  await t.test('Sequence Comprehension [start..end by step]', async () => {
+    compiler.registerOperator('Z', {
+      path: 'jot/Z',
+      schema: {
+        arguments: [
+          { name: 'offset', type: 'jot:number', default: 0.0 }
+        ],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    compiler.registerOperator('mz', {
+      path: 'jot/mz',
+      schema: {
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [
+          { name: 'z', type: 'jot:numbers', default: [0.0] }
+        ],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    compiler.registerOperator('Box', {
+      path: 'jot/Box',
+      schema: {
+        arguments: [
+          { name: 'size', type: 'jot:number' }
+        ],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    // 1. Basic parser AST check
+    const ast = parser.parse('[10..20 by 5]');
+    assert.equal(ast.type, 'RANGE');
+    assert.strictEqual(ast.start, 10);
+    assert.strictEqual(ast.end, 20);
+    assert.strictEqual(ast.step, 5);
+    assert.strictEqual(ast.inclusiveEnd, false);
+
+    // 2. Evaluates to standard array (exclusive)
+    const resExclusive = await compiler._evaluateRecursive(parser.parse('[10..20 by 5]'), {}, null, {});
+    assert.deepEqual(resExclusive, [10, 15]);
+
+    // 3. Evaluates to standard array (inclusive)
+    const resInclusive = await compiler._evaluateRecursive(parser.parse('[10..20 by 5 inc]'), {}, null, {});
+    assert.deepEqual(resInclusive, [10, 15, 20]);
+
+    // 4. Chaining / Mapping with singular offset argument: [10..20 by 5].Z()
+    const mappingRes = await compiler.evaluate(parser.parse('[10..20 by 5].Z() -> $out'), {}, defaultSchema);
+    assert.equal(mappingRes.length, 2);
+    assert.equal(mappingRes[0].selector.path, 'jot/Z');
+    assert.equal(mappingRes[0].selector.parameters.offset, 10);
+    assert.equal(mappingRes[1].selector.path, 'jot/Z');
+    assert.equal(mappingRes[1].selector.parameters.offset, 15);
+
+    // 5. Array/Sequence argument with plural z argument: Box(10).mz([10..20 by 5 inc])
+    const mzRes = await compiler.evaluate(parser.parse('Box(10).mz([10..20 by 5 inc]) -> $out'), {}, defaultSchema);
+    assert.equal(mzRes.length, 1);
+    assert.equal(mzRes[0].selector.path, 'jot/mz');
+    assert.deepEqual(mzRes[0].selector.parameters.z, [10, 15, 20]);
+
+    // 6. Direct plural argument collection on Z operator (e.g. Z([10..20 by 5 inc]))
+    compiler.registerOperator('Z', {
+      path: 'jot/Z',
+      schema: {
+        arguments: [
+          { name: 'offset', type: 'jot:numbers', default: [0.0] }
+        ],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    const pluralZRes = await compiler.evaluate(parser.parse('Z([10..20 by 5 inc]) -> $out'), {}, defaultSchema);
+    assert.equal(pluralZRes.length, 1);
+    assert.equal(pluralZRes[0].selector.path, 'jot/Z');
+    assert.deepEqual(pluralZRes[0].selector.parameters.offset, [10, 15, 20]);
+  });
 });
+
