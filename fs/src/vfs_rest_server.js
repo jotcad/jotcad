@@ -47,6 +47,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   };
 
   const handleRequest = async (req, res) => {
+    log(`[MeshServer ${vfs.id}] INCOMING: ${req.method} ${req.url}`);
     // 1. Global CORS Headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');

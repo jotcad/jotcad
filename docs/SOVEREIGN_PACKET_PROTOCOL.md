@@ -6,7 +6,7 @@ The JotCAD mesh network requires a unified architecture where physical hardware 
 
 This JSON-wrapping approach severely degraded performance and memory efficiency for constrained devices sending raw binary data (such as a 2 FPS JPEG stream from an ESP32-CAM), forcing them to Base64 encode binary data or parse heavy JSON envelopes.
 
-The **Sovereign Packet Protocol** separates routing metadata from the actual data payload. Metadata is hoisted into HTTP headers, and the HTTP body is left strictly for the uninterpreted payload (raw binary bytes or pure JSON).
+The **Sovereign Packet Protocol** separates routing metadata from the actual data payload. Metadata is hoisted into HTTP headers, and the HTTP body is left strictly for the uninterpreted payload (raw binary bytes).
 
 ## Core Directives
 

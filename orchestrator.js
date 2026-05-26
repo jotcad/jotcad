@@ -24,7 +24,7 @@ export const PROFILES = {
     gateway: 'export',
     components: {
       ops:    { type: 'ops',    protocol: 'http',  port: 9191 },
-      export: { type: 'export', protocol: 'https', port: 9192 },
+      export: { type: 'export', protocol: 'https', port: 9194 },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
