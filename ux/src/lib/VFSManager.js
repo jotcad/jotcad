@@ -195,6 +195,11 @@ export const vfsActions = {
       setIsConnected(true);
       console.log(`[MeshVFS] Mesh started. Discovery active.`);
       
+      // Subscribe to topology updates so we receive TOPOLOGY_UPDATE notifications
+      mesh.subscribe(new Selector('sys/topo'), Date.now() + 1000 * 60 * 60 * 24).catch((err) => {
+        console.error('[MeshVFS] Failed to subscribe to sys/topo:', err);
+      });
+
       // Trigger initial discovery automatically
       this.discoverSchemas();
     } catch (e) {
@@ -209,6 +214,17 @@ export const vfsActions = {
         if (!nodes.has(peerId)) nodes.set(peerId, { id: peerId, type: 'PEER', pps: 0, neighbors });
         else nodes.get(peerId).neighbors = neighbors;
       }
+
+      // Add missing neighbor nodes to the topology list so they render as leaf nodes!
+      for (const neighbors of meshMap.values()) {
+        for (const neighbor of neighbors) {
+          if (!nodes.has(neighbor.id)) {
+            // Strip any -poller suffixes for display cleanliness if needed, but match topology exactly
+            nodes.set(neighbor.id, { id: neighbor.id, type: 'PEER', pps: 0, neighbors: [] });
+          }
+        }
+      }
+
       for (const p of mesh.peers.values()) {
         if (nodes.has(p.id)) {
           const n = nodes.get(p.id);

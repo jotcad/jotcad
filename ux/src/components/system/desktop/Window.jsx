@@ -4,10 +4,61 @@ import { X, Maximize2, Minimize2, Minus, Trash2, Globe } from 'lucide-solid';
 import { windowActions } from '../../../lib/state/DesktopState';
 import { blackboard } from '../../../lib/blackboard';
 
+const getColorScheme = (id) => {
+  const colors = [
+    {
+      border: 'border-cyan-400/80',
+      borderInteracting: 'border-cyan-300 ring-cyan-300/30',
+      text: 'text-cyan-300',
+      placeholder: 'placeholder:text-cyan-300/30'
+    },
+    {
+      border: 'border-emerald-400/80',
+      borderInteracting: 'border-emerald-300 ring-emerald-300/30',
+      text: 'text-emerald-300',
+      placeholder: 'placeholder:text-emerald-300/30'
+    },
+    {
+      border: 'border-rose-400/80',
+      borderInteracting: 'border-rose-300 ring-rose-300/30',
+      text: 'text-rose-300',
+      placeholder: 'placeholder:text-rose-300/30'
+    },
+    {
+      border: 'border-amber-400/80',
+      borderInteracting: 'border-amber-300 ring-amber-300/30',
+      text: 'text-amber-300',
+      placeholder: 'placeholder:text-amber-300/30'
+    },
+    {
+      border: 'border-fuchsia-400/80',
+      borderInteracting: 'border-fuchsia-300 ring-fuchsia-300/30',
+      text: 'text-fuchsia-300',
+      placeholder: 'placeholder:text-fuchsia-300/30'
+    },
+    {
+      border: 'border-yellow-400/80',
+      borderInteracting: 'border-yellow-300 ring-yellow-300/30',
+      text: 'text-yellow-300',
+      placeholder: 'placeholder:text-yellow-300/30'
+    }
+  ];
+
+  if (!id) return colors[0];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+};
+
 export const Window = (props) => {
   let winRef;
   const [isInteracting, setIsInteracting] = createSignal(false);
   const [screenSize, setScreenSize] = createSignal({ w: window.innerWidth, h: window.innerHeight });
+
+  const color = createMemo(() => getColorScheme(props.data.id));
 
   // Reactive derived signal from store
   const isMaximized = () => props.data.isMaximized || false;
@@ -188,9 +239,9 @@ export const Window = (props) => {
       ref={winRef}
       onPointerDown={() => { windowActions.raise(props.data.id); }}
       data-id={props.data.id}
-      class={`jot-window absolute pointer-events-auto border-cyan-400 bg-black/95 backdrop-blur-3xl shadow-2xl flex flex-col overflow-hidden touch-none ${
+      class={`jot-window absolute pointer-events-auto bg-black/95 backdrop-blur-3xl shadow-2xl flex flex-col overflow-hidden touch-none ${color().border} ${
         isMaximized() ? 'is-maximized' : 
-        isInteracting() ? 'border-cyan-300 ring-4 ring-cyan-400/20' : 'transition-all duration-200'
+        isInteracting() ? `${color().borderInteracting} ring-4` : 'transition-all duration-200'
       }`}
       style={windowStyle()}
     >
@@ -202,14 +253,14 @@ export const Window = (props) => {
       >
         <div class="flex items-center gap-3">
           <Show when={props.data.type === 'editor'} fallback={
-            <span class={`font-black tracking-[0.2em] text-white/50 ${
+            <span class={`font-black tracking-[0.2em] text-white opacity-100 ${
                 isMaximized() ? 'text-xs md:text-sm' : 'text-[10px] md:text-xs'
             }`}>
                 {props.data.label || props.data.id}
             </span>
           }>
              <input 
-               class="bg-transparent border-none text-ui-label font-black tracking-tighter text-cyan-400 focus:outline-none w-48 placeholder:text-cyan-400/20"
+               class={`bg-transparent border-none text-sm font-black tracking-tighter text-white opacity-100 focus:opacity-100 focus:outline-none w-48 ${color().placeholder}`}
                data-testid="op-name-input"
                value={props.data.opName ?? ''}
                placeholder="Name your op..."
@@ -233,7 +284,7 @@ export const Window = (props) => {
                <button 
                  onClick={handlePublish}
                  class={`relative tap-target rounded-full bg-white/5 transition-all flex items-center justify-center p-1.5 ${
-                    isUnpublished() ? 'text-cyan-400' : 'text-white/20'
+                    isUnpublished() ? color().text : 'text-white/20'
                  }`}
                  title={isUnpublished() ? "Publish to Mesh" : "Published to Mesh"}
                >

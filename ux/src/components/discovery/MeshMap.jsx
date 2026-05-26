@@ -26,6 +26,16 @@ const getEnvInfo = (node) => {
   return { label: 'JS', icon: <FileJson size={16} />, color: '#64748b' };
 };
 
+const getNodeDefaultPosition = (node, index, total, isWindowed) => {
+  const centerX = isWindowed ? 250 : 400; 
+  const centerY = isWindowed ? 250 : 500;
+  const angle = (index / Math.max(1, total)) * Math.PI * 2;
+  return {
+    x: centerX + Math.cos(angle) * 100,
+    y: centerY + Math.sin(angle) * 100,
+  };
+};
+
 const MeshNode = (props) => {
   let nodeRef;
   const env = createMemo(() => getEnvInfo(props.node));
@@ -34,14 +44,7 @@ const MeshNode = (props) => {
     const p = props.node;
     const saved = blackboard.meshPositions()[p.id];
     if (saved) return saved;
-
-    const centerX = 400; 
-    const centerY = 500;
-    const angle = (props.index / Math.max(1, props.total)) * Math.PI * 2;
-    return {
-      x: centerX + Math.cos(angle) * 100,
-      y: centerY + Math.sin(angle) * 100,
-    };
+    return getNodeDefaultPosition(p, props.index, props.total, props.isWindowed);
   });
 
   onMount(() => {
@@ -113,16 +116,22 @@ export function MeshMap(props) {
       blackboard.setMeshPositions((prev) => {
         const next = { ...prev };
 
+        // Pre-clone all peer objects we might mutate
+        for (let i = 0; i < peers.length; i++) {
+          const p = peers[i];
+          if (next[p.id]) {
+            next[p.id] = { ...next[p.id] };
+          } else {
+            next[p.id] = getNodeDefaultPosition(p, i, peers.length, props.isWindowed);
+          }
+        }
+
         for (let i = 0; i < peers.length; i++) {
           const p1 = peers[i];
-          if (!next[p1.id])
-            next[p1.id] = { x: 400 + Math.random(), y: 500 + Math.random() };
           if (next[p1.id].manual) continue;
 
           for (let j = i + 1; j < peers.length; j++) {
             const p2 = peers[j];
-            if (!next[p2.id])
-              next[p2.id] = { x: 400 + Math.random(), y: 500 + Math.random() };
 
             const dx = next[p1.id].x - next[p2.id].x;
             const dy = next[p1.id].y - next[p2.id].y;
@@ -143,8 +152,10 @@ export function MeshMap(props) {
             }
           }
 
-          const dcx = 400 - next[p1.id].x;
-          const dcy = 500 - next[p1.id].y;
+          const cX = props.isWindowed ? 250 : 400;
+          const cY = props.isWindowed ? 250 : 500;
+          const dcx = cX - next[p1.id].x;
+          const dcy = cY - next[p1.id].y;
           next[p1.id].x += dcx * 0.1;
           next[p1.id].y += dcy * 0.1;
         }
@@ -157,8 +168,8 @@ export function MeshMap(props) {
   const nodes = createMemo(() => {
     const t = topo();
     const peers = t.peers || [];
-    return peers.map((p) => {
-      const pos = positions()[p.id] || { x: 400, y: 500 };
+    return peers.map((p, idx) => {
+      const pos = positions()[p.id] || getNodeDefaultPosition(p, idx, peers.length, props.isWindowed);
       return { ...p, x: pos.x, y: pos.y };
     });
   });
@@ -188,7 +199,7 @@ export function MeshMap(props) {
   });
 
   return (
-    <div class={`absolute inset-0 pointer-events-none z-0 overflow-hidden ${props.isWindowed ? 'bg-slate-950/50' : ''}`}>
+    <div class={`absolute inset-0 pointer-events-none z-0 overflow-visible ${props.isWindowed ? 'bg-slate-950/50' : ''}`}>
       <svg class="w-full h-full overflow-visible">
         <For each={topoEdges()}>
           {(edge) => (
@@ -197,10 +208,10 @@ export function MeshMap(props) {
               y1={edge.from.y}
               x2={edge.to.x}
               y2={edge.to.y}
-              stroke="white"
-              stroke-width="1"
-              stroke-opacity="0.1"
-              stroke-dasharray={edge.reachability === 'REVERSE' ? '4 4' : '0'}
+              stroke="#06b6d4"
+              stroke-width="3"
+              stroke-opacity="0.7"
+              stroke-dasharray={edge.reachability === 'REVERSE' ? '6 6' : '0'}
             />
           )}
         </For>
@@ -236,6 +247,7 @@ export function MeshMap(props) {
               index={idx()}
               total={topo().peers.length}
               scale={props.scale || 1}
+              isWindowed={props.isWindowed}
             />
           )}
         </For>

@@ -117,10 +117,10 @@ export const Canvas = () => {
 
   return (
     <div 
-        class={`canvas-container w-full h-full overflow-hidden bg-blackboard relative select-none ${isWorldMode() ? 'cursor-grab active:cursor-grabbing' : ''}`} 
+        class={`canvas-container w-full h-full overflow-hidden bg-blackboard relative select-none touch-none ${isWorldMode() ? 'cursor-grab active:cursor-grabbing' : ''}`} 
         ref={canvasRef}
     >
-      <div ref={dragRef} class="pan-layer absolute inset-0 z-0 pointer-events-auto" />
+      <div ref={dragRef} class="pan-layer absolute inset-0 z-0 pointer-events-auto touch-none" />
 
       <div
         class="absolute inset-0 pointer-events-none"
@@ -138,7 +138,7 @@ export const Canvas = () => {
                 {(icon) => <DesktopIcon data={icon} isUserOp={true} />}
             </For>
 
-            <CounterWidget x={240} y={40} />
+            <CounterWidget x={40} y={340} />
             
             <WindowManager />
         </div>

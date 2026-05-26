@@ -15,7 +15,7 @@ export const PROFILES = {
     gateway: 'export',
     components: {
       ops:    { type: 'ops',    protocol: 'http',  port: 9091 },
-      export: { type: 'export', protocol: 'http',  port: 9092 },
+      export: { type: 'export', protocol: 'https', port: 9092 },
       ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
   },
@@ -24,7 +24,7 @@ export const PROFILES = {
     gateway: 'export',
     components: {
       ops:    { type: 'ops',    protocol: 'http',  port: 9191 },
-      export: { type: 'export', protocol: 'http',  port: 9192 },
+      export: { type: 'export', protocol: 'https', port: 9192 },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
@@ -33,7 +33,7 @@ export const PROFILES = {
     gateway: 'export',
     components: {
       ops:        { type: 'ops',        protocol: 'http',  port: 9091 },
-      export:     { type: 'export',     protocol: 'http',  port: 9092 },
+      export:     { type: 'export',     protocol: 'https', port: 9092 },
       subscriber: { type: 'subscriber', protocol: 'http',  port: 11223 },
       ux:         { type: 'ux',         protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
@@ -43,7 +43,7 @@ export const PROFILES = {
     gateway: 'export',
     components: {
       ops:        { type: 'ops',        protocol: 'http',  port: 9191 },
-      export:     { type: 'export',     protocol: 'http',  port: 9192 },
+      export:     { type: 'export',     protocol: 'https', port: 9192 },
       subscriber: { type: 'subscriber', protocol: 'http',  port: 11224 },
       ux:         { type: 'ux',         protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
@@ -105,20 +105,24 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
         }
       };
     },
-    export: (cfg) => ({
-      name: `Export Node (${cfg.port})`,
-      command: 'node',
-      args: ['geo/export_service.js'],
-      cwd: __dirname,
-      env: { 
-          ...process.env, 
-          LOG_LEVEL: globalLogLevel,
-          PORT: String(cfg.port),
-          VFS_ID: `${profileKey.replace('/', '_')}_export`,
-          NEIGHBORS: `${componentMap.ops.protocol}://localhost:${componentMap.ops.port}`,
-          ...env
-      }
-    }),
+    export: (cfg) => {
+      const useSsl = cfg.protocol === 'https';
+      return {
+        name: `Export Node (${cfg.port})`,
+        command: 'node',
+        args: ['geo/export_service.js'],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            LOG_LEVEL: globalLogLevel,
+            PORT: String(cfg.port),
+            VFS_ID: `${profileKey.replace('/', '_')}_export`,
+            NEIGHBORS: `${componentMap.ops.protocol}://localhost:${componentMap.ops.port}`,
+            DISABLE_SSL: useSsl ? '0' : '1',
+            ...env
+        }
+      };
+    },
     subscriber: (cfg) => ({
       name: `Counter Subscriber (${cfg.port})`,
       command: 'node',

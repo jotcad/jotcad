@@ -9,7 +9,7 @@ export const Connection = (props) => {
       x2={props.toPos?.x + props.toSize / 2}
       y2={props.toPos?.y + props.toSize / 2}
       stroke={props.color}
-      stroke-width="2"
+      stroke-width={props.strokeWidth || '2'}
       stroke-opacity={props.opacity}
       stroke-dasharray={props.dashed ? '4 4' : ''}
     />

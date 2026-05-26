@@ -385,7 +385,7 @@ export class VFS {
         }
         return { success: true, cid: null };
       } catch (err) {
-        console.error(`[VFS ${this.id}] _readResult Error:`, err);
+        log(`[VFS ${this.id}] _readResult failed for ${targetCID}: ${err.message}`);
         return { success: false, error: err.message };
       } finally { this.activeWait.delete(targetCID); }
     })();

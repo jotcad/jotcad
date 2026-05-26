@@ -24,7 +24,11 @@ void setup() {
 
     // 1. Setup VFS Node
     fs::VFSNode::Config config;
+#ifdef DEVICE_NODE_ID
+    config.id = DEVICE_NODE_ID;
+#else
     config.id = "esp32-real-node-01";
+#endif
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     
     // Use the host's actual LAN IP
