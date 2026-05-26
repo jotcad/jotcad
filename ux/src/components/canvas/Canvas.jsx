@@ -14,6 +14,7 @@ import { createBlackboardControls } from '../../lib/blackboard/BlackboardControl
 
 import { DesktopIcon } from '../system/desktop/DesktopIcon';
 import { CounterWidget } from '../system/desktop/CounterWidget';
+import { CameraWidget } from '../system/desktop/CameraWidget';
 import { WindowManager } from '../system/desktop/WindowManager';
 
 export const Canvas = () => {
@@ -139,6 +140,7 @@ export const Canvas = () => {
             </For>
 
             <CounterWidget x={40} y={340} />
+            <CameraWidget x={40} y={440} />
             
             <WindowManager />
         </div>
