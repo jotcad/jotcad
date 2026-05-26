@@ -21,7 +21,21 @@ export const CameraWidget = (props) => {
 
     const handleNotify = (selector, payload) => {
         if (selector.path === 'sensor/camera') {
-            setImage(payload.image);
+            let url;
+            if (payload instanceof Uint8Array) {
+                const blob = new Blob([payload], { type: 'image/jpeg' });
+                url = URL.createObjectURL(blob);
+            } else {
+                url = payload.image;
+            }
+
+            // Revoke previous URL to prevent memory leaks
+            const prev = image();
+            if (prev && prev.startsWith('blob:')) {
+                URL.revokeObjectURL(prev);
+            }
+
+            setImage(url);
             setLastUpdate(Date.now());
             setIsConnected(true);
             setIsUpdating(true);

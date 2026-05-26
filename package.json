@@ -25,6 +25,7 @@
     "test:pio": "export $(grep -v '^#' .env | xargs) && pio run -d pio && wokwi-cli pio/ --expect-text VFS_READY",
     "test:cpp:individual": "make -C geo/test",
     "test:integration": "node test_orchestrator.js integration",
+    "test:puppeteer": "node test_orchestrator.js puppeteer",
     "test:integration:individual": "node --test --test-concurrency=1",
     "integration_test": "xvfb-run -s '-ac -screen 0 1280x1024x24' node --test --test-timeout=300000 --test-force-exit fs/test/browser_mesh.test.js fs/test/cpp_mesh_integration.test.js",
     "test": "node test_orchestrator.js all",

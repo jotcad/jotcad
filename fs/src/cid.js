@@ -230,23 +230,23 @@ export function decodeSafe(base64) {
     return decodeSelectorJCB(fromBase64(base64));
 }
 
-export function decodeInfo(b64) {
-    if (!b64) return {};
+export function decodeInfo(str) {
+    if (!str) return {};
     try {
-        const decoded = fromBase64(b64);
-        // Hybrid support: check for JCB object tag (0x06) to fallback to JCB decoding
+        if (str.trim().startsWith('{')) return JSON.parse(str);
+        
+        // Fallback for Base64 (legacy or char-safe)
+        const decoded = fromBase64(str);
         if (decoded[0] === 0x06) return decodeDataJCB(decoded);
         return JSON.parse(new TextDecoder().decode(decoded));
     } catch (e) {
-        console.error(`[CID] decodeInfo CRITICAL: Failed to parse metadata header: "${b64}". Error: ${e.message}`);
+        console.error(`[CID] decodeInfo CRITICAL: Failed to parse metadata header: "${str}". Error: ${e.message}`);
         throw e;
     }
 }
 
 export function encodeInfo(info) {
-    const json = JSON.stringify(info);
-    const bytes = new TextEncoder().encode(json);
-    return toBase64(bytes);
+    return JSON.stringify(info);
 }
 
 /**

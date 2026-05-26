@@ -29,8 +29,8 @@ void VFSNode::listen() {
     svr->set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, X-Requested-With, X-VFS-Peer-Id, X-VFS-Reply-To, X-VFS-Id, X-VFS-Info"},
-        {"Access-Control-Expose-Headers", "X-VFS-Info, X-VFS-Id, X-VFS-Peer-Id"}
+        {"Access-Control-Allow-Headers", "Content-Type, X-Requested-With, X-VFS-Peer-Id, X-VFS-Reply-To, X-VFS-Id, X-VFS-Info, X-VFS-Op, X-VFS-Selector, X-VFS-Encoding, X-VFS-Stack, X-VFS-Expires"},
+        {"Access-Control-Expose-Headers", "X-VFS-Info, X-VFS-Id, X-VFS-Peer-Id, X-VFS-Op, X-VFS-Selector, X-VFS-Encoding, X-VFS-Stack, X-VFS-Expires, X-VFS-Reply-To"}
     });
 
     svr->Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
@@ -112,33 +112,51 @@ void VFSNode::listen() {
 
     svr->Post("/read", [this](const httplib::Request& req, httplib::Response& res) {
         try {
-            json body = json::parse(req.body);
             VFSRequest vreq;
-            if (body.contains("cid") && body["cid"].is_string()) {
-                vreq.cid = body["cid"].get<std::string>();
-            } else if (body.contains("selector")) {
-                vreq.selector = Selector::from_json(body["selector"]);
-                vreq.selector.validate(); // CRITICAL: FAIL VISIBLY
+            if (req.has_header("X-VFS-Selector")) {
+                std::string sel_raw = req.get_header_value("X-VFS-Selector");
+                try {
+                    // Try JSON first
+                    vreq.selector = Selector::from_json(json::parse(sel_raw));
+                } catch (...) {
+                    // Fallback to Base64-JCB
+                    try { vreq.selector = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
+                }
+                vreq.selector.validate();
+                
+                std::string stack_str = req.get_header_value("X-VFS-Stack");
+                if (!stack_str.empty()) {
+                    std::stringstream ss(stack_str);
+                    std::string item;
+                    while (std::getline(ss, item, ',')) vreq.stack.push_back(item);
+                }
+                
+                std::string expires_str = req.get_header_value("X-VFS-Expires");
+                if (!expires_str.empty()) vreq.expiresAt = std::stoll(expires_str);
             } else {
-                throw VFSException("Missing cid or selector in read request", 400);
+                json body = json::parse(req.body);
+                if (body.contains("cid") && body["cid"].is_string()) {
+                    vreq.cid = body["cid"].get<std::string>();
+                } else if (body.contains("selector")) {
+                    vreq.selector = Selector::from_json(body["selector"]);
+                    vreq.selector.validate(); 
+                } else {
+                    throw VFSException("Missing cid or selector in read request", 400);
+                }
+                vreq.stack = body.value("stack", std::vector<std::string>{});
+                vreq.resolutionStack = body.value("resolutionStack", std::vector<std::string>{});
+                vreq.expiresAt = body.value("expiresAt", 0LL);
             }
 
-            vreq.stack = body.value("stack", std::vector<std::string>{});
-            vreq.resolutionStack = body.value("resolutionStack", std::vector<std::string>{});
             if (vreq.stack.empty() && req.has_header("x-vfs-id")) {
                 vreq.stack.push_back(req.get_header_value("x-vfs-id"));
             }
-            vreq.expiresAt = body.value("expiresAt", 0LL);
-            vreq.followLinks = body.value("followLinks", true);
+            vreq.followLinks = true;
             
             auto result = read_impl(vreq);
             
-            // Base64 encode the metadata directly
-            std::string info_str = result.metadata.dump();
-            std::vector<uint8_t> info_bytes(info_str.begin(), info_str.end());
-            std::string info_b64 = fs::base64_encode(info_bytes);
-
-            res.set_header("x-vfs-info", info_b64);
+            res.set_header("x-vfs-info", result.metadata.dump());
+            res.set_header("X-VFS-Encoding", result.metadata.value("encoding", "json"));
             res.set_content((const char*)result.data.data(), result.data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
             json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "POST /read"}};
@@ -156,12 +174,32 @@ void VFSNode::listen() {
     svr->Post("/subscribe", [this](const httplib::Request& req, httplib::Response& res) {
         std::string source_id = req.get_header_value("x-vfs-id");
         try {
-            json body = json::parse(req.body);
-            // Protocol Violation Check: This will throw if selector is malformed
-            Selector s = Selector::from_json(body.at("selector"));
+            Selector s;
+            long long expiresAt = 0;
+            std::vector<std::string> stack;
+
+            if (req.has_header("X-VFS-Selector")) {
+                std::string sel_raw = req.get_header_value("X-VFS-Selector");
+                try { s = Selector::from_json(json::parse(sel_raw)); } catch (...) {
+                    try { s = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
+                }
+                std::string exp_str = req.get_header_value("X-VFS-Expires");
+                if (!exp_str.empty()) expiresAt = std::stoll(exp_str);
+                std::string stack_str = req.get_header_value("X-VFS-Stack");
+                if (!stack_str.empty()) {
+                    std::stringstream ss(stack_str);
+                    std::string item;
+                    while (std::getline(ss, item, ',')) stack.push_back(item);
+                }
+            } else {
+                json body = json::parse(req.body);
+                s = Selector::from_json(body.at("selector"));
+                expiresAt = body.at("expiresAt");
+                stack = body.value("stack", std::vector<std::string>{});
+            }
             
             std::cout << "[REST " << config_.id << "] <- SUBSCRIBE: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
-            subscribe(s.to_json(), body.at("expiresAt"), body.value("stack", std::vector<std::string>{}));
+            subscribe(s.to_json(), expiresAt, stack);
             res.status = 200;
         } catch (const std::exception& e) {
             json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /subscribe"}};
@@ -171,16 +209,46 @@ void VFSNode::listen() {
     });
 
     svr->Post("/notify", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string source_id = req.get_header_value("x-vfs-id");
         try {
-            json body = json::parse(req.body);
-            json selector_json = body.at("selector");
-            if (!selector_json.is_null()) {
-                // Protocol Violation Check: This will throw if selector is malformed
-                Selector s = Selector::from_json(selector_json);
-                std::cout << "[REST " << config_.id << "] <- NOTIFY: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
+            json selector_json;
+            json payload;
+            std::vector<std::string> stack;
+
+            if (req.has_header("X-VFS-Selector")) {
+                std::string sel_raw = req.get_header_value("X-VFS-Selector");
+                Selector s;
+                try { s = Selector::from_json(json::parse(sel_raw)); } catch (...) {
+                    try { s = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
+                }
+                selector_json = s.to_json();
+                
+                std::string stack_str = req.get_header_value("X-VFS-Stack");
+                if (!stack_str.empty()) {
+                    std::stringstream ss(stack_str);
+                    std::string item;
+                    while (std::getline(ss, item, ',')) stack.push_back(item);
+                }
+
+                std::string encoding = req.get_header_value("X-VFS-Encoding");
+                if (encoding == "bytes") {
+                    // Raw binary payload
+                    payload = std::vector<uint8_t>(req.body.begin(), req.body.end());
+                } else {
+                    json body = json::parse(req.body);
+                    payload = body.contains("payload") ? body["payload"] : body;
+                }
+            } else {
+                json body = json::parse(req.body);
+                selector_json = body.at("selector");
+                payload = body.at("payload");
+                stack = body.value("stack", std::vector<std::string>{});
             }
-            notify(selector_json, body.at("payload"), body.value("stack", std::vector<std::string>{}));
+
+            if (!selector_json.is_null()) {
+                Selector s = Selector::from_json(selector_json);
+                std::cout << "[REST " << config_.id << "] <- NOTIFY: " << s.path << " from " << (stack.empty() ? "unknown" : stack.back()) << std::endl;
+            }
+            notify(selector_json, payload, stack);
             res.status = 200;
         } catch (const std::exception& e) {
             json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /notify"}};

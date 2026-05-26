@@ -100,15 +100,8 @@ void setup() {
             return;
         }
 
-        std::vector<uint8_t> data(fb->buf, fb->buf + fb->len);
-        std::string b64 = fs::base64_encode(data);
+        request->send_binary(200, "image/jpeg", fb->buf, fb->len);
         esp_camera_fb_return(fb);
-
-        request->send(200, "application/json", fs::json({
-            {"image", "data:image/jpeg;base64," + b64},
-            {"width", fb->width},
-            {"height", fb->height}
-        }).dump().c_str());
     }, {{"output", "image"}});
 
     node->begin();
@@ -120,29 +113,20 @@ void loop() {
     
     static unsigned long last_capture = 0;
     
-    // Auto-publish every 5 seconds if someone is interested
-    if (millis() - last_capture > 5000) {
+    // Auto-publish every 500ms (2 FPS) if someone is interested
+    if (millis() - last_capture > 500) {
         last_capture = millis();
         
         fs::json selector = {{"path", "sensor/camera"}};
         
-        // We only capture if there is interest to save power and bandwidth
+        // We only capture if there is interest
         camera_fb_t * fb = esp_camera_fb_get();
         if (fb) {
-            std::vector<uint8_t> data(fb->buf, fb->buf + fb->len);
-            std::string b64 = fs::base64_encode(data);
-            esp_camera_fb_return(fb);
-
-            fs::json payload = {
-                {"image", "data:image/jpeg;base64," + b64},
-                {"width", fb->width},
-                {"height", fb->height}
-            };
-            
-            int interested = node->notify(selector, payload);
+            int interested = node->notify_binary(selector, fb->buf, fb->len);
             if (interested > 0) {
-                Serial.printf("[ESP32-CAM] Published Image (%d bytes, %d interested)\n", (int)b64.length(), interested);
+                Serial.printf("[ESP32-CAM] Published Binary Image (%d bytes, %d interested)\n", (int)fb->len, interested);
             }
+            esp_camera_fb_return(fb);
         }
     }
 }

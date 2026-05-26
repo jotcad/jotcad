@@ -48,6 +48,14 @@ export const PROFILES = {
       ux:         { type: 'ux',         protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
+  'test/sovereign_js': {
+    storagePrefix: '.vfs_storage_sovereign_js_',
+    gateway: 'node_a',
+    components: {
+      node_a: { type: 'node_a', protocol: 'http', port: 8181 },
+      node_b: { type: 'node_b', protocol: 'http', port: 8182 }
+    }
+  },
   'live/direct_cpp': {
     storagePrefix: '.vfs_storage_direct_cpp_live_',
     gateway: 'ops',
@@ -58,11 +66,13 @@ export const PROFILES = {
   }
 };
 
-export async function launchSystem(profileKey = 'live/standard', globalLogLevel = 'INFO') {
+export async function launchSystem(profileKey = 'live/standard', globalLogLevel = 'INFO', options = {}) {
   const config = PROFILES[profileKey];
   if (!config) {
     throw new Error(`Unknown profile: ${profileKey}. Available: ${Object.keys(PROFILES).join(', ')}`);
   }
+
+  const capturedLogs = [];
 
   const { storagePrefix, components: componentMap, gateway, env = {} } = config;
 
@@ -117,12 +127,41 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
             LOG_LEVEL: globalLogLevel,
             PORT: String(cfg.port),
             VFS_ID: `${profileKey.replace('/', '_')}_export`,
-            NEIGHBORS: `${componentMap.ops.protocol}://localhost:${componentMap.ops.port}`,
+            NEIGHBORS: `${componentMap.ops?.protocol || 'http'}://localhost:${componentMap.ops?.port || 80}`,
             DISABLE_SSL: useSsl ? '0' : '1',
             ...env
         }
       };
     },
+    node_a: (cfg) => ({
+      name: `JS Node A (${cfg.port})`,
+      command: 'node',
+      args: ['geo/export_service.js'],
+      cwd: __dirname,
+      env: { 
+          ...process.env, 
+          LOG_LEVEL: globalLogLevel,
+          PORT: String(cfg.port),
+          VFS_ID: `node_a`,
+          DISABLE_SSL: '1',
+          ...env
+      }
+    }),
+    node_b: (cfg) => ({
+      name: `JS Node B (${cfg.port})`,
+      command: 'node',
+      args: ['geo/export_service.js'],
+      cwd: __dirname,
+      env: { 
+          ...process.env, 
+          LOG_LEVEL: globalLogLevel,
+          PORT: String(cfg.port),
+          VFS_ID: `node_b`,
+          NEIGHBORS: `http://localhost:${componentMap.node_a.port}`,
+          DISABLE_SSL: '1',
+          ...env
+      }
+    }),
     subscriber: (cfg) => ({
       name: `Counter Subscriber (${cfg.port})`,
       command: 'node',
@@ -133,7 +172,7 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
           LOG_LEVEL: globalLogLevel,
           PORT: String(cfg.port),
           VFS_ID: `${profileKey.replace('/', '_')}_subscriber`,
-          NEIGHBORS: `${componentMap.ops.protocol}://localhost:${componentMap.ops.port}`,
+          NEIGHBORS: `${componentMap.ops?.protocol || 'http'}://localhost:${componentMap.ops?.port || 80}`,
           ...env
       }
     }),
@@ -193,7 +232,11 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
             const lines = data.toString().split('\n');
             for (const line of lines) {
                 if (line.trim()) {
-                    process.stdout.write(`${colorPrefix}[${profileKey}:${component.name}] ${line.trim()}\n`);
+                    const formattedLine = `[${profileKey}:${component.name}] ${line.trim()}`;
+                    process.stdout.write(`${colorPrefix}${formattedLine}\n`);
+                    if (options.captureLogs) {
+                        capturedLogs.push(formattedLine);
+                    }
                 }
             }
         });
@@ -214,21 +257,23 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
 
   components.forEach(launch);
 
-  info(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
-  let uxReady = false;
-  for (let i = 0; i < 50; i++) {
-    try {
-      const url = `${componentMap.ux.protocol}://localhost:${ports.ux}`;
-      const options = {};
-      if (componentMap.ux.protocol === 'https') options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
-      const resp = await fetch(url, options);
-      if (resp.ok) { uxReady = true; break; }
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, 200));
+  if (ports.ux) {
+      info(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
+      let uxReady = false;
+      for (let i = 0; i < 50; i++) {
+        try {
+          const url = `${componentMap.ux.protocol}://localhost:${ports.ux}`;
+          const options = {};
+          if (componentMap.ux.protocol === 'https') options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
+          const resp = await fetch(url, options);
+          if (resp.ok) { uxReady = true; break; }
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 200));
+      }
+      if (!uxReady) warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
   }
-  if (!uxReady) warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
 
-  return { processes, ports, stop: shutdown };
+  return { processes, ports, stop: shutdown, logs: capturedLogs };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

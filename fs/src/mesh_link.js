@@ -40,19 +40,21 @@ export class ForwardConnection extends Connection {
 
   async read(target, context = {}) {
     const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
-    const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
+    const isSelector = target instanceof Selector;
+    
+    const headers = { 
+        'x-vfs-id': stack[0],
+        'x-vfs-op': 'READ',
+        'x-vfs-stack': stack.join(','),
+        'x-vfs-expires': String(expiresAt)
+    };
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
+    if (isSelector) headers['x-vfs-selector'] = JSON.stringify(target);
 
-    const bodyObj = { stack, resolutionStack, expiresAt };
-    if (typeof target === 'string') {
-        bodyObj.cid = target;
-    } else {
-        bodyObj.selector = target;
-    }
+    const body = isSelector ? null : JSON.stringify({ cid: target, resolutionStack });
 
-    const body = JSON.stringify(bodyObj);
     try {
-        log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/read`, body.length > 500 ? body.slice(0, 500) + '...' : body);
+        log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/read`, isSelector ? target.path : target);
         const resp = await this.fetch(`${this.url}/read`, {
           method: 'POST',
           headers,
@@ -74,14 +76,21 @@ export class ForwardConnection extends Connection {
 
   async spy(selector, context = {}) {
     const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
-    const headers = { 'Content-Type': 'application/json', 'x-vfs-id': stack[0] };
+    const headers = { 
+        'Content-Type': 'application/json', 
+        'x-vfs-id': stack[0],
+        'x-vfs-op': 'SPY',
+        'x-vfs-selector': JSON.stringify(selector),
+        'x-vfs-stack': stack.join(','),
+        'x-vfs-expires': String(expiresAt)
+    };
     if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
 
     const resp = await this.fetch(`${this.url}/spy`, {
       method: 'POST',
       headers,
       signal: this.signal || AbortSignal.timeout(5000),
-      body: JSON.stringify({ selector, stack, resolutionStack, expiresAt }),
+      body: JSON.stringify({ resolutionStack }),
     });
 
     if (resp.ok && resp.body) return resp.body;
@@ -90,13 +99,18 @@ export class ForwardConnection extends Connection {
 
   async subscribe(selector, expiresAt, stack) {
     const s = normalizeSelector(selector);
-    const body = JSON.stringify({ selector: s, expiresAt, stack });
-    log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/subscribe`, body);
+    const headers = {
+        'x-vfs-op': 'SUB',
+        'x-vfs-selector': JSON.stringify(s),
+        'x-vfs-expires': String(expiresAt),
+        'x-vfs-stack': stack.join(','),
+        'x-vfs-id': stack[stack.length - 1]
+    };
+    log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/subscribe`, s.path);
     await this.fetch(`${this.url}/subscribe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-vfs-id': stack[stack.length - 1] },
+      headers,
       signal: this.signal || AbortSignal.timeout(5000),
-      body,
     }).then(r => log(`[MeshLink ${this.neighborId}] <- ${r.status} ${this.url}/subscribe`))
       .catch(() => {});
   }
@@ -105,11 +119,22 @@ export class ForwardConnection extends Connection {
     const s = normalizeSelector(selector);
     this._pulseCount++;
     this.lastPulse = Date.now();
-    const body = JSON.stringify({ selector: s, payload, stack });
-    log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/notify`, s.path);
+
+    const isBinary = payload instanceof Uint8Array;
+    const headers = {
+        'x-vfs-op': 'PUB',
+        'x-vfs-selector': JSON.stringify(s),
+        'x-vfs-stack': stack.join(','),
+        'x-vfs-encoding': isBinary ? 'bytes' : 'json'
+    };
+    if (!isBinary) headers['Content-Type'] = 'application/json';
+
+    const body = isBinary ? payload : JSON.stringify(payload);
+
+    log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/notify`, s.path, isBinary ? `(BINARY ${payload.length} bytes)` : '');
     await this.fetch(`${this.url}/notify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       signal: this.signal || AbortSignal.timeout(5000),
       body,
     }).then(r => log(`[MeshLink ${this.neighborId}] <- ${r.status} ${this.url}/notify`))
@@ -170,8 +195,9 @@ export class ReverseConnection extends Connection {
         this.replies.delete(replyTo);
         const headers = new Map();
         if (info) headers.set('x-vfs-info', info);
-        if (info && info.error) {
-          resolveOrReject(null, headers, new Error(info.error));
+        const decodedInfo = decodeInfo(info);
+        if (decodedInfo && decodedInfo.error) {
+          resolveOrReject(null, headers, new Error(decodedInfo.error));
         } else {
           resolveOrReject(stream, headers);
         }
@@ -202,8 +228,27 @@ export class ReverseConnection extends Connection {
     log(`[ReverseConn ${this.neighborId}] Dispatching command ${command.op || command.type}`);
     if (this.pool.length > 0) {
       const { res } = this.pool.shift();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(command));
+      
+      const isBinary = command.payload instanceof Uint8Array;
+      const headers = { 
+        'Content-Type': isBinary ? 'application/octet-stream' : 'application/json',
+        'x-vfs-op': command.op || command.type,
+        'x-vfs-encoding': isBinary ? 'bytes' : 'json'
+      };
+      if (command.selector) headers['x-vfs-selector'] = JSON.stringify(command.selector);
+      if (command.stack) headers['x-vfs-stack'] = command.stack.join(',');
+      if (command.expiresAt) headers['x-vfs-expires'] = String(command.expiresAt);
+      if (command.id) headers['x-vfs-reply-to'] = command.id;
+
+      res.writeHead(200, headers);
+      
+      let body;
+      if (isBinary) {
+          body = command.payload;
+      } else {
+          body = JSON.stringify(command.payload !== undefined ? command.payload : command);
+      }
+      res.end(body);
       return true;
     }
     this.queue.push(command);
@@ -273,7 +318,7 @@ export class ReverseConnection extends Connection {
   async notify(selector, payload, stack = []) {
     this._pulseCount++;
     this.lastPulse = Date.now();
-    this._dispatch({ type: 'NOTIFY', selector, payload, stack });
+    this._dispatch({ type: 'PUB', selector, payload, stack });
   }
 
   /**
@@ -334,9 +379,43 @@ export class ReverseConnection extends Connection {
 
         log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} <- GOT SOMETHING (status ${resp.status}) from ${baseUrl}`);
         if (resp.status === 200) {
-          const cmdText = await resp.text();
-          const cmd = JSON.parse(cmdText);
-          log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - RECEIVED COMMAND:`, cmdText);
+          const h = resp.headers;
+          const op = h && typeof h.get === 'function' ? h.get('x-vfs-op') : null;
+          const encoding = h && typeof h.get === 'function' ? h.get('x-vfs-encoding') : null;
+          const selectorB64 = h && typeof h.get === 'function' ? h.get('x-vfs-selector') : null;
+          const stackStr = h && typeof h.get === 'function' ? h.get('x-vfs-stack') : null;
+          const expiresStr = h && typeof h.get === 'function' ? h.get('x-vfs-expires') : null;
+          const replyToHeader = h && typeof h.get === 'function' ? h.get('x-vfs-reply-to') : null;
+
+          let cmd, payload;
+          if (op) {
+            let selector = null;
+            if (selectorB64) {
+                try {
+                    selector = Selector.fromObject(JSON.parse(selectorB64));
+                } catch (e) {
+                    try { selector = decodeSafe(selectorB64); } catch (e2) {}
+                }
+            }
+            const stack = stackStr ? stackStr.split(',').map(s => s.trim()) : [];
+            const expiresAt = expiresStr ? parseInt(expiresStr) : null;
+
+            if (encoding === 'bytes') {
+                payload = new Uint8Array(await resp.arrayBuffer());
+            } else {
+                const text = await resp.text();
+                try { 
+                    const body = JSON.parse(text); 
+                    payload = body.payload !== undefined ? body.payload : body;
+                } catch (e) { payload = text; }
+            }
+            cmd = { type: op === 'PUB' ? 'PUB' : 'COMMAND', op, selector, payload, stack, expiresAt, id: replyToHeader };
+          } else {
+            const cmdText = await resp.text();
+            cmd = JSON.parse(cmdText);
+          }
+
+          log(`[ReverseConn ${this.neighborId}] Instance ${this.instanceId} - RECEIVED ${cmd.op || cmd.type}`);
 
           if (cmd.type === 'COMMAND') {
             const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;
@@ -369,9 +448,9 @@ export class ReverseConnection extends Connection {
                 console.error(`[ReverseConn ${this.neighborId}] Sub failed for selector:`, sel, subErr.message);
               }
             }
-          } else if (cmd.type === 'NOTIFY') {
+          } else if (cmd.type === 'PUB') {
             try {
-              const s = Selector.fromObject(cmd.selector);
+              const s = cmd.selector ? normalizeSelector(cmd.selector) : null;
               this.mesh.notify(s, cmd.payload, cmd.stack);
             } catch (notifyErr) {
               console.error(`[ReverseConn ${this.neighborId}] Notify failed:`, notifyErr.message);
@@ -541,17 +620,20 @@ export class MeshLinkBase {
       this.interests.get(topic).lastValue = payload;
     }
 
+    // 1. Local Delivery
     for (const entry of this.interests.values()) {
       if (this._matches(entry.selector, s)) {
         entry.lastValue = payload;
-
-        // 1. Local Delivery
         if (entry.localExpiresAt > Date.now()) {
           log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
           this.vfs.events.emit('notify', s, payload);
         }
+      }
+    }
 
-        // 2. Neighbor Propagation
+    // 2. Neighbor Propagation
+    for (const entry of this.interests.values()) {
+      if (this._matches(entry.selector, s)) {
         for (const [neighborId, expiry] of entry.subs.entries()) {
           if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
           if (stack.includes(neighborId)) continue;
@@ -667,6 +749,89 @@ export class MeshLinkBase {
     } catch (e) {
       log(`[MeshLink ${this.vfs.id}] Probing ${url} -> REVERSE (Error: ${e.message})`);
       return false;
+    }
+  }
+
+  async registerPeer(peerId, url) {
+    if (!peerId) throw new Error('Missing peerId');
+
+    const existing = this.peers.get(peerId);
+    if (existing) {
+      log(`[MeshLink ${this.vfs.id}] Peer ${peerId} already registered. Reachability: ${existing.reachability}`);
+      return { id: this.vfs.id, reachability: existing.reachability };
+    }
+
+    if (url) {
+      const isReachable = await this.probeDirectReachability(url);
+      if (isReachable) {
+        const conn = new ForwardConnection(peerId, url, this.fetch, {
+          localUrl: this.localUrl,
+          signal: this.abortController.signal,
+          reachability: 'DIRECT'
+        });
+        this._setPeer(peerId, conn);
+        log(`[MeshLink ${this.vfs.id}] Registered direct peer: ${peerId} at ${url}`);
+
+        // Sync active interests
+        for (const entry of this.interests.values()) {
+          let maxExp = entry.localExpiresAt || 0;
+          for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+          if (maxExp > Date.now()) {
+            log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new direct peer ${peerId}`);
+            conn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(() => {});
+          }
+        }
+
+        this.notify(new Selector('sys/topo'), {
+          type: 'TOPOLOGY_UPDATE',
+          peer: this.vfs.id,
+          neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+        });
+        return { id: this.vfs.id, reachability: 'DIRECT' };
+      } else {
+        log(`[MeshLink ${this.vfs.id}] Direct probe to ${url} failed. Falling back to REVERSE connection.`);
+        const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });
+        this._setPeer(peerId, conn);
+        log(`[MeshLink ${this.vfs.id}] Registered reverse peer connection (probe fallback) for: ${peerId}`);
+
+        // Sync active interests
+        for (const entry of this.interests.values()) {
+          let maxExp = entry.localExpiresAt || 0;
+          for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+          if (maxExp > Date.now()) {
+            log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new reverse peer ${peerId}`);
+            conn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(() => {});
+          }
+        }
+
+        this.notify(new Selector('sys/topo'), {
+          type: 'TOPOLOGY_UPDATE',
+          peer: this.vfs.id,
+          neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+        });
+        return { id: this.vfs.id, reachability: 'REVERSE' };
+      }
+    } else {
+      const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });
+      this._setPeer(peerId, conn);
+      log(`[MeshLink ${this.vfs.id}] Registered reverse peer connection for: ${peerId}`);
+
+      // Sync active interests
+      for (const entry of this.interests.values()) {
+        let maxExp = entry.localExpiresAt || 0;
+        for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+        if (maxExp > Date.now()) {
+          log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new reverse peer ${peerId}`);
+          conn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(() => {});
+        }
+      }
+
+      this.notify(new Selector('sys/topo'), {
+        type: 'TOPOLOGY_UPDATE',
+        peer: this.vfs.id,
+        neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+      });
+      return { id: this.vfs.id, reachability: 'REVERSE' };
     }
   }
 

@@ -138,34 +138,80 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
         conn->queue.erase(conn->queue.begin());
         std::string type = cmd.value("type", "unknown");
         std::string op = cmd.value("op", "none");
+        if (op == "none" && type == "PUB") op = "PUB";
+        
         std::cout << "[REST " << config_.id << "] -> Deliver " << type << "/" << op << " to " << peer_id << " (Queue: " << conn->queue.size() << ")" << std::endl;
-        res.set_content(cmd.dump(), "application/json");
+        
+        res.set_header("X-VFS-Op", op);
+        if (cmd.contains("selector")) res.set_header("X-VFS-Selector", cmd["selector"].dump());
+        if (cmd.contains("expiresAt")) res.set_header("X-VFS-Expires", std::to_string(cmd["expiresAt"].get<long long>()));
+        
+        std::string stack_str;
+        if (cmd.contains("stack")) {
+            for (size_t i = 0; i < cmd["stack"].size(); ++i) {
+                stack_str += (i == 0 ? "" : ",") + cmd["stack"][i].get<std::string>();
+            }
+        }
+        res.set_header("X-VFS-Stack", stack_str);
+        
+        if (cmd.contains("payload")) {
+            if (cmd["payload"].is_binary()) {
+                res.set_header("X-VFS-Encoding", "bytes");
+                std::vector<uint8_t> data = cmd["payload"].get_binary();
+                res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
+            } else {
+                res.set_header("X-VFS-Encoding", "json");
+                res.set_content(cmd["payload"].dump(), "application/json");
+            }
+        } else {
+            res.set_content(cmd.dump(), "application/json");
+        }
         return;
     }
     res.status = 204;
 }
 
 void VFSNode::ForwardConnection::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
-    json body = {{"selector", selector}, {"payload", payload}, {"stack", stack}, {"type", "NOTIFY"}};
+    httplib::Headers headers = {
+        {"X-VFS-Op", "PUB"},
+        {"X-VFS-Selector", selector.dump()},
+        {"X-VFS-Stack", ""},
+        {"X-VFS-Encoding", "json"},
+        {"Content-Type", "application/json"}
+    };
+    for (size_t i = 0; i < stack.size(); ++i) {
+        headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + stack[i];
+    }
+
+    std::string body = payload.dump();
     std::string target_url = url;
-    std::thread([target_url, body]() {
+    std::thread([target_url, body, headers]() {
         httplib::Client cli(target_url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         cli.enable_server_certificate_verification(false);
 #endif
-        cli.Post("/notify", body.dump(), "application/json");
+        cli.Post("/notify", headers, body, "application/json");
     }).detach();
 }
 
 void VFSNode::ForwardConnection::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
-    json body = {{"selector", selector}, {"expiresAt", expiresAt}, {"stack", stack}};
+    httplib::Headers headers = {
+        {"X-VFS-Op", "SUB"},
+        {"X-VFS-Selector", selector.dump()},
+        {"X-VFS-Expires", std::to_string(expiresAt)},
+        {"X-VFS-Stack", ""}
+    };
+    for (size_t i = 0; i < stack.size(); ++i) {
+        headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + stack[i];
+    }
+
     std::string target_url = url;
-    std::thread([target_url, body]() {
+    std::thread([target_url, headers]() {
         httplib::Client cli(target_url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         cli.enable_server_certificate_verification(false);
 #endif
-        cli.Post("/subscribe", body.dump(), "application/json");
+        cli.Post("/subscribe", headers, "", "application/json");
     }).detach();
 }
 
@@ -174,21 +220,37 @@ VFSResult VFSNode::ForwardConnection::read(const VFSRequest& req) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     cli.enable_server_certificate_verification(false);
 #endif
-    json body = {{"stack", req.stack}, {"resolutionStack", req.resolutionStack}, {"expiresAt", req.expiresAt}};
-    if (req.is_cid()) body["cid"] = req.cid;
-    else body["selector"] = req.selector;
-    
-    if (auto res = cli.Post("/read", body.dump(), "application/json")) {
+    httplib::Headers headers = {
+        {"X-VFS-Op", "READ"},
+        {"X-VFS-Stack", ""},
+        {"X-VFS-Expires", std::to_string(req.expiresAt)}
+    };
+    for (size_t i = 0; i < req.stack.size(); ++i) {
+        headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + req.stack[i];
+    }
+
+    std::string body;
+    if (req.is_cid()) {
+        body = json({{"cid", req.cid}, {"resolutionStack", req.resolutionStack}}).dump();
+    } else {
+        headers.emplace("X-VFS-Selector", req.selector.to_json().dump());
+    }
+
+    if (auto res = cli.Post("/read", headers, body, "application/json")) {
         if (res->status == 200) {
             VFSResult result;
             result.data = std::vector<uint8_t>(res->body.begin(), res->body.end());
-            
+
             if (res->has_header("x-vfs-info")) {
-                std::string info_b64 = res->get_header_value("x-vfs-info");
-                std::vector<uint8_t> info_bytes = fs::base64_decode(info_b64);
-                std::string info_str(info_bytes.begin(), info_bytes.end());
+                std::string info_raw = res->get_header_value("x-vfs-info");
                 try {
-                    result.metadata = json::parse(info_str);
+                    if (!info_raw.empty() && info_raw[0] == '{') {
+                        result.metadata = json::parse(info_raw);
+                    } else {
+                        // Fallback to Base64
+                        std::vector<uint8_t> info_bytes = fs::base64_decode(info_raw);
+                        result.metadata = json::parse(std::string(info_bytes.begin(), info_bytes.end()));
+                    }
                 } catch(...) {
                     result.metadata = {{"state", "AVAILABLE"}};
                 }
@@ -208,7 +270,7 @@ VFSResult VFSNode::ForwardConnection::read(const VFSRequest& req) {
 
 void VFSNode::ReverseConnection::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
     std::lock_guard<std::mutex> lock(mutex);
-    queue.push_back({{"type", "NOTIFY"}, {"selector", selector}, {"payload", payload}, {"stack", stack}});
+    queue.push_back({{"type", "PUB"}, {"selector", selector}, {"payload", payload}, {"stack", stack}});
     cv.notify_one();
 }
 

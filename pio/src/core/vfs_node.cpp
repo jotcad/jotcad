@@ -10,12 +10,15 @@ namespace fs {
  */
 class ReverseRequest : public VFSRequest {
 public:
-    ReverseRequest(std::function<void(int, const char*, const char*)> respond) : respond_(respond) {}
+    ReverseRequest(std::function<void(int, const char*, const uint8_t*, size_t)> respond) : respond_(respond) {}
     void send(int code, const char* contentType, const char* body) override {
-        respond_(code, contentType, body);
+        respond_(code, contentType, (const uint8_t*)body, strlen(body));
+    }
+    void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) override {
+        respond_(code, contentType, data, len);
     }
 private:
-    std::function<void(int, const char*, const char*)> respond_;
+    std::function<void(int, const char*, const uint8_t*, size_t)> respond_;
 };
 
 /**
@@ -34,18 +37,40 @@ void ReverseConnection::notify(const json& selector, const json& payload, const 
     HTTPClient http;
     http.begin((url_ + "/notify").c_str());
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    
+    std::string sel_json = selector.dump();
+    http.addHeader("X-VFS-Op", "PUB");
+    http.addHeader("X-VFS-Selector", sel_json.c_str());
+    http.addHeader("X-VFS-Stack", source_id.c_str());
+    http.addHeader("X-VFS-Encoding", "json");
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("X-VFS-Id", source_id.c_str());
 
-    json body = {
-        {"selector", selector},
-        {"payload", payload},
-        {"stack", {source_id}}
-    };
-
-    int code = http.POST(body.dump().c_str());
+    int code = http.POST(payload.dump().c_str());
     if (code != 200) {
         Serial.printf("[ReverseConn %s] Notify failed: %d\n", id_.c_str(), code);
+    }
+    http.end();
+}
+
+void ReverseConnection::notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) {
+    std::string path = selector.value("path", "unknown");
+    Serial.printf("[Mesh OUT] -> NOTIFY (BINARY %d bytes): %s to %s\n", (int)len, path.c_str(), id_.c_str());
+    node_->trigger_activity();
+
+    HTTPClient http;
+    http.begin((url_ + "/notify").c_str());
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    
+    std::string sel_json = selector.dump();
+    http.addHeader("X-VFS-Op", "PUB");
+    http.addHeader("X-VFS-Selector", sel_json.c_str());
+    http.addHeader("X-VFS-Stack", source_id.c_str());
+    http.addHeader("X-VFS-Encoding", "bytes");
+    http.addHeader("Content-Type", "application/octet-stream");
+
+    int code = http.POST((uint8_t*)data, len);
+    if (code != 200) {
+        Serial.printf("[ReverseConn %s] Binary Notify failed: %d\n", id_.c_str(), code);
     }
     http.end();
 }
@@ -59,18 +84,23 @@ void ReverseConnection::loop() {
     http.begin((url_ + "/listen").c_str());
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.addHeader("x-vfs-peer-id", node_->id().c_str());
-    http.setTimeout(60000); // 60 Seconds (Max uint16_t is ~65s)
+    http.setTimeout(60000); // 60 Seconds
     
     int code;
     if (has_reply_) {
-        Serial.printf("[Mesh OUT] -> REPLY to %s (%d bytes)\n", reply_to_.c_str(), (int)reply_body_.length());
+        Serial.printf("[Mesh OUT] -> REPLY to %s (%d bytes)\n", reply_to_.c_str(), (int)reply_body_.size());
         node_->trigger_activity();
         http.addHeader("x-vfs-reply-to", reply_to_.c_str());
         http.addHeader("Content-Type", reply_content_type_.c_str());
-        code = http.POST(reply_body_.c_str());
+        http.addHeader("X-VFS-Encoding", reply_encoding_.c_str());
+        if (!reply_selector_b64_.empty()) http.addHeader("X-VFS-Selector", reply_selector_b64_.c_str());
+        
+        code = http.POST(reply_body_.data(), reply_body_.size());
         has_reply_ = false;
         reply_to_ = "";
-        reply_body_ = "";
+        reply_body_.clear();
+        reply_encoding_ = "";
+        reply_selector_b64_ = "";
     } else {
         code = http.POST("");
     }
@@ -78,28 +108,75 @@ void ReverseConnection::loop() {
     last_poll_ = millis();
 
     if (code == 200) {
-        String payload = http.getString();
-        if (payload.length() > 0) {
-            node_->trigger_activity();
+        node_->trigger_activity();
+        
+        // 1. Check for Sovereign Packet Headers
+        String op = http.header("X-VFS-Op");
+        String sel_b64 = http.header("X-VFS-Selector");
+        String encoding = http.header("X-VFS-Encoding");
+        String replyTo = http.header("X-VFS-Reply-To");
+
+        if (op.length() > 0) {
+            Serial.printf("[Mesh IN] <- Sovereign %s from %s\n", op.c_str(), id_.c_str());
+            Selector sel;
+            if (sel_b64.length() > 0) {
+                try {
+                    // Try parsing as JSON first
+                    sel = Selector::from_json(json::parse(sel_b64.c_str()));
+                } catch (...) {
+                    // Fallback to JCB/Base64
+                    try { sel = Selector::from_json(decode_jcb(base64_decode(sel_b64.c_str()))); } catch (...) {}
+                }
+            }
+
+            int bodyLen = http.getSize();
+            if (encoding == "bytes") {
+                // Read raw binary body
+                WiFiClient* stream = http.getStreamPtr();
+                std::vector<uint8_t> data(bodyLen);
+                int read = 0;
+                while (read < bodyLen) {
+                    int r = stream->read(data.data() + read, bodyLen - read);
+                    if (r > 0) read += r;
+                    else { delay(1); if (!stream->connected()) break; }
+                }
+                node_->handle_binary_command(op.c_str(), sel, data.data(), data.size(), replyTo.c_str(), [this](int code, const char* type, const uint8_t* body, size_t len) {
+                    this->reply_body_.assign(body, body + len);
+                    this->reply_content_type_ = type;
+                    this->reply_encoding_ = "bytes";
+                    this->has_reply_ = true;
+                });
+            } else {
+                // Read JSON body
+                String body = http.getString();
+                json j_body = json::parse(body.c_str());
+                json cmd = {{"type", op == "PUB" ? "PUB" : "COMMAND"}, {"op", op.c_str()}, {"selector", sel.to_json()}, {"payload", j_body.contains("payload") ? j_body["payload"] : j_body}};
+                if (replyTo.length() > 0) cmd["id"] = replyTo.c_str();
+
+                node_->handle_command(cmd, [this](int code, const char* type, const uint8_t* body, size_t len) {
+                    this->reply_body_.assign(body, body + len);
+                    this->reply_content_type_ = type;
+                    this->reply_encoding_ = "json";
+                    this->has_reply_ = true;
+                });
+            }
+            poll_interval = 50;
+        } else {
+            // Legacy JSON Command
+            String payload = http.getString();
             try {
                 json cmd = json::parse(payload.c_str());
-                std::string type = cmd.value("type", "unknown");
-                std::string op = cmd.value("op", "none");
-                Serial.printf("[Mesh IN] <- %s/%s from %s\n", type.c_str(), op.c_str(), id_.c_str());
-                
                 if (cmd.contains("id")) reply_to_ = cmd["id"];
-                
-                node_->handle_command(cmd, [this](int code, const char* type, const char* body) {
-                    this->reply_body_ = body;
+                node_->handle_command(cmd, [this](int code, const char* type, const uint8_t* body, size_t len) {
+                    this->reply_body_.assign(body, body + len);
                     this->reply_content_type_ = type;
+                    this->reply_encoding_ = "json";
                     this->has_reply_ = true;
                 });
                 poll_interval = 50;
             } catch (...) {
                 Serial.printf("[ReverseConn %s] JSON Parse Error in command\n", id_.c_str());
             }
-        } else {
-            poll_interval = 1000;
         }
     } else if (code == 204 || code == -11) {
         poll_interval = 50; 
@@ -217,7 +294,7 @@ void VFSNode::register_with_neighbors() {
     }
 }
 
-void VFSNode::handle_command(const json& cmd, std::function<void(int, const char*, const char*)> respond) {
+void VFSNode::handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
     if (!cmd.contains("type")) return;
     std::string type = cmd.at("type");
     
@@ -231,7 +308,7 @@ void VFSNode::handle_command(const json& cmd, std::function<void(int, const char
                 ReverseRequest req(respond);
                 handlers_[sel.path](sel.parameters, &req);
             } else {
-                respond(404, "text/plain", "Not Found");
+                respond(404, "text/plain", (const uint8_t*)"Not Found", 9);
             }
         } else if (op == "SUB" && has_feature(VFS_SUBSCRIPTION)) {
             Selector sel = Selector::from_json(cmd.at("selector"));
@@ -241,10 +318,18 @@ void VFSNode::handle_command(const json& cmd, std::function<void(int, const char
             trigger_activity();
             this->subscribe(sel.to_json(), expiresAt, neighbor_id);
         }
-    } else if (type == "NOTIFY") {
+    } else if (type == "PUB") {
         Selector sel = Selector::from_json(cmd.at("selector"));
-        Serial.printf("[Mesh IN] <- NOTIFY: %s\n", sel.path.c_str());
+        Serial.printf("[Mesh IN] <- PUB: %s\n", sel.path.c_str());
         trigger_activity();
+    }
+}
+
+void VFSNode::handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
+    if (op == "PUB") {
+        Serial.printf("[Mesh IN] <- Sovereign Binary PUB: %s (%d bytes)\n", sel.path.c_str(), (int)len);
+        trigger_activity();
+        // Forward to any local listeners if needed, but for now we just log
     }
 }
 
@@ -290,6 +375,40 @@ int VFSNode::notify(const json& selector, const json& payload) {
             if (peer->id() == target_id) {
                 trigger_activity();
                 peer->notify(selector, payload, config_.id);
+                notified++;
+            }
+        }
+    }
+    return notified;
+}
+
+int VFSNode::notify_binary(const json& selector, const uint8_t* data, size_t len) {
+    if (!has_feature(VFS_PUBLICATION)) return 0;
+
+    std::string path = selector.at("path");
+    std::set<std::string> targets;
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
+        if (interests_.count(path)) {
+            for (auto const& [peer_id, expiry] : interests_[path]) {
+                if (expiry > millis()) targets.insert(peer_id);
+            }
+        }
+    }
+
+    int notified = 0;
+    std::vector<std::shared_ptr<Peer>> current_peers;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
+        current_peers = peers_;
+    }
+
+    for (const auto& target_id : targets) {
+        for (auto& peer : current_peers) {
+            if (peer->id() == target_id) {
+                trigger_activity();
+                peer->notify_binary(selector, data, len, config_.id);
                 notified++;
             }
         }

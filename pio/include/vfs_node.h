@@ -26,6 +26,7 @@ class VFSRequest {
 public:
     virtual ~VFSRequest() = default;
     virtual void send(int code, const char* contentType, const char* body) = 0;
+    virtual void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) = 0;
 };
 
 /**
@@ -36,6 +37,7 @@ public:
     virtual ~Peer() = default;
     virtual const std::string& id() const = 0;
     virtual void notify(const json& selector, const json& payload, const std::string& source_id) = 0;
+    virtual void notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) = 0;
     virtual void loop() {} // No-op for forward-only peers
 };
 
@@ -49,6 +51,7 @@ public:
     ReverseConnection(VFSNode* node, const std::string& neighbor_id, const std::string& url);
     const std::string& id() const override { return id_; }
     void notify(const json& selector, const json& payload, const std::string& source_id) override;
+    void notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) override;
     
     void loop() override; 
 private:
@@ -58,8 +61,10 @@ private:
     
     // Reply buffer for the NEXT /listen call
     std::string reply_to_;
-    std::string reply_body_;
+    std::vector<uint8_t> reply_body_;
     std::string reply_content_type_;
+    std::string reply_encoding_;
+    std::string reply_selector_b64_;
     bool has_reply_ = false;
     
     unsigned long last_poll_ = 0;
@@ -93,10 +98,12 @@ public:
     void register_op(const std::string& path, Handler handler, const json& schema = json::object());
 
     int notify(const json& selector, const json& payload);
+    int notify_binary(const json& selector, const uint8_t* data, size_t len);
     void subscribe(const json& selector, long long expiresAt, const std::string& remote_id = "");
     
     // Internal API for Peer loop interaction
-    void handle_command(const json& cmd, std::function<void(int, const char*, const char*)> respond);
+    void handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond);
+    void handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond);
 
 private:
     Config config_;
