@@ -450,7 +450,7 @@ export class ReverseConnection extends Connection {
             }
           } else if (cmd.type === 'PUB') {
             try {
-              const s = cmd.selector ? normalizeSelector(cmd.selector) : null;
+              const s = cmd.selector ? Selector.fromObject(cmd.selector) : null;
               this.mesh.notify(s, cmd.payload, cmd.stack);
             } catch (notifyErr) {
               console.error(`[ReverseConn ${this.neighborId}] Notify failed:`, notifyErr.message);
@@ -574,7 +574,7 @@ export class MeshLinkBase {
         if (conn) {
             const catalog = this.vfs.getCatalog();
             log(`[MeshLink ${this.vfs.id}] -> Contributing local catalog to ${neighborId} (${Object.keys(catalog.catalog).length} ops)`);
-            conn.notify(s, { type: 'CATALOG_ANNOUNCEMENT', ...catalog }, [this.vfs.id]).catch(() => {});
+            conn.notify(s, catalog, [this.vfs.id]).catch(() => {});
         }
     }
 
@@ -584,7 +584,6 @@ export class MeshLinkBase {
         if (conn) {
             log(`[MeshLink ${this.vfs.id}] -> Contributing local topology to new subscriber ${neighborId}`);
             conn.notify(s, {
-                type: 'TOPOLOGY_UPDATE',
                 peer: this.vfs.id,
                 neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
             }, [this.vfs.id]).catch(() => {});
@@ -723,7 +722,7 @@ export class MeshLinkBase {
               }
           }
 
-          this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+          this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
           return info.id;
         }
       } else {
@@ -783,7 +782,6 @@ export class MeshLinkBase {
         }
 
         this.notify(new Selector('sys/topo'), {
-          type: 'TOPOLOGY_UPDATE',
           peer: this.vfs.id,
           neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
         });
@@ -805,7 +803,6 @@ export class MeshLinkBase {
         }
 
         this.notify(new Selector('sys/topo'), {
-          type: 'TOPOLOGY_UPDATE',
           peer: this.vfs.id,
           neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
         });
@@ -827,7 +824,6 @@ export class MeshLinkBase {
       }
 
       this.notify(new Selector('sys/topo'), {
-        type: 'TOPOLOGY_UPDATE',
         peer: this.vfs.id,
         neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
       });
@@ -843,7 +839,7 @@ export class MeshLinkBase {
     if (!this.peers.has(neighborId)) {
       const conn = new ReverseConnection(neighborId, this, { instanceId: this.instanceId });
       this._setPeer(neighborId, conn);
-      this.notify(new Selector('sys/topo'), { type: 'TOPOLOGY_UPDATE', peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+      this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
       for (const entry of this.interests.values()) {
         let maxExp = entry.localExpiresAt || 0;
         for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;

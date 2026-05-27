@@ -37,12 +37,19 @@ struct MemoryBridge : public VFSNode::Connection {
 };
 
 // A simple observer that records notifications
+struct TestNotification {
+    json selector;
+    json payload;
+};
+
 struct TestObserver : public VFSNode::Connection {
     std::vector<json> received_payloads;
+    std::vector<TestNotification> received_notifications;
     TestObserver(std::string id) { neighbor_id = id; }
 
     void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override {
         received_payloads.push_back(payload);
+        received_notifications.push_back({selector, payload});
     }
 
     void subscribe(const json&, long long, const std::vector<std::string>&) override {}
@@ -153,8 +160,9 @@ void test_interest_reply_catalog() {
 
     // 2. Node B should have immediately replied with a CATALOG_ANNOUNCEMENT notification
     bool foundCatalog = false;
-    for (const auto& payload : observer->received_payloads) {
-        if (payload.contains("type") && payload["type"] == "CATALOG_ANNOUNCEMENT") {
+    for (const auto& notification : observer->received_notifications) {
+        if (notification.selector.value("path", "") == "sys/schema") {
+            const auto& payload = notification.payload;
             if (payload.contains("catalog") && payload["catalog"].contains("test/op")) {
                 foundCatalog = true;
                 break;

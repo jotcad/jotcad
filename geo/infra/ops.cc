@@ -53,8 +53,13 @@ int main(int argc, char** argv) {
 
     fs::VFSNode::Config config;
     config.id = "geo-ops-node";
+    if (const char* env_peer = std::getenv("PEER_ID")) {
+        config.id = env_peer;
+    } else if (const char* env_vfs = std::getenv("VFS_ID")) {
+        config.id = env_vfs;
+    }
     config.port = port;
-    config.storage_dir = (argc > 2) ? argv[2] : ".vfs_storage_geo-ops-node";
+    config.storage_dir = (argc > 2) ? argv[2] : ".vfs_storage_" + config.id;
 
     if (const char* cert_p = std::getenv("SSL_CERT_PATH")) config.cert_path = cert_p;
     if (const char* key_p = std::getenv("SSL_KEY_PATH")) config.key_path = key_p;

@@ -52,7 +52,8 @@ if (typeof window !== 'undefined') {
 
     const originalNotify = mesh.notify.bind(mesh);
     mesh.notify = (selector, payload, stack = []) => {
-        if (payload.type === 'TOPOLOGY_UPDATE' || payload.type === 'CATALOG_ANNOUNCEMENT') {
+        const s = Selector.fromObject(selector);
+        if (s.path === 'sys/topo' || s.path === 'sys/schema') {
             return originalNotify(selector, payload, stack);
         }
         const isIncoming = stack.length > 0;
@@ -154,11 +155,12 @@ export const vfsActions = {
 
     const originalNotify = mesh.notify.bind(mesh);
     mesh.notify = (selector, payload, stack = []) => {
-      if (payload.type === 'TOPOLOGY_UPDATE') {
+      const s = Selector.fromObject(selector);
+      if (s.path === 'sys/topo') {
           console.log(`[MeshVFS] Mesh topology update from ${payload.peer}: ${payload.neighbors.length} peers visible.`);
           meshMap.set(payload.peer, payload.neighbors);
       }
-      if (payload.type === 'CATALOG_ANNOUNCEMENT') {
+      if (s.path === 'sys/schema') {
         const { catalog, provider } = payload;
         console.log(`%c[MeshVFS] Received Catalog from ${provider} (${Object.keys(catalog || {}).length} ops)`, 'color: #f59e0b; font-weight: bold;');
         

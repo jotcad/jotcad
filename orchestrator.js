@@ -56,6 +56,18 @@ export const PROFILES = {
       node_b: { type: 'node_b', protocol: 'http', port: 8182 }
     }
   },
+  'test/complex_topology': {
+    storagePrefix: '.vfs_storage_complex_topo_',
+    gateway: 'node_js',
+    components: {
+      cpp_node_1: { type: 'vfs_cpp', protocol: 'http', port: 9591 },
+      cpp_node_2: { type: 'vfs_cpp', protocol: 'http', port: 9592 },
+      node_js:    { type: 'node_a',  protocol: 'http', port: 9593 }
+    },
+    env: {
+      NEIGHBORS: 'http://localhost:9591,http://localhost:9592'
+    }
+  },
   'live/direct_cpp': {
     storagePrefix: '.vfs_storage_direct_cpp_live_',
     gateway: 'ops',
@@ -176,6 +188,22 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
           ...env
       }
     }),
+    vfs_cpp: (cfg, key) => {
+      const fullId = `${profileKey.replace('/', '_')}_${key}`;
+      return {
+        name: `${key} (${cfg.port})`,
+        command: './fs/cpp/test_server',
+        args: ['--port', String(cfg.port), '--storage', `${storagePrefix}${key}`, '--id', fullId],
+        cwd: __dirname,
+        env: {
+            ...process.env,
+            LOG_LEVEL: globalLogLevel,
+            PORT: String(cfg.port),
+            PEER_ID: fullId,
+            ...env
+        }
+      };
+    },
     ux: (cfg) => {
       const useSsl = cfg.protocol === 'https';
       const uxArgs = ['http-server', cfg.dist, '-p', String(cfg.port)];
@@ -197,7 +225,7 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
     }
   };
 
-  const components = Object.entries(componentMap).map(([id, cfg]) => componentConfigs[cfg.type](cfg));
+  const components = Object.entries(componentMap).map(([id, cfg]) => componentConfigs[cfg.type](cfg, id));
 
   const processes = new Map();
   let shuttingDown = false;

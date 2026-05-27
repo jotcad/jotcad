@@ -43,7 +43,7 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
             neighbors.push_back(json{{"id", p_id}, {"reachability", "REVERSE"}});
         }
     }
-    json topo_payload = {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", neighbors}};
+    json topo_payload = {{"peer", config_.id}, {"neighbors", neighbors}};
     notify(sys_topo, topo_payload, {});
 }
 

@@ -93,10 +93,8 @@ All peer interactions are managed through a unified **Connection** abstraction.
 The VFS uses specialized system paths for mesh management.
 
 - **Topology Updates (`sys/topo`):** Nodes notify neighbors of topology changes.
-  - Payload Type: `TOPOLOGY_UPDATE`
-  - Content: `{ peer: "id", neighbors: { "id": "url" } }`
+  - Content: `{ peer: "id", neighbors: [ { "id": "peer-id", "reachability": "DIRECT|REVERSE" } ] }`
 - **Schema Discovery (`sys/schema`):** Providers announce their available operators.
-  - Payload Type: `CATALOG_ANNOUNCEMENT`
   - Content: `{ provider: "id", catalog: { "path": schema } }`
   - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
 

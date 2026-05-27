@@ -269,7 +269,7 @@ void VFSNode::subscribe(const json& selector_json, long long expiresAt, const st
 
         if (target) {
             json catalog = get_catalog();
-            json payload = {{"type", "CATALOG_ANNOUNCEMENT"}, {"catalog", catalog["catalog"]}, {"provider", config_.id}};
+            json payload = {{"catalog", catalog["catalog"]}, {"provider", config_.id}};
             std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/schema sub from " << peer_id << " with local catalog (" << catalog["catalog"].size() << " ops)" << std::endl;
             target->notify(selector.to_json(), payload, {config_.id});
         }
@@ -287,7 +287,7 @@ void VFSNode::subscribe(const json& selector_json, long long expiresAt, const st
         }
 
         if (target) {
-            json payload = {{"type", "TOPOLOGY_UPDATE"}, {"peer", config_.id}, {"neighbors", neighbors}};
+            json payload = {{"peer", config_.id}, {"neighbors", neighbors}};
             std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/topo sub from " << peer_id << " with local topology" << std::endl;
             target->notify(selector.to_json(), payload, {config_.id});
         }

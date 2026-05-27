@@ -150,7 +150,6 @@ export const JotRegistry = {
 
     if (mesh && mesh.connected) {
         mesh.notify(new Selector('sys/schema'), {
-          type: 'CATALOG_ANNOUNCEMENT',
           provider: vfs.id,
           catalog: { [targetPath]: schemaWithOrigin }
         });

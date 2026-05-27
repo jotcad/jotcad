@@ -69,7 +69,7 @@ test('Mesh Topology Discovery', async (t) => {
         console.log(
           `[Test] Node A received pulse: ${selector.path} from ${payload.peer}`
         );
-        if (payload.type === 'TOPOLOGY_UPDATE') {
+        if (selector.path === 'sys/topo') {
           receivedTopo.set(payload.peer, payload.neighbors);
         }
         return originalNotifyA(selector, payload, stack);
@@ -93,7 +93,7 @@ test('Mesh Topology Discovery', async (t) => {
         console.log(
           `[Test] Triggering heartbeat from ${name} (${m.vfs.id})...`
         );
-        m.notify(sel, { type: 'TOPOLOGY_UPDATE', peer: m.vfs.id, neighbors });
+        m.notify(sel, { peer: m.vfs.id, neighbors });
       };
 
       triggerHeartbeat(meshC, 'Node C');
