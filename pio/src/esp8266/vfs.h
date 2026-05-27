@@ -20,7 +20,7 @@ enum VFSFeature {
     VFS_NONE         = 0,
     VFS_HANDSHAKE    = 1 << 0, // Mandatory for mesh participation
     VFS_FULFILLMENT  = 1 << 1, // Respond to /read
-    VFS_PUBLICATION  = 1 << 2, // Emit /notify
+    VFS_PUBLICATION  = 1 << 2, // Emit /publish
     VFS_SUBSCRIPTION = 1 << 3, // Respond to /subscribe
     VFS_STORAGE      = 1 << 4, // Persistent storage (Flash)
     VFS_ALL          = 0xFF
@@ -43,8 +43,8 @@ class Peer {
 public:
     virtual ~Peer() = default;
     virtual const std::string& id() const = 0;
-    virtual void notify(const json& selector, const json& payload, const std::string& source_id) = 0;
-    virtual void notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) = 0;
+    virtual void publish(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
+    virtual void publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) = 0;
     virtual void tick() {} // Cooperative tick
 };
 
@@ -57,8 +57,8 @@ class ReverseConnection : public Peer {
 public:
     ReverseConnection(VFS* node, const std::string& neighbor_id, const std::string& url);
     const std::string& id() const override { return id_; }
-    void notify(const json& selector, const json& payload, const std::string& source_id) override;
-    void notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) override;
+    void publish(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+    void publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) override;
     
     void tick() override; 
 private:
@@ -104,10 +104,9 @@ public:
     using Handler = std::function<void(const json& params, VFSRequest* request)>;
     void register_op(const std::string& path, Handler handler, const json& schema = json::object());
 
-    int notify(const json& selector, const json& payload);
-    int notify_binary(const json& selector, const uint8_t* data, size_t len);
-    int notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id);
-    void subscribe(const json& selector, long long expiresAt, const std::string& remote_id = "");
+    int publish(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
+    int publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
+    void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack = {});
     
     // Internal API for Peer loop interaction
     void handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond);

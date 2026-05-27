@@ -30,9 +30,9 @@ ReverseConnection::ReverseConnection(VFS* node, const std::string& neighbor_id, 
     if (url_.back() == '/') url_.pop_back();
 }
 
-void ReverseConnection::notify(const json& selector, const json& payload, const std::string& source_id) {
+void ReverseConnection::publish(const json& selector, const json& payload, const std::vector<std::string>& stack) {
     std::string path = selector.value("path", "unknown");
-    Serial.printf("[Mesh OUT] -> NOTIFY: %s to %s\n", path.c_str(), id_.c_str());
+    Serial.printf("[Mesh OUT] -> PUB: %s to %s\n", path.c_str(), id_.c_str());
     node_->trigger_activity();
 
     WiFiClient client;
@@ -40,22 +40,28 @@ void ReverseConnection::notify(const json& selector, const json& payload, const 
     http.begin(client, (url_ + "/notify").c_str());
     
     std::string sel_json = selector.dump();
+    std::string stack_str;
+    for (size_t i = 0; i < stack.size(); ++i) {
+        stack_str += stack[i];
+        if (i < stack.size() - 1) stack_str += ",";
+    }
+
     http.addHeader("X-VFS-Op", "PUB");
     http.addHeader("X-VFS-Selector", sel_json.c_str());
-    http.addHeader("X-VFS-Stack", source_id.c_str());
+    http.addHeader("X-VFS-Stack", stack_str.c_str());
     http.addHeader("X-VFS-Encoding", "json");
     http.addHeader("Content-Type", "application/json");
 
     int code = http.POST(payload.dump().c_str());
     if (code != 200) {
-        Serial.printf("[ReverseConn %s] Notify failed: %d\n", id_.c_str(), code);
+        Serial.printf("[ReverseConn %s] Publish failed: %d\n", id_.c_str(), code);
     }
     http.end();
 }
 
-void ReverseConnection::notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) {
+void ReverseConnection::publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
     std::string path = selector.value("path", "unknown");
-    Serial.printf("[Mesh OUT] -> NOTIFY (BINARY %d bytes): %s to %s\n", (int)len, path.c_str(), id_.c_str());
+    Serial.printf("[Mesh OUT] -> PUB (BINARY %d bytes): %s to %s\n", (int)len, path.c_str(), id_.c_str());
     node_->trigger_activity();
 
     WiFiClient client;
@@ -63,15 +69,21 @@ void ReverseConnection::notify_binary(const json& selector, const uint8_t* data,
     http.begin(client, (url_ + "/notify").c_str());
     
     std::string sel_json = selector.dump();
+    std::string stack_str;
+    for (size_t i = 0; i < stack.size(); ++i) {
+        stack_str += stack[i];
+        if (i < stack.size() - 1) stack_str += ",";
+    }
+
     http.addHeader("X-VFS-Op", "PUB");
     http.addHeader("X-VFS-Selector", sel_json.c_str());
-    http.addHeader("X-VFS-Stack", source_id.c_str());
+    http.addHeader("X-VFS-Stack", stack_str.c_str());
     http.addHeader("X-VFS-Encoding", "bytes");
     http.addHeader("Content-Type", "application/octet-stream");
 
     int code = http.POST((uint8_t*)data, len);
     if (code != 200) {
-        Serial.printf("[ReverseConn %s] Binary Notify failed: %d\n", id_.c_str(), code);
+        Serial.printf("[ReverseConn %s] Binary Publish failed: %d\n", id_.c_str(), code);
     }
     http.end();
 }
@@ -297,7 +309,7 @@ void VFS::add_peer(std::shared_ptr<Peer> peer) {
     // Subscribe to interested keys
     for (const auto& [path, stack_map] : interests_) {
         for (const auto& [remote_id, exp] : stack_map) {
-            subscribe(interest_selectors_[path], exp, remote_id);
+            subscribe(interest_selectors_[path], exp, {remote_id});
         }
     }
 }
@@ -313,7 +325,7 @@ void VFS::register_op(const std::string& path, Handler handler, const json& sche
     schemas_[path] = schema;
 }
 
-int VFS::notify(const json& selector, const json& payload) {
+int VFS::publish(const json& selector, const json& payload, const std::vector<std::string>& stack) {
     std::string path = selector.value("path", "unknown");
     std::vector<std::shared_ptr<Peer>> current_peers;
     {
@@ -322,17 +334,22 @@ int VFS::notify(const json& selector, const json& payload) {
         current_peers = peers_;
     }
 
+    std::vector<std::string> next_stack = stack;
+    if (std::find(next_stack.begin(), next_stack.end(), config_.id) == next_stack.end()) {
+        next_stack.push_back(config_.id);
+    }
+
     int count = 0;
     for (auto& peer : current_peers) {
         if (interests_[path].count(peer->id())) {
-            peer->notify(selector, payload, config_.id);
+            peer->publish(selector, payload, next_stack);
             count++;
         }
     }
     return count;
 }
 
-int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) {
+int VFS::publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
     std::string path = selector.value("path", "unknown");
     std::vector<std::shared_ptr<Peer>> current_peers;
     {
@@ -341,28 +358,30 @@ int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len, co
         current_peers = peers_;
     }
 
+    std::vector<std::string> next_stack = stack;
+    if (std::find(next_stack.begin(), next_stack.end(), config_.id) == next_stack.end()) {
+        next_stack.push_back(config_.id);
+    }
+
     int count = 0;
     for (auto& peer : current_peers) {
         if (interests_[path].count(peer->id())) {
-            peer->notify_binary(selector, data, len, source_id.empty() ? config_.id : source_id);
+            peer->publish_binary(selector, data, len, next_stack);
             count++;
         }
     }
     return count;
 }
 
-int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len) {
-    return notify_binary(selector, data, len, config_.id);
-}
-
-void VFS::subscribe(const json& selector, long long expiresAt, const std::string& remote_id) {
+void VFS::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
     std::string path = selector.value("path", "unknown");
+    std::string remote_id = stack.empty() ? "local" : stack.back();
     Serial.printf("[Mesh OUT] -> SUBSCRIBE: %s (expires: %lld)\n", path.c_str(), expiresAt);
     
     std::vector<std::shared_ptr<Peer>> current_peers;
     {
         std::lock_guard<Mutex> lock(mesh_mutex_);
-        interests_[path][remote_id.empty() ? "local" : remote_id] = expiresAt;
+        interests_[path][remote_id] = expiresAt;
         interest_selectors_[path] = selector;
         current_peers = peers_;
     }
@@ -406,7 +425,7 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
         
         // Propagate to local subscribers
         if (interests_.count(path)) {
-            notify(selector, payload);
+            publish(selector, payload);
         }
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     } else if (type == "COMMAND") {
@@ -431,7 +450,7 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
         } else if (op == "SUB") {
             long long expires = cmd.value("expiresAt", 0LL);
             std::string remote_id = cmd.value("id", "");
-            subscribe(selector, expires, remote_id);
+            subscribe(selector, expires, {remote_id});
             respond(200, "text/plain", (const uint8_t*)"OK", 2);
         } else {
             respond(501, "text/plain", (const uint8_t*)"Not Implemented", 15);
@@ -442,7 +461,7 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
 void VFS::handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
     if (op == "PUB") {
         Serial.printf("[Mesh IN] <- Sovereign Binary PUB: %s (%zu bytes)\n", sel.path.c_str(), len);
-        notify_binary(sel.to_json(), data, len, replyTo);
+        publish_binary(sel.to_json(), data, len, {replyTo});
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     } else if (op == "READ") {
         Handler handler;
