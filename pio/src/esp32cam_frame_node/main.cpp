@@ -127,9 +127,9 @@ void loop() {
         // We only capture if there is interest
         camera_fb_t * fb = esp_camera_fb_get();
         if (fb) {
-            int interested = node->notify_binary(selector, fb->buf, fb->len);
-            if (interested > 0) {
-                Serial.printf("[ESP32-CAM] Published Binary Image (%d bytes, %d interested)\n", (int)fb->len, interested);
+            int sent = node->publish_binary(selector, fb->buf, fb->len);
+            if (sent > 0) {
+                Serial.printf("[ESP32-CAM] Published Binary Image (%d bytes, Sent to: %d)\n", (int)fb->len, sent);
             }
             esp_camera_fb_return(fb);
         }

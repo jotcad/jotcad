@@ -72,8 +72,8 @@ void loop() {
         // Broadcast count change
         fs::json selector = {{"path", "sensor/counter"}};
         fs::json payload = {{"value", shared_count}};
-        int interested = node->notify(selector, payload);
+        int sent = node->publish(selector, payload);
         
-        Serial.printf("[ESP32] Counter: %d (Interested: %d)\n", shared_count, interested);
+        Serial.printf("[ESP32] Counter: %d (Sent to: %d)\n", shared_count, sent);
     }
 }
