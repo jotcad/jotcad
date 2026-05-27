@@ -38,24 +38,24 @@ public:
     virtual const std::string& id() const = 0;
     virtual void notify(const json& selector, const json& payload, const std::string& source_id) = 0;
     virtual void notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) = 0;
-    virtual void loop() {} // No-op for forward-only peers
+    virtual void tick() {} // No-op for forward-only peers
 };
 
-class VFSNode;
+class VFS;
 
 /**
  * ReverseConnection: Implements the JotCAD /listen polling pattern.
  */
 class ReverseConnection : public Peer {
 public:
-    ReverseConnection(VFSNode* node, const std::string& neighbor_id, const std::string& url);
+    ReverseConnection(VFS* node, const std::string& neighbor_id, const std::string& url);
     const std::string& id() const override { return id_; }
     void notify(const json& selector, const json& payload, const std::string& source_id) override;
     void notify_binary(const json& selector, const uint8_t* data, size_t len, const std::string& source_id) override;
     
-    void loop() override; 
+    void tick() override; 
 private:
-    VFSNode* node_;
+    VFS* node_;
     std::string id_;
     std::string url_;
     
@@ -70,7 +70,7 @@ private:
     unsigned long last_poll_ = 0;
 };
 
-class VFSNode {
+class VFS {
 public:
     struct Config {
         std::string id;
@@ -78,11 +78,11 @@ public:
         std::vector<std::string> neighbors;
     };
 
-    VFSNode(const Config& config);
-    ~VFSNode();
+    VFS(const Config& config);
+    ~VFS();
 
     void begin();
-    void loop();
+    void tick();
     
     // Activity UI (Toggle-based)
     void trigger_activity();

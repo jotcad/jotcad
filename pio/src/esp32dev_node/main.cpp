@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include "vfs_node.h"
+#include "vfs.h"
 #include "secrets.h"
 
-fs::VFSNode *node = nullptr;
+fs::VFS *node = nullptr;
 static uint32_t shared_count = 0;
 
 void setup() {
@@ -23,7 +23,7 @@ void setup() {
     Serial.printf("[ESP32] Gateway:    %s\n", WiFi.gatewayIP().toString().c_str());
 
     // 1. Setup VFS Node
-    fs::VFSNode::Config config;
+    fs::VFS::Config config;
 #ifdef DEVICE_NODE_ID
     config.id = DEVICE_NODE_ID;
 #else
@@ -48,7 +48,7 @@ void setup() {
     }
     probe.end();
 
-    node = new fs::VFSNode(config);
+    node = new fs::VFS(config);
 
     // 2. Register a handler to read the current count
     node->register_op("sensor/counter", [](const fs::json& params, fs::VFSRequest *request) {
@@ -60,7 +60,7 @@ void setup() {
 }
 
 void loop() {
-    node->loop();
+    node->tick();
     
     static unsigned long last_tick = 0;
     

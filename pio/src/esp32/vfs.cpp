@@ -1,4 +1,4 @@
-#include "vfs_node.h"
+#include "vfs.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <set>
@@ -24,7 +24,7 @@ private:
 /**
  * ReverseConnection Implementation
  */
-ReverseConnection::ReverseConnection(VFSNode* node, const std::string& neighbor_id, const std::string& url) 
+ReverseConnection::ReverseConnection(VFS* node, const std::string& neighbor_id, const std::string& url) 
     : node_(node), id_(neighbor_id), url_(url) {
     if (url_.back() == '/') url_.pop_back();
 }
@@ -75,7 +75,7 @@ void ReverseConnection::notify_binary(const json& selector, const uint8_t* data,
     http.end();
 }
 
-void ReverseConnection::loop() {
+void ReverseConnection::tick() {
     unsigned long now = millis();
     static unsigned long poll_interval = 100;
     if (now - last_poll_ < poll_interval && last_poll_ != 0) return;
@@ -190,26 +190,26 @@ void ReverseConnection::loop() {
 }
 
 /**
- * VFSNode Implementation
+ * VFS Implementation
  */
-VFSNode::VFSNode(const Config& config) : config_(config) {
+VFS::VFS(const Config& config) : config_(config) {
 }
 
-VFSNode::~VFSNode() {
+VFS::~VFS() {
 }
 
 // Background Task for Mesh Listeners
 void vfs_mesh_task(void* parameter) {
-    VFSNode* node = (VFSNode*)parameter;
+    VFS* node = (VFS*)parameter;
     Serial.println("\n[VFS] Mesh Task Started on Core 0");
     Serial.flush();
     while (true) {
-        node->loop();
+        node->tick();
         vTaskDelay(pdMS_TO_TICKS(10)); // Yield
     }
 }
 
-void VFSNode::begin() {
+void VFS::begin() {
     Serial.printf("[VFS %s] Started in REVERSE Mode (No local server)\n", config_.id.c_str());
     
 #ifdef LED_BUILTIN
@@ -229,7 +229,7 @@ void VFSNode::begin() {
     );
 }
 
-void VFSNode::loop() {
+void VFS::tick() {
     unsigned long now = millis();
 
     if (has_feature(VFS_HANDSHAKE)) {
@@ -253,18 +253,18 @@ void VFSNode::loop() {
     }
 
     for (auto& peer : current_peers) {
-        peer->loop();
+        peer->tick();
     }
 }
 
-void VFSNode::trigger_activity() {
+void VFS::trigger_activity() {
     led_state_ = !led_state_; // Toggle state
 #ifdef LED_BUILTIN
     digitalWrite(LED_BUILTIN, led_state_ ? HIGH : LOW);
 #endif
 }
 
-void VFSNode::register_with_neighbors() {
+void VFS::register_with_neighbors() {
     for (const auto& neighbor : config_.neighbors) {
         Serial.printf("[VFS %s] Registering with neighbor: %s\n", config_.id.c_str(), neighbor.c_str());
         trigger_activity();
@@ -294,7 +294,7 @@ void VFSNode::register_with_neighbors() {
     }
 }
 
-void VFSNode::handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
+void VFS::handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
     if (!cmd.contains("type")) return;
     std::string type = cmd.at("type");
     
@@ -325,7 +325,7 @@ void VFSNode::handle_command(const json& cmd, std::function<void(int, const char
     }
 }
 
-void VFSNode::handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
+void VFS::handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
     if (op == "PUB") {
         Serial.printf("[Mesh IN] <- Sovereign Binary PUB: %s (%d bytes)\n", sel.path.c_str(), (int)len);
         trigger_activity();
@@ -333,22 +333,22 @@ void VFSNode::handle_binary_command(const std::string& op, const Selector& sel, 
     }
 }
 
-void VFSNode::add_peer(std::shared_ptr<Peer> peer) {
+void VFS::add_peer(std::shared_ptr<Peer> peer) {
     std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
     peers_.push_back(peer);
 }
 
-void VFSNode::clear_peers() {
+void VFS::clear_peers() {
     std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
     peers_.clear();
 }
 
-void VFSNode::register_op(const std::string& path, Handler handler, const json& schema) {
+void VFS::register_op(const std::string& path, Handler handler, const json& schema) {
     handlers_[path] = handler;
     schemas_[path] = schema;
 }
 
-int VFSNode::notify(const json& selector, const json& payload) {
+int VFS::notify(const json& selector, const json& payload) {
     if (!has_feature(VFS_PUBLICATION)) return 0;
 
     std::string path = selector.at("path");
@@ -382,7 +382,7 @@ int VFSNode::notify(const json& selector, const json& payload) {
     return notified;
 }
 
-int VFSNode::notify_binary(const json& selector, const uint8_t* data, size_t len) {
+int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len) {
     if (!has_feature(VFS_PUBLICATION)) return 0;
 
     std::string path = selector.at("path");
@@ -416,7 +416,7 @@ int VFSNode::notify_binary(const json& selector, const uint8_t* data, size_t len
     return notified;
 }
 
-void VFSNode::subscribe(const json& selector, long long expiresAt, const std::string& remote_id) {
+void VFS::subscribe(const json& selector, long long expiresAt, const std::string& remote_id) {
     if (!has_feature(VFS_SUBSCRIPTION)) return;
     std::string path = selector.at("path");
     std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);

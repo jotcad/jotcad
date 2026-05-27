@@ -2,7 +2,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include "esp_camera.h"
-#include "vfs_node.h"
+#include "vfs.h"
 #include "secrets.h"
 
 // AI-Thinker ESP32-CAM Pin Map
@@ -23,7 +23,7 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-fs::VFSNode *node = nullptr;
+fs::VFS *node = nullptr;
 
 bool init_camera() {
     camera_config_t config;
@@ -85,12 +85,12 @@ void setup() {
     Serial.println("\nWiFi Connected.");
 
     // 1. Setup VFS Node
-    fs::VFSNode::Config config;
+    fs::VFS::Config config;
     config.id = DEVICE_NODE_ID;
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     config.neighbors = {MESH_NEIGHBOR_URL};
     
-    node = new fs::VFSNode(config);
+    node = new fs::VFS(config);
 
     // 2. Register handler for on-demand camera reads
     node->register_op("sensor/camera", [](const fs::json& params, fs::VFSRequest *request) {
@@ -109,7 +109,7 @@ void setup() {
 }
 
 void loop() {
-    node->loop();
+    node->tick();
     
     static unsigned long last_capture = 0;
     
