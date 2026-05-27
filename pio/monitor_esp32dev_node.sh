@@ -1,13 +1,13 @@
 #!/bin/bash
-# Script to monitor the ESP32-CAM serial output
+# Script to monitor the esp32dev_node application serial output
 
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd "$SCRIPT_DIR"
 
-echo "[JotCAD] Starting Serial Monitor for ESP32-CAM..."
+echo "[JotCAD] Starting Serial Monitor for esp32dev_node..."
 
-if pio run -e esp32cam -t monitor; then
+if pio run -e esp32dev -t monitor; then
     echo "[JotCAD] Monitoring finished."
 else
     echo "[JotCAD] Monitoring FAILED."

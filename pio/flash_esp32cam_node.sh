@@ -1,12 +1,12 @@
 #!/bin/bash
-# Script to build, flash, and monitor the ESP32-CAM
+# Script to build, flash, and monitor the esp32cam_node application
 
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd "$SCRIPT_DIR"
 
 echo "============================================================"
-echo "ESP32-CAM MANUAL FLASHING INSTRUCTIONS"
+echo "esp32cam_node MANUAL FLASHING INSTRUCTIONS"
 echo "============================================================"
 echo "1. Connect GPIO 0 to GND (use a jumper wire)."
 echo "2. Connect 5V power (ESP32-CAM is power-hungry)."
