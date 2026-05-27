@@ -1,4 +1,4 @@
-# ESP32-CAM Node Application
+# ESP32-CAM Camera Frame Node Application
 
 This directory contains the PlatformIO application for an ESP32-CAM board acting as a JotCAD VFS node.
 
@@ -13,4 +13,4 @@ This application initializes Wi-Fi, configures the ESP32-CAM camera module, conn
 
 ## Files Summary
 
-- [main.cpp](file:///home/brian/github/jotcad/pio/src/esp32cam_node/main.cpp): Configures the camera sensor, registers VFS handlers for capturing and retrieving images, and tick-loops the VFS client.
+- [main.cpp](file:///home/brian/github/jotcad/pio/src/esp32cam_frame_node/main.cpp): Configures the camera sensor, registers VFS handlers for capturing and retrieving images, and tick-loops the VFS client.

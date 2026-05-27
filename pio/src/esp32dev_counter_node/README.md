@@ -1,4 +1,4 @@
-# ESP32 Development Node Application
+# ESP32 Development Counter Node Application
 
 This directory contains the PlatformIO application for a standard ESP32 development board (e.g., ESP32-WROOM-32D) acting as a JotCAD VFS node.
 
@@ -13,4 +13,4 @@ This application establishes Wi-Fi, performs the VFS handshake with a parent JS 
 
 ## Files Summary
 
-- [main.cpp](file:///home/brian/github/jotcad/pio/src/esp32dev_node/main.cpp): Core node application implementation, registering operators and driving the event loop.
+- [main.cpp](file:///home/brian/github/jotcad/pio/src/esp32dev_counter_node/main.cpp): Core node application implementation, registering operators and driving the event loop.

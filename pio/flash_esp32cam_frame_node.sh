@@ -1,12 +1,17 @@
 #!/bin/bash
-# Script to build, flash, and monitor the esp32cam_node application
+# Script to build, flash, and monitor the esp32cam_frame_node application
 
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd "$SCRIPT_DIR"
 
+# Parse suffix (defaulting to 01)
+RAW_SUFFIX=${1:-1}
+SUFFIX=$(printf "%02d" $RAW_SUFFIX)
+NODE_ID="esp32cam-frame-node-$SUFFIX"
+
 echo "============================================================"
-echo "esp32cam_node MANUAL FLASHING INSTRUCTIONS"
+echo "$NODE_ID MANUAL FLASHING INSTRUCTIONS"
 echo "============================================================"
 echo "1. Connect GPIO 0 to GND (use a jumper wire)."
 echo "2. Connect 5V power (ESP32-CAM is power-hungry)."
@@ -17,7 +22,7 @@ echo "============================================================"
 echo ""
 read -p "Press Enter to start build and upload..."
 
-if pio run -e esp32cam -t upload -t monitor; then
+if DEVICE_NODE_ID="$NODE_ID" pio run -e esp32cam -t upload -t monitor; then
     echo "[JotCAD] Execution finished."
 else
     echo "[JotCAD] Upload or Monitor FAILED."

@@ -1,7 +1,6 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
-#include <WiFiClient.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 #include "vfs.h"
 #include "secrets.h"
 
@@ -11,7 +10,7 @@ static uint32_t shared_count = 0;
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("\n[ESP8266] JotCAD VFS Node Booting...");
+    Serial.println("\n[ESP32] JotCAD VFS Node Booting...");
 
     // Connect to WiFi
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -20,32 +19,33 @@ void setup() {
         Serial.print(".");
     }
     Serial.println("\nWiFi Connected.");
-    Serial.printf("[ESP8266] IP Address: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[ESP32] IP Address: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[ESP32] Gateway:    %s\n", WiFi.gatewayIP().toString().c_str());
+
+#ifndef DEVICE_NODE_ID
+#error "DEVICE_NODE_ID macro is not defined! Please define sysenv.DEVICE_NODE_ID in your environment."
+#endif
+static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Please define sysenv.DEVICE_NODE_ID in your environment.");
 
     // 1. Setup VFS Node
     fs::VFS::Config config;
-#ifdef DEVICE_NODE_ID
     config.id = DEVICE_NODE_ID;
-#else
-    config.id = "esp8266-real-node-01";
-#endif
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     
-    // Connect to JS Gateway Node neighbor
+    // Use the host's actual LAN IP
     config.neighbors = {MESH_NEIGHBOR_URL};
     
     delay(2000); // Wait for JS neighbor to stabilize
     
     // Bridge Sanity Check
-    Serial.println("[ESP8266] Probing host neighbor sanity (GET /health)...");
-    WiFiClient client;
+    Serial.println("[ESP32] Probing host neighbor sanity (GET /health)...");
     HTTPClient probe;
-    probe.begin(client, String(MESH_NEIGHBOR_URL) + "/health");
+    probe.begin(String(MESH_NEIGHBOR_URL) + "/health");
     int probeCode = probe.GET();
     if (probeCode > 0) {
-        Serial.printf("[ESP8266] Neighbor Sanity OK: %d\n", probeCode);
+        Serial.printf("[ESP32] Neighbor Sanity OK: %d\n", probeCode);
     } else {
-        Serial.printf("[ESP8266] Neighbor Sanity FAILED: %s (%d)\n", probe.errorToString(probeCode).c_str(), probeCode);
+        Serial.printf("[ESP32] Neighbor Sanity FAILED: %s (%d)\n", probe.errorToString(probeCode).c_str(), probeCode);
     }
     probe.end();
 
@@ -61,7 +61,7 @@ void setup() {
 }
 
 void loop() {
-    node->tick(); // Cooperative execution tick
+    node->tick();
     
     static unsigned long last_tick = 0;
     
@@ -74,6 +74,6 @@ void loop() {
         fs::json payload = {{"value", shared_count}};
         int interested = node->notify(selector, payload);
         
-        Serial.printf("[ESP8266] Counter: %d (Interested: %d)\n", shared_count, interested);
+        Serial.printf("[ESP32] Counter: %d (Interested: %d)\n", shared_count, interested);
     }
 }

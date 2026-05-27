@@ -84,6 +84,11 @@ void setup() {
     }
     Serial.println("\nWiFi Connected.");
 
+#ifndef DEVICE_NODE_ID
+#error "DEVICE_NODE_ID macro is not defined! Please define sysenv.DEVICE_NODE_ID in your environment."
+#endif
+static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Please define sysenv.DEVICE_NODE_ID in your environment.");
+
     // 1. Setup VFS Node
     fs::VFS::Config config;
     config.id = DEVICE_NODE_ID;

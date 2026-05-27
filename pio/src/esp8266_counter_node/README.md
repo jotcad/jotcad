@@ -1,4 +1,4 @@
-# ESP8266 VFS Node Application
+# ESP8266 VFS Sensor Counter Node Application
 
 This directory contains the PlatformIO application for an ESP8266-based JotCAD VFS node (e.g., running on a WeMos D1 or NodeMCU board).
 
@@ -13,4 +13,4 @@ This application initializes Wi-Fi connectivity, performs a handshake with a par
 
 ## Files Summary
 
-- [main.cpp](file:///home/brian/github/jotcad/pio/src/esp8266_node/main.cpp): Application entry point, Wi-Fi initialization, mesh handshake, and registration of the counter operator.
+- [main.cpp](file:///home/brian/github/jotcad/pio/src/esp8266_counter_node/main.cpp): Application entry point, Wi-Fi initialization, mesh handshake, and registration of the counter operator.
