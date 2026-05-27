@@ -1,0 +1,211 @@
+# VFS WebSocket Transport Layer Specification
+
+This document defines the architecture, message formats, handshake negotiation, and microcontroller (PIO) integration for an opportunistic WebSocket transport layer within the JotCAD Virtual File System (VFS) mesh.
+
+This transport layer is designed to run in parallel with the existing HTTP/REST and Long-Polling mechanisms, upgrading directly to WebSocket whenever negotiable, and falling back gracefully when needed.
+
+---
+
+## 1. Design Goals
+
+- **Bi-directional Low-Latency Multiplexing**: Eliminate HTTP request/response connection overhead for high-frequency virtual file lookups and mesh event propagates.
+- **Pure Push-Based Reverse Connections**: Eliminate battery/CPU-draining HTTP long-polling loops for nodes behind NAT/firewalls or browser UX contexts by utilizing the persistent bi-directional channel.
+- **Opportunistic Upgrade**: Seamlessly negotiate and transition from HTTP to WebSocket connections during initial registration.
+- **Hardware Agnostic (PIO Integration)**: Standardize on a lightweight, memory-efficient framing format suitable for constrained microcontrollers (ESP32 and ESP8266) running freeRTOS or bare-metal loops.
+
+---
+
+## 2. Negotiation & Connection Upgrade
+
+WebSocket support is negotiable at registration time. The existing `POST /register` handshake payload is extended with capability advertising.
+
+### A. Handshake Capabilities
+
+When registering a peer, nodes advertise supported protocols in a `transports` list and expose a `wsUrl` target endpoint.
+
+#### 1. Registration Request
+```json
+{
+  "id": "node_a",
+  "url": "http://192.168.1.100:9591",
+  "transports": ["http", "ws"]
+}
+```
+
+#### 2. Registration Response
+```json
+{
+  "id": "node_b",
+  "reachability": "DIRECT",
+  "transports": ["http", "ws"],
+  "wsUrl": "ws://192.168.1.101:9592/vfs-ws"
+}
+```
+
+### B. Upgrade Workflow
+
+1. If both peers support `"ws"`, the registering client initiates a WebSocket connection to the server's `wsUrl`.
+2. Once the TCP socket is upgraded to WebSocket, the client transmits an **`IDENTIFY`** frame.
+3. The server validates the identity and responds with an **`ACK`** frame.
+4. The system transitions routing for that specific peer from the HTTP adapter to the newly created WebSocket adapter.
+5. If the WebSocket connection fails at any stage (timeout, proxy block, SSL failure), both nodes **gracefully fall back** to the HTTP REST and Long-Polling adapters.
+
+```
+       [HTTP/REST Register Handshake]
+                      │
+            Both Support WebSocket?
+             ├── No  ──► [Use Standard HTTP/REST + Long-Poll]
+             └── Yes ──► [Initiate ws:// Connection to /vfs-ws]
+                              │
+                      Connection OK?
+                       ├── No  ──► [Fallback to HTTP/REST]
+                       └── Yes ──► [Send IDENTIFY -> Receive ACK]
+                                        │
+                               [WebSocket Transport Active]
+```
+
+---
+
+## 3. Multiplexed Messaging Protocol (Framing)
+
+Since WebSocket channels are asynchronous, request-response exchanges must be correlated using dynamic transaction identifiers (`txId`).
+
+### A. Core Message Envelope (JSON)
+
+Every frame sent over the WebSocket transport adheres to the following layout:
+
+```json
+{
+  "txId": "msg_f7c1a892b",    // Unique transaction correlation ID (required for READ/READ_RESPONSE)
+  "type": "IDENTIFY" | "ACK" | "READ" | "READ_RESPONSE" | "SUBSCRIBE" | "NOTIFY",
+  "selector": {                // Safe-JCB Selector representation
+    "path": "sys/topo",
+    "parameters": {}
+  },
+  "cid": "...",                // Content Identifier (populated for direct-hash reads)
+  "payload": {},               // Payload content (JSON, schema metadata, or serialized maps)
+  "stack": [],                 // Cycle prevention array
+  "expiresAt": 0,              // TTL or subscription expiry timestamp (epoch ms)
+  "status": 200                // Execution status code (for READ_RESPONSE)
+}
+```
+
+### B. Flow Primitives
+
+#### 1. Asynchronous Read Request (`READ`)
+Initiated by either peer. Requires `txId` for tracking.
+```json
+{
+  "txId": "read_00918ac",
+  "type": "READ",
+  "selector": { "path": "sensor/temperature", "parameters": {} },
+  "stack": ["gateway_node"],
+  "expiresAt": 177989912000
+}
+```
+
+#### 2. Read Response (`READ_RESPONSE`)
+Returns requested resource bytes and metadata correlated by `txId`.
+```json
+{
+  "txId": "read_00918ac",
+  "type": "READ_RESPONSE",
+  "status": 200,
+  "payload": {
+    "data": "MjEuNQA=",      // Base64-encoded file payload (e.g., 21.5)
+    "metadata": {
+      "encoding": "string",
+      "state": "AVAILABLE"
+    }
+  }
+}
+```
+
+#### 3. Interest Propagation (`SUBSCRIBE`)
+Paints a subscription trail in the mesh. No reply expected.
+```json
+{
+  "type": "SUBSCRIBE",
+  "selector": { "path": "sys/topo", "parameters": {} },
+  "expiresAt": 177989912000,
+  "stack": ["subscriber_node"]
+}
+```
+
+#### 4. Event Notification (`NOTIFY`)
+Broadcasts dynamic updates down a subscription path.
+```json
+{
+  "type": "NOTIFY",
+  "selector": { "path": "sys/topo" },
+  "payload": {
+    "peer": "gateway_node",
+    "neighbors": [
+      { "id": "esp32_sensor", "reachability": "DIRECT" }
+    ]
+  },
+  "stack": []
+}
+```
+
+---
+
+## 4. PIO Integration (ESP32 & ESP8266 Microcontrollers)
+
+Constrained microcontrollers face significant limitations regarding heap space, parsing buffers, and network timeouts. Persistence via WebSockets resolves CPU and memory overhead caused by repeated socket churn.
+
+### A. Hardware-Specific Architecture
+
+```
+                  ┌───────────────────────────────┐
+                  │      JotCAD Gateway Node      │
+                  └───────────────▲───────────────┘
+                                  │
+                       WebSocket Persistent
+                        (Frames < 1.5 KB)
+                                  │
+                  ┌───────────────▼───────────────┐
+                  │    ESP32 / ESP8266 Client     │
+                  │   ┌───────────────────────┐   │
+                  │   │   VFS Router (Core)   │   │
+                  │   └───────────▲───────────┘   │
+                  │               │               │
+                  │   ┌───────────▼───────────┐   │
+                  │   │  JSON Selector Map    │   │
+                  │   └───────────────────────┘   │
+                  └───────────────────────────────┘
+```
+
+### B. Lightweight Microcontroller Constraints
+
+1. **Persistent Socket Reuse**: Microcontrollers establish an outbound WebSocket connection to the VFS Gateway using a optimized WebSocket client wrapper (e.g. ESP-IDF native WebSockets component or `arduinoWebSockets` library).
+2. **Buffer Limits**: Large CAD payloads (STLs, high-resolution PDFs) can easily overflow a microcontroller's SRAM. PIO nodes **MUST** restrict incoming WebSocket frames to $1.5\text{ KB}$ (matching standard MTUs). Payload fragments larger than $1.5\text{ KB}$ must be chunked or rejected.
+3. **Zero-Copy Parser (`ArduinoJson`)**: VFS JSON envelopes are parsed using fixed stack-allocated `StaticJsonDocument` or `DynamicJsonDocument` allocations (typically sized at $1024$ bytes) to prevent dynamic heap fragmentation.
+4. **Active Connection Keep-Alives**: Since microcontrollers may sit behind strict routers, the PIO node must transmit a 2-byte ping frame every 15 seconds to ensure network state consistency.
+
+### C. PIO Hardware Command Execution Flow
+
+Through the bi-directional reverse transport, the VFS server can push commands down the microcontroller's socket to execute real-time pin states or retrieve sensor telemetry.
+
+#### Scenario: Server Requests Real-Time Sensor Telemetry
+```
+  [Server / Gateway]                            [PIO Node (ESP32)]
+          │                                              │
+          │ ─── (WS: READ "sensor/counter") ───────────► │
+          │                                              │ ─── Read GPIO pins / 
+          │                                              │     hardware timers
+          │                                              │
+          │ ◄── (WS: READ_RESPONSE "200: [Value]") ──────│
+```
+
+1. The gateway executes `vfs.read({ path: "sensor/counter" })`.
+2. The router resolves this selector to the PIO node and fires a `READ` frame over the open WebSocket.
+3. The PIO node receives the WebSocket frame, parses the JSON structure on the stack, and routes it directly to its local sensor loop.
+4. The PIO node reads its physical GPIO pin/timer registers, formats the result as a raw value, base64 encodes it, and pushes the `READ_RESPONSE` frame back up the WebSocket channel.
+
+---
+
+## 5. Security & Context-Safe Transports
+
+- **HTTPS / WSS Upgrades**: When HTTPS mode is active in the mesh (`DISABLE_SSL=0`), the registration negotiator upgrades the URL scheme to secure WebSockets: `wss://`.
+- **Certificates on Embedded Devices**: Microcontrollers must include the gateway's SSL certificate fingerprint or CA Root in their flash storage to secure the persistent WSS connection, keeping communication authentic and encrypted across public boundaries.
