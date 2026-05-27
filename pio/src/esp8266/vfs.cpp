@@ -98,7 +98,11 @@ void ReverseConnection::tick() {
     // Cooperative timeout: keep it relatively short (e.g. 5000ms) on ESP8266 to maintain main application loop responsiveness
     http.begin(client, (url_ + "/listen").c_str());
     http.addHeader("x-vfs-peer-id", node_->id().c_str());
-    http.setTimeout(5000); // 5 Seconds (yielding back to main loop frequently)
+    
+    // CRITICAL: Must collect headers before POST
+    const char * headerKeys[] = {"X-VFS-Op", "X-VFS-Selector", "X-VFS-Encoding", "X-VFS-Reply-To", "X-VFS-Stack", "X-VFS-Expires"};
+    http.collectHeaders(headerKeys, 6);
+    http.setTimeout(5000); 
     
     int code;
     if (has_reply_) {
@@ -143,6 +147,19 @@ void ReverseConnection::tick() {
                 }
             }
 
+            // Parse Stack for interest tracking
+            std::vector<std::string> stack;
+            String stack_header = http.header("X-VFS-Stack");
+            if (stack_header.length() > 0) {
+                char* s = strdup(stack_header.c_str());
+                char* token = strtok(s, ",");
+                while (token) {
+                    stack.push_back(token);
+                    token = strtok(NULL, ",");
+                }
+                free(s);
+            }
+
             int bodyLen = http.getSize();
             if (encoding == "bytes") {
                 // Read raw binary body in watchdog-yielding cooperative stream
@@ -163,18 +180,29 @@ void ReverseConnection::tick() {
             } else {
                 // Read JSON body
                 String body = http.getString();
-                json j_body = json::parse(body.c_str());
-                json cmd = {{"type", op == "PUB" ? "PUB" : "COMMAND"}, {"op", op.c_str()}, {"selector", sel.to_json()}, {"payload", j_body.contains("payload") ? j_body["payload"] : j_body}};
-                if (replyTo.length() > 0) cmd["id"] = replyTo.c_str();
+                json j_body = json::object();
+                if (body.length() > 0) {
+                    try { j_body = json::parse(body.c_str()); } catch (...) {}
+                }
+                
+                json cmd = {
+                    {"type", op == "PUB" ? "PUB" : "COMMAND"}, 
+                    {"op", op.c_str()}, 
+                    {"selector", sel.to_json()}, 
+                    {"payload", j_body.contains("payload") ? j_body["payload"] : j_body},
+                    {"stack", stack}
+                };
+                    if (replyTo.length() > 0) cmd["id"] = replyTo.c_str();
 
-                node_->handle_command(cmd, [this](int code, const char* type, const uint8_t* body, size_t len) {
-                    this->reply_body_.assign(body, body + len);
-                    this->reply_content_type_ = type;
-                    this->reply_encoding_ = "json";
-                    this->has_reply_ = true;
-                });
-            }
-            poll_interval = 50;
+                    node_->handle_command(cmd, [this, replyTo](int code, const char* type, const uint8_t* body, size_t len) {
+                        this->reply_to_ = replyTo.c_str();
+                        this->reply_body_.assign(body, body + len);
+                        this->reply_content_type_ = type;
+                        this->reply_encoding_ = "json";
+                        this->has_reply_ = true;
+                    });
+                    }
+                    poll_interval = 50;
         } else {
             // Legacy JSON Command
             String payload = http.getString();
@@ -216,10 +244,6 @@ VFS::~VFS() {
 void VFS::begin() {
     Serial.printf("[VFS %s] Started in REVERSE Mode (No local server) for ESP8266\n", config_.id.c_str());
     
-#ifdef LED_BUILTIN
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH); // Normally ON
-#endif
     // Note: ESP8266 is single core and does not use FreeRTOS multitasking.
     // The user MUST call tick() in their main Arduino loop().
 }
@@ -254,10 +278,7 @@ void VFS::tick() {
 }
 
 void VFS::trigger_activity() {
-#ifdef LED_BUILTIN
-    led_state_ = !led_state_;
-    digitalWrite(LED_BUILTIN, led_state_ ? HIGH : LOW);
-#endif
+    // Disabled on ESP8266 to prevent pin conflict with sensors/displays on D4 (GPIO2/LED_BUILTIN)
 }
 
 void VFS::register_with_neighbors() {
@@ -374,25 +395,44 @@ int VFS::publish_binary(const json& selector, const uint8_t* data, size_t len, c
 }
 
 void VFS::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
+    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
+
     std::string path = selector.value("path", "unknown");
     std::string remote_id = stack.empty() ? "local" : stack.back();
-    Serial.printf("[Mesh OUT] -> SUBSCRIBE: %s (expires: %lld)\n", path.c_str(), expiresAt);
     
+    bool is_new_interest = false;
     std::vector<std::shared_ptr<Peer>> current_peers;
     {
         std::lock_guard<Mutex> lock(mesh_mutex_);
+        if (interests_[path].count(remote_id) == 0) is_new_interest = true;
         interests_[path][remote_id] = expiresAt;
         interest_selectors_[path] = selector;
         current_peers = peers_;
     }
 
-    // Propagate subscription to all connected peers
+    if (!is_new_interest) return;
+
+    // Propagate local/new interest to neighbors (Stack Protection)
+    std::vector<std::string> next_stack = stack;
+    next_stack.push_back(config_.id);
+
     for (auto& peer : current_peers) {
+        // Don't send back to anyone already in the stack
+        if (std::find(stack.begin(), stack.end(), peer->id()) != stack.end()) continue;
+
         WiFiClient client;
         HTTPClient http;
         http.begin(client, (neighbor_url_from_peer_id(peer->id()) + "/subscribe").c_str());
         http.addHeader("Content-Type", "application/json");
         http.addHeader("x-vfs-id", config_.id.c_str());
+        http.addHeader("X-VFS-Op", "SUB");
+        http.addHeader("X-VFS-Selector", selector.dump().c_str());
+        
+        std::string stack_str;
+        for (size_t i = 0; i < next_stack.size(); ++i) {
+            stack_str += (i == 0 ? "" : ",") + next_stack[i];
+        }
+        http.addHeader("X-VFS-Stack", stack_str.c_str());
 
         json body = {{"selector", selector}, {"expiresAt", expiresAt}};
         int code = http.POST(body.dump().c_str());
@@ -449,7 +489,9 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
             }
         } else if (op == "SUB") {
             long long expires = cmd.value("expiresAt", 0LL);
-            std::string remote_id = cmd.value("id", "");
+            std::vector<std::string> stack = cmd.value("stack", std::vector<std::string>{});
+            std::string remote_id = stack.empty() ? cmd.value("id", "") : stack.back();
+            Serial.printf("[Mesh IN] <- SUB %s from %s\n", selector.value("path", "").c_str(), remote_id.c_str());
             subscribe(selector, expires, {remote_id});
             respond(200, "text/plain", (const uint8_t*)"OK", 2);
         } else {

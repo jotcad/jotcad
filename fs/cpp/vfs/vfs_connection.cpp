@@ -20,17 +20,15 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     }
     std::cout << "[VFSNode " << config_.id << "] Peer Added: " << id << (conn->is_reverse() ? " (REVERSE)" : " (DIRECT)") << std::endl;
     
-    // Protocol Rule: Only sync interests on connection. 
-    // Announcements (Catalog/Topo) happen on-demand via subscriptions.
+    // Protocol Rule: Sync all current interests on connection to new neighbors.
     {
         std::lock_guard<std::mutex> lock(interest_mutex_);
-        long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         for (auto const& [sel_str, subs] : interests_) {
             long long maxExp = 0;
             for (auto const& [neighbor_id, expiry] : subs) if (expiry > maxExp) maxExp = expiry;
-            if (maxExp > now) {
-                conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
-            }
+            
+            // Sync interest regardless of local clock. Let the neighbor decide if it's too old.
+            conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
         }
     }
 
@@ -185,13 +183,21 @@ void VFSNode::ForwardConnection::notify(const json& selector, const json& payloa
 
     std::string body = payload.dump();
     std::string target_url = url;
-    std::thread([target_url, body, headers]() {
+    std::string neighbor = neighbor_id;
+
+    std::thread([target_url, body, headers, neighbor]() {
         httplib::Client cli(target_url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         cli.enable_server_certificate_verification(false);
 #endif
-        cli.Post("/notify", headers, body, "application/json");
-    }).detach();
+        if (auto res = cli.Post("/notify", headers, body, "application/json")) {
+            if (res->status != 200) {
+                std::cerr << "[PROTOCOL ERROR] /notify to " << neighbor << " failed with status " << res->status << ": " << res->body << std::endl;
+            }
+        } else {
+            std::cerr << "[NETWORK ERROR] Failed to reach " << neighbor << " for /notify at " << target_url << std::endl;
+        }
+    }).detach(); // Still detached, but now it LOGS failures.
 }
 
 void VFSNode::ForwardConnection::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
@@ -206,12 +212,21 @@ void VFSNode::ForwardConnection::subscribe(const json& selector, long long expir
     }
 
     std::string target_url = url;
-    std::thread([target_url, headers]() {
+    std::string neighbor = neighbor_id;
+    std::string path = selector.value("path", "unknown");
+
+    std::thread([target_url, headers, neighbor, path]() {
         httplib::Client cli(target_url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         cli.enable_server_certificate_verification(false);
 #endif
-        cli.Post("/subscribe", headers, "", "application/json");
+        if (auto res = cli.Post("/subscribe", headers, "", "application/json")) {
+            if (res->status != 200) {
+                std::cerr << "[PROTOCOL ERROR] /subscribe (" << path << ") to " << neighbor << " failed with status " << res->status << ": " << res->body << std::endl;
+            }
+        } else {
+            std::cerr << "[NETWORK ERROR] Failed to reach " << neighbor << " for /subscribe at " << target_url << std::endl;
+        }
     }).detach();
 }
 

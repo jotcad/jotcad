@@ -96,7 +96,10 @@ void ReverseConnection::tick() {
     http.begin((url_ + "/listen").c_str());
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.addHeader("x-vfs-peer-id", node_->id().c_str());
-    http.setTimeout(60000); // 60 Seconds
+    
+    const char * headerKeys[] = {"X-VFS-Op", "X-VFS-Selector", "X-VFS-Encoding", "X-VFS-Reply-To", "X-VFS-Stack", "X-VFS-Expires"};
+    http.collectHeaders(headerKeys, 6);
+    http.setTimeout(5000); 
     
     int code;
     if (has_reply_) {
@@ -141,6 +144,19 @@ void ReverseConnection::tick() {
                 }
             }
 
+            // Parse Stack for interest tracking
+            std::vector<std::string> stack;
+            String stack_header = http.header("X-VFS-Stack");
+            if (stack_header.length() > 0) {
+                char* s = strdup(stack_header.c_str());
+                char* token = strtok(s, ",");
+                while (token) {
+                    stack.push_back(token);
+                    token = strtok(NULL, ",");
+                }
+                free(s);
+            }
+
             int bodyLen = http.getSize();
             if (encoding == "bytes") {
                 // Read raw binary body
@@ -161,8 +177,18 @@ void ReverseConnection::tick() {
             } else {
                 // Read JSON body
                 String body = http.getString();
-                json j_body = json::parse(body.c_str());
-                json cmd = {{"type", op == "PUB" ? "PUB" : "COMMAND"}, {"op", op.c_str()}, {"selector", sel.to_json()}, {"payload", j_body.contains("payload") ? j_body["payload"] : j_body}};
+                json j_body = json::object();
+                if (body.length() > 0) {
+                    try { j_body = json::parse(body.c_str()); } catch (...) {}
+                }
+                
+                json cmd = {
+                    {"type", op == "PUB" ? "PUB" : "COMMAND"}, 
+                    {"op", op.c_str()}, 
+                    {"selector", sel.to_json()}, 
+                    {"payload", j_body.contains("payload") ? j_body["payload"] : j_body},
+                    {"stack", stack}
+                };
                 if (replyTo.length() > 0) cmd["id"] = replyTo.c_str();
 
                 node_->handle_command(cmd, [this](int code, const char* type, const uint8_t* body, size_t len) {
