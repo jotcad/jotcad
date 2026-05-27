@@ -20,15 +20,17 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     }
     std::cout << "[VFSNode " << config_.id << "] Peer Added: " << id << (conn->is_reverse() ? " (REVERSE)" : " (DIRECT)") << std::endl;
     
-    // Protocol Rule: Sync all current interests on connection to new neighbors.
+    // Protocol Rule: Only sync active interests on connection. 
+    // Announcements (Catalog/Topo) happen on-demand via subscriptions.
     {
         std::lock_guard<std::mutex> lock(interest_mutex_);
+        long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         for (auto const& [sel_str, subs] : interests_) {
             long long maxExp = 0;
             for (auto const& [neighbor_id, expiry] : subs) if (expiry > maxExp) maxExp = expiry;
-            
-            // Sync interest regardless of local clock. Let the neighbor decide if it's too old.
-            conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
+            if (maxExp > now) {
+                conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
+            }
         }
     }
 

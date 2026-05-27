@@ -192,17 +192,17 @@ void ReverseConnection::tick() {
                     {"payload", j_body.contains("payload") ? j_body["payload"] : j_body},
                     {"stack", stack}
                 };
-                    if (replyTo.length() > 0) cmd["id"] = replyTo.c_str();
+                if (replyTo.length() > 0) cmd["id"] = replyTo.c_str();
 
-                    node_->handle_command(cmd, [this, replyTo](int code, const char* type, const uint8_t* body, size_t len) {
-                        this->reply_to_ = replyTo.c_str();
-                        this->reply_body_.assign(body, body + len);
-                        this->reply_content_type_ = type;
-                        this->reply_encoding_ = "json";
-                        this->has_reply_ = true;
-                    });
-                    }
-                    poll_interval = 50;
+                node_->handle_command(cmd, [this, replyTo](int code, const char* type, const uint8_t* body, size_t len) {
+                    this->reply_to_ = replyTo.c_str();
+                    this->reply_body_.assign(body, body + len);
+                    this->reply_content_type_ = type;
+                    this->reply_encoding_ = "json";
+                    this->has_reply_ = true;
+                });
+            }
+            poll_interval = 50;
         } else {
             // Legacy JSON Command
             String payload = http.getString();
