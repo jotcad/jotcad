@@ -12,9 +12,13 @@
 #include <memory>
 #include <mutex>
 #include <condition_variable>
+#include <future>
 
 namespace httplib {
     class Response;
+    namespace ws {
+        class WebSocket;
+    }
 }
 
 namespace jotcad {
@@ -116,10 +120,15 @@ public:
 
     void add_peer(const std::string& url);
     void add_connection(std::shared_ptr<Connection> conn);
+    void upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Connection> ws_conn);
     void register_reverse_peer(const std::string& peer_id, httplib::Response& res);
 
     json get_catalog();
     json get_neighbors();
+
+    // Transaction Management for Async WS Reads
+    void resolve_transaction(const std::string& tx_id, const VFSResult& result);
+    void reject_transaction(const std::string& tx_id, int status, const std::string& error);
 
 private:
     struct ForwardConnection : public Connection {
@@ -145,6 +154,29 @@ private:
         bool is_reverse() const override { return true; }
     };
 
+    struct WSConnection : public Connection {
+        VFSNode* node = nullptr;
+        virtual void send_frame(const json& frame) = 0;
+        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
+        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
+        VFSResult read(const VFSRequest& req) override;
+        bool is_reverse() const override { return false; }
+    };
+
+    struct WSForwardConnection : public WSConnection {
+        std::string url;
+        WSForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
+        void send_frame(const json& frame) override;
+        std::string get_url() const override { return url; }
+    };
+
+    struct WSReverseConnection : public WSConnection {
+        httplib::ws::WebSocket* ws;
+        WSReverseConnection(std::string id, httplib::ws::WebSocket* socket) : ws(socket) { neighbor_id = std::move(id); }
+        void send_frame(const json& frame) override;
+        bool is_reverse() const override { return true; }
+    };
+
     Config config_;
     std::map<std::string, OpHandler> handlers_;
     std::map<std::string, json> schemas_;
@@ -153,6 +185,9 @@ private:
     std::map<std::string, std::shared_ptr<Connection>> peers_; 
     std::set<std::string> connecting_;
     std::mutex peer_mutex_;
+
+    std::map<std::string, std::shared_ptr<std::promise<VFSResult>>> transactions_;
+    std::mutex transaction_mutex_;
 
     std::map<std::string, std::map<std::string, long long>> interests_;
     std::mutex interest_mutex_;

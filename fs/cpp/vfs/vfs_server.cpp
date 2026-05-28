@@ -45,7 +45,7 @@ void VFSNode::listen() {
         res.set_content(get_catalog().dump(), "application/json");
     });
 
-    svr->Post("/register", [this](const httplib::Request& req, httplib::Response& res) {
+    svr->Post("/register", [this, is_ssl](const httplib::Request& req, httplib::Response& res) {
         try {
             std::string peerId;
             std::string url;
@@ -84,10 +84,17 @@ void VFSNode::listen() {
                 if (url.empty()) url = get_param("url");
             }
 
+            json response_body = {{"id", config_.id}, {"transports", {"http", "ws"}}};
+            std::string ws_proto = is_ssl ? "wss" : "ws";
+            // Since we don't easily know our own hostname, we assume localhost/IP relative to request
+            std::string host = req.get_header_value("Host");
+            if (host.empty()) host = "localhost:" + std::to_string(config_.port);
+            response_body["wsUrl"] = ws_proto + "://" + host + "/vfs-ws";
+
             if (!peerId.empty()) {
                 if (!url.empty()) {
                     add_peer(url);
-                    res.set_content(json({{"id", config_.id}, {"reachability", "DIRECT"}}).dump(), "application/json");
+                    response_body["reachability"] = "DIRECT";
                 } else {
                     bool exists = false;
                     {
@@ -97,8 +104,9 @@ void VFSNode::listen() {
                     if (!exists) {
                         add_connection(std::make_shared<ReverseConnection>(peerId));
                     }
-                    res.set_content(json({{"id", config_.id}, {"reachability", "REVERSE"}}).dump(), "application/json");
+                    response_body["reachability"] = "REVERSE";
                 }
+                res.set_content(response_body.dump(), "application/json");
             } else {
                 res.status = 400;
                 res.set_content("Missing peerId", "text/plain");
@@ -265,6 +273,81 @@ void VFSNode::listen() {
             return;
         }
         register_reverse_peer(peer_id, res);
+    });
+
+    svr->WebSocket("/vfs-ws", [this](const httplib::Request&, httplib::ws::WebSocket& ws) {
+        bool identified = false;
+        std::string peerId;
+        std::string msg;
+
+        while (ws.is_open()) {
+            if (ws.read(msg) != httplib::ws::Text) continue;
+
+            try {
+                json frame = json::parse(msg);
+                std::string type = frame.value("type", "");
+
+                if (!identified) {
+                    if (type == "IDENTIFY" && frame.contains("peerId")) {
+                        peerId = frame["peerId"];
+                        identified = true;
+                        
+                        json ack = {{"type", "ACK"}, {"peerId", config_.id}};
+                        ws.send(ack.dump());
+
+                        auto ws_conn = std::make_shared<WSReverseConnection>(peerId, &ws);
+                        ws_conn->node = this;
+                        upgrade_peer_to_ws(peerId, ws_conn);
+                    } else {
+                        ws.close();
+                        break;
+                    }
+                    continue;
+                }
+
+                if (type == "READ") {
+                    VFSRequest vreq;
+                    if (frame.contains("cid")) vreq.cid = frame["cid"];
+                    else if (frame.contains("selector")) vreq.selector = Selector::from_json(frame["selector"]);
+                    
+                    vreq.stack = frame.value("stack", std::vector<std::string>{});
+                    vreq.expiresAt = frame.value("expiresAt", 0LL);
+                    
+                    try {
+                        auto res = read_impl(vreq);
+                        json reply = {
+                            {"type", "READ_RESPONSE"},
+                            {"txId", frame.value("txId", "")},
+                            {"status", 200},
+                            {"payload", {
+                                {"data", base64_encode(res.data)},
+                                {"metadata", res.metadata}
+                            }}
+                        };
+                        ws.send(reply.dump());
+                    } catch (const VFSException& e) {
+                        json reply = {{"type", "READ_RESPONSE"}, {"txId", frame.value("txId", "")}, {"status", e.code}, {"error", e.what()}};
+                        ws.send(reply.dump());
+                    }
+                } else if (type == "READ_RESPONSE") {
+                    std::string txId = frame.value("txId", "");
+                    if (frame.value("status", 500) == 200) {
+                        VFSResult result;
+                        result.metadata = frame["payload"]["metadata"];
+                        result.data = base64_decode(frame["payload"]["data"].get<std::string>());
+                        resolve_transaction(txId, result);
+                    } else {
+                        reject_transaction(txId, frame.value("status", 500), frame.value("error", "Unknown error"));
+                    }
+                } else if (type == "SUBSCRIBE") {
+                    subscribe(frame["selector"], frame["expiresAt"], frame.value("stack", std::vector<std::string>{}));
+                } else if (type == "NOTIFY") {
+                    notify(frame["selector"], frame["payload"], frame.value("stack", std::vector<std::string>{}));
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[WS " << config_.id << "] Frame error: " << e.what() << std::endl;
+            }
+        }
     });
 
     int attempts = 0;

@@ -6,10 +6,22 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <random>
+#include <iomanip>
 
 namespace fs {
 
 static std::atomic<int> active_poll_threads{0};
+
+static std::string generate_tx_id() {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<> dis(0, 15);
+    const char* hex = "0123456789abcdef";
+    std::string res = "tx_";
+    for (int i = 0; i < 8; ++i) res += hex[dis(gen)];
+    return res;
+}
 
 void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     if (!conn) return;
@@ -40,11 +52,23 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     {
         std::lock_guard<std::mutex> lock(peer_mutex_);
         for (auto const& [p_id, conn_ptr] : peers_) {
-            neighbors.push_back(json{{"id", p_id}, {"reachability", "REVERSE"}});
+            neighbors.push_back(json{{"id", p_id}, {"reachability", conn_ptr->is_reverse() ? "REVERSE" : "DIRECT"}});
         }
     }
     json topo_payload = {{"peer", config_.id}, {"neighbors", neighbors}};
     notify(sys_topo, topo_payload, {});
+}
+
+void VFSNode::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Connection> ws_conn) {
+    if (!ws_conn) return;
+    {
+        std::lock_guard<std::mutex> lock(peer_mutex_);
+        peers_[peer_id] = ws_conn;
+    }
+    std::cout << "[VFSNode " << config_.id << "] Peer " << peer_id << " upgraded to WebSocket." << std::endl;
+    
+    // Trigger topology update
+    add_connection(ws_conn);
 }
 
 void VFSNode::add_peer(const std::string& url) {
@@ -301,6 +325,97 @@ VFSResult VFSNode::ReverseConnection::read(const VFSRequest& req) {
     // Note: C++ reverse read requires a registry to track replies.
     // For now, we only support reverse notify.
     throw VFSException("C++ Reverse READ not yet implemented", 501);
+}
+
+// --- WebSocket Connection Implementations ---
+
+void VFSNode::WSConnection::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
+    send_frame({
+        {"type", "NOTIFY"},
+        {"selector", selector},
+        {"payload", payload},
+        {"stack", stack}
+    });
+}
+
+void VFSNode::WSConnection::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
+    send_frame({
+        {"type", "SUBSCRIBE"},
+        {"selector", selector},
+        {"expiresAt", expiresAt},
+        {"stack", stack}
+    });
+}
+
+VFSResult VFSNode::WSConnection::read(const VFSRequest& req) {
+    std::string tx_id = generate_tx_id();
+    auto promise = std::make_shared<std::promise<VFSResult>>();
+    auto future = promise->get_future();
+
+    {
+        std::lock_guard<std::mutex> lock(node->transaction_mutex_);
+        node->transactions_[tx_id] = promise;
+    }
+
+    json frame = {
+        {"type", "READ"},
+        {"txId", tx_id},
+        {"stack", req.stack},
+        {"expiresAt", req.expiresAt}
+    };
+
+    if (req.is_cid()) frame["cid"] = req.cid;
+    else frame["selector"] = req.selector.to_json();
+
+    send_frame(frame);
+
+    if (future.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+        return future.get();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(node->transaction_mutex_);
+        node->transactions_.erase(tx_id);
+    }
+    throw VFSException("WebSocket Read Timeout", 504);
+}
+
+void VFSNode::WSForwardConnection::send_frame(const json& frame) {
+    // Note: This requires a persistent WS client which httplib doesn't easily expose 
+    // in a non-blocking background way yet without blocking the VFS loop.
+    // Implementation deferred to full IXWebSocket integration.
+    std::cerr << "[WS] Forward READ not yet implemented for Native C++" << std::endl;
+}
+
+void VFSNode::WSReverseConnection::send_frame(const json& frame) {
+    if (ws) {
+        std::string s = frame.dump();
+        ws->send(s.c_str(), s.length());
+    }
+}
+
+void VFSNode::resolve_transaction(const std::string& tx_id, const VFSResult& result) {
+    std::shared_ptr<std::promise<VFSResult>> p;
+    {
+        std::lock_guard<std::mutex> lock(transaction_mutex_);
+        if (transactions_.count(tx_id)) {
+            p = transactions_[tx_id];
+            transactions_.erase(tx_id);
+        }
+    }
+    if (p) p->set_value(result);
+}
+
+void VFSNode::reject_transaction(const std::string& tx_id, int status, const std::string& error) {
+    std::shared_ptr<std::promise<VFSResult>> p;
+    {
+        std::lock_guard<std::mutex> lock(transaction_mutex_);
+        if (transactions_.count(tx_id)) {
+            p = transactions_[tx_id];
+            transactions_.erase(tx_id);
+        }
+    }
+    if (p) p->set_exception(std::make_exception_ptr(VFSException(error, status)));
 }
 
 } // namespace fs
