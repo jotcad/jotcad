@@ -2,6 +2,7 @@ import { pipeline } from 'stream/promises';
 import { Readable } from 'node:stream';
 import { normalizeSelector, Selector, encodeSafe, decodeSafe, getSelectorKey, decodeInfo } from './vfs_core.js';
 import { log } from './log.js';
+import { WebSocketServer } from 'ws';
 
 export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const getBody = async (req) => {
@@ -42,6 +43,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
     try {
       await pipeline(Readable.fromWeb(stream), res);
     } catch (err) {
+      console.error(`[REST SERVER PUMP ERROR]`, err);
       if (!res.writableEnded) res.end();
     }
   };
@@ -271,9 +273,52 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
     }
   };
 
+  const wss = new WebSocketServer({ noServer: true });
+
+  wss.on('connection', (ws) => {
+    let identified = false;
+    let peerId = null;
+
+    ws.on('message', async (data) => {
+      try {
+        const frame = JSON.parse(data.toString());
+        if (!identified) {
+          if (frame.type === 'IDENTIFY' && frame.peerId) {
+            peerId = frame.peerId;
+            identified = true;
+            ws.send(JSON.stringify({ type: 'ACK', peerId: vfs.id }));
+
+            const { WSReverseConnection } = await import('./vfs_ws_transport.js');
+            const wsConn = new WSReverseConnection(peerId, ws);
+            wsConn.vfs = vfs;
+            wsConn.mesh = meshLink;
+            meshLink?.upgradePeerToWS(peerId, wsConn);
+            log(`[MeshServer ${vfs.id}] Upgraded peer ${peerId} over WebSocket Tunnel.`);
+          } else {
+            ws.close(4000, 'Expected IDENTIFY');
+          }
+        }
+      } catch (e) {
+        log(`[MeshServer ${vfs.id}] WS Connection error: ${e.message}`);
+      }
+    });
+  });
+
+  const handleUpgrade = (request, socket, head) => {
+    const pathname = new URL(request.url, `http://${request.headers.host || 'localhost'}`).pathname;
+    if (pathname === (prefix ? prefix + '/vfs-ws' : '/vfs-ws')) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    }
+  };
+
+  server.on('upgrade', handleUpgrade);
   server.on('request', handleRequest);
 
   return () => {
     server.off('request', handleRequest);
+    server.off('upgrade', handleUpgrade);
+    wss.close();
   };
 }

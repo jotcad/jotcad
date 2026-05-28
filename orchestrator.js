@@ -23,8 +23,8 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_test_',
     gateway: 'export',
     components: {
-      ops:    { type: 'ops',    protocol: 'http',  port: 9191 },
-      export: { type: 'export', protocol: 'https', port: 9194 },
+      ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node' } },
+      export: { type: 'export', protocol: 'https', port: 9198 },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
@@ -72,7 +72,7 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_direct_cpp_live_',
     gateway: 'ops',
     components: {
-      ops: { type: 'ops', protocol: 'https', port: 9192 },
+      ops: { type: 'ops', protocol: 'https', port: 9198, env: { PEER_ID: 'geo-ops-node' } },
       ux:  { type: 'ux',  protocol: 'https', port: 3232, dist: 'ux/dist/test' }
     }
   }
@@ -123,7 +123,8 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
             PEER_ID: `${profileKey.replace('/', '_')}_ops`,
             SSL_CERT_PATH: (useSsl && hasCerts) ? certPath : '',
             SSL_KEY_PATH: (useSsl && hasCerts) ? keyPath : '',
-            ...env
+            ...env,
+            ...cfg.env
         }
       };
     },

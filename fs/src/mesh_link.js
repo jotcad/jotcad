@@ -1,11 +1,12 @@
 import crypto from 'crypto';
 import { normalizeSelector, Selector, decodeSafe, decodeInfo } from './cid.js';
 import { log } from './log.js';
+import WebSocket from 'ws';
 
 /**
  * Connection: Abstract interface for a direct communication pipe to a neighbor.
  */
-class Connection {
+export class Connection {
   constructor(neighborId) {
     this.neighborId = neighborId;
     this.reachability = 'UNKNOWN';
@@ -523,6 +524,20 @@ export class MeshLinkBase {
     this.peers.set(id, conn);
   }
 
+  upgradePeerToWS(id, wsConn) {
+    if (this.peers.has(id)) {
+      const old = this.peers.get(id);
+      log(`[MeshLink ${this.vfs.id}] Upgrading peer ${id} to WS. Closing old ${old.reachability} connection.`);
+      if (old.stop) old.stop();
+      this.peers.delete(id);
+    }
+    this.peers.set(id, wsConn);
+    this.notify(new Selector('sys/topo'), {
+      peer: this.vfs.id,
+      neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+    });
+  }
+
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
     const s = normalizeSelector(selector);
     if (stack.includes(this.vfs.id)) return;
@@ -678,7 +693,7 @@ export class MeshLinkBase {
       const resp = await this.fetch(`${url}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: this.vfs.id, url: this.localUrl }),
+        body: JSON.stringify({ id: this.vfs.id, url: this.localUrl, transports: ['http', 'ws'] }),
         signal: this.abortController.signal || AbortSignal.timeout(5000),
       });
       log(`[MeshLink ${this.vfs.id}] <- ${resp.status} ${url}/register`);
@@ -686,6 +701,43 @@ export class MeshLinkBase {
         const info = await resp.json();
         log(`[MeshLink ${this.vfs.id}] Registration successful for ${url}:`, info);
         if (info.id && info.id !== this.vfs.id) {
+          // Attempt WS upgrade if both sides support it
+          if (info.transports && info.transports.includes('ws') && info.wsUrl) {
+            try {
+              log(`[MeshLink ${this.vfs.id}] Attempting WebSocket upgrade to ${info.wsUrl}`);
+              const { WSForwardConnection } = await import('./vfs_ws_transport.js');
+              const socket = new WebSocket(info.wsUrl);
+              await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('WS connection timeout')), 3000);
+                socket.on('open', () => { clearTimeout(timeout); resolve(); });
+                socket.on('error', (err) => { clearTimeout(timeout); reject(err); });
+              });
+
+              socket.send(JSON.stringify({ type: 'IDENTIFY', peerId: this.vfs.id }));
+
+              await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('WS identify ACK timeout')), 3000);
+                socket.once('message', (data) => {
+                  clearTimeout(timeout);
+                  try {
+                    const frame = JSON.parse(data.toString());
+                    if (frame.type === 'ACK') resolve();
+                    else reject(new Error(`Expected ACK, got ${frame.type}`));
+                  } catch (e) { reject(e); }
+                });
+              });
+
+              const wsConn = new WSForwardConnection(info.id, socket);
+              wsConn.vfs = this.vfs;
+              wsConn.mesh = this;
+              this.upgradePeerToWS(info.id, wsConn);
+              log(`[MeshLink ${this.vfs.id}] Successfully upgraded peer ${info.id} to WebSocket!`);
+              return info.id;
+            } catch (wsErr) {
+              log(`[MeshLink ${this.vfs.id}] WebSocket upgrade to ${info.wsUrl} failed: ${wsErr.message}. Falling back to HTTP.`);
+            }
+          }
+
           let newConn = null;
 
           if (!this.peers.has(info.id)) {
@@ -754,10 +806,12 @@ export class MeshLinkBase {
   async registerPeer(peerId, url) {
     if (!peerId) throw new Error('Missing peerId');
 
+    const wsUrl = this.localUrl ? this.localUrl.replace(/^http/, 'ws') + '/vfs-ws' : null;
+
     const existing = this.peers.get(peerId);
     if (existing) {
       log(`[MeshLink ${this.vfs.id}] Peer ${peerId} already registered. Reachability: ${existing.reachability}`);
-      return { id: this.vfs.id, reachability: existing.reachability };
+      return { id: this.vfs.id, reachability: existing.reachability, transports: ['http', 'ws'], wsUrl };
     }
 
     if (url) {
@@ -785,7 +839,7 @@ export class MeshLinkBase {
           peer: this.vfs.id,
           neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
         });
-        return { id: this.vfs.id, reachability: 'DIRECT' };
+        return { id: this.vfs.id, reachability: 'DIRECT', transports: ['http', 'ws'], wsUrl };
       } else {
         log(`[MeshLink ${this.vfs.id}] Direct probe to ${url} failed. Falling back to REVERSE connection.`);
         const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });
@@ -806,7 +860,7 @@ export class MeshLinkBase {
           peer: this.vfs.id,
           neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
         });
-        return { id: this.vfs.id, reachability: 'REVERSE' };
+        return { id: this.vfs.id, reachability: 'REVERSE', transports: ['http', 'ws'], wsUrl };
       }
     } else {
       const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });

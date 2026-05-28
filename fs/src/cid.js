@@ -55,8 +55,9 @@ export function normalizeSelector(s) {
 
 /**
  * toBase64: Standard Base64 encoding for Uint8Array.
+ * TODO: Move these encoding utilities to a dedicated 'encoding.js' file.
  */
-function toBase64(bytes) {
+export function toBase64(bytes) {
   if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
   let binary = '';
   const len = (bytes.byteLength !== undefined) ? bytes.byteLength : bytes.length;
@@ -67,7 +68,7 @@ function toBase64(bytes) {
 /**
  * fromBase64: Standard Base64 decoding to Uint8Array.
  */
-function fromBase64(base64) {
+export function fromBase64(base64) {
   if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(base64, 'base64'));
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);

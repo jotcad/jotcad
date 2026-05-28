@@ -6,7 +6,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "build:live": "VITE_VFS_URL=https://brian-odroid-h4.tail7a70cb.ts.net:9092 vite build --outDir dist/live",
-    "build:test": "VITE_VFS_URL=https://localhost:9192 vite build --outDir dist/test",
+    "build:test": "VITE_VFS_URL=https://localhost:9198 vite build --outDir dist/test",
     "serve": "vite preview",
     "test": "vitest run"
   },

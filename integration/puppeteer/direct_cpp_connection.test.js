@@ -7,12 +7,14 @@ import { log } from '../../fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-test('Direct C++ Connection: UX to Ops Node Discovery', { timeout: 45000 }, async (t) => {
+test('Direct C++ Connection: UX to Ops Node Discovery', async (t) => {
   let cluster, browser;
   try {
-    // Launch cluster using DIRECT_CPP profile (skips Export Node)
     cluster = await launchSystem('live/direct_cpp');
     const PORT_UX = cluster.ports.ux;
+
+    // VERIFY IDENTITY (Catch Divergence)
+    const EXPECTED_OPS_ID = 'geo-ops-node';
 
     browser = await puppeteer.launch({ 
       headless: 'new',
@@ -22,20 +24,16 @@ test('Direct C++ Connection: UX to Ops Node Discovery', { timeout: 45000 }, asyn
 
     log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
 
-    // Wait for the catalog receipt log from the C++ node
-    log('[Test Browser] Waiting for Direct Catalog handshake from geo-ops-node...');
+    // Wait for the direct catalog receipt log
+    log('[Test Browser] Waiting for Direct Catalog handshake...');
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Direct handshake timeout')), 40000);
+      const timeout = setTimeout(() => reject(new Error(`Direct handshake timeout (Expected: ${EXPECTED_OPS_ID})`)), 45000);
       page.on('console', (msg) => {
-        const text = msg.text();
-        log(`[Browser Console] ${msg.type()}: ${text}`);
-        if (text.includes('Received Catalog from geo-ops-node')) {
-          log('[Test Browser] MATCH: Received Catalog from geo-ops-node');
+        if (msg.text().includes(`Received Catalog from ${EXPECTED_OPS_ID}`)) {
           clearTimeout(timeout);
           resolve();
         }
       });
-      // Force HTTPS as per orchestrator configuration
       page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
     });
 
