@@ -205,7 +205,26 @@ Through the bi-directional reverse transport, the VFS server can push commands d
 
 ---
 
-## 5. Security & Context-Safe Transports
+## 5. Native C++ Implementation Guidelines (VFS Core)
+
+Native nodes (C++) utilize the WebSocket transport to provide the backbone of the mesh. High-performance native implementations prioritize memory safety and non-blocking I/O.
+
+### A. Server Lifecycle & Coexistence
+
+1. **Dual-Stack Server**: Native nodes run a standard HTTP server (e.g., `httplib`) for baseline Sovereign Packet requests and a parallel WebSocket server (e.g., `IXWebSocket`) on the same or a coordinated port.
+2. **Upgrade Hijacking**: If possible, the HTTP server should detect the `Connection: Upgrade` header and hand off the socket to the WebSocket handler.
+3. **Peer Mapping**: The native `VFSNode` maintains a thread-safe `std::unordered_map<std::string, std::shared_ptr<WebSocketConnection>>` to route traffic to the appropriate persistent tunnel.
+
+### B. Threading & Concurrency
+
+1. **Non-blocking Event Loop**: Incoming WebSocket frames are processed in a dedicated background thread pool.
+2. **Atomic Transaction Correlation**: A thread-safe `std::unordered_map<std::string, std::promise<VFSResponse>>` is used to park pending `READ` requests while waiting for their asynchronous `READ_RESPONSE` from the remote peer.
+3. **CID Deduplication**: WebSocket frames containing JSON payloads MUST be hashed using the standard `JCB` (JotCAD Canonical Binary) algorithm before being committed to the native cache to ensure CID consistency across C++ and JS nodes.
+
+---
+
+## 6. Security & Context-Safe Transports
 
 - **HTTPS / WSS Upgrades**: When HTTPS mode is active in the mesh (`DISABLE_SSL=0`), the registration negotiator upgrades the URL scheme to secure WebSockets: `wss://`.
 - **Certificates on Embedded Devices**: Microcontrollers must include the gateway's SSL certificate fingerprint or CA Root in their flash storage to secure the persistent WSS connection, keeping communication authentic and encrypted across public boundaries.
+- **Native SSL Contexts**: C++ implementations utilizing OpenSSL MUST share the same SSL context/certificates between the HTTP and WebSocket listeners to ensure consistent identity verification.
