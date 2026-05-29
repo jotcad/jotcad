@@ -53,8 +53,8 @@ static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Pleas
     node = new fs::VFS(config);
 
     // 2. Register a handler to read the current count
-    node->register_op("sensor/counter", [](const fs::json& params, fs::VFSRequest *request) {
-        request->send(200, "application/json", fs::json({{"value", shared_count}}).dump().c_str());
+    node->register_op("sensor/counter", [](const fs::json& params, fs::VFSResponseWriter *response) {
+        response->send(200, "application/json", fs::json({{"value", shared_count}}).dump().c_str());
     }, {{"output", "number"}});
 
     node->begin();

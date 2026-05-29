@@ -20,13 +20,25 @@ enum VFSFeature {
 };
 
 /**
- * VFSRequest: Protocol-agnostic response handle.
+ * VFSResponseWriter: Protocol-agnostic response handle.
  */
-class VFSRequest {
+class VFSResponseWriter {
 public:
-    virtual ~VFSRequest() = default;
+    virtual ~VFSResponseWriter() = default;
     virtual void send(int code, const char* contentType, const char* body) = 0;
     virtual void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) = 0;
+};
+
+struct VFSRequest {
+    std::string op; // "PUB", "SUB", "READ_SELECTOR", "READ_CID"
+    Selector selector;
+    std::string cid;
+    json payload;
+    const uint8_t* binary_payload = nullptr;
+    size_t binary_len = 0;
+    std::vector<std::string> stack;
+    std::vector<std::string> resolutionStack;
+    long long expiresAt = 0;
 };
 
 /**
@@ -36,8 +48,7 @@ class Peer {
 public:
     virtual ~Peer() = default;
     virtual const std::string& id() const = 0;
-    virtual void publish(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
-    virtual void publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) = 0;
+    virtual void send(const VFSRequest& req) = 0;
     virtual void tick() {} // No-op for forward-only peers
 };
 
@@ -50,8 +61,7 @@ class ReverseConnection : public Peer {
 public:
     ReverseConnection(VFS* node, const std::string& neighbor_id, const std::string& url);
     const std::string& id() const override { return id_; }
-    void publish(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
-    void publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) override;
+    void send(const VFSRequest& req) override;
     
     void tick() override; 
 private:
@@ -94,12 +104,13 @@ public:
     void add_peer(std::shared_ptr<Peer> peer);
     void clear_peers();
 
-    using Handler = std::function<void(const json& params, VFSRequest* request)>;
+    using Handler = std::function<void(const json& params, VFSResponseWriter* response)>;
     void register_op(const std::string& path, Handler handler, const json& schema = json::object());
 
-    int publish(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
-    int publish_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
+    int notify(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
+    int notify_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
     void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack = {});
+
     
     // Internal API for Peer loop interaction
     void handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond);
