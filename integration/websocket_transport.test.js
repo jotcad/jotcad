@@ -1,13 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
 import { VFS } from '../fs/src/vfs.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
 import { launchSystem } from '../orchestrator.js';
 
 test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', async (t) => {
+    // instruct JS nodes to clean storage on initialization
+    process.env.VFS_EPHEMERAL_WIPE = 'true';
+
+    // Manually clean up any stale storage directories before starting
+    const __dirname = path.resolve();
+    const staleDirs = [
+        path.join(__dirname, '.vfs_storage_node_a'),
+        path.join(__dirname, '.vfs_storage_node_b'),
+        path.join(__dirname, '.vfs_storage_test_sovereign_js_node_a'),
+        path.join(__dirname, '.vfs_storage_test_sovereign_js_node_b')
+    ];
+    for (const dir of staleDirs) {
+        if (fs.existsSync(dir)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
     console.log('[Test WS VFS] Launching sovereign JS mesh cluster...');
-    const sys = await launchSystem('test/sovereign_js');
+    const sys = await launchSystem('test/sovereign_js', 'DEBUG');
     const PORT = sys.ports.node_a;
 
     // Wait for Node A to be healthy
@@ -20,6 +39,9 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
         await new Promise(r => setTimeout(r, 100));
     }
     assert.ok(ready, 'Server Node A failed to start.');
+
+    // Wait for mesh stabilization (discovery + upgrades)
+    await new Promise(r => setTimeout(r, 2000));
 
     // 1. Initialise WS-capable subscriber client
     const wsNodeVFS = new VFS({ id: 'node-ws-subscriber' });
@@ -47,24 +69,25 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
     httpMesh.neighborUrls = []; 
     await httpNodeVFS.init();
 
+    let brokenMesh = null;
     try {
         // --- TEST 1: WebSocket Handshake & Negotiation Upgrade ---
         console.log('[Test WS VFS] Connecting WS subscriber to Server Node A...');
         await wsMesh.addPeer(`http://localhost:${PORT}`);
 
-        const wsConn = wsMesh.peers.get('node_a');
+        const wsConn = [...wsMesh.peers.values()].find(c => c.neighborId.endsWith('node_a'));
         assert.ok(wsConn, 'WebSocket client should be connected to Node A.');
         assert.equal(wsConn.reachability, 'DIRECT');
         assert.equal(
             wsConn.constructor.name, 
-            'WSForwardConnection', 
-            'Connection should be upgraded to WSForwardConnection.'
+            'WSNodeForwardConnection', 
+            'Connection should be upgraded to WSNodeForwardConnection.'
         );
         console.log('✔ WebSocket direct transport upgraded and active.');
 
         // --- TEST 2: Fallback Recovery on Socket Failure ---
         console.log('[Test WS VFS] Verifying fallback recovery to HTTP when WS upgrade fails...');
-        const brokenMesh = new MeshLink(httpNodeVFS, [], { localUrl: 'http://localhost:8199' });
+        brokenMesh = new MeshLink(httpNodeVFS, [], { localUrl: 'http://localhost:8199' });
         const originalFetch = brokenMesh.fetch;
         brokenMesh.fetch = async (url, opts) => {
             const resp = await originalFetch(url, opts);
@@ -82,7 +105,7 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
             return resp;
         };
         await brokenMesh.addPeer(`http://localhost:${PORT}`);
-        const fallbackConn = brokenMesh.peers.get('node_a');
+        const fallbackConn = [...brokenMesh.peers.values()].find(c => c.neighborId.endsWith('node_a'));
         assert.ok(fallbackConn, 'Should fall back and register Node A.');
         assert.equal(
             fallbackConn.constructor.name, 
@@ -96,9 +119,10 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
         // Node A registers several geometric primitives. Let's read one.
         const boxSelector = Selector.fromObject({
             path: 'jot/Box',
-            parameters: { width: 10, height: 10, depth: 10 }
+            parameters: { width: 10, height: 10, depth: 10 },
+            output: '$out'
         });
-        const readResult = await wsConn.read(boxSelector);
+        const readResult = await wsConn.readSelector(boxSelector);
         assert.ok(readResult && readResult.body, 'Forward VFS read over WS should return a stream.');
         console.log('✔ Read request successfully completed over WebSocket.');
 
@@ -107,7 +131,7 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
         // We make a REST call to Node A asking it to resolve a resource owned by our WS subscriber.
         // Node A must push this VFS request down the active WS socket to the client, receive the
         // binary reply, and stream it back over REST.
-        const gatewayReadResp = await fetch(`http://localhost:${PORT}/read`, {
+        const gatewayReadResp = await fetch(`http://localhost:${PORT}/read_selector`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -129,6 +153,8 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
 
         httpMesh.stop();
         await httpNodeVFS.close();
+
+        if (brokenMesh) brokenMesh.stop();
 
         await sys.stop();
     }

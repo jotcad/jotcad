@@ -74,11 +74,7 @@ struct Processor {
      * This avoids needing the template headers at the call site.
      */
     static void execute(fs::VFSNode* vfs, const fs::Selector& selector, const std::vector<std::string>& stack = {}) {
-        fs::VFSNode::VFSRequest req;
-        fs::Selector s = selector;
-        req.selector = s;
-        req.stack = stack;
-        vfs->read<std::vector<uint8_t>>(req);
+        vfs->readSelector<std::vector<uint8_t>>(selector);
     }
 
     template <typename Op, typename... Args, size_t... Is>
@@ -132,21 +128,27 @@ struct Processor {
 
             try {
                 if constexpr (std::is_same_v<T, Shape>) {
+                    fs::VFSNode::VFSRequest vreq;
                     if (val.is_string() && val.get<std::string>().size() == 64) {
-                        return vfs->read<Shape>(fs::CID{val.get<std::string>()});
+                        vreq.cid = val.get<std::string>();
+                        return vfs->read<Shape>(vreq);
                     }
                     if (val.is_object() && val.contains("path")) {
-                        return vfs->read<Shape>(val.get<fs::Selector>());
+                        vreq.selector = val.get<fs::Selector>();
+                        return vfs->read<Shape>(vreq);
                     }
                     return Shape::from_json(val);
                 } else if constexpr (std::is_same_v<T, std::vector<Shape>>) {
                     std::vector<Shape> results;
                     if (!val.is_array()) throw std::runtime_error("Type must be an array for std::vector<Shape>");
                     for (const auto& item : val) {
+                        fs::VFSNode::VFSRequest vreq;
                         if (item.is_string() && item.get<std::string>().size() == 64) {
-                            results.push_back(vfs->read<Shape>(fs::CID{item.get<std::string>()}));
+                            vreq.cid = item.get<std::string>();
+                            results.push_back(vfs->read<Shape>(vreq));
                         } else if (item.is_object() && item.contains("path")) {
-                            results.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
+                            vreq.selector = item.get<fs::Selector>();
+                            results.push_back(vfs->read<Shape>(vreq));
                         } else {
                             results.push_back(Shape::from_json(item));
                         }

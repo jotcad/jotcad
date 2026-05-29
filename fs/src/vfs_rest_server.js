@@ -71,29 +71,18 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
 
       const vfsHeaders = parseHeaders(req);
 
-      if (req.method === 'POST' && vfsPath === '/read') {
-        let target, stack, resolutionStack, expiresAt;
-
-        if (vfsHeaders.selector) {
-            target = vfsHeaders.selector;
-            stack = vfsHeaders.stack;
-            expiresAt = vfsHeaders.expiresAt;
-        } else {
-            const body = await getBody(req);
-            target = body.selector ? Selector.fromObject(body.selector) : body.cid;
-            stack = body.stack || [];
-            resolutionStack = body.resolutionStack || [];
-            expiresAt = body.expiresAt;
-        }
-
-        log(`[MeshServer ${vfs.id}] POST /read: ${target.path || target} (stack: ${stack.join('->')})`);
-        if (!target) {
+      if (req.method === 'POST' && vfsPath === '/read_selector') {
+        const { selector, stack, expiresAt } = vfsHeaders;
+        const body = await getBody(req);
+        const rawSel = selector || body.selector;
+        const s = Selector.fromObject(rawSel);
+        if (!s) {
             res.writeHead(400);
-            return res.end('Missing selector or cid');
+            return res.end('Missing or invalid selector');
         }
-        if (target instanceof Selector) vfs.validateSelector(target); 
-        
-        const result = await vfs.read(target, { stack, resolutionStack, expiresAt });
+        log(`[MeshServer ${vfs.id}] POST /read_selector: Selector(${s.path})`);
+        const result = await vfs.readSelector(s, { stack, expiresAt });
+
         if (result) {
           const { stream, metadata } = result;
           res.writeHead(200, {
@@ -104,7 +93,29 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
           });
           return await pump(stream, res);
         }
-        res.writeHead(404);
+        res.writeHead(404, { 'x-vfs-info': encodeInfo({ error: 'Not Found' }) });
+        return res.end();
+      }
+
+      if (req.method === 'POST' && vfsPath === '/read_cid') {
+        const { stack, expiresAt } = vfsHeaders;
+        const body = await getBody(req);
+        const cid = body.cid;
+        const resolutionStack = body.resolutionStack || [];
+        log(`[MeshServer ${vfs.id}] POST /read_cid: CID(${cid})`);
+        const result = await vfs.readCID(cid, { stack, resolutionStack, expiresAt });
+
+        if (result) {
+          const { stream, metadata } = result;
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'x-vfs-id': vfs.id,
+            'x-vfs-info': encodeInfo(metadata),
+            'x-vfs-encoding': metadata.encoding || 'json'
+          });
+          return await pump(stream, res);
+        }
+        res.writeHead(404, { 'x-vfs-info': encodeInfo({ error: 'Not Found' }) });
         return res.end();
       }
 
@@ -244,11 +255,6 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         return res.end(JSON.stringify({ status: 'OK', id: vfs.id }));
       }
 
-      if (req.method === 'GET' && vfsPath === '/version') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ version: vfs.version || 'unknown', id: vfs.id }));
-      }
-
       // Catch-all fallback for unhandled routes to prevent request hangs
       res.writeHead(404);
       return res.end('Not Found');
@@ -257,8 +263,6 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       const ctxLine = JSON.stringify(vfsCtx);
       
       let msg = err.message;
-      // If the message is already a set of JSON lines, just prepend.
-      // Otherwise, wrap the message in a JSON object.
       if (!msg.trim().startsWith('{')) {
           msg = JSON.stringify({ error: msg });
       }
@@ -278,6 +282,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   wss.on('connection', (ws) => {
     let identified = false;
     let peerId = null;
+    let activeConn = null;
 
     ws.on('message', async (data) => {
       try {
@@ -288,15 +293,17 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
             identified = true;
             ws.send(JSON.stringify({ type: 'ACK', peerId: vfs.id }));
 
-            const { WSReverseConnection } = await import('./vfs_ws_transport.js');
-            const wsConn = new WSReverseConnection(peerId, ws);
-            wsConn.vfs = vfs;
-            wsConn.mesh = meshLink;
-            meshLink?.upgradePeerToWS(peerId, wsConn);
+            const { WSNodeReverseConnection } = await import('./vfs_ws_transport_node.js');
+            activeConn = new WSNodeReverseConnection(peerId, ws);
+            activeConn.vfs = vfs;
+            activeConn.mesh = meshLink;
+            meshLink?.upgradePeerToWS(peerId, activeConn);
             log(`[MeshServer ${vfs.id}] Upgraded peer ${peerId} over WebSocket Tunnel.`);
           } else {
             ws.close(4000, 'Expected IDENTIFY');
           }
+        } else if (activeConn) {
+          activeConn.handleFrame(frame);
         }
       } catch (e) {
         log(`[MeshServer ${vfs.id}] WS Connection error: ${e.message}`);

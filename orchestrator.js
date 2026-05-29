@@ -53,7 +53,11 @@ export const PROFILES = {
     gateway: 'node_a',
     components: {
       node_a: { type: 'node_a', protocol: 'http', port: 8181 },
-      node_b: { type: 'node_b', protocol: 'http', port: 8182 }
+      node_b: { type: 'node_b', protocol: 'http', port: 8182 },
+      ops:    { type: 'ops',    protocol: 'http', port: 8183 }
+    },
+    env: {
+      NEIGHBORS: 'http://localhost:8181,http://localhost:8182,http://localhost:8183'
     }
   },
   'test/complex_topology': {
@@ -78,7 +82,7 @@ export const PROFILES = {
   }
 };
 
-export async function launchSystem(profileKey = 'live/standard', globalLogLevel = 'INFO', options = {}) {
+export async function launchSystem(profileKey = 'live/standard', globalLogLevel = process.env.LOG_LEVEL || 'INFO', options = {}) {
   const config = PROFILES[profileKey];
   if (!config) {
     throw new Error(`Unknown profile: ${profileKey}. Available: ${Object.keys(PROFILES).join(', ')}`);
@@ -146,35 +150,41 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
         }
       };
     },
-    node_a: (cfg) => ({
-      name: `JS Node A (${cfg.port})`,
-      command: 'node',
-      args: ['geo/export_service.js'],
-      cwd: __dirname,
-      env: { 
-          ...process.env, 
-          LOG_LEVEL: globalLogLevel,
-          PORT: String(cfg.port),
-          VFS_ID: `node_a`,
-          DISABLE_SSL: '1',
-          ...env
-      }
-    }),
-    node_b: (cfg) => ({
-      name: `JS Node B (${cfg.port})`,
-      command: 'node',
-      args: ['geo/export_service.js'],
-      cwd: __dirname,
-      env: { 
-          ...process.env, 
-          LOG_LEVEL: globalLogLevel,
-          PORT: String(cfg.port),
-          VFS_ID: `node_b`,
-          NEIGHBORS: `http://localhost:${componentMap.node_a.port}`,
-          DISABLE_SSL: '1',
-          ...env
-      }
-    }),
+    node_a: (cfg) => {
+      const fullId = `${profileKey.replace('/', '_')}_node_a`;
+      return {
+        name: `JS Node A (${cfg.port})`,
+        command: 'node',
+        args: ['geo/export_service.js'],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            LOG_LEVEL: globalLogLevel,
+            PORT: String(cfg.port),
+            VFS_ID: fullId,
+            DISABLE_SSL: '1',
+            ...env
+        }
+      };
+    },
+    node_b: (cfg) => {
+      const fullId = `${profileKey.replace('/', '_')}_node_b`;
+      return {
+        name: `JS Node B (${cfg.port})`,
+        command: 'node',
+        args: ['geo/export_service.js'],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            LOG_LEVEL: globalLogLevel,
+            PORT: String(cfg.port),
+            VFS_ID: fullId,
+            NEIGHBORS: `http://localhost:${componentMap.node_a.port}`,
+            DISABLE_SSL: '1',
+            ...env
+        }
+      };
+    },
     subscriber: (cfg) => ({
       name: `Counter Subscriber (${cfg.port})`,
       command: 'node',

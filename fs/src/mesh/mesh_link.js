@@ -1,0 +1,450 @@
+import { normalizeSelector, Selector, decodeInfo } from '../cid.js';
+import { log, info } from '../log.js';
+import { ForwardConnection } from './forward_connection.js';
+import { ReverseConnection } from './reverse_connection.js';
+
+/**
+ * MeshLink: Direct Neighbor Registry and Recursive Bread-crumb Router.
+ * Honors Identity Duality: Explicit methods for Selector and CID searches.
+ */
+export class MeshLinkBase {
+  constructor(vfs, neighborUrls = [], options = {}) {
+    this.vfs = vfs;
+    this.vfs.mesh = this;
+    this.instanceId = Math.random().toString(36).slice(2, 8);
+    this.fetch = options.fetch || globalThis.fetch.bind(globalThis);
+    this.localUrl = options.localUrl;
+    log(`[MeshLink ${this.vfs.id}] Instance ${this.instanceId} created.`);
+    this.peers = new Map(); // neighborId -> Connection
+    this.connecting = new Set();
+    this.pollers = []; // Private client-side long-polling receivers
+    this.neighborUrls = neighborUrls.map((u) => u.replace(/\/$/, ''));
+    this.abortController = new AbortController();
+
+    this.interests = new Map();
+
+    this._ppsInterval = setInterval(() => {
+      for (const conn of this.peers.values()) conn._tickPPS();
+    }, 1000);
+    if (this._ppsInterval.unref) this._ppsInterval.unref();
+  }
+
+  /**
+   * INTERNAL: Enforce strictly one Connection per peer.
+   */
+  _setPeer(id, conn) {
+    if (this.peers.has(id)) {
+      const existing = this.peers.get(id);
+      throw new Error(`CRITICAL PROTOCOL VIOLATION: Peer ${id} already has an active connection (${existing.reachability}). Refusing to create duplicate.`);
+    }
+    this.peers.set(id, conn);
+  }
+
+  upgradePeerToWS(id, wsConn) {
+    let reachability = wsConn.reachability;
+    if (this.peers.has(id)) {
+      const old = this.peers.get(id);
+      reachability = old.reachability;
+      log(`[MeshLink ${this.vfs.id}] Upgrading peer ${id} to WS. Closing old ${old.reachability} connection.`);
+      if (old.stop) old.stop();
+      this.peers.delete(id);
+    }
+    wsConn.reachability = reachability;
+    this.peers.set(id, wsConn);
+    this.notify(new Selector('sys/topo'), {
+      peer: this.vfs.id,
+      neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+    });
+  }
+
+  async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
+    const s = normalizeSelector(selector);
+    if (stack.includes(this.vfs.id)) return;
+    
+    // Paint the local interest field
+    const topic = JSON.stringify(s);
+    if (!this.interests.has(topic)) {
+        this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null, localExpiresAt: 0 });
+    }
+    const entry = this.interests.get(topic);
+    entry.localExpiresAt = Math.max(entry.localExpiresAt, expiresAt);
+    log(`[MeshLink ${this.vfs.id}] Local interest in ${s.path} recorded (expiresAt: ${expiresAt})`);
+    
+    // Propagate the interest (Painting the mesh)
+    const nextStack = [...stack, this.vfs.id];
+    for (const conn of this.peers.values()) {
+      if (!nextStack.includes(conn.neighborId)) {
+        log(`[MeshLink ${this.vfs.id}] -> Propagating local interest in ${s.path} to peer ${conn.neighborId}`);
+        conn.subscribe(s, expiresAt, nextStack).catch(() => {});
+      }
+    }
+  }
+
+  addInterest(neighborId, selector, expiresAt, stack = []) {
+    const s = normalizeSelector(selector);
+    const topic = JSON.stringify(s);
+    log(`[MeshLink ${this.vfs.id}] addInterest: ${s.path} from ${neighborId} (stack: ${stack})`);
+    if (!this.interests.has(topic)) {
+      this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null, localExpiresAt: 0 });
+    }
+    
+    const entry = this.interests.get(topic);
+    const isNewNeighbor = !entry.subs.has(neighborId);
+    entry.subs.set(neighborId, expiresAt);
+
+    // IMMEDIATE REPLY PHASE
+    if (isNewNeighbor && entry.lastValue) {
+      const conn = this.peers.get(neighborId);
+      if (conn) {
+          log(`[MeshLink ${this.vfs.id}] -> Pushing cached lastValue for ${s.path} to ${neighborId}`);
+          conn.notify(s, entry.lastValue, [this.vfs.id]).catch(() => {});
+      }
+    }
+
+    // Contribution phase (sys/schema, sys/topo)
+    if (isNewNeighbor && s.path === 'sys/schema') {
+        const conn = this.peers.get(neighborId);
+        if (conn) {
+            const catalog = this.vfs.getCatalog();
+            log(`[MeshLink ${this.vfs.id}] -> Contributing local catalog to ${neighborId} (${Object.keys(catalog.catalog).length} ops)`);
+            conn.notify(s, catalog, [this.vfs.id]).catch(() => {});
+        }
+    }
+
+    if (isNewNeighbor && s.path === 'sys/topo') {
+        const conn = this.peers.get(neighborId);
+        if (conn) {
+            log(`[MeshLink ${this.vfs.id}] -> Contributing local topology to new subscriber ${neighborId}`);
+            conn.notify(s, {
+                peer: this.vfs.id,
+                neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+            }, [this.vfs.id]).catch(() => {});
+        }
+    }
+
+    // PROPAGATION PHASE
+    if (isNewNeighbor) {
+      const nextStack = [...stack, this.vfs.id];
+      for (const conn of this.peers.values()) {
+        if (!nextStack.includes(conn.neighborId) && conn.neighborId !== neighborId) {
+          log(`[MeshLink ${this.vfs.id}] -> Propagating interest in ${s.path} from ${neighborId} to ${conn.neighborId}`);
+          conn.subscribe(s, expiresAt, nextStack).catch(() => {});
+        }
+      }
+    }
+  }
+
+  notify(selector, payload, stack = []) {
+    const s = normalizeSelector(selector);
+    if (stack.includes(this.vfs.id)) return;
+    const nextStack = [...stack, this.vfs.id];
+
+    log(`[MeshLink ${this.vfs.id}] notify: ${s.path} from stack ${stack}`);
+
+    const topic = JSON.stringify(s);
+    if (!this.interests.has(topic)) {
+      this.interests.set(topic, { selector: s, subs: new Map(), lastValue: payload, localExpiresAt: 0 });
+    } else {
+      this.interests.get(topic).lastValue = payload;
+    }
+
+    // 1. Local Delivery
+    for (const entry of this.interests.values()) {
+      if (this._matches(entry.selector, s)) {
+        entry.lastValue = payload;
+        if (entry.localExpiresAt > Date.now()) {
+          log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
+          this.vfs.events.emit('notify', s, payload);
+        }
+      }
+    }
+
+    // 2. Neighbor Propagation
+    for (const entry of this.interests.values()) {
+      if (this._matches(entry.selector, s)) {
+        for (const [neighborId, expiry] of entry.subs.entries()) {
+          if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
+          if (stack.includes(neighborId)) continue;
+          
+          const conn = this.peers.get(neighborId);
+          if (conn) {
+              log(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
+              conn.notify(s, payload, nextStack).catch(() => {});
+          }
+        }
+      }
+    }
+  }
+
+  _matches(sub, event) {
+    if (!sub || !event) return false;
+    if (sub.path === event.path) {
+      const subParams = sub.parameters || {};
+      if (Object.keys(subParams).length === 0) return true;
+      for (const [k, v] of Object.entries(subParams)) {
+        if (JSON.stringify(v) !== JSON.stringify(event.parameters?.[k])) return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  async start() {
+    this.vfs.mesh = this;
+    for (const url of this.neighborUrls) await this.addPeer(url);
+  }
+
+  async addPeer(url) {
+    url = url.replace(/\/$/, '');
+    log(`[MeshLink ${this.vfs.id}] addPeer startup: Attempting connection to ${url}`);
+    if (this.connecting.has(url)) {
+        log(`[MeshLink ${this.vfs.id}] addPeer: Already connecting to ${url}, skipping.`);
+        return;
+    }
+    this.connecting.add(url);
+    try {
+      log(`[MeshLink ${this.vfs.id}] -> POST ${url}/register (vfsId: ${this.vfs.id})`);
+      const resp = await this.fetch(`${url}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: this.vfs.id, url: this.localUrl, transports: ['http', 'ws'] }),
+        signal: this.abortController.signal || AbortSignal.timeout(5000),
+      });
+      log(`[MeshLink ${this.vfs.id}] <- ${resp.status} ${url}/register`);
+      if (resp.ok) {
+        const info = await resp.json();
+        log(`[MeshLink ${this.vfs.id}] Registration successful for ${url}:`, info);
+        if (info.id && info.id !== this.vfs.id) {
+          // WS upgrade phase
+          if (info.transports && info.transports.includes('ws') && info.wsUrl) {
+            try {
+              log(`[MeshLink ${this.vfs.id}] Attempting WebSocket upgrade to ${info.wsUrl}`);
+              let wsConn;
+              if (typeof window === 'undefined') {
+                const { WSNodeForwardConnection } = await import('../vfs_ws_transport_node.js');
+                wsConn = await WSNodeForwardConnection.connect(info.wsUrl, this.vfs.id, info.id);
+              } else {
+                const { WSBrowserForwardConnection } = await import('../vfs_ws_transport_browser.js');
+                wsConn = await WSBrowserForwardConnection.connect(info.wsUrl, this.vfs.id, info.id);
+              }
+
+              wsConn.vfs = this.vfs;
+              wsConn.mesh = this;
+              this.upgradePeerToWS(info.id, wsConn);
+              log(`[MeshLink ${this.vfs.id}] Successfully upgraded peer ${info.id} to WebSocket!`);
+              return info.id;
+            } catch (wsErr) {
+              log(`[MeshLink ${this.vfs.id}] WebSocket upgrade to ${info.wsUrl} failed: ${wsErr.message}. Falling back to HTTP.`);
+            }
+          }
+
+          let newConn = null;
+
+          if (!this.peers.has(info.id)) {
+            newConn = new ForwardConnection(info.id, url, this.fetch, { 
+                localUrl: this.localUrl, 
+                signal: this.abortController.signal,
+                reachability: info.reachability
+            });
+            this._setPeer(info.id, newConn);
+            log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id} (${info.reachability})`);
+          }
+
+          // Reverse poll line for hidden nodes
+          if (info.reachability === 'REVERSE' || !this.localUrl) {
+            const pollerId = `${info.id}-poller`;
+            const hasExistingPoller = this.pollers.some(p => p.neighborId === pollerId);
+            if (!hasExistingPoller) {
+                log(`[MeshLink ${this.vfs.id}] Starting private reverse poll line for ${info.id}`);
+                const poller = new ReverseConnection(pollerId, this, { instanceId: this.instanceId });
+                poller.vfs = this.vfs; // Explicit assignment for the polling receiver
+                this.pollers.push(poller);
+                poller.startPolling(url, this.fetch);
+            }
+          }
+
+          // SYNC INTERESTS
+          if (newConn) {
+              for (const entry of this.interests.values()) {
+                let maxExp = entry.localExpiresAt || 0;
+                for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
+                if (maxExp > Date.now()) {
+                  log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new peer ${newConn.neighborId}`);
+                  newConn.subscribe(entry.selector, maxExp, [this.vfs.id]).catch(()=>{});
+                }
+              }
+          }
+
+          this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+          return info.id;
+        }
+      } else {
+        const errText = await resp.text().catch(() => 'no body');
+        log(`[MeshLink ${this.vfs.id}] Handshake rejected by ${url} (Status ${resp.status}): ${errText}`);
+      }
+    } catch (e) {
+        log(`[MeshLink ${this.vfs.id}] Handshake failed for ${url}: ${e.message}`);
+    } finally { this.connecting.delete(url); }
+    return null;
+  }
+
+  async probeDirectReachability(url) {
+    if (!url) return false;
+    const target = `${url.replace(/\/$/, '')}/health`;
+    try {
+      const resp = await this.fetch(target, {
+        signal: AbortSignal.timeout(1000),
+      });
+      return resp.ok;
+    } catch (e) {
+      log(`[MeshLink ${this.vfs.id}] probeDirectReachability failed for ${target}: ${e.message}`);
+      return false;
+    }
+  }
+
+  async registerPeer(peerId, url) {
+    if (!peerId) throw new Error('Missing peerId');
+    const wsUrl = this.localUrl ? this.localUrl.replace(/^http/, 'ws') + '/vfs-ws' : null;
+
+    if (this.peers.has(peerId)) {
+      return { id: this.vfs.id, reachability: this.peers.get(peerId).reachability, transports: ['http', 'ws'], wsUrl };
+    }
+
+    if (url) {
+      const isReachable = await this.probeDirectReachability(url);
+      if (isReachable) {
+        const conn = new ForwardConnection(peerId, url, this.fetch, {
+          localUrl: this.localUrl,
+          signal: this.abortController.signal,
+          reachability: 'DIRECT'
+        });
+        this._setPeer(peerId, conn);
+        this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+        return { id: this.vfs.id, reachability: 'DIRECT', transports: ['http', 'ws'], wsUrl };
+      }
+    }
+
+    const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });
+    this._setPeer(peerId, conn);
+    this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+    return { id: this.vfs.id, reachability: 'REVERSE', transports: ['http', 'ws'], wsUrl };
+  }
+
+  registerReversePeer(neighborId, res, replyTo = null, stream = null, info = null) {
+    if (!this.peers.has(neighborId)) {
+      this.registerPeer(neighborId);
+    }
+    const conn = this.peers.get(neighborId);
+    if (!(conn instanceof ReverseConnection)) {
+        throw new Error(`CRITICAL PROTOCOL VIOLATION: registerReversePeer called for ${neighborId} but connection is ${conn.constructor.name}`);
+    }
+    conn.addScanner(res, replyTo, stream, info);
+  }
+
+  async readSelector(selector, context = {}) {
+    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const targetConns = [...this.peers.values()];
+    if (targetConns.length === 0) return null;
+
+    const fetchPromises = targetConns.map(async (conn) => {
+      const resp = await conn.readSelector(selector, { ...context, stack, expiresAt });
+      const metadata = decodeInfo(resp?.headers?.get('x-vfs-info'));
+      
+      if (metadata.error) {
+          if (metadata.error.includes('Backflow') || metadata.error.includes('403')) {
+              throw new Error(`Backflow: ${metadata.error}`);
+          }
+          throw new Error(`Peer ${conn.neighborId} reported error: ${metadata.error}`);
+      }
+      if (resp && resp.body) return { stream: resp.body, metadata };
+      throw new Error(`Peer ${conn.neighborId} returned no data for ${selector.path}`);
+    });
+
+    try { return await Promise.any(fetchPromises); } 
+    catch (e) { 
+        const errDetails = e.errors ? e.errors.map(err => err.message).join(', ') : e.message;
+        throw new Error(`Mesh-wide Selector Read Failure for ${selector.path}: ${errDetails}`); 
+    }
+    finally { for (const p of fetchPromises) p.catch(() => {}); }
+  }
+
+  async readCID(cid, context = {}) {
+    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
+    const targetConns = [...this.peers.values()];
+    if (targetConns.length === 0) return null;
+
+    const fetchPromises = targetConns.map(async (conn) => {
+      const resp = await conn.readCID(cid, { ...context, stack, resolutionStack, expiresAt });
+      const metadata = decodeInfo(resp?.headers?.get('x-vfs-info'));
+      
+      if (metadata.error) {
+          if (metadata.error.includes('Backflow') || metadata.error.includes('403')) {
+              throw new Error(`Backflow: ${metadata.error}`);
+          }
+          throw new Error(`Peer ${conn.neighborId} reported error: ${metadata.error}`);
+      }
+      if (resp && resp.body) return { stream: resp.body, metadata };
+      throw new Error(`Peer ${conn.neighborId} returned no data for ${cid}`);
+    });
+
+    try { return await Promise.any(fetchPromises); } 
+    catch (e) { 
+        const errDetails = e.errors ? e.errors.map(err => err.message).join(', ') : e.message;
+        throw new Error(`Mesh-wide CID Read Failure for ${cid}: ${errDetails}`); 
+    }
+    finally { for (const p of fetchPromises) p.catch(() => {}); }
+  }
+
+  async spy(selector, context = {}) {
+    const s = normalizeSelector(selector);
+    const { stack = [], expiresAt = Date.now() + 30000 } = context;
+    const nextStack = stack.includes(this.vfs.id) ? stack : [...stack, this.vfs.id];
+    const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
+    
+    if (targetConns.length === 0) return null;
+    
+    const fetchPromises = targetConns.map(async (conn) => {
+      try {
+        const stream = await conn.spy(s, { ...context, stack: nextStack, expiresAt });
+        return stream;
+      } catch (err) { return null; }
+    });
+    
+    try {
+      const results = await Promise.allSettled(fetchPromises);
+      const validStreams = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+      
+      if (validStreams.length === 0) return null;
+      return new ReadableStream({
+        async start(controller) {
+          for (const s of validStreams) {
+            const reader = s.getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } finally {
+              reader.releaseLock();
+            }
+          }
+          controller.close();
+        },
+      });
+    } finally {
+      for (const p of fetchPromises) p.catch(() => {});
+    }
+  }
+
+  stop() { 
+    this.abortController.abort(); 
+    clearInterval(this._ppsInterval); 
+    for (const conn of this.peers.values()) if (conn.stop) conn.stop();
+    for (const poller of this.pollers) if (poller.stop) poller.stop();
+    this.peers.clear(); 
+    this.pollers = [];
+  }
+}
+
+export class MeshLink extends MeshLinkBase {}

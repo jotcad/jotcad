@@ -124,7 +124,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
     const past = Date.now() - 5000;
     console.log('[Test Pipeline] Sending raw stale request to C++ node...');
 
-    const resp = await fetch(`http://localhost:${PORT_OPS}/read`, {
+    const resp = await fetch(`http://localhost:${PORT_OPS}/read_selector`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

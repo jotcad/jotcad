@@ -104,7 +104,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
         // 7. Request Execution from the C++ Ops Node
         // The Ops Node will call back to the Test Node for user/Red.
         // The Test Node will resolve the expansion and return the result.
-        const response = await fetch(`http://localhost:${OPS_PORT}/read`, {
+        const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ selector: finalSelector.toJSON() })

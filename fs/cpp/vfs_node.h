@@ -32,13 +32,9 @@ namespace fs {
 
 using json = nlohmann::json;
 
-// Global VFS utility declarations (from cid.h)
 std::string vfs_hash256(const std::vector<uint8_t>& data);
 std::string vfs_hash256_str(const std::string& data);
 
-/**
- * VFSNode: A decentralized mesh participant that can provision files on-demand.
- */
 struct VFSResult {
     std::vector<uint8_t> data;
     json metadata;
@@ -57,8 +53,10 @@ public:
     };
 
     struct VFSRequest {
-        std::string cid;   // Direct content identity
-        Selector selector; // Computational identity
+        std::string op; // NOTIFY, SUBSCRIBE, READ_SELECTOR, READ_CID, PUBLISH
+        std::string cid;
+        Selector selector;
+        std::string data; // Used for payloads (e.g. NOTIFY JSON payload string, or raw bytes)
         std::vector<std::string> stack;
         std::vector<std::string> resolutionStack;
         long long expiresAt = 0;
@@ -67,13 +65,10 @@ public:
         bool is_cid() const { return !cid.empty(); }
     };
 
-    // Mesh Connection Abstraction
     struct Connection {
         std::string neighbor_id;
         virtual ~Connection() = default;
-        virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
-        virtual void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) = 0;
-        virtual VFSResult read(const VFSRequest& req) = 0;
+        virtual VFSResult sendRequest(const VFSRequest& req) = 0;
         virtual bool is_reverse() const = 0;
         virtual std::string get_url() const { return ""; }
     };
@@ -88,14 +83,22 @@ public:
     void listen();
     void stop();
 
+    // Identity Duality Overloads (Explicit Typed Dispatch)
     template<typename T = std::vector<uint8_t>>
     T read(const Selector& sel);
 
     template<typename T = std::vector<uint8_t>>
-    T read(const VFSRequest& req);
+    T read(const CID& cid);
 
     template<typename T = std::vector<uint8_t>>
-    T read(const CID& cid);
+    T read(const VFSRequest& req);
+
+    // Internal explicit methods
+    template<typename T = std::vector<uint8_t>>
+    T readSelector(const Selector& sel) { return read<T>(sel); }
+
+    template<typename T = std::vector<uint8_t>>
+    T readCID(const CID& cid) { return read<T>(cid); }
 
     std::string get_cid(const Selector& sel);
     VFSResult get_local(const std::string& cid);
@@ -126,7 +129,6 @@ public:
     json get_catalog();
     json get_neighbors();
 
-    // Transaction Management for Async WS Reads
     void resolve_transaction(const std::string& tx_id, const VFSResult& result);
     void reject_transaction(const std::string& tx_id, int status, const std::string& error);
 
@@ -134,9 +136,8 @@ private:
     struct ForwardConnection : public Connection {
         std::string url;
         ForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
-        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
-        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
-        VFSResult read(const VFSRequest& req) override;
+        VFSResult sendRequest(const VFSRequest& req) override;
+        VFSResult _do_read(const std::map<std::string, std::string>& headers, const std::string& body, const std::string& path);
         bool is_reverse() const override { return false; }
         std::string get_url() const override { return url; }
     };
@@ -146,20 +147,17 @@ private:
         std::mutex mutex;
         std::condition_variable cv;
         bool is_polling = false;
-        long long current_poll_id = 0; // Superseding support
+        long long current_poll_id = 0;
         ReverseConnection(std::string id) { neighbor_id = std::move(id); }
-        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
-        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
-        VFSResult read(const VFSRequest& req) override;
+        VFSResult sendRequest(const VFSRequest& req) override;
         bool is_reverse() const override { return true; }
     };
 
     struct WSConnection : public Connection {
         VFSNode* node = nullptr;
         virtual void send_frame(const json& frame) = 0;
-        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
-        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
-        VFSResult read(const VFSRequest& req) override;
+        VFSResult sendRequest(const VFSRequest& req) override;
+        VFSResult _do_ws_read(const json& frame);
         bool is_reverse() const override { return false; }
     };
 
@@ -196,8 +194,8 @@ private:
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
 
-    VFSResult read_impl(const VFSRequest& req);
-    VFSResult read_result(const VFSRequest& req);
+    VFSResult read_cid_impl(const VFSRequest& req);
+    VFSResult read_selector_impl(const VFSRequest& req);
 
     bool has_local(const std::string& cid);
     void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
@@ -211,16 +209,18 @@ template<> json VFSNode::read<json>(const Selector& sel);
 template<> double VFSNode::read<double>(const Selector& sel);
 template<> int VFSNode::read<int>(const Selector& sel);
 template<> std::string VFSNode::read<std::string>(const Selector& sel);
-template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req);
-template<> json VFSNode::read<json>(const VFSRequest& req);
-template<> double VFSNode::read<double>(const VFSRequest& req);
-template<> int VFSNode::read<int>(const VFSRequest& req);
-template<> std::string VFSNode::read<std::string>(const VFSRequest& req);
+
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& cid);
 template<> json VFSNode::read<json>(const CID& cid);
 template<> double VFSNode::read<double>(const CID& cid);
 template<> int VFSNode::read<int>(const CID& cid);
 template<> std::string VFSNode::read<std::string>(const CID& cid);
+
+template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req);
+template<> json VFSNode::read<json>(const VFSRequest& req);
+template<> double VFSNode::read<double>(const VFSRequest& req);
+template<> int VFSNode::read<int>(const VFSRequest& req);
+template<> std::string VFSNode::read<std::string>(const VFSRequest& req);
 
 template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint8_t>& data);
 template<> CID VFSNode::materialize<json>(const json& data);

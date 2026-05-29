@@ -49,11 +49,11 @@ test('Sovereign Packet Protocol Integration', async (t) => {
 
         // Query Node A to pull the data from the client via reverse long-polling
         try {
-            const resp = await globalThis.fetch('http://localhost:8181/read', {
+            const resp = await globalThis.fetch('http://localhost:8181/read_selector', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-vfs-op': 'READ',
+                    'x-vfs-op': 'READ_SELECTOR',
                     'x-vfs-selector': JSON.stringify(selector)
                 }
             });

@@ -32,8 +32,6 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     }
     std::cout << "[VFSNode " << config_.id << "] Peer Added: " << id << (conn->is_reverse() ? " (REVERSE)" : " (DIRECT)") << std::endl;
     
-    // Protocol Rule: Only sync active interests on connection. 
-    // Announcements (Catalog/Topo) happen on-demand via subscriptions.
     {
         std::lock_guard<std::mutex> lock(interest_mutex_);
         long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -41,12 +39,16 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
             long long maxExp = 0;
             for (auto const& [neighbor_id, expiry] : subs) if (expiry > maxExp) maxExp = expiry;
             if (maxExp > now) {
-                conn->subscribe(interest_selectors_[sel_str], maxExp, {config_.id});
+                VFSRequest req;
+                req.op = "SUBSCRIBE";
+                req.selector = interest_selectors_[sel_str];
+                req.expiresAt = maxExp;
+                req.stack = {config_.id};
+                conn->sendRequest(req);
             }
         }
     }
 
-    // Broadcast the updated topology to all subscribed peers in the mesh
     json sys_topo = {{"path", "sys/topo"}, {"parameters", json::object()}};
     json neighbors = json::array();
     {
@@ -66,8 +68,6 @@ void VFSNode::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Con
         peers_[peer_id] = ws_conn;
     }
     std::cout << "[VFSNode " << config_.id << "] Peer " << peer_id << " upgraded to WebSocket." << std::endl;
-    
-    // Trigger topology update
     add_connection(ws_conn);
 }
 
@@ -96,45 +96,30 @@ void VFSNode::add_peer(const std::string& url) {
 void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Response& res) {
     struct PollThreadGuard {
         std::atomic<int>& count;
-        std::string peer;
-        std::string node;
-        PollThreadGuard(std::atomic<int>& c, std::string p, std::string n) : count(c), peer(std::move(p)), node(std::move(n)) {}
-        ~PollThreadGuard() {
-            --count;
-        }
+        PollThreadGuard(std::atomic<int>& c) : count(c) {}
+        ~PollThreadGuard() { --count; }
     };
 
     int current_active = ++active_poll_threads;
     if (current_active >= 8) {
         std::cout << "[VFSNode " << config_.id << "] !!! THREAD EXHAUSTION WARNING !!! "
-                  << "Total active/blocked long-polling C++ threads: " << current_active << "/8. "
-                  << "No remaining threads in the C++ worker pool!" << std::endl;
+                  << "Total active/blocked long-polling C++ threads: " << current_active << "/8." << std::endl;
     }
 
-    PollThreadGuard guard(active_poll_threads, peer_id, config_.id);
+    PollThreadGuard guard(active_poll_threads);
 
     std::shared_ptr<ReverseConnection> conn;
     {
         std::lock_guard<std::mutex> lock(peer_mutex_);
-        if (peers_.count(peer_id)) {
-            conn = std::dynamic_pointer_cast<ReverseConnection>(peers_[peer_id]);
-        }
+        if (peers_.count(peer_id)) conn = std::dynamic_pointer_cast<ReverseConnection>(peers_[peer_id]);
     }
 
-    if (!conn) {
-        res.status = 404;
-        return;
-    }
+    if (!conn) { res.status = 404; return; }
 
     std::unique_lock<std::mutex> lock(conn->mutex);
-    
-    // Protocol Rule: Superseding (No more 409)
-    // If a poll is already active, signal it to exit so the new one can take over.
     if (conn->is_polling) {
-        conn->current_poll_id++; // Change ID to invalidate the old thread
+        conn->current_poll_id++;
         conn->cv.notify_all();
-        
-        // Wait for old thread to clear is_polling
         conn->cv.wait_for(lock, std::chrono::seconds(2), [&conn] { return !conn->is_polling; });
     }
 
@@ -142,29 +127,22 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
     conn->is_polling = true;
 
     if (conn->queue.empty()) {
-        // Permanent Tunnel: Wait indefinitely for mesh commands or superseding
         conn->cv.wait(lock, [&conn, my_poll_id] {
             return !conn->queue.empty() || conn->current_poll_id != my_poll_id;
         });
     }
 
     conn->is_polling = false;
-    conn->cv.notify_all(); // Wake up any waiting supersede threads
+    conn->cv.notify_all();
 
-    // If we were superseded, return 204 so the client can try again on the new socket
-    if (conn->current_poll_id != my_poll_id) {
-        res.status = 204;
-        return;
-    }
+    if (conn->current_poll_id != my_poll_id) { res.status = 204; return; }
 
     if (!conn->queue.empty()) {
         json cmd = conn->queue.front();
         conn->queue.erase(conn->queue.begin());
-        std::string type = cmd.value("type", "unknown");
-        std::string op = cmd.value("op", "none");
-        if (op == "none" && type == "PUB") op = "PUB";
+        std::string op = cmd.value("op", cmd.value("type", "unknown"));
         
-        std::cout << "[REST " << config_.id << "] -> Deliver " << type << "/" << op << " to " << peer_id << " (Queue: " << conn->queue.size() << ")" << std::endl;
+        std::cout << "[REST " << config_.id << "] -> Deliver " << op << " to " << peer_id << std::endl;
         
         res.set_header("X-VFS-Op", op);
         if (cmd.contains("selector")) res.set_header("X-VFS-Selector", cmd["selector"].dump());
@@ -172,9 +150,7 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
         
         std::string stack_str;
         if (cmd.contains("stack")) {
-            for (size_t i = 0; i < cmd["stack"].size(); ++i) {
-                stack_str += (i == 0 ? "" : ",") + cmd["stack"][i].get<std::string>();
-            }
+            for (size_t i = 0; i < cmd["stack"].size(); ++i) stack_str += (i == 0 ? "" : ",") + cmd["stack"][i].get<std::string>();
         }
         res.set_header("X-VFS-Stack", stack_str);
         
@@ -195,184 +171,125 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
     res.status = 204;
 }
 
-void VFSNode::ForwardConnection::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
-    httplib::Headers headers = {
-        {"X-VFS-Op", "PUB"},
-        {"X-VFS-Selector", selector.dump()},
-        {"X-VFS-Stack", ""},
-        {"X-VFS-Encoding", "json"},
-        {"Content-Type", "application/json"}
-    };
-    for (size_t i = 0; i < stack.size(); ++i) {
-        headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + stack[i];
-    }
-
-    std::string body = payload.dump();
-    std::string target_url = url;
-    std::string neighbor = neighbor_id;
-
-    std::thread([target_url, body, headers, neighbor]() {
-        httplib::Client cli(target_url);
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-        cli.enable_server_certificate_verification(false);
-#endif
-        if (auto res = cli.Post("/notify", headers, body, "application/json")) {
-            if (res->status != 200) {
-                std::cerr << "[PROTOCOL ERROR] /notify to " << neighbor << " failed with status " << res->status << ": " << res->body << std::endl;
-            }
-        } else {
-            std::cerr << "[NETWORK ERROR] Failed to reach " << neighbor << " for /notify at " << target_url << std::endl;
-        }
-    }).detach(); // Still detached, but now it LOGS failures.
-}
-
-void VFSNode::ForwardConnection::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
-    httplib::Headers headers = {
-        {"X-VFS-Op", "SUB"},
-        {"X-VFS-Selector", selector.dump()},
-        {"X-VFS-Expires", std::to_string(expiresAt)},
-        {"X-VFS-Stack", ""}
-    };
-    for (size_t i = 0; i < stack.size(); ++i) {
-        headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + stack[i];
-    }
-
-    std::string target_url = url;
-    std::string neighbor = neighbor_id;
-    std::string path = selector.value("path", "unknown");
-
-    std::thread([target_url, headers, neighbor, path]() {
-        httplib::Client cli(target_url);
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-        cli.enable_server_certificate_verification(false);
-#endif
-        if (auto res = cli.Post("/subscribe", headers, "", "application/json")) {
-            if (res->status != 200) {
-                std::cerr << "[PROTOCOL ERROR] /subscribe (" << path << ") to " << neighbor << " failed with status " << res->status << ": " << res->body << std::endl;
-            }
-        } else {
-            std::cerr << "[NETWORK ERROR] Failed to reach " << neighbor << " for /subscribe at " << target_url << std::endl;
-        }
-    }).detach();
-}
-
-VFSResult VFSNode::ForwardConnection::read(const VFSRequest& req) {
+VFSResult VFSNode::ForwardConnection::_do_read(const std::map<std::string, std::string>& headers, const std::string& body, const std::string& path) {
     httplib::Client cli(url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     cli.enable_server_certificate_verification(false);
 #endif
-    httplib::Headers headers = {
-        {"X-VFS-Op", "READ"},
-        {"X-VFS-Stack", ""},
-        {"X-VFS-Expires", std::to_string(req.expiresAt)}
-    };
-    for (size_t i = 0; i < req.stack.size(); ++i) {
-        headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + req.stack[i];
-    }
+    httplib::Headers h;
+    for (auto const& [k, v] : headers) h.emplace(k, v);
 
-    std::string body;
-    if (req.is_cid()) {
-        body = json({{"cid", req.cid}, {"resolutionStack", req.resolutionStack}}).dump();
-    } else {
-        headers.emplace("X-VFS-Selector", req.selector.to_json().dump());
-    }
-
-    if (auto res = cli.Post("/read", headers, body, "application/json")) {
+    if (auto res = cli.Post(path, h, body, "application/json")) {
         if (res->status == 200) {
             VFSResult result;
             result.data = std::vector<uint8_t>(res->body.begin(), res->body.end());
-
             if (res->has_header("x-vfs-info")) {
                 std::string info_raw = res->get_header_value("x-vfs-info");
                 try {
-                    if (!info_raw.empty() && info_raw[0] == '{') {
-                        result.metadata = json::parse(info_raw);
-                    } else {
-                        // Fallback to Base64
+                    if (!info_raw.empty() && info_raw[0] == '{') result.metadata = json::parse(info_raw);
+                    else {
                         std::vector<uint8_t> info_bytes = fs::base64_decode(info_raw);
                         result.metadata = json::parse(std::string(info_bytes.begin(), info_bytes.end()));
                     }
-                } catch(...) {
-                    result.metadata = {{"state", "AVAILABLE"}};
-                }
-            } else {
-                result.metadata = {{"state", "AVAILABLE"}};
-            }
+                } catch(...) { result.metadata = {{"state", "AVAILABLE"}}; }
+            } else result.metadata = {{"state", "AVAILABLE"}};
             return result;
-        } else {
-            // JSON Lines error propagation
-            json ctx = {{"vfsId", neighbor_id}, {"status", res->status}, {"action", "read_peer"}};
-            std::string newBody = ctx.dump() + "\n" + res->body;
-            throw VFSException(newBody, res->status);
-        }
+        } else throw VFSException(res->body, res->status);
     }
-    throw VFSException(json({{"vfsId", neighbor_id}, {"error", "Network failure"}, {"url", url}}).dump(), 503);
+    throw VFSException("Network failure", 503);
 }
 
-void VFSNode::ReverseConnection::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
-    std::lock_guard<std::mutex> lock(mutex);
-    queue.push_back({{"type", "PUB"}, {"selector", selector}, {"payload", payload}, {"stack", stack}});
-    cv.notify_one();
+VFSResult VFSNode::ForwardConnection::sendRequest(const VFSRequest& req) {
+    if (req.op == "NOTIFY" || req.op == "PUB") {
+        httplib::Headers headers = {
+            {"X-VFS-Op", "PUB"},
+            {"X-VFS-Selector", req.selector.to_json().dump()},
+            {"X-VFS-Stack", ""},
+            {"X-VFS-Encoding", "json"},
+            {"Content-Type", "application/json"}
+        };
+        for (size_t i = 0; i < req.stack.size(); ++i) headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + req.stack[i];
+
+        std::string body = req.data;
+        std::string target_url = url;
+        std::thread([target_url, body, headers]() {
+            httplib::Client cli(target_url);
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+            cli.enable_server_certificate_verification(false);
+#endif
+            cli.Post("/notify", headers, body, "application/json");
+        }).detach();
+        return {};
+    } else if (req.op == "SUBSCRIBE" || req.op == "SUB") {
+        httplib::Headers headers = {
+            {"X-VFS-Op", "SUB"},
+            {"X-VFS-Selector", req.selector.to_json().dump()},
+            {"X-VFS-Expires", std::to_string(req.expiresAt)},
+            {"X-VFS-Stack", ""}
+        };
+        for (size_t i = 0; i < req.stack.size(); ++i) headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + req.stack[i];
+
+        std::string target_url = url;
+        std::thread([target_url, headers]() {
+            httplib::Client cli(target_url);
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+            cli.enable_server_certificate_verification(false);
+#endif
+            cli.Post("/subscribe", headers, "", "application/json");
+        }).detach();
+        return {};
+    } else if (req.op == "READ_SELECTOR" || req.op == "READ_CID") {
+        std::map<std::string, std::string> headers = {
+            {"X-VFS-Op", req.op},
+            {"X-VFS-Stack", ""},
+            {"X-VFS-Expires", std::to_string(req.expiresAt)}
+        };
+        for (size_t i = 0; i < req.stack.size(); ++i) headers["X-VFS-Stack"] += (i == 0 ? "" : ",") + req.stack[i];
+        
+        std::string path;
+        std::string body = "";
+        
+        if (req.op == "READ_SELECTOR") {
+            headers["X-VFS-Selector"] = req.selector.to_json().dump();
+            path = "/read_selector";
+        } else {
+            path = "/read_cid";
+            json jbody = {{"cid", req.cid}, {"resolutionStack", req.resolutionStack}};
+            body = jbody.dump();
+        }
+        
+        return _do_read(headers, body, path);
+    }
+    throw VFSException("ForwardConnection sendRequest unsupported op: " + req.op, 501);
 }
 
-void VFSNode::ReverseConnection::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
-    std::lock_guard<std::mutex> lock(mutex);
-    queue.push_back({{"type", "COMMAND"}, {"op", "SUB"}, {"selector", selector}, {"expiresAt", expiresAt}, {"stack", stack}});
-    cv.notify_one();
-}
-
-VFSResult VFSNode::ReverseConnection::read(const VFSRequest& req) {
-    // Note: C++ reverse read requires a registry to track replies.
-    // For now, we only support reverse notify.
-    throw VFSException("C++ Reverse READ not yet implemented", 501);
+VFSResult VFSNode::ReverseConnection::sendRequest(const VFSRequest& req) {
+    if (req.op == "NOTIFY" || req.op == "PUB") {
+        std::lock_guard<std::mutex> lock(mutex);
+        queue.push_back({{"type", "PUB"}, {"selector", req.selector.to_json()}, {"payload", req.data.empty() ? json::object() : json::parse(req.data)}, {"stack", req.stack}});
+        cv.notify_one();
+        return {};
+    } else if (req.op == "SUBSCRIBE" || req.op == "SUB") {
+        std::lock_guard<std::mutex> lock(mutex);
+        queue.push_back({{"type", "COMMAND"}, {"op", "SUB"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
+        cv.notify_one();
+        return {};
+    }
+    throw VFSException("ReverseConnection sendRequest " + req.op + " not yet implemented", 501);
 }
 
 // --- WebSocket Connection Implementations ---
 
-void VFSNode::WSConnection::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
-    send_frame({
-        {"type", "NOTIFY"},
-        {"selector", selector},
-        {"payload", payload},
-        {"stack", stack}
-    });
-}
-
-void VFSNode::WSConnection::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
-    send_frame({
-        {"type", "SUBSCRIBE"},
-        {"selector", selector},
-        {"expiresAt", expiresAt},
-        {"stack", stack}
-    });
-}
-
-VFSResult VFSNode::WSConnection::read(const VFSRequest& req) {
-    std::string tx_id = generate_tx_id();
+VFSResult VFSNode::WSConnection::_do_ws_read(const json& frame) {
+    std::string tx_id = frame["txId"];
     auto promise = std::make_shared<std::promise<VFSResult>>();
     auto future = promise->get_future();
-
     {
         std::lock_guard<std::mutex> lock(node->transaction_mutex_);
         node->transactions_[tx_id] = promise;
     }
-
-    json frame = {
-        {"type", "READ"},
-        {"txId", tx_id},
-        {"stack", req.stack},
-        {"expiresAt", req.expiresAt}
-    };
-
-    if (req.is_cid()) frame["cid"] = req.cid;
-    else frame["selector"] = req.selector.to_json();
-
     send_frame(frame);
-
-    if (future.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
-        return future.get();
-    }
-
+    if (future.wait_for(std::chrono::seconds(15)) == std::future_status::ready) return future.get();
     {
         std::lock_guard<std::mutex> lock(node->transaction_mutex_);
         node->transactions_.erase(tx_id);
@@ -380,28 +297,45 @@ VFSResult VFSNode::WSConnection::read(const VFSRequest& req) {
     throw VFSException("WebSocket Read Timeout", 504);
 }
 
+VFSResult VFSNode::WSConnection::sendRequest(const VFSRequest& req) {
+    if (req.op == "NOTIFY" || req.op == "PUB") {
+        json payload = req.data.empty() ? json::object() : json::parse(req.data);
+        send_frame({{"type", "NOTIFY"}, {"selector", req.selector.to_json()}, {"payload", payload}, {"stack", req.stack}});
+        return {};
+    } else if (req.op == "SUBSCRIBE" || req.op == "SUB") {
+        send_frame({{"type", "SUBSCRIBE"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
+        return {};
+    } else if (req.op == "READ_SELECTOR" || req.op == "READ_CID") {
+        json frame = {
+            {"type", req.op},
+            {"txId", generate_tx_id()},
+            {"stack", req.stack},
+            {"expiresAt", req.expiresAt}
+        };
+        if (req.op == "READ_SELECTOR") {
+            frame["selector"] = req.selector.to_json();
+        } else {
+            frame["cid"] = req.cid;
+            frame["resolutionStack"] = req.resolutionStack;
+        }
+        return _do_ws_read(frame);
+    }
+    throw VFSException("WSConnection sendRequest unsupported op: " + req.op, 501);
+}
+
 void VFSNode::WSForwardConnection::send_frame(const json& frame) {
-    // Note: This requires a persistent WS client which httplib doesn't easily expose 
-    // in a non-blocking background way yet without blocking the VFS loop.
-    // Implementation deferred to full IXWebSocket integration.
     std::cerr << "[WS] Forward READ not yet implemented for Native C++" << std::endl;
 }
 
 void VFSNode::WSReverseConnection::send_frame(const json& frame) {
-    if (ws) {
-        std::string s = frame.dump();
-        ws->send(s.c_str(), s.length());
-    }
+    if (ws) { std::string s = frame.dump(); ws->send(s); }
 }
 
 void VFSNode::resolve_transaction(const std::string& tx_id, const VFSResult& result) {
     std::shared_ptr<std::promise<VFSResult>> p;
     {
         std::lock_guard<std::mutex> lock(transaction_mutex_);
-        if (transactions_.count(tx_id)) {
-            p = transactions_[tx_id];
-            transactions_.erase(tx_id);
-        }
+        if (transactions_.count(tx_id)) { p = transactions_[tx_id]; transactions_.erase(tx_id); }
     }
     if (p) p->set_value(result);
 }
@@ -410,10 +344,7 @@ void VFSNode::reject_transaction(const std::string& tx_id, int status, const std
     std::shared_ptr<std::promise<VFSResult>> p;
     {
         std::lock_guard<std::mutex> lock(transaction_mutex_);
-        if (transactions_.count(tx_id)) {
-            p = transactions_[tx_id];
-            transactions_.erase(tx_id);
-        }
+        if (transactions_.count(tx_id)) { p = transactions_[tx_id]; transactions_.erase(tx_id); }
     }
     if (p) p->set_exception(std::make_exception_ptr(VFSException(error, status)));
 }

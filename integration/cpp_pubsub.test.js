@@ -78,8 +78,10 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
         assert.ok(
             catalogReceived.provider === 'live_standard_ops' || 
             catalogReceived.provider === 'test_standard_ops' || 
-            catalogReceived.provider === 'geo-ops-node',
-            `Expected dynamic ops peer ID, got: ${catalogReceived.provider}`
+            catalogReceived.provider === 'geo-ops-node' ||
+            catalogReceived.provider === 'live_standard_export' ||
+            catalogReceived.provider === 'test_standard_export',
+            `Expected dynamic ops/export peer ID, got: ${catalogReceived.provider}`
         );
         console.log('✔ Node.js received Catalog from C++');
 

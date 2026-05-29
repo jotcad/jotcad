@@ -51,7 +51,7 @@ test('VFS Symmetric Links (Pure Router)', async (t) => {
     // Link itself should have 'encoding: link'
     assert.strictEqual(metadata.encoding, 'link');
     assert.strictEqual(metadata.state, 'AVAILABLE');
-    assert.deepStrictEqual(metadata.selector.toJSON(), src.toJSON());
+    assert.deepStrictEqual(metadata.selector, src.toJSON());
 
     // Link data should be the target selector
     const data = await consumeJSON(stream);

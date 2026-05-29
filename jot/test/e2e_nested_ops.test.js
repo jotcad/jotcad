@@ -57,7 +57,7 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
         compiler.registerOperator('user/OpA', { path: 'user/OpA', schema: opASchema });
         const terminals = await compiler.evaluate((new JotParser()).parse('Box(10).OpA() -> $out'), {}, { outputs: { $out: 'jot:shape' } });
 
-        const response = await fetch(`http://localhost:${OPS_PORT}/read`, {
+        const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ selector: terminals[0].selector.toJSON() })

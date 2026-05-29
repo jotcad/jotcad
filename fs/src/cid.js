@@ -1,3 +1,6 @@
+import { toBase64, fromBase64 } from './encoding.js';
+export { toBase64, fromBase64 };
+
 /**
  * Selector: The universal address for mesh content.
  * MUST be defined at the top to avoid hoisting issues with encodeSelectorJCB.
@@ -51,29 +54,6 @@ export function normalizeSelector(s) {
   
   console.error(errorMsg, s);
   throw new Error(errorMsg);
-}
-
-/**
- * toBase64: Standard Base64 encoding for Uint8Array.
- * TODO: Move these encoding utilities to a dedicated 'encoding.js' file.
- */
-export function toBase64(bytes) {
-  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
-  let binary = '';
-  const len = (bytes.byteLength !== undefined) ? bytes.byteLength : bytes.length;
-  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
-/**
- * fromBase64: Standard Base64 decoding to Uint8Array.
- */
-export function fromBase64(base64) {
-  if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(base64, 'base64'));
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 /**
