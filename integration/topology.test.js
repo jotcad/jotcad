@@ -32,24 +32,24 @@ test('Mesh Topology Discovery', async (t) => {
     const peerA = {
       neighborId: mB.vfs.id,
       reachability: 'DIRECT',
-      subscribe: (s, e, st) => {
-        mB.addInterest(mA.vfs.id, s, e, st);
-        return Promise.resolve();
-      },
-      notify: (s, p, st) => {
-        return Promise.resolve(mB.notify(s, p, st));
-      },
+      send: async (req) => {
+        if (req.op === 'SUB') {
+          mB.addInterest(mA.vfs.id, req.selector, req.expiresAt, req.stack);
+        } else if (req.op === 'PUB') {
+          mB.notify(req.selector, req.payload, req.stack);
+        }
+      }
     };
     const peerB = {
       neighborId: mA.vfs.id,
       reachability: 'DIRECT',
-      subscribe: (s, e, st) => {
-        mA.addInterest(mB.vfs.id, s, e, st);
-        return Promise.resolve();
-      },
-      notify: (s, p, st) => {
-        return Promise.resolve(mA.notify(s, p, st));
-      },
+      send: async (req) => {
+        if (req.op === 'SUB') {
+          mA.addInterest(mB.vfs.id, req.selector, req.expiresAt, req.stack);
+        } else if (req.op === 'PUB') {
+          mA.notify(req.selector, req.payload, req.stack);
+        }
+      }
     };
     mA.peers.set(mB.vfs.id, peerA);
     mB.peers.set(mA.vfs.id, peerB);

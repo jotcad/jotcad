@@ -1,4 +1,4 @@
-import { Connection } from './mesh_link.js';
+import { Connection, VFSResult } from './mesh_link.js';
 import { Selector } from './cid.js';
 import { fromBase64, toBase64 } from './encoding.js';
 import { log } from './log.js';
@@ -60,10 +60,7 @@ export class WSConnectionBase extends Connection {
               }
           });
 
-          const headers = new Map();
-          headers.set('x-vfs-info', JSON.stringify(payload.metadata));
-          headers.set('x-vfs-encoding', payload.metadata.encoding || 'json');
-          handler.resolve({ body: stream, headers });
+          handler.resolve(new VFSResult(stream, payload.metadata));
         } else {
           const errMsg = payload?.error || `VFS Error status ${status}`;
           handler.reject(new Error(errMsg));
@@ -117,7 +114,7 @@ export class WSConnectionBase extends Connection {
                   controller.close();
               }
           });
-          handler.resolve(stream);
+          handler.resolve(new VFSResult(stream));
         } else {
           handler.resolve(null);
         }
@@ -167,83 +164,88 @@ export class WSConnectionBase extends Connection {
       }
   }
 
-  async readSelector(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
-    const txId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).substring(2);
+  /**
+   * Dispatch an encapsulated request to the peer.
+   * @param {VFSRequest} req
+   * @returns {Promise<VFSResult|void>}
+   */
+  async send(req) {
+    if (req.op === 'READ_SELECTOR') {
+      const txId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).substring(2);
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        if (this.pendingReads.has(txId)) {
-            this.pendingReads.delete(txId);
-            reject(new Error(`WebSocket VFS read Selector timeout for ${selector.path}`));
-        }
-      }, Math.max(0, expiresAt - Date.now()));
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (this.pendingReads.has(txId)) {
+              this.pendingReads.delete(txId);
+              reject(new Error(`WebSocket VFS read Selector timeout for ${req.selector.path}`));
+          }
+        }, Math.max(0, req.expiresAt - Date.now()));
 
-      this.pendingReads.set(txId, {
-        resolve: (val) => { clearTimeout(timeout); resolve(val); },
-        reject: (err) => { clearTimeout(timeout); reject(err); }
+        this.pendingReads.set(txId, {
+          resolve: (val) => { clearTimeout(timeout); resolve(val); },
+          reject: (err) => { clearTimeout(timeout); reject(err); }
+        });
+
+        this._send({ txId, type: 'READ_SELECTOR', selector: req.selector, stack: req.stack, expiresAt: req.expiresAt });
       });
+    }
 
-      this._send({ txId, type: 'READ_SELECTOR', selector, stack, expiresAt });
-    });
-  }
+    if (req.op === 'READ_CID') {
+      const txId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).substring(2);
 
-  async readCID(cid, context = {}) {
-    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
-    const txId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).substring(2);
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (this.pendingReads.has(txId)) {
+              this.pendingReads.delete(txId);
+              reject(new Error(`WebSocket VFS read CID timeout for ${req.cid}`));
+          }
+        }, Math.max(0, req.expiresAt - Date.now()));
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        if (this.pendingReads.has(txId)) {
-            this.pendingReads.delete(txId);
-            reject(new Error(`WebSocket VFS read CID timeout for ${cid}`));
-        }
-      }, Math.max(0, expiresAt - Date.now()));
+        this.pendingReads.set(txId, {
+          resolve: (val) => { clearTimeout(timeout); resolve(val); },
+          reject: (err) => { clearTimeout(timeout); reject(err); }
+        });
 
-      this.pendingReads.set(txId, {
-        resolve: (val) => { clearTimeout(timeout); resolve(val); },
-        reject: (err) => { clearTimeout(timeout); reject(err); }
+        this._send({ txId, type: 'READ_CID', cid: req.cid, resolutionStack: req.resolutionStack, stack: req.stack, expiresAt: req.expiresAt });
       });
+    }
 
-      this._send({ txId, type: 'READ_CID', cid, resolutionStack, stack, expiresAt });
-    });
-  }
+    if (req.op === 'SPY') {
+      const txId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).substring(2);
 
-  async spy(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
-    const txId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).substring(2);
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (this.pendingSpies.has(txId)) {
+              this.pendingSpies.delete(txId);
+              reject(new Error(`WebSocket spy timeout for ${req.selector.path}`));
+          }
+        }, Math.max(0, req.expiresAt - Date.now()));
 
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        if (this.pendingSpies.has(txId)) {
-            this.pendingSpies.delete(txId);
-            resolve(null);
-        }
-      }, Math.max(0, expiresAt - Date.now()));
+        this.pendingSpies.set(txId, {
+          resolve: (val) => { clearTimeout(timeout); resolve(val); },
+          reject: (err) => { clearTimeout(timeout); reject(err); }
+        });
 
-      this.pendingSpies.set(txId, {
-        resolve: (val) => { clearTimeout(timeout); resolve(val); }
+        this._send({ txId, type: 'SPY', selector: req.selector, stack: req.stack, expiresAt: req.expiresAt });
       });
+    }
 
-      this._send({ txId, type: 'SPY', selector, stack, expiresAt });
-    });
-  }
+    if (req.op === 'SUB') {
+      this._send({ type: 'SUBSCRIBE', selector: req.selector, expiresAt: req.expiresAt, stack: req.stack });
+    }
 
-  async subscribe(selector, expiresAt, stack) {
-    this._send({ type: 'SUBSCRIBE', selector, expiresAt, stack });
-  }
-
-  async notify(selector, payload, stack = []) {
-    this._pulseCount++;
-    this.lastPulse = Date.now();
-    const isBinary = payload instanceof Uint8Array;
-    this._send({
-      type: 'NOTIFY',
-      selector,
-      payload: isBinary ? toBase64(payload) : payload,
-      encoding: isBinary ? 'bytes' : 'json',
-      stack
-    });
+    if (req.op === 'PUB') {
+      this._pulseCount++;
+      this.lastPulse = Date.now();
+      const isBinary = req.payload instanceof Uint8Array;
+      this._send({
+        type: 'NOTIFY',
+        selector: req.selector,
+        payload: isBinary ? toBase64(req.payload) : req.payload,
+        encoding: isBinary ? 'bytes' : 'json',
+        stack: req.stack
+      });
+    }
   }
 
   stop() {

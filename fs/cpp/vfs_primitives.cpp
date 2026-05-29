@@ -41,6 +41,13 @@ template<> std::string VFSNode::read<std::string>(const Selector& sel) {
     return std::string(data.begin(), data.end());
 }
 
+template<> VFSResult VFSNode::read<VFSResult>(const Selector& sel) {
+    VFSRequest req;
+    req.selector = sel;
+    req.op = "READ_SELECTOR";
+    return read_selector_impl(req);
+}
+
 // --- read(VFSRequest) ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req) {
@@ -74,6 +81,10 @@ template<> std::string VFSNode::read<std::string>(const VFSRequest& req) {
     if (j.is_string()) return j.get<std::string>();
     auto data = read<std::vector<uint8_t>>(req);
     return std::string(data.begin(), data.end());
+}
+
+template<> VFSResult VFSNode::read<VFSResult>(const VFSRequest& req) {
+    return req.is_cid() ? read_cid_impl(req) : read_selector_impl(req);
 }
 
 // --- read(CID) ---
@@ -111,6 +122,11 @@ template<> std::string VFSNode::read<std::string>(const CID& cid) {
     if (j.is_string()) return j.get<std::string>();
     auto data = read<std::vector<uint8_t>>(cid);
     return std::string(data.begin(), data.end());
+}
+
+template<> VFSResult VFSNode::read<VFSResult>(const CID& cid) {
+    VFSRequest req; req.cid = cid.value; req.op = "READ_CID";
+    return read_cid_impl(req);
 }
 
 // --- write implementations ---

@@ -1,4 +1,4 @@
-import { Connection } from './connection.js';
+import { Connection, VFSResult } from './connection.js';
 import { Selector, decodeInfo, decodeSafe, normalizeSelector } from '../cid.js';
 import { log } from '../log.js';
 
@@ -117,96 +117,109 @@ export class ReverseConnection extends Connection {
     return false;
   }
 
-  async readSelector(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
-    const requestId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2);
-    const replyPromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.replies.delete(requestId);
-        reject(new Error(`Reverse read Selector timeout for ${selector.path}`));
-      }, Math.max(0, expiresAt - Date.now()));
+  /**
+   * Dispatch an encapsulated request to the peer.
+   * @param {VFSRequest} req
+   * @returns {Promise<VFSResult|void>}
+   */
+  async send(req) {
+    if (req.op === 'READ_SELECTOR') {
+      const requestId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2);
+      const replyPromise = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.replies.delete(requestId);
+          reject(new Error(`Reverse read Selector timeout for ${req.selector.path}`));
+        }, Math.max(0, req.expiresAt - Date.now()));
 
-      this.replies.set(requestId, (stream, headers = new Map(), err = null) => {
-        clearTimeout(timeout);
-        if (err) reject(err);
-        else resolve({ body: stream, headers });
+        this.replies.set(requestId, (stream, headers = new Map(), err = null) => {
+          clearTimeout(timeout);
+          if (err) reject(err);
+          else {
+            const info = decodeInfo(headers.get('x-vfs-info')) || { state: 'AVAILABLE' };
+            resolve(new VFSResult(stream, info));
+          }
+        });
       });
-    });
 
-    this._dispatch({ 
-        type: 'COMMAND', 
-        op: 'READ_SELECTOR', 
-        id: requestId, 
-        selector, 
-        stack, 
-        expiresAt 
-    });
-    return replyPromise;
-  }
-
-  async readCID(cid, context = {}) {
-    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
-    const requestId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2);
-    const replyPromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.replies.delete(requestId);
-        reject(new Error(`Reverse read CID timeout for ${cid}`));
-      }, Math.max(0, expiresAt - Date.now()));
-
-      this.replies.set(requestId, (stream, headers = new Map(), err = null) => {
-        clearTimeout(timeout);
-        if (err) reject(err);
-        else resolve({ body: stream, headers });
+      this._dispatch({ 
+          type: 'COMMAND', 
+          op: 'READ_SELECTOR', 
+          id: requestId, 
+          selector: req.selector, 
+          stack: req.stack, 
+          expiresAt: req.expiresAt 
       });
-    });
+      return replyPromise;
+    }
 
-    this._dispatch({ 
-        type: 'COMMAND', 
-        op: 'READ_CID', 
-        id: requestId, 
-        payload: { cid, resolutionStack }, 
-        stack, 
-        expiresAt 
-    });
-    return replyPromise;
-  }
+    if (req.op === 'READ_CID') {
+      const requestId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2);
+      const replyPromise = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.replies.delete(requestId);
+          reject(new Error(`Reverse read CID timeout for ${req.cid}`));
+        }, Math.max(0, req.expiresAt - Date.now()));
 
-  async spy(selector, context = {}) {
-    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
-    const requestId = globalThis.crypto.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2);
-    const replyPromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.replies.delete(requestId);
-        reject(new Error(`Reverse spy timeout for ${selector.path}`));
-      }, expiresAt - Date.now());
-
-      this.replies.set(requestId, (stream, headers = new Map(), err = null) => {
-        clearTimeout(timeout);
-        if (err) reject(err);
-        else resolve({ body: stream, headers });
+        this.replies.set(requestId, (stream, headers = new Map(), err = null) => {
+          clearTimeout(timeout);
+          if (err) reject(err);
+          else {
+            const info = decodeInfo(headers.get('x-vfs-info')) || { state: 'AVAILABLE' };
+            resolve(new VFSResult(stream, info));
+          }
+        });
       });
-    });
 
-    this._dispatch({ 
-        type: 'COMMAND', 
-        op: 'SPY', 
-        id: requestId, 
-        selector, 
-        stack, 
-        resolutionStack,
-        expiresAt 
-    });
-    return replyPromise;
-  }
+      this._dispatch({ 
+          type: 'COMMAND', 
+          op: 'READ_CID', 
+          id: requestId, 
+          payload: { cid: req.cid, resolutionStack: req.resolutionStack || [] }, 
+          stack: req.stack, 
+          expiresAt: req.expiresAt 
+      });
+      return replyPromise;
+    }
 
-  async subscribe(selector, expiresAt, stack) {
-    this._dispatch({ type: 'COMMAND', op: 'SUB', selector, expiresAt, stack });
-  }
+    if (req.op === 'SPY') {
+      const requestId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2);
+      const replyPromise = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.replies.delete(requestId);
+          reject(new Error(`Reverse spy timeout for ${req.selector.path}`));
+        }, Math.max(0, req.expiresAt - Date.now()));
 
-  async notify(selector, payload, stack = []) {
-    this._pulseCount++;
-    this.lastPulse = Date.now();
-    this._dispatch({ type: 'PUB', selector, payload, stack });
+        this.replies.set(requestId, (stream, headers = new Map(), err = null) => {
+          clearTimeout(timeout);
+          if (err) reject(err);
+          else {
+            const info = decodeInfo(headers.get('x-vfs-info')) || { state: 'AVAILABLE' };
+            resolve(new VFSResult(stream, info));
+          }
+        });
+      });
+
+      this._dispatch({ 
+          type: 'COMMAND', 
+          op: 'SPY', 
+          id: requestId, 
+          selector: req.selector, 
+          stack: req.stack, 
+          resolutionStack: req.resolutionStack || [],
+          expiresAt: req.expiresAt 
+      });
+      return replyPromise;
+    }
+
+    if (req.op === 'SUB') {
+      this._dispatch({ type: 'COMMAND', op: 'SUB', selector: req.selector, expiresAt: req.expiresAt, stack: req.stack });
+    }
+
+    if (req.op === 'PUB') {
+      this._pulseCount++;
+      this.lastPulse = Date.now();
+      this._dispatch({ type: 'PUB', selector: req.selector, payload: req.payload, stack: req.stack });
+    }
   }
 
   async startPolling(baseUrl, fetch) {

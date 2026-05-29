@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { VFS } from '../fs/src/vfs.js';
-import { MeshLink } from '../fs/src/mesh_link.js';
+import { MeshLink, ReadSelectorRequest } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
 import { launchSystem } from '../orchestrator.js';
 
@@ -122,7 +122,7 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
             parameters: { width: 10, height: 10, depth: 10 },
             output: '$out'
         });
-        const readResult = await wsConn.readSelector(boxSelector);
+        const readResult = await wsConn.send(new ReadSelectorRequest(boxSelector));
         assert.ok(readResult && readResult.body, 'Forward VFS read over WS should return a stream.');
         console.log('✔ Read request successfully completed over WebSocket.');
 

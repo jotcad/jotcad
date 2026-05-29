@@ -25,6 +25,10 @@ static std::string generate_tx_id() {
 
 void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     if (!conn) return;
+    auto ws_conn = std::dynamic_pointer_cast<WSConnection>(conn);
+    if (ws_conn) {
+        ws_conn->node = this;
+    }
     std::string id = conn->neighbor_id;
     {
         std::lock_guard<std::mutex> lock(peer_mutex_);
@@ -74,6 +78,11 @@ void VFSNode::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Con
 void VFSNode::add_peer(const std::string& url) {
     {
         std::lock_guard<std::mutex> lock(peer_mutex_);
+        for (auto const& [p_id, conn_ptr] : peers_) {
+            if (conn_ptr->get_url() == url) {
+                return;
+            }
+        }
         if (connecting_.count(url)) return;
         connecting_.insert(url);
     }
@@ -323,8 +332,213 @@ VFSResult VFSNode::WSConnection::sendRequest(const VFSRequest& req) {
     throw VFSException("WSConnection sendRequest unsupported op: " + req.op, 501);
 }
 
+VFSNode::WSForwardConnection::WSForwardConnection(std::string id, std::string u) {
+    neighbor_id = std::move(id);
+    url = std::move(u);
+}
+
+VFSNode::WSForwardConnection::~WSForwardConnection() {
+    is_closed = true;
+    if (ws_client) {
+        ws_client->close();
+    }
+    if (read_thread.joinable()) {
+        read_thread.join();
+    }
+}
+
+void VFSNode::WSForwardConnection::start_client() {
+    if (ws_client && ws_client->is_open()) return;
+    
+    is_closed = false;
+    std::string ws_url = url;
+    if (ws_url.rfind("http://", 0) == 0) {
+        ws_url.replace(0, 7, "ws://");
+    } else if (ws_url.rfind("https://", 0) == 0) {
+        ws_url.replace(0, 8, "wss://");
+    }
+    
+    if (ws_url.find("/vfs-ws") == std::string::npos) {
+        if (ws_url.back() == '/') {
+            ws_url += "vfs-ws";
+        } else {
+            ws_url += "/vfs-ws";
+        }
+    }
+
+    std::cout << "[WS Client] Connecting to " << ws_url << "..." << std::endl;
+    ws_client = std::make_shared<httplib::ws::WebSocketClient>(ws_url);
+    ws_client->set_connection_timeout(2);
+    ws_client->set_read_timeout(10);
+    
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    ws_client->enable_server_certificate_verification(false);
+#endif
+
+    if (!ws_client->connect()) {
+        std::cerr << "[WS Client] Connection failed to " << ws_url << std::endl;
+        ws_client.reset();
+        return;
+    }
+    
+    std::cout << "[WS Client] Handshake successful! Sending IDENTIFY frame." << std::endl;
+    json identify = {{"type", "IDENTIFY"}, {"peerId", node ? node->config_.id : "unknown"}};
+    ws_client->send(identify.dump());
+    
+    if (read_thread.joinable()) {
+        read_thread.join();
+    }
+    read_thread = std::thread(&VFSNode::WSForwardConnection::read_loop, this);
+}
+
 void VFSNode::WSForwardConnection::send_frame(const json& frame) {
-    std::cerr << "[WS] Forward READ not yet implemented for Native C++" << std::endl;
+    start_client();
+    if (ws_client && ws_client->is_open()) {
+        ws_client->send(frame.dump());
+    } else {
+        std::cerr << "[WS Client] Cannot send frame, client not connected." << std::endl;
+    }
+}
+
+void VFSNode::WSForwardConnection::read_loop() {
+    std::string msg;
+    while (!is_closed && ws_client && ws_client->is_open()) {
+        auto res = ws_client->read(msg);
+        if (res == httplib::ws::ReadResult::Fail) {
+            std::cerr << "[WS Client] Read failed or connection closed." << std::endl;
+            break;
+        }
+        
+        try {
+            json frame = json::parse(msg);
+            std::string type = frame.value("type", "");
+            
+            if (type == "ACK") {
+                std::cout << "[WS Client] Peer ACK received: " << frame.value("peerId", "") << std::endl;
+                continue;
+            }
+            
+            if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
+                std::string tx_id = frame.value("txId", "");
+                int status = frame.value("status", 200);
+                if (status == 200) {
+                    VFSResult result;
+                    if (frame.contains("payload")) {
+                        json payload = frame["payload"];
+                        if (payload.is_string()) {
+                            result.data = fs::base64_decode(payload.get<std::string>());
+                        } else if (payload.contains("data") && payload["data"].is_string()) {
+                            result.data = fs::base64_decode(payload["data"].get<std::string>());
+                        }
+                        if (payload.contains("metadata")) {
+                            result.metadata = payload["metadata"];
+                        } else if (frame.contains("metadata")) {
+                            result.metadata = frame["metadata"];
+                        }
+                    }
+                    if (node) {
+                        node->resolve_transaction(tx_id, result);
+                    }
+                } else {
+                    std::string error = frame.contains("payload") && frame["payload"].contains("error") 
+                        ? frame["payload"]["error"].get<std::string>() 
+                        : "Error";
+                    if (node) {
+                        node->reject_transaction(tx_id, status, error);
+                    }
+                }
+            } else if (type == "READ_SELECTOR" || type == "READ_CID") {
+                std::string tx_id = frame.value("txId", "");
+                VFSRequest req;
+                req.op = type;
+                req.expiresAt = frame.value("expiresAt", 0LL);
+                if (frame.contains("stack")) {
+                    for (auto const& s : frame["stack"]) req.stack.push_back(s.get<std::string>());
+                }
+                
+                if (type == "READ_SELECTOR") {
+                    req.selector = Selector::from_json(frame["selector"]);
+                } else {
+                    req.cid = frame.value("cid", "");
+                    if (frame.contains("resolutionStack")) {
+                        for (auto const& s : frame["resolutionStack"]) req.resolutionStack.push_back(s.get<std::string>());
+                    }
+                }
+                
+                std::thread([this, tx_id, req]() {
+                    try {
+                        if (node) {
+                            VFSResult result = node->read<VFSResult>(req);
+                            json res_frame = {
+                                {"type", "READ_RESPONSE"},
+                                {"txId", tx_id},
+                                {"status", 200},
+                                {"payload", {
+                                    {"data", fs::base64_encode(result.data)},
+                                    {"metadata", result.metadata}
+                                }}
+                            };
+                            send_frame(res_frame);
+                        }
+                    } catch (const std::exception& e) {
+                        json err_frame = {
+                            {"type", "READ_RESPONSE"},
+                            {"txId", tx_id},
+                            {"status", 500},
+                            {"payload", {{"error", e.what()}}}
+                        };
+                        send_frame(err_frame);
+                    }
+                }).detach();
+            } else if (type == "SPY") {
+                std::string tx_id = frame.value("txId", "");
+                Selector sel = Selector::from_json(frame["selector"]);
+                std::thread([this, tx_id, sel]() {
+                    try {
+                        if (node) {
+                            VFSResult result = node->get_local(node->get_cid(sel));
+                            json res_frame = {
+                                {"type", "SPY_RESPONSE"},
+                                {"txId", tx_id},
+                                {"status", 200},
+                                {"payload", {
+                                    {"data", fs::base64_encode(result.data)}
+                                }}
+                            };
+                            send_frame(res_frame);
+                        }
+                    } catch (...) {
+                        json err_frame = {
+                            {"type", "SPY_RESPONSE"},
+                            {"txId", tx_id},
+                            {"status", 404}
+                        };
+                        send_frame(err_frame);
+                    }
+                }).detach();
+            } else if (type == "NOTIFY" || type == "PUB") {
+                if (node) {
+                    Selector sel = Selector::from_json(frame["selector"]);
+                    json payload = frame.value("payload", json::object());
+                    std::vector<std::string> stack;
+                    if (frame.contains("stack")) {
+                        for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
+                    }
+                    node->notify(sel.to_json(), payload, stack);
+                }
+            } else if (type == "SUBSCRIBE" || type == "SUB") {
+                if (node) {
+                    json sel_json = frame["selector"];
+                    long long exp = frame.value("expiresAt", 0LL);
+                    std::vector<std::string> stack;
+                    if (frame.contains("stack")) {
+                        for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
+                    }
+                    node->subscribe(sel_json, exp, stack);
+                }
+            }
+        } catch (...) {}
+    }
 }
 
 void VFSNode::WSReverseConnection::send_frame(const json& frame) {
