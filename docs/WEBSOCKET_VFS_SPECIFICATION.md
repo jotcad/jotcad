@@ -72,25 +72,42 @@ Since WebSocket channels are asynchronous, request-response exchanges must be co
 
 ### A. Core Message Envelope (JSON)
 
-Every frame sent over the WebSocket transport adheres to the following layout:
+Every frame sent over the WebSocket transport adheres to the layout below. To maximize efficiency and avoid Base64 overhead for CAD artifacts, binary data is transmitted using **Sequential Framing**.
 
 ```json
 {
   "txId": "msg_f7c1a892b",    // Unique transaction correlation ID (required for READ/READ_RESPONSE)
-  "type": "IDENTIFY" | "ACK" | "READ" | "READ_RESPONSE" | "SUBSCRIBE" | "NOTIFY",
+  "type": "IDENTIFY" | "ACK" | "READ" | "READ_RESPONSE" | "SUBSCRIBE" | "NOTIFY" | "SPY" | "SPY_RESPONSE",
   "selector": {                // Safe-JCB Selector representation
     "path": "sys/topo",
     "parameters": {}
   },
   "cid": "...",                // Content Identifier (populated for direct-hash reads)
   "payload": {},               // Payload content (JSON, schema metadata, or serialized maps)
+  "hasBinary": false,          // IF TRUE: The very next WebSocket frame MUST be a BINARY frame containing the data.
   "stack": [],                 // Cycle prevention array
   "expiresAt": 0,              // TTL or subscription expiry timestamp (epoch ms)
   "status": 200                // Execution status code (for READ_RESPONSE)
 }
 ```
 
-### B. Flow Primitives
+### B. Sequential Binary Framing
+
+To avoid the 33% size inflation of Base64, JotCAD uses an atomic sequential framing protocol for binary payloads (e.g., STLs, PNGs, Binary Mesh data):
+
+1. **The Header (TEXT Frame)**: A standard JSON envelope is sent as a text frame. It MUST contain `"hasBinary": true` and MUST NOT contain a `payload.data` field.
+2. **The Payload (BINARY Frame)**: The raw bytes are sent as the immediately following WebSocket binary frame.
+
+**Sender Constraints**:
+- Senders MUST ensure that the Text Header and Binary Payload are transmitted atomically. In multi-threaded environments (like Native C++), the socket MUST be locked (Mutex) during this sequence to prevent interleaving frames from other threads.
+- In single-threaded asynchronous environments (like JavaScript), the two `send()` calls must be executed synchronously back-to-back.
+
+**Receiver Constraints**:
+- If a receiver parses a JSON text frame with `"hasBinary": true`, it MUST enter a "Waiting for Binary" state.
+- The receiver MUST treat the *very next* frame received on that socket as the binary payload for the previous header, regardless of any other pending transactions.
+- Once the binary frame is received, the message is considered complete and is dispatched for processing.
+
+### C. Flow Primitives
 
 #### 1. Asynchronous Read Request (`READ`)
 Initiated by either peer. Requires `txId` for tracking.

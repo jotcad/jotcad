@@ -130,6 +130,9 @@ public:
     json get_catalog();
     json get_neighbors();
 
+    void handle_ws_frame(const json& frame);
+    void handle_binary_frame(const json& header, const std::vector<uint8_t>& data);
+
     void resolve_transaction(const std::string& tx_id, const VFSResult& result);
     void reject_transaction(const std::string& tx_id, int status, const std::string& error);
 
@@ -156,7 +159,9 @@ private:
 
     struct WSConnection : public Connection {
         VFSNode* node = nullptr;
+        std::mutex ws_mutex;
         virtual void send_frame(const json& frame) = 0;
+        virtual void send_binary_frame(const json& header, const std::vector<uint8_t>& data) = 0;
         VFSResult sendRequest(const VFSRequest& req) override;
         VFSResult _do_ws_read(const json& frame);
         bool is_reverse() const override { return false; }
@@ -171,6 +176,7 @@ private:
         WSForwardConnection(std::string id, std::string u);
         ~WSForwardConnection() override;
         void send_frame(const json& frame) override;
+        void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
         std::string get_url() const override { return url; }
         void start_client();
         void read_loop();
@@ -180,6 +186,7 @@ private:
         httplib::ws::WebSocket* ws;
         WSReverseConnection(std::string id, httplib::ws::WebSocket* socket) : ws(socket) { neighbor_id = std::move(id); }
         void send_frame(const json& frame) override;
+        void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
         bool is_reverse() const override { return true; }
     };
 

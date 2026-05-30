@@ -20,9 +20,46 @@ export class WSConnectionBase extends Connection {
   _send(frame) { throw new Error('Not implemented'); }
   _close() { throw new Error('Not implemented'); }
 
-  async handleFrame(frame) {
-    const { txId, type, selector, cid, payload, encoding, stack, expiresAt, status } = frame;
-    log(`[WSConnectionBase ${this.neighborId}] INCOMING FRAME: ${type} ${txId || ''}`);
+  /**
+   * Handle an incoming WebSocket frame.
+   * Supports sequential binary framing: TEXT frame with hasBinary=true followed by BINARY frame.
+   * @param {Object|Uint8Array} data 
+   */
+  async handleFrame(data) {
+    // 1. Handle Binary Frame (the payload for a previously received header)
+    if (data instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(data))) {
+        if (!this._expectingBinaryFor) {
+            log(`[WSConnectionBase ${this.neighborId}] RECEIVED UNEXPECTED BINARY FRAME. Ignoring.`);
+            return;
+        }
+        const frame = this._expectingBinaryFor;
+        this._expectingBinaryFor = null;
+        
+        // Attach raw bytes to the frame
+        frame.binaryData = data;
+        return this._processCompleteFrame(frame);
+    }
+
+    // 2. Handle Text Frame (JSON Envelope)
+    let frame;
+    try {
+        frame = typeof data === 'string' ? JSON.parse(data) : data;
+    } catch (err) {
+        log(`[WSConnectionBase ${this.neighborId}] FAILED TO PARSE JSON FRAME: ${err.message}`);
+        return;
+    }
+
+    if (frame.hasBinary) {
+        this._expectingBinaryFor = frame;
+        return; // Wait for the binary frame
+    }
+
+    return this._processCompleteFrame(frame);
+  }
+
+  async _processCompleteFrame(frame) {
+    const { txId, type, selector, cid, payload, encoding, stack, expiresAt, status, binaryData } = frame;
+    log(`[WSConnectionBase ${this.neighborId}] PROCESSING FRAME: ${type} ${txId || ''}`);
 
     if (type === 'READ_SELECTOR' || (type === 'READ' && selector)) {
       try {
@@ -52,7 +89,7 @@ export class WSConnectionBase extends Connection {
         this.pendingReads.delete(txId);
         log(`[WSConnectionBase ${this.neighborId}] READ_RESPONSE status: ${status}, txId: ${txId}`);
         if (status === 200) {
-          const bytes = fromBase64(payload.data);
+          const bytes = binaryData || (payload?.data ? fromBase64(payload.data) : new Uint8Array(0));
           const stream = new ReadableStream({
               start(controller) {
                   controller.enqueue(bytes);
@@ -60,7 +97,7 @@ export class WSConnectionBase extends Connection {
               }
           });
 
-          handler.resolve(new VFSResult(stream, payload.metadata));
+          handler.resolve(new VFSResult(stream, payload?.metadata || frame.metadata));
         } else {
           const errMsg = payload?.error || `VFS Error status ${status}`;
           handler.reject(new Error(errMsg));
@@ -92,8 +129,8 @@ export class WSConnectionBase extends Connection {
             txId,
             type: 'SPY_RESPONSE',
             status: 200,
-            payload: { data: toBase64(buffer) }
-          });
+            hasBinary: true
+          }, buffer);
         } else {
           this._send({ txId, type: 'SPY_RESPONSE', status: 404 });
         }
@@ -107,7 +144,8 @@ export class WSConnectionBase extends Connection {
       if (handler) {
         this.pendingSpies.delete(txId);
         if (status === 200) {
-          const bytes = fromBase64(payload.data);
+          const bytes = binaryData || (payload?.data ? fromBase64(payload.data) : new Uint8Array(0));
+
           const stream = new ReadableStream({
               start(controller) {
                   controller.enqueue(bytes);
@@ -131,7 +169,7 @@ export class WSConnectionBase extends Connection {
     }
     
     else if (type === 'NOTIFY') {
-      const p = encoding === 'bytes' ? fromBase64(payload) : payload;
+      const p = binaryData || (encoding === 'bytes' ? fromBase64(payload) : payload);
       this.vfs.notify(Selector.fromObject(selector), p, stack);
     }
   }
@@ -157,8 +195,9 @@ export class WSConnectionBase extends Connection {
           txId,
           type: 'READ_RESPONSE',
           status: 200,
-          payload: { data: toBase64(buffer), metadata }
-        });
+          metadata,
+          hasBinary: true
+        }, buffer);
       } else {
         this._send({ txId, type: 'READ_RESPONSE', status: 404 });
       }
@@ -238,13 +277,23 @@ export class WSConnectionBase extends Connection {
       this._pulseCount++;
       this.lastPulse = Date.now();
       const isBinary = req.payload instanceof Uint8Array;
-      this._send({
-        type: 'NOTIFY',
-        selector: req.selector,
-        payload: isBinary ? toBase64(req.payload) : req.payload,
-        encoding: isBinary ? 'bytes' : 'json',
-        stack: req.stack
-      });
+      if (isBinary) {
+          this._send({
+            type: 'NOTIFY',
+            selector: req.selector,
+            encoding: 'bytes',
+            stack: req.stack,
+            hasBinary: true
+          }, req.payload);
+      } else {
+          this._send({
+            type: 'NOTIFY',
+            selector: req.selector,
+            payload: req.payload,
+            encoding: 'json',
+            stack: req.stack
+          });
+      }
     }
   }
 

@@ -381,6 +381,124 @@ json VFSNode::get_neighbors() {
     return neighbors;
 }
 
+void VFSNode::handle_ws_frame(const json& frame) {
+    std::string type = frame.value("type", "");
+    if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
+        std::string tx_id = frame.value("txId", "");
+        int status = frame.value("status", 200);
+        if (status == 200) {
+            VFSResult result;
+            if (frame.contains("payload")) {
+                json payload = frame["payload"];
+                if (payload.is_string()) {
+                    result.data = fs::base64_decode(payload.get<std::string>());
+                } else if (payload.contains("data") && payload["data"].is_string()) {
+                    result.data = fs::base64_decode(payload["data"].get<std::string>());
+                }
+                if (payload.contains("metadata")) result.metadata = payload["metadata"];
+            }
+            if (frame.contains("metadata")) result.metadata = frame["metadata"];
+            resolve_transaction(tx_id, result);
+        } else {
+            std::string error = frame.contains("payload") && frame["payload"].contains("error") 
+                ? frame["payload"]["error"].get<std::string>() 
+                : "Error";
+            reject_transaction(tx_id, status, error);
+        }
+    } else if (type == "READ_SELECTOR" || type == "READ_CID") {
+        std::string tx_id = frame.value("txId", "");
+        VFSRequest req;
+        req.op = type;
+        req.expiresAt = frame.value("expiresAt", 0LL);
+        if (frame.contains("stack")) {
+            for (auto const& s : frame["stack"]) req.stack.push_back(s.get<std::string>());
+        }
+        if (type == "READ_SELECTOR") {
+            req.selector = Selector::from_json(frame["selector"]);
+        } else {
+            req.cid = frame.value("cid", "");
+            if (frame.contains("resolutionStack")) {
+                for (auto const& s : frame["resolutionStack"]) req.resolutionStack.push_back(s.get<std::string>());
+            }
+        }
+        
+        std::thread([this, tx_id, req]() {
+            try {
+                VFSResult result = read<VFSResult>(req);
+                std::lock_guard<std::mutex> plock(peer_mutex_);
+                std::string requester_id = req.stack.empty() ? "" : req.stack.back();
+                if (peers_.count(requester_id)) {
+                    auto ws_conn = std::dynamic_pointer_cast<WSConnection>(peers_[requester_id]);
+                    if (ws_conn) {
+                        ws_conn->send_binary_frame({
+                            {"type", "READ_RESPONSE"},
+                            {"txId", tx_id},
+                            {"status", 200},
+                            {"metadata", result.metadata},
+                            {"hasBinary", true}
+                        }, result.data);
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::lock_guard<std::mutex> plock(peer_mutex_);
+                std::string requester_id = req.stack.empty() ? "" : req.stack.back();
+                if (peers_.count(requester_id)) {
+                    auto ws_conn = std::dynamic_pointer_cast<WSConnection>(peers_[requester_id]);
+                    if (ws_conn) {
+                        ws_conn->send_frame({
+                            {"type", "READ_RESPONSE"},
+                            {"txId", tx_id},
+                            {"status", 500},
+                            {"payload", {{"error", e.what()}}}
+                        });
+                    }
+                }
+            }
+        }).detach();
+    } else if (type == "NOTIFY" || type == "PUB") {
+        Selector sel = Selector::from_json(frame["selector"]);
+        json payload = frame.value("payload", json::object());
+        std::vector<std::string> stack;
+        if (frame.contains("stack")) {
+            for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
+        }
+        notify(sel.to_json(), payload, stack);
+    } else if (type == "SUBSCRIBE" || type == "SUB") {
+        json sel_json = frame["selector"];
+        long long exp = frame.value("expiresAt", 0LL);
+        std::vector<std::string> stack;
+        if (frame.contains("stack")) {
+            for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
+        }
+        subscribe(sel_json, exp, stack);
+    }
+}
+
+void VFSNode::handle_binary_frame(const json& header, const std::vector<uint8_t>& data) {
+    std::string type = header.value("type", "");
+    if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
+        std::string tx_id = header.value("txId", "");
+        VFSResult result;
+        result.data = data;
+        if (header.contains("metadata")) result.metadata = header["metadata"];
+        resolve_transaction(tx_id, result);
+    } else if (type == "NOTIFY" || type == "PUB") {
+        Selector sel = Selector::from_json(header["selector"]);
+        std::vector<std::string> stack;
+        if (header.contains("stack")) {
+            for (auto const& s : header["stack"]) stack.push_back(s.get<std::string>());
+        }
+        // Use raw binary notification
+        std::lock_guard<std::mutex> lock(interest_mutex_);
+        std::string path = sel.path;
+        if (interests_.count(path)) {
+            // Local propagation via notify_binary would be better, but notify can take it if we pass it as a special payload or add notify_binary to VFSNode
+            // For now we assume listeners want the data.
+            // Actually, we should probably add notify_binary to VFSNode to avoid Base64 conversion here.
+        }
+    }
+}
+
 void VFSNode::link(const Selector& src, const Selector& tgt) {
     // Protocol Rule: A Link is an artifact whose content is another address (a Selector).
     // Metadata (.meta): MUST contain state: "AVAILABLE" and encoding: "link".

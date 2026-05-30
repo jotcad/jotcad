@@ -308,8 +308,12 @@ VFSResult VFSNode::WSConnection::_do_ws_read(const json& frame) {
 
 VFSResult VFSNode::WSConnection::sendRequest(const VFSRequest& req) {
     if (req.op == "NOTIFY" || req.op == "PUB") {
-        json payload = req.data.empty() ? json::object() : json::parse(req.data);
-        send_frame({{"type", "NOTIFY"}, {"selector", req.selector.to_json()}, {"payload", payload}, {"stack", req.stack}});
+        if (!req.binary_data.empty()) {
+            send_binary_frame({{"type", "NOTIFY"}, {"selector", req.selector.to_json()}, {"stack", req.stack}, {"hasBinary", true}}, req.binary_data);
+        } else {
+            json payload = req.data.empty() ? json::object() : json::parse(req.data);
+            send_frame({{"type", "NOTIFY"}, {"selector", req.selector.to_json()}, {"payload", payload}, {"stack", req.stack}});
+        }
         return {};
     } else if (req.op == "SUBSCRIBE" || req.op == "SUB") {
         send_frame({{"type", "SUBSCRIBE"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
@@ -393,6 +397,7 @@ void VFSNode::WSForwardConnection::start_client() {
 
 void VFSNode::WSForwardConnection::send_frame(const json& frame) {
     start_client();
+    std::lock_guard<std::mutex> lock(ws_mutex);
     if (ws_client && ws_client->is_open()) {
         ws_client->send(frame.dump());
     } else {
@@ -400,149 +405,63 @@ void VFSNode::WSForwardConnection::send_frame(const json& frame) {
     }
 }
 
+void VFSNode::WSForwardConnection::send_binary_frame(const json& header, const std::vector<uint8_t>& data) {
+    start_client();
+    std::lock_guard<std::mutex> lock(ws_mutex);
+    if (ws_client && ws_client->is_open()) {
+        ws_client->send(header.dump());
+        ws_client->send((const char*)data.data(), data.size(), httplib::ws::OpCode::Binary);
+    } else {
+        std::cerr << "[WS Client] Cannot send binary frame, client not connected." << std::endl;
+    }
+}
+
 void VFSNode::WSForwardConnection::read_loop() {
     std::string msg;
+    json expecting_binary_header;
     while (!is_closed && ws_client && ws_client->is_open()) {
         auto res = ws_client->read(msg);
         if (res == httplib::ws::ReadResult::Fail) {
             std::cerr << "[WS Client] Read failed or connection closed." << std::endl;
             break;
         }
-        
-        try {
-            json frame = json::parse(msg);
-            std::string type = frame.value("type", "");
-            
-            if (type == "ACK") {
-                std::cout << "[WS Client] Peer ACK received: " << frame.value("peerId", "") << std::endl;
+
+        if (res == httplib::ws::ReadResult::Binary) {
+            if (expecting_binary_header.empty()) {
+                std::cerr << "[WS Client] Unexpected binary frame, ignoring." << std::endl;
                 continue;
             }
-            
-            if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
-                std::string tx_id = frame.value("txId", "");
-                int status = frame.value("status", 200);
-                if (status == 200) {
-                    VFSResult result;
-                    if (frame.contains("payload")) {
-                        json payload = frame["payload"];
-                        if (payload.is_string()) {
-                            result.data = fs::base64_decode(payload.get<std::string>());
-                        } else if (payload.contains("data") && payload["data"].is_string()) {
-                            result.data = fs::base64_decode(payload["data"].get<std::string>());
-                        }
-                        if (payload.contains("metadata")) {
-                            result.metadata = payload["metadata"];
-                        } else if (frame.contains("metadata")) {
-                            result.metadata = frame["metadata"];
-                        }
-                    }
-                    if (node) {
-                        node->resolve_transaction(tx_id, result);
-                    }
-                } else {
-                    std::string error = frame.contains("payload") && frame["payload"].contains("error") 
-                        ? frame["payload"]["error"].get<std::string>() 
-                        : "Error";
-                    if (node) {
-                        node->reject_transaction(tx_id, status, error);
-                    }
-                }
-            } else if (type == "READ_SELECTOR" || type == "READ_CID") {
-                std::string tx_id = frame.value("txId", "");
-                VFSRequest req;
-                req.op = type;
-                req.expiresAt = frame.value("expiresAt", 0LL);
-                if (frame.contains("stack")) {
-                    for (auto const& s : frame["stack"]) req.stack.push_back(s.get<std::string>());
-                }
-                
-                if (type == "READ_SELECTOR") {
-                    req.selector = Selector::from_json(frame["selector"]);
-                } else {
-                    req.cid = frame.value("cid", "");
-                    if (frame.contains("resolutionStack")) {
-                        for (auto const& s : frame["resolutionStack"]) req.resolutionStack.push_back(s.get<std::string>());
-                    }
-                }
-                
-                std::thread([this, tx_id, req]() {
-                    try {
-                        if (node) {
-                            VFSResult result = node->read<VFSResult>(req);
-                            json res_frame = {
-                                {"type", "READ_RESPONSE"},
-                                {"txId", tx_id},
-                                {"status", 200},
-                                {"payload", {
-                                    {"data", fs::base64_encode(result.data)},
-                                    {"metadata", result.metadata}
-                                }}
-                            };
-                            send_frame(res_frame);
-                        }
-                    } catch (const std::exception& e) {
-                        json err_frame = {
-                            {"type", "READ_RESPONSE"},
-                            {"txId", tx_id},
-                            {"status", 500},
-                            {"payload", {{"error", e.what()}}}
-                        };
-                        send_frame(err_frame);
-                    }
-                }).detach();
-            } else if (type == "SPY") {
-                std::string tx_id = frame.value("txId", "");
-                Selector sel = Selector::from_json(frame["selector"]);
-                std::thread([this, tx_id, sel]() {
-                    try {
-                        if (node) {
-                            VFSResult result = node->get_local(node->get_cid(sel));
-                            json res_frame = {
-                                {"type", "SPY_RESPONSE"},
-                                {"txId", tx_id},
-                                {"status", 200},
-                                {"payload", {
-                                    {"data", fs::base64_encode(result.data)}
-                                }}
-                            };
-                            send_frame(res_frame);
-                        }
-                    } catch (...) {
-                        json err_frame = {
-                            {"type", "SPY_RESPONSE"},
-                            {"txId", tx_id},
-                            {"status", 404}
-                        };
-                        send_frame(err_frame);
-                    }
-                }).detach();
-            } else if (type == "NOTIFY" || type == "PUB") {
-                if (node) {
-                    Selector sel = Selector::from_json(frame["selector"]);
-                    json payload = frame.value("payload", json::object());
-                    std::vector<std::string> stack;
-                    if (frame.contains("stack")) {
-                        for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
-                    }
-                    node->notify(sel.to_json(), payload, stack);
-                }
-            } else if (type == "SUBSCRIBE" || type == "SUB") {
-                if (node) {
-                    json sel_json = frame["selector"];
-                    long long exp = frame.value("expiresAt", 0LL);
-                    std::vector<std::string> stack;
-                    if (frame.contains("stack")) {
-                        for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
-                    }
-                    node->subscribe(sel_json, exp, stack);
-                }
+            if (node) {
+                std::vector<uint8_t> data(msg.begin(), msg.end());
+                node->handle_binary_frame(expecting_binary_header, data);
             }
-        } catch (...) {}
+            expecting_binary_header.clear();
+        } else {
+            try {
+                json frame = json::parse(msg);
+                if (frame.value("hasBinary", false)) {
+                    expecting_binary_header = frame;
+                } else if (node) {
+                    node->handle_ws_frame(frame);
+                }
+            } catch (...) {
+                std::cerr << "[WS Client] Failed to parse JSON frame: " << msg << std::endl;
+            }
+        }
     }
 }
 
 void VFSNode::WSReverseConnection::send_frame(const json& frame) {
+    std::lock_guard<std::mutex> lock(ws_mutex);
     if (ws) { std::string s = frame.dump(); ws->send(s); }
+}
+
+void VFSNode::WSReverseConnection::send_binary_frame(const json& header, const std::vector<uint8_t>& data) {
+    std::lock_guard<std::mutex> lock(ws_mutex);
+    if (ws) {
+        ws->send(header.dump());
+        ws->send((const char*)data.data(), data.size(), httplib::ws::OpCode::Binary);
+    }
 }
 
 void VFSNode::resolve_transaction(const std::string& tx_id, const VFSResult& result) {

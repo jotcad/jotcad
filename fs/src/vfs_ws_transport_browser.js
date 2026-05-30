@@ -10,10 +10,14 @@ export class WSBrowserConnection extends WSConnectionBase {
     super(neighborId, ws);
     
     this.ws = ws;
+    this.ws.binaryType = 'arraybuffer';
     this.ws.onmessage = async (event) => {
       try {
-        const frame = JSON.parse(event.data);
-        await this.handleFrame(frame);
+        if (event.data instanceof ArrayBuffer) {
+            await this.handleFrame(new Uint8Array(event.data));
+        } else {
+            await this.handleFrame(event.data);
+        }
       } catch (err) {
         log(`[WSBrowserConnection ${this.neighborId}] Frame processing error: ${err.message}`);
       }
@@ -28,9 +32,12 @@ export class WSBrowserConnection extends WSConnectionBase {
     };
   }
 
-  _send(frame) {
+  _send(frame, payload) {
     if (this.ws.readyState === 1) { // OPEN
       this.ws.send(JSON.stringify(frame));
+      if (payload) {
+          this.ws.send(payload);
+      }
     }
   }
 

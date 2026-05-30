@@ -10,10 +10,13 @@ export class WSNodeConnection extends WSConnectionBase {
     super(neighborId, ws);
     
     this.ws = ws;
-    this.ws.on('message', async (data) => {
+    this.ws.on('message', async (data, isBinary) => {
       try {
-        const frame = JSON.parse(data.toString());
-        await this.handleFrame(frame);
+        if (isBinary) {
+            await this.handleFrame(new Uint8Array(data));
+        } else {
+            await this.handleFrame(data.toString());
+        }
       } catch (err) {
         log(`[WSNodeConnection ${this.neighborId}] Frame processing error: ${err.message}`);
       }
@@ -28,9 +31,12 @@ export class WSNodeConnection extends WSConnectionBase {
     });
   }
 
-  _send(frame) {
+  _send(frame, payload) {
     if (this.ws.readyState === 1) { // OPEN
       this.ws.send(JSON.stringify(frame));
+      if (payload) {
+          this.ws.send(payload);
+      }
     }
   }
 

@@ -7,6 +7,14 @@
 #include <vector>
 #include <mutex>
 
+#ifdef ESP32
+#include <WiFi.h>
+#else
+#include <ESP8266WiFi.h>
+#endif
+
+#include <WebSocketsClient.h>
+
 namespace fs {
 
 enum VFSFeature {
@@ -31,6 +39,7 @@ public:
 
 struct VFSRequest {
     std::string op; // "PUB", "SUB", "READ_SELECTOR", "READ_CID"
+    std::string txId;
     Selector selector;
     std::string cid;
     json payload;
@@ -80,6 +89,30 @@ private:
     unsigned long last_poll_ = 0;
 };
 
+/**
+ * WSConnection: Implements the JotCAD persistent WebSocket transport.
+ */
+class WSConnection : public Peer {
+public:
+    WSConnection(VFS* node, const std::string& neighbor_id, const std::string& url);
+    ~WSConnection() override;
+    
+    const std::string& id() const override { return id_; }
+    void send(const VFSRequest& req) override;
+    void tick() override;
+
+private:
+    void on_event(WStype_t type, uint8_t * payload, size_t length);
+
+    VFS* node_;
+    std::string id_;
+    std::string url_;
+    WebSocketsClient client_;
+    
+    bool connected_ = false;
+    json expecting_binary_header_;
+};
+
 class VFS {
 public:
     struct Config {
@@ -102,6 +135,7 @@ public:
 
     void register_with_neighbors();
     void add_peer(std::shared_ptr<Peer> peer);
+    void upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> ws_conn);
     void clear_peers();
 
     using Handler = std::function<void(const json& params, VFSResponseWriter* response)>;
@@ -114,14 +148,21 @@ public:
     
     // Internal API for Peer loop interaction
     void handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond);
+    void handle_ws_frame(const json& frame, WSConnection* conn);
     void handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond);
 
 private:
     Config config_;
     std::map<std::string, Handler> handlers_;
     std::map<std::string, json> schemas_;
+
+    // Peer Management
     std::vector<std::shared_ptr<Peer>> peers_;
+#ifdef ESP32
     std::recursive_mutex mesh_mutex_;
+#else
+    Mutex mesh_mutex_;
+#endif
 
     // Interest Tracking
     std::map<std::string, std::map<std::string, long long>> interests_;

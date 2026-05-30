@@ -294,13 +294,24 @@ void VFSNode::listen() {
     svr->WebSocket("/vfs-ws", [this](const httplib::Request&, httplib::ws::WebSocket& ws) {
         bool identified = false;
         std::string peerId;
-        std::string msg;
+        json expecting_binary_header;
 
-        while (ws.is_open()) {
-            if (ws.read(msg) != httplib::ws::Text) continue;
+        std::string msg;
+        while (true) {
+            auto res = ws.read(msg);
+            if (res == httplib::ws::ReadResult::Fail) break;
+
+            if (res == httplib::ws::ReadResult::Binary) {
+                if (expecting_binary_header.empty()) continue;
+                std::vector<uint8_t> data(msg.begin(), msg.end());
+                handle_binary_frame(expecting_binary_header, data);
+                expecting_binary_header.clear();
+                continue;
+            }
 
             try {
                 json frame = json::parse(msg);
+
                 std::string type = frame.value("type", "");
 
                 if (!identified) {
@@ -315,55 +326,10 @@ void VFSNode::listen() {
                     continue;
                 }
 
-                if (type == "READ" || type == "READ_SELECTOR" || type == "READ_CID") {
-                    std::thread([this, &ws, frame, type]() {
-                        std::cout << "[WS " << config_.id << "] Incoming " << type << " for " << (frame.contains("selector") ? frame["selector"]["path"].get<std::string>() : frame.value("cid", "unknown")) << std::endl;
-                        VFSRequest vreq;
-                        vreq.op = type;
-                        if (frame.contains("selector")) vreq.selector = Selector::from_json(frame["selector"]);
-                        else if (frame.contains("cid")) vreq.cid = frame["cid"];
-                        
-                        vreq.stack = frame.value("stack", std::vector<std::string>{});
-                        vreq.resolutionStack = frame.value("resolutionStack", std::vector<std::string>{});
-                        vreq.expiresAt = frame.value("expiresAt", 0LL);
-                        
-                        try {
-                            auto res = vreq.is_cid() ? read_cid_impl(vreq) : read_selector_impl(vreq);
-                            json resp;
-                            resp["type"] = "READ_RESPONSE";
-                            resp["txId"] = frame.value("txId", std::string(""));
-                            resp["status"] = 200;
-                            resp["payload"] = {
-                                {"data", base64_encode(res.data)},
-                                {"metadata", res.metadata}
-                            };
-                            ws.send(resp.dump());
-                            std::cout << "[WS " << config_.id << "] Sent READ_RESPONSE for " << (vreq.is_cid() ? vreq.cid : vreq.selector.path) << std::endl;
-                        } catch (const VFSException& e) {
-                            std::cout << "[WS " << config_.id << "] VFS Error: " << e.what() << std::endl;
-                            json resp;
-                            resp["type"] = "READ_RESPONSE";
-                            resp["txId"] = frame.value("txId", std::string(""));
-                            resp["status"] = e.code;
-                            resp["error"] = e.what();
-                            ws.send(resp.dump());
-                        } catch (const std::exception& e) {
-                            std::cerr << "[WS " << config_.id << "] Unexpected error in async VFS task: " << e.what() << std::endl;
-                        }
-                    }).detach();
-                } else if (type == "READ_RESPONSE") {
-                    std::string txId = frame.value("txId", "");
-                    std::cout << "[WS " << config_.id << "] Incoming READ_RESPONSE txId=" << txId << " status=" << frame.value("status", 500) << std::endl;
-                    if (frame.value("status", 500) == 200) {
-                        VFSResult res;
-                        res.metadata = frame["payload"]["metadata"];
-                        res.data = base64_decode(frame["payload"]["data"].get<std::string>());
-                        resolve_transaction(txId, res);
-                    } else reject_transaction(txId, frame.value("status", 500), frame.value("error", "Unknown error"));
-                } else if (type == "SUBSCRIBE") {
-                    subscribe(frame["selector"], frame["expiresAt"], frame.value("stack", std::vector<std::string>{}));
-                } else if (type == "NOTIFY") {
-                    notify(frame["selector"], frame["payload"], frame.value("stack", std::vector<std::string>{}));
+                if (frame.value("hasBinary", false)) {
+                    expecting_binary_header = frame;
+                } else {
+                    handle_ws_frame(frame);
                 }
             } catch (const std::exception& e) {
                 std::cerr << "[WS " << config_.id << "] Frame error: " << e.what() << std::endl;
