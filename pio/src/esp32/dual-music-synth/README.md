@@ -133,3 +133,38 @@ The `ESP32Synth` library is designed to accept voice and master volume inputs in
 *   **The Bug**: Internally, `noteOn()` and `setVolume()` shift the volume left by 8 bits (`volume << 8`) to fit into a 16-bit unsigned voice container (`uint16_t vol`). Scaling MIDI note velocity to a 16-bit range (e.g., `velocity * 512 = 51200`) causes a bitwise overflow when shifted left by another 8 bits inside a `uint16_t` ($51200 \times 256 \equiv 0 \pmod{65536}$), reducing the note volume to **exactly 0 (complete silence)**.
 *   **The Rule**: Standardize all volume inputs (both per-voice and master) to a standard **8-bit range (0 to 255)**. Scale standard 7-bit MIDI velocity (0-127) using a simple left-shift: `(velocity > 127) ? 255 : (velocity << 1)`.
 
+---
+
+## 7. Wireless Latency & Zero-Latency Alternatives
+
+While wireless audio provides an incredible wire-free experience, standard Bluetooth introduces latency characteristics that musicians should understand:
+
+### A. Wireless Latency Profiles
+1.  **BLE Leg (Keyboard to ESP32)**: **Optimized to ~7.5ms - 15ms**.
+    We request a hardware-level connection parameter update using Espressif's native GAP API (`esp_ble_gap_update_conn_params`). This overrides standard battery-saving defaults (~100ms) to ensure key presses are transmitted virtually instantaneously.
+2.  **A2DP Leg (ESP32 to Earphones)**: **~150ms - 300ms (Earphone Hardware Buffer)**.
+    While the ESP32 encodes and sends SBC audio packets quickly (~40ms), **consumer Bluetooth earphones (e.g. Sony, JBL, Apple, Bose) purposefully buffer 150ms to 300ms of audio internally** to prevent dropouts. This buffering is hardcoded in the earphones' firmware and is a hardware limitation of consumer receivers.
+
+### B. Achieving $0\text{ms}$ Zero-Latency (Wired Output)
+If you want to play the synthesizer as a professional, lag-free live instrument, you can bypass Bluetooth Classic A2DP entirely and output directly over wires using `ESP32Synth`:
+
+1.  **External I2S DAC (Recommended for High-Fidelity)**:
+    *   Connect an external I2S DAC module (such as a **PCM5102A**, costing ~$3) using 3 pins:
+        *   GPIO 2 (Data Out)
+        *   GPIO 4 (Bit Clock - BCK)
+        *   GPIO 15 (Word Select - WS)
+    *   Change `synth.beginCustom(44100)` in `main.cpp` to standard I2S initialization:
+        ```cpp
+        synth.begin(2, SMODE_I2S, 4, 15, I2S_16BIT);
+        ```
+    *   **Latency**: **$0\text{ms}$ (100% instantaneous)** with pristine CD-quality audio.
+
+2.  **LEDC PWM (Direct Single-Pin Output)**:
+    *   Connect a headphone jack or speaker directly to **GPIO 25** with a simple RC (resistor-capacitor) filter.
+    *   Initialize in pure PWM mode in `main.cpp`:
+        ```cpp
+        synth.begin(25, SMODE_PWM, -1, -1, I2S_16BIT);
+        ```
+    *   **Latency**: **$0\text{ms}$ (100% instantaneous)** without needing any external DAC chip.
+
+
