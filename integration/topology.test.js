@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, Selector } from '../fs/src/index.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
+import { MockConnection } from './vfs_test_helpers.js';
 
 test('Mesh Topology Discovery', async (t) => {
   // Chain: A <-> B <-> C
@@ -29,28 +30,20 @@ test('Mesh Topology Discovery', async (t) => {
   // Peering
   const connect = (mA, mB) => {
     // Peer A represents Node B as seen by Node A
-    const peerA = {
-      neighborId: mB.vfs.id,
-      reachability: 'DIRECT',
-      send: async (req) => {
+    const peerA = new MockConnection(mB.vfs.id, async (req) => {
         if (req.op === 'SUB') {
           mB.addInterest(mA.vfs.id, req.selector, req.expiresAt, req.stack);
         } else if (req.op === 'PUB') {
           mB.notify(req.selector, req.payload, req.stack);
         }
-      }
-    };
-    const peerB = {
-      neighborId: mA.vfs.id,
-      reachability: 'DIRECT',
-      send: async (req) => {
+    });
+    const peerB = new MockConnection(mA.vfs.id, async (req) => {
         if (req.op === 'SUB') {
           mA.addInterest(mB.vfs.id, req.selector, req.expiresAt, req.stack);
         } else if (req.op === 'PUB') {
           mA.notify(req.selector, req.payload, req.stack);
         }
-      }
-    };
+    });
     mA.peers.set(mB.vfs.id, peerA);
     mB.peers.set(mA.vfs.id, peerB);
   };

@@ -247,15 +247,33 @@ export class VFS {
     });
   }
 
-  async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
+  async subscribe(selector, expiresAt = Date.now() + 60000, stack = [], callback = null) {
     this._checkClosed();
     const s = normalizeSelector(selector);
+    
+    let unsubscribe = () => {};
+    if (callback) {
+      const listener = (notifiedSelector, payload) => {
+        if (notifiedSelector.equals(s)) {
+          callback(notifiedSelector, payload);
+        }
+      };
+      this.events.on('notify', listener);
+      unsubscribe = () => this.events.off('notify', listener);
+    }
+
     if (this.mesh) this.mesh.subscribe(s, expiresAt, stack);
+    return unsubscribe;
   }
 
   async notify(selector, payload, stack = []) {
     this._checkClosed();
     const s = normalizeSelector(selector);
+    
+    // 1. Local Delivery
+    this.events.emit('notify', s, payload);
+
+    // 2. Mesh Propagation
     if (this.mesh) this.mesh.notify(s, payload, stack);
   }
 

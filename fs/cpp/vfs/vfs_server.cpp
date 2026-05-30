@@ -233,7 +233,7 @@ void VFSNode::listen() {
                 stack = body.value("stack", std::vector<std::string>{});
             }
             
-            std::cout << "[REST " << config_.id << "] <- SUBSCRIBE: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
+            std::cout << "[REST " << config_.id << "] <- SUB: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
             subscribe(s.to_json(), expiresAt, stack);
             res.status = 200;
         } catch (const std::exception& e) {
@@ -275,7 +275,7 @@ void VFSNode::listen() {
 
             if (!selector_json.is_null()) {
                 Selector s = Selector::from_json(selector_json);
-                std::cout << "[REST " << config_.id << "] <- NOTIFY: " << s.path << std::endl;
+                std::cout << "[REST " << config_.id << "] <- PUB: " << s.path << std::endl;
             }
             notify(selector_json, payload, stack);
             res.status = 200;

@@ -157,8 +157,12 @@ export const vfsActions = {
     mesh.notify = (selector, payload, stack = []) => {
       const s = Selector.fromObject(selector);
       if (s.path === 'sys/topo') {
-          console.log(`[MeshVFS] Mesh topology update from ${payload.peer}: ${payload.neighbors.length} peers visible.`);
-          meshMap.set(payload.peer, payload.neighbors);
+          const peerId = payload.id || payload.peer;
+          console.log(`[MeshVFS] Mesh topology update from ${peerId}: ${payload.neighbors?.length || 0} peers, ${payload.interests?.length || 0} interests.`);
+          meshMap.set(peerId, {
+            neighbors: payload.neighbors || [],
+            interests: payload.interests || []
+          });
       }
       if (s.path === 'sys/schema') {
         const { catalog, provider } = payload;
@@ -211,18 +215,34 @@ export const vfsActions = {
 
     setInterval(() => {
       const nodes = new Map();
-      nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [] });
-      for (const [peerId, neighbors] of meshMap.entries()) {
-        if (!nodes.has(peerId)) nodes.set(peerId, { id: peerId, type: 'PEER', pps: 0, neighbors });
-        else nodes.get(peerId).neighbors = neighbors;
+      const localInterests = [];
+      try {
+          for (const entry of mesh.interests.values()) {
+            if (entry.localExpiresAt > Date.now() && entry.selector && entry.selector.path) {
+                localInterests.push({ path: entry.selector.path, local: true });
+            }
+          }
+      } catch (e) { console.error('[MeshVFS] Interest extraction error:', e); }
+
+      nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [], interests: localInterests });
+      
+      for (const [peerId, data] of meshMap.entries()) {
+        const { neighbors, interests } = data;
+        if (!nodes.has(peerId)) {
+            nodes.set(peerId, { id: peerId, type: 'PEER', pps: 0, neighbors, interests: interests || [] });
+        } else {
+            const n = nodes.get(peerId);
+            n.neighbors = neighbors;
+            n.interests = interests || [];
+        }
       }
 
       // Add missing neighbor nodes to the topology list so they render as leaf nodes!
-      for (const neighbors of meshMap.values()) {
+      for (const data of meshMap.values()) {
+        const { neighbors } = data;
         for (const neighbor of neighbors) {
           if (!nodes.has(neighbor.id)) {
-            // Strip any -poller suffixes for display cleanliness if needed, but match topology exactly
-            nodes.set(neighbor.id, { id: neighbor.id, type: 'PEER', pps: 0, neighbors: [] });
+            nodes.set(neighbor.id, { id: neighbor.id, type: 'PEER', pps: 0, neighbors: [], interests: [] });
           }
         }
       }

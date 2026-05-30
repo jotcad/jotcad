@@ -44,11 +44,13 @@ When registering a peer, nodes advertise supported protocols in a `transports` l
 
 ### B. Upgrade Workflow
 
-1. If both peers support `"ws"`, the registering client initiates a WebSocket connection to the server's `wsUrl`.
-2. Once the TCP socket is upgraded to WebSocket, the client transmits an **`IDENTIFY`** frame.
-3. The server validates the identity and responds with an **`ACK`** frame.
-4. The system transitions routing for that specific peer from the HTTP adapter to the newly created WebSocket adapter.
-5. If the WebSocket connection fails at any stage (timeout, proxy block, SSL failure), both nodes **gracefully fall back** to the HTTP REST and Long-Polling adapters.
+1. If both peers support `"ws"`, the registering client checks the **Deterministic Tie-Breaker**.
+2. **Tie-Breaker Rule**: Only the node with the **lexicographically smaller ID** (e.g. `node-a < node-b`) is permitted to initiate the outbound WebSocket upgrade.
+3. The initiating node connects to the server's `wsUrl`.
+4. Once the TCP socket is upgraded to WebSocket, the client transmits an **`IDENTIFY`** frame.
+5. The server validates the identity and responds with an **`ACK`** frame.
+6. The system transitions routing for that specific peer from the HTTP adapter to the newly created WebSocket adapter.
+7. If the WebSocket connection fails at any stage (timeout, proxy block, SSL failure), both nodes **gracefully fall back** to the HTTP REST and Long-Polling adapters.
 
 ```
        [HTTP/REST Register Handshake]
@@ -155,10 +157,11 @@ Broadcasts dynamic updates down a subscription path.
   "type": "NOTIFY",
   "selector": { "path": "sys/topo" },
   "payload": {
-    "peer": "gateway_node",
+    "id": "gateway_node",
     "neighbors": [
-      { "id": "esp32_sensor", "reachability": "DIRECT", "protocol": "HTTP" }
-    ]
+      { "id": "esp32_sensor", "reachability": "DIRECT", "protocol": "http" }
+    ],
+    "interests": []
   },
   "stack": []
 }

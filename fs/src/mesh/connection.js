@@ -104,6 +104,10 @@ export class Connection {
     this._pulseCount = 0;
   }
 
+  getProtocol() {
+    return 'unknown';
+  }
+
   /**
    * Dispatch an encapsulated request to the peer.
    * @param {VFSRequest} req

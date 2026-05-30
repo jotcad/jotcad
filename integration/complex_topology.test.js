@@ -38,9 +38,10 @@ test('Complex Hybrid VFS Mesh: 3-Node Topology Subscription & Notification', asy
         const receivedTopo = new Map();
         nodeVFS.events.on('notify', (selector, payload) => {
             if (selector.path === 'sys/topo') {
-                console.log(`[Test Complex Topo] Received sys/topo update from [${payload.peer}] with ${payload.neighbors?.length || 0} neighbors`);
-                if (payload.peer && payload.neighbors) {
-                    receivedTopo.set(payload.peer, payload.neighbors);
+                const peerId = payload.id || payload.peer;
+                console.log(`[Test Complex Topo] Received sys/topo update from [${peerId}] with ${payload.neighbors?.length || 0} neighbors`);
+                if (peerId && payload.neighbors) {
+                    receivedTopo.set(peerId, payload.neighbors);
                 }
             }
         });
@@ -59,18 +60,18 @@ test('Complex Hybrid VFS Mesh: 3-Node Topology Subscription & Notification', asy
         // Gateway Node assertions
         assert.ok(receivedTopo.has('test_complex_topology_node_a'), 'Mesh should discover the JS Gateway ("test_complex_topology_node_a")');
         const gatewayNeighbors = receivedTopo.get('test_complex_topology_node_a');
-        console.log('[Test Complex Topo] JS Gateway neighbors:', gatewayNeighbors.map(n => n.id));
+        console.log('[Test Complex Topo] JS Gateway neighbors:', gatewayNeighbors);
         
         assert.ok(
-            gatewayNeighbors.some(n => n.id === 'node-js-subscriber'),
+            gatewayNeighbors.some(n => (n.id || n) === 'node-js-subscriber'),
             'JS Gateway must see the external subscriber node'
         );
         assert.ok(
-            gatewayNeighbors.some(n => n.id === 'test_complex_topology_cpp_node_1'),
+            gatewayNeighbors.some(n => (n.id || n) === 'test_complex_topology_cpp_node_1'),
             'JS Gateway must see C++ Node 1'
         );
         assert.ok(
-            gatewayNeighbors.some(n => n.id === 'test_complex_topology_cpp_node_2'),
+            gatewayNeighbors.some(n => (n.id || n) === 'test_complex_topology_cpp_node_2'),
             'JS Gateway must see C++ Node 2'
         );
 
@@ -80,9 +81,9 @@ test('Complex Hybrid VFS Mesh: 3-Node Topology Subscription & Notification', asy
             'Mesh should discover C++ Node 1 ("test_complex_topology_cpp_node_1")'
         );
         const cpp1Neighbors = receivedTopo.get('test_complex_topology_cpp_node_1');
-        console.log('[Test Complex Topo] C++ Node 1 neighbors:', cpp1Neighbors.map(n => n.id));
+        console.log('[Test Complex Topo] C++ Node 1 neighbors:', cpp1Neighbors);
         assert.ok(
-            cpp1Neighbors.some(n => n.id === 'test_complex_topology_node_a'),
+            cpp1Neighbors.some(n => (n.id || n) === 'test_complex_topology_node_a'),
             'C++ Node 1 must see its peer link to the JS Gateway'
         );
 
@@ -92,9 +93,9 @@ test('Complex Hybrid VFS Mesh: 3-Node Topology Subscription & Notification', asy
             'Mesh should discover C++ Node 2 ("test_complex_topology_cpp_node_2")'
         );
         const cpp2Neighbors = receivedTopo.get('test_complex_topology_cpp_node_2');
-        console.log('[Test Complex Topo] C++ Node 2 neighbors:', cpp2Neighbors.map(n => n.id));
+        console.log('[Test Complex Topo] C++ Node 2 neighbors:', cpp2Neighbors);
         assert.ok(
-            cpp2Neighbors.some(n => n.id === 'test_complex_topology_node_a'),
+            cpp2Neighbors.some(n => (n.id || n) === 'test_complex_topology_node_a'),
             'C++ Node 2 must see its peer link to the JS Gateway'
         );
 

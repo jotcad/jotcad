@@ -14,7 +14,10 @@ export class ForwardConnection extends Connection {
     this.localUrl = options.localUrl;
     this.signal = options.signal;
     this.reachability = options.reachability || 'DIRECT';
-    this.protocol = 'HTTP';
+  }
+
+  getProtocol() {
+    return this.url.startsWith('https') ? 'https' : 'http';
   }
 
   /**

@@ -54,7 +54,7 @@ public:
     };
 
     struct VFSRequest {
-        std::string op; // NOTIFY, SUBSCRIBE, READ_SELECTOR, READ_CID, PUBLISH
+        std::string op; // PUB, SUB, READ_SELECTOR, READ_CID, PUBLISH
         std::string cid;
         Selector selector;
         std::string data; // Used for JSON payloads
@@ -121,8 +121,8 @@ public:
 
     bool validate_selector(const VFSRequest& req, std::string& error_out);
 
-    void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack);
-    void notify(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
+    void subscribe(const Selector& selector, long long expiresAt, const std::vector<std::string>& stack);
+    void notify(const Selector& selector, const json& payload, const std::vector<std::string>& stack = {});
 
     void add_peer(const std::string& url);
     void add_connection(std::shared_ptr<Connection> conn);
@@ -131,6 +131,7 @@ public:
 
     json get_catalog();
     json get_neighbors();
+    json get_topology_payload();
 
     void handle_ws_frame(const json& frame);
     void handle_binary_frame(const json& header, const std::vector<uint8_t>& data);
@@ -146,7 +147,7 @@ private:
         VFSResult _do_read(const std::map<std::string, std::string>& headers, const std::string& body, const std::string& path);
         bool is_reverse() const override { return false; }
         std::string get_url() const override { return url; }
-        std::string get_protocol() const override { return "HTTP"; }
+        std::string get_protocol() const override { return (url.rfind("https", 0) == 0) ? "https" : "http"; }
         };
 
         struct ReverseConnection : public Connection {
@@ -159,7 +160,7 @@ private:
         ReverseConnection(std::string id) { neighbor_id = std::move(id); }
         VFSResult sendRequest(const VFSRequest& req) override;
         bool is_reverse() const override { return true; }
-        std::string get_protocol() const override { return "REVERSE-HTTP"; }
+        std::string get_protocol() const override { return "http"; }
         };
 
     struct WSConnection : public Connection {
@@ -170,7 +171,7 @@ private:
         VFSResult sendRequest(const VFSRequest& req) override;
         VFSResult _do_ws_read(const json& frame);
         bool is_reverse() const override { return false; }
-        std::string get_protocol() const override { return "WS"; }
+        std::string get_protocol() const override { return "ws"; }
     };
 
     struct WSForwardConnection : public WSConnection {
@@ -184,6 +185,7 @@ private:
         void send_frame(const json& frame) override;
         void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
         std::string get_url() const override { return url; }
+        std::string get_protocol() const override { return (url.rfind("https", 0) == 0 || url.rfind("wss", 0) == 0) ? "wss" : "ws"; }
         void start_client();
         void read_loop();
     };
@@ -194,6 +196,11 @@ private:
         void send_frame(const json& frame) override;
         void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
         bool is_reverse() const override { return true; }
+        std::string get_protocol() const override { 
+            // In our TestServer, reverse WS connections over SSL will have a non-empty cert path in the node config
+            if (node && !node->config_.cert_path.empty()) return "wss";
+            return "ws";
+        }
     };
 
     Config config_;
@@ -208,9 +215,14 @@ private:
     std::map<std::string, std::shared_ptr<std::promise<VFSResult>>> transactions_;
     std::mutex transaction_mutex_;
 
-    std::map<std::string, std::map<std::string, long long>> interests_;
+    struct SubscriptionEntry {
+        Selector selector;
+        std::map<std::string, long long> subs; // neighbor_id -> expiresAt
+        long long localExpiresAt = 0;
+    };
+
+    std::vector<SubscriptionEntry> interests_;
     std::mutex interest_mutex_;
-    std::map<std::string, json> interest_selectors_;
 
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;

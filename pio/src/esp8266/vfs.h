@@ -158,6 +158,9 @@ public:
     int notify_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
     void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack = {});
 
+    // Status Logging
+    json get_topology_payload();
+    void log_status();
     
     // Internal API for Peer loop interaction
     void handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond);

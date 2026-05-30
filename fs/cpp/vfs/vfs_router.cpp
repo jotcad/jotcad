@@ -233,17 +233,10 @@ template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint
     return CID{cid_str};
 }
 
-void VFSNode::notify(const json& selector_json, const json& payload, const std::vector<std::string>& stack) {
+void VFSNode::notify(const Selector& selector, const json& payload, const std::vector<std::string>& stack) {
     // 1. Stack Protection: Break loops early
     if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
 
-    Selector selector;
-    if (!selector_json.is_null()) {
-        selector = Selector::from_json(selector_json);
-    }
-
-    std::string sel_str = encode_safe(selector.to_json());
-    
     std::cout << "[VFSNode " << config_.id << "] notify: " << (selector.path.empty() ? "null" : selector.path) << " from stack {";
     for(size_t i=0; i<stack.size(); ++i) std::cout << (i==0?"":",") << stack[i];
     std::cout << "}" << std::endl;
@@ -251,12 +244,16 @@ void VFSNode::notify(const json& selector_json, const json& payload, const std::
     std::vector<std::shared_ptr<Connection>> targets;
     {
         std::lock_guard<std::mutex> lock(interest_mutex_);
-        if (interests_.count(sel_str)) {
-            auto& subs = interests_[sel_str];
-            std::lock_guard<std::mutex> plock(peer_mutex_);
-            for (auto const& [peer_id, expiresAt] : subs) {
-                if (std::find(stack.begin(), stack.end(), peer_id) != stack.end()) continue;
-                if (peers_.count(peer_id)) targets.push_back(peers_[peer_id]);
+        long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        
+        for (auto& entry : interests_) {
+            if (entry.selector == selector) {
+                std::lock_guard<std::mutex> plock(peer_mutex_);
+                for (auto const& [peer_id, expiresAt] : entry.subs) {
+                    if (expiresAt > now && std::find(stack.begin(), stack.end(), peer_id) == stack.end()) {
+                        if (peers_.count(peer_id)) targets.push_back(peers_[peer_id]);
+                    }
+                }
             }
         }
     }
@@ -266,7 +263,7 @@ void VFSNode::notify(const json& selector_json, const json& payload, const std::
     for (auto& conn : targets) {
         std::cout << "[VFSNode " << config_.id << "] -> Forwarding notification for " << selector.path << " to " << conn->neighbor_id << std::endl;
         VFSRequest req;
-        req.op = "NOTIFY";
+        req.op = "PUB";
         req.selector = selector;
         req.data = payload.dump();
         req.stack = next_stack;
@@ -274,11 +271,12 @@ void VFSNode::notify(const json& selector_json, const json& payload, const std::
     }
 }
 
-void VFSNode::subscribe(const json& selector_json, long long expiresAt, const std::vector<std::string>& stack) {
-    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
+void VFSNode::subscribe(const Selector& selector, long long expiresAt, const std::vector<std::string>& stack) {
+    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) {
+        std::cout << "[VFSNode " << config_.id << "] DROP subscribe: Loop detected (stack contains " << config_.id << ")" << std::endl;
+        return;
+    }
 
-    Selector selector = Selector::from_json(selector_json);
-    std::string sel_str = encode_safe(selector.to_json());
     std::string peer_id = stack.empty() ? "unknown" : stack.back();
 
     std::cout << "[VFSNode " << config_.id << "] subscribe: " << selector.path << " from " << peer_id << " (stack size: " << stack.size() << ")" << std::endl;
@@ -286,9 +284,35 @@ void VFSNode::subscribe(const json& selector_json, long long expiresAt, const st
     bool isNewInterest = false;
     {
         std::lock_guard<std::mutex> lock(interest_mutex_);
-        if (interests_[sel_str].count(peer_id) == 0) isNewInterest = true;
-        interests_[sel_str][peer_id] = expiresAt;
-        interest_selectors_[sel_str] = selector.to_json();
+        auto it = std::find_if(interests_.begin(), interests_.end(), [&](const SubscriptionEntry& e) {
+            return e.selector == selector;
+        });
+
+        if (it == interests_.end()) {
+            interests_.push_back({selector, {{peer_id, expiresAt}}, 0});
+            isNewInterest = true;
+        } else {
+            if (it->subs.count(peer_id) == 0) isNewInterest = true;
+            it->subs[peer_id] = expiresAt;
+        }
+    }
+
+    if (isNewInterest) {
+        if (selector.path == "sys/topo") {
+            std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/topo sub from " << peer_id << " with local topology" << std::endl;
+            VFSRequest req;
+            req.op = "PUB";
+            req.selector = selector;
+            req.data = get_topology_payload().dump();
+            req.stack = {config_.id};
+            
+            std::lock_guard<std::mutex> plock(peer_mutex_);
+            if (peers_.count(peer_id)) {
+                peers_[peer_id]->sendRequest(req);
+            }
+        } else {
+            notify(Selector("sys/topo"), get_topology_payload(), {});
+        }
     }
 
     if (selector.path == "sys/schema") {
@@ -303,7 +327,7 @@ void VFSNode::subscribe(const json& selector_json, long long expiresAt, const st
             json payload = {{"catalog", catalog["catalog"]}, {"provider", config_.id}};
             std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/schema sub from " << peer_id << " with local catalog (" << catalog["catalog"].size() << " ops)" << std::endl;
             VFSRequest req;
-            req.op = "NOTIFY";
+            req.op = "PUB";
             req.selector = selector;
             req.data = payload.dump();
             req.stack = {config_.id};
@@ -313,26 +337,17 @@ void VFSNode::subscribe(const json& selector_json, long long expiresAt, const st
 
     if (selector.path == "sys/topo") {
         std::shared_ptr<Connection> target;
-        json neighbors = json::array();
         {
             std::lock_guard<std::mutex> lock(peer_mutex_);
             if (peers_.count(peer_id)) target = peers_[peer_id];
-            for (auto const& [p_id, conn] : peers_) {
-                neighbors.push_back(json{
-                    {"id", p_id}, 
-                    {"reachability", conn->is_reverse() ? "REVERSE" : "DIRECT"},
-                    {"protocol", conn->get_protocol()}
-                });
-            }
         }
 
         if (target) {
-            json payload = {{"peer", config_.id}, {"neighbors", neighbors}};
             std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/topo sub from " << peer_id << " with local topology" << std::endl;
             VFSRequest req;
-            req.op = "NOTIFY";
+            req.op = "PUB";
             req.selector = selector;
-            req.data = payload.dump();
+            req.data = get_topology_payload().dump();
             req.stack = {config_.id};
             target->sendRequest(req);
         }
@@ -358,7 +373,7 @@ void VFSNode::subscribe(const json& selector_json, long long expiresAt, const st
         for (auto& conn : others) {
             std::cout << "[VFSNode " << config_.id << "] -> Propagating interest in " << selector.path << " from " << peer_id << " to " << conn->neighbor_id << std::endl;
             VFSRequest req;
-            req.op = "SUBSCRIBE";
+            req.op = "SUB";
             req.selector = selector;
             req.expiresAt = expiresAt;
             req.stack = next_stack;
@@ -459,22 +474,22 @@ void VFSNode::handle_ws_frame(const json& frame) {
                 }
             }
         }).detach();
-    } else if (type == "NOTIFY" || type == "PUB") {
+    } else if (type == "PUB") {
         Selector sel = Selector::from_json(frame["selector"]);
         json payload = frame.value("payload", json::object());
         std::vector<std::string> stack;
         if (frame.contains("stack")) {
             for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
         }
-        notify(sel.to_json(), payload, stack);
-    } else if (type == "SUBSCRIBE" || type == "SUB") {
-        json sel_json = frame["selector"];
+        notify(sel, payload, stack);
+    } else if (type == "SUB") {
+        Selector sel = Selector::from_json(frame["selector"]);
         long long exp = frame.value("expiresAt", 0LL);
         std::vector<std::string> stack;
         if (frame.contains("stack")) {
             for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
         }
-        subscribe(sel_json, exp, stack);
+        subscribe(sel, exp, stack);
     }
 }
 
@@ -486,19 +501,26 @@ void VFSNode::handle_binary_frame(const json& header, const std::vector<uint8_t>
         result.data = data;
         if (header.contains("metadata")) result.metadata = header["metadata"];
         resolve_transaction(tx_id, result);
-    } else if (type == "NOTIFY" || type == "PUB") {
+    } else if (type == "PUB") {
         Selector sel = Selector::from_json(header["selector"]);
         std::vector<std::string> stack;
         if (header.contains("stack")) {
             for (auto const& s : header["stack"]) stack.push_back(s.get<std::string>());
         }
         // Use raw binary notification
-        std::lock_guard<std::mutex> lock(interest_mutex_);
         std::string path = sel.path;
-        if (interests_.count(path)) {
-            // Local propagation via notify_binary would be better, but notify can take it if we pass it as a special payload or add notify_binary to VFSNode
-            // For now we assume listeners want the data.
-            // Actually, we should probably add notify_binary to VFSNode to avoid Base64 conversion here.
+        bool hasInterest = false;
+        {
+            std::lock_guard<std::mutex> lock(interest_mutex_);
+            for (auto const& entry : interests_) {
+                if (entry.selector.path == path) {
+                    hasInterest = true;
+                    break;
+                }
+            }
+        }
+        if (hasInterest) {
+            // Forwarding logic for binary PUB would go here.
         }
     }
 }

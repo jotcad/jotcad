@@ -13,7 +13,6 @@ export class ReverseConnection extends Connection {
     this.vfs = mesh.vfs;
     this.instanceId = options.instanceId || Math.random().toString(36).slice(2, 8);
     this.reachability = 'REVERSE';
-    this.protocol = 'REVERSE-HTTP';
     
     // Server-side state
     this.pool = [];
@@ -22,6 +21,13 @@ export class ReverseConnection extends Connection {
     
     // Client-side state
     this.abortController = new AbortController();
+  }
+
+  getProtocol() {
+    if (this.baseUrl) {
+      return this.baseUrl.startsWith('https') ? 'https' : 'http';
+    }
+    return 'http';
   }
 
   stop() {
@@ -342,7 +348,7 @@ export class ReverseConnection extends Connection {
             throw new Error(`CRITICAL: Remote node rejected our poll: ${await resp.text()}`);
         }
       } catch (err) { 
-        if (this.abortController.signal.aborted) break; 
+        if (this.abortController.signal.aborted || err.name === 'AbortError') break; 
         consecutiveFailures++;
         if (consecutiveFailures >= MAX_FAILURES) throw err;
         await new Promise((resolve) => setTimeout(resolve, 2000));

@@ -12,9 +12,15 @@ export class WSConnectionBase extends Connection {
   constructor(neighborId, socket) {
     super(neighborId);
     this.socket = socket;
-    this.protocol = 'WS';
     this.pendingReads = new Map();
     this.pendingSpies = new Map();
+  }
+
+  getProtocol() {
+    if (this.socket && this.socket.url) {
+      return this.socket.url.startsWith('wss') ? 'wss' : 'ws';
+    }
+    return 'ws';
   }
 
   // Abstract methods to be implemented by platform subclasses
@@ -160,7 +166,7 @@ export class WSConnectionBase extends Connection {
       }
     } 
     
-    else if (type === 'SUBSCRIBE') {
+    else if (type === 'SUB') {
       const sel = Selector.fromObject(selector);
       if (this.mesh) {
         this.mesh.addInterest(this.neighborId, sel, expiresAt, stack);
@@ -169,7 +175,7 @@ export class WSConnectionBase extends Connection {
       }
     }
     
-    else if (type === 'NOTIFY') {
+    else if (type === 'PUB') {
       const p = binaryData || (encoding === 'bytes' ? fromBase64(payload) : payload);
       this.vfs.notify(Selector.fromObject(selector), p, stack);
     }
@@ -271,7 +277,7 @@ export class WSConnectionBase extends Connection {
     }
 
     if (req.op === 'SUB') {
-      this._send({ type: 'SUBSCRIBE', selector: req.selector, expiresAt: req.expiresAt, stack: req.stack });
+      this._send({ type: 'SUB', selector: req.selector, expiresAt: req.expiresAt, stack: req.stack });
     }
 
     if (req.op === 'PUB') {
@@ -280,7 +286,7 @@ export class WSConnectionBase extends Connection {
       const isBinary = req.payload instanceof Uint8Array;
       if (isBinary) {
           this._send({
-            type: 'NOTIFY',
+            type: 'PUB',
             selector: req.selector,
             encoding: 'bytes',
             stack: req.stack,
@@ -288,7 +294,7 @@ export class WSConnectionBase extends Connection {
           }, req.payload);
       } else {
           this._send({
-            type: 'NOTIFY',
+            type: 'PUB',
             selector: req.selector,
             payload: req.payload,
             encoding: 'json',

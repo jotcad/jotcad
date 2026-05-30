@@ -43,6 +43,17 @@ export class WSNodeConnection extends WSConnectionBase {
   _close() {
     this.ws.close();
   }
+
+  getProtocol() {
+    if (this.ws && this.ws.url) {
+        return this.ws.url.startsWith('wss') ? 'wss' : 'ws';
+    }
+    // Check if the underlying socket is encrypted (for reverse connections)
+    if (this.ws?._socket?.encrypted) {
+        return 'wss';
+    }
+    return 'ws';
+  }
 }
 
 export class WSNodeForwardConnection extends WSNodeConnection {

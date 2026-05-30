@@ -28,7 +28,7 @@ export class MeshLinkBase {
     this.neighborUrls = neighborUrls.map((u) => u.replace(/\/$/, ''));
     this.abortController = new AbortController();
 
-    this.interests = new Map();
+    this.interests = []; // List of { selector: Selector, subs: Map<neighborId, expiresAt>, localExpiresAt: number }
 
     this._ppsInterval = setInterval(() => {
       for (const conn of this.peers.values()) conn._tickPPS();
@@ -47,11 +47,38 @@ export class MeshLinkBase {
     this.peers.set(id, conn);
   }
 
+  _getTopologyPayload() {
+    const activeInterests = [];
+    for (const entry of this.interests) {
+        const isLocal = entry.localExpiresAt > Date.now();
+        const hasRemote = [...entry.subs.values()].some(expiry => expiry > Date.now());
+        if ((isLocal || hasRemote) && entry.selector && entry.selector.path) {
+            activeInterests.push({
+                path: entry.selector.path,
+                local: isLocal,
+                remote: hasRemote
+            });
+        }
+    }
+
+    const neighbors = [...this.peers.values()].map(c => ({
+        id: c.neighborId,
+        reachability: c.reachability || 'DIRECT',
+        protocol: c.getProtocol()
+    }));
+
+    return {
+        id: this.vfs.id,
+        interests: activeInterests,
+        neighbors: neighbors
+    };
+  }
+
   upgradePeerToWS(id, wsConn) {
     let reachability = wsConn.reachability;
     if (this.peers.has(id)) {
       const old = this.peers.get(id);
-      if (old.ws || old.constructor.name.includes('WS')) {
+      if (old.getProtocol && old.getProtocol().includes('ws')) {
         log(`[MeshLink ${this.vfs.id}] Peer ${id} already has active WebSocket connection. Closing redundant new connection.`);
         if (wsConn.stop) wsConn.stop();
         return;
@@ -59,14 +86,10 @@ export class MeshLinkBase {
       reachability = old.reachability;
       log(`[MeshLink ${this.vfs.id}] Upgrading peer ${id} to WS. Closing old ${old.reachability} connection.`);
       if (old.stop) old.stop();
-      this.peers.delete(id);
     }
     wsConn.reachability = reachability;
     this.peers.set(id, wsConn);
-    this.notify(new Selector('sys/topo'), {
-      peer: this.vfs.id,
-      neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol }))
-    });
+    this.vfs.notify(new Selector('sys/topo'), this._getTopologyPayload());
   }
 
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
@@ -74,14 +97,20 @@ export class MeshLinkBase {
     if (stack.includes(this.vfs.id)) return;
     
     // Paint the local interest field
-    const topic = JSON.stringify(s);
-    if (!this.interests.has(topic)) {
-        this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null, localExpiresAt: 0 });
+    let entry = this.interests.find(e => e.selector.equals(s));
+    if (!entry) {
+        entry = { selector: s, subs: new Map(), localExpiresAt: 0 };
+        this.interests.push(entry);
     }
-    const entry = this.interests.get(topic);
+
+    const wasLocal = entry.localExpiresAt > Date.now();
     entry.localExpiresAt = Math.max(entry.localExpiresAt, expiresAt);
     log(`[MeshLink ${this.vfs.id}] Local interest in ${s.path} recorded (expiresAt: ${expiresAt})`);
     
+    if (!wasLocal) {
+        this.vfs.notify(new Selector('sys/topo'), this._getTopologyPayload());
+    }
+
     // Propagate the interest (Painting the mesh)
     const nextStack = [...stack, this.vfs.id];
     for (const conn of this.peers.values()) {
@@ -96,25 +125,19 @@ export class MeshLinkBase {
 
   addInterest(neighborId, selector, expiresAt, stack = []) {
     const s = normalizeSelector(selector);
-    const topic = JSON.stringify(s);
     log(`[MeshLink ${this.vfs.id}] addInterest: ${s.path} from ${neighborId} (stack: ${stack})`);
-    if (!this.interests.has(topic)) {
-      this.interests.set(topic, { selector: s, subs: new Map(), lastValue: null, localExpiresAt: 0 });
+    
+    let entry = this.interests.find(e => e.selector.equals(s));
+    if (!entry) {
+      entry = { selector: s, subs: new Map(), localExpiresAt: 0 };
+      this.interests.push(entry);
     }
     
-    const entry = this.interests.get(topic);
     const isNewNeighbor = !entry.subs.has(neighborId);
     entry.subs.set(neighborId, expiresAt);
 
-    // IMMEDIATE REPLY PHASE
-    if (isNewNeighbor && entry.lastValue) {
-      const conn = this.peers.get(neighborId);
-      if (conn) {
-          log(`[MeshLink ${this.vfs.id}] -> Pushing cached lastValue for ${s.path} to ${neighborId}`);
-          conn.send(new NotifyRequest(s, entry.lastValue, [this.vfs.id])).catch((err) => {
-            log(`[MeshLink ${this.vfs.id}] Failed to push cached lastValue to new peer ${neighborId}: ${err.message}`);
-          });
-      }
+    if (isNewNeighbor) {
+        this.notify(new Selector('sys/topo'), this._getTopologyPayload());
     }
 
     // Contribution phase (sys/schema, sys/topo)
@@ -133,10 +156,7 @@ export class MeshLinkBase {
         const conn = this.peers.get(neighborId);
         if (conn) {
             log(`[MeshLink ${this.vfs.id}] -> Contributing local topology to new subscriber ${neighborId}`);
-            conn.send(new NotifyRequest(s, {
-                peer: this.vfs.id,
-                neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol }))
-            }, [this.vfs.id])).catch((err) => {
+            conn.send(new NotifyRequest(s, this._getTopologyPayload(), [this.vfs.id])).catch((err) => {
               log(`[MeshLink ${this.vfs.id}] Failed to push topology to new peer ${neighborId}: ${err.message}`);
             });
         }
@@ -163,59 +183,37 @@ export class MeshLinkBase {
 
     log(`[MeshLink ${this.vfs.id}] notify: ${s.path} from stack ${stack}`);
 
-    const topic = JSON.stringify(s);
-    if (!this.interests.has(topic)) {
-      this.interests.set(topic, { selector: s, subs: new Map(), lastValue: payload, localExpiresAt: 0 });
-    } else {
-      this.interests.get(topic).lastValue = payload;
+    // Logical Entry Matching
+    let entry = this.interests.find(e => e.selector.equals(s));
+    if (!entry) {
+        entry = { selector: s, subs: new Map(), localExpiresAt: 0 };
+        this.interests.push(entry);
     }
 
     // 1. Local Delivery
-    for (const entry of this.interests.values()) {
-      if (this._matches(entry.selector, s)) {
-        entry.lastValue = payload;
-        if (entry.localExpiresAt > Date.now()) {
-          log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
-          this.vfs.events.emit('notify', s, payload);
-        }
-      }
+    if (entry.localExpiresAt > Date.now()) {
+      log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
+      this.vfs.events.emit('notify', s, payload);
     }
 
     // 2. Neighbor Propagation
-    for (const entry of this.interests.values()) {
-      if (this._matches(entry.selector, s)) {
-        for (const [neighborId, expiry] of entry.subs.entries()) {
-          if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
-          if (stack.includes(neighborId)) continue;
-          
-          const conn = this.peers.get(neighborId);
-          if (conn) {
-              log(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
-              conn.send(new NotifyRequest(s, payload, nextStack)).catch((err) => {
-                log(`[MeshLink ${this.vfs.id}] Failed to forward notification to neighbor ${neighborId}: ${err.message}`);
-              });
-          }
-        }
+    for (const [neighborId, expiry] of entry.subs.entries()) {
+      if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
+      if (stack.includes(neighborId)) continue;
+      
+      const conn = this.peers.get(neighborId);
+      if (conn) {
+          log(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
+          conn.send(new NotifyRequest(s, payload, nextStack)).catch((err) => {
+            log(`[MeshLink ${this.vfs.id}] Failed to forward notification to neighbor ${neighborId}: ${err.message}`);
+          });
       }
     }
-  }
-
-  _matches(sub, event) {
-    if (!sub || !event) return false;
-    if (sub.path === event.path) {
-      const subParams = sub.parameters || {};
-      if (Object.keys(subParams).length === 0) return true;
-      for (const [k, v] of Object.entries(subParams)) {
-        if (JSON.stringify(v) !== JSON.stringify(event.parameters?.[k])) return false;
-      }
-      return true;
-    }
-    return false;
   }
 
   async start() {
     this.vfs.mesh = this;
-    for (const url of this.neighborUrls) await this.addPeer(url);
+    await Promise.all(this.neighborUrls.map((url) => this.addPeer(url)));
   }
 
   async addPeer(url) {
@@ -255,10 +253,10 @@ export class MeshLinkBase {
             return info.id;
           }
 
-          // WS upgrade phase
-          if (info.transports && info.transports.includes('ws') && info.wsUrl) {
+          // WS upgrade phase - TIE-BREAKER: Only smaller ID initiates
+          if (info.transports && info.transports.includes('ws') && info.wsUrl && this.vfs.id < info.id) {
             try {
-              log(`[MeshLink ${this.vfs.id}] Attempting WebSocket upgrade to ${info.wsUrl}`);
+              log(`[MeshLink ${this.vfs.id}] Initiating deterministic WS upgrade to ${info.id} (Tie-breaker: ${this.vfs.id} < ${info.id})`);
               let wsConn;
               if (typeof window === 'undefined') {
                 const { WSNodeForwardConnection } = await import('../vfs_ws_transport_node.js');
@@ -317,7 +315,7 @@ export class MeshLinkBase {
               }
           }
 
-          this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol })) });
+          this.notify(new Selector('sys/topo'), this._getTopologyPayload());
           return info.id;
         }
       } else {
@@ -364,7 +362,7 @@ export class MeshLinkBase {
           reachability: 'DIRECT'
         });
         this._setPeer(peerId, conn);
-        this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol })) });
+        this.notify(new Selector('sys/topo'), this._getTopologyPayload());
         return { id: this.vfs.id, reachability: 'DIRECT', transports: ['http', 'ws'], wsUrl };
       }
     }
@@ -374,7 +372,7 @@ export class MeshLinkBase {
     }
     const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });
     this._setPeer(peerId, conn);
-    this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol })) });
+    this.notify(new Selector('sys/topo'), this._getTopologyPayload());
     return { id: this.vfs.id, reachability: 'REVERSE', transports: ['http', 'ws'], wsUrl };
   }
 

@@ -23,6 +23,45 @@ static std::string generate_tx_id() {
     return res;
 }
 
+json VFSNode::get_topology_payload() {
+    json rich_neighbors = json::array();
+    {
+        std::lock_guard<std::mutex> lock(peer_mutex_);
+        for (auto const& [p_id, conn_ptr] : peers_) {
+            rich_neighbors.push_back(json{
+                {"id", p_id}, 
+                {"reachability", conn_ptr->is_reverse() ? "REVERSE" : "DIRECT"},
+                {"protocol", conn_ptr->get_protocol()}
+            });
+        }
+    }
+
+    json activeInterests = json::array();
+    {
+        std::lock_guard<std::mutex> lock(interest_mutex_);
+        long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        for (auto const& entry : interests_) {
+            bool is_local = entry.localExpiresAt > now;
+            bool has_remote = false;
+            for (auto const& [neighbor_id, expiry] : entry.subs) {
+                if (expiry > now) {
+                    has_remote = true;
+                    break;
+                }
+            }
+            if (is_local || has_remote) {
+                activeInterests.push_back({
+                    {"path", entry.selector.path},
+                    {"local", is_local},
+                    {"remote", has_remote}
+                });
+            }
+        }
+    }
+
+    return {{"id", config_.id}, {"neighbors", rich_neighbors}, {"interests", activeInterests}};
+}
+
 void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     if (!conn) return;
     auto ws_conn = std::dynamic_pointer_cast<WSConnection>(conn);
@@ -39,13 +78,13 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     {
         std::lock_guard<std::mutex> lock(interest_mutex_);
         long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        for (auto const& [sel_str, subs] : interests_) {
-            long long maxExp = 0;
-            for (auto const& [neighbor_id, expiry] : subs) if (expiry > maxExp) maxExp = expiry;
+        for (auto const& entry : interests_) {
+            long long maxExp = entry.localExpiresAt;
+            for (auto const& [neighbor_id, expiry] : entry.subs) if (expiry > maxExp) maxExp = expiry;
             if (maxExp > now) {
                 VFSRequest req;
-                req.op = "SUBSCRIBE";
-                req.selector = interest_selectors_[sel_str];
+                req.op = "SUB";
+                req.selector = entry.selector;
                 req.expiresAt = maxExp;
                 req.stack = {config_.id};
                 conn->sendRequest(req);
@@ -54,19 +93,7 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     }
 
     json sys_topo = {{"path", "sys/topo"}, {"parameters", json::object()}};
-    json neighbors = json::array();
-    {
-        std::lock_guard<std::mutex> lock(peer_mutex_);
-        for (auto const& [p_id, conn_ptr] : peers_) {
-            neighbors.push_back(json{
-                {"id", p_id}, 
-                {"reachability", conn_ptr->is_reverse() ? "REVERSE" : "DIRECT"},
-                {"protocol", conn_ptr->get_protocol()}
-            });
-        }
-    }
-    json topo_payload = {{"peer", config_.id}, {"neighbors", neighbors}};
-    notify(sys_topo, topo_payload, {});
+    notify(sys_topo, get_topology_payload(), {});
 }
 
 void VFSNode::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Connection> ws_conn) {
@@ -213,7 +240,7 @@ VFSResult VFSNode::ForwardConnection::_do_read(const std::map<std::string, std::
 }
 
 VFSResult VFSNode::ForwardConnection::sendRequest(const VFSRequest& req) {
-    if (req.op == "NOTIFY" || req.op == "PUB") {
+    if (req.op == "PUB") {
         httplib::Headers headers = {
             {"X-VFS-Op", "PUB"},
             {"X-VFS-Selector", req.selector.to_json().dump()},
@@ -233,7 +260,7 @@ VFSResult VFSNode::ForwardConnection::sendRequest(const VFSRequest& req) {
             cli.Post("/notify", headers, body, "application/json");
         }).detach();
         return {};
-    } else if (req.op == "SUBSCRIBE" || req.op == "SUB") {
+    } else if (req.op == "SUB") {
         httplib::Headers headers = {
             {"X-VFS-Op", "SUB"},
             {"X-VFS-Selector", req.selector.to_json().dump()},
@@ -277,12 +304,12 @@ VFSResult VFSNode::ForwardConnection::sendRequest(const VFSRequest& req) {
 }
 
 VFSResult VFSNode::ReverseConnection::sendRequest(const VFSRequest& req) {
-    if (req.op == "NOTIFY" || req.op == "PUB") {
+    if (req.op == "PUB") {
         std::lock_guard<std::mutex> lock(mutex);
         queue.push_back({{"type", "PUB"}, {"selector", req.selector.to_json()}, {"payload", req.data.empty() ? json::object() : json::parse(req.data)}, {"stack", req.stack}});
         cv.notify_one();
         return {};
-    } else if (req.op == "SUBSCRIBE" || req.op == "SUB") {
+    } else if (req.op == "SUB") {
         std::lock_guard<std::mutex> lock(mutex);
         queue.push_back({{"type", "COMMAND"}, {"op", "SUB"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
         cv.notify_one();
@@ -311,18 +338,19 @@ VFSResult VFSNode::WSConnection::_do_ws_read(const json& frame) {
 }
 
 VFSResult VFSNode::WSConnection::sendRequest(const VFSRequest& req) {
-    if (req.op == "NOTIFY" || req.op == "PUB") {
+    if (req.op == "PUB") {
         if (!req.binary_data.empty()) {
-            send_binary_frame({{"type", "NOTIFY"}, {"selector", req.selector.to_json()}, {"stack", req.stack}, {"hasBinary", true}}, req.binary_data);
+            send_binary_frame({{"type", "PUB"}, {"selector", req.selector.to_json()}, {"stack", req.stack}, {"hasBinary", true}}, req.binary_data);
         } else {
             json payload = req.data.empty() ? json::object() : json::parse(req.data);
-            send_frame({{"type", "NOTIFY"}, {"selector", req.selector.to_json()}, {"payload", payload}, {"stack", req.stack}});
+            send_frame({{"type", "PUB"}, {"selector", req.selector.to_json()}, {"payload", payload}, {"stack", req.stack}});
         }
         return {};
-    } else if (req.op == "SUBSCRIBE" || req.op == "SUB") {
-        send_frame({{"type", "SUBSCRIBE"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
+    } else if (req.op == "SUB") {
+        send_frame({{"type", "SUB"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
         return {};
-    } else if (req.op == "READ_SELECTOR" || req.op == "READ_CID") {
+    }
+ else if (req.op == "READ_SELECTOR" || req.op == "READ_CID") {
         json frame = {
             {"type", req.op},
             {"txId", generate_tx_id()},

@@ -296,9 +296,20 @@ VFS::VFS(const Config& config) : config_(config) {}
 VFS::~VFS() {}
 
 void VFS::begin() {
+    register_with_neighbors();
 }
 
 void VFS::tick() {
+    // 1. Periodic Registration Retry (if no peers and we have neighbors configured)
+    static unsigned long last_register_attempt = 0;
+    if (peers_.empty() && !config_.neighbors.empty()) {
+        if (millis() - last_register_attempt > 10000) { // Retry every 10s
+            last_register_attempt = millis();
+            Serial.println("[VFS] No peers. Retrying registration...");
+            register_with_neighbors();
+        }
+    }
+
     static unsigned long last_activity = 0;
     if (millis() - last_activity > 100) {
         last_activity = millis();
@@ -355,12 +366,7 @@ void VFS::register_with_neighbors() {
     }
 }
 
-void VFS::add_peer(std::shared_ptr<Peer> peer) {
-    {
-        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
-        peers_.push_back(peer);
-    }
-    
+json VFS::get_topology_payload() {
     json neighbors = json::array();
     {
         std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
@@ -372,7 +378,35 @@ void VFS::add_peer(std::shared_ptr<Peer> peer) {
             });
         }
     }
-    notify({{"path", "sys/topo"}}, {{"peer", config_.id}, {"neighbors", neighbors}});
+
+    json activeInterests = json::array();
+    {
+        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
+        for (auto const& [topic, subs] : interests_) {
+            bool has_remote = false;
+            for (auto const& [neighbor_id, expiry] : subs) {
+                has_remote = true; 
+                break;
+            }
+            if (has_remote && interest_selectors_.count(topic)) {
+                activeInterests.push_back({
+                    {"path", interest_selectors_[topic]["path"]},
+                    {"local", false},
+                    {"remote", true}
+                });
+            }
+        }
+    }
+
+    return {{"peer", config_.id}, {"neighbors", neighbors}, {"interests", activeInterests}};
+}
+
+void VFS::add_peer(std::shared_ptr<Peer> peer) {
+    {
+        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
+        peers_.push_back(peer);
+    }
+    notify({{"path", "sys/topo"}}, get_topology_payload());
 }
 
 void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> ws_conn) {
@@ -387,26 +421,13 @@ void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> w
         peers_.push_back(ws_conn);
     }
     Serial.printf("[VFS] Peer %s upgraded to WebSocket!\n", peer_id.c_str());
-
-    json neighbors = json::array();
-    {
-        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
-        for (auto const& p : peers_) {
-            neighbors.push_back({
-                {"id", p->id()},
-                {"reachability", p->reachability()},
-                {"protocol", p->protocol()}
-            });
-        }
-    }
-    notify({{"path", "sys/topo"}}, {{"peer", config_.id}, {"neighbors", neighbors}});
+    notify({{"path", "sys/topo"}}, get_topology_payload());
 }
 
 void VFS::clear_peers() {
     std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
     peers_.clear();
 }
-
 void VFS::register_op(const std::string& path, Handler handler, const json& schema) {
     handlers_[path] = handler;
     schemas_[path] = schema;
@@ -416,30 +437,21 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
     if (!cmd.contains("type")) return;
     std::string type = cmd.at("type");
     
-    if (type == "COMMAND") {
-        std::string op = cmd.at("op");
-        if (op == "READ" && has_feature(VFS_FULFILLMENT)) {
-            Selector sel = Selector::from_json(cmd.at("selector"));
-            Serial.printf("[VFS] Processing READ: %s\n", sel.path.c_str());
-            trigger_activity();
-            if (handlers_.count(sel.path)) {
-                ReverseResponseWriter resp(respond);
-                handlers_[sel.path](sel.parameters, &resp);
-            } else {
-                respond(404, "text/plain", (const uint8_t*)"Not Found", 9);
-            }
-        } else if (op == "SUB" && has_feature(VFS_SUBSCRIPTION)) {
-            Selector sel = Selector::from_json(cmd.at("selector"));
-            long long expiresAt = cmd.at("expiresAt");
-            std::string neighbor_id = cmd.at("stack").back();
-            Serial.printf("[VFS] Processing SUB: %s from %s\n", sel.path.c_str(), neighbor_id.c_str());
-            trigger_activity();
-            this->subscribe(sel.to_json(), expiresAt, {neighbor_id});
-        }
-    } else if (type == "PUB") {
+    if (type == "PUB" || type == "NOTIFY") {
         Selector sel = Selector::from_json(cmd.at("selector"));
         Serial.printf("[Mesh IN] <- PUB: %s\n", sel.path.c_str());
         trigger_activity();
+        notify(sel.to_json(), cmd.at("payload"));
+        respond(200, "text/plain", (const uint8_t*)"OK", 2);
+    } else if (type == "SUB" || type == "SUBSCRIBE") {
+        Selector sel = Selector::from_json(cmd.at("selector"));
+        long long expiresAt = cmd.at("expiresAt");
+        std::vector<std::string> stack;
+        if (cmd.contains("stack")) {
+            for (auto const& s : cmd["stack"]) stack.push_back(s.get<std::string>());
+        }
+        this->subscribe(sel.to_json(), expiresAt, stack);
+        respond(200, "text/plain", (const uint8_t*)"OK", 2);
     }
 }
 
@@ -586,16 +598,24 @@ void VFS::subscribe(const json& selector, long long expiresAt, const std::vector
     if (!has_feature(VFS_SUBSCRIPTION)) return;
     Selector sel = Selector::from_json(selector);
     std::string path = sel.path;
-    std::string remote_id = stack.empty() ? "" : stack.back();
+    std::string remote_id = stack.empty() ? "local" : stack.back();
 
+    bool is_new_interest = false;
     {
         std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
+        if (interests_[path].count(remote_id) == 0) is_new_interest = true;
         interests_[path][remote_id] = expiresAt;
         interest_selectors_[path] = selector;
     }
 
-    Serial.printf("[VFS %s] Subscription recorded for %s from %s (expires in %lldms)\n", 
-                  config_.id.c_str(), path.c_str(), remote_id.c_str(), expiresAt - millis());
+    if (is_new_interest) {
+        notify({{"path", "sys/topo"}}, get_topology_payload());
+    }
+
+    Serial.printf("[VFS %s] Subscription recorded for %s from %s\n", 
+                  config_.id.c_str(), path.c_str(), remote_id.c_str());
+
+    if (!is_new_interest) return;
 
     VFSRequest req;
     req.op = "SUB";

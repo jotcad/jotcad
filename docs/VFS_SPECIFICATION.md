@@ -93,7 +93,8 @@ All peer interactions are managed through a unified **Connection** abstraction.
 The VFS uses specialized system paths for mesh management.
 
 - **Topology Updates (`sys/topo`):** Nodes notify neighbors of topology changes.
-  - Content: `{ peer: "id", neighbors: [ { "id": "peer-id", "reachability": "DIRECT|REVERSE", "protocol": "HTTP|REVERSE-HTTP|WS" } ] }`
+  - Content: `{ id: "sender-id", neighbors: [ { "id": "peer-id", "reachability": "DIRECT|REVERSE", "protocol": "http|https|ws|wss" } ], interests: [...] }`
+  - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion, WebSocket upgrade, or when a new `SUB` for `sys/topo` is received (Reactive Discovery).
 - **Schema Discovery (`sys/schema`):** Providers announce their available operators.
   - Content: `{ provider: "id", catalog: { "path": schema } }`
   - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
