@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to build and flash the esp8266_time_display_node application
+# Script to build, flash, and monitor the esp32_midi_reader application
 
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -8,13 +8,15 @@ cd "$SCRIPT_DIR"
 # Parse suffix (defaulting to 01)
 RAW_SUFFIX=${1:-1}
 SUFFIX=$(printf "%02d" $RAW_SUFFIX)
-NODE_ID="esp8266-time-display-$SUFFIX"
+NODE_ID="esp32-midi-reader-$SUFFIX"
 
 echo "[JotCAD] Starting Build, Upload, and Monitor for $NODE_ID..."
 
-if DEVICE_NODE_ID="$NODE_ID" pio run -e esp8266_time_display -t upload -t monitor; then
+if DEVICE_NODE_ID="$NODE_ID" pio run -e esp32_midi_reader -t upload --upload-port /dev/ttyACM0 -t monitor --monitor-port /dev/ttyACM0; then
     echo "[JotCAD] Execution finished."
 else
     echo "[JotCAD] Upload or Monitor FAILED."
     exit 1
 fi
+
+

@@ -1,5 +1,10 @@
 # JotCAD ESP32 Dual Music Synthesizer Node
 
+> [!IMPORTANT]
+> **HARDWARE COMPATIBILITY NOTICE**:
+> *   **Supported Hardware**: Classic original dual-core ESP32 microcontrollers (e.g., **ESP32-WROOM-32**, **ESP32-WROVER**, or **ESP32-DevKitC**).
+> *   **Unsupported Hardware**: **ESP32-S3**, **ESP32-S2**, **ESP32-C3**, and **ESP32-C6** are **NOT supported**. While some possess dual-core CPUs (such as the S3), they lack the physical **Classic Bluetooth (BR/EDR)** radio hardware needed to transmit standard high-fidelity audio streams over **A2DP** (they are restricted to Bluetooth Low Energy only).
+
 This directory contains the firmware for the **JotCAD ESP32 Dual Music Synthesizer Node** (`esp32_dual_music_synth`), a dedicated high-fidelity wireless music synthesizer targeting classic dual-core ESP32 microcontrollers. 
 
 This node functions entirely without wires: it connects asynchronously as a **BLE-MIDI Client** to your `SMK25Mini` keyboard, maps key velocity to polyphonic voice channels, synthesizes real-time stereo CD-quality audio (44.1kHz) in memory, and broadcasts the audio to **Bluetooth Earphones/Speakers** via Classic Bluetooth **A2DP Source**.
@@ -75,7 +80,7 @@ The synthesizer is configured with a rich, clean-sounding default patch:
     *   **Decay**: 150ms.
     *   **Sustain**: 75% level (`192` out of 255).
     *   **Release**: 250ms (smooth, natural note decay after key release).
-*   **Master Volume**: Set slightly below the clipping threshold (`60000` out of 65535) to provide a rich, loud signal without distortion.
+*   **Master Volume**: Set to maximum 8-bit level (`255`) to provide a rich, loud signal without distortion.
 
 ---
 
@@ -113,3 +118,18 @@ Every 10 seconds, the synthesizer prints a comprehensive diagnostic line to the 
 
 *   **Self-Healing Reconnection**: If the `SMK25Mini` keyboard is turned off or goes out of range, the background scanner detects the loss of connection and will automatically trigger active background scans every 10 seconds to re-establish the connection.
 *   **A2DP Connection**: The Classic Bluetooth stack manages automatic re-pairing with the last connected Bluetooth earphones/speakers when they enter pairing mode.
+
+---
+
+## 6. Critical Multitasking & API Rules
+
+### A. Prevent CPU Starvation (Mandatory loop Yields)
+On dual-core ESP32 microcontrollers, the primary application loop (`loop()`) executes on Core 1 by default. When VFS/Wi-Fi is disabled, a standard loop check containing no delay runs as a tight infinite block.
+*   **The Bug**: Consumes 100% of Core 1's CPU capacity, completely starving lower-priority background tasks on Core 1 (such as the Bluedroid stack, A2DP state machine handshakes, and FreeRTOS connection timers). This blocks the A2DP stream from ever starting.
+*   **The Rule**: **Always** place a short yield or delay (e.g., `delay(10);` or `vTaskDelay(pdMS_TO_TICKS(10));`) at the end of the `loop()` function. This immediately releases CPU control and permits the background Bluetooth stack to complete handshakes seamlessly.
+
+### B. Standard 8-Bit Volume Scaling (Avoid Bitwise Overflow)
+The `ESP32Synth` library is designed to accept voice and master volume inputs in an **8-bit range (0 to 255)**.
+*   **The Bug**: Internally, `noteOn()` and `setVolume()` shift the volume left by 8 bits (`volume << 8`) to fit into a 16-bit unsigned voice container (`uint16_t vol`). Scaling MIDI note velocity to a 16-bit range (e.g., `velocity * 512 = 51200`) causes a bitwise overflow when shifted left by another 8 bits inside a `uint16_t` ($51200 \times 256 \equiv 0 \pmod{65536}$), reducing the note volume to **exactly 0 (complete silence)**.
+*   **The Rule**: Standardize all volume inputs (both per-voice and master) to a standard **8-bit range (0 to 255)**. Scale standard 7-bit MIDI velocity (0-127) using a simple left-shift: `(velocity > 127) ? 255 : (velocity << 1)`.
+

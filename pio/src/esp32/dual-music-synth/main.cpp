@@ -4,11 +4,11 @@
 #include "vfs.h"
 #include "secrets.h"
 
-// BLE-MIDI and NimBLE scanning imports
+// BLE-MIDI and standard BLE scanning imports
 #include <BLEMidi.h>
-#include <NimBLEDevice.h>
-#include <NimBLEScan.h>
-#include <NimBLEAdvertisedDevice.h>
+#include <BLEDevice.h>
+#include <BLEScan.h>
+#include <BLEAdvertisedDevice.h>
 
 // Classic Bluetooth A2DP Source and Synthesizer imports
 #include "BluetoothA2DPSource.h"
@@ -33,18 +33,18 @@ static int next_voice_index = 0;
 static portMUX_TYPE synth_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // Standard BLE MIDI Service UUID
-static NimBLEUUID midiServiceUUID("03B80E5A-EDE8-4B33-A751-6CE34EC4C700");
+static BLEUUID midiServiceUUID("03B80E5A-EDE8-4B33-A751-6CE34EC4C700");
 
 // --- BLE-MIDI Discovery Scan Callbacks ---
-class JotMidiDiscoveryCallbacks: public NimBLEAdvertisedDeviceCallbacks {
-    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+class JotMidiDiscoveryCallbacks: public BLEAdvertisedDeviceCallbacks {
+    void onResult(BLEAdvertisedDevice advertisedDevice) {
         Serial.print("[BLE-SCANNER] Discovered device: ");
         Serial.printf("Name: '%s' | Addr: %s | RSSI: %d dBm", 
-                      advertisedDevice->getName().c_str(),
-                      advertisedDevice->getAddress().toString().c_str(),
-                      advertisedDevice->getRSSI());
+                      advertisedDevice.getName().c_str(),
+                      advertisedDevice.getAddress().toString().c_str(),
+                      advertisedDevice.getRSSI());
         
-        if (advertisedDevice->haveServiceUUID() && advertisedDevice->isAdvertisingService(midiServiceUUID)) {
+        if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(midiServiceUUID)) {
             Serial.print("  <== [MIDI-CAPABLE KEYBOARD DETECTED!]");
         }
         Serial.println();
@@ -83,9 +83,12 @@ void broadcast_vfs_event(const fs::json& event) {
 }
 
 // --- Real-time Stereo Audio Stream Callback (Invoked on Core 0 by A2DP Thread) ---
+static uint64_t total_frames_rendered = 0;
+
 int32_t get_sound_data(Frame* data, int32_t len) {
     // Fill the stereo frame buffer in real-time using fixed-point polyphonic mixing
     synth.generateSamplesStereo((int16_t*)data, len);
+    total_frames_rendered += len;
     return len;
 }
 
@@ -103,8 +106,8 @@ void OnBLEDisconnected() {
 }
 
 void OnBLENoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t timestamp) {
-    Serial.printf("[BLE-MIDI] NOTE ON - Ch: %d, Note: %d, Velocity: %d (Timestamp: %u)\n", 
-                  channel, note, velocity, timestamp);
+    Serial.printf("[BLE-MIDI] NOTE ON - Ch: %d, Note: %d, Velocity: %d (Time: %lu ms)\n", 
+                  channel, note, velocity, millis());
     
     // Convert MIDI note number to frequency in centihertz
     double freq = 440.0 * pow(2.0, (note - 69.0) / 12.0);
@@ -116,8 +119,8 @@ void OnBLENoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t times
     next_voice_index = (next_voice_index + 1) % MAX_POLYPHONY;
     active_notes[voice] = note;
     
-    // Scale standard 7-bit velocity (0-127) to synthesizer 16-bit volume (0-65535)
-    uint16_t synthVolume = velocity * 512; 
+    // Scale standard 7-bit velocity (0-127) to synthesizer standard 8-bit volume (0-255)
+    uint8_t synthVolume = (velocity > 127) ? 255 : (velocity << 1); 
     
     synth.noteOn(voice, freqCentiHz, synthVolume);
     portEXIT_CRITICAL(&synth_mux);
@@ -128,14 +131,14 @@ void OnBLENoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t times
         {"note", note},
         {"velocity", velocity},
         {"source", "ble"},
-        {"timestamp", timestamp}
+        {"timestamp", millis()}
     };
     broadcast_vfs_event(event);
 }
 
 void OnBLENoteOff(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t timestamp) {
-    Serial.printf("[BLE-MIDI] NOTE OFF - Ch: %d, Note: %d, Velocity: %d (Timestamp: %u)\n", 
-                  channel, note, velocity, timestamp);
+    Serial.printf("[BLE-MIDI] NOTE OFF - Ch: %d, Note: %d, Velocity: %d (Time: %lu ms)\n", 
+                  channel, note, velocity, millis());
 
     portENTER_CRITICAL(&synth_mux);
     // Find the active voice channel rendering this note and trigger release envelope
@@ -153,7 +156,7 @@ void OnBLENoteOff(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t time
         {"note", note},
         {"velocity", velocity},
         {"source", "ble"},
-        {"timestamp", timestamp}
+        {"timestamp", millis()}
     };
     broadcast_vfs_event(event);
 }
@@ -173,10 +176,41 @@ void OnBLEControlChange(uint8_t channel, uint8_t control, uint8_t value, uint16_
     broadcast_vfs_event(event);
 }
 
+// --- Classic Bluetooth A2DP Device Discovery Callback ---
+bool my_ssid_callback(const char* ssid, esp_bd_addr_t address, int rssi) {
+    Serial.printf("[A2DP-SCANNER] Discovered device: Name: '%s' | MAC: %02X:%02X:%02X:%02X:%02X:%02X | RSSI: %d dBm\n",
+                  (ssid && strlen(ssid) > 0 ? ssid : "<Unknown>"),
+                  address[0], address[1], address[2], address[3], address[4], address[5],
+                  rssi);
+                  
+    // If we have a specific earphones target configured, check if this matches
+    if (strlen(BT_EARPHONES_NAME) > 0) {
+        if (ssid && strcmp(ssid, BT_EARPHONES_NAME) == 0) {
+            Serial.printf("[A2DP-SCANNER] ==> MATCH FOUND: Connecting to locked target '%s'!\n", BT_EARPHONES_NAME);
+            return true;
+        }
+        return false; // Continue scanning for the matching name
+    }
+    
+    // Otherwise, in generic discovery mode, automatically connect to the first audio receiver found
+    Serial.printf("[A2DP-SCANNER] ==> Connecting to first available receiver: '%s'...\n", (ssid && strlen(ssid) > 0 ? ssid : "<Unknown>"));
+    return true;
+}
+
+// --- A2DP State Changed Callbacks for Handshake Diagnostics ---
+void on_a2dp_connection_state(esp_a2d_connection_state_t state, void* obj) {
+    Serial.printf("[A2DP-CALLBACK] Connection State Changed: %d\n", (int)state);
+}
+
+void on_a2dp_audio_state(esp_a2d_audio_state_t state, void* obj) {
+    Serial.printf("[A2DP-CALLBACK] Audio State Changed: %d\n", (int)state);
+}
+
 // --- Active Bluetooth A2DP Source Connection Verification ---
 void verify_a2dp_connection() {
     if (a2dp_source.is_connected()) {
         Serial.println("[A2DP-AUDIO] >>> SUCCESS: Connected to Bluetooth Earphones! Streaming audio... <<<");
+        a2dp_source.set_volume(100); // Unmute and set volume to 100/127 on connection!
     } else {
         Serial.println("[A2DP-AUDIO] WARNING: Earphones disconnected or scanning. Retrying connection...");
     }
@@ -208,15 +242,15 @@ void setup() {
 
     // 2. BLE Keyboard Scanner discovery phase
     Serial.println("\n[BLE-SCANNER] Initializing active scan to discover BLE MIDI controllers...");
-    NimBLEDevice::init("JotCAD Synth Client");
-    NimBLEScan* pNimBLEScan = NimBLEDevice::getScan();
-    pNimBLEScan->setAdvertisedDeviceCallbacks(new JotMidiDiscoveryCallbacks());
-    pNimBLEScan->setActiveScan(true);
-    pNimBLEScan->setInterval(100);
-    pNimBLEScan->setWindow(99);
+    BLEDevice::init("JotCAD Synth Client");
+    BLEScan* pBLEScan = BLEDevice::getScan();
+    pBLEScan->setAdvertisedDeviceCallbacks(new JotMidiDiscoveryCallbacks());
+    pBLEScan->setActiveScan(true);
+    pBLEScan->setInterval(100);
+    pBLEScan->setWindow(99);
     
     Serial.println("[BLE-SCANNER] Starting 5-second active discovery scan...");
-    pNimBLEScan->start(5, false); // Synchronous block scan
+    pBLEScan->start(5, false); // Synchronous block scan
     Serial.println("[BLE-SCANNER] Scan complete.");
 
     // 3. Initialize BLE-MIDI Client Keyboard Connection
@@ -250,11 +284,14 @@ void setup() {
         synth.setWave(i, WAVE_TRIANGLE); // Warm, clean triangle wave
         synth.setEnv(i, 20, 150, 192, 250); // ADSR: 20ms attack, 150ms decay, 75% sustain level, 250ms release stage
     }
-    synth.setMasterVolume(60000); // Scale master volume slightly below clip limit
+    synth.setMasterVolume(255); // Set master volume to maximum 8-bit level
     Serial.println("[SYNTH] 16 Polyphonic triangle-envelope voices initialized.");
 
     // 5. Initialize Bluetooth A2DP Audio Streaming Source (earphones)
     Serial.println("\n[A2DP-AUDIO] Bootstrapping Bluetooth A2DP Audio transmitter...");
+    a2dp_source.set_on_connection_state_changed(on_a2dp_connection_state);
+    a2dp_source.set_on_audio_state_changed(on_a2dp_audio_state);
+    a2dp_source.set_ssid_callback(my_ssid_callback);
     
     // Configure standard audio streaming configurations
     std::vector<const char*> target_names;
@@ -267,6 +304,7 @@ void setup() {
     
     // Start transmitting stereo audio stream
     a2dp_source.start(target_names, get_sound_data);
+    a2dp_source.set_volume(100); // Set absolute volume to 100/127 to prevent muted default!
     Serial.println("[A2DP-AUDIO] Broadcasting A2DP streaming signals. Scanning for audio receivers...");
 
 #if ENABLE_VFS
@@ -300,10 +338,12 @@ void loop() {
         bool isBleConnected = BLEMidiClient.isConnected();
         bool isA2dpConnected = a2dp_source.is_connected();
         
-        Serial.printf("[DIAGNOSTIC] Wi-Fi: %s | BLE Keyboard: %s | Earphones: %s | Last Event: %s\n", 
+        Serial.printf("[DIAGNOSTIC] Wi-Fi: %s | BLE Keyboard: %s | Earphones: %s | DSP Load: %.2f%% | Rendered Frames: %llu | Last Event: %s\n", 
                       (WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED"), 
                       (isBleConnected ? "CONNECTED" : "DISCONNECTED"),
                       (isA2dpConnected ? "CONNECTED" : "DISCONNECTED"),
+                      synth.getCPULoad(),
+                      total_frames_rendered,
                       current.dump().c_str());
                       
         // A. Self-healing BLE-MIDI keyboard reconnection
@@ -321,4 +361,5 @@ void loop() {
         // B. Self-healing Bluetooth Earphones connection logger
         verify_a2dp_connection();
     }
+    delay(10); // Yield to prevent Core 1 CPU starvation
 }

@@ -36,7 +36,7 @@ void setup() {
     // 1. Setup VFS Node
     fs::VFS::Config config;
     config.id = DEVICE_NODE_ID;
-    config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION;
+    config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     config.neighbors = {MESH_NEIGHBOR_URL};
     
     node = new fs::VFS(config);
@@ -60,6 +60,11 @@ void loop() {
 
         // Update display
         display.showNumberDec(shared_count % 10000, true);
+
+        // Periodically log mesh status
+        if (shared_count % 5 == 0) {
+            node->log_status();
+        }
 
         // Broadcast count change
         fs::json selector = {{"path", "sensor/counter"}};
