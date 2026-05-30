@@ -71,7 +71,8 @@ export class VFS {
         ...context, 
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
-        expiresAt: context.expiresAt || (Date.now() + 10000) 
+        // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
+        expiresAt: context.expiresAt || (Date.now() + 30000) 
     };
     if (Date.now() > packetContext.expiresAt) return null;
 
@@ -95,7 +96,8 @@ export class VFS {
         ...context, 
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
-        expiresAt: context.expiresAt || (Date.now() + 10000) 
+        // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
+        expiresAt: context.expiresAt || (Date.now() + 30000) 
     };
     if (Date.now() > packetContext.expiresAt) return null;
 

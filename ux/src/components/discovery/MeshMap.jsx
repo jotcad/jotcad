@@ -190,6 +190,7 @@ export function MeshMap(props) {
               from: node,
               to: target,
               reachability: neighbor.reachability,
+              protocol: neighbor.protocol,
             });
           }
         }
@@ -208,7 +209,7 @@ export function MeshMap(props) {
               y1={edge.from.y}
               x2={edge.to.x}
               y2={edge.to.y}
-              stroke="#06b6d4"
+              stroke={edge.protocol === 'WS' ? "#a855f7" : "#06b6d4"}
               stroke-width="3"
               stroke-opacity="0.7"
               stroke-dasharray={edge.reachability === 'REVERSE' ? '6 6' : '0'}

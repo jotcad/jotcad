@@ -13,6 +13,7 @@ export class ReverseConnection extends Connection {
     this.vfs = mesh.vfs;
     this.instanceId = options.instanceId || Math.random().toString(36).slice(2, 8);
     this.reachability = 'REVERSE';
+    this.protocol = 'REVERSE-HTTP';
     
     // Server-side state
     this.pool = [];

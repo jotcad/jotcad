@@ -232,6 +232,7 @@ export const vfsActions = {
           const n = nodes.get(p.id);
           n.pps = p.pps;
           n.reachability = p.reachability;
+          n.protocol = p.protocol;
         }
       }
       setMeshTopology('peers', reconcile([...nodes.values()]));

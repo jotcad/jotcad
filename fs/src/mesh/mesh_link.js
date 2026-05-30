@@ -65,7 +65,7 @@ export class MeshLinkBase {
     this.peers.set(id, wsConn);
     this.notify(new Selector('sys/topo'), {
       peer: this.vfs.id,
-      neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+      neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol }))
     });
   }
 
@@ -135,7 +135,7 @@ export class MeshLinkBase {
             log(`[MeshLink ${this.vfs.id}] -> Contributing local topology to new subscriber ${neighborId}`);
             conn.send(new NotifyRequest(s, {
                 peer: this.vfs.id,
-                neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability }))
+                neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol }))
             }, [this.vfs.id])).catch((err) => {
               log(`[MeshLink ${this.vfs.id}] Failed to push topology to new peer ${neighborId}: ${err.message}`);
             });
@@ -317,7 +317,7 @@ export class MeshLinkBase {
               }
           }
 
-          this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+          this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol })) });
           return info.id;
         }
       } else {
@@ -364,7 +364,7 @@ export class MeshLinkBase {
           reachability: 'DIRECT'
         });
         this._setPeer(peerId, conn);
-        this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+        this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol })) });
         return { id: this.vfs.id, reachability: 'DIRECT', transports: ['http', 'ws'], wsUrl };
       }
     }
@@ -374,7 +374,7 @@ export class MeshLinkBase {
     }
     const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });
     this._setPeer(peerId, conn);
-    this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability })) });
+    this.notify(new Selector('sys/topo'), { peer: this.vfs.id, neighbors: [...this.peers.values()].map(c => ({ id: c.neighborId, reachability: c.reachability, protocol: c.protocol })) });
     return { id: this.vfs.id, reachability: 'REVERSE', transports: ['http', 'ws'], wsUrl };
   }
 

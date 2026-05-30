@@ -58,7 +58,11 @@ void VFSNode::add_connection(std::shared_ptr<Connection> conn) {
     {
         std::lock_guard<std::mutex> lock(peer_mutex_);
         for (auto const& [p_id, conn_ptr] : peers_) {
-            neighbors.push_back(json{{"id", p_id}, {"reachability", conn_ptr->is_reverse() ? "REVERSE" : "DIRECT"}});
+            neighbors.push_back(json{
+                {"id", p_id}, 
+                {"reachability", conn_ptr->is_reverse() ? "REVERSE" : "DIRECT"},
+                {"protocol", conn_ptr->get_protocol()}
+            });
         }
     }
     json topo_payload = {{"peer", config_.id}, {"neighbors", neighbors}};
@@ -410,7 +414,7 @@ void VFSNode::WSForwardConnection::send_binary_frame(const json& header, const s
     std::lock_guard<std::mutex> lock(ws_mutex);
     if (ws_client && ws_client->is_open()) {
         ws_client->send(header.dump());
-        ws_client->send((const char*)data.data(), data.size(), httplib::ws::OpCode::Binary);
+        ws_client->send((const char*)data.data(), data.size());
     } else {
         std::cerr << "[WS Client] Cannot send binary frame, client not connected." << std::endl;
     }
@@ -460,7 +464,7 @@ void VFSNode::WSReverseConnection::send_binary_frame(const json& header, const s
     std::lock_guard<std::mutex> lock(ws_mutex);
     if (ws) {
         ws->send(header.dump());
-        ws->send((const char*)data.data(), data.size(), httplib::ws::OpCode::Binary);
+        ws->send((const char*)data.data(), data.size());
     }
 }
 

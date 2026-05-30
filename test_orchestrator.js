@@ -23,13 +23,13 @@ const suites = {
   },
   integration: {
     name: 'Integration Tests',
-    command: 'node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/*.test.js',
+    command: './geo/compile.sh && node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/*.test.js',
     args: [],
     env: {}
   },
   puppeteer: {
     name: 'Puppeteer Integration Tests',
-    command: 'npm run build:ux && node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/puppeteer/*.test.js',
+    command: './geo/compile.sh && npm run build:ux && node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/puppeteer/*.test.js',
     args: [],
     env: {}
   }};

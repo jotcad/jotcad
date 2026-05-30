@@ -59,22 +59,23 @@ export class WSNodeForwardConnection extends WSNodeConnection {
         ws.send(JSON.stringify({ type: 'IDENTIFY', peerId: localId }));
       });
 
-      ws.on('message', (data) => {
+      const onHandshake = (data) => {
         try {
           const msg = JSON.parse(data.toString());
           if (msg.type === 'ACK') {
             clearTimeout(timeout);
-            // We don't remove the message listener because WSNodeConnection constructor adds one.
-            // But we must be careful not to process the ACK as a VFS frame.
-            // WSNodeConnection will ignore it because it's not a VFS type (READ/NOTIFY/etc).
+            ws.off('message', onHandshake);
             resolve(new WSNodeForwardConnection(peerId, ws));
           }
         } catch (err) {
           clearTimeout(timeout);
+          ws.off('message', onHandshake);
           ws.close();
           reject(new Error(`Handshake error: ${err.message}`));
         }
-      });
+      };
+
+      ws.on('message', onHandshake);
 
       ws.on('error', (err) => {
         clearTimeout(timeout);

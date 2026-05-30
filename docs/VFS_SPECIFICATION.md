@@ -93,7 +93,7 @@ All peer interactions are managed through a unified **Connection** abstraction.
 The VFS uses specialized system paths for mesh management.
 
 - **Topology Updates (`sys/topo`):** Nodes notify neighbors of topology changes.
-  - Content: `{ peer: "id", neighbors: [ { "id": "peer-id", "reachability": "DIRECT|REVERSE" } ] }`
+  - Content: `{ peer: "id", neighbors: [ { "id": "peer-id", "reachability": "DIRECT|REVERSE", "protocol": "HTTP|REVERSE-HTTP|WS" } ] }`
 - **Schema Discovery (`sys/schema`):** Providers announce their available operators.
   - Content: `{ provider: "id", catalog: { "path": schema } }`
   - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
@@ -160,7 +160,7 @@ The `read` operation is the primary mechanism for demand-driven data retrieval.
     "stack": ["node-A"]
   }
   ```
-- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status.
+- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status. The default TTL for requests without an explicit `expiresAt` is **30 seconds**.
 
 ## 4. Core Type System
 

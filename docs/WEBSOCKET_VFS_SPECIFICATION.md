@@ -128,15 +128,14 @@ Returns requested resource bytes and metadata correlated by `txId`.
   "txId": "read_00918ac",
   "type": "READ_RESPONSE",
   "status": 200,
-  "payload": {
-    "data": "MjEuNQA=",      // Base64-encoded file payload (e.g., 21.5)
-    "metadata": {
-      "encoding": "string",
-      "state": "AVAILABLE"
-    }
+  "hasBinary": true,
+  "metadata": {
+    "encoding": "json",
+    "state": "AVAILABLE"
   }
 }
 ```
+*(Followed immediately by a BINARY frame containing the raw data)*
 
 #### 3. Interest Propagation (`SUBSCRIBE`)
 Paints a subscription trail in the mesh. No reply expected.
@@ -158,7 +157,7 @@ Broadcasts dynamic updates down a subscription path.
   "payload": {
     "peer": "gateway_node",
     "neighbors": [
-      { "id": "esp32_sensor", "reachability": "DIRECT" }
+      { "id": "esp32_sensor", "reachability": "DIRECT", "protocol": "HTTP" }
     ]
   },
   "stack": []
@@ -218,7 +217,7 @@ Through the bi-directional reverse transport, the VFS server can push commands d
 1. The gateway executes `vfs.read({ path: "sensor/counter" })`.
 2. The router resolves this selector to the PIO node and fires a `READ` frame over the open WebSocket.
 3. The PIO node receives the WebSocket frame, parses the JSON structure on the stack, and routes it directly to its local sensor loop.
-4. The PIO node reads its physical GPIO pin/timer registers, formats the result as a raw value, base64 encodes it, and pushes the `READ_RESPONSE` frame back up the WebSocket channel.
+4. The PIO node reads its physical GPIO pin/timer registers, formats the result as a raw value, and pushes the `READ_RESPONSE` frame back up the WebSocket channel using sequential binary framing to minimize overhead.
 
 ---
 

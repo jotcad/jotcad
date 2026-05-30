@@ -12,6 +12,7 @@ export class WSConnectionBase extends Connection {
   constructor(neighborId, socket) {
     super(neighborId);
     this.socket = socket;
+    this.protocol = 'WS';
     this.pendingReads = new Map();
     this.pendingSpies = new Map();
   }

@@ -318,7 +318,11 @@ void VFSNode::subscribe(const json& selector_json, long long expiresAt, const st
             std::lock_guard<std::mutex> lock(peer_mutex_);
             if (peers_.count(peer_id)) target = peers_[peer_id];
             for (auto const& [p_id, conn] : peers_) {
-                neighbors.push_back(json{{"id", p_id}, {"reachability", "REVERSE"}});
+                neighbors.push_back(json{
+                    {"id", p_id}, 
+                    {"reachability", conn->is_reverse() ? "REVERSE" : "DIRECT"},
+                    {"protocol", conn->get_protocol()}
+                });
             }
         }
 

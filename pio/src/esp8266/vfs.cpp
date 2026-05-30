@@ -351,20 +351,50 @@ void VFS::register_with_neighbors() {
 }
 
 void VFS::add_peer(std::shared_ptr<Peer> peer) {
-    std::lock_guard<Mutex> lock(mesh_mutex_);
-    peers_.push_back(peer);
+    {
+        std::lock_guard<Mutex> lock(mesh_mutex_);
+        peers_.push_back(peer);
+    }
+
+    json neighbors = json::array();
+    {
+        std::lock_guard<Mutex> lock(mesh_mutex_);
+        for (auto const& p : peers_) {
+            neighbors.push_back({
+                {"id", p->id()},
+                {"reachability", p->reachability()},
+                {"protocol", p->protocol()}
+            });
+        }
+    }
+    notify({{"path", "sys/topo"}}, {{"peer", config_.id}, {"neighbors", neighbors}});
 }
 
 void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> ws_conn) {
-    std::lock_guard<Mutex> lock(mesh_mutex_);
-    for (auto it = peers_.begin(); it != peers_.end(); ++it) {
-        if ((*it)->id() == peer_id) {
-            peers_.erase(it);
-            break;
+    {
+        std::lock_guard<Mutex> lock(mesh_mutex_);
+        for (auto it = peers_.begin(); it != peers_.end(); ++it) {
+            if ((*it)->id() == peer_id) {
+                peers_.erase(it);
+                break;
+            }
+        }
+        peers_.push_back(ws_conn);
+    }
+    Serial.printf("[VFS] Peer %s upgraded to WebSocket!\n", peer_id.c_str());
+
+    json neighbors = json::array();
+    {
+        std::lock_guard<Mutex> lock(mesh_mutex_);
+        for (auto const& p : peers_) {
+            neighbors.push_back({
+                {"id", p->id()},
+                {"reachability", p->reachability()},
+                {"protocol", p->protocol()}
+            });
         }
     }
-    peers_.push_back(ws_conn);
-    Serial.printf("[VFS] Peer %s upgraded to WebSocket!\n", peer_id.c_str());
+    notify({{"path", "sys/topo"}}, {{"peer", config_.id}, {"neighbors", neighbors}});
 }
 
 void VFS::clear_peers() {

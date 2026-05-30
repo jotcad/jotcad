@@ -66,6 +66,8 @@ public:
     virtual const std::string& id() const = 0;
     virtual void send(const VFSRequest& req) = 0;
     virtual void tick() {} // Cooperative tick
+    virtual std::string protocol() const = 0;
+    virtual std::string reachability() const = 0;
 };
 
 class VFS;
@@ -80,6 +82,8 @@ public:
     void send(const VFSRequest& req) override;
     
     void tick() override; 
+    std::string protocol() const override { return "REVERSE-HTTP"; }
+    std::string reachability() const override { return "REVERSE"; }
 private:
     VFS* node_;
     std::string id_;
@@ -107,6 +111,8 @@ public:
     const std::string& id() const override { return id_; }
     void send(const VFSRequest& req) override;
     void tick() override;
+    std::string protocol() const override { return "WS"; }
+    std::string reachability() const override { return "DIRECT"; }
 
 private:
     void on_event(WStype_t type, uint8_t * payload, size_t length);

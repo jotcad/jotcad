@@ -280,35 +280,28 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
   const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', (ws) => {
-    let identified = false;
-    let peerId = null;
-    let activeConn = null;
-
-    ws.on('message', async (data) => {
+    const onMessage = async (data) => {
       try {
         const frame = JSON.parse(data.toString());
-        if (!identified) {
-          if (frame.type === 'IDENTIFY' && frame.peerId) {
-            peerId = frame.peerId;
-            identified = true;
-            ws.send(JSON.stringify({ type: 'ACK', peerId: vfs.id }));
+        if (frame.type === 'IDENTIFY' && frame.peerId) {
+          const peerId = frame.peerId;
+          ws.off('message', onMessage);
+          ws.send(JSON.stringify({ type: 'ACK', peerId: vfs.id }));
 
-            const { WSNodeReverseConnection } = await import('./vfs_ws_transport_node.js');
-            activeConn = new WSNodeReverseConnection(peerId, ws);
-            activeConn.vfs = vfs;
-            activeConn.mesh = meshLink;
-            meshLink?.upgradePeerToWS(peerId, activeConn);
-            log(`[MeshServer ${vfs.id}] Upgraded peer ${peerId} over WebSocket Tunnel.`);
-          } else {
-            ws.close(4000, 'Expected IDENTIFY');
-          }
-        } else if (activeConn) {
-          activeConn.handleFrame(frame);
+          const { WSNodeReverseConnection } = await import('./vfs_ws_transport_node.js');
+          const activeConn = new WSNodeReverseConnection(peerId, ws);
+          activeConn.vfs = vfs;
+          activeConn.mesh = meshLink;
+          meshLink?.upgradePeerToWS(peerId, activeConn);
+          log(`[MeshServer ${vfs.id}] Upgraded peer ${peerId} over WebSocket Tunnel.`);
+        } else {
+          ws.close(4000, 'Expected IDENTIFY');
         }
       } catch (e) {
-        log(`[MeshServer ${vfs.id}] WS Connection error: ${e.message}`);
+        log(`[MeshServer ${vfs.id}] WS Handshake error: ${e.message}`);
       }
-    });
+    };
+    ws.on('message', onMessage);
   });
 
   const handleUpgrade = (request, socket, head) => {

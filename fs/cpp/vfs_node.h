@@ -57,7 +57,8 @@ public:
         std::string op; // NOTIFY, SUBSCRIBE, READ_SELECTOR, READ_CID, PUBLISH
         std::string cid;
         Selector selector;
-        std::string data; // Used for payloads (e.g. NOTIFY JSON payload string, or raw bytes)
+        std::string data; // Used for JSON payloads
+        std::vector<uint8_t> binary_data; // Used for raw binary payloads
         std::vector<std::string> stack;
         std::vector<std::string> resolutionStack;
         long long expiresAt = 0;
@@ -72,6 +73,7 @@ public:
         virtual VFSResult sendRequest(const VFSRequest& req) = 0;
         virtual bool is_reverse() const = 0;
         virtual std::string get_url() const { return ""; }
+        virtual std::string get_protocol() const = 0;
     };
 
     using OpHandler = std::function<void(const VFSRequest& req)>;
@@ -144,18 +146,21 @@ private:
         VFSResult _do_read(const std::map<std::string, std::string>& headers, const std::string& body, const std::string& path);
         bool is_reverse() const override { return false; }
         std::string get_url() const override { return url; }
-    };
+        std::string get_protocol() const override { return "HTTP"; }
+        };
 
-    struct ReverseConnection : public Connection {
-        std::vector<json> queue;
+        struct ReverseConnection : public Connection {
         std::mutex mutex;
         std::condition_variable cv;
+        std::vector<json> queue;
         bool is_polling = false;
         long long current_poll_id = 0;
+
         ReverseConnection(std::string id) { neighbor_id = std::move(id); }
         VFSResult sendRequest(const VFSRequest& req) override;
         bool is_reverse() const override { return true; }
-    };
+        std::string get_protocol() const override { return "REVERSE-HTTP"; }
+        };
 
     struct WSConnection : public Connection {
         VFSNode* node = nullptr;
@@ -165,6 +170,7 @@ private:
         VFSResult sendRequest(const VFSRequest& req) override;
         VFSResult _do_ws_read(const json& frame);
         bool is_reverse() const override { return false; }
+        std::string get_protocol() const override { return "WS"; }
     };
 
     struct WSForwardConnection : public WSConnection {
