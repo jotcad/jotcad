@@ -70,7 +70,7 @@ void loop() {
         last_tick = millis();
 
         // Broadcast count change
-        fs::json selector = {{"path", "sensor/counter"}};
+        fs::Selector selector("sensor/counter");
         fs::json payload = {{"value", shared_count}};
         int sent = node->notify(selector, payload);
         

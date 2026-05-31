@@ -131,7 +131,7 @@ void ReverseConnection::tick() {
         std::string stack_str = http.header("X-VFS-Stack").c_str();
 
         if (op.length() > 0) {
-            Serial.printf("[Mesh IN] <- Sovereign %s from %s\n", op.c_str(), id_.c_str());
+            Serial.printf("[Mesh IN] <- %s from %s\n", op.c_str(), id_.c_str());
             Selector sel;
             if (sel_b64.length() > 0) {
                 try {
@@ -250,7 +250,7 @@ void WSConnection::on_event(WStype_t type, uint8_t * payload, size_t length) {
             if (!expecting_binary_header_.empty()) {
                 std::string op = expecting_binary_header_.value("type", "");
                 Selector sel = Selector::from_json(expecting_binary_header_.value("selector", json::object()));
-                if (op == "NOTIFY" || op == "PUB") {
+                if (op == "PUB") {
                     node_->handle_binary_command("PUB", sel, payload, length, id_, [](int, const char*, const uint8_t*, size_t){});
                 }
                 expecting_binary_header_ = json::object();
@@ -394,7 +394,7 @@ json VFS::get_topology_payload() {
         }
     }
 
-    return {{"peer", config_.id}, {"neighbors", neighbors}, {"interests", activeInterests}};
+    return {{"id", config_.id}, {"neighbors", neighbors}, {"interests", activeInterests}};
 }
 
 void VFS::add_peer(std::shared_ptr<Peer> peer) {
@@ -402,7 +402,7 @@ void VFS::add_peer(std::shared_ptr<Peer> peer) {
         std::lock_guard<Mutex> lock(mesh_mutex_);
         peers_.push_back(peer);
     }
-    notify({{"path", "sys/topo"}}, get_topology_payload());
+    notify(Selector("sys/topo"), get_topology_payload());
 }
 
 void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> ws_conn) {
@@ -417,7 +417,7 @@ void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> w
         peers_.push_back(ws_conn);
     }
     Serial.printf("[VFS] Peer %s upgraded to WebSocket!\n", peer_id.c_str());
-    notify({{"path", "sys/topo"}}, get_topology_payload());
+    notify(Selector("sys/topo"), get_topology_payload());
 }
 
 void VFS::clear_peers() {
@@ -446,21 +446,20 @@ void VFS::log_status() {
 void VFS::handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
     std::string type = cmd.value("type", "unknown");
     if (type == "PUB") {
-        json selector = cmd.value("selector", json::object());
-        std::string path = selector.value("path", "");
+        Selector sel = Selector::from_json(cmd.value("selector", json::object()));
         json payload = cmd.value("payload", json::object());
         
-        Serial.printf("[Mesh IN] <- PUB Update: %s\n", path.c_str());
-        notify(selector, payload);
+        Serial.printf("[Mesh IN] <- PUB Update: %s\n", sel.path.c_str());
+        notify(sel, payload);
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     } else if (type == "SUB") {
-        json selector = cmd.value("selector", json::object());
+        Selector sel = Selector::from_json(cmd.value("selector", json::object()));
         long long expiresAt = cmd.value("expiresAt", 0LL);
         std::vector<std::string> stack;
         if (cmd.contains("stack")) {
             for (auto const& s : cmd["stack"]) stack.push_back(s.get<std::string>());
         }
-        this->subscribe(selector, expiresAt, stack);
+        this->subscribe(sel, expiresAt, stack);
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     }
 }
@@ -469,21 +468,21 @@ class WSResponseWriter : public VFSResponseWriter {
 public:
     WSResponseWriter(WSConnection* conn, const std::string& txId) : conn_(conn), txId_(txId) {}
     void send(int code, const char* contentType, const char* body) override {
-        VFSRequest req;
-        req.op = "READ_RESPONSE";
-        req.txId = txId_;
-        req.payload = {{"status", code}};
-        try { req.payload["data"] = json::parse(body); } catch(...) { req.payload["data"] = body; }
-        conn_->send(req);
+        auto req = std::make_unique<VFSRequest>();
+        req->op = "READ_RESPONSE";
+        req->txId = txId_;
+        req->payload = {{"status", code}};
+        try { req->payload["data"] = json::parse(body); } catch(...) { req->payload["data"] = body; }
+        conn_->send(*req);
     }
     void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) override {
-        VFSRequest req;
-        req.op = "READ_RESPONSE";
-        req.txId = txId_;
-        req.payload = {{"status", code}};
-        req.binary_payload = data;
-        req.binary_len = len;
-        conn_->send(req);
+        auto req = std::make_unique<VFSRequest>();
+        req->op = "READ_RESPONSE";
+        req->txId = txId_;
+        req->payload = {{"status", code}};
+        req->binary_payload = data;
+        req->binary_len = len;
+        conn_->send(*req);
     }
 private:
     WSConnection* conn_;
@@ -521,78 +520,102 @@ void VFS::handle_binary_command(const std::string& op, const Selector& sel, cons
     }
 }
 
-int VFS::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
+int VFS::notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack) {
     if (!has_feature(VFS_PUBLICATION)) return 0;
 
-    Selector sel = Selector::from_json(selector);
+    static bool is_notifying = false;
+    if (is_notifying) return 0;
+    is_notifying = true;
+
     std::string path = sel.path;
     std::vector<std::shared_ptr<Peer>> current_peers;
+    std::set<std::string> target_peer_ids;
+
     {
         std::lock_guard<Mutex> lock(mesh_mutex_);
-        if (!interests_.count(path)) return 0;
+        // Protocol Rule: Match by path for sensor updates to tolerate normalization differences
+        if (interests_.count(path)) {
+             for (auto const& [peer_id, expiry] : interests_[path]) {
+                target_peer_ids.insert(peer_id);
+             }
+        }
         current_peers = peers_;
     }
 
-    VFSRequest req;
-    req.op = "PUB";
-    req.selector = sel;
-    req.payload = payload;
-    req.stack = stack;
-    if (req.stack.empty()) req.stack.push_back(config_.id);
-    else if (std::find(req.stack.begin(), req.stack.end(), config_.id) == req.stack.end()) {
-        req.stack.push_back(config_.id);
+    if (target_peer_ids.empty()) {
+        is_notifying = false;
+        return 0;
+    }
+
+    auto req = std::make_unique<VFSRequest>();
+    req->op = "PUB";
+    req->selector = sel;
+    req->payload = payload;
+    req->stack = stack;
+    if (req->stack.empty()) req->stack.push_back(config_.id);
+    else if (std::find(req->stack.begin(), req->stack.end(), config_.id) == req->stack.end()) {
+        req->stack.push_back(config_.id);
     }
 
     int count = 0;
     for (auto& peer : current_peers) {
-        if (interests_[path].count(peer->id())) {
+        if (target_peer_ids.count(peer->id())) {
+            if (std::find(stack.begin(), stack.end(), peer->id()) != stack.end()) continue;
             trigger_activity();
-            peer->send(req);
+            peer->send(*req);
+            count++;
+        }
+    }
+    is_notifying = false;
+    return count;
+}
+
+int VFS::notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
+    if (!has_feature(VFS_PUBLICATION)) return 0;
+
+    std::string path = sel.path;
+    std::vector<std::shared_ptr<Peer>> current_peers;
+    std::set<std::string> target_peer_ids;
+
+    {
+        std::lock_guard<Mutex> lock(mesh_mutex_);
+        if (interests_.count(path)) {
+            for (auto const& [peer_id, expiry] : interests_[path]) {
+                target_peer_ids.insert(peer_id);
+            }
+        }
+        current_peers = peers_;
+    }
+
+    if (target_peer_ids.empty()) return 0;
+
+    auto req = std::make_unique<VFSRequest>();
+    req->op = "PUB";
+    req->selector = sel;
+    req->binary_payload = data;
+    req->binary_len = len;
+    req->stack = stack;
+    if (req->stack.empty()) req->stack.push_back(config_.id);
+    else if (std::find(req->stack.begin(), req->stack.end(), config_.id) == req->stack.end()) {
+        req->stack.push_back(config_.id);
+    }
+
+    int count = 0;
+    for (auto& peer : current_peers) {
+        if (target_peer_ids.count(peer->id())) {
+            if (std::find(stack.begin(), stack.end(), peer->id()) != stack.end()) continue;
+            trigger_activity();
+            peer->send(*req);
             count++;
         }
     }
     return count;
 }
 
-int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
-    if (!has_feature(VFS_PUBLICATION)) return 0;
-
-    Selector sel = Selector::from_json(selector);
-    std::string path = sel.path;
-    std::vector<std::shared_ptr<Peer>> current_peers;
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        if (!interests_.count(path)) return 0;
-        current_peers = peers_;
-    }
-
-    VFSRequest req;
-    req.op = "PUB";
-    req.selector = sel;
-    req.binary_payload = data;
-    req.binary_len = len;
-    req.stack = stack;
-    if (req.stack.empty()) req.stack.push_back(config_.id);
-    else if (std::find(req.stack.begin(), req.stack.end(), config_.id) == req.stack.end()) {
-        req.stack.push_back(config_.id);
-    }
-
-    int count = 0;
-    for (auto& peer : current_peers) {
-        if (interests_[path].count(peer->id())) {
-            trigger_activity();
-            peer->send(req);
-            count++;
-        }
-    }
-    return count;
-}
-
-void VFS::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
+void VFS::subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack) {
     if (!has_feature(VFS_SUBSCRIPTION)) return;
     if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
 
-    Selector sel = Selector::from_json(selector);
     std::string path = sel.path;
     std::string remote_id = stack.empty() ? "local" : stack.back();
     
@@ -602,27 +625,27 @@ void VFS::subscribe(const json& selector, long long expiresAt, const std::vector
         std::lock_guard<Mutex> lock(mesh_mutex_);
         if (interests_[path].count(remote_id) == 0) is_new_interest = true;
         interests_[path][remote_id] = expiresAt;
-        interest_selectors_[path] = selector;
+        interest_selectors_[path] = sel.to_json();
         current_peers = peers_;
     }
 
     if (is_new_interest) {
-        notify({{"path", "sys/topo"}}, get_topology_payload());
+        notify(Selector("sys/topo"), get_topology_payload());
     }
 
     if (!is_new_interest) return;
 
-    VFSRequest req;
-    req.op = "SUB";
-    req.selector = sel;
-    req.expiresAt = expiresAt;
-    req.stack = stack;
-    req.stack.push_back(config_.id);
+    auto req = std::make_unique<VFSRequest>();
+    req->op = "SUB";
+    req->selector = sel;
+    req->expiresAt = expiresAt;
+    req->stack = stack;
+    req->stack.push_back(config_.id);
 
     for (auto& peer : current_peers) {
         if (std::find(stack.begin(), stack.end(), peer->id()) != stack.end()) continue;
         trigger_activity();
-        peer->send(req);
+        peer->send(*req);
     }
 }
 

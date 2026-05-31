@@ -412,7 +412,7 @@ void VFS::add_peer(std::shared_ptr<Peer> peer) {
         std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
         peers_.push_back(peer);
     }
-    notify({{"path", "sys/topo"}}, get_topology_payload());
+    notify(Selector("sys/topo"), get_topology_payload());
 }
 
 void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> ws_conn) {
@@ -427,7 +427,7 @@ void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> w
         peers_.push_back(ws_conn);
     }
     Serial.printf("[VFS] Peer %s upgraded to WebSocket!\n", peer_id.c_str());
-    notify({{"path", "sys/topo"}}, get_topology_payload());
+    notify(Selector("sys/topo"), get_topology_payload());
 }
 
 void VFS::clear_peers() {
@@ -447,7 +447,7 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
         Selector sel = Selector::from_json(cmd.at("selector"));
         Serial.printf("[Mesh IN] <- PUB: %s\n", sel.path.c_str());
         trigger_activity();
-        notify(sel.to_json(), cmd.at("payload"));
+        notify(sel, cmd.at("payload"));
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     } else if (type == "SUB") {
         Selector sel = Selector::from_json(cmd.at("selector"));
@@ -456,7 +456,7 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
         if (cmd.contains("stack")) {
             for (auto const& s : cmd["stack"]) stack.push_back(s.get<std::string>());
         }
-        this->subscribe(sel.to_json(), expiresAt, stack);
+        this->subscribe(sel, expiresAt, stack);
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     }
 }
@@ -509,10 +509,9 @@ void VFS::handle_binary_command(const std::string& op, const Selector& sel, cons
     }
 }
 
-int VFS::notify(const json& selector, const json& payload, const std::vector<std::string>& stack) {
+int VFS::notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack) {
     if (!has_feature(VFS_PUBLICATION)) return 0;
 
-    Selector sel = Selector::from_json(selector);
     std::string path = sel.path;
     std::set<std::string> targets;
 
@@ -538,14 +537,14 @@ int VFS::notify(const json& selector, const json& payload, const std::vector<std
         current_peers = peers_;
     }
 
-    VFSRequest req;
-    req.op = "PUB";
-    req.selector = sel;
-    req.payload = payload;
-    req.stack = stack;
-    if (req.stack.empty()) req.stack.push_back(config_.id);
-    else if (std::find(req.stack.begin(), req.stack.end(), config_.id) == req.stack.end()) {
-        req.stack.push_back(config_.id);
+    auto req = std::make_unique<VFSRequest>();
+    req->op = "PUB";
+    req->selector = sel;
+    req->payload = payload;
+    req->stack = stack;
+    if (req->stack.empty()) req->stack.push_back(config_.id);
+    else if (std::find(req->stack.begin(), req->stack.end(), config_.id) == req->stack.end()) {
+        req->stack.push_back(config_.id);
     }
 
     for (const auto& target_id : targets) {
@@ -553,7 +552,7 @@ int VFS::notify(const json& selector, const json& payload, const std::vector<std
             if (peer->id() == target_id) {
                 Serial.printf("[VFS] -> Sending PUB %s to %s\n", path.c_str(), target_id.c_str());
                 trigger_activity();
-                peer->send(req);
+                peer->send(*req);
                 notified++;
             }
         }
@@ -561,10 +560,9 @@ int VFS::notify(const json& selector, const json& payload, const std::vector<std
     return notified;
 }
 
-int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
+int VFS::notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
     if (!has_feature(VFS_PUBLICATION)) return 0;
 
-    Selector sel = Selector::from_json(selector);
     std::string path = sel.path;
     std::set<std::string> targets;
 
@@ -572,7 +570,7 @@ int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len, co
         std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
         if (interests_.count(path)) {
             for (auto const& [peer_id, expiry] : interests_[path]) {
-                if (expiry > millis()) targets.insert(peer_id);
+                targets.insert(peer_id);
             }
         }
     }
@@ -584,22 +582,22 @@ int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len, co
         current_peers = peers_;
     }
 
-    VFSRequest req;
-    req.op = "PUB";
-    req.selector = sel;
-    req.binary_payload = data;
-    req.binary_len = len;
-    req.stack = stack;
-    if (req.stack.empty()) req.stack.push_back(config_.id);
-    else if (std::find(req.stack.begin(), req.stack.end(), config_.id) == req.stack.end()) {
-        req.stack.push_back(config_.id);
+    auto req = std::make_unique<VFSRequest>();
+    req->op = "PUB";
+    req->selector = sel;
+    req->binary_payload = data;
+    req->binary_len = len;
+    req->stack = stack;
+    if (req->stack.empty()) req->stack.push_back(config_.id);
+    else if (std::find(req->stack.begin(), req->stack.end(), config_.id) == req->stack.end()) {
+        req->stack.push_back(config_.id);
     }
 
     for (const auto& target_id : targets) {
         for (auto& peer : current_peers) {
             if (peer->id() == target_id) {
                 trigger_activity();
-                peer->send(req);
+                peer->send(*req);
                 notified++;
             }
         }
@@ -607,9 +605,8 @@ int VFS::notify_binary(const json& selector, const uint8_t* data, size_t len, co
     return notified;
 }
 
-void VFS::subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) {
+void VFS::subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack) {
     if (!has_feature(VFS_SUBSCRIPTION)) return;
-    Selector sel = Selector::from_json(selector);
     std::string path = sel.path;
     std::string remote_id = stack.empty() ? "local" : stack.back();
 
@@ -618,11 +615,11 @@ void VFS::subscribe(const json& selector, long long expiresAt, const std::vector
         std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
         if (interests_[path].count(remote_id) == 0) is_new_interest = true;
         interests_[path][remote_id] = expiresAt;
-        interest_selectors_[path] = selector;
+        interest_selectors_[path] = sel.to_json();
     }
 
     if (is_new_interest) {
-        notify({{"path", "sys/topo"}}, get_topology_payload());
+        notify(Selector("sys/topo"), get_topology_payload());
     }
 
     Serial.printf("[VFS %s] Subscription recorded for %s from %s\n", 
@@ -630,20 +627,24 @@ void VFS::subscribe(const json& selector, long long expiresAt, const std::vector
 
     if (!is_new_interest) return;
 
-    VFSRequest req;
-    req.op = "SUB";
-    req.selector = sel;
-    req.expiresAt = expiresAt;
-    req.stack = stack;
-    if (std::find(req.stack.begin(), req.stack.end(), config_.id) == req.stack.end()) {
-        req.stack.push_back(config_.id);
+    auto req = std::make_unique<VFSRequest>();
+    req->op = "SUB";
+    req->selector = sel;
+    req->expiresAt = expiresAt;
+    req->stack = stack;
+    if (std::find(req->stack.begin(), req->stack.end(), config_.id) == req->stack.end()) {
+        req->stack.push_back(config_.id);
     }
 
-    std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
-    for (auto& peer : peers_) {
+    std::vector<std::shared_ptr<Peer>> current_peers;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
+        current_peers = peers_;
+    }
+    for (auto& peer : current_peers) {
         if (peer->id() != remote_id) {
             trigger_activity();
-            peer->send(req);
+            peer->send(*req);
         }
     }
 }

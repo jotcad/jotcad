@@ -248,15 +248,8 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
         
         std::cout << "[VFSNode " << config_.id << "]   Checking " << interests_.size() << " active interests..." << std::endl;
         for (auto& entry : interests_) {
-            // Protocol Rule: Match by selector equality OR path-prefix for sensor/system updates
-            bool is_match = (entry.selector == selector);
-            
-            // Loose matching for sensors: If the paths match exactly and the interest has no parameters
-            if (!is_match && entry.selector.path == selector.path && (entry.selector.parameters.empty() || entry.selector.parameters.is_null())) {
-                is_match = true;
-            }
-
-            if (is_match) {
+            // Protocol Rule: Strict bit-exact matching. Normalization MUST happen at the boundary.
+            if (entry.selector == selector) {
                 std::lock_guard<std::mutex> plock(peer_mutex_);
                 for (auto const& [peer_id, expiresAt] : entry.subs) {
                     bool expired = (expiresAt > 0 && expiresAt < now);

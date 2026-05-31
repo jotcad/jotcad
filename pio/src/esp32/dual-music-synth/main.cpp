@@ -75,10 +75,11 @@ fs::VFS *node = nullptr;
 void broadcast_vfs_event(const fs::json& event) {
     set_last_event(event);
 #if ENABLE_VFS
-    if (node) {
-        fs::json selector = {{"path", "midi/events"}};
+    if (new_event) {
+        fs::Selector selector("midi/event");
         node->notify(selector, event);
     }
+
 #endif
 }
 

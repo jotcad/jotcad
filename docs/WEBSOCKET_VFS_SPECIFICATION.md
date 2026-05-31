@@ -79,7 +79,7 @@ Every frame sent over the WebSocket transport adheres to the layout below. To ma
 ```json
 {
   "txId": "msg_f7c1a892b",    // Unique transaction correlation ID (required for READ/READ_RESPONSE)
-  "type": "IDENTIFY" | "ACK" | "READ" | "READ_RESPONSE" | "SUBSCRIBE" | "NOTIFY" | "SPY" | "SPY_RESPONSE",
+  "type": "IDENTIFY" | "ACK" | "READ" | "READ_RESPONSE" | "SUB" | "PUB" | "SPY" | "SPY_RESPONSE",
   "selector": {                // Safe-JCB Selector representation
     "path": "sys/topo",
     "parameters": {}
@@ -139,22 +139,22 @@ Returns requested resource bytes and metadata correlated by `txId`.
 ```
 *(Followed immediately by a BINARY frame containing the raw data)*
 
-#### 3. Interest Propagation (`SUBSCRIBE`)
+#### 3. Interest Propagation (`SUB`)
 Paints a subscription trail in the mesh. No reply expected.
 ```json
 {
-  "type": "SUBSCRIBE",
+  "type": "SUB",
   "selector": { "path": "sys/topo", "parameters": {} },
   "expiresAt": 177989912000,
   "stack": ["subscriber_node"]
 }
 ```
 
-#### 4. Event Notification (`NOTIFY`)
+#### 4. Event Notification (`PUB`)
 Broadcasts dynamic updates down a subscription path.
 ```json
 {
-  "type": "NOTIFY",
+  "type": "PUB",
   "selector": { "path": "sys/topo" },
   "payload": {
     "id": "gateway_node",
@@ -201,6 +201,7 @@ Constrained microcontrollers face significant limitations regarding heap space, 
 2. **Buffer Limits**: Large CAD payloads (STLs, high-resolution PDFs) can easily overflow a microcontroller's SRAM. PIO nodes **MUST** restrict incoming WebSocket frames to $1.5\text{ KB}$ (matching standard MTUs). Payload fragments larger than $1.5\text{ KB}$ must be chunked or rejected.
 3. **Zero-Copy Parser (`ArduinoJson`)**: VFS JSON envelopes are parsed using fixed stack-allocated `StaticJsonDocument` or `DynamicJsonDocument` allocations (typically sized at $1024$ bytes) to prevent dynamic heap fragmentation.
 4. **Active Connection Keep-Alives**: Since microcontrollers may sit behind strict routers, the PIO node must transmit a 2-byte ping frame every 15 seconds to ensure network state consistency.
+5. **Memory Safety (Off-Stack Allocation)**: PIO nodes MUST NOT allocate large protocol objects (like `VFSRequest` or `json`) on the stack. Due to the tiny 4KB stack limit of the ESP8266, all mesh frames and requests MUST be allocated on the heap (e.g., using `std::unique_ptr`) to prevent **Stack Smashing** crashes and ensure re-entrancy safety.
 
 ### C. PIO Hardware Command Execution Flow
 

@@ -154,9 +154,9 @@ public:
     using Handler = std::function<void(const json& params, VFSResponseWriter* response)>;
     void register_op(const std::string& path, Handler handler, const json& schema = json::object());
 
-    int notify(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
-    int notify_binary(const json& selector, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
-    void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack = {});
+    int notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack = {});
+    int notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
+    void subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack = {});
 
     // Status Logging
     json get_topology_payload();

@@ -74,7 +74,7 @@ void broadcast_vfs_event(const fs::json& event) {
     set_last_event(event);
 
     if (node) {
-        fs::json selector = {{"path", "midi/events"}};
+        fs::Selector selector("midi/events");
         Serial.printf("[VFS] Broadcasting event to mesh: %s\n", event.dump().c_str());
         int sent = node->notify(selector, event);
         Serial.printf("[VFS] Broadcast completed. Sent to %d peer(s).\n", sent);

@@ -2,9 +2,15 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
+#include <TM1637Display.h>
 #include "vfs.h"
 #include "secrets.h"
 
+// TM1637 Pins (Wemos D1 Mini)
+#define CLK D3 // GPIO0
+#define DIO D4 // GPIO2
+
+TM1637Display display(CLK, DIO);
 fs::VFS *node = nullptr;
 static uint32_t shared_count = 0;
 
@@ -12,6 +18,9 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("\n[ESP8266] JotCAD VFS Node Booting...");
+
+    display.setBrightness(0x0f);
+    display.showNumberDec(0, true);
 
     // Connect to WiFi
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -70,8 +79,11 @@ void loop() {
         shared_count++;
         last_tick = millis();
 
+        // Update display
+        display.showNumberDec(shared_count % 10000, true);
+
         // Broadcast count change
-        fs::json selector = {{"path", "sensor/counter"}};
+        fs::Selector selector("sensor/counter");
         fs::json payload = {{"value", shared_count}};
         int interested = node->notify(selector, payload);
         
