@@ -249,7 +249,7 @@ void WSConnection::on_event(WStype_t type, uint8_t * payload, size_t length) {
             if (!expecting_binary_header_.empty()) {
                 std::string op = expecting_binary_header_.value("type", "");
                 Selector sel = Selector::from_json(expecting_binary_header_.value("selector", json::object()));
-                if (op == "NOTIFY" || op == "PUB") {
+                if (op == "PUB") {
                     node_->handle_binary_command("PUB", sel, payload, length, id_, [](int, const char*, const uint8_t*, size_t){});
                 }
                 expecting_binary_header_ = json::object();
@@ -263,7 +263,7 @@ void WSConnection::on_event(WStype_t type, uint8_t * payload, size_t length) {
 void WSConnection::send(const VFSRequest& req) {
     if (!connected_) return;
     json frame = {
-        {"type", req.op == "PUB" ? "NOTIFY" : (req.op == "SUB" ? "SUBSCRIBE" : req.op)},
+        {"type", req.op},
         {"selector", req.selector.to_json()},
         {"stack", req.stack},
         {"expiresAt", req.expiresAt}
@@ -437,13 +437,13 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
     if (!cmd.contains("type")) return;
     std::string type = cmd.at("type");
     
-    if (type == "PUB" || type == "NOTIFY") {
+    if (type == "PUB") {
         Selector sel = Selector::from_json(cmd.at("selector"));
         Serial.printf("[Mesh IN] <- PUB: %s\n", sel.path.c_str());
         trigger_activity();
         notify(sel.to_json(), cmd.at("payload"));
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
-    } else if (type == "SUB" || type == "SUBSCRIBE") {
+    } else if (type == "SUB") {
         Selector sel = Selector::from_json(cmd.at("selector"));
         long long expiresAt = cmd.at("expiresAt");
         std::vector<std::string> stack;
@@ -489,9 +489,9 @@ void VFS::handle_ws_frame(const json& frame, WSConnection* conn) {
             WSResponseWriter resp(conn, tx_id);
             handlers_[sel.path](sel.parameters, &resp);
         }
-    } else if (type == "NOTIFY" || type == "PUB") {
+    } else if (type == "PUB") {
         handle_command(frame, [](int, const char*, const uint8_t*, size_t){});
-    } else if (type == "SUBSCRIBE" || type == "SUB") {
+    } else if (type == "SUB") {
         handle_command(frame, [](int, const char*, const uint8_t*, size_t){});
     }
 }
