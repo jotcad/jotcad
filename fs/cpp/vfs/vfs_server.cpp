@@ -304,7 +304,7 @@ void VFSNode::listen() {
             if (res == httplib::ws::ReadResult::Binary) {
                 if (expecting_binary_header.empty()) continue;
                 std::vector<uint8_t> data(msg.begin(), msg.end());
-                handle_binary_frame(expecting_binary_header, data);
+                handle_binary_frame(peerId, expecting_binary_header, data);
                 expecting_binary_header.clear();
                 continue;
             }
@@ -329,10 +329,10 @@ void VFSNode::listen() {
                 if (frame.value("hasBinary", false)) {
                     expecting_binary_header = frame;
                 } else {
-                    handle_ws_frame(frame);
+                    handle_ws_frame(peerId, frame);
                 }
             } catch (const std::exception& e) {
-                std::cerr << "[WS " << config_.id << "] Frame error: " << e.what() << std::endl;
+                std::cerr << "[WS " << config_.id << "] Frame error from " << peerId << ": " << e.what() << std::endl;
             }
         }
     });

@@ -264,7 +264,7 @@ void WSConnection::on_event(WStype_t type, uint8_t * payload, size_t length) {
 void WSConnection::send(const VFSRequest& req) {
     if (!connected_) return;
     json frame = {
-        {"type", req.op == "PUB" ? "NOTIFY" : (req.op == "SUB" ? "SUBSCRIBE" : req.op)},
+        {"type", req.op},
         {"selector", req.selector.to_json()},
         {"stack", req.stack},
         {"expiresAt", req.expiresAt}
@@ -445,7 +445,7 @@ void VFS::log_status() {
 
 void VFS::handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
     std::string type = cmd.value("type", "unknown");
-    if (type == "PUB" || type == "NOTIFY") {
+    if (type == "PUB") {
         json selector = cmd.value("selector", json::object());
         std::string path = selector.value("path", "");
         json payload = cmd.value("payload", json::object());
@@ -453,7 +453,7 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
         Serial.printf("[Mesh IN] <- PUB Update: %s\n", path.c_str());
         notify(selector, payload);
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
-    } else if (type == "SUB" || type == "SUBSCRIBE") {
+    } else if (type == "SUB") {
         json selector = cmd.value("selector", json::object());
         long long expiresAt = cmd.value("expiresAt", 0LL);
         std::vector<std::string> stack;
@@ -506,9 +506,9 @@ void VFS::handle_ws_frame(const json& frame, WSConnection* conn) {
             WSResponseWriter resp(conn, tx_id);
             handler(sel.parameters, &resp);
         }
-    } else if (type == "NOTIFY" || type == "PUB") {
+    } else if (type == "PUB") {
         handle_command(frame, [](int, const char*, const uint8_t*, size_t){});
-    } else if (type == "SUBSCRIBE" || type == "SUB") {
+    } else if (type == "SUB") {
         handle_command(frame, [](int, const char*, const uint8_t*, size_t){});
     }
 }

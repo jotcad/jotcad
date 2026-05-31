@@ -133,8 +133,8 @@ public:
     json get_neighbors();
     json get_topology_payload();
 
-    void handle_ws_frame(const json& frame);
-    void handle_binary_frame(const json& header, const std::vector<uint8_t>& data);
+    void handle_ws_frame(const std::string& neighbor_id, const json& frame);
+    void handle_binary_frame(const std::string& neighbor_id, const json& header, const std::vector<uint8_t>& data);
 
     void resolve_transaction(const std::string& tx_id, const VFSResult& result);
     void reject_transaction(const std::string& tx_id, int status, const std::string& error);

@@ -261,7 +261,10 @@ void WSConnection::on_event(WStype_t type, uint8_t * payload, size_t length) {
 }
 
 void WSConnection::send(const VFSRequest& req) {
-    if (!connected_) return;
+    if (!connected_) {
+        Serial.printf("[WS %s] Cannot send %s: Not connected\n", id_.c_str(), req.op.c_str());
+        return;
+    }
     json frame = {
         {"type", req.op},
         {"selector", req.selector.to_json()},
@@ -276,11 +279,14 @@ void WSConnection::send(const VFSRequest& req) {
 
     if (req.binary_payload) {
         frame["hasBinary"] = true;
+        Serial.printf("[WS %s] -> SEND BINARY %s (%d bytes)\n", id_.c_str(), req.op.c_str(), (int)req.binary_len);
         client_.sendTXT(frame.dump().c_str());
         client_.sendBIN((uint8_t*)req.binary_payload, req.binary_len);
     } else {
         if (!req.payload.empty()) frame["payload"] = req.payload;
-        client_.sendTXT(frame.dump().c_str());
+        std::string s = frame.dump();
+        Serial.printf("[WS %s] -> SEND TEXT %s (%d bytes): %s\n", id_.c_str(), req.op.c_str(), (int)s.length(), s.c_str());
+        client_.sendTXT(s.c_str());
     }
 }
 
@@ -511,12 +517,18 @@ int VFS::notify(const json& selector, const json& payload, const std::vector<std
     std::set<std::string> targets;
 
     {
-        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_);
+        std::lock_guard<std::recursive_mutex> lock(interest_mutex_); // Using interest_mutex_
         if (interests_.count(path)) {
             for (auto const& [peer_id, expiry] : interests_[path]) {
-                if (expiry > millis()) targets.insert(peer_id);
+                // For now, allow all active interests on ESP. 
+                // Expiry needs world-clock sync to be truly accurate.
+                targets.insert(peer_id);
             }
         }
+    }
+
+    if (targets.empty()) {
+        return 0;
     }
 
     int notified = 0;
@@ -539,6 +551,7 @@ int VFS::notify(const json& selector, const json& payload, const std::vector<std
     for (const auto& target_id : targets) {
         for (auto& peer : current_peers) {
             if (peer->id() == target_id) {
+                Serial.printf("[VFS] -> Sending PUB %s to %s\n", path.c_str(), target_id.c_str());
                 trigger_activity();
                 peer->send(req);
                 notified++;

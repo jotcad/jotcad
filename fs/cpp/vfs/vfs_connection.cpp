@@ -465,7 +465,7 @@ void VFSNode::WSForwardConnection::read_loop() {
             }
             if (node) {
                 std::vector<uint8_t> data(msg.begin(), msg.end());
-                node->handle_binary_frame(expecting_binary_header, data);
+                node->handle_binary_frame(neighbor_id, expecting_binary_header, data);
             }
             expecting_binary_header.clear();
         } else {
@@ -474,7 +474,7 @@ void VFSNode::WSForwardConnection::read_loop() {
                 if (frame.value("hasBinary", false)) {
                     expecting_binary_header = frame;
                 } else if (node) {
-                    node->handle_ws_frame(frame);
+                    node->handle_ws_frame(neighbor_id, frame);
                 }
             } catch (...) {
                 std::cerr << "[WS Client] Failed to parse JSON frame: " << msg << std::endl;

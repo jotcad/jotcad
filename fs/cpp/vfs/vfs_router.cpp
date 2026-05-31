@@ -246,16 +246,40 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
         std::lock_guard<std::mutex> lock(interest_mutex_);
         long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         
+        std::cout << "[VFSNode " << config_.id << "]   Checking " << interests_.size() << " active interests..." << std::endl;
         for (auto& entry : interests_) {
-            if (entry.selector == selector) {
+            // Protocol Rule: Match by selector equality OR path-prefix for sensor/system updates
+            bool is_match = (entry.selector == selector);
+            
+            // Loose matching for sensors: If the paths match exactly and the interest has no parameters
+            if (!is_match && entry.selector.path == selector.path && (entry.selector.parameters.empty() || entry.selector.parameters.is_null())) {
+                is_match = true;
+            }
+
+            if (is_match) {
                 std::lock_guard<std::mutex> plock(peer_mutex_);
                 for (auto const& [peer_id, expiresAt] : entry.subs) {
-                    if (expiresAt > now && std::find(stack.begin(), stack.end(), peer_id) == stack.end()) {
-                        if (peers_.count(peer_id)) targets.push_back(peers_[peer_id]);
+                    bool expired = (expiresAt > 0 && expiresAt < now);
+                    bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
+                    bool peer_exists = peers_.count(peer_id);
+
+                    std::cout << "[VFSNode " << config_.id << "]   Match! Interest: " << entry.selector.path 
+                              << " Peer: " << peer_id 
+                              << " Expired: " << (expired?"Y":"N") 
+                              << " InStack: " << (in_stack?"Y":"N") 
+                              << " Exists: " << (peer_exists?"Y":"N") << std::endl;
+
+                    if (!expired && !in_stack && peer_exists) {
+                        targets.push_back(peers_[peer_id]);
                     }
                 }
             }
         }
+    }
+
+    if (targets.empty()) {
+        std::cout << "[VFSNode " << config_.id << "]   No valid interested targets found for " << selector.path << std::endl;
+        return;
     }
 
     std::vector<std::string> next_stack = stack;
@@ -400,7 +424,7 @@ json VFSNode::get_neighbors() {
     return neighbors;
 }
 
-void VFSNode::handle_ws_frame(const json& frame) {
+void VFSNode::handle_ws_frame(const std::string& neighbor_id, const json& frame) {
     std::string type = frame.value("type", "");
     if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
         std::string tx_id = frame.value("txId", "");
@@ -481,6 +505,12 @@ void VFSNode::handle_ws_frame(const json& frame) {
         if (frame.contains("stack")) {
             for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
         }
+        
+        // Add sender to stack if not already present
+        if (!neighbor_id.empty() && std::find(stack.begin(), stack.end(), neighbor_id) == stack.end()) {
+            stack.push_back(neighbor_id);
+        }
+        
         notify(sel, payload, stack);
     } else if (type == "SUB") {
         Selector sel = Selector::from_json(frame["selector"]);
@@ -489,11 +519,17 @@ void VFSNode::handle_ws_frame(const json& frame) {
         if (frame.contains("stack")) {
             for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
         }
+
+        // Add sender to stack if not already present
+        if (!neighbor_id.empty() && std::find(stack.begin(), stack.end(), neighbor_id) == stack.end()) {
+            stack.push_back(neighbor_id);
+        }
+
         subscribe(sel, exp, stack);
     }
 }
 
-void VFSNode::handle_binary_frame(const json& header, const std::vector<uint8_t>& data) {
+void VFSNode::handle_binary_frame(const std::string& neighbor_id, const json& header, const std::vector<uint8_t>& data) {
     std::string type = header.value("type", "");
     if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
         std::string tx_id = header.value("txId", "");
@@ -507,20 +543,44 @@ void VFSNode::handle_binary_frame(const json& header, const std::vector<uint8_t>
         if (header.contains("stack")) {
             for (auto const& s : header["stack"]) stack.push_back(s.get<std::string>());
         }
-        // Use raw binary notification
-        std::string path = sel.path;
-        bool hasInterest = false;
+
+        // Stack Protection: Break loops early
+        if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
+
+        std::cout << "[VFSNode " << config_.id << "] binary notify: " << sel.path << " from stack {";
+        for(size_t i=0; i<stack.size(); ++i) std::cout << (i==0?"":",") << stack[i];
+        std::cout << "}" << std::endl;
+
+        std::vector<std::shared_ptr<Connection>> targets;
         {
             std::lock_guard<std::mutex> lock(interest_mutex_);
+            long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            
             for (auto const& entry : interests_) {
-                if (entry.selector.path == path) {
-                    hasInterest = true;
-                    break;
+                bool is_match = (entry.selector == sel);
+                if (!is_match && entry.selector.path == sel.path && entry.selector.parameters.empty()) is_match = true;
+
+                if (is_match) {
+                    std::lock_guard<std::mutex> plock(peer_mutex_);
+                    for (auto const& [peer_id, expiresAt] : entry.subs) {
+                        if (expiresAt > now && std::find(stack.begin(), stack.end(), peer_id) == stack.end()) {
+                            if (peers_.count(peer_id)) targets.push_back(peers_[peer_id]);
+                        }
+                    }
                 }
             }
         }
-        if (hasInterest) {
-            // Forwarding logic for binary PUB would go here.
+
+        std::vector<std::string> next_stack = stack;
+        next_stack.push_back(config_.id);
+        for (auto& conn : targets) {
+            std::cout << "[VFSNode " << config_.id << "] -> Forwarding binary notification for " << sel.path << " to " << conn->neighbor_id << std::endl;
+            VFSRequest req;
+            req.op = "PUB";
+            req.selector = sel;
+            req.binary_data = data;
+            req.stack = next_stack;
+            conn->sendRequest(req);
         }
     }
 }
