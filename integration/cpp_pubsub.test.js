@@ -12,17 +12,21 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
 
     // Initialize VFS & Mesh
     const nodeVFS = new VFS({ id: 'node-js' });
-    const mesh = new MeshLink(nodeVFS);
+    const mesh = new MeshLink(nodeVFS, [`http://localhost:${CPP_PORT}`]);
     await nodeVFS.init();
 
     try {
         // 3. Connect Node.js -> C++
         console.log('[Test] Connecting Node.js to C++...');
-        await mesh.addPeer(`http://localhost:${CPP_PORT}`);
+        await mesh.start();
+        
+        // Wait for Ops Node to see us
+        const { waitForMeshNodes } = await import('./vfs_test_helpers.js');
+        await waitForMeshNodes(nodeVFS, ['live_standard_ops']);
         
         // 4. Test 1: Interest Propagation (Node -> C++)
         console.log('[Test] Subscribing from Node.js to test/topic...');
-        const topic = { path: 'test/topic' };
+        const topic = new Selector('test/topic');
         let receivedByNode = null;
         
         nodeVFS.events.on('notify', (selector, payload) => {
@@ -31,8 +35,7 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
             }
         });
 
-        // We need to wait a bit for the C++ node to process the subscription
-        await mesh.subscribe(Selector.fromObject(topic), Date.now() + 10000);
+        await nodeVFS.subscribe(topic);
         console.log('✔ Subscription interest sent');
 
         // 5. Test 2: Notification Routing (C++ -> Node)
@@ -40,7 +43,7 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
         const notifyRes = await fetch(`http://localhost:${CPP_PORT}/notify`, {
             method: 'POST',
             body: JSON.stringify({
-                selector: topic,
+                selector: topic.toJSON(),
                 payload: { hello: 'from-cpp' },
                 stack: []
             })

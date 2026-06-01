@@ -550,18 +550,25 @@ void VFSNode::handle_binary_frame(const std::string& neighbor_id, const json& he
             long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
             
             for (auto const& entry : interests_) {
-                bool is_match = (entry.selector == sel);
-                if (!is_match && entry.selector.path == sel.path && entry.selector.parameters.empty()) is_match = true;
-
-                if (is_match) {
+                // Protocol Rule: Strict bit-exact matching. Normalization MUST happen at the boundary.
+                if (entry.selector == sel) {
                     std::lock_guard<std::mutex> plock(peer_mutex_);
                     for (auto const& [peer_id, expiresAt] : entry.subs) {
-                        if (expiresAt > now && std::find(stack.begin(), stack.end(), peer_id) == stack.end()) {
-                            if (peers_.count(peer_id)) targets.push_back(peers_[peer_id]);
+                        bool expired = (expiresAt > 0 && expiresAt < now);
+                        bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
+                        bool peer_exists = peers_.count(peer_id);
+
+                        if (!expired && !in_stack && peer_exists) {
+                            targets.push_back(peers_[peer_id]);
                         }
                     }
                 }
             }
+        }
+
+        if (targets.empty()) {
+            std::cout << "[VFSNode " << config_.id << "] binary notify drop: No interested peers found for " << sel.path << std::endl;
+            return;
         }
 
         std::vector<std::string> next_stack = stack;

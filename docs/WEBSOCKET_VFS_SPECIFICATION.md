@@ -79,7 +79,7 @@ Every frame sent over the WebSocket transport adheres to the layout below. To ma
 ```json
 {
   "txId": "msg_f7c1a892b",    // Unique transaction correlation ID (required for READ/READ_RESPONSE)
-  "type": "IDENTIFY" | "ACK" | "READ" | "READ_RESPONSE" | "SUB" | "PUB" | "SPY" | "SPY_RESPONSE",
+  "type": "IDENTIFY" | "ACK" | "READ_SELECTOR" | "READ_CID" | "READ_RESPONSE" | "SUB" | "PUB" | "SPY" | "SPY_RESPONSE",
   "selector": {                // Safe-JCB Selector representation
     "path": "sys/topo",
     "parameters": {}
@@ -111,12 +111,12 @@ To avoid the 33% size inflation of Base64, JotCAD uses an atomic sequential fram
 
 ### C. Flow Primitives
 
-#### 1. Asynchronous Read Request (`READ`)
+#### 1. Asynchronous Read Request (`READ_SELECTOR`)
 Initiated by either peer. Requires `txId` for tracking.
 ```json
 {
   "txId": "read_00918ac",
-  "type": "READ",
+  "type": "READ_SELECTOR",
   "selector": { "path": "sensor/temperature", "parameters": {} },
   "stack": ["gateway_node"],
   "expiresAt": 177989912000
@@ -211,7 +211,7 @@ Through the bi-directional reverse transport, the VFS server can push commands d
 ```
   [Server / Gateway]                            [PIO Node (ESP32)]
           │                                              │
-          │ ─── (WS: READ "sensor/counter") ───────────► │
+          │ ─── (WS: READ_SELECTOR "sensor/counter") ──► │
           │                                              │ ─── Read GPIO pins / 
           │                                              │     hardware timers
           │                                              │
@@ -219,7 +219,7 @@ Through the bi-directional reverse transport, the VFS server can push commands d
 ```
 
 1. The gateway executes `vfs.read({ path: "sensor/counter" })`.
-2. The router resolves this selector to the PIO node and fires a `READ` frame over the open WebSocket.
+2. The router resolves this selector to the PIO node and fires a `READ_SELECTOR` frame over the open WebSocket.
 3. The PIO node receives the WebSocket frame, parses the JSON structure on the stack, and routes it directly to its local sensor loop.
 4. The PIO node reads its physical GPIO pin/timer registers, formats the result as a raw value, and pushes the `READ_RESPONSE` frame back up the WebSocket channel using sequential binary framing to minimize overhead.
 

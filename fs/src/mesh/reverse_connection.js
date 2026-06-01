@@ -75,10 +75,7 @@ export class ReverseConnection extends Connection {
 
     // Flush any pending commands immediately
     if (this.queue.length > 0) {
-      const cmd = this.queue.shift();
-      log(`[ReverseConn ${this.neighborId}] Delivering queued command ${cmd.op || cmd.type} immediately.`);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(cmd));
+      this._flushQueue(res);
       return;
     }
 
@@ -94,34 +91,53 @@ export class ReverseConnection extends Connection {
    * SERVER SIDE: Send a command or notification by consuming a pooled /listen response.
    */
   _dispatch(command) {
-    log(`[ReverseConn ${this.neighborId}] Dispatching command ${command.op || command.type}`);
+    log(`[ReverseConn ${this.neighborId}] Queueing command ${command.op || command.type}. Current depth: ${this.queue.length + 1}`);
+    this.queue.push(command);
+    
     if (this.pool.length > 0) {
       const { res } = this.pool.shift();
-      
-      const isBinary = command.payload instanceof Uint8Array;
-      const headers = { 
-        'Content-Type': isBinary ? 'application/octet-stream' : 'application/json',
-        'x-vfs-op': command.op || command.type,
-        'x-vfs-encoding': isBinary ? 'bytes' : 'json'
-      };
-      if (command.selector) headers['x-vfs-selector'] = JSON.stringify(command.selector);
-      if (command.stack) headers['x-vfs-stack'] = command.stack.join(',');
-      if (command.expiresAt) headers['x-vfs-expires'] = String(command.expiresAt);
-      if (command.id) headers['x-vfs-reply-to'] = command.id;
-
-      res.writeHead(200, headers);
-      
-      let body;
-      if (isBinary) {
-          body = command.payload;
-      } else {
-          body = JSON.stringify(command.payload !== undefined ? command.payload : command);
-      }
-      res.end(body);
+      this._flushQueue(res);
       return true;
     }
-    this.queue.push(command);
     return false;
+  }
+
+  _flushQueue(res) {
+    if (this.queue.length === 0) {
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+
+    // If only one item and it's binary, send as standard PUB/COMMAND
+    if (this.queue.length === 1 && this.queue[0].payload instanceof Uint8Array) {
+        const command = this.queue.shift();
+        const headers = { 
+            'Content-Type': 'application/octet-stream',
+            'x-vfs-op': command.op || command.type,
+            'x-vfs-encoding': 'bytes'
+        };
+        if (command.selector) headers['x-vfs-selector'] = JSON.stringify(command.selector);
+        if (command.stack) headers['x-vfs-stack'] = command.stack.join(',');
+        if (command.id) headers['x-vfs-reply-to'] = command.id;
+        res.writeHead(200, headers);
+        res.end(command.payload);
+        return;
+    }
+
+    // Otherwise, send all non-binary messages in a BATCH
+    const batch = [];
+    while (this.queue.length > 0 && !(this.queue[0].payload instanceof Uint8Array)) {
+        batch.push(this.queue.shift());
+    }
+
+    log(`[ReverseConn ${this.neighborId}] Delivering BATCH of ${batch.length} commands.`);
+    res.writeHead(200, { 
+        'Content-Type': 'application/json',
+        'x-vfs-op': 'BATCH',
+        'x-vfs-encoding': 'json'
+    });
+    res.end(JSON.stringify(batch));
   }
 
   /**
@@ -236,9 +252,11 @@ export class ReverseConnection extends Connection {
     let replyTo = null, stream = null, metadata = null;
     let consecutiveFailures = 0;
     const MAX_FAILURES = 5;
+    let lastPollFinished = Date.now();
     
     while (!this.abortController.signal.aborted) {
       try {
+        const pollStart = Date.now();
         const headers = { 'x-vfs-peer-id': this.vfs.id };
         if (replyTo) headers['x-vfs-reply-to'] = replyTo;
          if (metadata) {
@@ -269,17 +287,72 @@ export class ReverseConnection extends Connection {
         if (bodyToSend !== undefined) fetchOptions.body = bodyToSend;
         
         const resp = await fetch(`${baseUrl}/listen`, fetchOptions);
+        const pollEnd = Date.now();
+        const pollDuration = pollEnd - pollStart;
+        const pollGap = pollStart - lastPollFinished;
+        
         replyTo = null; stream = null; metadata = null;
         consecutiveFailures = 0;
+        lastPollFinished = pollEnd;
 
         if (resp.status === 200) {
           const h = resp.headers;
           const op = h?.get('x-vfs-op');
-          const encoding = h?.get('x-vfs-encoding');
+          log(`[ReverseConn ${this.neighborId}] RECEIVED ${op || 'EVENT'} (Poll: ${pollDuration}ms, Gap: ${pollGap}ms)`);
           const selectorB64 = h?.get('x-vfs-selector');
           const stackStr = h?.get('x-vfs-stack');
           const expiresStr = h?.get('x-vfs-expires');
           const replyToHeader = h?.get('x-vfs-reply-to');
+
+          const processCommand = async (rawCmd) => {
+            const cmd = { ...rawCmd };
+            if (rawCmd.type === 'COMMAND') {
+              const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;
+              if (cmd.op === 'READ_SELECTOR' || (cmd.op === 'READ' && sel)) {
+                try {
+                  const result = await this.vfs.readSelector(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt });
+                  if (result) { stream = result.stream; metadata = result.metadata; } 
+                  else { metadata = { error: 'Not Found' }; }
+                } catch (readErr) {
+                  metadata = { error: readErr.message };
+                }
+                replyTo = cmd.id;
+              } else if (cmd.op === 'READ_CID' || cmd.op === 'READ') {
+                try {
+                  const cid = cmd.cid || cmd.payload?.cid;
+                  const rs = cmd.resolutionStack || cmd.payload?.resolutionStack || [];
+                  const result = await this.vfs.readCID(cid, { stack: cmd.stack, resolutionStack: rs, expiresAt: cmd.expiresAt });
+                  if (result) { stream = result.stream; metadata = result.metadata; } 
+                  else { metadata = { error: 'Not Found' }; }
+                } catch (readErr) {
+                  metadata = { error: readErr.message };
+                }
+                replyTo = cmd.id;
+              } else if (cmd.op === 'SPY') {
+                try {
+                  stream = await this.vfs.spy(sel, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
+                  if (!stream) metadata = { error: 'Not Found' };
+                } catch (spyErr) {
+                  metadata = { error: spyErr.message };
+                }
+                replyTo = cmd.id;
+              } else if (cmd.op === 'SUB') {
+                this.mesh.addInterest(cmd.stack[0] || 'unknown', sel, cmd.expiresAt, cmd.stack);
+              }
+            } else if (cmd.type === 'PUB') {
+              const s = cmd.selector ? Selector.fromObject(cmd.selector) : null;
+              this.mesh.notify(s, cmd.payload, cmd.stack);
+            }
+          };
+
+          if (op === 'BATCH') {
+            const batch = JSON.parse(await resp.text());
+            log(`[ReverseConn ${this.neighborId}] Processing BATCH of ${batch.length} commands.`);
+            for (const item of batch) {
+                await processCommand(item);
+            }
+            continue;
+          }
 
           let cmd, payload;
           if (op) {
@@ -306,44 +379,8 @@ export class ReverseConnection extends Connection {
           }
 
           log(`[ReverseConn ${this.neighborId}] RECEIVED ${cmd.op || cmd.type}`);
+          await processCommand(cmd);
 
-          if (cmd.type === 'COMMAND') {
-            const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;
-            if (cmd.op === 'READ_SELECTOR' || (cmd.op === 'READ' && sel)) {
-              try {
-                const result = await this.vfs.readSelector(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt });
-                if (result) { stream = result.stream; metadata = result.metadata; } 
-                else { metadata = { error: 'Not Found' }; }
-              } catch (readErr) {
-                metadata = { error: readErr.message };
-              }
-              replyTo = cmd.id;
-            } else if (cmd.op === 'READ_CID' || cmd.op === 'READ') {
-              try {
-                const cid = cmd.cid || cmd.payload?.cid;
-                const rs = cmd.resolutionStack || cmd.payload?.resolutionStack || [];
-                const result = await this.vfs.readCID(cid, { stack: cmd.stack, resolutionStack: rs, expiresAt: cmd.expiresAt });
-                if (result) { stream = result.stream; metadata = result.metadata; } 
-                else { metadata = { error: 'Not Found' }; }
-              } catch (readErr) {
-                metadata = { error: readErr.message };
-              }
-              replyTo = cmd.id;
-            } else if (cmd.op === 'SPY') {
-              try {
-                stream = await this.vfs.spy(sel, { stack: cmd.stack, resolutionStack: cmd.resolutionStack, expiresAt: cmd.expiresAt });
-                if (!stream) metadata = { error: 'Not Found' };
-              } catch (spyErr) {
-                metadata = { error: spyErr.message };
-              }
-              replyTo = cmd.id;
-            } else if (cmd.op === 'SUB') {
-              this.mesh.addInterest(cmd.stack[0] || 'unknown', sel, cmd.expiresAt, cmd.stack);
-            }
-          } else if (cmd.type === 'PUB') {
-            const s = cmd.selector ? Selector.fromObject(cmd.selector) : null;
-            this.mesh.notify(s, cmd.payload, cmd.stack);
-          }
         } else if (resp.status === 409) {
             throw new Error(`CRITICAL: Remote node rejected our poll: ${await resp.text()}`);
         }

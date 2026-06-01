@@ -178,34 +178,41 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
     if (conn->current_poll_id != my_poll_id) { res.status = 204; return; }
 
     if (!conn->queue.empty()) {
-        json cmd = conn->queue.front();
-        conn->queue.erase(conn->queue.begin());
-        std::string op = cmd.value("op", cmd.value("type", "unknown"));
-        
-        std::cout << "[REST " << config_.id << "] -> Deliver " << op << " to " << peer_id << std::endl;
-        
-        res.set_header("X-VFS-Op", op);
-        if (cmd.contains("selector")) res.set_header("X-VFS-Selector", cmd["selector"].dump());
-        if (cmd.contains("expiresAt")) res.set_header("X-VFS-Expires", std::to_string(cmd["expiresAt"].get<long long>()));
-        
-        std::string stack_str;
-        if (cmd.contains("stack")) {
-            for (size_t i = 0; i < cmd["stack"].size(); ++i) stack_str += (i == 0 ? "" : ",") + cmd["stack"][i].get<std::string>();
-        }
-        res.set_header("X-VFS-Stack", stack_str);
-        
-        if (cmd.contains("payload")) {
-            if (cmd["payload"].is_binary()) {
-                res.set_header("X-VFS-Encoding", "bytes");
-                std::vector<uint8_t> data = cmd["payload"].get_binary();
-                res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
-            } else {
-                res.set_header("X-VFS-Encoding", "json");
-                res.set_content(cmd["payload"].dump(), "application/json");
+        // BINARY RULE: If the first item is binary, deliver it alone as a standard response
+        if (conn->queue.front().contains("payload") && conn->queue.front()["payload"].is_binary()) {
+            json cmd = conn->queue.front();
+            conn->queue.erase(conn->queue.begin());
+            std::string op = cmd.value("op", cmd.value("type", "unknown"));
+            
+            res.set_header("X-VFS-Op", op);
+            if (cmd.contains("selector")) res.set_header("X-VFS-Selector", cmd["selector"].dump());
+            if (cmd.contains("expiresAt")) res.set_header("X-VFS-Expires", std::to_string(cmd["expiresAt"].get<long long>()));
+            
+            std::string stack_str;
+            if (cmd.contains("stack")) {
+                for (size_t i = 0; i < cmd["stack"].size(); ++i) stack_str += (i == 0 ? "" : ",") + cmd["stack"][i].get<std::string>();
             }
-        } else {
-            res.set_content(cmd.dump(), "application/json");
+            res.set_header("X-VFS-Stack", stack_str);
+            
+            res.set_header("X-VFS-Encoding", "bytes");
+            std::vector<uint8_t> data = cmd["payload"].get_binary();
+            res.set_content((const char*)data.data(), data.size(), "application/octet-stream");
+            return;
         }
+
+        // BATCH RULE: Flush all non-binary messages in one array
+        json batch = json::array();
+        while (!conn->queue.empty() && 
+               !(conn->queue.front().contains("payload") && conn->queue.front()["payload"].is_binary())) {
+            batch.push_back(conn->queue.front());
+            conn->queue.erase(conn->queue.begin());
+        }
+        
+        std::cout << "[REST " << config_.id << "] -> Deliver BATCH of " << batch.size() << " commands to " << peer_id << std::endl;
+        
+        res.set_header("X-VFS-Op", "BATCH");
+        res.set_header("X-VFS-Encoding", "json");
+        res.set_content(batch.dump(), "application/json");
         return;
     }
     res.status = 204;
@@ -307,6 +314,7 @@ VFSResult VFSNode::ReverseConnection::sendRequest(const VFSRequest& req) {
     if (req.op == "PUB") {
         std::lock_guard<std::mutex> lock(mutex);
         queue.push_back({{"type", "PUB"}, {"selector", req.selector.to_json()}, {"payload", req.data.empty() ? json::object() : json::parse(req.data)}, {"stack", req.stack}});
+        std::cout << "[ReverseConn " << neighbor_id << "] PUB queued. Queue depth: " << queue.size() << std::endl;
         cv.notify_one();
         return {};
     } else if (req.op == "SUB") {
@@ -314,8 +322,30 @@ VFSResult VFSNode::ReverseConnection::sendRequest(const VFSRequest& req) {
         queue.push_back({{"type", "COMMAND"}, {"op", "SUB"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
         cv.notify_one();
         return {};
+    } else if (req.op == "READ_SELECTOR" || req.op == "READ_CID") {
+        std::lock_guard<std::mutex> lock(mutex);
+        json cmd = {
+            {"type", "COMMAND"}, 
+            {"op", req.op}, 
+            {"id", generate_tx_id()},
+            {"expiresAt", req.expiresAt}, 
+            {"stack", req.stack}
+        };
+        if (req.op == "READ_SELECTOR") {
+            cmd["selector"] = req.selector.to_json();
+        } else {
+            cmd["cid"] = req.cid;
+            cmd["resolutionStack"] = req.resolutionStack;
+        }
+        queue.push_back(cmd);
+        cv.notify_one();
+
+        // Note: Reverse READ over Long-Poll is technically 'fire and forget' 
+        // until the next poll returns the reply.
+        return {};
     }
     throw VFSException("ReverseConnection sendRequest " + req.op + " not yet implemented", 501);
+
 }
 
 // --- WebSocket Connection Implementations ---
