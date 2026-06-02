@@ -9,7 +9,9 @@ export {
   encodeSafe, 
   decodeSafe, 
   encodeJCB, 
-  decodeJCB 
+  decodeJCB,
+  encodeInfo,
+  decodeInfo
 } from './cid.js';
 
 export { EventEmitter } from './event_emitter.js';

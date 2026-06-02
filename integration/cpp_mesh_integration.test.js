@@ -53,9 +53,10 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
   });
 
   // 1. Launch the TEST system
-  sys = await launchSystem(PROFILES.TEST);
+  const profileKey = 'test/standard';
+  sys = await launchSystem(profileKey);
   const PORT_CPP = sys.ports.ops;
-  const STORAGE_CPP = `${PROFILES.TEST.storagePrefix}ops`;
+  const STORAGE_CPP = `${PROFILES[profileKey].storagePrefix}ops`;
 
   // 2. Start JS Node
   jsVfs = new VFS({

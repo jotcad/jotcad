@@ -12,9 +12,14 @@
 #include <memory>
 #include <mutex>
 #include <condition_variable>
+#include <future>
 
 namespace httplib {
     class Response;
+    namespace ws {
+        class WebSocket;
+        class WebSocketClient;
+    }
 }
 
 namespace jotcad {
@@ -28,13 +33,9 @@ namespace fs {
 
 using json = nlohmann::json;
 
-// Global VFS utility declarations (from cid.h)
 std::string vfs_hash256(const std::vector<uint8_t>& data);
 std::string vfs_hash256_str(const std::string& data);
 
-/**
- * VFSNode: A decentralized mesh participant that can provision files on-demand.
- */
 struct VFSResult {
     std::vector<uint8_t> data;
     json metadata;
@@ -53,8 +54,11 @@ public:
     };
 
     struct VFSRequest {
-        std::string cid;   // Direct content identity
-        Selector selector; // Computational identity
+        std::string op; // PUB, SUB, READ_SELECTOR, READ_CID, PUBLISH
+        std::string cid;
+        Selector selector;
+        std::string data; // Used for JSON payloads
+        std::vector<uint8_t> binary_data; // Used for raw binary payloads
         std::vector<std::string> stack;
         std::vector<std::string> resolutionStack;
         long long expiresAt = 0;
@@ -63,15 +67,15 @@ public:
         bool is_cid() const { return !cid.empty(); }
     };
 
-    // Mesh Connection Abstraction
+    static constexpr long long PEER_POLL_TIMEOUT_MS = 10000;
+
     struct Connection {
         std::string neighbor_id;
         virtual ~Connection() = default;
-        virtual void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) = 0;
-        virtual void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) = 0;
-        virtual VFSResult read(const VFSRequest& req) = 0;
+        virtual VFSResult sendRequest(const VFSRequest& req) = 0;
         virtual bool is_reverse() const = 0;
         virtual std::string get_url() const { return ""; }
+        virtual std::string get_protocol() const = 0;
     };
 
     using OpHandler = std::function<void(const VFSRequest& req)>;
@@ -84,14 +88,24 @@ public:
     void listen();
     void stop();
 
+    void prune_stale_connections();
+
+    // Identity Duality Overloads (Explicit Typed Dispatch)
     template<typename T = std::vector<uint8_t>>
     T read(const Selector& sel);
 
     template<typename T = std::vector<uint8_t>>
-    T read(const VFSRequest& req);
+    T read(const CID& cid);
 
     template<typename T = std::vector<uint8_t>>
-    T read(const CID& cid);
+    T read(const VFSRequest& req);
+
+    // Internal explicit methods
+    template<typename T = std::vector<uint8_t>>
+    T readSelector(const Selector& sel) { return read<T>(sel); }
+
+    template<typename T = std::vector<uint8_t>>
+    T readCID(const CID& cid) { return read<T>(cid); }
 
     std::string get_cid(const Selector& sel);
     VFSResult get_local(const std::string& cid);
@@ -111,37 +125,90 @@ public:
 
     bool validate_selector(const VFSRequest& req, std::string& error_out);
 
-    void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack);
-    void notify(const json& selector, const json& payload, const std::vector<std::string>& stack = {});
+    void subscribe(const Selector& selector, long long expiresAt, const std::vector<std::string>& stack);
+    void notify(const Selector& selector, const json& payload, const std::vector<std::string>& stack = {});
 
     void add_peer(const std::string& url);
     void add_connection(std::shared_ptr<Connection> conn);
+    void upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Connection> ws_conn);
     void register_reverse_peer(const std::string& peer_id, httplib::Response& res);
 
     json get_catalog();
     json get_neighbors();
+    json get_topology_payload();
+
+    void handle_ws_frame(const std::string& neighbor_id, const json& frame);
+    void handle_binary_frame(const std::string& neighbor_id, const json& header, const std::vector<uint8_t>& data);
+
+    void resolve_transaction(const std::string& tx_id, const VFSResult& result);
+    void reject_transaction(const std::string& tx_id, int status, const std::string& error);
 
 private:
     struct ForwardConnection : public Connection {
         std::string url;
         ForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
-        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
-        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
-        VFSResult read(const VFSRequest& req) override;
+        VFSResult sendRequest(const VFSRequest& req) override;
+        VFSResult _do_read(const std::map<std::string, std::string>& headers, const std::string& body, const std::string& path);
         bool is_reverse() const override { return false; }
         std::string get_url() const override { return url; }
-    };
+        std::string get_protocol() const override { return (url.rfind("https", 0) == 0) ? "https" : "http"; }
+        };
 
-    struct ReverseConnection : public Connection {
-        std::vector<json> queue;
+        struct ReverseConnection : public Connection {
         std::mutex mutex;
         std::condition_variable cv;
+        std::vector<json> queue;
         bool is_polling = false;
-        ReverseConnection(std::string id) { neighbor_id = std::move(id); }
-        void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override;
-        void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override;
-        VFSResult read(const VFSRequest& req) override;
+        long long current_poll_id = 0;
+        long long last_poll_at = 0;
+
+        ReverseConnection(std::string id) { 
+            neighbor_id = std::move(id); 
+            last_poll_at = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        }
+        VFSResult sendRequest(const VFSRequest& req) override;
         bool is_reverse() const override { return true; }
+        std::string get_protocol() const override { return "http"; }
+        };
+
+    struct WSConnection : public Connection {
+        VFSNode* node = nullptr;
+        std::mutex ws_mutex;
+        virtual void send_frame(const json& frame) = 0;
+        virtual void send_binary_frame(const json& header, const std::vector<uint8_t>& data) = 0;
+        VFSResult sendRequest(const VFSRequest& req) override;
+        VFSResult _do_ws_read(const json& frame);
+        bool is_reverse() const override { return false; }
+        std::string get_protocol() const override { return "ws"; }
+    };
+
+    struct WSForwardConnection : public WSConnection {
+        std::string url;
+        std::shared_ptr<httplib::ws::WebSocketClient> ws_client;
+        std::thread read_thread;
+        std::atomic<bool> is_closed{false};
+
+        WSForwardConnection(std::string id, std::string u);
+        ~WSForwardConnection() override;
+        void send_frame(const json& frame) override;
+        void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
+        std::string get_url() const override { return url; }
+        std::string get_protocol() const override { return (url.rfind("https", 0) == 0 || url.rfind("wss", 0) == 0) ? "wss" : "ws"; }
+        void start_client();
+        void read_loop();
+    };
+
+    struct WSReverseConnection : public WSConnection {
+        httplib::ws::WebSocket* ws;
+        WSReverseConnection(std::string id, httplib::ws::WebSocket* socket) : ws(socket) { neighbor_id = std::move(id); }
+        void send_frame(const json& frame) override;
+        void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
+        bool is_reverse() const override { return true; }
+        std::string get_protocol() const override { 
+            // In our TestServer, reverse WS connections over SSL will have a non-empty cert path in the node config
+            if (node && !node->config_.cert_path.empty()) return "wss";
+            return "ws";
+        }
     };
 
     Config config_;
@@ -153,15 +220,23 @@ private:
     std::set<std::string> connecting_;
     std::mutex peer_mutex_;
 
-    std::map<std::string, std::map<std::string, long long>> interests_;
+    std::map<std::string, std::shared_ptr<std::promise<VFSResult>>> transactions_;
+    std::mutex transaction_mutex_;
+
+    struct SubscriptionEntry {
+        Selector selector;
+        std::map<std::string, long long> subs; // neighbor_id -> expiresAt
+        long long localExpiresAt = 0;
+    };
+
+    std::vector<SubscriptionEntry> interests_;
     std::mutex interest_mutex_;
-    std::map<std::string, json> interest_selectors_;
 
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
 
-    VFSResult read_impl(const VFSRequest& req);
-    VFSResult read_result(const VFSRequest& req);
+    VFSResult read_cid_impl(const VFSRequest& req);
+    VFSResult read_selector_impl(const VFSRequest& req);
 
     bool has_local(const std::string& cid);
     void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
@@ -175,16 +250,21 @@ template<> json VFSNode::read<json>(const Selector& sel);
 template<> double VFSNode::read<double>(const Selector& sel);
 template<> int VFSNode::read<int>(const Selector& sel);
 template<> std::string VFSNode::read<std::string>(const Selector& sel);
-template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req);
-template<> json VFSNode::read<json>(const VFSRequest& req);
-template<> double VFSNode::read<double>(const VFSRequest& req);
-template<> int VFSNode::read<int>(const VFSRequest& req);
-template<> std::string VFSNode::read<std::string>(const VFSRequest& req);
+template<> VFSResult VFSNode::read<VFSResult>(const Selector& sel);
+
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& cid);
 template<> json VFSNode::read<json>(const CID& cid);
 template<> double VFSNode::read<double>(const CID& cid);
 template<> int VFSNode::read<int>(const CID& cid);
 template<> std::string VFSNode::read<std::string>(const CID& cid);
+template<> VFSResult VFSNode::read<VFSResult>(const CID& cid);
+
+template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req);
+template<> json VFSNode::read<json>(const VFSRequest& req);
+template<> double VFSNode::read<double>(const VFSRequest& req);
+template<> int VFSNode::read<int>(const VFSRequest& req);
+template<> std::string VFSNode::read<std::string>(const VFSRequest& req);
+template<> VFSResult VFSNode::read<VFSResult>(const VFSRequest& req);
 
 template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint8_t>& data);
 template<> CID VFSNode::materialize<json>(const json& data);

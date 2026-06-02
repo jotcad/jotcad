@@ -1,0 +1,17 @@
+make: Entering directory '/home/brian/github/jotcad/geo/test'
+make -C ..
+make[1]: Entering directory '/home/brian/github/jotcad/geo'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/home/brian/github/jotcad/geo'
+g++ -O1 -std=c++17 -MMD -MP -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../render -I../infra -I../../fs/cpp -I../../fs/cpp/vendor -I../cgal -I../cgal/boost -I../cgal/cgal/include -I../cgal/cgal/include/CGAL/include -I../cgal/freetype/include -I../pack -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT pack_test.cpp -Wl,--start-group ../bin/libjotgeo.a ../cgal/freetype/build/libfreetype.a -lpthread -lssl -lcrypto -lz -ldl -Wl,--end-group -o bin/pack_test
+In file included from ../cgal/CGAL/AABB_traits.h:19,
+                 from ../boolean/engine.h:12,
+                 from test_base.h:11,
+                 from pack_test.cpp:1:
+../cgal/CGAL/Installation/internal/deprecation_warning.h:80:6: warning: #warning "A deprecated header has been included." [-Wcpp]
+   80 | #    warning "A deprecated header has been included."
+      |      ^~~~~~~
+../cgal/CGAL/Installation/internal/deprecation_warning.h:81:54: note: ‘#pragma message: Warning: The header `<CGAL/AABB_traits.h>` is deprecated. Please use `<CGAL/AABB_traits_3.h>` instead. ’
+   81 | #    pragma message (CGAL_INTERNAL_DEPRECATED_MESSAGE)
+      |                                                      ^
+make: *** [Makefile:64: bin/pack_test] Terminated

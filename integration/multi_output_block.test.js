@@ -46,7 +46,7 @@ test('Multi-Output Scoped Block Integration', { timeout: 60000 }, async (t) => {
   });
 
   // 1. Launch the TEST system
-  sys = await launchSystem(PROFILES.TEST);
+  sys = await launchSystem('test/standard');
   const PORT_CPP = sys.ports.ops;
   const PORT_JS = 20402;
 

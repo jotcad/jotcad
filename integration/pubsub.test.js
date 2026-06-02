@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { VFS, MemoryStorage, Selector } from '../fs/src/index.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
+import { MockConnection } from './vfs_test_helpers.js';
 
 test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
   // Setup a 3-node chain: A <-> B <-> C
@@ -28,28 +29,20 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
 
   // Mock direct peering (bypass HTTP for unit test)
   const connect = (mA, mB) => {
-    const peerA = {
-      neighborId: mB.vfs.id,
-      subscribe: (s, e, st) => {
-        mB.addInterest(mA.vfs.id, s, e, st);
-        return Promise.resolve();
-      },
-      notify: (s, p, st) => {
-        mB.notify(s, p, st);
-        return Promise.resolve();
-      },
-    };
-    const peerB = {
-      neighborId: mA.vfs.id,
-      subscribe: (s, e, st) => {
-        mA.addInterest(mB.vfs.id, s, e, st);
-        return Promise.resolve();
-      },
-      notify: (s, p, st) => {
-        mA.notify(s, p, st);
-        return Promise.resolve();
-      },
-    };
+    const peerA = new MockConnection(mB.vfs.id, async (req) => {
+        if (req.op === 'SUB') {
+          mB.addInterest(mA.vfs.id, req.selector, req.expiresAt, req.stack);
+        } else if (req.op === 'PUB') {
+          mB.notify(req.selector, req.payload, req.stack);
+        }
+    });
+    const peerB = new MockConnection(mA.vfs.id, async (req) => {
+        if (req.op === 'SUB') {
+          mA.addInterest(mB.vfs.id, req.selector, req.expiresAt, req.stack);
+        } else if (req.op === 'PUB') {
+          mA.notify(req.selector, req.payload, req.stack);
+        }
+    });
     mA.peers.set(mB.vfs.id, peerA);
     mB.peers.set(mA.vfs.id, peerB);
   };
@@ -69,14 +62,14 @@ test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
     await new Promise((r) => setTimeout(r, 50));
 
     // Verify B knows A is interested
-    const bEntry = meshB.interests.get(topicString);
+    const bEntry = meshB.interests.find(e => e.selector.path === selector.path);
     assert.ok(
       bEntry && bEntry.subs.has('node-A'),
       'Node B should record Node A interest'
     );
 
     // Verify C knows B is interested (propagation)
-    const cEntry = meshC.interests.get(topicString);
+    const cEntry = meshC.interests.find(e => e.selector.path === selector.path);
     assert.ok(
       cEntry && cEntry.subs.has('node-B'),
       'Node C should record Node B interest'

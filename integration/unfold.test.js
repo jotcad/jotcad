@@ -72,7 +72,7 @@ async function test() {
     console.log("Starting Unfold Integration Test...");
     
     // 1. Launch the TEST system (ops node on 9191)
-    const sys = await launchSystem(PROFILES.TEST);
+    const sys = await launchSystem('test/standard');
     const opsUrl = `http://localhost:${sys.ports.ops}`;
 
     // 2. Setup VFS and MeshLink

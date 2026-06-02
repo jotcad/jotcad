@@ -53,6 +53,29 @@ vi.mock('../src/lib/blackboard', () => {
   };
 });
 
+// Mock jot compiler
+vi.mock('../../jot/src/compiler', () => {
+  return {
+    JotCompiler: class {
+      constructor() {}
+      parse() { return { type: 'Program', body: [] }; }
+      evaluate() {
+        return Promise.resolve([
+          { 
+            selector: { path: 'jot/Box', parameters: { width: 10, height: 10, depth: 10 }, output: '$out' },
+            schema: { type: 'jot:shape' }
+          },
+          {
+            selector: { path: 'foo.pdf', parameters: { path: 'foo.pdf' }, output: 'pdf' },
+            schema: { type: 'file' }
+          }
+        ]);
+      }
+      dynamicOps() { return {}; }
+    }
+  };
+});
+
 // Mock ThreeUtils and Viewport to avoid WebGL issues in JSDOM
 vi.mock('../src/lib/three_utils', () => ({
   packZFS: vi.fn().mockResolvedValue({ type: 'packed-geometry' })
@@ -62,15 +85,36 @@ vi.mock('../src/components/viewport/Viewport', () => ({
   Viewport: () => <div data-testid="mock-viewport">Viewport</div>
 }));
 
+// Mock blackboard
+vi.mock('../src/lib/blackboard', async () => {
+  const actual = await vi.importActual('../src/lib/blackboard');
+  return {
+    ...actual,
+    blackboard: {
+      ...actual.blackboard,
+      readSelectorData: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+      readSelector: vi.fn().mockResolvedValue({
+          stream: new ReadableStream({
+              start(controller) {
+                  controller.enqueue(new Uint8Array([1, 2, 3]));
+                  controller.close();
+              }
+          }),
+          metadata: { state: 'AVAILABLE', encoding: 'bytes' }
+      })
+    }
+  };
+});
+
 describe('JotNode Terminal Integration', () => {
   it('should display a download button when terminal files are discovered', async () => {
     const { unmount } = render(() => <JotNode id="test-node" />);
     
     // 1. Find the code editor (text area)
-    const editor = screen.getByDisplayValue(/Box\(10\)/);
+    const editor = screen.getByTestId('jot-code-editor');
     
     // 2. Update code to produce a PDF terminal
-    fireEvent.input(editor, { target: { value: 'Box(10).pdf("foo.pdf")' } });
+    fireEvent.input(editor, { target: { value: 'Box(10).pdf("foo.pdf") -> $out' } });
     
     // 3. Trigger evaluation
     const evaluateBtn = screen.getByText('Evaluate Jot');

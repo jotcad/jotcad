@@ -1,4 +1,4 @@
-console.log('[Trace] Executing JotRegistry.js');
+// console.log('[Trace] Executing JotRegistry.js');
 import { Selector } from '../../../../fs/src/vfs_browser.js';
 import { setSchemas, setDynamicOps } from '../state/MeshState.js';
 import { Worksheet } from './Worksheet';
@@ -150,7 +150,6 @@ export const JotRegistry = {
 
     if (mesh && mesh.connected) {
         mesh.notify(new Selector('sys/schema'), {
-          type: 'CATALOG_ANNOUNCEMENT',
           provider: vfs.id,
           catalog: { [targetPath]: schemaWithOrigin }
         });

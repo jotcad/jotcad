@@ -32,17 +32,20 @@ test('ReverseConnection should drain ReadableStream into Uint8Array', async (t) 
         // Simulate a "READ" command from the server on the first poll
         // Format MUST match mesh_link.js:316
         if (pollCount === 1) {
+            const body = {
+                type: 'COMMAND',
+                op: 'READ_SELECTOR',
+                id: 'server-request-123',
+                selector: { path: 'test/path', parameters: {} },
+                stack: [],
+                resolutionStack: [],
+                expiresAt: Date.now() + 30000
+            };
             return {
                 status: 200,
-                text: async () => JSON.stringify({
-                    type: 'COMMAND',
-                    op: 'READ',
-                    id: 'server-request-123',
-                    selector: { path: 'test/path', parameters: {} },
-                    stack: [],
-                    resolutionStack: [],
-                    expiresAt: Date.now() + 30000
-                })
+                text: async () => JSON.stringify(body),
+                json: async () => body,
+                headers: new Map()
             };
         }
 
@@ -55,8 +58,9 @@ test('ReverseConnection should drain ReadableStream into Uint8Array', async (t) 
     const { ReverseConnection } = await import('../fs/src/mesh_link.js');
     const rev = new ReverseConnection('server-poller', mesh, { instanceId: 'test-inst' });
     
-    // Mock vfs.read to return our stream
-    vfs.read = async () => ({ stream: createStream(), metadata: { encoding: 'bytes' } });
+    // Mock vfs.readSelector to return our stream
+    vfs.readSelector = async () => ({ stream: createStream(), metadata: { encoding: 'bytes' } });
+    vfs.readCID = async () => ({ stream: createStream(), metadata: { encoding: 'bytes' } });
 
     console.log('[Test] Starting ReverseConnection polling loop...');
     

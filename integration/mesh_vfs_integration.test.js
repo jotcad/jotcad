@@ -18,7 +18,9 @@ async function consumeJSON(stream) {
     return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-test('Decentralized Mesh-VFS Integration', async (t) => {
+import { waitForMeshNodes } from './vfs_test_helpers.js';
+
+test('Decentralized Mesh-VFS Integration', { timeout: 30000 }, async (t) => {
   const vfsA = new VFS({ id: 'node-A', storage: new MemoryStorage() });
   const vfsB = new VFS({ id: 'node-B', storage: new MemoryStorage() });
   const vfsC = new VFS({ id: 'node-C', storage: new MemoryStorage() });
@@ -40,11 +42,14 @@ test('Decentralized Mesh-VFS Integration', async (t) => {
   const serverB = http.createServer(); registerVFSRoutes(vfsB, serverB, '', meshB); serverB.listen(25002);
   const serverC = http.createServer(); registerVFSRoutes(vfsC, serverC, '', meshC); serverC.listen(25003);
 
-  await Promise.all([vfsA.init(), vfsB.init(), vfsC.init()]);
+  serverA.unref(); serverB.unref(); serverC.unref();
+
   await Promise.all([meshA.start(), meshB.start(), meshC.start()]);
 
-  // Wait for mesh to settle
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait for mesh to settle: Node A needs to discover Node B and Node C
+  console.log('[Test Mesh] Waiting for A -> B -> C routing path to form...');
+  await waitForMeshNodes(vfsA, ['node-B', 'node-C']);
+
 
   await t.test('should implement Ephemeral Wipe on startup', async () => {
     // MemoryStorage is empty by default on startup
@@ -62,12 +67,13 @@ test('Decentralized Mesh-VFS Integration', async (t) => {
   });
 
   await t.test('should implement Auto-Peering (Symmetry)', async () => {
-    const vfsD = new VFS({ id: 'node-D' });
+    const vfsD = new VFS({ id: 'node-D', storage: new MemoryStorage() });
     const meshD = new MeshLink(vfsD, ['http://localhost:25001']);
     await meshD.start();
-    await new Promise(r => setTimeout(r, 500));
     
     // Node A should now see Node D as a peer even though D only contacted A
+    await waitForMeshNodes(vfsA, ['node-D']);
+    
     assert.ok(meshA.peers.has('node-D'), 'Node A should have auto-registered Node D');
     console.log('[Test Mesh] AUTO-PEERING SUCCESSful.');
     
@@ -77,7 +83,13 @@ test('Decentralized Mesh-VFS Integration', async (t) => {
 
   t.after(async () => {
     console.log('[Test Mesh] Cleaning up all nodes...');
-    serverA.close(); serverB.close(); serverC.close();
+    
+    // Force close all connections to prevent hanging
+    for (const s of [serverA, serverB, serverC]) {
+        if (s.closeAllConnections) s.closeAllConnections();
+        s.close();
+    }
+    
     meshA.stop(); meshB.stop(); meshC.stop();
     await vfsA.close(); await vfsB.close(); await vfsC.close();
   });

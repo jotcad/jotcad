@@ -87,16 +87,19 @@ All peer interactions are managed through a unified **Connection** abstraction.
 - **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers).
   - **Encapsulated Responsibility:** The `ReverseConnection` class manages BOTH the server-side listener pool and the client-side active polling loop.
   - **409 Conflict Protection:** Servers MUST reject a `POST /listen` with a **409 Conflict** if a poll is already active for that peer ID. Clients MUST treat a 409 as a critical failure (zombie process detection).
+- **Stale Peer Pruning (10s Activity Timeout):**
+  - To prevent memory exhaustion from abandoned browser tabs or crashed nodes, servers MUST track the last activity time for every peer. 
+  - If a peer fails to interact (e.g., a new `/listen` poll or an incoming `/register`) for more than **10 seconds**, the server MUST prune that peer from its routing table. 
+  - Upon pruning, all pending notification queues for that peer MUST be cleared.
 
 ### 3.3 Discovery & Lifecycle (`sys/`)
 
 The VFS uses specialized system paths for mesh management.
 
 - **Topology Updates (`sys/topo`):** Nodes notify neighbors of topology changes.
-  - Payload Type: `TOPOLOGY_UPDATE`
-  - Content: `{ peer: "id", neighbors: { "id": "url" } }`
+  - Content: `{ id: "sender-id", neighbors: [ { "id": "peer-id", "reachability": "DIRECT|REVERSE", "protocol": "http|https|ws|wss" } ], interests: [...] }`
+  - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion, WebSocket upgrade, or when a new `SUB` for `sys/topo` is received (Reactive Discovery).
 - **Schema Discovery (`sys/schema`):** Providers announce their available operators.
-  - Payload Type: `CATALOG_ANNOUNCEMENT`
   - Content: `{ provider: "id", catalog: { "path": schema } }`
   - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
 
@@ -119,15 +122,18 @@ Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sha
 - **Allowed Headers:** MUST include `Content-Type`, `X-VFS-Peer-Id`, `X-VFS-Reply-To`, and `X-VFS-Id`.
 - **Preflight:** Nodes MUST handle `OPTIONS` requests for all mesh routes.
 
-### 3.4 Reverse Link Polling (`POST /listen`)
+### 3.7 Reverse Link Polling (`POST /listen`)
 
 Peers without a stable incoming URL (e.g., Browsers) receive mesh events by polling the `/listen` endpoint of their neighbors.
+
 - **Endpoint:** `POST /listen`
 - **Headers:** `x-vfs-peer-id: <local-id>`
-- **Response:** 
-  - `200 OK`: Returns a single JSON Command object (e.g., `NOTIFY`, `READ`).
-  - `204 No Content`: No events pending (returned ONLY after a timeout).
-- **Long-Polling Contract:** Servers MUST NOT return `204` immediately if the queue is empty. They must wait for a publication or a timeout (e.g., 30s).
+- **Response Operations (`X-VFS-Op`):**
+  - **`PUB` / `SUB` / `READ_SELECTOR` / `READ_CID`**: Returns a single standard mesh command object.
+  - **`BATCH`**: To eliminate per-message HTTP overhead, servers MAY return multiple pending JSON commands as a single array. Clients MUST iterate over this array and process each command.
+  - **`204 No Content`**: No events pending (returned ONLY after a long-poll timeout).
+- **Long-Polling Contract:** Servers MUST NOT return `204` immediately if the queue is empty. They MUST wait for a publication or a timeout (e.g., 30s) to keep the connection active for immediate delivery.
+- **Binary Constraint**: The `BATCH` operation is reserved for JSON frames. Raw binary notifications (`encoding: bytes`) MUST be delivered as individual standard `200 OK` responses to maintain framing integrity and efficiency.
 
 ### 3.5 Formal Links (Unambiguous Redirection)
 
@@ -142,10 +148,13 @@ The VFS supports **Formal Links**, a mechanism for redirecting one Selector to a
 - **Cycle Protection:** Nodes MUST maintain a `resolutionStack` of CIDs encountered during a single resolution chain. If a CID is encountered that is already in the stack, the resolution MUST fail with a "Circular Link Detected" error.
 - **Owner Sovereignty:** A Link is an independent entry owned by its source Selector. If the source Selector entry is deleted, the link is destroyed, but the target artifact remains unaffected.
 
-### 3.6 Recursive Bread-crumb READ (`POST /read`)
+### 3.6 Recursive Bread-crumb READ (`POST /read_selector` | `POST /read_cid`)
 
 The `read` operation is the primary mechanism for demand-driven data retrieval.
 
+- **Endpoints:**
+  - `POST /read_selector`: Retrieves data by its computational address (path + parameters).
+  - `POST /read_cid`: Retrieves data by its specific content hash.
 - **Atomic Wire Format:** Requests MUST wrap the target Selector or CID in a top-level key.
   ```json
   {
@@ -162,7 +171,7 @@ The `read` operation is the primary mechanism for demand-driven data retrieval.
     "stack": ["node-A"]
   }
   ```
-- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status.
+- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status. The default TTL for requests without an explicit `expiresAt` is **30 seconds**.
 
 ## 4. Core Type System
 

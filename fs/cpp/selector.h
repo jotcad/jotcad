@@ -19,7 +19,7 @@ struct Selector {
     Selector() = default;
     Selector(std::string p, json params = json::object(), std::string out = "") 
         : path(std::move(p)), parameters(std::move(params)), output(std::move(out)) {
-        if (parameters.is_null()) parameters = json::object();
+        if (parameters.is_null() || !parameters.is_object()) parameters = json::object();
         if (!path.empty()) validate();
     }
 
@@ -77,6 +77,13 @@ struct Selector {
         Selector s = *this;
         s.output = out;
         return s;
+    }
+
+    bool operator==(const Selector& other) const {
+        return path == other.path && parameters == other.parameters && output == other.output;
+    }
+    bool operator!=(const Selector& other) const {
+        return !(*this == other);
     }
 };
 

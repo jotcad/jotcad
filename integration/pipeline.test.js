@@ -48,7 +48,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
   });
 
   // 1. Launch the TEST system (ops on 9191, export on 9192)
-  sys = await launchSystem(PROFILES.TEST);
+  sys = await launchSystem('test/standard');
   const PORT_OPS = sys.ports.ops;
   const PORT_EXPORT = sys.ports.export;
   const PORT_CLIENT = 20203;
@@ -124,7 +124,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
     const past = Date.now() - 5000;
     console.log('[Test Pipeline] Sending raw stale request to C++ node...');
 
-    const resp = await fetch(`http://localhost:${PORT_OPS}/read`, {
+    const resp = await fetch(`http://localhost:${PORT_OPS}/read_selector`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

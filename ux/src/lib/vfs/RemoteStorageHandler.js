@@ -57,7 +57,7 @@ export const RemoteStorageHandler = {
 
     rs.on('connected', async () => {
       const userAddress = rs.remote.userAddress;
-      console.log(`%c[RemoteStorage] Connected: ${userAddress}`, 'color: #00ffff; font-weight: bold;');
+      // console.log(`%c[RemoteStorage] Connected: ${userAddress}`, 'color: #00ffff; font-weight: bold;');
       setCloudAccount({ email: userAddress, name: userAddress.split('@')[0] });
       setSyncStatus('idle');
 
@@ -83,7 +83,7 @@ export const RemoteStorageHandler = {
 
   async initialSync() {
     if (!rs) return;
-    console.log('[RemoteStorage] initialSync started');
+    // console.log('[RemoteStorage] initialSync started');
     setSyncStatus('syncing');
     try {
       const remoteUserOps = await this.getUserOps();
@@ -97,7 +97,7 @@ export const RemoteStorageHandler = {
       }
 
       setSyncStatus('idle');
-      console.log('[RemoteStorage] initialSync finished');
+      // console.log('[RemoteStorage] initialSync finished');
     } catch (e) {
       console.error('[RemoteStorage] Initial sync failed:', e);
       setSyncStatus('error');

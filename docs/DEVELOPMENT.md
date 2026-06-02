@@ -154,21 +154,23 @@ npm run tests
 
 Both scripts utilize `test_orchestrator.js`, which ensures that each suite is run in a clean environment.
 
-### 6.2 Resource Cleanup Protocol
+### 6.2 Resource Cleanup & Port Isolation
 
-To prevent network port collisions (`EADDRINUSE`) and file system locks, the orchestrator implements a strict **Resource Cleanup Protocol**:
+To prevent network port collisions (`EADDRINUSE`) and file system locks, the orchestrator implements strict **Port Isolation**:
 
-1.  **Port Scrubbing**: Before launching a test cluster, the orchestrator uses `fuser -k` to forcibly release ports `9191` (Ops), `9192` (Export), and `3131` (UX).
+1.  **Disjoint Port Mapping**: Profiles use unique port ranges to prevent back-to-back test failures.
+    *   **test/standard**: Ops on `9191`, Export on `9197`.
+    *   **live/direct_cpp**: Ops on `9198` (Reserved for direct UX bridge).
 2.  **Storage Purge**: Temporary VFS storage directories (prefixed with `.vfs_storage_test_`) are deleted between suite runs.
-3.  **Graceful Teardown**: The `sys.stop()` method ensures child processes are killed and network sockets are fully released by the OS (enforced via explicit sleep intervals) before the next test begins.
+3.  **Graceful Teardown**: The `sys.stop()` method ensures child processes are killed and network sockets are fully released by the OS before the next test begins.
 
-### 6.3 Puppeteer Integration Tests
+### 6.3 Dynamic Gateway Discovery
 
-Browser-side integration tests are isolated in `integration/puppeteer/`. These tests validate the "Final Mile" of the system:
+Browser-side integration tests are isolated in `integration/puppeteer/`. To support disjoint ports without multiple builds, the UX implements **Dynamic Gateway Discovery**:
 
-- **Mesh Handshake**: Confirms the browser can discover and synchronize the JOT Catalog from the native C++ ops node.
-- **Log-Based Synchronization**: Because Puppeteer context-bridges can be fragile in bundled environments, these tests use **Console Log Detection** (`msg.text().includes(...)`) as the authoritative signal for system readiness.
-- **Static Build Testing**: Integration tests run against the **Production Build** (`ux/dist`) served via a static server, ensuring that bundling, code-splitting, and minification haven't introduced runtime errors.
+1.  **URL Override**: The UX checks for a `?gateway=` query parameter. If present, it overrides the build-time `VITE_VFS_URL`.
+2.  **Orchestrator Injection**: When `launchSystem` is called, it returns a `gatewayUrl` (e.g., `https://localhost:3131/?gateway=9197`).
+3.  **Test Execution**: Puppeteer tests MUST use `page.goto(cluster.gatewayUrl)` to ensure the browser connects to the correct cluster.
 
 ### 6.5 Secure Contexts & HTTPS
 

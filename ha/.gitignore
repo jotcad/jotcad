@@ -1,0 +1,18 @@
+# Local AI binaries and libraries (downloaded dynamically)
+bin/
+lib/
+
+# Local Python virtual environment
+venv/
+
+# Local cached neural network models (ONNX, CTranslate2, etc.)
+models/
+
+# Python caching directories
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating system metadata files
+.DS_Store

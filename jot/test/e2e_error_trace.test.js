@@ -42,7 +42,7 @@ test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
         const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'jot:shape' } });
         const finalSelector = terminals[0].selector;
 
-        const response = await fetch(`http://localhost:${OPS_PORT}/read`, {
+        const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ selector: finalSelector.toJSON() })

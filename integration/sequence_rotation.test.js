@@ -47,7 +47,7 @@ test('Sequence Rotation and Section Integration Tests', { timeout: 120000 }, asy
   });
 
   // 1. Launch the TEST system
-  sys = await launchSystem(PROFILES.TEST);
+  sys = await launchSystem('test/standard');
   const PORT_CPP = sys.ports.ops;
 
   // 2. Start JS Node

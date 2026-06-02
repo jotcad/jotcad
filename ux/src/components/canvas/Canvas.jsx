@@ -13,6 +13,9 @@ import { setPointerCount } from '../../lib/state/SystemState';
 import { createBlackboardControls } from '../../lib/blackboard/BlackboardControls';
 
 import { DesktopIcon } from '../system/desktop/DesktopIcon';
+import { CounterWidget } from '../system/desktop/CounterWidget';
+import { CameraWidget } from '../system/desktop/CameraWidget';
+import { DigitsWidget } from '../system/desktop/DigitsWidget';
 import { WindowManager } from '../system/desktop/WindowManager';
 
 export const Canvas = () => {
@@ -116,10 +119,10 @@ export const Canvas = () => {
 
   return (
     <div 
-        class={`canvas-container w-full h-full overflow-hidden bg-blackboard relative select-none ${isWorldMode() ? 'cursor-grab active:cursor-grabbing' : ''}`} 
+        class={`canvas-container w-full h-full overflow-hidden bg-blackboard relative select-none touch-none ${isWorldMode() ? 'cursor-grab active:cursor-grabbing' : ''}`} 
         ref={canvasRef}
     >
-      <div ref={dragRef} class="pan-layer absolute inset-0 z-0 pointer-events-auto" />
+      <div ref={dragRef} class="pan-layer absolute inset-0 z-0 pointer-events-auto touch-none" />
 
       <div
         class="absolute inset-0 pointer-events-none"
@@ -136,6 +139,10 @@ export const Canvas = () => {
             <For each={throttledIcons()} by="id">
                 {(icon) => <DesktopIcon data={icon} isUserOp={true} />}
             </For>
+
+            <CounterWidget x={40} y={340} />
+            <CameraWidget x={40} y={440} />
+            <DigitsWidget x={40} y={540} />
             
             <WindowManager />
         </div>

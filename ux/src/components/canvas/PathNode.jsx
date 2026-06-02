@@ -54,7 +54,7 @@ export const PathNode = (props) => {
       const hasAvailable = props.results.find((r) => r.state === 'AVAILABLE');
       if (hasAvailable) {
         try {
-          const data = await vfs.readData(
+          const data = await blackboard.readSelectorData(
             hasAvailable.path,
             hasAvailable.parameters
           );
@@ -62,7 +62,7 @@ export const PathNode = (props) => {
 
           // If it's a shape, also fetch its geometry for the expandable section
           if (typeof data === 'object' && data.geometry) {
-            const gd = await vfs.readData(data.geometry);
+            const gd = await blackboard.readCIDData(data.geometry);
             if (gd) {
               const text =
                 typeof gd === 'string' ? gd : new TextDecoder().decode(gd);
@@ -95,7 +95,7 @@ export const PathNode = (props) => {
     if (hasAvailable && !hasThumb && !isBusy && isGeometry) {
       setIsGenerating(true);
       try {
-        const rawData = await blackboard.readData(
+        const rawData = await blackboard.readSelectorData(
           hasAvailable.path,
           hasAvailable.parameters
         );

@@ -23,7 +23,7 @@ struct JotVfsProtocol {
 
     static Geometry read_shape_geo(fs::VFSNode* vfs, const Shape& s) {
         if (!s.geometry.has_value()) return Geometry{};
-        return vfs->read<Geometry>(s.geometry.value());
+        return vfs->readCID<Geometry>(s.geometry.value());
     }
 
     static Shape make_shape(fs::VFSNode* vfs, const Geometry& geo, const json& tags) {

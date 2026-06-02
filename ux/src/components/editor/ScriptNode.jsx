@@ -1,7 +1,6 @@
 import { createSignal, onMount, onCleanup } from 'solid-js';
 import interact from 'interactjs';
-import { vfs } from '../../lib/blackboard';
-import { Selector } from '../../../fs/src/cid';
+import { vfs, Selector } from '../../lib/VFSManager';
 
 const DEFAULT_CODE = `
 // Define your agent here using standard VFS registration
@@ -14,7 +13,7 @@ export const agent = {
       console.log('[HexagonPipeline] Waking up to fulfill result...');
       
       // Request the required geometry from the mesh
-      const hexagon = await blackboard.readData(new Selector('jot/Hexagon/full', { diameter: 50 }).withOutput('$out'));
+      const hexagon = await blackboard.readSelectorData(new Selector('jot/Hexagon/full', { diameter: 50 }).withOutput('$out'));
       console.log('[HexagonPipeline] Received C++ geometry:', hexagon);
       
       // Return the final result to whoever requested ui/result/hexagon

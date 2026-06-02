@@ -31,7 +31,7 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
   });
 
   // 1. Launch the TEST system
-  sys = await launchSystem(PROFILES.TEST);
+  sys = await launchSystem('test/standard');
   const PORT_CPP = sys.ports.ops;
 
   // 2. Start JS Node

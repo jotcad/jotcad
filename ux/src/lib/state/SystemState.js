@@ -1,4 +1,4 @@
-console.log('[Trace] Executing SystemState.js');
+// console.log('[Trace] Executing SystemState.js');
 import { createSignal } from 'solid-js';
 import { initDesktopState } from './DesktopState';
 import { logActions } from './LogState';

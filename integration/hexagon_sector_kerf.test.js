@@ -4,7 +4,7 @@ import http from 'node:http';
 import { VFS, DiskStorage, MeshLink, registerVFSRoutes, Selector } from '../fs/src/index.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { launchSystem, PROFILES } from '../orchestrator.js';
+import { launchSystem } from '../orchestrator.js';
 
 async function consumeBytes(stream) {
     const reader = stream.getReader();
@@ -27,7 +27,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', { timeout: 30000 }, as
 
   t.before(async () => {
     // 1. Launch the TEST system
-    sys = await launchSystem(PROFILES.TEST);
+    sys = await launchSystem('test/standard');
     const OPS_URL = `http://localhost:${sys.ports.ops}`;
     
     console.log('[Test Sector] Starting Node.js Test Client...');

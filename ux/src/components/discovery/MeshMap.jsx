@@ -2,14 +2,9 @@ import {
   For,
   Show,
   createMemo,
-  createEffect,
-  onMount,
-  untrack,
-  onCleanup,
 } from 'solid-js';
 import { blackboard } from '../../lib/blackboard';
 import { Cpu, Globe, Zap, FileJson, Shield, Workflow } from 'lucide-solid';
-import interact from 'interactjs';
 
 const getEnvInfo = (node) => {
   const id = node.id.toLowerCase();
@@ -27,52 +22,28 @@ const getEnvInfo = (node) => {
 };
 
 const MeshNode = (props) => {
-  let nodeRef;
   const env = createMemo(() => getEnvInfo(props.node));
 
-  const pos = createMemo(() => {
-    const p = props.node;
-    const saved = blackboard.meshPositions()[p.id];
-    if (saved) return saved;
-
-    const centerX = 400; 
-    const centerY = 500;
-    const angle = (props.index / Math.max(1, props.total)) * Math.PI * 2;
-    return {
-      x: centerX + Math.cos(angle) * 100,
-      y: centerY + Math.sin(angle) * 100,
-    };
-  });
-
-  onMount(() => {
-    interact(nodeRef).draggable({
-      listeners: {
-        move(event) {
-          const s = props.scale || 1;
-          const current = untrack(pos);
-          blackboard.setMeshPositions((prev) => ({
-            ...prev,
-            [props.node.id]: {
-              x: current.x + event.dx / s,
-              y: current.y + event.dy / s,
-              manual: true,
-            },
-          }));
-        },
-      },
-    });
+  const tooltip = createMemo(() => {
+    const lines = [`ID: ${props.node.id}`];
+    if (props.node.interests && props.node.interests.length > 0) {
+      lines.push('\nInterests:');
+      props.node.interests.forEach(i => {
+        lines.push(` - ${i.path} (${i.local ? 'local' : 'remote'})`);
+      });
+    }
+    return lines.join('\n');
   });
 
   return (
     <div
-      ref={nodeRef}
-      class="absolute pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center select-none w-12 h-12"
+      class="absolute pointer-events-auto flex items-center justify-center select-none w-12 h-12"
       style={{
-        left: `${pos().x - 24}px`,
-        top: `${pos().y - 24}px`,
+        left: `${props.node.x - 24}px`,
+        top: `${props.node.y - 24}px`,
         'z-index': 100,
       }}
-      title={`ID: ${props.node.id}`}
+      title={tooltip()}
     >
       <div
         class="absolute w-16 h-16 rounded-full animate-ping opacity-10"
@@ -99,86 +70,95 @@ const MeshNode = (props) => {
     </div>
   );
 };
-
 export function MeshMap(props) {
   const topo = blackboard.meshTopology;
   const pulses = blackboard.pulse;
-  const positions = blackboard.meshPositions;
-
-  onMount(() => {
-    const interval = setInterval(() => {
-      const peers = untrack(topo).peers || [];
-      if (peers.length < 2) return;
-
-      blackboard.setMeshPositions((prev) => {
-        const next = { ...prev };
-
-        for (let i = 0; i < peers.length; i++) {
-          const p1 = peers[i];
-          if (!next[p1.id])
-            next[p1.id] = { x: 400 + Math.random(), y: 500 + Math.random() };
-          if (next[p1.id].manual) continue;
-
-          for (let j = i + 1; j < peers.length; j++) {
-            const p2 = peers[j];
-            if (!next[p2.id])
-              next[p2.id] = { x: 400 + Math.random(), y: 500 + Math.random() };
-
-            const dx = next[p1.id].x - next[p2.id].x;
-            const dy = next[p1.id].y - next[p2.id].y;
-            const distSq = dx * dx + dy * dy;
-            const dist = Math.sqrt(distSq) || 1;
-
-            const force = 10000 / distSq;
-            const fx = (dx / dist) * force;
-            const fy = (dy / dist) * force;
-
-            if (!next[p1.id].manual) {
-              next[p1.id].x += fx;
-              next[p1.id].y += fy;
-            }
-            if (!next[p2.id].manual) {
-              next[p2.id].x -= fx;
-              next[p2.id].y -= fy;
-            }
-          }
-
-          const dcx = 400 - next[p1.id].x;
-          const dcy = 500 - next[p1.id].y;
-          next[p1.id].x += dcx * 0.1;
-          next[p1.id].y += dcy * 0.1;
-        }
-        return next;
-      });
-    }, 16);
-    onCleanup(() => clearInterval(interval));
-  });
+  const localId = blackboard.peerId;
 
   const nodes = createMemo(() => {
     const t = topo();
-    const peers = t.peers || [];
+    const peers = t?.peers || [];
+    const localNodeId = localId;
+
+    // 1. BFS to assign levels (Sugiyama-style layout)
+    const levels = new Map();
+    const queue = [{ id: localNodeId, depth: 0 }];
+    levels.set(localNodeId, 0);
+
+    const processed = new Set();
+    while (queue.length > 0) {
+      const { id, depth } = queue.shift();
+      processed.add(id);
+
+      const peer = peers.find(p => p.id === id);
+      if (peer && peer.neighbors) {
+        for (const neighbor of peer.neighbors) {
+          if (!levels.has(neighbor.id)) {
+            levels.set(neighbor.id, depth + 1);
+            queue.push({ id: neighbor.id, depth: depth + 1 });
+          }
+        }
+      }
+    }
+
+    // Handle unreachable nodes (Level -1 or orphans)
+    peers.forEach(p => { if (!levels.has(p.id)) levels.set(p.id, 99); });
+
+    // 2. Group nodes by level for horizontal spacing
+    const levelGroups = new Map();
+    peers.forEach(p => {
+      const lv = levels.get(p.id);
+      if (!levelGroups.has(lv)) levelGroups.set(lv, []);
+      levelGroups.get(lv).push(p);
+    });
+
+    const cX = props.isWindowed ? 250 : 400;
+    const levelHeight = props.isWindowed ? 120 : 180;
+    const nodeWidth = props.isWindowed ? 100 : 150;
+
     return peers.map((p) => {
-      const pos = positions()[p.id] || { x: 400, y: 500 };
-      return { ...p, x: pos.x, y: pos.y };
+      const lv = levels.get(p.id);
+      const group = levelGroups.get(lv);
+      const idx = group.indexOf(p);
+      const totalInLevel = group.length;
+
+      // Horizontal offset to center the level
+      const rowWidth = (totalInLevel - 1) * nodeWidth;
+      const startX = cX - rowWidth / 2;
+
+      return {
+        ...p,
+        x: startX + idx * nodeWidth,
+        y: 80 + lv * levelHeight,
+        isLocal: p.id === localNodeId
+      };
     });
   });
 
   const topoEdges = createMemo(() => {
-    const ns = nodes();
+    const ns = nodes() || [];
     const result = [];
     const seen = new Set();
 
     ns.forEach((node) => {
+      if (!node) return;
       (node.neighbors || []).forEach((neighbor) => {
-        const target = ns.find((n) => n.id === neighbor.id);
+        if (!neighbor) return;
+        const target = ns.find((n) => n && n.id === neighbor.id);
         if (target) {
           const edgeKey = [node.id, target.id].sort().join('--');
           if (!seen.has(edgeKey)) {
             seen.add(edgeKey);
+            
+            const isReverse = neighbor.reachability === 'REVERSE';
+            
             result.push({
-              from: node,
-              to: target,
+              from: isReverse ? target : node,
+              to: isReverse ? node : target,
               reachability: neighbor.reachability,
+              protocol: neighbor.protocol,
+              originalFrom: node.id,
+              originalTo: target.id
             });
           }
         }
@@ -188,8 +168,17 @@ export function MeshMap(props) {
   });
 
   return (
-    <div class={`absolute inset-0 pointer-events-none z-0 overflow-hidden ${props.isWindowed ? 'bg-slate-950/50' : ''}`}>
+    <div class={`absolute inset-0 pointer-events-none z-0 overflow-visible ${props.isWindowed ? 'bg-slate-950/50' : ''}`}>
       <svg class="w-full h-full overflow-visible">
+        <defs>
+          <marker id="arrow-http" viewBox="0 0 10 10" refX="25" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#06b6d4" />
+          </marker>
+          <marker id="arrow-ws" viewBox="0 0 10 10" refX="25" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#a855f7" />
+          </marker>
+        </defs>
+
         <For each={topoEdges()}>
           {(edge) => (
             <line
@@ -197,11 +186,15 @@ export function MeshMap(props) {
               y1={edge.from.y}
               x2={edge.to.x}
               y2={edge.to.y}
-              stroke="white"
-              stroke-width="1"
-              stroke-opacity="0.1"
-              stroke-dasharray={edge.reachability === 'REVERSE' ? '4 4' : '0'}
-            />
+              stroke={edge.protocol === 'WS' ? "#a855f7" : "#06b6d4"}
+              stroke-width="2"
+              stroke-opacity="0.6"
+              stroke-dasharray={edge.reachability === 'REVERSE' ? '5 5' : '0'}
+              marker-end={edge.protocol === 'WS' ? 'url(#arrow-ws)' : 'url(#arrow-http)'}
+              class="pointer-events-auto cursor-help"
+            >
+              <title>{`${edge.originalFrom} -> ${edge.originalTo}\nProtocol: ${edge.protocol}\nReachability: ${edge.reachability}`}</title>
+            </line>
           )}
         </For>
 
@@ -229,13 +222,14 @@ export function MeshMap(props) {
       </svg>
 
       <div class="absolute inset-0 pointer-events-none">
-        <For each={topo().peers}>
+        <For each={nodes()}>
           {(node, idx) => (
             <MeshNode
               node={node}
               index={idx()}
-              total={topo().peers.length}
+              total={nodes().length}
               scale={props.scale || 1}
+              isWindowed={props.isWindowed}
             />
           )}
         </For>

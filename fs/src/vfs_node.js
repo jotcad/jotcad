@@ -94,6 +94,17 @@ export class DiskStorage {
     await fsPromises.unlink(path.join(this.root, `${cid}.meta`)).catch(() => {});
   }
 
+  async getMeta(cid) {
+    const metaFile = path.join(this.root, `${cid}.meta`);
+    if (!fs.existsSync(metaFile)) return null;
+    try {
+      const content = await fsPromises.readFile(metaFile, 'utf8');
+      return JSON.parse(content);
+    } catch (e) {
+      return null;
+    }
+  }
+
   async close() {}
 
   async *iterateMeta() {

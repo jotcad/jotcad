@@ -1,3 +1,6 @@
+import { toBase64, fromBase64 } from './encoding.js';
+export { toBase64, fromBase64 };
+
 /**
  * Selector: The universal address for mesh content.
  * MUST be defined at the top to avoid hoisting issues with encodeSelectorJCB.
@@ -8,7 +11,7 @@ export class Selector {
       throw new Error('Selector constructor only accepts (path, parameters). Use .withOutput(out) for output ports.');
     }
     this.path = path;
-    this.parameters = parameters;
+    this.parameters = parameters || {};
     this._isJotSelector = true; // Branding for context-safe identification
   }
 
@@ -30,6 +33,25 @@ export class Selector {
     if (obj.output) s.output = obj.output;
     return s;
   }
+
+  equals(other) {
+    if (!isSelector(other)) return false;
+    if (this.path !== other.path) return false;
+    if (this.output !== other.output) return false;
+    return deepEqual(this.parameters, other.parameters);
+  }
+}
+
+function deepEqual(a, b) {
+    if (a === b) return true;
+    if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) return false;
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+        if (!keysB.includes(key) || !deepEqual(a[key], b[key])) return false;
+    }
+    return true;
 }
 
 /**
@@ -51,28 +73,6 @@ export function normalizeSelector(s) {
   
   console.error(errorMsg, s);
   throw new Error(errorMsg);
-}
-
-/**
- * toBase64: Standard Base64 encoding for Uint8Array.
- */
-function toBase64(bytes) {
-  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
-  let binary = '';
-  const len = (bytes.byteLength !== undefined) ? bytes.byteLength : bytes.length;
-  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
-/**
- * fromBase64: Standard Base64 decoding to Uint8Array.
- */
-function fromBase64(base64) {
-  if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(base64, 'base64'));
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 /**
@@ -230,23 +230,23 @@ export function decodeSafe(base64) {
     return decodeSelectorJCB(fromBase64(base64));
 }
 
-export function decodeInfo(b64) {
-    if (!b64) return {};
+export function decodeInfo(str) {
+    if (!str) return {};
     try {
-        const decoded = fromBase64(b64);
-        // Hybrid support: check for JCB object tag (0x06) to fallback to JCB decoding
+        if (str.trim().startsWith('{')) return JSON.parse(str);
+        
+        // Fallback for Base64 (legacy or char-safe)
+        const decoded = fromBase64(str);
         if (decoded[0] === 0x06) return decodeDataJCB(decoded);
         return JSON.parse(new TextDecoder().decode(decoded));
     } catch (e) {
-        console.error(`[CID] decodeInfo CRITICAL: Failed to parse metadata header: "${b64}". Error: ${e.message}`);
+        console.error(`[CID] decodeInfo CRITICAL: Failed to parse metadata header: "${str}". Error: ${e.message}`);
         throw e;
     }
 }
 
 export function encodeInfo(info) {
-    const json = JSON.stringify(info);
-    const bytes = new TextEncoder().encode(json);
-    return toBase64(bytes);
+    return JSON.stringify(info);
 }
 
 /**

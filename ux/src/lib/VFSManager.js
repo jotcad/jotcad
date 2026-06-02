@@ -1,6 +1,7 @@
 console.log('[Boot] VFSManager.js loading...');
 import { reconcile } from 'solid-js/store';
 import { VFS, IndexedDBStorage, Selector } from '../../../fs/src/vfs_browser.js';
+export { Selector };
 if (typeof window !== 'undefined') {
   window.Selector = Selector;
 }
@@ -31,12 +32,56 @@ export const vfs = new VFS({
 
 registerJotProvider(vfs);
 
-const vfsUrl = import.meta.env.VITE_VFS_URL;
-if (!vfsUrl) {
-    throw new Error('[VFSManager] CRITICAL: VITE_VFS_URL is not defined in the environment. The mesh gateway must be explicitly configured at build time.');
+const getVfsUrl = () => {
+    if (typeof window === 'undefined') return import.meta.env.VITE_VFS_URL;
+    const params = new URLSearchParams(window.location.search);
+    const override = params.get('gateway');
+    if (override) {
+        // If just a port is provided, assume local https
+        if (!override.includes(':')) {
+            return `https://localhost:${override}`;
+        }
+        return override;
+    }
+    return import.meta.env.VITE_VFS_URL;
+};
+
+const vfsUrl = getVfsUrl();
+if (!vfsUrl && typeof window !== 'undefined' && !window.__vitest_browser__) {
+    // Note: We check for Vitest browser environment to avoid crashing unit tests
+    // In a real browser or Puppeteer, this should still throw.
+    if (!navigator.userAgent.includes('jsdom')) {
+        throw new Error('[VFSManager] CRITICAL: VITE_VFS_URL is not defined and no ?gateway= override provided.');
+    }
 }
 
-export const mesh = new MeshLink(vfs, [vfsUrl]);
+const neighbors = vfsUrl ? [vfsUrl] : [];
+export const mesh = new MeshLink(vfs, neighbors);
+
+// --- MESH AUDIT & NOISE CONTROL ---
+if (typeof window !== 'undefined') {
+    window.__JOT_SUBS = [];
+    const originalSubscribe = mesh.subscribe.bind(mesh);
+    mesh.subscribe = (selector, expiresAt, stack = []) => {
+        const s = Selector.fromObject(selector);
+        window.__JOT_SUBS.push({ path: s.path, t: Date.now(), stack });
+        console.log(`%c[MeshVFS] -> SUBSCRIBE: ${s.path}`, 'color: #8b5cf6; font-weight: bold;', { selector: s, expiresAt, stack });
+        return originalSubscribe(selector, expiresAt, stack);
+    };
+
+    const originalNotify = mesh.notify.bind(mesh);
+    mesh.notify = (selector, payload, stack = []) => {
+        const s = Selector.fromObject(selector);
+        if (s.path === 'sys/topo' || s.path === 'sys/schema') {
+            return originalNotify(selector, payload, stack);
+        }
+        const isIncoming = stack.length > 0;
+        const color = isIncoming ? '#10b981' : '#3b82f6';
+        const label = isIncoming ? '<- NOTIFY' : '-> NOTIFY';
+        console.log(`%c[MeshVFS] ${label}: ${selector?.path}`, `color: ${color}; font-weight: bold;`, { selector, payload, stack });
+        return originalNotify(selector, payload, stack);
+    };
+}
 
 let isStarted = false;
 const meshMap = new Map();
@@ -120,13 +165,25 @@ export const vfsActions = {
       setGraph((prev) => ({ ...prev, [event.cid]: { ...prev[event.cid], ...event } }));
     });
 
+    // MESH TRACING: Instrument mesh for visibility
+    const originalSubscribe = mesh.subscribe.bind(mesh);
+    mesh.subscribe = (selector, expiresAt, stack = []) => {
+        console.log(`%c[MeshVFS] -> SUBSCRIBE: ${selector.path}`, 'color: #8b5cf6; font-weight: bold;', { selector, expiresAt, stack });
+        return originalSubscribe(selector, expiresAt, stack);
+    };
+
     const originalNotify = mesh.notify.bind(mesh);
     mesh.notify = (selector, payload, stack = []) => {
-      if (payload.type === 'TOPOLOGY_UPDATE') {
-          console.log(`[MeshVFS] Mesh topology update from ${payload.peer}: ${payload.neighbors.length} peers visible.`);
-          meshMap.set(payload.peer, payload.neighbors);
+      const s = Selector.fromObject(selector);
+      if (s.path === 'sys/topo') {
+          const peerId = payload.id || payload.peer;
+          console.log(`[MeshVFS] Mesh topology update from ${peerId}: ${payload.neighbors?.length || 0} peers, ${payload.interests?.length || 0} interests.`);
+          meshMap.set(peerId, {
+            neighbors: payload.neighbors || [],
+            interests: payload.interests || []
+          });
       }
-      if (payload.type === 'CATALOG_ANNOUNCEMENT') {
+      if (s.path === 'sys/schema') {
         const { catalog, provider } = payload;
         console.log(`%c[MeshVFS] Received Catalog from ${provider} (${Object.keys(catalog || {}).length} ops)`, 'color: #f59e0b; font-weight: bold;');
         
@@ -147,8 +204,14 @@ export const vfsActions = {
           });
         }
       }
+      
+      const isIncoming = stack.length > 0;
+      const color = isIncoming ? '#10b981' : '#3b82f6';
+      const label = isIncoming ? '<- NOTIFY' : '-> NOTIFY';
+      console.log(`%c[MeshVFS] ${label}: ${selector?.path}`, `color: ${color}; font-weight: bold;`, { selector, payload, stack });
+      
       setPulse((prev) => [...prev, { selector, payload, t: Date.now() }].slice(-20));
-      originalNotify(selector, payload, stack);
+      return originalNotify(selector, payload, stack);
     };
 
     try {
@@ -157,6 +220,11 @@ export const vfsActions = {
       setIsConnected(true);
       console.log(`[MeshVFS] Mesh started. Discovery active.`);
       
+      // Subscribe to topology updates so we receive TOPOLOGY_UPDATE notifications
+      mesh.subscribe(new Selector('sys/topo'), Date.now() + 1000 * 60 * 60 * 24).catch((err) => {
+        console.error('[MeshVFS] Failed to subscribe to sys/topo:', err);
+      });
+
       // Trigger initial discovery automatically
       this.discoverSchemas();
     } catch (e) {
@@ -166,16 +234,44 @@ export const vfsActions = {
 
     setInterval(() => {
       const nodes = new Map();
-      nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [] });
-      for (const [peerId, neighbors] of meshMap.entries()) {
-        if (!nodes.has(peerId)) nodes.set(peerId, { id: peerId, type: 'PEER', pps: 0, neighbors });
-        else nodes.get(peerId).neighbors = neighbors;
+      const localInterests = [];
+      try {
+          for (const entry of mesh.interests.values()) {
+            if (entry.localExpiresAt > Date.now() && entry.selector && entry.selector.path) {
+                localInterests.push({ path: entry.selector.path, local: true });
+            }
+          }
+      } catch (e) { console.error('[MeshVFS] Interest extraction error:', e); }
+
+      nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [], interests: localInterests });
+      
+      for (const [peerId, data] of meshMap.entries()) {
+        const { neighbors, interests } = data;
+        if (!nodes.has(peerId)) {
+            nodes.set(peerId, { id: peerId, type: 'PEER', pps: 0, neighbors, interests: interests || [] });
+        } else {
+            const n = nodes.get(peerId);
+            n.neighbors = neighbors;
+            n.interests = interests || [];
+        }
       }
+
+      // Add missing neighbor nodes to the topology list so they render as leaf nodes!
+      for (const data of meshMap.values()) {
+        const { neighbors } = data;
+        for (const neighbor of neighbors) {
+          if (!nodes.has(neighbor.id)) {
+            nodes.set(neighbor.id, { id: neighbor.id, type: 'PEER', pps: 0, neighbors: [], interests: [] });
+          }
+        }
+      }
+
       for (const p of mesh.peers.values()) {
         if (nodes.has(p.id)) {
           const n = nodes.get(p.id);
           n.pps = p.pps;
           n.reachability = p.reachability;
+          n.protocol = p.protocol;
         }
       }
       setMeshTopology('peers', reconcile([...nodes.values()]));
@@ -213,17 +309,13 @@ export const vfsActions = {
     vfs.close();
   },
 
-  async readData(selector, context = {}) {
-    console.log(`[MeshVFS] readData for:`, selector);
-    const result = await vfs.read(selector, context);
+  async _drainStream(result, selectorLabel) {
     if (!result) {
-        console.warn(`[MeshVFS] readData returned null for:`, selector);
+        console.warn(`[MeshVFS] Drain failed: No result for ${selectorLabel}`);
         return null;
     }
     const { stream, metadata } = result;
-    console.log(`[MeshVFS] readData got result. Metadata:`, metadata);
     
-    // Drain stream into a single Uint8Array
     const reader = stream.getReader();
     const chunks = [];
     try {
@@ -253,16 +345,29 @@ export const vfsActions = {
     } else {
         parsed = bytes;
     }
-    console.log(`[MeshVFS] readData SUCCESS. Result type: ${typeof parsed}. Length: ${totalLength} bytes.`);
     return parsed;
+  },
+
+  async readSelectorData(selector, context = {}) {
+    const result = await vfs.readSelector(selector, context);
+    return this._drainStream(result, selector.path || 'selector');
+  },
+
+  async readCIDData(cid, context = {}) {
+    const result = await vfs.readCID(cid, context);
+    return this._drainStream(result, cid);
   },
 
   async writeData(selector, data, metadata = {}) {
     return vfs.write(selector, data, metadata);
   },
 
-  async read(selector) {
-    return vfs.read(selector);
+  async readSelector(selector, context = {}) {
+    return vfs.readSelector(selector, context);
+  },
+
+  async readCID(cid, context = {}) {
+    return vfs.readCID(cid, context);
   },
 
   async write(selector, data) {

@@ -6,21 +6,20 @@
 namespace fs {
 
 // --- read(Selector) ---
-
-template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) {
-    VFSRequest req; req.selector = sel;
-    return read_impl(req).data;
+template <> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) {
+    VFSRequest req;
+    req.selector = sel;
+    req.op = "READ_SELECTOR";
+    return read_selector_impl(req).data;
 }
 
-template<> json VFSNode::read<json>(const Selector& sel) {
-    VFSRequest req; req.selector = sel;
-    auto res = read_impl(req);
+template <> json VFSNode::read<json>(const Selector& sel) {
+    VFSRequest req;
+    req.selector = sel;
+    req.op = "READ_SELECTOR";
+    auto res = read_selector_impl(req);
     if (res.data.empty()) return json::object();
-    try {
-        return json::parse(res.data);
-    } catch (...) {
-        return json::object();
-    }
+    return json::parse(res.data);
 }
 
 template<> double VFSNode::read<double>(const Selector& sel) {
@@ -42,14 +41,21 @@ template<> std::string VFSNode::read<std::string>(const Selector& sel) {
     return std::string(data.begin(), data.end());
 }
 
+template<> VFSResult VFSNode::read<VFSResult>(const Selector& sel) {
+    VFSRequest req;
+    req.selector = sel;
+    req.op = "READ_SELECTOR";
+    return read_selector_impl(req);
+}
+
 // --- read(VFSRequest) ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSRequest& req) {
-    return read_impl(req).data;
+    return req.is_cid() ? read_cid_impl(req).data : read_selector_impl(req).data;
 }
 
 template<> json VFSNode::read<json>(const VFSRequest& req) {
-    auto res = read_impl(req);
+    auto res = req.is_cid() ? read_cid_impl(req) : read_selector_impl(req);
     if (res.data.empty()) return json::object();
     try {
         return json::parse(res.data);
@@ -77,16 +83,20 @@ template<> std::string VFSNode::read<std::string>(const VFSRequest& req) {
     return std::string(data.begin(), data.end());
 }
 
+template<> VFSResult VFSNode::read<VFSResult>(const VFSRequest& req) {
+    return req.is_cid() ? read_cid_impl(req) : read_selector_impl(req);
+}
+
 // --- read(CID) ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& cid) {
-    VFSRequest req; req.cid = cid.value;
-    return read_impl(req).data;
+    VFSRequest req; req.cid = cid.value; req.op = "READ_CID";
+    return read_cid_impl(req).data;
 }
 
 template<> json VFSNode::read<json>(const CID& cid) {
-    VFSRequest req; req.cid = cid.value;
-    auto res = read_impl(req);
+    VFSRequest req; req.cid = cid.value; req.op = "READ_CID";
+    auto res = read_cid_impl(req);
     if (res.data.empty()) return json::object();
     try {
         return json::parse(res.data);
@@ -112,6 +122,11 @@ template<> std::string VFSNode::read<std::string>(const CID& cid) {
     if (j.is_string()) return j.get<std::string>();
     auto data = read<std::vector<uint8_t>>(cid);
     return std::string(data.begin(), data.end());
+}
+
+template<> VFSResult VFSNode::read<VFSResult>(const CID& cid) {
+    VFSRequest req; req.cid = cid.value; req.op = "READ_CID";
+    return read_cid_impl(req);
 }
 
 // --- write implementations ---
