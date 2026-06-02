@@ -556,6 +556,11 @@ export class JotCompiler {
     if (a === 'jot:number' && e === 'jot:numbers') return true;
     if (a === 'jot:string' && e === 'jot:strings') return true;
 
+    // Plural -> Singular Promotion (Injection/Expansion)
+    if (a === 'jot:shapes' && e === 'jot:shape') return true;
+    if (a === 'jot:numbers' && e === 'jot:number') return true;
+    if (a === 'jot:strings' && e === 'jot:string') return true;
+
     return false;
   }
 
@@ -778,6 +783,9 @@ export class JotCompiler {
             const val = await ctx.evaluate(p.node);
             if (this._isJotString(val, argDef, ctx)) {
                 results.push(val);
+                p.consumed = true;
+            } else if (Array.isArray(val) && val.every(v => this._isJotString(v, argDef, ctx))) {
+                results.push(...val);
                 p.consumed = true;
             } else break;
         }
