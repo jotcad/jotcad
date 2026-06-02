@@ -28,6 +28,7 @@ struct FillOp : P {
     };
 
     static void collect_geometries(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& nodes) {
+        if (s.is_ghost() || s.is_mark() || s.is_mask()) return;
         if (s.geometry.has_value()) {
             nodes.push_back({vfs->read<Geometry>(s.geometry.value()), s.tf});
         }

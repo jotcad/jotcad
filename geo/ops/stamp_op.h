@@ -12,9 +12,9 @@ struct StampOp : P {
     static constexpr const char* path = "jot/stamp";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        Shape out = in;
+        Shape result = in;
         if (tools.empty()) {
-            vfs->write(fulfilling.with_output("$out"), out);
+            vfs->write(fulfilling.with_output("$out"), result);
             return;
         }
 
@@ -24,8 +24,13 @@ struct StampOp : P {
         }
 
         // We pass stamp=true to force the "membrane effect" (grafting tool boundary)
-        boolean::Engine::recursive_subtract(vfs, out, Matrix::identity(), tool_nodes, false, true);
-        vfs->write(fulfilling.with_output("$out"), out);
+        boolean::Engine::recursive_subtract(vfs, result, Matrix::identity(), tool_nodes, false, true);
+        
+        for (const auto& tool : tools) {
+            result.components.push_back(Shape::make_ghost(tool));
+        }
+
+        vfs->write(fulfilling.with_output("$out"), result);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }

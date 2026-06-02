@@ -162,7 +162,7 @@ struct GapOp : P {
     static constexpr const char* path = "jot/gap";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         Shape out = in;
-        out.add_tag("gap", true);
+        out.add_tag("role", "gap");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
@@ -177,11 +177,74 @@ struct GapOp : P {
     }
 };
 
+template <typename P = JotVfsProtocol>
+struct GhostOp : P {
+    static constexpr const char* path = "jot/ghost";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        Shape out = in;
+        out.add_tag("role", "ghost");
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/ghost"},
+            {"description", "Tags the subject as a 'ghost' (visual reference). Ghosts are ignored by Boolean kernels and promoters."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct MarkOp : P {
+    static constexpr const char* path = "jot/mark";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        Shape out = in;
+        out.add_tag("role", "mark");
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/mark"},
+            {"description", "Tags the subject as a 'mark' (annotation). Marks are ignored by Boolean kernels but included in PDF exports."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct MaskOp : P {
+    static constexpr const char* path = "jot/mask";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        Shape out = in;
+        out.add_tag("role", "mask");
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/mask"},
+            {"description", "Tags the subject as a 'mask' (logical filter). Masks are ignored by Boolean kernels and are invisible in standard renders."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array()},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
 inline void transform_ops_init(fs::VFSNode* vfs) {
     Processor::register_op<ByOp<>, Shape, std::vector<Shape>>(vfs, "jot/by");
     Processor::register_op<ToOp<>, Shape, std::vector<Shape>>(vfs, "jot/to");
     Processor::register_op<DupOp<>, Shape, double>(vfs, "jot/dup");
     Processor::register_op<GapOp<>, Shape>(vfs, "jot/gap");
+    Processor::register_op<GhostOp<>, Shape>(vfs, "jot/ghost");
+    Processor::register_op<MarkOp<>, Shape>(vfs, "jot/mark");
+    Processor::register_op<MaskOp<>, Shape>(vfs, "jot/mask");
     Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/origin");
     Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/o");
 }

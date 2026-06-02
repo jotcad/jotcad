@@ -244,82 +244,76 @@ Unfolds a 3D polyhedral mesh into one or more flat 2D patches (islands).
 - **Progressive Logging**: Outputs live candidate predictions, topological cuts, 2D intersection skips, and high-resolution timing details (elapsed time, candidate averages, ETA) alongside detailed material wastage metrics (solid area vs. bounding box) to `stdout` during execution.
 - **Example**: `FlatPattern = Part.unfold(rule="pair", minFold=1.5)`
 
-## 6. Metadata and Filtering
+## 6. Roles and Visibility
 
-Metadata allows you to attach non-geometric information (tags) to shapes, which can later be used for identification, logical branching, or selective filtering.
+The **`role`** tag defines how a shape interacts with the geometric kernel and the visualization engine. Most shapes are physical solids (no role tag), but special cases are explicitly tagged.
 
-### `set(key, value)`
-Attaches a tag to the subject shape.
-- **`key`**: The name of the tag (String).
-- **`value`**: The value to store (String or Number).
-- **Collision Logic**: Last-write-wins. Setting a value for an existing key overwrites the previous value.
-- **Example**: `Part = Box(10).set("material", "aluminum")`
+### `gap()`
+Tags the subject as a **Gap** (Persistent Negative Space).
+- **Boolean Logic**: Gaps are "matter-less." They automatically subtract from any non-gap shape they intersect with during `join()`, `clip()`, `fuse()`, or `disjoint()` operations.
+- **Persistency**: Gaps are never cut by other shapes.
+- **Visuals**: Rendered with **30% opacity** by default.
+- **Export**: Excluded from STL/PDF.
 
-### `get(key)`
-Retrieves the value of a tag from the subject.
-- **`key`**: The name of the tag to look up.
-- **Returns**: The stored value or `null` if not found.
+### `ghost()`
+Tags the subject as a **Ghost** (Visual Reference).
+- **Boolean Logic**: Ghosts are "non-matter." They are ignored by all Boolean kernels and promoters (like `extrude` or `fill`). They simply "pass through" other geometry.
+- **Usage**: Use for furnishings, reference parts, or "staged" assembly components.
+- **Visuals**: Rendered with **30% opacity** by default.
+- **Export**: Excluded from STL/PDF.
 
-### `has(key, value=null)`
-**Recursive Shape Filter.** Dynamically filters the subject tree, returning a new `Shape` containing only the sub-components that match the specified tags. Because it eagerly evaluates to a shape, it can be chained with style or geometric operations.
-- **`key`**: The tag name to search for.
-- **`value`**: Optional. If provided, matches only components where the tag value exactly matches.
-- **Example**: `unfolded.has("unfold", "fold").color("green")`
+### `mark()`
+Tags the subject as a **Mark** (Annotation).
+- **Usage**: Used for rulers, arrows, dimensions, and labels.
+- **Boolean Logic**: Ignored by all Boolean kernels.
+- **Visuals**: Rendered as **Opaque** by default.
+- **Export**: **Included in PDF** drawings but excluded from STL manufacturing files.
 
-### `keep(target)`
-Prunes the subject tree, retaining only the components that match the provided target (a shape query, selector, or sub-shape).
-- **Deep Semantic Matching**: Evaluates exact structure equality (comparing geometry CIDs, tags, and children) to safely distinguish and filter identical primitives (like multiple identical boxes) in complex assemblies without CID collision.
-- **Preservation**: Parents of matching components are retained to preserve world-space transforms, but their other children (which don't contain matches) are removed.
-- **Example**: `Assembly.keep(has("part", "bolt"))`
+### `mask()`
+Tags the subject as a **Mask** (Logical Filter).
+- **Usage**: Used for defining spatial boundaries or predicates.
+- **Logic**: Used with `keep()` and `drop()` for logical filtering without geometric union.
+- **Visuals**: **Invisible** in standard renders.
 
-### `drop(target)`
-The inverse of `keep`. Removes all components from the tree that match the provided target (a shape query, selector, or sub-shape) using deep semantic matching.
-- **Example**: `Assembly.drop(has("part", "bracket"))`
+### `clean()`
+Recursively removes all components tagged with `role: "ghost"` from the subject tree.
+- **Usage**: `Assembly.cut(Drill).clean()` results in the physical part without the ghosted drill reference.
 
-## 7. Export and Post-Processing
+### `opacity(alpha)`
+Overrides the visual transparency of a shape.
+- **`alpha`**: A number from `0.0` (invisible) to `1.0` (opaque).
+- **Note**: This is a visual override and does not affect the shape's geometric role.
 
-### `pdf(path="export.pdf", width=0, height=0)`
+## 7. Booleans and Nesting
 
-Generates a PDF document from the spatial representation of the input shape.
+### `join(tools=[])`
+Combines the subject with one or more tool shapes into a single manifold solid. Overlapping volumes are merged.
 
-- **`path`**: The suggested filename for the download.
-- **Outputs**:
-  - **`$out`**: The generated PDF binary blob (triggers download in the UX).
+### `cut(tools=[])`
+Subtracts one or more tool shapes from the subject.
+- **Automatic Ghosting**: By default, `cut` leaves the tool shapes behind as **ghosts**. This allows you to see the "scaffolding" of your design. Use `.clean()` to remove them.
+- **Dimensionality Aware**: When subtracting a 3D solid from a 2D surface, `cut` strictly produces a flat 2D hole in the surface, adhering to the dimensional plane.
+- **Example**: `Box(20, 20).cut(Orb(15))` results in a group: `[FlatSquareWithHole, OrbGhost]`.
 
-### `png()`
-Generates a PNG thumbnail for the input shape.
+### `stamp(tools=[])`
+Topologically embosses the subject using 3D tool shapes.
+- **Membrane Effect**: Unlike `cut`, `stamp` grafts the intersecting boundary of the 3D tool onto the subject. If the subject is a 2D surface, it will be "pushed" into the shape of the tool, creating a manifold 3D shell.
+- **Automatic Ghosting**: Like `cut`, `stamp` leaves the tools as ghosts.
 
-- **Outputs**:
-  - **`$out`**: The generated PNG binary blob.
+### `clip(tools=[])`
+Intersects the subject with one or more tool shapes, keeping only the overlapping volume.
+- **Automatic Ghosting**: Leaves the tools as ghosts.
 
-### `stl(path="export.stl")`
-Generates a binary STL file from the spatial representation of the input shape.
+### `fuse(tools=[])`
+Flattens a complex assembly into a set of disjoint manifolds. It merges overlapping solids and resolves intersections without removing material (unless `gap()` tags are present).
 
-- **`path`**: The suggested filename for the download.
-- **Outputs**:
-  - **`$out`**: The generated STL binary blob (triggers download in the UX).
+### `disjoint(tools=[])`
+Ensures the subject and tools are topologically disjoint by subtracting the intersection from the subject.
+- **Automatic Ghosting**: Leaves the tools as ghosts.
 
-### `section(planes=[])`
-Extracts 2D cross-sections of the input shape at specified planes.
-
-- **`planes`**: A list of shapes whose transforms define the sectioning planes.
-- **Default**: If no planes are provided, performs a section at local $Z=0$.
-- **Logic**: Slices the input geometry and merges overlapping/nested loops into clean 2D faces.
-
-### `separate()`
-Splits the input geometry into separate shapes based on connected components (disconnected geometric islands).
-
-- **Output**: A group containing one child shape for each disconnected piece of geometry.
-- **Support**: Works for 3D solids, 2D faces, 1D segments, and 0D points.
-- **Usage**: Useful after boolean operations (like `cut`) that result in multiple disjoint parts.
-
-#### Example
-```js
-// Cut a box in half and treat the two halves as separate objects
-Box(10).cut(Plane().m(0, 0, 5)).separate()
-```
-
-## 8. Plane and Normal Extraction
+### `pack(parts=null, sheet=null, spacing=2.0, margin=0.0)`
+...
+## 8. Metadata and Filtering
 
 ### `plane()`
 Extracts the coordinate system from the first face of a shape.

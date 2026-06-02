@@ -38,6 +38,7 @@ struct SewOp : P {
 
         // 1. Collect and Weld
         for (const auto& s : inputs) {
+            if (s.is_ghost() || s.is_mark() || s.is_mask()) continue;
             if (!s.geometry.has_value()) continue;
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             geo.apply_tf(s.tf);

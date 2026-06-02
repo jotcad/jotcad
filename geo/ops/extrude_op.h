@@ -24,6 +24,10 @@ struct ExtrudeProject {
 template <typename P = JotVfsProtocol>
 struct ExtrudeOpBase : P {
     static void execute_sweep(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Matrix& bottom_tf, const Matrix& top_tf) {
+        if (!in.is_solid() && !in.is_gap()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;

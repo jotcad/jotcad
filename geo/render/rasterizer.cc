@@ -40,11 +40,19 @@ void Rasterizer::rasterize_triangle(
                 double depth = w0 * tri.p[0].z + w1 * tri.p[1].z + w2 * tri.p[2].z;
                 int idx = y * width + x;
                 if (depth >= z_buffer[idx]) {
-                    z_buffer[idx] = depth;
-                    pixels[idx * 4] = tri.color.r;
-                    pixels[idx * 4 + 1] = tri.color.g;
-                    pixels[idx * 4 + 2] = tri.color.b;
-                    pixels[idx * 4 + 3] = 255;
+                    if (tri.color.a == 255) {
+                        z_buffer[idx] = depth;
+                        pixels[idx * 4] = tri.color.r;
+                        pixels[idx * 4 + 1] = tri.color.g;
+                        pixels[idx * 4 + 2] = tri.color.b;
+                        pixels[idx * 4 + 3] = 255;
+                    } else {
+                        double a = tri.color.a / 255.0;
+                        pixels[idx * 4] = (unsigned char)(pixels[idx * 4] * (1.0 - a) + tri.color.r * a);
+                        pixels[idx * 4 + 1] = (unsigned char)(pixels[idx * 4 + 1] * (1.0 - a) + tri.color.g * a);
+                        pixels[idx * 4 + 2] = (unsigned char)(pixels[idx * 4 + 2] * (1.0 - a) + tri.color.b * a);
+                        // Do not update z_buffer for transparent fragments to allow back-to-front accumulation
+                    }
                 }
             }
         }
@@ -58,7 +66,14 @@ void Rasterizer::rasterize_line(int x0, int y0, int x1, int y1, ColorRGBA col, s
     while (true) {
         if (x0 >= 0 && x0 < width && y0 >= 0 && y0 < height) {
             int idx = (y0 * width + x0) * 4;
-            pixels[idx] = col.r; pixels[idx+1] = col.g; pixels[idx+2] = col.b; pixels[idx+3] = 255;
+            if (col.a == 255) {
+                pixels[idx] = col.r; pixels[idx+1] = col.g; pixels[idx+2] = col.b; pixels[idx+3] = 255;
+            } else {
+                double a = col.a / 255.0;
+                pixels[idx] = (unsigned char)(pixels[idx] * (1.0 - a) + col.r * a);
+                pixels[idx+1] = (unsigned char)(pixels[idx+1] * (1.0 - a) + col.g * a);
+                pixels[idx+2] = (unsigned char)(pixels[idx+2] * (1.0 - a) + col.b * a);
+            }
         }
         if (x0 == x1 && y0 == y1) break;
         e2 = 2 * err;
@@ -80,13 +95,19 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
     auto collect = [&](auto self, const Shape& s, const std::string& current_color) -> void {
         Matrix current_tf = s.tf;
         std::string next_color = s.tags.value("color", current_color);
+        double opacity = s.opacity();
+        if (opacity <= 0.0) {
+            for (const auto& child : s.components) self(self, child, next_color);
+            return;
+        }
+        unsigned char alpha = (unsigned char)(opacity * 255);
 
-        if (s.geometry.has_value() && !s.is_gap()) {
+        if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            ColorRGBA base_color = {200, 200, 200, 255};
+            ColorRGBA base_color = {200, 200, 200, alpha};
             if (!next_color.empty()) {
                 auto rgb = ContourUtils::parse_color(next_color);
-                base_color = {rgb.r, rgb.g, rgb.b, 255};
+                base_color = {rgb.r, rgb.g, rgb.b, alpha};
             }
 
             std::vector<Vec3> pts;
