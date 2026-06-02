@@ -17,7 +17,7 @@ Connects a series of points into a closed loop.
 
 - **`$in`**, **`tools`**, **`smooth`**, **`zag`**: Same as `Link`, but the final point is automatically connected back to the first point to close the loop.
 
-## 2. Hull (Convex Envelopes)
+## 2. Envelopes and Bounds
 
 ### `Hull(shapes=[])` / `hull()`
 Generates the convex hull of the input shape(s).
@@ -34,6 +34,26 @@ Hull(Cylinder(5), Box(10).m(20))
 // 2D Method call
 MyPath.hull().fill()
 ```
+
+### `boundingBox(grow=0.0)` (alias: `bb()`)
+Returns an axis-aligned bounding box for the subject.
+
+- **`grow`**: Optional padding to expand the box symmetrically in all directions.
+- **Dimensional Logic**: Returns a Box matching the subject's spatial dimensionality:
+  - **3D**: Manifold "closed" solid.
+  - **2D**: Planar "surface" face.
+  - **1D**: Linear "segments".
+  - **0D**: Single "points".
+- **Local Origin**: The produced box is generated in local space starting at `(0,0,0)` and transformed to the subject's minimum corner.
+- **Example**: `A.by(A.bb().o())` moves shape A so its minimum corner lands at the world origin.
+
+### `orientedBoundingBox(grow=0.0)` (alias: `obb()`)
+Returns the optimal (minimum volume) oriented bounding box for the subject.
+
+- **`grow`**: Optional padding to expand the box symmetrically in all directions.
+- **Efficiency**: Unlike the standard bounding box, the OBB rotates to find the tightest possible fit for the subject, regardless of its orientation in world space.
+- **Matrix**: The resulting shape includes a transformation matrix that aligns the local axes with the OBB's principal directions.
+- **Example**: `MyPart.obb().color("cyan")`
 
 ## 3. Primitives
 

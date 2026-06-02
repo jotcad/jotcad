@@ -53,6 +53,8 @@
 #include "unfold_op.h"
 #include "pack_op.h"
 #include "item_ops.h"
+#include "bb_op.h"
+#include "obb_op.h"
 
 #include "measure_ops.h"
 #include "sort_ops.h"
@@ -115,6 +117,8 @@ void register_all_ops(fs::VFSNode* vfs) {
     unfold_init(vfs);
     pack_init(vfs);
     item_init(vfs);
+    bb_init(vfs);
+    obb_init(vfs);
     measure_init(vfs);
     filter_ops_init(vfs);
     selection_init(vfs);
