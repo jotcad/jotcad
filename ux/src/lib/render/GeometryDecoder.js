@@ -185,7 +185,7 @@ export async function packZFS(vfs, shape) {
       const id = normalizeId(s.geometry);
       if (!assets.has(id)) {
         try {
-          const data = await blackboard.readData(s.geometry);
+          const data = await blackboard.readCIDData(s.geometry);
           if (data) assets.set(id, typeof data === 'string' ? data : new TextDecoder().decode(data));
         } catch (e) { console.warn('[packZFS] Failed to fetch asset:', id, e); }
       }

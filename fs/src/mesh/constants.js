@@ -1,0 +1,1 @@
+export const PEER_POLL_TIMEOUT_MS = 10000;

@@ -61,6 +61,15 @@ Subscribes to a stream of updates for a given selector.
 * **Method**: `POST`
 * **Headers**: `X-VFS-Op: SUB`, `X-VFS-Selector`, `X-VFS-Stack`, `X-VFS-Expires`
 
+## Peer Lifecycle
+
+### Stale Peer Pruning
+The VFS mesh implements an authoritative **10-second activity timeout** to protect system memory.
+
+1. **Pruning Condition**: If a peer (e.g., a browser tab or mobile app) has not interacted with a node (via `/listen` poll, `/register`, or `/notify`) for more than 10 seconds, that peer is considered "stale."
+2. **Action**: The stale peer is removed from the routing table, and its pending notification queue is wiped.
+3. **Recovery**: A pruned peer must re-register via `/register` to rejoin the mesh.
+
 ## ESP32 / Embedded Constraints
 - **Recursive Mutex**: ESP32 operations must utilize `std::recursive_mutex` due to re-entrant mesh link logic.
 - **Task Isolation**: The `/listen` mesh server loop must run in a dedicated FreeRTOS task on Core 0 to prevent starving geometry operations on Core 1.

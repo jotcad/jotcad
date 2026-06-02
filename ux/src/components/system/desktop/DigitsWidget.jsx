@@ -39,7 +39,7 @@ export const DigitsWidget = (props) => {
 
     // 1.5. Try to read initial state from VFS
     const initialSelector = new Selector('sensor/vision/digits');
-    vfsActions.readData(initialSelector)
+    vfsActions.readSelectorData(initialSelector)
       .then((data) => {
         if (data && typeof data.digits !== 'undefined') {
           setDigits(data.digits);

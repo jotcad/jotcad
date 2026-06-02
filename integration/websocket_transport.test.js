@@ -98,7 +98,7 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
                     status: 200,
                     json: async () => ({
                         ...json,
-                        wsUrl: 'ws://localhost:9999/vfs-ws' // Unreachable port to force WS failure
+                        wsUrl: 'ws://localhost:1/vfs-ws' // Port 1 is guaranteed to be closed to force WS failure
                     })
                 };
             }

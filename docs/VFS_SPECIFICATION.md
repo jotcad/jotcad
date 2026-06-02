@@ -87,6 +87,10 @@ All peer interactions are managed through a unified **Connection** abstraction.
 - **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers).
   - **Encapsulated Responsibility:** The `ReverseConnection` class manages BOTH the server-side listener pool and the client-side active polling loop.
   - **409 Conflict Protection:** Servers MUST reject a `POST /listen` with a **409 Conflict** if a poll is already active for that peer ID. Clients MUST treat a 409 as a critical failure (zombie process detection).
+- **Stale Peer Pruning (10s Activity Timeout):**
+  - To prevent memory exhaustion from abandoned browser tabs or crashed nodes, servers MUST track the last activity time for every peer. 
+  - If a peer fails to interact (e.g., a new `/listen` poll or an incoming `/register`) for more than **10 seconds**, the server MUST prune that peer from its routing table. 
+  - Upon pruning, all pending notification queues for that peer MUST be cleared.
 
 ### 3.3 Discovery & Lifecycle (`sys/`)
 

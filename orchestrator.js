@@ -113,7 +113,19 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   } catch (e) {}
 
   const gatewayNode = componentMap[gateway];
-  const gatewayUrl = `${gatewayNode.protocol}://localhost:${gatewayNode.port}`;
+  if (!gatewayNode) {
+      throw new Error(`Profile "${profileKey}" specifies gateway "${gateway}", but that component is not defined.`);
+  }
+
+  const gatewayPort = gatewayNode.port;
+  if (!gatewayPort || gatewayPort <= 0 || gatewayPort > 65535) {
+      throw new Error(`Invalid gateway port for "${gateway}": ${gatewayPort}. Port must be between 1 and 65535.`);
+  }
+
+  let gatewayUrl = '';
+  if (componentMap.ux) {
+      gatewayUrl = `${componentMap.ux.protocol}://localhost:${componentMap.ux.port}?gateway=${gatewayPort}`;
+  }
 
   const componentConfigs = {
     ops: (cfg) => {
@@ -315,13 +327,11 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       if (!uxReady) warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
   }
 
-  const gatewayPort = componentMap[gateway].port;
-
   return { 
     processes, 
     ports, 
     gatewayPort,
-    gatewayUrl: `${componentMap.ux.protocol}://localhost:${ports.ux}?gateway=${gatewayPort}`,
+    gatewayUrl,
     stop: shutdown, 
     logs: capturedLogs 
   };

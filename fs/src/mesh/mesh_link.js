@@ -2,6 +2,7 @@ import { normalizeSelector, Selector, decodeInfo } from '../cid.js';
 import { log, info } from '../log.js';
 import { ForwardConnection } from './forward_connection.js';
 import { ReverseConnection } from './reverse_connection.js';
+import { PEER_POLL_TIMEOUT_MS } from './constants.js';
 import {
   ReadSelectorRequest,
   ReadCIDRequest,
@@ -48,6 +49,7 @@ export class MeshLinkBase {
   }
 
   _getTopologyPayload() {
+    this.pruneStaleConnections();
     const activeInterests = [];
     for (const entry of this.interests) {
         const isLocal = entry.localExpiresAt > Date.now();
@@ -72,6 +74,24 @@ export class MeshLinkBase {
         interests: activeInterests,
         neighbors: neighbors
     };
+  }
+
+  pruneStaleConnections() {
+    const now = Date.now();
+    for (const [id, conn] of this.peers.entries()) {
+      if (conn instanceof ReverseConnection) {
+        if (now - conn.lastPollAt > PEER_POLL_TIMEOUT_MS) {
+          log(`[MeshLink ${this.vfs.id}] Authoritative pruning of stale peer ${id} (no poll for ${now - conn.lastPollAt}ms).`);
+          if (conn.stop) conn.stop();
+          this.peers.delete(id);
+          
+          // Scrub interests
+          for (const entry of this.interests) {
+            entry.subs.delete(id);
+          }
+        }
+      }
+    }
   }
 
   upgradePeerToWS(id, wsConn) {
@@ -177,6 +197,7 @@ export class MeshLinkBase {
   }
 
   notify(selector, payload, stack = []) {
+    this.pruneStaleConnections();
     const s = normalizeSelector(selector);
     if (stack.includes(this.vfs.id)) return;
     const nextStack = [...stack, this.vfs.id];

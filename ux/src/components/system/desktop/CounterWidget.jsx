@@ -37,7 +37,7 @@ export const CounterWidget = (props) => {
 
     // 1.5. Try to read initial state from VFS
     const initialSelector = new Selector('sensor/counter');
-    vfsActions.readData(initialSelector)
+    vfsActions.readSelectorData(initialSelector)
       .then((data) => {
         if (data && typeof data.value !== 'undefined') {
           setCount(data.value);

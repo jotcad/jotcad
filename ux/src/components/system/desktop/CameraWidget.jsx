@@ -113,7 +113,7 @@ export const CameraWidget = (props) => {
     
         // Initial read attempt
         const camSel = new Selector('sensor/camera', { width: 96, height: 96, format: 'grayscale' });
-        vfsActions.readData(camSel)
+        vfsActions.readSelectorData(camSel)
             .then(data => {
                 const url = decodeCameraPayload(camSel, data);
                 if (url) {

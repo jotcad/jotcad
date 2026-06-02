@@ -13,7 +13,7 @@ export const agent = {
       console.log('[HexagonPipeline] Waking up to fulfill result...');
       
       // Request the required geometry from the mesh
-      const hexagon = await blackboard.readData(new Selector('jot/Hexagon/full', { diameter: 50 }).withOutput('$out'));
+      const hexagon = await blackboard.readSelectorData(new Selector('jot/Hexagon/full', { diameter: 50 }).withOutput('$out'));
       console.log('[HexagonPipeline] Received C++ geometry:', hexagon);
       
       // Return the final result to whoever requested ui/result/hexagon

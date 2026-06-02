@@ -47,11 +47,16 @@ const getVfsUrl = () => {
 };
 
 const vfsUrl = getVfsUrl();
-if (!vfsUrl && typeof window !== 'undefined') {
-    throw new Error('[VFSManager] CRITICAL: VITE_VFS_URL is not defined and no ?gateway= override provided.');
+if (!vfsUrl && typeof window !== 'undefined' && !window.__vitest_browser__) {
+    // Note: We check for Vitest browser environment to avoid crashing unit tests
+    // In a real browser or Puppeteer, this should still throw.
+    if (!navigator.userAgent.includes('jsdom')) {
+        throw new Error('[VFSManager] CRITICAL: VITE_VFS_URL is not defined and no ?gateway= override provided.');
+    }
 }
 
-export const mesh = new MeshLink(vfs, [vfsUrl]);
+const neighbors = vfsUrl ? [vfsUrl] : [];
+export const mesh = new MeshLink(vfs, neighbors);
 
 // --- MESH AUDIT & NOISE CONTROL ---
 if (typeof window !== 'undefined') {
@@ -304,17 +309,13 @@ export const vfsActions = {
     vfs.close();
   },
 
-  async readData(selector, context = {}) {
-    console.log(`[MeshVFS] readData for:`, selector);
-    const result = await vfs.read(selector, context);
+  async _drainStream(result, selectorLabel) {
     if (!result) {
-        console.warn(`[MeshVFS] readData returned null for:`, selector);
+        console.warn(`[MeshVFS] Drain failed: No result for ${selectorLabel}`);
         return null;
     }
     const { stream, metadata } = result;
-    console.log(`[MeshVFS] readData got result. Metadata:`, metadata);
     
-    // Drain stream into a single Uint8Array
     const reader = stream.getReader();
     const chunks = [];
     try {
@@ -344,16 +345,29 @@ export const vfsActions = {
     } else {
         parsed = bytes;
     }
-    console.log(`[MeshVFS] readData SUCCESS. Result type: ${typeof parsed}. Length: ${totalLength} bytes.`);
     return parsed;
+  },
+
+  async readSelectorData(selector, context = {}) {
+    const result = await vfs.readSelector(selector, context);
+    return this._drainStream(result, selector.path || 'selector');
+  },
+
+  async readCIDData(cid, context = {}) {
+    const result = await vfs.readCID(cid, context);
+    return this._drainStream(result, cid);
   },
 
   async writeData(selector, data, metadata = {}) {
     return vfs.write(selector, data, metadata);
   },
 
-  async read(selector) {
-    return vfs.read(selector);
+  async readSelector(selector, context = {}) {
+    return vfs.readSelector(selector, context);
+  },
+
+  async readCID(cid, context = {}) {
+    return vfs.readCID(cid, context);
   },
 
   async write(selector, data) {

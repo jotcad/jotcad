@@ -237,7 +237,7 @@ export const JotNode = (props) => {
       setAssociatedFiles(files);
 
       const resultList = await Promise.all(shapes.map(async (sel) => {
-        const data = await blackboard.readData(sel);
+        const data = await blackboard.readSelectorData(sel);
         let finalData = data;
         if (data && typeof data === 'object' && (data.geometry || data.components)) {
           finalData = await packZFS(vfs, data);
