@@ -516,7 +516,7 @@ int VFS::notify(const Selector& sel, const json& payload, const std::vector<std:
     std::set<std::string> targets;
 
     {
-        std::lock_guard<std::recursive_mutex> lock(interest_mutex_); // Using interest_mutex_
+        std::lock_guard<std::recursive_mutex> lock(mesh_mutex_); // Using mesh_mutex_
         if (interests_.count(path)) {
             for (auto const& [peer_id, expiry] : interests_[path]) {
                 // For now, allow all active interests on ESP. 

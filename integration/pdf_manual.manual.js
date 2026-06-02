@@ -18,7 +18,7 @@ async function consumeBinary(stream) {
     return bytes;
 }
 async function main() {
-    const sys = await launchSystem(PROFILES.TEST);
+    const sys = await launchSystem('test/standard');
     const PORT_EXPORT = sys.ports.export;
 
     // Detect protocol (matches geo/export_service.js logic)

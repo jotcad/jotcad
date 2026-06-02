@@ -22,7 +22,7 @@ test('Direct C++ Connection: UX to Ops Node Discovery', async (t) => {
     });
     const page = await browser.newPage();
 
-    log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
+    log(`[Test Browser] Loading UX with gateway: ${cluster.gatewayUrl}...`);
 
     // Wait for the direct catalog receipt log
     log('[Test Browser] Waiting for Direct Catalog handshake...');
@@ -34,7 +34,7 @@ test('Direct C++ Connection: UX to Ops Node Discovery', async (t) => {
           resolve();
         }
       });
-      page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
+      page.goto(cluster.gatewayUrl, { waitUntil: 'domcontentloaded' });
     });
 
     log('[Test Browser] Direct C++ Catalog handshake SUCCESS.');

@@ -1,6 +1,6 @@
 import { Connection, VFSResult } from './connection.js';
 import { Selector, decodeInfo, decodeSafe, normalizeSelector } from '../cid.js';
-import { log } from '../log.js';
+import { log, info } from '../log.js';
 
 /**
  * ReverseConnection: A pipe reached by replying to a neighbor's pending /listen poll.
@@ -91,7 +91,7 @@ export class ReverseConnection extends Connection {
    * SERVER SIDE: Send a command or notification by consuming a pooled /listen response.
    */
   _dispatch(command) {
-    log(`[ReverseConn ${this.neighborId}] Queueing command ${command.op || command.type}. Current depth: ${this.queue.length + 1}`);
+    info(`[ReverseConn ${this.neighborId}] Queueing command ${command.op || command.type}. Current depth: ${this.queue.length + 1}`);
     this.queue.push(command);
     
     if (this.pool.length > 0) {
@@ -109,8 +109,9 @@ export class ReverseConnection extends Connection {
         return;
     }
 
-    // If only one item and it's binary, send as standard PUB/COMMAND
-    if (this.queue.length === 1 && this.queue[0].payload instanceof Uint8Array) {
+    // BINARY RULE: If the first item is binary, send it as a raw response immediately.
+    // This prevents binary payloads (like camera frames) from stalling the queue.
+    if (this.queue[0].payload instanceof Uint8Array) {
         const command = this.queue.shift();
         const headers = { 
             'Content-Type': 'application/octet-stream',
@@ -125,7 +126,7 @@ export class ReverseConnection extends Connection {
         return;
     }
 
-    // Otherwise, send all non-binary messages in a BATCH
+    // BATCH RULE: Collect all contiguous non-binary messages
     const batch = [];
     while (this.queue.length > 0 && !(this.queue[0].payload instanceof Uint8Array)) {
         batch.push(this.queue.shift());
@@ -298,7 +299,8 @@ export class ReverseConnection extends Connection {
         if (resp.status === 200) {
           const h = resp.headers;
           const op = h?.get('x-vfs-op');
-          log(`[ReverseConn ${this.neighborId}] RECEIVED ${op || 'EVENT'} (Poll: ${pollDuration}ms, Gap: ${pollGap}ms)`);
+          info(`[ReverseConn ${this.neighborId}] RECEIVED ${op || 'EVENT'} (Poll: ${pollDuration}ms, Gap: ${pollGap}ms)`);
+          const encoding = h?.get('x-vfs-encoding');
           const selectorB64 = h?.get('x-vfs-selector');
           const stackStr = h?.get('x-vfs-stack');
           const expiresStr = h?.get('x-vfs-expires');
@@ -347,7 +349,7 @@ export class ReverseConnection extends Connection {
 
           if (op === 'BATCH') {
             const batch = JSON.parse(await resp.text());
-            log(`[ReverseConn ${this.neighborId}] Processing BATCH of ${batch.length} commands.`);
+            info(`[ReverseConn ${this.neighborId}] Processing BATCH of ${batch.length} commands.`);
             for (const item of batch) {
                 await processCommand(item);
             }
@@ -378,7 +380,7 @@ export class ReverseConnection extends Connection {
             cmd = await resp.json();
           }
 
-          log(`[ReverseConn ${this.neighborId}] RECEIVED ${cmd.op || cmd.type}`);
+          info(`[ReverseConn ${this.neighborId}] RECEIVED ${cmd.op || cmd.type}`);
           await processCommand(cmd);
 
         } else if (resp.status === 409) {

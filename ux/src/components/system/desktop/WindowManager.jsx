@@ -7,6 +7,7 @@ import { MeshGraphApp } from '../../discovery/MeshGraphApp';
 import { Console } from '../../system/Console';
 import { FolderWindow } from './FolderWindow';
 import { SettingsApp } from '../../system/SettingsApp';
+import { CameraWindow } from './CameraWindow';
 
 export const WindowManager = (props) => {
   return (
@@ -32,6 +33,9 @@ export const WindowManager = (props) => {
               </Show>
               <Show when={win.type === 'settings'}>
                  <SettingsApp />
+              </Show>
+              <Show when={win.type === 'vision_debug'}>
+                 <CameraWindow />
               </Show>
             </Window>
           );

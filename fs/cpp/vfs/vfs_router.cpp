@@ -9,6 +9,7 @@
 #include <thread>
 #include <future>
 #include <sstream>
+#include <random>
 
 namespace fs {
 
@@ -253,6 +254,12 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
                 std::lock_guard<std::mutex> plock(peer_mutex_);
                 for (auto const& [peer_id, expiresAt] : entry.subs) {
                     bool expired = (expiresAt > 0 && expiresAt < now);
+                    
+                    if (expired) {
+                        std::cout << "[VFSNode " << config_.id << "]   Match REJECTED: Interest in " << entry.selector.path 
+                                  << " from " << peer_id << " EXPIRED (" << (now - expiresAt) << "ms ago)" << std::endl;
+                    }
+
                     bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
                     bool peer_exists = peers_.count(peer_id);
 
@@ -271,7 +278,7 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
     }
 
     if (targets.empty()) {
-        std::cout << "[VFSNode " << config_.id << "]   No valid interested targets found for " << selector.path << std::endl;
+        std::cout << "[VFSNode " << config_.id << "] notify drop: No valid interested targets found for " << selector.path << std::endl;
         return;
     }
 
@@ -282,7 +289,11 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
         VFSRequest req;
         req.op = "PUB";
         req.selector = selector;
-        req.data = payload.dump();
+        if (payload.is_binary()) {
+            req.binary_data = payload.get_binary();
+        } else {
+            req.data = payload.dump();
+        }
         req.stack = next_stack;
         conn->sendRequest(req);
     }
@@ -309,7 +320,9 @@ void VFSNode::subscribe(const Selector& selector, long long expiresAt, const std
             interests_.push_back({selector, {{peer_id, expiresAt}}, 0});
             isNewInterest = true;
         } else {
-            if (it->subs.count(peer_id) == 0) isNewInterest = true;
+            if (it->subs.count(peer_id) == 0 || expiresAt > it->subs[peer_id]) {
+                isNewInterest = true;
+            }
             it->subs[peer_id] = expiresAt;
         }
     }
@@ -537,6 +550,11 @@ void VFSNode::handle_binary_frame(const std::string& neighbor_id, const json& he
             for (auto const& s : header["stack"]) stack.push_back(s.get<std::string>());
         }
 
+        // Add sender to stack if not already present
+        if (!neighbor_id.empty() && std::find(stack.begin(), stack.end(), neighbor_id) == stack.end()) {
+            stack.push_back(neighbor_id);
+        }
+
         // Stack Protection: Break loops early
         if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
 
@@ -555,6 +573,12 @@ void VFSNode::handle_binary_frame(const std::string& neighbor_id, const json& he
                     std::lock_guard<std::mutex> plock(peer_mutex_);
                     for (auto const& [peer_id, expiresAt] : entry.subs) {
                         bool expired = (expiresAt > 0 && expiresAt < now);
+                        
+                        if (expired) {
+                            std::cout << "[VFSNode " << config_.id << "]   Match REJECTED: Interest in " << entry.selector.path 
+                                      << " from " << peer_id << " EXPIRED (" << (now - expiresAt) << "ms ago)" << std::endl;
+                        }
+
                         bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
                         bool peer_exists = peers_.count(peer_id);
 
@@ -567,7 +591,7 @@ void VFSNode::handle_binary_frame(const std::string& neighbor_id, const json& he
         }
 
         if (targets.empty()) {
-            std::cout << "[VFSNode " << config_.id << "] binary notify drop: No interested peers found for " << sel.path << std::endl;
+            std::cout << "[VFSNode " << config_.id << "] binary notify drop: No valid interested targets found for " << sel.path << std::endl;
             return;
         }
 

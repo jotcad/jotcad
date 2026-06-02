@@ -38,9 +38,16 @@ fi
 # Activate virtual environment
 source "$HA_DIR/venv/bin/activate"
 
+# Check for PortAudio system-wide dependency
+if ! ldconfig -p | grep -q "libportaudio" &>/dev/null; then
+    echo -e "${YELLOW}[WARNING] libportaudio C library not found on your system.${NC}"
+    echo "Python 'sounddevice' requires 'libportaudio2' to capture microphone input."
+    echo -e "We recommend running: ${GREEN}sudo apt-get install -y libportaudio2${NC}\n"
+fi
+
 echo "Upgrading pip and installing Python local AI requirements..."
 pip install --upgrade pip
-pip install faster-whisper sounddevice numpy
+pip install faster-whisper sounddevice numpy requests
 
 # 3. Local Ollama Standalone Installation
 echo -e "\n${YELLOW}[3/5] Checking for Ollama LLM Runner...${NC}"
@@ -92,11 +99,11 @@ else
 fi
 
 # 5. Pre-caching Whisper STT Model
-echo -e "\n${YELLOW}[5/5] Pre-caching local Whisper model (tiny.en)...${NC}"
+echo -e "\n${YELLOW}[5/5] Pre-caching local Whisper model (base.en)...${NC}"
 python3 -c "
 from faster_whisper import WhisperModel
-print('Downloading and caching CTranslate2 Whisper tiny.en model...')
-WhisperModel('tiny.en', device='cpu', compute_type='int8')
+print('Downloading and caching CTranslate2 Whisper base.en model...')
+WhisperModel('base.en', device='cpu', compute_type='int8')
 print('Whisper model cached successfully.')
 "
 
@@ -109,9 +116,9 @@ echo " - Standalone Whisper model cached for fast CPU transcription."
 echo ""
 echo "To test Ollama reasoning:"
 if command -v ollama &> /dev/null; then
-    echo "  ollama run phi3:mini"
+    echo "  ollama run qwen2.5:1.5b"
 else
     echo "  $HA_DIR/bin/ollama serve &"
-    echo "  $HA_DIR/bin/ollama run phi3:mini"
+    echo "  $HA_DIR/bin/ollama run qwen2.5:1.5b"
 fi
 echo "=========================================================================="

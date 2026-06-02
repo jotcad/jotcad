@@ -24,7 +24,7 @@ export const PROFILES = {
     gateway: 'export',
     components: {
       ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node' } },
-      export: { type: 'export', protocol: 'https', port: 9198 },
+      export: { type: 'export', protocol: 'https', port: 9197 },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
@@ -82,7 +82,10 @@ export const PROFILES = {
   }
 };
 
-export async function launchSystem(profileKey = 'live/standard', globalLogLevel = process.env.LOG_LEVEL || 'INFO', options = {}) {
+export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_LEVEL || 'INFO', options = {}) {
+  if (!profileKey) {
+    throw new Error('CRITICAL: No profileKey provided to launchSystem. You must explicitly choose a profile (e.g., "test/standard").');
+  }
   const config = PROFILES[profileKey];
   if (!config) {
     throw new Error(`Unknown profile: ${profileKey}. Available: ${Object.keys(PROFILES).join(', ')}`);
@@ -312,7 +315,16 @@ export async function launchSystem(profileKey = 'live/standard', globalLogLevel 
       if (!uxReady) warn(`[Orchestrator] UX port ${ports.ux} not responding after 10s.`);
   }
 
-  return { processes, ports, stop: shutdown, logs: capturedLogs };
+  const gatewayPort = componentMap[gateway].port;
+
+  return { 
+    processes, 
+    ports, 
+    gatewayPort,
+    gatewayUrl: `${componentMap.ux.protocol}://localhost:${ports.ux}?gateway=${gatewayPort}`,
+    stop: shutdown, 
+    logs: capturedLogs 
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

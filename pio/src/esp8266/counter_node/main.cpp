@@ -20,7 +20,7 @@ void setup() {
     Serial.println("\n[ESP8266] JotCAD VFS Node Booting...");
 
     display.setBrightness(0x0f);
-    display.showNumberDec(0, true);
+    display.showNumberDec(0, false);
 
     // Connect to WiFi
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -38,7 +38,10 @@ static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Pleas
 
     // 1. Setup VFS Node
     fs::VFS::Config config;
-    config.id = DEVICE_NODE_ID;
+    char unique_id[64];
+    uint32_t chipId = ESP.getChipId();
+    snprintf(unique_id, sizeof(unique_id), "%s-%06X", DEVICE_NODE_ID, (uint32_t)(chipId & 0xFFFFFF));
+    config.id = unique_id;
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     
     // Connect to JS Gateway Node neighbor
@@ -75,12 +78,12 @@ void loop() {
     
     static unsigned long last_tick = 0;
     
-    if (millis() - last_tick > 1000) {
-        shared_count++;
+    if (millis() - last_tick > 20000) {
+        shared_count = (shared_count + 1) % 10;
         last_tick = millis();
 
-        // Update display
-        display.showNumberDec(shared_count % 10000, true);
+        // Update display: only one digit lit, cycling 0 to 9
+        display.showNumberDec(shared_count, false);
 
         // Broadcast count change
         fs::Selector selector("sensor/counter");

@@ -3,11 +3,11 @@ import assert from 'node:assert';
 import { VFS } from '../fs/src/vfs.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
-import { launchSystem, PROFILES } from '../orchestrator.js';
+import { launchSystem } from '../orchestrator.js';
 
 test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
     // 1. Launch the TEST system
-    const sys = await launchSystem(PROFILES.TEST);
+    const sys = await launchSystem('test/standard');
     const CPP_PORT = sys.ports.ops;
 
     // Initialize VFS & Mesh
@@ -22,7 +22,7 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
         
         // Wait for Ops Node to see us
         const { waitForMeshNodes } = await import('./vfs_test_helpers.js');
-        await waitForMeshNodes(nodeVFS, ['live_standard_ops']);
+        await waitForMeshNodes(nodeVFS, ['geo-ops-node']);
         
         // 4. Test 1: Interest Propagation (Node -> C++)
         console.log('[Test] Subscribing from Node.js to test/topic...');
@@ -79,12 +79,10 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
         }
 
         assert.ok(
-            catalogReceived.provider === 'live_standard_ops' || 
-            catalogReceived.provider === 'test_standard_ops' || 
-            catalogReceived.provider === 'geo-ops-node' ||
-            catalogReceived.provider === 'live_standard_export' ||
-            catalogReceived.provider === 'test_standard_export',
-            `Expected dynamic ops/export peer ID, got: ${catalogReceived.provider}`
+            catalogReceived.provider === 'geo-ops-node' || 
+            catalogReceived.provider.includes('standard_ops') || 
+            catalogReceived.provider.includes('standard_export'),
+            `Expected geo-ops-node or standard peer ID, got: ${catalogReceived.provider}`
         );
         console.log('✔ Node.js received Catalog from C++');
 

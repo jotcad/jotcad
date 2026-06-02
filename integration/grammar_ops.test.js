@@ -4,7 +4,7 @@ import { VFS, MeshLink, registerVFSRoutes, DiskStorage, Selector } from '../fs/s
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
-import { launchSystem, PROFILES } from '../orchestrator.js';
+import { launchSystem } from '../orchestrator.js';
 
 async function consumeBytes(stream) {
     const reader = stream.getReader();
@@ -35,7 +35,7 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
   });
 
   // 1. Launch the TEST system
-  sys = await launchSystem(PROFILES.TEST);
+  sys = await launchSystem('test/standard');
   const OPS_URL = `http://localhost:${sys.ports.ops}`;
 
   // 2. Start JS Node

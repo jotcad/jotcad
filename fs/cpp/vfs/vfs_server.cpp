@@ -264,8 +264,12 @@ void VFSNode::listen() {
                 }
 
                 std::string encoding = req.get_header_value("X-VFS-Encoding");
-                if (encoding == "bytes") payload = std::vector<uint8_t>(req.body.begin(), req.body.end());
-                else payload = json::parse(req.body);
+                if (encoding == "bytes") {
+                    std::vector<uint8_t> bytes(req.body.begin(), req.body.end());
+                    payload = json::binary(bytes);
+                } else {
+                    payload = json::parse(req.body);
+                }
             } else {
                 json body = json::parse(req.body);
                 selector_json = body.at("selector");

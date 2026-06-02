@@ -61,4 +61,8 @@ ops/node_modules/
 server/assets/
 server/node_modules/
 threejs/node_modules/
+# Ignore Python cache
+__pycache__/
+**/__pycache__/
+
 ux/dist/

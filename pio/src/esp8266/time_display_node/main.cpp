@@ -35,7 +35,10 @@ void setup() {
 
     // 1. Setup VFS Node
     fs::VFS::Config config;
-    config.id = DEVICE_NODE_ID;
+    char unique_id[64];
+    uint32_t chipId = ESP.getChipId();
+    snprintf(unique_id, sizeof(unique_id), "%s-%06X", DEVICE_NODE_ID, (uint32_t)(chipId & 0xFFFFFF));
+    config.id = unique_id;
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     config.neighbors = {MESH_NEIGHBOR_URL};
     

@@ -248,26 +248,31 @@ VFSResult VFSNode::ForwardConnection::_do_read(const std::map<std::string, std::
 
 VFSResult VFSNode::ForwardConnection::sendRequest(const VFSRequest& req) {
     if (req.op == "PUB") {
+        bool is_binary = !req.binary_data.empty();
         httplib::Headers headers = {
             {"X-VFS-Op", "PUB"},
             {"X-VFS-Selector", req.selector.to_json().dump()},
             {"X-VFS-Stack", ""},
-            {"X-VFS-Encoding", "json"},
-            {"Content-Type", "application/json"}
+            {"X-VFS-Encoding", is_binary ? "bytes" : "json"},
+            {"Content-Type", is_binary ? "application/octet-stream" : "application/json"}
         };
-        for (size_t i = 0; i < req.stack.size(); ++i) headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + req.stack[i];
+        for (size_t i = 0; i < req.stack.size(); ++i) {
+            auto it = headers.find("X-VFS-Stack");
+            it->second += (i == 0 ? "" : ",") + req.stack[i];
+        }
 
-        std::string body = req.data;
+        std::string body = is_binary ? std::string(req.binary_data.begin(), req.binary_data.end()) : req.data;
         std::string target_url = url;
-        std::thread([target_url, body, headers]() {
+        std::thread([target_url, body, headers, is_binary]() {
             httplib::Client cli(target_url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
             cli.enable_server_certificate_verification(false);
 #endif
-            cli.Post("/notify", headers, body, "application/json");
+            cli.Post("/notify", headers, body, is_binary ? "application/octet-stream" : "application/json");
         }).detach();
         return {};
-    } else if (req.op == "SUB") {
+    }
+ else if (req.op == "SUB") {
         httplib::Headers headers = {
             {"X-VFS-Op", "SUB"},
             {"X-VFS-Selector", req.selector.to_json().dump()},
@@ -313,11 +318,18 @@ VFSResult VFSNode::ForwardConnection::sendRequest(const VFSRequest& req) {
 VFSResult VFSNode::ReverseConnection::sendRequest(const VFSRequest& req) {
     if (req.op == "PUB") {
         std::lock_guard<std::mutex> lock(mutex);
-        queue.push_back({{"type", "PUB"}, {"selector", req.selector.to_json()}, {"payload", req.data.empty() ? json::object() : json::parse(req.data)}, {"stack", req.stack}});
+        json cmd = {{"type", "PUB"}, {"selector", req.selector.to_json()}, {"stack", req.stack}};
+        if (!req.binary_data.empty()) {
+            cmd["payload"] = json::binary(req.binary_data);
+        } else {
+            cmd["payload"] = req.data.empty() ? json::object() : json::parse(req.data);
+        }
+        queue.push_back(cmd);
         std::cout << "[ReverseConn " << neighbor_id << "] PUB queued. Queue depth: " << queue.size() << std::endl;
         cv.notify_one();
         return {};
-    } else if (req.op == "SUB") {
+    }
+ else if (req.op == "SUB") {
         std::lock_guard<std::mutex> lock(mutex);
         queue.push_back({{"type", "COMMAND"}, {"op", "SUB"}, {"selector", req.selector.to_json()}, {"expiresAt", req.expiresAt}, {"stack", req.stack}});
         cv.notify_one();

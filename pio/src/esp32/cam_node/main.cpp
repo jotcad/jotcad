@@ -91,10 +91,13 @@ static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Pleas
 
     // 1. Setup VFS Node
     fs::VFS::Config config;
-    config.id = DEVICE_NODE_ID;
+    char unique_id[64];
+    uint64_t mac = ESP.getEfuseMac();
+    snprintf(unique_id, sizeof(unique_id), "%s-%06X", DEVICE_NODE_ID, (uint32_t)(mac & 0xFFFFFF));
+    config.id = unique_id;
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     config.neighbors = {MESH_NEIGHBOR_URL};
-    
+
     node = new fs::VFS(config);
 
     // 2. Register handler for on-demand camera reads
@@ -115,15 +118,15 @@ static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Pleas
 
 void loop() {
     node->tick();
-    
+
     static unsigned long last_capture = 0;
-    
+
     // Auto-publish every 500ms (2 FPS) if someone is interested
     if (millis() - last_capture > 500) {
         last_capture = millis();
-        
+
         fs::json selector = {{"path", "sensor/camera"}};
-        
+
         // We only capture if there is interest
         camera_fb_t * fb = esp_camera_fb_get();
         if (fb) {

@@ -307,7 +307,10 @@ void setup() {
     // 4. Setup VFS Node Config
     Serial.println("[VFS] Bootstrapping VFS Client Node...");
     fs::VFS::Config config;
-    config.id = DEVICE_NODE_ID;
+    char unique_id[64];
+    uint64_t mac = ESP.getEfuseMac();
+    snprintf(unique_id, sizeof(unique_id), "%s-%06X", DEVICE_NODE_ID, (uint32_t)(mac & 0xFFFFFF));
+    config.id = unique_id;
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     config.neighbors = {MESH_NEIGHBOR_URL};
     

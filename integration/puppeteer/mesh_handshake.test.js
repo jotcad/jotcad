@@ -22,7 +22,7 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
     });
     const page = await browser.newPage();
 
-    log(`[Test Browser] Loading UX on port ${PORT_UX}...`);
+    log(`[Test Browser] Loading UX with gateway: ${cluster.gatewayUrl}...`);
 
     // Wait for the catalog receipt log
     log('[Test Browser] Waiting for Catalog handshake...');
@@ -35,7 +35,7 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
         }
       });
       // Force HTTPS as per orchestrator configuration
-      page.goto(`https://localhost:${PORT_UX}/`, { waitUntil: 'domcontentloaded' });
+      page.goto(cluster.gatewayUrl, { waitUntil: 'domcontentloaded' });
     });
 
     log('[Test Browser] Catalog handshake SUCCESS.');

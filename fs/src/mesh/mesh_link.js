@@ -181,7 +181,7 @@ export class MeshLinkBase {
     if (stack.includes(this.vfs.id)) return;
     const nextStack = [...stack, this.vfs.id];
 
-    log(`[MeshLink ${this.vfs.id}] notify: ${s.path} from stack ${stack}`);
+    info(`[MeshLink ${this.vfs.id}] notify: ${s.path} from stack ${stack}`);
 
     // Logical Entry Matching
     let entry = this.interests.find(e => e.selector.equals(s));
@@ -192,7 +192,7 @@ export class MeshLinkBase {
 
     // 1. Local Delivery
     if (entry.localExpiresAt > Date.now()) {
-      log(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
+      info(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
       this.vfs.events.emit('notify', s, payload);
     }
 
@@ -203,9 +203,9 @@ export class MeshLinkBase {
       
       const conn = this.peers.get(neighborId);
       if (conn) {
-          log(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
+          info(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
           conn.send(new NotifyRequest(s, payload, nextStack)).catch((err) => {
-            log(`[MeshLink ${this.vfs.id}] Failed to forward notification to neighbor ${neighborId}: ${err.message}`);
+            error(`[MeshLink ${this.vfs.id}] Failed to forward notification to neighbor ${neighborId}: ${err.message}`);
           });
       }
     }

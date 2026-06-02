@@ -1,7 +1,7 @@
 import { pipeline } from 'stream/promises';
 import { Readable } from 'node:stream';
 import { normalizeSelector, Selector, encodeSafe, decodeSafe, getSelectorKey, decodeInfo } from './vfs_core.js';
-import { log } from './log.js';
+import { log, info } from './log.js';
 import { WebSocketServer } from 'ws';
 
 export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
@@ -162,7 +162,7 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
             stack = body.stack || [];
         }
 
-        log(`[MeshServer ${vfs.id}] POST /notify ${selector?.path || 'null'} from stack ${stack}`);
+        info(`[MeshServer ${vfs.id}] POST /notify ${selector?.path || 'null'} from stack ${stack}`);
         if (selector) vfs.validateSelector(selector); 
         meshLink?.notify(selector, payload, stack);
         res.writeHead(200);

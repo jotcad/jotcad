@@ -48,7 +48,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
   });
 
   // 1. Launch the TEST system (ops on 9191, export on 9192)
-  sys = await launchSystem(PROFILES.TEST);
+  sys = await launchSystem('test/standard');
   const PORT_OPS = sys.ports.ops;
   const PORT_EXPORT = sys.ports.export;
   const PORT_CLIENT = 20203;

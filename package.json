@@ -8,7 +8,7 @@
     "start": "node orchestrator.js",
     "start:test": "node test_orchestrator.js",
     "setup:ha": "./ha/setup.sh",
-    "start:ha": "if command -v ollama >/dev/null 2>&1; then ollama serve; else ./ha/bin/ollama serve; fi",
+    "start:ha": "./ha/start.sh",
     "depcheck": "npm run depcheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "lintfix": "npm run lintfix --workspaces --if-present",

@@ -32,9 +32,23 @@ export const vfs = new VFS({
 
 registerJotProvider(vfs);
 
-const vfsUrl = import.meta.env.VITE_VFS_URL;
-if (!vfsUrl) {
-    throw new Error('[VFSManager] CRITICAL: VITE_VFS_URL is not defined in the environment. The mesh gateway must be explicitly configured at build time.');
+const getVfsUrl = () => {
+    if (typeof window === 'undefined') return import.meta.env.VITE_VFS_URL;
+    const params = new URLSearchParams(window.location.search);
+    const override = params.get('gateway');
+    if (override) {
+        // If just a port is provided, assume local https
+        if (!override.includes(':')) {
+            return `https://localhost:${override}`;
+        }
+        return override;
+    }
+    return import.meta.env.VITE_VFS_URL;
+};
+
+const vfsUrl = getVfsUrl();
+if (!vfsUrl && typeof window !== 'undefined') {
+    throw new Error('[VFSManager] CRITICAL: VITE_VFS_URL is not defined and no ?gateway= override provided.');
 }
 
 export const mesh = new MeshLink(vfs, [vfsUrl]);

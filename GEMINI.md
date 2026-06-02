@@ -29,6 +29,8 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 - **NO PERSISTENT CONTEXT**: Request-level context (e.g., `expiresAt`, `depth`, `tags`, `stack`) MUST NEVER be saved to disk. The VFS is a data router, not a request logger.
 - **LINK SYMMETRY**: A "Link" is an artifact with `encoding: "link"`. Its `.data` payload is a serialized Selector. The legacy `vfs:/` URI hack and "link-guessing" in raw data are strictly prohibited.
 - **UNAMBIGUOUS RESOLUTION**: The VFS MUST resolve links based on the `encoding` hint in metadata. It MUST NOT perform structural analysis (e.g. checking for a `.path` key) on `json` artifacts to decide whether to resolve them.
+- **EXPLICIT TEST PROFILES (MANDATORY)**: `launchSystem` MUST be called with explicit string profile keys (e.g., `'test/standard'`). Legacy aliases like `PROFILES.TEST` are strictly prohibited to ensure environment isolation and prevent port collisions.
+- **DYNAMIC GATEWAY DISCOVERY**: The UX MUST support the `?gateway=PORT` query parameter to override the build-time `VITE_VFS_URL`. This enables testing against disjoint mesh clusters (e.g., port 9197 vs 9198) using a single static UX build.
 
 ## Documentation Index
 
