@@ -2,6 +2,8 @@ import { Connection, VFSResult } from './connection.js';
 import { Selector, decodeInfo, decodeSafe, normalizeSelector } from '../cid.js';
 import { log, info } from '../log.js';
 
+const PEER_POLL_TIMEOUT = 10000;
+
 /**
  * ReverseConnection: A pipe reached by replying to a neighbor's pending /listen poll.
  * Encapsulates BOTH the server-side pool management and the client-side poll loop.
@@ -18,6 +20,7 @@ export class ReverseConnection extends Connection {
     this.pool = [];
     this.queue = [];
     this.replies = new Map();
+    this.lastPollAt = Date.now();
     
     // Client-side state
     this.abortController = new AbortController();
@@ -42,6 +45,7 @@ export class ReverseConnection extends Connection {
    * SERVER SIDE: Entry point for a hidden peer calling /listen.
    */
   addScanner(res, replyTo = null, stream = null, info = null) {
+    this.lastPollAt = Date.now();
     // Protocol Rule: Permanent Tunnel
     if (res.setTimeout) res.setTimeout(0);
 
@@ -91,6 +95,14 @@ export class ReverseConnection extends Connection {
    * SERVER SIDE: Send a command or notification by consuming a pooled /listen response.
    */
   _dispatch(command) {
+    if (Date.now() - this.lastPollAt > PEER_POLL_TIMEOUT) {
+      log(`[ReverseConn ${this.neighborId}] Pruning stale peer (no poll for ${Date.now() - this.lastPollAt}ms).`);
+      this.queue = [];
+      // Note: We don't delete from mesh.peers here as the mesh might have multiple connections
+      // but we return false to indicate dispatch failed.
+      return false;
+    }
+
     info(`[ReverseConn ${this.neighborId}] Queueing command ${command.op || command.type}. Current depth: ${this.queue.length + 1}`);
     this.queue.push(command);
     

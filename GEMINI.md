@@ -31,6 +31,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 - **UNAMBIGUOUS RESOLUTION**: The VFS MUST resolve links based on the `encoding` hint in metadata. It MUST NOT perform structural analysis (e.g. checking for a `.path` key) on `json` artifacts to decide whether to resolve them.
 - **EXPLICIT TEST PROFILES (MANDATORY)**: `launchSystem` MUST be called with explicit string profile keys (e.g., `'test/standard'`). Legacy aliases like `PROFILES.TEST` are strictly prohibited to ensure environment isolation and prevent port collisions.
 - **DYNAMIC GATEWAY DISCOVERY**: The UX MUST support the `?gateway=PORT` query parameter to override the build-time `VITE_VFS_URL`. This enables testing against disjoint mesh clusters (e.g., port 9197 vs 9198) using a single static UX build.
+- **AUTHORITATIVE POLL TIMEOUT (MANDATORY)**: Reverse (Long-Poll) connections MUST be considered closed if no poll request is received for **10 seconds** (`PEER_POLL_TIMEOUT_MS`). The VFS MUST immediately wipe the peer's queue and remove them from the active peer map to prevent memory bloat and 'notification flooding' from ghost peers.
 
 ## Documentation Index
 

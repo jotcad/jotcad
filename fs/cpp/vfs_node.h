@@ -67,6 +67,8 @@ public:
         bool is_cid() const { return !cid.empty(); }
     };
 
+    static constexpr long long PEER_POLL_TIMEOUT_MS = 10000;
+
     struct Connection {
         std::string neighbor_id;
         virtual ~Connection() = default;
@@ -85,6 +87,8 @@ public:
     void notify_schema();
     void listen();
     void stop();
+
+    void prune_stale_connections();
 
     // Identity Duality Overloads (Explicit Typed Dispatch)
     template<typename T = std::vector<uint8_t>>
@@ -156,8 +160,12 @@ private:
         std::vector<json> queue;
         bool is_polling = false;
         long long current_poll_id = 0;
+        long long last_poll_at = 0;
 
-        ReverseConnection(std::string id) { neighbor_id = std::move(id); }
+        ReverseConnection(std::string id) { 
+            neighbor_id = std::move(id); 
+            last_poll_at = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        }
         VFSResult sendRequest(const VFSRequest& req) override;
         bool is_reverse() const override { return true; }
         std::string get_protocol() const override { return "http"; }

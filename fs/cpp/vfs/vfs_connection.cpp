@@ -24,6 +24,7 @@ static std::string generate_tx_id() {
 }
 
 json VFSNode::get_topology_payload() {
+    prune_stale_connections();
     json rich_neighbors = json::array();
     {
         std::lock_guard<std::mutex> lock(peer_mutex_);
@@ -155,6 +156,11 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
     }
 
     if (!conn) { res.status = 404; return; }
+
+    {
+        std::lock_guard<std::mutex> lock(conn->mutex);
+        conn->last_poll_at = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    }
 
     std::unique_lock<std::mutex> lock(conn->mutex);
     if (conn->is_polling) {
@@ -554,6 +560,24 @@ void VFSNode::reject_transaction(const std::string& tx_id, int status, const std
         if (transactions_.count(tx_id)) { p = transactions_[tx_id]; transactions_.erase(tx_id); }
     }
     if (p) p->set_exception(std::make_exception_ptr(VFSException(error, status)));
+}
+
+void VFSNode::prune_stale_connections() {
+    long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    std::lock_guard<std::mutex> lock(peer_mutex_);
+    for (auto it = peers_.begin(); it != peers_.end(); ) {
+        auto rev = std::dynamic_pointer_cast<ReverseConnection>(it->second);
+        if (rev) {
+            std::lock_guard<std::mutex> rlock(rev->mutex);
+            if (now - rev->last_poll_at > PEER_POLL_TIMEOUT_MS) {
+                std::cout << "[VFSNode " << config_.id << "] Pruning stale connection: " << it->first 
+                          << " (no poll for " << (now - rev->last_poll_at) << "ms)" << std::endl;
+                it = peers_.erase(it);
+                continue;
+            }
+        }
+        ++it;
+    }
 }
 
 } // namespace fs

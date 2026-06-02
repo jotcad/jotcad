@@ -238,6 +238,8 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
     // 1. Stack Protection: Break loops early
     if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
 
+    prune_stale_connections();
+
     std::cout << "[VFSNode " << config_.id << "] notify: " << (selector.path.empty() ? "null" : selector.path) << " from stack {";
     for(size_t i=0; i<stack.size(); ++i) std::cout << (i==0?"":",") << stack[i];
     std::cout << "}" << std::endl;
@@ -252,16 +254,31 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
             // Protocol Rule: Strict bit-exact matching. Normalization MUST happen at the boundary.
             if (entry.selector == selector) {
                 std::lock_guard<std::mutex> plock(peer_mutex_);
-                for (auto const& [peer_id, expiresAt] : entry.subs) {
-                    bool expired = (expiresAt > 0 && expiresAt < now);
-                    
-                    if (expired) {
-                        std::cout << "[VFSNode " << config_.id << "]   Match REJECTED: Interest in " << entry.selector.path 
-                                  << " from " << peer_id << " EXPIRED (" << (now - expiresAt) << "ms ago)" << std::endl;
-                    }
+                for (auto it_sub = entry.subs.begin(); it_sub != entry.subs.end(); ) {
+                    std::string peer_id = it_sub->first;
+                    long long expiresAt = it_sub->second;
 
+                    bool expired = (expiresAt > 0 && expiresAt < now);
                     bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
                     bool peer_exists = peers_.count(peer_id);
+
+                    if (peer_exists) {
+                        auto rev = std::dynamic_pointer_cast<ReverseConnection>(peers_[peer_id]);
+                        if (rev) {
+                            std::lock_guard<std::mutex> rlock(rev->mutex);
+                            if (now - rev->last_poll_at > PEER_POLL_TIMEOUT_MS) {
+                                std::cout << "[VFSNode " << config_.id << "] Pruning stale peer " << peer_id 
+                                          << " (no poll for " << (now - rev->last_poll_at) << "ms)" << std::endl;
+                                peers_.erase(peer_id);
+                                peer_exists = false;
+                            }
+                        }
+                    }
+
+                    if (expired || !peer_exists) {
+                        it_sub = entry.subs.erase(it_sub);
+                        continue;
+                    }
 
                     std::cout << "[VFSNode " << config_.id << "]   Match! Interest: " << entry.selector.path 
                               << " Peer: " << peer_id 
@@ -269,9 +286,10 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
                               << " InStack: " << (in_stack?"Y":"N") 
                               << " Exists: " << (peer_exists?"Y":"N") << std::endl;
 
-                    if (!expired && !in_stack && peer_exists) {
+                    if (!in_stack) {
                         targets.push_back(peers_[peer_id]);
                     }
+                    ++it_sub;
                 }
             }
         }

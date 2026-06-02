@@ -106,10 +106,28 @@ for digit in range(10):
                     for h in heights:
                         img = generate_7seg_digit(digit, slant, thick, gap, w, h)
                         
+                        # Generate background noise (lines/scratches)
+                        img_noise = np.zeros_like(img)
+                        if np.random.rand() > 0.4:
+                            draw_img = Image.new('L', (48, 48), color=0)
+                            draw = ImageDraw.Draw(draw_img)
+                            for _ in range(np.random.randint(1, 3)):
+                                draw.line([(np.random.randint(0, 48), np.random.randint(0, 48)), 
+                                           (np.random.randint(0, 48), np.random.randint(0, 48))], 
+                                          fill=np.random.randint(50, 180), width=np.random.randint(1, 3))
+                            img_noise = np.array(draw_img, dtype=np.float32) / 255.0
+                        
+                        # Mask out digit to keep it clean (no overlap)
+                        digit_mask = (img > 0.05).astype(np.float32)
+                        clean_noise = img_noise * (1.0 - digit_mask)
+                        
+                        # Combine
+                        img_combined = np.clip(img + clean_noise, 0.0, 1.0)
+                        
                         # Add random translations (shift)
                         dx = np.random.randint(-3, 4)
                         dy = np.random.randint(-3, 4)
-                        img_shift = np.zeros_like(img)
+                        img_shift = np.zeros_like(img_combined)
                         if dx >= 0:
                             x_src_start, x_src_end = 0, 48 - dx
                             x_dst_start, x_dst_end = dx, 48
@@ -123,7 +141,7 @@ for digit in range(10):
                             y_src_start, y_src_end = -dy, 48
                             y_dst_start, y_dst_end = 0, 48 + dy
                         
-                        img_shift[y_dst_start:y_dst_end, x_dst_start:x_dst_end] = img[y_src_start:y_src_end, x_src_start:x_src_end]
+                        img_shift[y_dst_start:y_dst_end, x_dst_start:x_dst_end] = img_combined[y_src_start:y_src_end, x_src_start:x_src_end]
                         
                         # Add Gaussian noise
                         noise = np.random.normal(0, 0.04, img_shift.shape)
