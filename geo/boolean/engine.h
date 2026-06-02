@@ -52,6 +52,29 @@ struct Engine {
         return success;
     }
 
+    static void cut_surface_by_solid(ExactMesh& target, const ExactMesh& tool) {
+        if (CGAL::is_closed(tool)) {
+            ExactMesh tool_copy = tool; // split needs non-const splitter
+            CGAL::Polygon_mesh_processing::split(target, tool_copy);
+            CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(tool_copy);
+            std::vector<ExactMesh::Face_index> to_remove;
+            for (auto f : target.faces()) {
+                auto h = target.halfedge(f);
+                auto p0 = target.point(target.source(h));
+                auto p1 = target.point(target.target(h));
+                auto p2 = target.point(target.target(target.next(h)));
+                auto mid = CGAL::centroid(p0, p1, p2);
+                if (inside_check(mid) != CGAL::ON_UNBOUNDED_SIDE) {
+                    to_remove.push_back(f);
+                }
+            }
+            for (auto f : to_remove) {
+                CGAL::Euler::remove_face(target.halfedge(f), target);
+            }
+            CGAL::Polygon_mesh_processing::remove_isolated_vertices(target);
+        }
+    }
+
     /**
      * join_mesh_by_mesh: 3D Volume-Volume union.
      */
@@ -494,7 +517,7 @@ struct Engine {
 
     // --- Recursive Boolean Orchestrators ---
 
-    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open) {
+    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open, bool stamp = false) {
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
@@ -505,8 +528,9 @@ struct Engine {
             bool has_points = !target_geo.points.empty();
 
             if (has_faces) {
-                bool is_target_flat = target_geo.is_plane();
-                if (is_target_flat) {
+                bool original_is_flat = target_geo.is_plane();
+                bool is_target_flat = original_is_flat;
+                if (is_target_flat && !stamp) {
                     EK::Plane_3 target_plane = *target_geo.find_plane();
                     Matrix project_tf = Matrix::lookAt(target_plane.point(), target_plane.orthogonal_vector());
                     Matrix rehydrate_tf = project_tf.inverse();
@@ -520,11 +544,19 @@ struct Engine {
                     if (used_pwh_path) { target_geo = gps_to_geometry(subject_set); target_geo.apply_tf(rehydrate_tf); }
                     else is_target_flat = false;
                 }
-                if (!is_target_flat) {
+                if (!is_target_flat || (original_is_flat && stamp)) {
                     ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : tool_nodes) {
                         if (tool.type == "plane") cut_mesh_by_plane(target_mesh, (subject_world_inv * tool.world_tf).transform(EK::Plane_3(0,0,1,0)));
-                        else if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { ExactMesh tool_mesh = geometry_to_mesh(tool.geo); transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); cut_mesh_by_mesh(target_mesh, tool_mesh); }
+                        else if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { 
+                            ExactMesh tool_mesh = geometry_to_mesh(tool.geo); 
+                            transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); 
+                            if (original_is_flat && !stamp) {
+                                cut_surface_by_solid(target_mesh, tool_mesh);
+                            } else {
+                                cut_mesh_by_mesh(target_mesh, tool_mesh); 
+                            }
+                        }
                     }
                     target_geo = mesh_to_geometry(target_mesh);
                 }
@@ -554,7 +586,7 @@ struct Engine {
             }
             s.geometry = vfs->materialize<Geometry>(target_geo);
         }
-        for (auto& child : s.components) recursive_subtract(vfs, child, subject_world_tf, tool_nodes, open);
+        for (auto& child : s.components) recursive_subtract(vfs, child, subject_world_tf, tool_nodes, open, stamp);
     }
 
     static void recursive_union(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {

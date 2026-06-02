@@ -17,6 +17,7 @@
 #include "on_op.h"
 #include "at_op.h"
 #include "cut_op.h"
+#include "stamp_op.h"
 #include "join_op.h"
 #include "clip_op.h"
 #include "fuse_op.h"
@@ -82,6 +83,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     on_init(vfs);
     at_init(vfs);
     cut_init(vfs);
+    stamp_init(vfs);
     join_init(vfs);
     clip_init(vfs);
     fuse_init(vfs);

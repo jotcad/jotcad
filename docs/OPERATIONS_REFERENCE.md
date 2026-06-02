@@ -202,6 +202,13 @@ Combines the subject with one or more tool shapes into a single manifold solid. 
 
 ### `cut(tools=[])`
 Subtracts one or more tool shapes from the subject.
+- **Dimensionality Aware**: When subtracting a 3D solid from a 2D surface, `cut` strictly produces a flat 2D hole in the surface, adhering to the dimensional plane.
+- **Example**: `Box(20, 20).cut(Orb(15))` results in a flat square with a circular hole.
+
+### `stamp(tools=[])`
+Topologically embosses the subject using 3D tool shapes.
+- **Membrane Effect**: Unlike `cut`, `stamp` grafts the intersecting boundary of the 3D tool onto the subject. If the subject is a 2D surface, it will be "pushed" into the shape of the tool, creating a manifold 3D shell (e.g., a hemispherical depression).
+- **Example**: `Box(20, 20).stamp(Orb(15))` results in a flat sheet with a hemispherical "dent" or pocket.
 
 ### `clip(tools=[])`
 Intersects the subject with one or more tool shapes, keeping only the overlapping volume.
