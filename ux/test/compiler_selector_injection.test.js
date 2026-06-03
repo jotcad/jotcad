@@ -76,4 +76,18 @@ describe('Jot Compiler Selector Injection', () => {
     expect(result.parameters.turns[1]).toMatchObject({ path: 'jot/range' });
     expect(result.parameters.turns[2]).toBe(0.5);
   });
+
+  it('successfully handles positional mixed injection', async () => {
+    const code = 'Rotate(0.1, range(3), 0.5) -> $out';
+    const ast = parser.parse(code);
+
+    const artifacts = await compiler.evaluate(ast, {}, { outputs: { $out: { type: 'jot:shape' } } });
+    const result = artifacts.find(a => a.port === '$out').selector;
+    console.log('Positional Result:', JSON.stringify(result, null, 2));
+
+    expect(result.parameters.turns).toHaveLength(3);
+    expect(result.parameters.turns[0]).toBe(0.1);
+    expect(result.parameters.turns[1]).toMatchObject({ path: 'jot/range' });
+    expect(result.parameters.turns[2]).toBe(0.5);
+  });
 });

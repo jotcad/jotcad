@@ -531,7 +531,9 @@ export class JotCompiler {
   // --- Type Predicates ---
 
   _getTypeOfValue(val, ctx) {
-    if (val instanceof Selector) return this._getSelectorOutputType(val);
+    if (val instanceof Selector || (val !== null && typeof val === 'object' && val.path)) {
+        return this._getSelectorOutputType(val);
+    }
     if (typeof val === 'number') return 'jot:number';
     if (typeof val === 'string') return 'jot:string';
     if (typeof val === 'boolean') return 'jot:boolean';
@@ -609,12 +611,12 @@ export class JotCompiler {
 
   _getSelectorOutputType(sel) {
     if (!sel.output) {
-      throw new Error(`Protocol Violation: Cannot determine type of port-less selector for "${sel.path}". Use .withOutput(port) to specify a value source.`);
+      return 'jot:any';
     }
 
     const schema = this._getSchemaForPath(sel.path);
     if (!schema) {
-      throw new Error(`Compiler Error: Unregistered operator path "${sel.path}" during type resolution.`);
+      return 'jot:any';
     }
 
     const outDef = schema.outputs?.[sel.output];

@@ -33,6 +33,8 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 - **EXPLICIT TEST PROFILES (MANDATORY)**: `launchSystem` MUST be called with explicit string profile keys (e.g., `'test/standard'`). Legacy aliases like `PROFILES.TEST` are strictly prohibited to ensure environment isolation and prevent port collisions.
 - **DYNAMIC GATEWAY DISCOVERY**: The UX MUST support the `?gateway=PORT` query parameter to override the build-time `VITE_VFS_URL`. This enables testing against disjoint mesh clusters (e.g., port 9197 vs 9198) using a single static UX build.
 - **AUTHORITATIVE POLL TIMEOUT (MANDATORY)**: Reverse (Long-Poll) connections MUST be considered closed if no poll request is received for **10 seconds** (`PEER_POLL_TIMEOUT_MS`). The VFS MUST immediately wipe the peer's queue and remove them from the active peer map to prevent memory bloat and 'notification flooding' from ghost peers.
+- **INTEGRATED GHOST PATTERN (CRITICAL)**: Ghost components (roles: `gap`, `ghost`, `mark`, `mask`) MUST be preserved as direct children within the subject's primitive hierarchy, not wrapped in a new group. This ensures that tool geometry remains associated with the modified subject for late-binding or downstream boolean operations.
+- **MIXED POOL INJECTION**: The compiler MUST support "mixed" argument pools (e.g., `[0.1, range(3), 0.5]`). This requires plural-to-singular promotion in `_isSubtype` and detecting raw objects with a `.path` key as Selectors within typed consumers (e.g., `JotNumbersConsumer`) to enable late-binding of computational recipes.
 
 ## Documentation Index
 

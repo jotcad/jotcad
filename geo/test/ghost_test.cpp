@@ -35,9 +35,11 @@ int main() {
     Shape cut_group = vfs.read<Shape>(cut_sel.with_output("$out"));
 
     std::cout << "Cut Result Components: " << cut_group.components.size() << std::endl;
-    assert(cut_group.components.size() == 2);
-    assert(cut_group.components[1].is_ghost());
-    std::cout << "Ghost confirmed in group." << std::endl;
+    // Integrated Ghost Pattern: The tool is added as a component to the subject.
+    // Since 'box' was a primitive (0 components), the result now has 1 component (the ghost).
+    assert(cut_group.components.size() == 1);
+    assert(cut_group.components[0].is_ghost());
+    std::cout << "Ghost confirmed in subject's components." << std::endl;
 
     // 4. Test CLEAN
     fs::Selector clean_sel("jot/clean");
@@ -45,7 +47,7 @@ int main() {
     Shape clean_res = vfs.read<Shape>(clean_sel.with_output("$out"));
     
     std::cout << "Clean Result Components: " << clean_res.components.size() << std::endl;
-    assert(clean_res.components.size() == 1);
+    assert(clean_res.components.size() == 0);
     std::cout << "Clean confirmed (ghost removed)." << std::endl;
 
     // 5. Test EXTRUDE (should ignore ghost)

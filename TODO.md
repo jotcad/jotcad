@@ -1,11 +1,11 @@
 # Project TODO List
 
 ## Compiler & Language
-- [ ] **Fix Selector Injection in Typed Consumers**: Update `JotNumbersConsumer`, `JotStringsConsumer`, and others to allow "mixed" pools. Currently, these consumers perform eager type-checking on evaluated values and fail if they encounter a `Selector` (e.g., from `range()`) instead of a raw primitive. They should instead:
+- [x] **Fix Selector Injection in Typed Consumers**: Update `JotNumbersConsumer`, `JotStringsConsumer`, and others to allow "mixed" pools. Currently, these consumers perform eager type-checking on evaluated values and fail if they encounter a `Selector` (e.g., from `range()`) instead of a raw primitive. They should instead:
     - Recognize `Selector` objects as valid "recipes" for the expected type.
     - Check the Selector's output port type using `_getSelectorOutputType`.
     - Allow the VFS to handle the final flattening/resolution.
-- [ ] **Refactor `_isJotNumber/String` for Late-Binding**: These guards currently return `false` for Selectors. They need to be updated to support symbolic or selector-based identity.
+- [x] **Refactor `_isJotNumber/String` for Late-Binding**: These guards currently return `false` for Selectors. They need to be updated to support symbolic or selector-based identity.
 
 ## Geometry Kernels
 - [ ] **Standardize Plural Producers**: Audit C++ operators to ensure they correctly declare `jot:numbers` or `jot:strings` in their output schema if they return sequences.
