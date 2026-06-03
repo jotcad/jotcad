@@ -104,7 +104,15 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
   const walk = async (s) => {
     const worldMat = decodeTf(s.tf);
     const shapeColor = toColor(s.tags);
-    const isGap = s.tags?.gap || s.tags?.tags?.gap;
+    
+    // Ghost Workflow Support
+    const role = s.tags?.role || s.tags?.tags?.role;
+    const isGhost = role === 'ghost' || role === 'gap';
+    const tagOpacity = s.tags?.opacity !== undefined ? parseFloat(s.tags.opacity) : 
+                       (s.tags?.tags?.opacity !== undefined ? parseFloat(s.tags.tags.opacity) : 1.0);
+    const opacity = isGhost ? 0.3 : tagOpacity;
+    const transparent = opacity < 1.0;
+
     if (s.geometry) {
       const text = await assets.getText(s.geometry);
       if (text) {
@@ -119,14 +127,14 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
 
             const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ 
                 color: shapeColor, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
-                transparent: !!isGap, opacity: isGap ? 0.3 : 1.0 
+                transparent, opacity 
             }));
             mesh.userData.isJot = true;
             mesh.applyMatrix4(worldMat); scene.add(mesh);
             
             const edgesGeo = new THREE.EdgesGeometry(g, edgeThreshold);
             const edgesLine = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ 
-                color: 0xffffff, transparent: true, opacity: isGap ? 0.2 : 0.5 
+                color: 0xffffff, transparent: true, opacity: isGhost ? 0.2 : 0.5 
             }));
             edgesLine.userData.isJot = true;
             edgesLine.applyMatrix4(worldMat); scene.add(edgesLine);
@@ -143,7 +151,7 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
                 const g = new THREE.BufferGeometry();
                 g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
                 const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ 
-                    color: shapeColor, linewidth: 2, transparent: !!isGap, opacity: isGap ? 0.3 : 1.0 
+                    color: shapeColor, linewidth: 2, transparent, opacity
                 }));
                 line.userData.isJot = true;
                 line.applyMatrix4(worldMat); 
