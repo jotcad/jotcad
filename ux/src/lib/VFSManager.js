@@ -9,6 +9,7 @@ import { MeshLink } from '../../../fs/src/mesh_link.js';
 import { registerJotProvider } from '../../../jot/src/index.js';
 import { Worksheet } from './vfs/Worksheet';
 import { registerUtilityOps } from './vfs/UtilityOps';
+import { registerTextureProvider } from './vfs/TextureProvider';
 import { JotRegistry } from './vfs/JotRegistry';
 import {
   setGraph, setSchemas, setPulse, setMeshTopology,
@@ -158,6 +159,7 @@ export const vfsActions = {
 
     // 2. Register Utility Ops
     registerUtilityOps(vfs);
+    registerTextureProvider(vfs, mesh);
 
     // 3. Event Handling
     vfs.events.on('state', async (event) => {

@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 export const normalizeId = (id) => {
   if (typeof id === 'string') return id;
   if (id && typeof id === 'object' && id.path) {
@@ -6,6 +8,16 @@ export const normalizeId = (id) => {
     return id.path + '?' + JSON.stringify(sortedParams);
   }
   return JSON.stringify(id);
+};
+
+export const MATERIAL_PALETTE = {
+  'grid': 'https://threejs.org/examples/textures/uv_grid_opengl.jpg',
+  'steel': 'https://threejs.org/examples/textures/terrain/grasslight-big.jpg',
+  'wood': 'https://threejs.org/examples/textures/floors/FloorsCheckerboard_S_Diffuse.jpg',
+};
+
+export const registerMaterial = (name, urlOrCid) => {
+  MATERIAL_PALETTE[name] = urlOrCid;
 };
 
 export class JOTAssets {
@@ -37,6 +49,44 @@ export class JOTAssets {
         return text;
       }
     } catch (e) { console.warn('[JOTAssets] Resolution failed:', id, e); }
+    return null;
+  }
+  async getTexture(id) {
+    const resolvedId = MATERIAL_PALETTE[id] || id;
+    const cacheKey = normalizeId(resolvedId) + ':texture';
+    if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
+
+    // Support direct Web URLs
+    if (typeof resolvedId === 'string' && (resolvedId.startsWith('http') || resolvedId.startsWith('/'))) {
+      const loader = new THREE.TextureLoader();
+      try {
+        const texture = await new Promise((resolve, reject) => {
+          loader.load(resolvedId, resolve, undefined, reject);
+        });
+        this.cache.set(cacheKey, texture);
+        return texture;
+      } catch (e) {
+        console.warn('[JOTAssets] External texture load failed:', resolvedId, e);
+        return null;
+      }
+    }
+
+    if (!this.vfs) return null;
+    try {
+      const data = await blackboard.readCIDData(id);
+      if (data) {
+        const bytes = data instanceof Uint8Array ? data : new TextEncoder().encode(data);
+        const blob = new Blob([bytes]);
+        const url = URL.createObjectURL(blob);
+        const loader = new THREE.TextureLoader();
+        const texture = await new Promise((resolve, reject) => {
+          loader.load(url, resolve, undefined, reject);
+        });
+        URL.revokeObjectURL(url);
+        this.cache.set(cacheKey, texture);
+        return texture;
+      }
+    } catch (e) { console.warn('[JOTAssets] Texture resolution failed:', id, e); }
     return null;
   }
 }

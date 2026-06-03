@@ -6,6 +6,10 @@
 namespace jotcad {
 namespace geo {
 
+struct Vec2 {
+    double x, y;
+};
+
 struct Vec3 {
     double x, y, z;
     Vec3 operator-(const Vec3& other) const { return {x - other.x, y - other.y, z - other.z}; }

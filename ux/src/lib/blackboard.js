@@ -50,6 +50,8 @@ import {
   DEFAULT_CODE
 } from './state/Config.js';
 
+import { registerMaterial } from './render/AssetManager.js';
+
 console.log('[Boot] blackboard.js imports resolved.');
 
 export { vfs, DEFAULT_CODE };
@@ -89,6 +91,7 @@ export const blackboard = {
 
   // Actions
   ...editorActions,
+  registerMaterial,
   rename: windowActions.rename.bind(windowActions),
   discoverSchemas: vfsActions.discoverSchemas.bind(vfsActions),
   start: (bb) => vfsActions.start(bb || blackboard), 

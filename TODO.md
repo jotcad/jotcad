@@ -16,8 +16,8 @@
 - [ ] **Hitchhiker Grid Alignment**: Verify the overlay grid's scale and persistence as a reference in the WebGL renderer.
 
 ## Embedded (ESP32)
-- [x] **Initialize PlatformIO project**: Configured for ESP32 with C++17 and AsyncWebServer.
+- [x] **Initialize PlatformIO project**: Configured for ESP32 with C++17 and WebSockets.
 - [x] **Setup Simulation**: Verified local Wokwi simulation pipeline with `npm run test:pio`.
-- [ ] **Port VFS Core**: Implement `VFSNode` and `CID` logic for the ESP32 environment.
-- [ ] **Async Networking**: Implement mesh-compatible HTTP/WebSocket handlers using ESPAsyncWebServer.
-- [ ] **Flash Storage**: Implement persistent artifact storage using SPIFFS or LittleFS.
+- [ ] **Port VFS Core (DEFERRED)**: Implement `VFSNode` and `CID` logic for the ESP32 environment.
+- [ ] **Async Networking (DEFERRED)**: Implement mesh-compatible WebSocket handlers using `WebSockets` library.
+- [ ] **Flash Storage (DEFERRED)**: Implement persistent artifact storage using SPIFFS or LittleFS.

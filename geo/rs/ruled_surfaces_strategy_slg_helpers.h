@@ -10,15 +10,15 @@ inline std::pair<int, int> slg_index_to_node(NodeIndex index, int n) {
   return {index / n, index % n};
 }
 
-PolygonSoup reconstruct_triangulation_slg(
+inline PolygonSoup reconstruct_triangulation_slg(
     const PolygonalChain& p, const PolygonalChain& q,
     const std::vector<std::pair<NodeIndex, bool>>& path);
 
-std::vector<std::pair<PointCgal, PointCgal>> reconstruct_rulings_slg(
+inline std::vector<std::pair<PointCgal, PointCgal>> reconstruct_rulings_slg(
     const PolygonalChain& p, const PolygonalChain& q,
     const std::vector<std::pair<NodeIndex, bool>>& path);
 
-PolygonSoup reconstruct_triangulation_slg(
+inline PolygonSoup reconstruct_triangulation_slg(
     const PolygonalChain& p, const PolygonalChain& q,
     const std::vector<std::pair<NodeIndex, bool>>& path) {
   PolygonSoup soup;
@@ -46,7 +46,7 @@ PolygonSoup reconstruct_triangulation_slg(
   return soup;
 }
 
-std::vector<std::pair<PointCgal, PointCgal>> reconstruct_rulings_slg(
+inline std::vector<std::pair<PointCgal, PointCgal>> reconstruct_rulings_slg(
     const PolygonalChain& p, const PolygonalChain& q,
     const std::vector<std::pair<NodeIndex, bool>>& path) {
   std::vector<std::pair<PointCgal, PointCgal>> rulings;

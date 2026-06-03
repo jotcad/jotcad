@@ -3,29 +3,29 @@
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 
 echo "Building all tests..."
-make -C "$DIR" -j4 all
-
-# Find all executables in the bin directory
-TEST_BINS=$(find "$DIR/bin" -maxdepth 1 -type f -executable | sort)
+make -C "$DIR" all
 
 tests=0
 pass=0
 fail=0
 
-for b in $TEST_BINS; do
-    name=$(basename "$b")
-    # Skip cid_consistency_test as it's run separately or has different output
-    if [ "$name" == "cid_consistency_test" ]; then continue; fi
-
-    tests=$((tests + 1))
-    echo "[RUN] $name"
-    if "$b"; then
-        pass=$((pass + 1))
-    else
-        fail=$((fail + 1))
-        echo "✖ $name"
-    fi
-done
+# Query the combined test binary for the list of tests
+if [ -f "$DIR/bin/unit_tests" ]; then
+    TEST_NAMES=$("$DIR/bin/unit_tests" --list)
+    for name in $TEST_NAMES; do
+        tests=$((tests + 1))
+        echo "[RUN] $name"
+        if "$DIR/bin/unit_tests" "$name"; then
+            pass=$((pass + 1))
+        else
+            fail=$((fail + 1))
+            echo "✖ $name"
+        fi
+    done
+else
+    echo "Error: bin/unit_tests not found."
+    exit 1
+fi
 
 echo ""
 echo "ℹ tests $tests"

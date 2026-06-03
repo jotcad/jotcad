@@ -11,6 +11,7 @@
 #include "nth_op.h"
 #include "rotate_op.h"
 #include "color_op.h"
+#include "material_op.h"
 #include "group_op.h"
 #include "path_op.h"
 #include "corners_op.h"
@@ -78,6 +79,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     nth_init(vfs);
     rotate_init(vfs);
     color_init(vfs);
+    material_init(vfs);
     group_init(vfs);
     path_init(vfs);
     corners_init(vfs);

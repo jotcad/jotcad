@@ -105,6 +105,19 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
     const worldMat = decodeTf(s.tf);
     const shapeColor = toColor(s.tags);
     
+    // Material & Texture Support
+    const materialTag = s.tags?.material || s.tags?.tags?.material;
+    let texture = null;
+    if (materialTag && typeof materialTag === 'string') {
+        // Heuristic for CID: 64 hex chars or containing path separators
+        if (materialTag.length === 64 || materialTag.includes('/') || materialTag.includes('?')) {
+            texture = await assets.getTexture(materialTag);
+            if (texture) {
+                texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            }
+        }
+    }
+
     // Ghost Workflow Support
     const role = s.tags?.role || s.tags?.tags?.role;
     const isGhost = role === 'ghost' || role === 'gap';
@@ -125,8 +138,22 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             g.setIndex(triangles.flat());
             g.computeVertexNormals();
 
+            if (texture) {
+                // Simple box/planar projection for UVs if they are missing
+                const pos = vertices.flat();
+                const uvs = new Float32Array((pos.length / 3) * 2);
+                for (let i = 0; i < pos.length / 3; i++) {
+                    // Use a 100-unit scale for texture repeats
+                    uvs[i * 2] = pos[i * 3] / 100;
+                    uvs[i * 2 + 1] = pos[i * 3 + 1] / 100;
+                }
+                g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+            }
+
             const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ 
-                color: shapeColor, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
+                color: texture ? 0xffffff : shapeColor,
+                map: texture,
+                side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
                 transparent, opacity 
             }));
             mesh.userData.isJot = true;
