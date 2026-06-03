@@ -47,7 +47,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                points_boolean_test.cpp \
                lower_dim_boolean_test.cpp \
                ghost_test.cpp \
-               stamp_test.cpp
+               stamp_test.cpp \
+               simplify_test.cpp
 TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
 TEST_DEPS = $(TEST_BINS:=.d)
 

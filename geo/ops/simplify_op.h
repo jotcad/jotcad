@@ -52,18 +52,25 @@ struct SimplifyOp : P {
         InexactMesh::Property_map<edge_descriptor, bool> is_constrained = 
             imesh.add_property_map<edge_descriptor, bool>("e:is_constrained", false).first;
         
+        int constrained_count = 0;
         for(edge_descriptor e : imesh.edges()) {
             if(CGAL::is_border(e, imesh)) {
                 is_constrained[e] = true;
+                constrained_count++;
             } else {
                 auto h = imesh.halfedge(e);
                 auto p1 = imesh.point(imesh.source(h));
                 auto p2 = imesh.point(imesh.target(h));
                 auto p3 = imesh.point(imesh.target(imesh.next(h)));
                 auto p4 = imesh.point(imesh.target(imesh.next(imesh.opposite(h))));
-                double angle_rad = CGAL::to_double(CGAL::approximate_dihedral_angle(p1, p2, p3, p4));
-                if(std::abs(angle_rad) > threshold_tau * 2.0 * M_PI) {
+                
+                // CGAL::approximate_dihedral_angle returns degrees, where 180 is flat.
+                double angle_deg = CGAL::to_double(CGAL::approximate_dihedral_angle(p1, p2, p3, p4));
+                double deviation_deg = std::abs(180.0 - std::abs(angle_deg));
+                
+                if(deviation_deg > threshold_tau * 360.0) {
                     is_constrained[e] = true;
+                    constrained_count++;
                 }
             }
         }
