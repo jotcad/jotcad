@@ -8,8 +8,8 @@
 - [x] **Refactor `_isJotNumber/String` for Late-Binding**: These guards currently return `false` for Selectors. They need to be updated to support symbolic or selector-based identity.
 
 ## Geometry Kernels
-- [ ] **Standardize Plural Producers**: Audit C++ operators to ensure they correctly declare `jot:numbers` or `jot:strings` in their output schema if they return sequences.
-- [ ] **Verify `Simplify` Operator**: Create `geo/test/simplify_test.cpp` to verify topological integrity, volume stability, and sharp edge preservation under various reduction ratios.
+- [x] **Standardize Plural Producers**: Audit C++ operators and ensure metadata correctly declares `jot:numbers` or `jot:strings` in their output schema. (Hardened via `Processor::decode` automatic pluralization).
+- [x] **Verify `Simplify` Operator**: Resolved stalling issue (dihedral unit mismatch) and integrated `geo/test/simplify_test.cpp` to verify topological integrity and volume stability.
 
 ## Rendering & Visuals
 - [ ] **Visual Regression for Translucency**: Create a Puppeteer or PNG-based test that explicitly verifies alpha blending. It should check that back-to-front sorting works and that the Z-buffer isn't blocking fragments with alpha < 255.
