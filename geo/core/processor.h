@@ -18,6 +18,12 @@ struct is_optional : std::false_type {};
 template <typename T>
 struct is_optional<std::optional<T>> : std::true_type {};
 
+template <typename T>
+struct is_vector : std::false_type {};
+
+template <typename T>
+struct is_vector<std::vector<T>> : std::true_type {};
+
 /**
  * Processor: The schema-aware execution engine for JOT operators.
  */
@@ -128,27 +134,45 @@ struct Processor {
 
             try {
                 if constexpr (std::is_same_v<T, Shape>) {
-                    fs::VFSNode::VFSRequest vreq;
+                    if (val.is_array()) {
+                        // Automatic Collection: Wrap plural results into a group shape.
+                        std::vector<Shape> components;
+                        for (const auto& item : val) {
+                            if (item.is_string() && item.get<std::string>().size() == 64) {
+                                components.push_back(vfs->read<Shape>(fs::CID::from_json(item)));
+                            } else if (item.is_object() && item.contains("path")) {
+                                components.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
+                            } else {
+                                components.push_back(Shape::from_json(item));
+                            }
+                        }
+                        return Shape::group(components);
+                    }
                     if (val.is_string() && val.get<std::string>().size() == 64) {
-                        vreq.cid = val.get<std::string>();
-                        return vfs->read<Shape>(vreq);
+                        return vfs->read<Shape>(fs::CID::from_json(val));
                     }
                     if (val.is_object() && val.contains("path")) {
-                        vreq.selector = val.get<fs::Selector>();
-                        return vfs->read<Shape>(vreq);
+                        return vfs->read<Shape>(val.get<fs::Selector>());
                     }
                     return Shape::from_json(val);
                 } else if constexpr (std::is_same_v<T, std::vector<Shape>>) {
                     std::vector<Shape> results;
-                    if (!val.is_array()) throw std::runtime_error("Type must be an array for std::vector<Shape>");
+                    if (!val.is_array()) {
+                        // Automatic Pluralization: Treat a single shape as a sequence of one.
+                        if (val.is_string() && val.get<std::string>().size() == 64) {
+                            results.push_back(vfs->read<Shape>(fs::CID::from_json(val)));
+                        } else if (val.is_object() && val.contains("path")) {
+                            results.push_back(vfs->read<Shape>(val.get<fs::Selector>()));
+                        } else {
+                            results.push_back(Shape::from_json(val));
+                        }
+                        return results;
+                    }
                     for (const auto& item : val) {
-                        fs::VFSNode::VFSRequest vreq;
                         if (item.is_string() && item.get<std::string>().size() == 64) {
-                            vreq.cid = item.get<std::string>();
-                            results.push_back(vfs->read<Shape>(vreq));
+                            results.push_back(vfs->read<Shape>(fs::CID::from_json(item)));
                         } else if (item.is_object() && item.contains("path")) {
-                            vreq.selector = item.get<fs::Selector>();
-                            results.push_back(vfs->read<Shape>(vreq));
+                            results.push_back(vfs->read<Shape>(item.get<fs::Selector>()));
                         } else {
                             results.push_back(Shape::from_json(item));
                         }
@@ -161,6 +185,12 @@ struct Processor {
                     throw std::runtime_error("Type must be a Selector");
                 } else if constexpr (std::is_same_v<T, Interval>) {
                     return Interval::from_json(val);
+                } else if constexpr (is_vector<T>::value) {
+                    if (!val.is_array()) {
+                        // Automatic Pluralization: Wrap a singular value into a vector of one.
+                        return std::vector<typename T::value_type>{ val.get<typename T::value_type>() };
+                    }
+                    return val.get<T>();
                 } else {
                     return val.get<T>();
                 }
