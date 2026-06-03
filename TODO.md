@@ -12,7 +12,7 @@
 - [x] **Verify `Simplify` Operator**: Resolved stalling issue (dihedral unit mismatch) and integrated `geo/test/simplify_test.cpp` to verify topological integrity and volume stability.
 
 ## Rendering & Visuals
-- [ ] **Visual Regression for Translucency**: Create a Puppeteer or PNG-based test that explicitly verifies alpha blending. It should check that back-to-front sorting works and that the Z-buffer isn't blocking fragments with alpha < 255.
+- [x] **Visual Regression for Translucency**: Implemented `integration/puppeteer/translucency.test.js` and fixed `GeometryDecoder.js` to correctly honor the `ghost` role and `opacity` tags. Verified translucent overlap in standard cluster.
 - [ ] **Hitchhiker Grid Alignment**: Verify the overlay grid's scale and persistence as a reference in the WebGL renderer.
 
 ## Embedded (ESP32)
