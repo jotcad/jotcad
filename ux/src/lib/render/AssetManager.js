@@ -115,3 +115,34 @@ export class JOTAssets {
     return null;
   }
 }
+
+const DEFAULT_SKU_CATALOG = {
+  'plywood_3/4': { description: '3/4 inch Birch Plywood', price: '45.00', supplier: 'HomeDepot' },
+  'm3_bolt': { description: 'M3 x 10mm Hex Socket Cap Screw', price: '0.15', supplier: 'McMaster' },
+};
+
+const savedCatalog = typeof window !== 'undefined' ? Worksheet.get(Worksheet.TIERS.CONFIG, 'sku_catalog') : null;
+
+export const SKU_CATALOG = {
+  ...DEFAULT_SKU_CATALOG,
+  ...(savedCatalog || {})
+};
+
+const [skuCatalogSignal, setSkuCatalogSignal] = createSignal({ ...SKU_CATALOG });
+export { skuCatalogSignal };
+
+export const registerSku = (sku, metadata) => {
+  SKU_CATALOG[sku] = metadata;
+  setSkuCatalogSignal({ ...SKU_CATALOG });
+  if (typeof window !== 'undefined') {
+    Worksheet.save(Worksheet.TIERS.CONFIG, 'sku_catalog', SKU_CATALOG);
+  }
+};
+
+export const unregisterSku = (sku) => {
+  delete SKU_CATALOG[sku];
+  setSkuCatalogSignal({ ...SKU_CATALOG });
+  if (typeof window !== 'undefined') {
+    Worksheet.save(Worksheet.TIERS.CONFIG, 'sku_catalog', SKU_CATALOG);
+  }
+};
