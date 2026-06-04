@@ -635,6 +635,12 @@ ReliefMesh = Relief(Map, width=100, height=100, depth=5, base=2, resolution=256)
 ReliefMesh.stl("model.stl");
 ```
 
+### `Conform(target, direction=[0,0,0], offset=0.0)`
+Wraps or projects the subject geometry onto a target surface. 
+- If `direction` is `[0,0,0]`, it performs a **closest-point (shrink-wrap)** projection.
+- If a `direction` is provided, it performs a **directional (raycast)** projection.
+- `offset` specifies the distance to maintain from the target surface.
+
 ## 17. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
