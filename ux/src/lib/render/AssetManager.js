@@ -10,14 +10,39 @@ export const normalizeId = (id) => {
   return JSON.stringify(id);
 };
 
-export const MATERIAL_PALETTE = {
+import { createSignal } from 'solid-js';
+import { Worksheet } from '../vfs/Worksheet.js';
+
+const DEFAULT_MATERIAL_PALETTE = {
   'grid': 'https://threejs.org/examples/textures/uv_grid_opengl.jpg',
   'steel': 'https://threejs.org/examples/textures/terrain/grasslight-big.jpg',
   'wood': 'https://threejs.org/examples/textures/floors/FloorsCheckerboard_S_Diffuse.jpg',
 };
 
+const savedPalette = typeof window !== 'undefined' ? Worksheet.get(Worksheet.TIERS.CONFIG, 'material_palette') : null;
+
+export const MATERIAL_PALETTE = {
+  ...DEFAULT_MATERIAL_PALETTE,
+  ...(savedPalette || {})
+};
+
+const [paletteSignal, setPaletteSignal] = createSignal({ ...MATERIAL_PALETTE });
+export { paletteSignal };
+
 export const registerMaterial = (name, urlOrCid) => {
   MATERIAL_PALETTE[name] = urlOrCid;
+  setPaletteSignal({ ...MATERIAL_PALETTE });
+  if (typeof window !== 'undefined') {
+    Worksheet.save(Worksheet.TIERS.CONFIG, 'material_palette', MATERIAL_PALETTE);
+  }
+};
+
+export const unregisterMaterial = (name) => {
+  delete MATERIAL_PALETTE[name];
+  setPaletteSignal({ ...MATERIAL_PALETTE });
+  if (typeof window !== 'undefined') {
+    Worksheet.save(Worksheet.TIERS.CONFIG, 'material_palette', MATERIAL_PALETTE);
+  }
 };
 
 export class JOTAssets {
