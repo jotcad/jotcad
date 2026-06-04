@@ -109,12 +109,9 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
     const materialTag = s.tags?.material || s.tags?.tags?.material;
     let texture = null;
     if (materialTag && typeof materialTag === 'string') {
-        // Heuristic for CID: 64 hex chars or containing path separators
-        if (materialTag.length === 64 || materialTag.includes('/') || materialTag.includes('?')) {
-            texture = await assets.getTexture(materialTag);
-            if (texture) {
-                texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-            }
+        texture = await assets.getTexture(materialTag);
+        if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
         }
     }
 
