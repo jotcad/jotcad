@@ -11,7 +11,9 @@ import {
   AlertCircle, 
   CloudOff, 
   FileText, 
-  Box 
+  Box,
+  Palette,
+  Tag
 } from 'lucide-solid';
 import { IconShell } from './IconShell';
 import { blackboard } from '../../../lib/blackboard';
@@ -32,7 +34,9 @@ const ICON_MAP = {
     AlertCircle,
     CloudOff,
     FileText,
-    Box
+    Box,
+    Palette,
+    Tag
 };
 
 export const DesktopIcon = (props) => {

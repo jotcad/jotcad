@@ -16,6 +16,14 @@ canvas from screen-space application windows.
 -   `src/lib/vfs/Worksheet.js`: The unified persistence layer (LocalStorage +
     RemoteStorage) with 3-way merging.
 
+## System Applications
+
+JotCAD features dedicated system apps for managing metadata mappings:
+* **Materials Manager**: Maps geometric shape material names to visual texture paths. The C++ rasterizer queries these via `jot/texture`, which resolves dynamically against this palette at runtime.
+* **SKU Catalog**: Maps stock item SKU codes to physical descriptions, pricing, and suppliers. These are integrated with BOM/Metadata export tools.
+
+Both managers are fully integrated with the `Worksheet` persistence layer, saving state immediately on modification and synchronizing across devices. They can be accessed inline within the Settings App or launched in standalone windows from the Spatial Desktop icons.
+
 ## Interaction Model
 
 ### The Blackboard
