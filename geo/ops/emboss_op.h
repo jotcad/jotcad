@@ -9,7 +9,6 @@
 #include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
 #include <CGAL/Cartesian_converter.h>
-#include "../../fs/cpp/vendor/stb_image.h"
 #include <vector>
 #include <map>
 #include <set>
@@ -25,31 +24,18 @@ struct EmbossOp : P {
     static constexpr const char* path = "jot/emboss";
 
     typedef boolean::ExactMesh ExactMesh;
+    typedef CGAL::AABB_face_graph_triangle_primitive<ExactMesh> Primitive;
+    typedef CGAL::AABB_traits<EK, Primitive> Traits;
+    typedef CGAL::AABB_tree<Traits> Tree;
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& pattern, double depth = 1.0, double offset = 0.0, const nlohmann::json& image_identity = nlohmann::json()) {
-        if (!in.geometry.has_value() || !pattern.geometry.has_value()) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& pattern, const Shape& relief) {
+        if (!in.geometry.has_value() || !pattern.geometry.has_value() || !relief.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
 
         try {
-            // 1. Load depth map if provided
-            int img_w = 0, img_h = 0, img_chan = 0;
-            unsigned char* img_data = nullptr;
-            if (!image_identity.is_null() && !image_identity.empty()) {
-                try {
-                    fs::Selector img_sel = image_identity.get<fs::Selector>();
-                    if (img_sel.output.empty()) img_sel = img_sel.with_output("$out");
-                    std::vector<uint8_t> img_bytes = vfs->read<std::vector<uint8_t>>(img_sel);
-                    if (!img_bytes.empty()) {
-                        img_data = stbi_load_from_memory(img_bytes.data(), (int)img_bytes.size(), &img_w, &img_h, &img_chan, 3);
-                    }
-                } catch (...) {
-                    // Ignore image failure and fallback to constant depth
-                }
-            }
-
-            // 2. Read target geometry and convert to ExactMesh
+            // 1. Read target and relief geometry, convert to ExactMesh
             Geometry target_geo = vfs->read<Geometry>(in.geometry.value());
             ExactMesh target_mesh = boolean::Engine::geometry_to_mesh(target_geo);
             
@@ -58,35 +44,37 @@ struct EmbossOp : P {
                 target_mesh.point(v) = in.tf.transform(target_mesh.point(v));
             }
 
-            // 3. Collect pattern nodes and build combined column cutter mesh
+            Geometry relief_geo = vfs->read<Geometry>(relief.geometry.value());
+
+            // 2. Collect pattern nodes and build combined column cutter mesh
             std::vector<boolean::Engine::ToolNode> pattern_nodes;
             boolean::Engine::collect_tool_geometry(vfs, pattern, Matrix::identity(), pattern_nodes);
 
-            ExactMesh cutter_mesh;
-            
-            struct NodeBounds {
-                double x_min, x_max, y_min, y_max;
-                double dx, dy;
+            struct NodeRelief {
+                std::unique_ptr<ExactMesh> mesh;
+                std::unique_ptr<Tree> tree;
             };
-            std::vector<NodeBounds> node_bounds_list;
+            std::vector<NodeRelief> node_reliefs;
 
             for (const auto& node : pattern_nodes) {
-                // Determine bounding box of pattern in its local plane space
-                double x_min = 1e18, x_max = -1e18, y_min = 1e18, y_max = -1e18;
-                for (const auto& v : node.geo.vertices) {
-                    double vx = CGAL::to_double(v.x);
-                    double vy = CGAL::to_double(v.y);
-                    if (vx < x_min) x_min = vx;
-                    if (vx > x_max) x_max = vx;
-                    if (vy < y_min) y_min = vy;
-                    if (vy > y_max) y_max = vy;
+                auto r_mesh = std::make_unique<ExactMesh>(boolean::Engine::geometry_to_mesh(relief_geo));
+                
+                // Transform relief mesh from its local space to the pattern node's local space
+                Matrix T_relief_to_pattern = node.world_tf.inverse() * relief.tf;
+                for (auto v : r_mesh->vertices()) {
+                    r_mesh->point(v) = T_relief_to_pattern.transform(r_mesh->point(v));
                 }
-                double dx = x_max - x_min;
-                double dy = y_max - y_min;
-                if (dx <= 0) dx = 1.0;
-                if (dy <= 0) dy = 1.0;
-                node_bounds_list.push_back({x_min, x_max, y_min, y_max, dx, dy});
 
+                auto tree_ptr = std::make_unique<Tree>(faces(*r_mesh).first, faces(*r_mesh).second, *r_mesh);
+                tree_ptr->build();
+                tree_ptr->accelerate_distance_queries();
+                
+                node_reliefs.push_back({std::move(r_mesh), std::move(tree_ptr)});
+            }
+
+            ExactMesh cutter_mesh;
+
+            for (const auto& node : pattern_nodes) {
                 // Construct open pattern mesh
                 ExactMesh pattern_mesh = boolean::Engine::geometry_to_mesh(node.geo);
 
@@ -146,13 +134,13 @@ struct EmbossOp : P {
                 }
             }
 
-            // 4. Split target_mesh with cutter_mesh
+            // 3. Split target_mesh with cutter_mesh
             CGAL::Polygon_mesh_processing::split(target_mesh, cutter_mesh);
 
-            // 5. Build Side_of_triangle_mesh to check inside/outside
+            // 4. Build Side_of_triangle_mesh to check inside/outside
             CGAL::Side_of_triangle_mesh<ExactMesh, EK> inside_check(cutter_mesh);
 
-            // 6. Classify target_mesh faces
+            // 5. Classify target_mesh faces
             std::vector<ExactMesh::Face_index> inside_faces;
             std::vector<ExactMesh::Face_index> outside_faces;
             std::set<ExactMesh::Face_index> inside_set;
@@ -172,13 +160,11 @@ struct EmbossOp : P {
             }
 
             if (inside_faces.empty()) {
-                // Fallback if no intersection
                 vfs->write(fulfilling.with_output("$out"), in);
-                if (img_data) stbi_image_free(img_data);
                 return;
             }
 
-            // 7. Find boundary halfedges between inside and outside faces
+            // 6. Find boundary halfedges between inside and outside faces
             std::vector<ExactMesh::Halfedge_index> boundary_halfedges;
             for (auto f : inside_faces) {
                 auto h = target_mesh.halfedge(f);
@@ -193,7 +179,7 @@ struct EmbossOp : P {
                 } while (cur != h);
             }
 
-            // 8. Create the result mesh
+            // 7. Create the result mesh
             ExactMesh result_mesh;
             std::map<ExactMesh::Vertex_index, ExactMesh::Vertex_index> old_to_new_outside;
             std::map<ExactMesh::Vertex_index, ExactMesh::Vertex_index> old_to_new_inside;
@@ -211,7 +197,6 @@ struct EmbossOp : P {
                 bool is_used_outside = false;
                 bool is_used_inside = false;
                 
-                // Inspect adjacent faces
                 auto h = target_mesh.halfedge(v);
                 if (h != ExactMesh::null_halfedge()) {
                     auto cur = h;
@@ -238,48 +223,50 @@ struct EmbossOp : P {
                     double len = std::sqrt(nx*nx + ny*ny + nz*nz);
                     if (len > 1e-9) { nx /= len; ny /= len; nz /= len; }
 
-                    // Sample depth map if image exists
-                    double intensity = 1.0;
-                    if (img_data) {
-                        double best_dist = 1e18;
-                        int best_node = 0;
-                        EK::Point_3 best_local_p = p;
-                        
-                        for (size_t i = 0; i < pattern_nodes.size(); ++i) {
-                            auto p_local = pattern_nodes[i].world_tf.inverse().transform(p);
-                            double dist_to_center = std::sqrt(std::pow(CGAL::to_double(p_local.x()), 2) + std::pow(CGAL::to_double(p_local.y()), 2));
-                            if (dist_to_center < best_dist) {
-                                best_dist = dist_to_center;
-                                best_node = (int)i;
-                                best_local_p = p_local;
-                            }
+                    // Find closest pattern node for local direction
+                    double best_dist = 1e18;
+                    size_t best_node = 0;
+                    for (size_t i = 0; i < pattern_nodes.size(); ++i) {
+                        auto p_local = pattern_nodes[i].world_tf.inverse().transform(p);
+                        double dist_to_center = std::sqrt(std::pow(CGAL::to_double(p_local.x()), 2) + std::pow(CGAL::to_double(p_local.y()), 2));
+                        if (dist_to_center < best_dist) {
+                            best_dist = dist_to_center;
+                            best_node = i;
                         }
-
-                        const auto& bounds = node_bounds_list[best_node];
-                        double u = (CGAL::to_double(best_local_p.x()) - bounds.x_min) / bounds.dx;
-                        double v = (CGAL::to_double(best_local_p.y()) - bounds.y_min) / bounds.dy;
-                        u = std::clamp(u, 0.0, 1.0);
-                        v = std::clamp(v, 0.0, 1.0);
-
-                        int px = std::clamp((int)(u * (img_w - 1)), 0, img_w - 1);
-                        int py = std::clamp((int)(v * (img_h - 1)), 0, img_h - 1);
-                        int pixel_idx = (px + py * img_w) * 3;
-                        intensity = (0.299 * img_data[pixel_idx] + 0.587 * img_data[pixel_idx+1] + 0.114 * img_data[pixel_idx+2]) / 255.0;
                     }
 
-                    double disp = offset + intensity * depth;
+                    // Project point to local space of the best pattern node
+                    EK::Point_3 p_local = pattern_nodes[best_node].world_tf.inverse().transform(p);
+
+                    // Construct ray in the local space of the pattern node pointing downward along local Z axis
+                    EK::Ray_3 ray(EK::Point_3(p_local.x(), p_local.y(), EK::FT(10000.0)), EK::Vector_3(0, 0, -1));
+
+                    std::vector<typename Tree::Intersection_and_primitive_id<EK::Ray_3>::Type> intersections;
+                    node_reliefs[best_node].tree->all_intersections(ray, std::back_inserter(intersections));
+
+                    double max_z = -1e18;
+                    bool hit = false;
+                    for (const auto& inter : intersections) {
+                        if (const EK::Point_3* pi = std::get_if<EK::Point_3>(&inter.first)) {
+                            double z_val = CGAL::to_double(pi->z());
+                            if (z_val > max_z) {
+                                max_z = z_val;
+                                hit = true;
+                            }
+                        }
+                    }
+                    double height_val = hit ? max_z : 0.0;
+
                     EK::Point_3 displaced_p(
-                        p.x() + EK::FT(nx * disp),
-                        p.y() + EK::FT(ny * disp),
-                        p.z() + EK::FT(nz * disp)
+                        p.x() + EK::FT(nx * height_val),
+                        p.y() + EK::FT(ny * height_val),
+                        p.z() + EK::FT(nz * height_val)
                     );
                     old_to_new_inside[v] = result_mesh.add_vertex(displaced_p);
                 }
             }
 
-            if (img_data) stbi_image_free(img_data);
-
-            // 9. Add outside faces to result
+            // 8. Add outside faces to result
             for (auto f : outside_faces) {
                 std::vector<ExactMesh::Vertex_index> f_vs;
                 auto h = target_mesh.halfedge(f);
@@ -291,7 +278,7 @@ struct EmbossOp : P {
                 result_mesh.add_face(f_vs);
             }
 
-            // 10. Add inside faces to result
+            // 9. Add inside faces to result
             for (auto f : inside_faces) {
                 std::vector<ExactMesh::Vertex_index> f_vs;
                 auto h = target_mesh.halfedge(f);
@@ -303,7 +290,7 @@ struct EmbossOp : P {
                 result_mesh.add_face(f_vs);
             }
 
-            // 11. Add side walls connecting outside and inside boundaries
+            // 10. Add side walls connecting outside and inside boundaries
             for (auto h : boundary_halfedges) {
                 auto vs = target_mesh.source(h);
                 auto vt = target_mesh.target(h);
@@ -317,7 +304,7 @@ struct EmbossOp : P {
                 result_mesh.add_face(os, it, is);
             }
 
-            // 12. Convert back to local space using in.tf.inverse()
+            // 11. Convert back to local space using in.tf.inverse()
             Matrix world_to_local = in.tf.inverse();
             for (auto v : result_mesh.vertices()) {
                 result_mesh.point(v) = world_to_local.transform(result_mesh.point(v));
@@ -333,23 +320,22 @@ struct EmbossOp : P {
         }
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "pattern", "depth", "offset", "image"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "pattern", "relief"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/emboss"},
-            {"inputs", {{"$in", {{"type", "jot:shape"}}}, {"pattern", {{"type", "jot:shape"}}}}},
-            {"arguments", nlohmann::json::array({
-                {{"name", "depth"}, {"type", "jot:number"}, {"default", 1.0}},
-                {{"name", "offset"}, {"type", "jot:number"}, {"default", 0.0}},
-                {{"name", "image"}, {"type", "jot:image"}, {"default", nullptr}}
-            })},
+            {"inputs", {
+                {"$in", {{"type", "jot:shape"}}},
+                {"pattern", {{"type", "jot:shape"}}},
+                {"relief", {{"type", "jot:shape"}}}
+            }},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
 };
 
 inline void emboss_init(fs::VFSNode* vfs) {
-    Processor::register_op<EmbossOp<>, Shape, Shape, double, double, nlohmann::json>(vfs, "jot/emboss");
+    Processor::register_op<EmbossOp<>, Shape, Shape, Shape>(vfs, "jot/emboss");
 }
 
 } // namespace geo
