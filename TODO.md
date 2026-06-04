@@ -13,7 +13,15 @@
 
 ## Rendering & Visuals
 - [x] **Visual Regression for Translucency**: Implemented `integration/puppeteer/translucency.test.js` and fixed `GeometryDecoder.js` to correctly honor the `ghost` role and `opacity` tags. Verified translucent overlap in standard cluster.
-- [ ] **Hitchhiker Grid Alignment**: Verify the overlay grid's scale and persistence as a reference in the WebGL renderer.
+- [ ] **Hitchhiker Grid Alignment**: Implement a screen-aligned, scale-invariant overlay grid that subdivides on zoom (HUD-style).
+    - [ ] Coordinate Sync: Ensure `[0,0,0]` alignment during camera pan/zoom.
+    - [ ] Dynamic Subdivision: Line density adjusts based on zoom power-of-10.
+    - [ ] Orientation Cues: Visual indicator for workplane alignment (XY/XZ/YZ).
+
+## CAD Features & BOM
+- [x] **Conformal Wrapping**: Implemented `jot/conform` for wrapping geometry onto curved surfaces.
+- [x] **BOM Tagging Convention**: Standardized `provenance` (unique) and `sku` (non-unique) tags for physical stock tracking.
+- [ ] **BOM Report Generator**: Implement a JS-side utility to traverse a shape hierarchy and generate a formatted CSV/JSON Bill of Materials.
 
 ## Embedded (ESP32)
 - [x] **Initialize PlatformIO project**: Configured for ESP32 with C++17 and WebSockets.
