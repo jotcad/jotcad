@@ -51,7 +51,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                ghost_test.cpp \
                stamp_test.cpp \
                material_test.cpp \
-               simplify_test.cpp
+               simplify_test.cpp \
+               relief_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))

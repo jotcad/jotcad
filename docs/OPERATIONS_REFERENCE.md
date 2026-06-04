@@ -612,6 +612,29 @@ Vector = Trace(Photo, colors=12, smooth=2.0);
 Vector.on("#bcd3ee").ez(5);
 ```
 
+### `Relief(image, width=10.0, height=10.0, depth=2.0, base=1.0, resolution=128)`
+Generates a 3D relief mesh from a 2D grayscale/bump map image.
+
+- **`image`**: An `Image()` object or direct URL to a bitmap.
+- **`width`**: Physical target width of the relief shape along the X-axis.
+- **`height`**: Physical target height of the relief shape along the Y-axis.
+- **`depth`**: Maximum extrusion height (along the Z-axis) corresponding to white pixels.
+- **`base`**: Thickness of the base bottom plate (below the heightmap surface).
+- **`resolution`**: The maximum sampling grid resolution (clamped to the image dimension). Controls triangle density to keep computations fast.
+- **Solid Closure**: Automatically seals the mesh by adding a flat bottom plane ($Z = 0.0$) and vertical side-wall skirting to produce a watertight manifold suitable for 3D printing.
+
+#### Example
+```js
+// Load heightmap
+Map = Image("heightmap.png");
+
+// Generate a 100x100mm relief, 5mm max displacement, with a 2mm base
+ReliefMesh = Relief(Map, width=100, height=100, depth=5, base=2, resolution=256);
+
+// Export to STL
+ReliefMesh.stl("model.stl");
+```
+
 ## 17. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).

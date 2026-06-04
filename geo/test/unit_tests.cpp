@@ -41,6 +41,7 @@
 #include "pdf_op.h"
 #include "stl_op.h"
 #include "png_op.h"
+#include "relief_op.h"
 #include "rule_op.h"
 #include "move_op.h"
 #include "fill_op.h"

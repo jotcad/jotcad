@@ -27,6 +27,7 @@
 #include "pdf_op.h"
 #include "stl_op.h"
 #include "png_op.h"
+#include "relief_op.h"
 #include "rule_op.h"
 #include "move_op.h"
 #include "fill_op.h"
@@ -95,6 +96,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     pdf_init(vfs);
     stl_init(vfs);
     png_init(vfs);
+    relief_init(vfs);
     rule_init(vfs);
     move_init(vfs);
     fill_init(vfs);
