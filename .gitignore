@@ -69,3 +69,4 @@ ux/dist/
 
 # Ignore build-generated test run header
 geo/test/unit_tests_run.h
+.vfs_test_storage*/
