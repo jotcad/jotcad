@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { activateViewport, captureSnapshot, createLabel } from '../../lib/render/SharedRenderer';
 import { renderJotToScene } from '../../lib/render/GeometryDecoder';
 import { vfs } from '../../lib/blackboard';
+import { viewportSettings } from '../../lib/state/SystemState';
 
 export const Viewport = (props) => {
   let containerRef;
@@ -88,6 +89,8 @@ export const Viewport = (props) => {
     });
     toRemove.forEach(obj => scene.remove(obj));
 
+    const showGrid = viewportSettings().hitchhikerGrid;
+
     // 2. Calculate optimal grid size (nearest 100 to keep 100mm marks aligned)
     const size = Math.ceil(Math.max(maxPos.x, maxPos.y, 100) / 100) * 100;
 
@@ -101,6 +104,7 @@ export const Viewport = (props) => {
     minorGrid.material.depthWrite = false;
     minorGrid.renderOrder = 1000;
     minorGrid.userData.isSystem = true;
+    minorGrid.visible = showGrid;
     scene.add(minorGrid);
 
     // Major Grid (100mm / 10cm) - Color Coded Cyan
@@ -113,6 +117,7 @@ export const Viewport = (props) => {
     majorGrid.material.depthWrite = false;
     majorGrid.renderOrder = 1001;
     majorGrid.userData.isSystem = true;
+    majorGrid.visible = showGrid;
     scene.add(majorGrid);
 
     // Labels at 10mm marks
@@ -125,6 +130,7 @@ export const Viewport = (props) => {
       xLabel.material.depthTest = false;
       xLabel.renderOrder = 1002;
       xLabel.userData.isSystem = true;
+      xLabel.visible = showGrid;
       scene.add(xLabel);
 
       const yLabel = createLabel(i.toString(), color, isMajor ? 12 : 10);
@@ -132,6 +138,7 @@ export const Viewport = (props) => {
       yLabel.material.depthTest = false;
       yLabel.renderOrder = 1002;
       yLabel.userData.isSystem = true;
+      yLabel.visible = showGrid;
       scene.add(yLabel);
     }
   };
@@ -228,6 +235,17 @@ export const Viewport = (props) => {
        const height = rect.height || 200;
        camera.aspect = width / height;
        camera.updateProjectionMatrix();
+    }
+  });
+
+  createEffect(() => {
+    const showGrid = viewportSettings().hitchhikerGrid;
+    if (scene) {
+        scene.traverse(child => {
+            if (child.userData.isSystem && (child.type === 'GridHelper' || child.type === 'Sprite')) {
+                child.visible = showGrid;
+            }
+        });
     }
   });
 

@@ -8,6 +8,10 @@ export const [isGesturing, setIsGesturing] = createSignal(false);
 export const [gestureOwner, setGestureOwner] = createSignal(null); 
 export const [error, setError] = createSignal(null);
 
+export const [viewportSettings, setViewportSettings] = createSignal({
+  hitchhikerGrid: false
+});
+
 export const initAppState = () => {
   logActions.initInterception();
   initDesktopState();
