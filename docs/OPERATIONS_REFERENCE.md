@@ -641,6 +641,20 @@ Wraps or projects the subject geometry onto a target surface.
 - If a `direction` is provided, it performs a **directional (raycast)** projection.
 - `offset` specifies the distance to maintain from the target surface.
 
+### `emboss(pattern, depth=1.0, offset=0.0, image=null)`
+Topologically embosses or debosses a pattern onto the subject's surface using corefinement.
+
+- **`pattern`**: The 2D or 3D shape pattern to emboss.
+- **`depth`**: The height of the emboss (or depth of deboss if negative) along the local surface normal.
+- **`offset`**: Offset shift above or below the surface before applying the emboss.
+- **`image`**: An optional grayscale depth-map image (`Image()`). If provided, deforms the embossed vertices locally according to pixel values, enabling 3D textures.
+
+#### Example
+```js
+// Planar projection emboss with constant depth on a Box surface
+Box(30, 30, 10).emboss(Disk(10), depth=2.0, offset=-0.1);
+```
+
 ## 17. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).

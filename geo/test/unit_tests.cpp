@@ -33,6 +33,7 @@
 #include "at_op.h"
 #include "cut_op.h"
 #include "stamp_op.h"
+#include "emboss_op.h"
 #include "join_op.h"
 #include "clip_op.h"
 #include "fuse_op.h"
