@@ -591,12 +591,13 @@ Downloads and validates a raster image (PNG/JPG) from a remote URL.
 - **Security**: Validates file headers (magic numbers) to ensure it is a valid image before ingestion.
 - **VFS Integration**: Images are automatically cached by the VFS; subsequent uses of the same URL are instant.
 
-### `Trace(image, colors=8, smooth=1.0)`
+### `Trace(image, colors=8, smooth=0.0, minArea=25.0)`
 Converts a raster image into vector geometry using automatic color quantization.
 
 - **`image`**: An `Image()` object or direct URL to a bitmap.
 - **`colors`**: Number of color buckets to automatically identify using K-Means clustering.
-- **`smooth`**: Simplification tolerance (Douglas-Peucker). Higher values result in fewer vertices and smoother curves.
+- **`smooth`**: Simplification tolerance (Douglas-Peucker). Higher values result in fewer vertices and smoother curves (default: 0.0).
+- **`minArea`**: Minimum area in pixels (default: 25.0). Small component regions with area less than `minArea` are merged into their closest HSV color neighbor.
 - **HSV Quantization**: Automatically identifies the most dominant colors in the image using HSV space, preserving color separation across varying brightness.
 - **Boundary Injection**: Automatically pads image edges to ensure large regions (like the sky) are correctly closed into manifold loops.
 - **Despeckling**: Includes a noise-reduction pass and area-based filtering to eliminate small, jagged "speckle" polygons.

@@ -266,5 +266,33 @@ test('JotCompiler Argument Mapping', async (t) => {
     assert.equal(pluralZRes[0].selector.path, 'jot/Z');
     assert.deepEqual(pluralZRes[0].selector.parameters.offset, [10, 15, 20]);
   });
+
+  await t.test('Fallback Consumer for Unregistered Custom Types', async () => {
+    compiler.registerOperator('ReliefTest', {
+      path: 'jot/ReliefTest',
+      schema: {
+        arguments: [
+          { name: 'image', type: 'jot:image' },
+          { name: 'width', type: 'jot:number', default: 10.0 }
+        ],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    compiler.registerOperator('ImageTest', {
+      path: 'jot/ImageTest',
+      schema: {
+        arguments: [{ name: 'url', type: 'jot:string' }],
+        outputs: { "$out": { type: "jot:image" } }
+      }
+    });
+
+    const res = await compiler.evaluate(parser.parse('ReliefTest(ImageTest("http://example.com/map.png"), 15.0) -> $out'), {}, defaultSchema);
+    const resolved = res[0].selector;
+    assert.equal(resolved.path, 'jot/ReliefTest');
+    assert.equal(resolved.parameters.image.path, 'jot/ImageTest');
+    assert.equal(resolved.parameters.image.parameters.url, 'http://example.com/map.png');
+    assert.equal(resolved.parameters.width, 15.0);
+  });
 });
 

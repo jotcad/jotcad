@@ -98,42 +98,100 @@ public:
     struct PointKey { 
         long long x, y; 
         bool operator<(const PointKey& o) const { if (x != o.x) return x < o.x; return y < o.y; }
+        bool operator==(const PointKey& o) const { return x == o.x && y == o.y; }
+        bool operator!=(const PointKey& o) const { return !(*this == o); }
     };
 
     static std::vector<Polygon> weld_segments(const std::vector<std::pair<EK::Point_2, EK::Point_2>>& segments, double tolerance = 0.5, double min_area = 16.0) {
         if (segments.empty()) return {};
         auto t_start = std::chrono::steady_clock::now();
 
-        std::map<PointKey, std::vector<EK::Point_2>> adj;
         auto to_key = [](const EK::Point_2& v) { 
             return PointKey{ (long long)std::round(CGAL::to_double(v.x()) * 1000000), 
                              (long long)std::round(CGAL::to_double(v.y()) * 1000000) }; 
         };
+
+        struct TrackedSegment {
+            EK::Point_2 p1;
+            EK::Point_2 p2;
+            bool used = false;
+        };
+
+        std::vector<TrackedSegment> track_segs;
+        track_segs.reserve(segments.size());
         for (const auto& seg : segments) {
-            adj[to_key(seg.first)].push_back(seg.second);
-            adj[to_key(seg.second)].push_back(seg.first);
+            track_segs.push_back({seg.first, seg.second, false});
+        }
+
+        std::map<PointKey, std::vector<size_t>> adj;
+        for (size_t i = 0; i < track_segs.size(); ++i) {
+            adj[to_key(track_segs[i].p1)].push_back(i);
+            adj[to_key(track_segs[i].p2)].push_back(i);
         }
 
         auto t_adj = std::chrono::steady_clock::now();
         std::vector<Polygon> polygons;
-        std::map<PointKey, bool> visited;
 
-        for (auto const& [key, neighbors] : adj) {
-            if (visited[key] || neighbors.empty()) continue;
+        for (size_t i = 0; i < track_segs.size(); ++i) {
+            if (track_segs[i].used) continue;
 
             std::vector<EK::Point_2> loop;
-            PointKey curr_key = key;
-            loop.push_back(EK::Point_2(FT(key.x) / 1000000, FT(key.y) / 1000000));
-            visited[curr_key] = true;
+            std::map<PointKey, size_t> loop_indices;
+
+            track_segs[i].used = true;
+            EK::Point_2 start_pt = track_segs[i].p1;
+            EK::Point_2 curr_pt = track_segs[i].p2;
+            
+            loop.push_back(start_pt);
+            loop_indices[to_key(start_pt)] = 0;
+
+            loop.push_back(curr_pt);
+            loop_indices[to_key(curr_pt)] = 1;
+
+            PointKey start_key = to_key(start_pt);
 
             while (true) {
+                PointKey curr_key = to_key(curr_pt);
+                if (curr_key == start_key) {
+                    break;
+                }
+
                 bool found = false;
-                for (const auto& next_v : adj[curr_key]) {
-                    PointKey next_key = to_key(next_v);
-                    if (!visited[next_key]) {
-                        visited[next_key] = true;
-                        curr_key = next_key;
-                        loop.push_back(next_v);
+                const auto& neighbors = adj[curr_key];
+                for (size_t seg_idx : neighbors) {
+                    if (!track_segs[seg_idx].used) {
+                        track_segs[seg_idx].used = true;
+                        EK::Point_2 next_pt = (to_key(track_segs[seg_idx].p1) == curr_key) ? track_segs[seg_idx].p2 : track_segs[seg_idx].p1;
+                        PointKey next_key = to_key(next_pt);
+                        
+                        if (next_key != start_key) {
+                            auto it = loop_indices.find(next_key);
+                            if (it != loop_indices.end()) {
+                                size_t cycle_start_idx = it->second;
+                                std::vector<EK::Point_2> sub_cycle;
+                                sub_cycle.reserve(loop.size() - cycle_start_idx);
+                                for (size_t k = cycle_start_idx; k < loop.size(); ++k) {
+                                    sub_cycle.push_back(loop[k]);
+                                    loop_indices.erase(to_key(loop[k]));
+                                }
+                                
+                                if (sub_cycle.size() >= 3) {
+                                    std::vector<EK::Point_2> simplified = simplify_douglas_peucker(sub_cycle, tolerance);
+                                    if (simplified.size() >= 3) {
+                                        Polygon poly;
+                                        for (const auto& p : simplified) poly.push_back(p);
+                                        if (poly.is_simple() && std::abs(CGAL::to_double(poly.area())) > min_area) {
+                                            polygons.push_back(poly);
+                                        }
+                                    }
+                                }
+                                loop.resize(cycle_start_idx);
+                            }
+                        }
+
+                        curr_pt = next_pt;
+                        loop.push_back(curr_pt);
+                        loop_indices[to_key(curr_pt)] = loop.size() - 1;
                         found = true;
                         break;
                     }
@@ -142,15 +200,22 @@ public:
             }
 
             if (loop.size() >= 3) {
-                std::vector<EK::Point_2> simplified = simplify_douglas_peucker(loop, tolerance);
-                if (simplified.size() >= 3) {
-                    Polygon poly;
-                    for (const auto& p : simplified) poly.push_back(p);
-                    // Filter by Area to remove speckle noise
-                    if (poly.is_simple() && std::abs(CGAL::to_double(poly.area())) > min_area) polygons.push_back(poly);
+                if (to_key(loop.back()) == start_key) {
+                    loop.pop_back();
+                }
+                if (loop.size() >= 3) {
+                    std::vector<EK::Point_2> simplified = simplify_douglas_peucker(loop, tolerance);
+                    if (simplified.size() >= 3) {
+                        Polygon poly;
+                        for (const auto& p : simplified) poly.push_back(p);
+                        if (poly.is_simple() && std::abs(CGAL::to_double(poly.area())) > min_area) {
+                            polygons.push_back(poly);
+                        }
+                    }
                 }
             }
         }
+
         auto t_end = std::chrono::steady_clock::now();
         std::cout << "    [Weld] Segs=" << segments.size() << ", Polys=" << polygons.size() << ", Total=" << std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count() << "ms" << std::endl;
         
