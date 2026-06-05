@@ -151,6 +151,132 @@ int main() {
         relief_out.close();
         std::cout << "  - Saved relief emboss verification PNG to actual/emboss_relief_test_final.png" << std::endl;
 
+        // 7. Execute EmbossOp (Test Case 3: Brickwork 3D Texture on Cube)
+        std::cout << "  - Executing EmbossOp (Test Case 3: Brickwork 3D Texture on Cube)..." << std::endl;
+        try {
+            // Create Cube Subject: 10x10x10
+            Selector subject_cube_sel = Selector{"jot/Box", {
+                {"width", 10.0},
+                {"height", 10.0},
+                {"depth", 10.0}
+            }}.with_output("$out");
+            Processor::execute(&vfs, subject_cube_sel);
+
+            // Create Disk Pattern: diameter = 12
+            Selector pattern_disk_sel = Selector{"jot/Disk", {
+                {"diameter", 12.0},
+                {"zag", 0.5}
+            }}.with_output("$out");
+            Processor::execute(&vfs, pattern_disk_sel);
+
+            // Create 4 Brick Boxes as compound relief
+            Selector b1_sel = Selector{"jot/Box", {
+                {"width", json::array({-5.0, -0.5})},
+                {"height", json::array({0.5, 5.0})},
+                {"depth", json::array({0.0, 1.5})}
+            }}.with_output("$out");
+            Processor::execute(&vfs, b1_sel);
+            Shape b1 = vfs.read<Shape>(b1_sel);
+
+            Selector b2_sel = Selector{"jot/Box", {
+                {"width", json::array({0.5, 5.0})},
+                {"height", json::array({0.5, 5.0})},
+                {"depth", json::array({0.0, 1.5})}
+            }}.with_output("$out");
+            Processor::execute(&vfs, b2_sel);
+            Shape b2 = vfs.read<Shape>(b2_sel);
+
+            Selector b3_sel = Selector{"jot/Box", {
+                {"width", json::array({-5.0, -0.5})},
+                {"height", json::array({-5.0, -0.5})},
+                {"depth", json::array({0.0, 1.5})}
+            }}.with_output("$out");
+            Processor::execute(&vfs, b3_sel);
+            Shape b3 = vfs.read<Shape>(b3_sel);
+
+            Selector b4_sel = Selector{"jot/Box", {
+                {"width", json::array({0.5, 5.0})},
+                {"height", json::array({-5.0, -0.5})},
+                {"depth", json::array({0.0, 1.5})}
+            }}.with_output("$out");
+            Processor::execute(&vfs, b4_sel);
+            Shape b4 = vfs.read<Shape>(b4_sel);
+
+            // Group the bricks together
+            Shape brickwork_group = Shape::group({b1, b2, b3, b4});
+            brickwork_group.add_tag("type", "group");
+
+            Selector brickwork_sel = Selector{"jot/temp_brickwork_relief", {}}.with_output("$out");
+            vfs.write(brickwork_sel, brickwork_group);
+
+            // Run Emboss Operation
+            Selector emboss_brick_sel = Selector{"jot/emboss", {
+                {"$in", subject_cube_sel.to_json()},
+                {"pattern", pattern_disk_sel.to_json()},
+                {"relief", brickwork_sel.to_json()}
+            }}.with_output("$out");
+            Processor::execute(&vfs, emboss_brick_sel);
+
+            // Verify Test Case 3 Results
+            Shape brick_result = vfs.read<Shape>(emboss_brick_sel);
+            assert(brick_result.geometry.has_value());
+
+            Geometry brick_geo = vfs.read<Geometry>(brick_result.geometry.value());
+            
+            // Assert watertightness and volume correctness
+            vfs.verify_well_formed_solid(brick_geo, "Embossed Brickwork Cube");
+
+            // Inspect the bounding box of the displaced geometry
+            double min_x = 1e18, max_x = -1e18;
+            double min_y = 1e18, max_y = -1e18;
+            double min_z = 1e18, max_z = -1e18;
+            for (const auto& v : brick_geo.vertices) {
+                double vx = CGAL::to_double(v.x);
+                double vy = CGAL::to_double(v.y);
+                double vz = CGAL::to_double(v.z);
+                if (vx < min_x) min_x = vx;
+                if (vx > max_x) max_x = vx;
+                if (vy < min_y) min_y = vy;
+                if (vy > max_y) max_y = vy;
+                if (vz < min_z) min_z = vz;
+                if (vz > max_z) max_z = vz;
+            }
+
+            std::cout << "  - Brickwork Emboss Bounding Box:" << std::endl;
+            std::cout << "    X: [" << min_x << ", " << max_x << "] (Expected ~[-6.5, 6.5])" << std::endl;
+            std::cout << "    Y: [" << min_y << ", " << max_y << "] (Expected ~[-6.5, 6.5])" << std::endl;
+            std::cout << "    Z: [" << min_z << ", " << max_z << "] (Expected ~[-6.5, 6.5])" << std::endl;
+
+            // Since the brick thickness is 1.5, displacement along the 6 face normals of the 10x10x10 cube 
+            // will extend each side from 5.0 to 6.5 (or -5.0 to -6.5).
+            assert(max_x > 6.45 && max_x < 6.55);
+            assert(min_x > -6.55 && min_x < -6.45);
+            assert(max_y > 6.45 && max_y < 6.55);
+            assert(min_y > -6.55 && min_y < -6.45);
+            assert(max_z > 6.45 && max_z < 6.55);
+            assert(min_z > -6.55 && min_z < -6.45);
+
+            // Generate verification PNG for Test Case 3
+            Selector brick_png_addr = Selector{"jot/png", {
+                {"$in", emboss_brick_sel.to_json()},
+                {"ax", 0.61547}, 
+                {"ay", 0.78539}
+            }}.with_output("$out");
+
+            std::cout << "  - Generating brickwork emboss PNG (actual/emboss_brick_test_final.png)..." << std::endl;
+            Processor::execute(&vfs, brick_png_addr);
+            
+            std::vector<uint8_t> brick_png_bytes = vfs.read<std::vector<uint8_t>>(brick_png_addr);
+            std::ofstream brick_out("actual/emboss_brick_test_final.png", std::ios::binary);
+            brick_out.write((char*)brick_png_bytes.data(), brick_png_bytes.size());
+            brick_out.close();
+            std::cout << "  - Saved brickwork emboss verification PNG to actual/emboss_brick_test_final.png" << std::endl;
+
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Emboss brickwork test failed: " << e.what() << std::endl;
+            return 1;
+        }
+
         std::cout << "✅ Emboss Corefinement Test PASS" << std::endl;
 
     } catch (const std::exception& e) {

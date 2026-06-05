@@ -29,13 +29,16 @@ struct EmbossOp : P {
     typedef CGAL::AABB_tree<Traits> Tree;
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& pattern, const Shape& relief) {
-        if (!in.geometry.has_value() || !pattern.geometry.has_value() || !relief.geometry.has_value()) {
+        std::vector<boolean::Engine::ToolNode> relief_nodes;
+        boolean::Engine::collect_tool_geometry(vfs, relief, Matrix::identity(), relief_nodes);
+
+        if (!in.geometry.has_value() || !pattern.geometry.has_value() || relief_nodes.empty()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
 
         try {
-            // 1. Read target and relief geometry, convert to ExactMesh
+            // 1. Read target geometry, convert to ExactMesh
             Geometry target_geo = vfs->read<Geometry>(in.geometry.value());
             ExactMesh target_mesh = boolean::Engine::geometry_to_mesh(target_geo);
             
@@ -43,8 +46,6 @@ struct EmbossOp : P {
             for (auto v : target_mesh.vertices()) {
                 target_mesh.point(v) = in.tf.transform(target_mesh.point(v));
             }
-
-            Geometry relief_geo = vfs->read<Geometry>(relief.geometry.value());
 
             // 2. Collect pattern nodes and build combined column cutter mesh
             std::vector<boolean::Engine::ToolNode> pattern_nodes;
@@ -57,19 +58,36 @@ struct EmbossOp : P {
             std::vector<NodeRelief> node_reliefs;
 
             for (const auto& node : pattern_nodes) {
-                auto r_mesh = std::make_unique<ExactMesh>(boolean::Engine::geometry_to_mesh(relief_geo));
+                auto combined_r_mesh = std::make_unique<ExactMesh>();
                 
-                // Transform relief mesh from its local space to the pattern node's local space
-                Matrix T_relief_to_pattern = node.world_tf.inverse() * relief.tf;
-                for (auto v : r_mesh->vertices()) {
-                    r_mesh->point(v) = T_relief_to_pattern.transform(r_mesh->point(v));
+                for (const auto& relief_node : relief_nodes) {
+                    ExactMesh r_mesh = boolean::Engine::geometry_to_mesh(relief_node.geo);
+                    
+                    // Transform relief mesh component from its local space to the pattern node's local space
+                    Matrix T = node.world_tf.inverse() * relief_node.world_tf;
+                    
+                    std::map<ExactMesh::Vertex_index, ExactMesh::Vertex_index> old_to_new;
+                    for (auto v : r_mesh.vertices()) {
+                        auto p = T.transform(r_mesh.point(v));
+                        old_to_new[v] = combined_r_mesh->add_vertex(p);
+                    }
+                    for (auto f : r_mesh.faces()) {
+                        std::vector<ExactMesh::Vertex_index> f_vs;
+                        auto h = r_mesh.halfedge(f);
+                        auto cur = h;
+                        do {
+                            f_vs.push_back(old_to_new[r_mesh.target(cur)]);
+                            cur = r_mesh.next(cur);
+                        } while (cur != h);
+                        combined_r_mesh->add_face(f_vs);
+                    }
                 }
 
-                auto tree_ptr = std::make_unique<Tree>(faces(*r_mesh).first, faces(*r_mesh).second, *r_mesh);
+                auto tree_ptr = std::make_unique<Tree>(faces(*combined_r_mesh).first, faces(*combined_r_mesh).second, *combined_r_mesh);
                 tree_ptr->build();
                 tree_ptr->accelerate_distance_queries();
                 
-                node_reliefs.push_back({std::move(r_mesh), std::move(tree_ptr)});
+                node_reliefs.push_back({std::move(combined_r_mesh), std::move(tree_ptr)});
             }
 
             ExactMesh cutter_mesh;
