@@ -116,6 +116,141 @@ int main() {
         std::cout << "  - Number of color buckets: " << result.components.size() << std::endl;
         assert(result.components.size() == 4);
         
+        // Mathematically prove full coverage with zero gaps/holes
+        std::cout << "  - Proving zero holes by subtracting all color patches from the image bounds..." << std::endl;
+        // Reconstruct padded grid for mock image to trace the boundary of the color region
+        int p_w = W + 2, p_h = H + 2;
+        std::vector<int> test_padded(p_w * p_h, -1);
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                int lbl = 0;
+                if (y < H / 2) {
+                    lbl = (x < W / 2) ? 0 : 3;
+                } else {
+                    lbl = (x < W / 2) ? 2 : 1;
+                }
+                test_padded[(y+1)*p_w + (x+1)] = lbl;
+            }
+        }
+
+        std::vector<std::pair<EK::Point_2, EK::Point_2>> border_segments;
+        for (int y = 0; y < p_h - 1; ++y) {
+            for (int x = 0; x < p_w - 1; ++x) {
+                int v0_lbl = test_padded[y*p_w+x];
+                int v1_lbl = test_padded[y*p_w+(x+1)];
+                int v2_lbl = test_padded[(y+1)*p_w+(x+1)];
+                int v3_lbl = test_padded[(y+1)*p_w+x];
+
+                FT fx(x-1), fy(H - (y-1)), h = FT(1)/2;
+                EK::Point_2 e0(fx+h, fy);
+                EK::Point_2 e1(fx+1, fy-h);
+                EK::Point_2 e2(fx+h, fy-1);
+                EK::Point_2 e3(fx, fy-h);
+                EK::Point_2 d0(fx+h, fy-h);
+
+                // Triangle 1: v0_lbl, v1_lbl, v3_lbl
+                bool v0 = (v0_lbl == -1);
+                bool v1 = (v1_lbl == -1);
+                bool v3 = (v3_lbl == -1);
+                if (v0) {
+                    if (!v1 && !v3) {
+                        if (v1_lbl == v3_lbl) border_segments.push_back({e0, e3});
+                        else { border_segments.push_back({e0, d0}); border_segments.push_back({d0, e3}); }
+                    } else if (v1 && !v3) border_segments.push_back({d0, e3});
+                    else if (v3 && !v1) border_segments.push_back({e0, d0});
+                } else {
+                    if (v1 && v3) border_segments.push_back({e0, e3});
+                    else if (v1 && !v3) border_segments.push_back({e0, d0});
+                    else if (v3 && !v1) border_segments.push_back({d0, e3});
+                }
+
+                // Triangle 2: v1_lbl, v2_lbl, v3_lbl
+                bool tv1 = (v1_lbl == -1);
+                bool tv2 = (v2_lbl == -1);
+                bool tv3 = (v3_lbl == -1);
+                if (tv1) {
+                    if (!tv2 && !tv3) {
+                        if (v2_lbl == v3_lbl) border_segments.push_back({e1, d0});
+                        else { border_segments.push_back({e1, e2}); border_segments.push_back({e2, d0}); }
+                    } else if (tv2 && !tv3) border_segments.push_back({e2, d0});
+                    else if (tv3 && !tv2) border_segments.push_back({e1, e2});
+                } else {
+                    if (tv2 && tv3) border_segments.push_back({e1, d0});
+                    else if (tv2 && !tv3) border_segments.push_back({e1, e2});
+                    else if (tv3 && !tv2) border_segments.push_back({e2, d0});
+                }
+            }
+        }
+
+        auto border_polys = ContourUtils::weld_segments(border_segments, 0.0, 0.5);
+        assert(border_polys.size() == 1);
+        
+        boolean::Polygon_2 bounds_poly = border_polys[0];
+        if (bounds_poly.is_clockwise_oriented()) bounds_poly.reverse_orientation();
+
+        boolean::General_polygon_set_2 bounds_gps;
+        bounds_gps.insert(bounds_poly);
+
+        std::cout << "    - Exact bounding region area from border: " << CGAL::to_double(bounds_poly.area()) << std::endl;
+
+        for (const auto& bucket : result.components) {
+            Geometry geo = vfs.read<Geometry>(bucket.geometry.value());
+            for (const auto& face : geo.faces) {
+                if (face.loops.empty()) continue;
+                
+                boolean::Polygon_2 boundary;
+                for (int idx : face.loops[0]) {
+                    boundary.push_back(EK::Point_2(geo.vertices[idx].x, geo.vertices[idx].y));
+                }
+                if (boundary.is_empty()) {
+                    std::cout << "    [Warning] Skipped face because boundary is empty." << std::endl;
+                    continue;
+                }
+                if (!boundary.is_simple()) {
+                    std::cout << "    [Warning] Skipped face because boundary is NOT simple! Vertices: ";
+                    for (size_t vi = 0; vi < boundary.size(); ++vi) {
+                        std::cout << "(" << CGAL::to_double(boundary[vi].x()) << "," << CGAL::to_double(boundary[vi].y()) << ") ";
+                    }
+                    std::cout << std::endl;
+                    continue;
+                }
+                if (boundary.is_clockwise_oriented()) boundary.reverse_orientation();
+                
+                std::vector<boolean::Polygon_2> holes;
+                for (size_t i = 1; i < face.loops.size(); ++i) {
+                    boolean::Polygon_2 h;
+                    for (int idx : face.loops[i]) {
+                        h.push_back(EK::Point_2(geo.vertices[idx].x, geo.vertices[idx].y));
+                    }
+                    if (h.is_simple()) {
+                        if (h.is_counterclockwise_oriented()) h.reverse_orientation();
+                        holes.push_back(h);
+                    }
+                }
+                
+                boolean::Polygon_with_holes_2 pwh(boundary, holes.begin(), holes.end());
+                std::cout << "    - Subtracting patch with area: " << CGAL::to_double(boundary.area()) << std::endl;
+                bounds_gps.difference(pwh);
+            }
+        }
+
+        bool has_gaps = !bounds_gps.is_empty();
+        std::cout << "    - Remaining uncovered area empty? " << (has_gaps ? "NO (Gaps detected!)" : "YES (Perfect coverage!)") << std::endl;
+        if (has_gaps) {
+            std::vector<boolean::Polygon_with_holes_2> remaining_pwhs;
+            bounds_gps.polygons_with_holes(std::back_inserter(remaining_pwhs));
+            std::cout << "    - Number of remaining gap components: " << remaining_pwhs.size() << std::endl;
+            for (size_t ri = 0; ri < remaining_pwhs.size(); ++ri) {
+                const auto& pwh = remaining_pwhs[ri];
+                std::cout << "      * Gap " << ri << " area: " << CGAL::to_double(pwh.outer_boundary().area()) << ", Vertices: ";
+                for (size_t vi = 0; vi < pwh.outer_boundary().size(); ++vi) {
+                    std::cout << "(" << CGAL::to_double(pwh.outer_boundary()[vi].x()) << "," << CGAL::to_double(pwh.outer_boundary()[vi].y()) << ") ";
+                }
+                std::cout << std::endl;
+            }
+        }
+        assert(bounds_gps.is_empty());
+        
         // Add cyan background behind the trace
         Shape bg = make_cyan_background_for_shape(vfs, result);
         std::vector<Shape> combined_components;

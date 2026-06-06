@@ -191,31 +191,120 @@ struct TraceOp : P {
             }
 
             std::cout << "[Trace] Vectorizing " << colors << " buckets..." << std::endl;
-            std::vector<Shape> buckets;
-            for (int c = 0; c < colors; ++c) {
-                auto tc_start = std::chrono::steady_clock::now();
-                std::vector<std::pair<EK::Point_2, EK::Point_2>> segments;
-                for (int y = 0; y < p_h - 1; ++y) {
-                    for (int x = 0; x < p_w - 1; ++x) {
-                        int v0 = (padded[y*p_w+x] == c), v1 = (padded[y*p_w+(x+1)] == c);
-                        int v2 = (padded[(y+1)*p_w+(x+1)] == c), v3 = (padded[(y+1)*p_w+x] == c);
-                        int case_idx = v0 | (v1 << 1) | (v2 << 2) | (v3 << 3);
-                        if (case_idx == 0 || case_idx == 15) continue;
+            std::vector<std::vector<std::pair<EK::Point_2, EK::Point_2>>> color_segments(colors);
 
-                        FT fx(x-1), fy(height - (y-1)), h = FT(1)/2;
-                        EK::Point_2 e0(fx+h, fy), e1(fx+1, fy-h), e2(fx+h, fy-1), e3(fx, fy-h);
-                        switch (case_idx) {
-                            case 1: case 14: segments.push_back({e3, e0}); break;
-                            case 2: case 13: segments.push_back({e0, e1}); break;
-                            case 3: case 12: segments.push_back({e3, e1}); break;
-                            case 4: case 11: segments.push_back({e1, e2}); break;
-                            case 5: segments.push_back({e3, e0}); segments.push_back({e1, e2}); break;
-                            case 6: case 9:  segments.push_back({e0, e2}); break;
-                            case 7: case 8:  segments.push_back({e3, e2}); break;
-                            case 10: segments.push_back({e0, e1}); segments.push_back({e2, e3}); break;
+            for (int y = 0; y < p_h - 1; ++y) {
+                for (int x = 0; x < p_w - 1; ++x) {
+                    int v0_lbl = padded[y*p_w+x];
+                    int v1_lbl = padded[y*p_w+(x+1)];
+                    int v2_lbl = padded[(y+1)*p_w+(x+1)];
+                    int v3_lbl = padded[(y+1)*p_w+x];
+
+                    // Optimization: if all vertices have the same label, no segments can exist in this cell.
+                    if (v0_lbl == v1_lbl && v1_lbl == v2_lbl && v2_lbl == v3_lbl) continue;
+
+                    // Gather unique active labels >= 0 in the cell
+                    int active_colors[4];
+                    int active_count = 0;
+                    if (v0_lbl >= 0) {
+                        active_colors[active_count++] = v0_lbl;
+                    }
+                    if (v1_lbl >= 0) {
+                        bool duplicate = false;
+                        for (int i = 0; i < active_count; ++i) {
+                            if (active_colors[i] == v1_lbl) { duplicate = true; break; }
+                        }
+                        if (!duplicate) active_colors[active_count++] = v1_lbl;
+                    }
+                    if (v2_lbl >= 0) {
+                        bool duplicate = false;
+                        for (int i = 0; i < active_count; ++i) {
+                            if (active_colors[i] == v2_lbl) { duplicate = true; break; }
+                        }
+                        if (!duplicate) active_colors[active_count++] = v2_lbl;
+                    }
+                    if (v3_lbl >= 0) {
+                        bool duplicate = false;
+                        for (int i = 0; i < active_count; ++i) {
+                            if (active_colors[i] == v3_lbl) { duplicate = true; break; }
+                        }
+                        if (!duplicate) active_colors[active_count++] = v3_lbl;
+                    }
+
+                    if (active_count == 0) continue;
+
+                    FT fx(x-1), fy(height - (y-1)), h = FT(1)/2;
+                    EK::Point_2 e0(fx+h, fy);
+                    EK::Point_2 e1(fx+1, fy-h);
+                    EK::Point_2 e2(fx+h, fy-1);
+                    EK::Point_2 e3(fx, fy-h);
+                    EK::Point_2 d0(fx+h, fy-h);
+
+                    for (int idx = 0; idx < active_count; ++idx) {
+                        int c = active_colors[idx];
+                        auto& segments = color_segments[c];
+
+                        // Triangle 1: v0_lbl, v1_lbl, v3_lbl
+                        bool v0 = (v0_lbl == c);
+                        bool v1 = (v1_lbl == c);
+                        bool v3 = (v3_lbl == c);
+                        if (v0) {
+                            if (!v1 && !v3) {
+                                if (v1_lbl == v3_lbl) {
+                                    segments.push_back({e0, e3});
+                                } else {
+                                    segments.push_back({e0, d0});
+                                    segments.push_back({d0, e3});
+                                }
+                            } else if (v1 && !v3) {
+                                segments.push_back({d0, e3});
+                            } else if (v3 && !v1) {
+                                segments.push_back({e0, d0});
+                            }
+                        } else {
+                            if (v1 && v3) {
+                                segments.push_back({e0, e3});
+                            } else if (v1 && !v3) {
+                                segments.push_back({e0, d0});
+                            } else if (v3 && !v1) {
+                                segments.push_back({d0, e3});
+                            }
+                        }
+
+                        // Triangle 2: v1_lbl, v2_lbl, v3_lbl
+                        bool tv1 = (v1_lbl == c);
+                        bool tv2 = (v2_lbl == c);
+                        bool tv3 = (v3_lbl == c);
+                        if (tv1) {
+                            if (!tv2 && !tv3) {
+                                if (v2_lbl == v3_lbl) {
+                                    segments.push_back({e1, d0});
+                                } else {
+                                    segments.push_back({e1, e2});
+                                    segments.push_back({e2, d0});
+                                }
+                            } else if (tv2 && !tv3) {
+                                segments.push_back({e2, d0});
+                            } else if (tv3 && !tv2) {
+                                segments.push_back({e1, e2});
+                            }
+                        } else {
+                            if (tv2 && tv3) {
+                                segments.push_back({e1, d0});
+                            } else if (tv2 && !tv3) {
+                                segments.push_back({e1, e2});
+                            } else if (tv3 && !tv2) {
+                                segments.push_back({e2, d0});
+                            }
                         }
                     }
                 }
+            }
+
+            std::vector<Shape> buckets;
+            for (int c = 0; c < colors; ++c) {
+                auto tc_start = std::chrono::steady_clock::now();
+                auto& segments = color_segments[c];
                 
                 auto tc_seg = std::chrono::steady_clock::now();
                 auto polys = ContourUtils::weld_segments(segments, smooth, 0.5);

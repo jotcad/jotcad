@@ -25,13 +25,31 @@ public:
         if (polygons.empty()) return {};
         auto t_start = std::chrono::steady_clock::now();
         
+        auto get_inside_point = [](const Polygon& poly) {
+            if (poly.size() < 3) return poly[0];
+            size_t min_idx = 0;
+            auto min_x = poly[0].x();
+            for (size_t v = 1; v < poly.size(); ++v) {
+                if (poly[v].x() < min_x) {
+                    min_x = poly[v].x();
+                    min_idx = v;
+                }
+            }
+            size_t prev_idx = (min_idx + poly.size() - 1) % poly.size();
+            size_t next_idx = (min_idx + 1) % poly.size();
+            return EK::Point_2(
+                (poly[min_idx].x() * 2 + poly[prev_idx].x() + poly[next_idx].x()) / 4,
+                (poly[min_idx].y() * 2 + poly[prev_idx].y() + poly[next_idx].y()) / 4
+            );
+        };
+
         std::vector<bool> is_hole(polygons.size(), false);
         std::vector<CGAL::Bbox_2> bboxes;
         for (const auto& p : polygons) bboxes.push_back(p.bbox());
 
         for (size_t i = 0; i < polygons.size(); ++i) {
             int parent_count = 0;
-            auto test_p = polygons[i][0];
+            auto test_p = get_inside_point(polygons[i]);
             for (size_t j = 0; j < polygons.size(); ++j) {
                 if (i == j) continue;
                 // BBox Pruning: skip expensive check if point is outside the bounding box
@@ -52,14 +70,14 @@ public:
         for (size_t i = 0; i < polygons.size(); ++i) {
             if (is_hole[i]) {
                 int best_parent = -1;
-                auto test_p = polygons[i][0];
+                auto test_p = get_inside_point(polygons[i]);
                 for (size_t g = 0; g < groups.size(); ++g) {
                     size_t outer_idx = groups[g].outer;
                     if (test_p.x() < bboxes[outer_idx].xmin() || test_p.x() > bboxes[outer_idx].xmax() ||
                         test_p.y() < bboxes[outer_idx].ymin() || test_p.y() > bboxes[outer_idx].ymax()) continue;
 
                     if (polygons[outer_idx].bounded_side(test_p) == CGAL::ON_BOUNDED_SIDE) {
-                        if (best_parent == -1 || polygons[groups[best_parent].outer].bounded_side(polygons[groups[g].outer][0]) == CGAL::ON_BOUNDED_SIDE) {
+                        if (best_parent == -1 || polygons[groups[best_parent].outer].bounded_side(get_inside_point(polygons[groups[g].outer])) == CGAL::ON_BOUNDED_SIDE) {
                             best_parent = (int)g;
                         }
                     }
@@ -102,7 +120,7 @@ public:
         bool operator!=(const PointKey& o) const { return !(*this == o); }
     };
 
-    static std::vector<Polygon> weld_segments(const std::vector<std::pair<EK::Point_2, EK::Point_2>>& segments, double tolerance = 0.5, double min_area = 16.0) {
+    static std::vector<Polygon> weld_segments(const std::vector<std::pair<EK::Point_2, EK::Point_2>>& segments, double tolerance = 0.5, double min_area = 16.0, bool prune_collinear = true) {
         if (segments.empty()) return {};
         auto t_start = std::chrono::steady_clock::now();
 
@@ -177,6 +195,9 @@ public:
                                 
                                 if (sub_cycle.size() >= 3) {
                                     std::vector<EK::Point_2> simplified = simplify_douglas_peucker(sub_cycle, tolerance);
+                                    if (prune_collinear) {
+                                        simplified = remove_collinear(simplified);
+                                    }
                                     if (simplified.size() >= 3) {
                                         Polygon poly;
                                         for (const auto& p : simplified) poly.push_back(p);
@@ -205,6 +226,9 @@ public:
                 }
                 if (loop.size() >= 3) {
                     std::vector<EK::Point_2> simplified = simplify_douglas_peucker(loop, tolerance);
+                    if (prune_collinear) {
+                        simplified = remove_collinear(simplified);
+                    }
                     if (simplified.size() >= 3) {
                         Polygon poly;
                         for (const auto& p : simplified) poly.push_back(p);
@@ -223,6 +247,34 @@ public:
     }
 
 private:
+    static std::vector<EK::Point_2> remove_collinear(const std::vector<EK::Point_2>& pts) {
+        if (pts.size() < 3) return pts;
+        std::vector<EK::Point_2> result;
+        result.reserve(pts.size());
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const auto& p = pts[(i == 0) ? pts.size() - 1 : i - 1];
+            const auto& q = pts[i];
+            const auto& r = pts[(i == pts.size() - 1) ? 0 : i + 1];
+            if (!CGAL::collinear(p, q, r)) {
+                result.push_back(q);
+            }
+        }
+        if (result.size() < pts.size() && result.size() >= 3) {
+            std::vector<EK::Point_2> final_result;
+            final_result.reserve(result.size());
+            for (size_t i = 0; i < result.size(); ++i) {
+                const auto& p = result[(i == 0) ? result.size() - 1 : i - 1];
+                const auto& q = result[i];
+                const auto& r = result[(i == result.size() - 1) ? 0 : i + 1];
+                if (!CGAL::collinear(p, q, r)) {
+                    final_result.push_back(q);
+                }
+            }
+            return final_result;
+        }
+        return result;
+    }
+
     static std::vector<EK::Point_2> simplify_douglas_peucker(const std::vector<EK::Point_2>& pts, double tolerance) {
         if (pts.size() < 3 || tolerance <= 1e-9) return pts;
         std::vector<bool> keep(pts.size(), false);
