@@ -183,136 +183,86 @@ struct TraceOp : P {
                 }
             }
 
-            // 3. Boundary Injection
-            int p_w = width + 2, p_h = height + 2;
-            std::vector<int> padded(p_w * p_h, -1);
+            // 3. Connected Component Partitioning & Boundary Injection
+            std::vector<int> comp_ids(width * height, -1);
+            int comp_count = 0;
+            std::vector<int> comp_colors;
             for (int y = 0; y < height; ++y) {
-                for (int x = 0; x < width; ++x) padded[(y+1)*p_w + (x+1)] = clean_labels[y*width + x];
-            }
+                for (int x = 0; x < width; ++x) {
+                    int idx = y * width + x;
+                    if (comp_ids[idx] != -1) continue;
 
-            std::cout << "[Trace] Vectorizing " << colors << " buckets..." << std::endl;
-            std::vector<std::vector<std::pair<EK::Point_2, EK::Point_2>>> color_segments(colors);
+                    int col = clean_labels[idx];
+                    int comp_id = comp_count++;
+                    comp_colors.push_back(col);
 
-            for (int y = 0; y < p_h - 1; ++y) {
-                for (int x = 0; x < p_w - 1; ++x) {
-                    int v0_lbl = padded[y*p_w+x];
-                    int v1_lbl = padded[y*p_w+(x+1)];
-                    int v2_lbl = padded[(y+1)*p_w+(x+1)];
-                    int v3_lbl = padded[(y+1)*p_w+x];
-
-                    // Optimization: if all vertices have the same label, no segments can exist in this cell.
-                    if (v0_lbl == v1_lbl && v1_lbl == v2_lbl && v2_lbl == v3_lbl) continue;
-
-                    // Gather unique active labels >= 0 in the cell
-                    int active_colors[4];
-                    int active_count = 0;
-                    if (v0_lbl >= 0) {
-                        active_colors[active_count++] = v0_lbl;
-                    }
-                    if (v1_lbl >= 0) {
-                        bool duplicate = false;
-                        for (int i = 0; i < active_count; ++i) {
-                            if (active_colors[i] == v1_lbl) { duplicate = true; break; }
-                        }
-                        if (!duplicate) active_colors[active_count++] = v1_lbl;
-                    }
-                    if (v2_lbl >= 0) {
-                        bool duplicate = false;
-                        for (int i = 0; i < active_count; ++i) {
-                            if (active_colors[i] == v2_lbl) { duplicate = true; break; }
-                        }
-                        if (!duplicate) active_colors[active_count++] = v2_lbl;
-                    }
-                    if (v3_lbl >= 0) {
-                        bool duplicate = false;
-                        for (int i = 0; i < active_count; ++i) {
-                            if (active_colors[i] == v3_lbl) { duplicate = true; break; }
-                        }
-                        if (!duplicate) active_colors[active_count++] = v3_lbl;
-                    }
-
-                    if (active_count == 0) continue;
-
-                    FT fx(x-1), fy(height - (y-1)), h = FT(1)/2;
-                    EK::Point_2 e0(fx+h, fy);
-                    EK::Point_2 e1(fx+1, fy-h);
-                    EK::Point_2 e2(fx+h, fy-1);
-                    EK::Point_2 e3(fx, fy-h);
-                    EK::Point_2 d0(fx+h, fy-h);
-
-                    for (int idx = 0; idx < active_count; ++idx) {
-                        int c = active_colors[idx];
-                        auto& segments = color_segments[c];
-
-                        // Triangle 1: v0_lbl, v1_lbl, v3_lbl
-                        bool v0 = (v0_lbl == c);
-                        bool v1 = (v1_lbl == c);
-                        bool v3 = (v3_lbl == c);
-                        if (v0) {
-                            if (!v1 && !v3) {
-                                if (v1_lbl == v3_lbl) {
-                                    segments.push_back({e0, e3});
-                                } else {
-                                    segments.push_back({e0, d0});
-                                    segments.push_back({d0, e3});
+                    std::vector<int> queue;
+                    queue.push_back(idx);
+                    comp_ids[idx] = comp_id;
+                    size_t q_head = 0;
+                    while (q_head < queue.size()) {
+                        int curr = queue[q_head++];
+                        int cx = curr % width;
+                        int cy = curr / width;
+                        int dx[4] = {-1, 1, 0, 0};
+                        int dy[4] = {0, 0, -1, 1};
+                        for (int dir = 0; dir < 4; ++dir) {
+                            int nx = cx + dx[dir];
+                            int ny = cy + dy[dir];
+                            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                                int nidx = ny * width + nx;
+                                if (clean_labels[nidx] == col && comp_ids[nidx] == -1) {
+                                    comp_ids[nidx] = comp_id;
+                                    queue.push_back(nidx);
                                 }
-                            } else if (v1 && !v3) {
-                                segments.push_back({d0, e3});
-                            } else if (v3 && !v1) {
-                                segments.push_back({e0, d0});
-                            }
-                        } else {
-                            if (v1 && v3) {
-                                segments.push_back({e0, e3});
-                            } else if (v1 && !v3) {
-                                segments.push_back({e0, d0});
-                            } else if (v3 && !v1) {
-                                segments.push_back({d0, e3});
-                            }
-                        }
-
-                        // Triangle 2: v1_lbl, v2_lbl, v3_lbl
-                        bool tv1 = (v1_lbl == c);
-                        bool tv2 = (v2_lbl == c);
-                        bool tv3 = (v3_lbl == c);
-                        if (tv1) {
-                            if (!tv2 && !tv3) {
-                                if (v2_lbl == v3_lbl) {
-                                    segments.push_back({e1, d0});
-                                } else {
-                                    segments.push_back({e1, e2});
-                                    segments.push_back({e2, d0});
-                                }
-                            } else if (tv2 && !tv3) {
-                                segments.push_back({e2, d0});
-                            } else if (tv3 && !tv2) {
-                                segments.push_back({e1, e2});
-                            }
-                        } else {
-                            if (tv2 && tv3) {
-                                segments.push_back({e1, d0});
-                            } else if (tv2 && !tv3) {
-                                segments.push_back({e1, e2});
-                            } else if (tv3 && !tv2) {
-                                segments.push_back({e2, d0});
                             }
                         }
                     }
                 }
             }
 
+            int border_comp_id = comp_count++;
+            comp_colors.push_back(-1);
+
+            int p_w = width + 2, p_h = height + 2;
+            std::vector<int> padded(p_w * p_h, border_comp_id);
+            for (int y = 0; y < height; ++y) {
+                for (int x = 0; x < width; ++x) {
+                    padded[(y+1)*p_w + (x+1)] = comp_ids[y*width + x];
+                }
+            }
+
+            std::cout << "[Trace] Vectorizing " << comp_count - 1 << " components..." << std::endl;
+            std::vector<int> targets(comp_count - 1);
+            for (int i = 0; i < comp_count - 1; ++i) targets[i] = i;
+            auto comp_segments = ContourUtils::generate_marching_triangles_segments(padded, p_w, p_h, height, targets);
+
+            // Weld loops for all components
+            std::vector<std::vector<Polygon>> comp_loops(comp_count - 1);
+            for (int i = 0; i < comp_count - 1; ++i) {
+                comp_loops[i] = ContourUtils::weld_segments(comp_segments[i], smooth, 0.5);
+            }
+
             std::vector<Shape> buckets;
             for (int c = 0; c < colors; ++c) {
                 auto tc_start = std::chrono::steady_clock::now();
-                auto& segments = color_segments[c];
-                
-                auto tc_seg = std::chrono::steady_clock::now();
-                auto polys = ContourUtils::weld_segments(segments, smooth, 0.5);
-                auto groups = ContourUtils::group_polygons(polys);
-                auto tc_weld = std::chrono::steady_clock::now();
-
                 Geometry geo;
-                for (auto& g : groups) {
+
+                for (int i = 0; i < comp_count - 1; ++i) {
+                    if (comp_colors[i] != c) continue;
+                    const auto& polys = comp_loops[i];
+                    if (polys.empty()) continue;
+
+                    // Find the outer boundary (longest loop)
+                    size_t longest_idx = 0;
+                    size_t max_size = 0;
+                    for (size_t j = 0; j < polys.size(); ++j) {
+                        if (polys[j].size() > max_size) {
+                            max_size = polys[j].size();
+                            longest_idx = j;
+                        }
+                    }
+
                     Geometry::Face f;
                     auto add_l = [&](const Polygon& p) {
                         std::vector<int> l;
@@ -322,11 +272,15 @@ struct TraceOp : P {
                         }
                         return l;
                     };
-                    f.loops.push_back(add_l(polys[g.outer]));
-                    for (size_t h_idx : g.holes) f.loops.push_back(add_l(polys[h_idx]));
+                    f.loops.push_back(add_l(polys[longest_idx]));
+                    for (size_t j = 0; j < polys.size(); ++j) {
+                        if (j != longest_idx) {
+                            f.loops.push_back(add_l(polys[j]));
+                        }
+                    }
                     geo.faces.push_back(f);
                 }
-                
+
                 long long r=0, g=0, b=0, count=0;
                 for(int i=0; i<width*height; ++i) if(clean_labels[i]==c) { r+=data[i*3]; g+=data[i*3+1]; b+=data[i*3+2]; count++; }
                 char hex[8]; 
@@ -335,7 +289,7 @@ struct TraceOp : P {
 
                 buckets.push_back(P::make_shape(vfs, geo, {{"color", hex}}));
                 auto tc_end = std::chrono::steady_clock::now();
-                std::cout << "  - bucket " << c << " (" << hex << "): Segs=" << segments.size() << ", Weld=" << std::chrono::duration_cast<std::chrono::milliseconds>(tc_weld - tc_seg).count() << "ms, Total=" 
+                std::cout << "  - bucket " << c << " (" << hex << "): Total=" 
                           << std::chrono::duration_cast<std::chrono::milliseconds>(tc_end - tc_start).count() << "ms" << std::endl;
             }
             stbi_image_free(data);

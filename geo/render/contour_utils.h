@@ -246,6 +246,91 @@ public:
         return polygons;
     }
 
+    static std::vector<std::vector<std::pair<EK::Point_2, EK::Point_2>>> generate_marching_triangles_segments(
+        const std::vector<int>& padded, int p_w, int p_h, int H, const std::vector<int>& targets) {
+        // Build active target lookup
+        std::map<int, int> label_to_idx;
+        for (size_t i = 0; i < targets.size(); ++i) {
+            label_to_idx[targets[i]] = i;
+        }
+
+        std::vector<std::vector<std::pair<EK::Point_2, EK::Point_2>>> result(targets.size());
+
+        for (int y = 0; y < p_h - 1; ++y) {
+            for (int x = 0; x < p_w - 1; ++x) {
+                int v0_lbl = padded[y*p_w+x];
+                int v1_lbl = padded[y*p_w+(x+1)];
+                int v2_lbl = padded[(y+1)*p_w+(x+1)];
+                int v3_lbl = padded[(y+1)*p_w+x];
+
+                if (v0_lbl == v1_lbl && v1_lbl == v2_lbl && v2_lbl == v3_lbl) continue;
+
+                int active_colors[4];
+                int active_count = 0;
+                auto add_target = [&](int lbl) {
+                    auto it = label_to_idx.find(lbl);
+                    if (it == label_to_idx.end()) return;
+                    for (int i = 0; i < active_count; ++i) {
+                        if (active_colors[i] == lbl) return;
+                    }
+                    active_colors[active_count++] = lbl;
+                };
+                add_target(v0_lbl);
+                add_target(v1_lbl);
+                add_target(v2_lbl);
+                add_target(v3_lbl);
+
+                if (active_count == 0) continue;
+
+                FT fx(x-1), fy(H - (y-1)), h = FT(1)/2;
+                EK::Point_2 e0(fx+h, fy);
+                EK::Point_2 e1(fx+1, fy-h);
+                EK::Point_2 e2(fx+h, fy-1);
+                EK::Point_2 e3(fx, fy-h);
+                EK::Point_2 d0(fx+h, fy-h);
+
+                for (int idx = 0; idx < active_count; ++idx) {
+                    int c = active_colors[idx];
+                    int target_idx = label_to_idx[c];
+                    auto& segments = result[target_idx];
+
+                    // Triangle 1: v0_lbl, v1_lbl, v3_lbl
+                    bool v0 = (v0_lbl == c);
+                    bool v1 = (v1_lbl == c);
+                    bool v3 = (v3_lbl == c);
+                    if (v0) {
+                        if (!v1 && !v3) {
+                            if (v1_lbl == v3_lbl) segments.push_back({e0, e3});
+                            else { segments.push_back({e0, d0}); segments.push_back({d0, e3}); }
+                        } else if (v1 && !v3) segments.push_back({d0, e3});
+                        else if (v3 && !v1) segments.push_back({e0, d0});
+                    } else {
+                        if (v1 && v3) segments.push_back({e0, e3});
+                        else if (v1 && !v3) segments.push_back({e0, d0});
+                        else if (v3 && !v1) segments.push_back({d0, e3});
+                    }
+
+                    // Triangle 2: v1_lbl, v2_lbl, v3_lbl
+                    bool tv1 = (v1_lbl == c);
+                    bool tv2 = (v2_lbl == c);
+                    bool tv3 = (v3_lbl == c);
+                    if (tv1) {
+                        if (!tv2 && !tv3) {
+                            if (v2_lbl == v3_lbl) segments.push_back({e1, d0});
+                            else { segments.push_back({e1, e2}); segments.push_back({e2, d0}); }
+                        } else if (tv2 && !tv3) segments.push_back({e2, d0});
+                        else if (tv3 && !tv2) segments.push_back({e1, e2});
+                    } else {
+                        if (tv2 && tv3) segments.push_back({e1, d0});
+                        else if (tv2 && !tv3) segments.push_back({e1, e2});
+                        else if (tv3 && !tv2) segments.push_back({e2, d0});
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
 private:
     static std::vector<EK::Point_2> remove_collinear(const std::vector<EK::Point_2>& pts) {
         if (pts.size() < 3) return pts;

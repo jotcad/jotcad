@@ -71,7 +71,7 @@ int main() {
         // Render verification PNG for Test Case 1
         Selector png_addr = Selector{"jot/png", {
             {"$in", emboss_sel.to_json()},
-            {"ax", 0.61547}, 
+            {"ax", -0.61547}, 
             {"ay", 0.78539}
         }}.with_output("$out");
 
@@ -138,7 +138,7 @@ int main() {
         // Generate verification PNG for Test Case 2
         Selector relief_png_addr = Selector{"jot/png", {
             {"$in", emboss_relief_sel.to_json()},
-            {"ax", 0.61547}, 
+            {"ax", -0.61547}, 
             {"ay", 0.78539}
         }}.with_output("$out");
 
@@ -259,7 +259,7 @@ int main() {
             // Generate verification PNG for Test Case 3
             Selector brick_png_addr = Selector{"jot/png", {
                 {"$in", emboss_brick_sel.to_json()},
-                {"ax", 0.61547}, 
+                {"ax", -0.61547}, 
                 {"ay", 0.78539}
             }}.with_output("$out");
 

@@ -45,14 +45,14 @@ int main() {
     std::cout << "  - Wrote mock PNG of size " << png_bytes.size() << " bytes to VFS" << std::endl;
 
     // 2. Execute ReliefOp
-    // We request a 2x2 resolution, width=10, height=10, depth=2.0, base=1.0
-    Selector relief_sel = Selector{"jot/Relief", {
-        {"image", image_sel.to_json()},
+    // We request a width=10, height=10, depth=2.0, base=1.0
+    Selector relief_sel = Selector{"jot/relief", {
+        {"$in", image_sel.to_json()},
         {"width", 10.0},
         {"height", 10.0},
         {"depth", 2.0},
         {"base", 1.0},
-        {"resolution", 2}
+        {"minArea", 0.0}
     }}.with_output("$out");
 
     std::cout << "  - Executing ReliefOp..." << std::endl;
@@ -76,40 +76,30 @@ int main() {
         std::cout << "  - Vertices count: " << geo.vertices.size() << std::endl;
         std::cout << "  - Triangles count: " << geo.triangles.size() << std::endl;
 
-        assert(geo.vertices.size() == 8);
+        assert(geo.vertices.size() > 0);
+        assert(geo.triangles.size() > 0);
 
-        // Expected Top Z values (base + intensity * depth):
-        // Intensity values for 0, 85, 170, 255 are approximately 0.0, 0.333, 0.666, 1.0.
-        // base = 1.0, depth = 2.0
-        // Vertex 0: Z = 1.0 + 0.0 * 2.0 = 1.0
-        // Vertex 1: Z = 1.0 + 0.333 * 2.0 = 1.666
-        // Vertex 2: Z = 1.0 + 0.666 * 2.0 = 2.333
-        // Vertex 3: Z = 1.0 + 1.0 * 2.0 = 3.0
-        
-        double z0 = CGAL::to_double(geo.vertices[0].z);
-        double z1 = CGAL::to_double(geo.vertices[1].z);
-        double z2 = CGAL::to_double(geo.vertices[2].z);
-        double z3 = CGAL::to_double(geo.vertices[3].z);
-
-        std::cout << "  - Vertex 0 Z (Black): " << z0 << " (Expected ~1.0)" << std::endl;
-        std::cout << "  - Vertex 1 Z (Dark gray): " << z1 << " (Expected ~1.666)" << std::endl;
-        std::cout << "  - Vertex 2 Z (Light gray): " << z2 << " (Expected ~2.333)" << std::endl;
-        std::cout << "  - Vertex 3 Z (White): " << z3 << " (Expected ~3.0)" << std::endl;
-
-        assert(std::abs(z0 - 1.0) < 0.01);
-        assert(std::abs(z1 - 1.666) < 0.02);
-        assert(std::abs(z2 - 2.333) < 0.02);
-        assert(std::abs(z3 - 3.0) < 0.01);
-
-        for (int i = 4; i < 8; ++i) {
-            double z_bot = CGAL::to_double(geo.vertices[i].z);
-            assert(std::abs(z_bot - 0.0) < 1e-9);
+        bool found_0 = false, found_1 = false, found_1_666 = false, found_2_333 = false, found_3 = false;
+        for (const auto& v : geo.vertices) {
+            double z = CGAL::to_double(v.z);
+            if (std::abs(z - 0.0) < 1e-5) found_0 = true;
+            else if (std::abs(z - 1.0) < 0.02) found_1 = true;
+            else if (std::abs(z - 1.666) < 0.02) found_1_666 = true;
+            else if (std::abs(z - 2.333) < 0.02) found_2_333 = true;
+            else if (std::abs(z - 3.0) < 0.02) found_3 = true;
         }
+        assert(found_0);
+        assert(found_1);
+        assert(found_1_666);
+        assert(found_2_333);
+        assert(found_3);
+
+        vfs.verify_well_formed_solid(geo, "Quantized Relief Case 1 Grid");
 
         // 4. Render verification PNG
         Selector png_addr = Selector{"jot/png", {
             {"$in", relief_sel.to_json()},
-            {"ax", 0.61547}, 
+            {"ax", -0.61547}, 
             {"ay", 0.78539}
         }}.with_output("$out");
 
@@ -148,13 +138,12 @@ int main() {
             Processor::execute(&vfs, image3_sel);
             
             // Generate Relief from the fetched heightmap
-            Selector relief3_sel = Selector{"jot/Relief", {
-                {"image", image3_sel.to_json()},
+            Selector relief3_sel = Selector{"jot/relief", {
+                {"$in", image3_sel.to_json()},
                 {"width", 15.0},
                 {"height", 15.0},
                 {"depth", 3.0},
-                {"base", 1.0},
-                {"resolution", 16} // Keep resolution small for fast test execution
+                {"base", 1.0}
             }}.with_output("$out");
 
             std::cout << "    - Executing ReliefOp on valid heightmap..." << std::endl;
@@ -167,15 +156,15 @@ int main() {
             std::cout << "    - Real Relief Vertices: " << relief_geo.vertices.size() << std::endl;
             std::cout << "    - Real Relief Triangles: " << relief_geo.triangles.size() << std::endl;
 
-            // Assert that we generated a valid 3D solid base + top grid (resolution 16 -> 16x16 top + 16x16 base = 512 vertices)
-            assert(relief_geo.vertices.size() == 512);
+            // Assert that we generated a valid 3D solid base + top grid
+            assert(relief_geo.vertices.size() > 0);
 
             vfs.verify_well_formed_solid(relief_geo, "Fetched Wikimedia Relief Mesh");
 
             // Generate verification PNG for Test Case 3
             Selector relief3_png_addr = Selector{"jot/png", {
                 {"$in", relief3_sel.to_json()},
-                {"ax", 0.61547}, 
+                {"ax", -0.61547}, 
                 {"ay", 0.78539}
             }}.with_output("$out");
 
@@ -191,6 +180,35 @@ int main() {
             std::cout << "    - SUCCESS: Real heightmap relief generated successfully!" << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "❌ FAIL: Fetch or ReliefOp failed on valid heightmap URL: " << e.what() << std::endl;
+            return 1;
+        }
+
+        // 7. Test Case 4: ReliefOp with close = false (open mesh)
+        std::cout << "  - Executing Test Case 4 (open mesh relief)..." << std::endl;
+        try {
+            Selector relief_open_sel = Selector{"jot/relief", {
+                {"$in", image_sel.to_json()},
+                {"width", 10.0},
+                {"height", 10.0},
+                {"depth", 2.0},
+                {"base", 1.0},
+                {"minArea", 0.0},
+                {"close", false}
+            }}.with_output("$out");
+
+            Processor::execute(&vfs, relief_open_sel);
+            Shape open_result = vfs.read<Shape>(relief_open_sel);
+            Geometry open_geo = vfs.read<Geometry>(open_result.geometry.value());
+            
+            std::cout << "    - Open Relief Vertices: " << open_geo.vertices.size() << std::endl;
+            std::cout << "    - Open Relief Triangles: " << open_geo.triangles.size() << std::endl;
+
+            // An open mesh should not be closed
+            boolean::Surface_mesh open_mesh = boolean::Engine::geometry_to_mesh(open_geo);
+            assert(!CGAL::is_closed(open_mesh));
+            std::cout << "    - SUCCESS: Open relief mesh verified as not closed!" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "❌ FAIL: Test Case 4 (close = false) failed: " << e.what() << std::endl;
             return 1;
         }
 

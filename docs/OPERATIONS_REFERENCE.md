@@ -613,7 +613,7 @@ Vector = Trace(Photo, colors=12, smooth=2.0);
 Vector.on("#bcd3ee").ez(5);
 ```
 
-### `Relief(image, width=10.0, height=10.0, depth=2.0, base=1.0, resolution=128)`
+### `Relief(image, width=10.0, height=10.0, depth=2.0, base=1.0, levels=16, minArea=25.0, smooth=0.0, close=true)`
 Generates a 3D relief mesh from a 2D grayscale/bump map image.
 
 - **`image`**: An `Image()` object or direct URL to a bitmap.
@@ -621,8 +621,15 @@ Generates a 3D relief mesh from a 2D grayscale/bump map image.
 - **`height`**: Physical target height of the relief shape along the Y-axis.
 - **`depth`**: Maximum extrusion height (along the Z-axis) corresponding to white pixels.
 - **`base`**: Thickness of the base bottom plate (below the heightmap surface).
-- **`resolution`**: The maximum sampling grid resolution (clamped to the image dimension). Controls triangle density to keep computations fast.
-- **Solid Closure**: Automatically seals the mesh by adding a flat bottom plane ($Z = 0.0$) and vertical side-wall skirting to produce a watertight manifold suitable for 3D printing.
+- **`levels`**: Number of height quantization levels (default 16).
+- **`minArea`**: Minimum pixel area for component merging / despeckling (default 25.0).
+- **`smooth`**: Boundary smoothing parameter (default 0.0).
+- **`close`**: Seals the mesh by adding a flat bottom plane and vertical side-wall skirting to produce a watertight manifold suitable for 3D printing (default true).
+
+#### Implementation Details
+- **Connected Components**: Pixels are partitioned into connected components using Breadth-First Search (BFS) at each quantization level.
+- **Watertight Triangulation**: The top and bottom caps are robustly triangulated directly from 2D contour loops (`CGAL::Polygon_2<EK>`) using 2D Constrained Delaunay Triangulation (`CDT`). The longest loop of each component is treated as the outer boundary, and all other loops are treated as holes.
+- **Consecutive Panel Splitting**: Vertical side walls are split into stacks of panels at all intermediate quantization levels to prevent T-junctions, ensuring a 100% closed, watertight solid check in CGAL.
 
 #### Example
 ```js
@@ -630,7 +637,7 @@ Generates a 3D relief mesh from a 2D grayscale/bump map image.
 Map = Image("heightmap.png");
 
 // Generate a 100x100mm relief, 5mm max displacement, with a 2mm base
-ReliefMesh = Relief(Map, width=100, height=100, depth=5, base=2, resolution=256);
+ReliefMesh = Relief(Map, width=100, height=100, depth=5, base=2, levels=16);
 
 // Export to STL
 ReliefMesh.stl("model.stl");
