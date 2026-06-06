@@ -53,14 +53,27 @@ export const Viewport = (props) => {
     onCleanup(() => resizeObserver.disconnect());
 
     // --- SYSTEM OBJECTS (Persistent) ---
-    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    // Ambient is low to allow shadows and depth to show
+    const ambient = new THREE.AmbientLight(0xffffff, 0.2);
     ambient.userData.isSystem = true;
     scene.add(ambient);
 
-    const dl = new THREE.DirectionalLight(0xffffff, 1.0);
-    dl.position.set(200, 500, 300);
-    dl.userData.isSystem = true;
-    scene.add(dl);
+    // Hemisphere light provides a subtle sky/ground gradient for orientation
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 0.4);
+    hemi.userData.isSystem = true;
+    scene.add(hemi);
+
+    // Main light from front-top-right
+    const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    mainLight.position.set(200, 500, 300);
+    mainLight.userData.isSystem = true;
+    scene.add(mainLight);
+
+    // Fill light from back-bottom-left to pop the edges
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    fillLight.position.set(-200, -100, -200);
+    fillLight.userData.isSystem = true;
+    scene.add(fillLight);
 
     updateGridAndLabels({ x: 100, y: 100 });
     

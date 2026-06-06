@@ -97,10 +97,6 @@ const toColor = (tags) => {
 };
 
 export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) => {
-  if (!scene.getObjectByName('ambient_light')) {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6); ambient.name = 'ambient_light'; scene.add(ambient);
-    const directional = new THREE.DirectionalLight(0xffffff, 0.6); directional.position.set(10, 20, 10); directional.name = 'directional_light'; scene.add(directional);
-  }
   const walk = async (s) => {
     const worldMat = decodeTf(s.tf);
     const shapeColor = toColor(s.tags);
@@ -150,7 +146,9 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ 
                 color: texture ? 0xffffff : shapeColor,
                 map: texture,
-                side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
+                side: THREE.DoubleSide, 
+                roughness: 0.4, 
+                metalness: 0.2,
                 transparent, opacity 
             }));
             mesh.userData.isJot = true;

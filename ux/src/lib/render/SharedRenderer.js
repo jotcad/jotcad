@@ -13,9 +13,13 @@ export function getSharedRenderer() {
     powerPreference: "high-performance"
   });
   sharedRenderer.setPixelRatio(window.devicePixelRatio);
-  sharedRenderer.setSize(300, 200); // Default size for snapshots
-  sharedRenderer.setClearColor(0x00ffff, 1); // Default Active: Cyan
+  sharedRenderer.setSize(300, 200);
+  sharedRenderer.setClearColor(0x00ffff, 1);
   sharedRenderer.autoClear = true;
+  
+  // Better color handling and realism
+  sharedRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  sharedRenderer.toneMappingExposure = 1.0;
 
   const loop = () => {
     if (activeViewport && sharedRenderer) {
