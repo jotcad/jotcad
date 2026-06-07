@@ -23,6 +23,8 @@ export const Viewport = (props) => {
   const [meshCount, setMeshCount] = createSignal(0);
   const [groundHgt, setGroundHgt] = createSignal(0);
   let jotObjects = [];
+  let meshObjects = [];
+  let lastHudUpdate = 0;
 
   // --- MOVEMENT STATE ---
   const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
@@ -53,11 +55,12 @@ export const Viewport = (props) => {
     }
   });
 
-  // Scale camera near plane with movement speed
+  // Scale camera near/far plane with movement speed
   createEffect(() => {
     const scale = speedScale();
     if (camera) {
-        camera.near = Math.max(0.01, scale * 1.0);
+        camera.near = Math.max(0.01, scale * 10);
+        camera.far = Math.max(1000, scale * 20000);
         camera.updateProjectionMatrix();
     }
   });
@@ -111,7 +114,18 @@ export const Viewport = (props) => {
   };
 
   const updateWalk = (dt) => {
-    if (viewMode() !== 'walk' || !scene || !isActive()) return;
+    const now = performance.now();
+    const isModeActive = viewMode() === 'walk' && scene && isActive();
+
+    if (!isModeActive) {
+        if (camera && now - lastHudUpdate > 100) {
+            setCamPos({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
+            const d = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            setLookDir({ x: d.x, y: d.y, z: d.z });
+            lastHudUpdate = now;
+        }
+        return;
+    }
 
     const dir = new THREE.Vector3();
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -162,7 +176,7 @@ export const Viewport = (props) => {
         camera.position.y += velocity.y * dt;
         camera.position.z += velocity.z * dt;
 
-        // --- FOOTPRINT PHYSICS (4-point raycast) ---
+        // --- BVH ACCELERATED PHYSICS ---
         // Player has a radius of 300mm (scaled)
         const radius = 300 * currentScale;
         const offsets = [
@@ -174,13 +188,14 @@ export const Viewport = (props) => {
         ];
 
         let maxGroundZ = 0;
-        const meshObjects = jotObjects.filter(obj => obj.type === 'Mesh');
+        raycaster.firstHitOnly = true; // Optimization from three-mesh-bvh
 
         for (const offset of offsets) {
             const rayOrigin = camera.position.clone().add(offset);
-            rayOrigin.z += 1000 * currentScale; // Start 1m (scaled) above
+            rayOrigin.z += 1000 * currentScale; 
             
             raycaster.set(rayOrigin, down);
+            // BVH acceleration is automatic via THREE.Mesh.prototype.raycast patch
             const intersects = raycaster.intersectObjects(meshObjects, true);
             if (intersects.length > 0) {
                 maxGroundZ = Math.max(maxGroundZ, intersects[0].point.z);
@@ -188,7 +203,14 @@ export const Viewport = (props) => {
         }
 
         const floor = maxGroundZ + getEyeHeight();
-        setGroundHgt(camera.position.z - maxGroundZ);
+        
+        if (now - lastHudUpdate > 100) {
+            setGroundHgt(camera.position.z - maxGroundZ);
+            setCamPos({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
+            const d = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            setLookDir({ x: d.x, y: d.y, z: d.z });
+            lastHudUpdate = now;
+        }
 
         if (camera.position.z <= floor) {
             camera.position.z = floor;
@@ -197,11 +219,6 @@ export const Viewport = (props) => {
         } else {
             isGrounded = false;
         }
-    }
-    if (camera) {
-        setCamPos({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
-        const d = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        setLookDir({ x: d.x, y: d.y, z: d.z });
     }
   };
 
@@ -489,13 +506,16 @@ export const Viewport = (props) => {
       const box = new THREE.Box3();
       let count = 0;
       jotObjects = [];
+      meshObjects = [];
       scene.traverse(obj => { 
         if(obj.userData.isJot) {
             box.expandByObject(obj); 
             if (obj.type === 'Mesh') {
                 count++;
-                jotObjects.push(obj);
+                if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+                meshObjects.push(obj);
             }
+            jotObjects.push(obj);
         }
       });
       

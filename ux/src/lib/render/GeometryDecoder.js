@@ -1,6 +1,12 @@
 import * as THREE from 'three';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { ratioToNumber } from '../ft.js';
 import { JOTAssets, normalizeId } from './AssetManager.js';
+
+// --- INITIALIZE BVH ---
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 export const decodeGeometry = (text) => {
   const vertices = [], points = [], triangles = [], segments = [], faces = [];
@@ -152,6 +158,10 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
                 transparent, opacity 
             }));
             mesh.userData.isJot = true;
+
+            // --- COMPUTE BVH ---
+            g.computeBoundsTree();
+
             mesh.applyMatrix4(worldMat); scene.add(mesh);
             
             const edgesGeo = new THREE.EdgesGeometry(g, edgeThreshold);

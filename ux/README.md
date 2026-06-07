@@ -42,6 +42,7 @@ Both managers are fully integrated with the `Worksheet` persistence layer, savin
 ### 3D Viewports
 * **Orbit Mode** (Default): Left-click drag to rotate around the model center. Right-click drag or middle-click drag to pan. Scroll to zoom.
 * **Walk/Fly Mode**: Press **V** or use the UI toggle to enter first-person navigation.
+    * **Performance**: Utilizes **BVH-accelerated spatial queries** (`three-mesh-bvh`) for high-fidelity 60Hz physics (gravity/ground detection) even on high-poly models.
     * **WASD**: Move relative to view.
     * **Mouse**: Look around (Pointer Lock enabled).
     * **Space / Shift**: Fly Up / Down.
