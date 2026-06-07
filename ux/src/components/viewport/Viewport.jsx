@@ -14,6 +14,268 @@ export const Viewport = (props) => {
   const [snapshot, setSnapshot] = createSignal(null);
   const [isActive, setIsActive] = createSignal(false);
   const [hasAutoZoomed, setHasAutoZoomed] = createSignal(false);
+  const [viewMode, setViewMode] = createSignal('orbit'); // 'orbit' or 'walk'
+  const [isFlying, setIsFlying] = createSignal(true);
+  const [speedScale, setSpeedScale] = createSignal(1.0);
+  const [camPos, setCamPos] = createSignal({ x: 0, y: 0, z: 0 });
+  const [lookDir, setLookDir] = createSignal({ x: 0, y: 0, z: 0 });
+  const [geoBox, setGeoBox] = createSignal({ center: {x:0,y:0,z:0}, size: {x:0,y:0,z:0} });
+  const [meshCount, setMeshCount] = createSignal(0);
+  const [groundHgt, setGroundHgt] = createSignal(0);
+  let jotObjects = [];
+
+  // --- MOVEMENT STATE ---
+  const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
+  const velocity = new THREE.Vector3();
+  const baseMoveSpeed = 1500.0; // ~1.5 m/s human walk
+  const baseFlySpeed = 2500.0;  
+  
+  // Derived constants that scale with speedScale
+  const getEyeHeight = () => 1650 * speedScale();
+  const getGravity = () => 9800 * speedScale(); // 9.8 m/s^2
+  const getJumpForce = () => 3000 * speedScale();
+  
+  let isGrounded = false;
+  const raycaster = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, 0, -1);
+
+  // Sync renderer whenever mode changes
+  createEffect(() => {
+    const mode = viewMode();
+    if (isActive()) {
+        if (mode === 'walk') {
+            controls.enabled = false;
+            activateViewport(id, containerRef, scene, camera, controls, updateWalk);
+        } else {
+            controls.enabled = true;
+            activateViewport(id, containerRef, scene, camera, controls, null);
+        }
+    }
+  });
+
+  // Scale camera near plane with movement speed
+  createEffect(() => {
+    const scale = speedScale();
+    if (camera) {
+        camera.near = Math.max(0.01, scale * 1.0);
+        camera.updateProjectionMatrix();
+    }
+  });
+
+  const onKeyDown = (e) => {
+    const key = e.key.toLowerCase();
+    if (key === 'v') { toggleViewMode(); return; }
+    
+    // Q/E Speed Scaling
+    if (key === 'q') { setSpeedScale(s => Math.max(0.01, s * 0.9)); e.preventDefault(); return; }
+    if (key === 'e') { setSpeedScale(s => Math.min(100, s * 1.1)); e.preventDefault(); return; }
+
+    if (viewMode() === 'orbit' || !isActive()) return;
+    
+    // Prevent WASD/Space/Shift from scrolling or triggering browser shortcuts
+    if (['w', 'a', 's', 'd', ' ', 'shift'].includes(key)) {
+        e.preventDefault();
+    }
+
+    if (key === 'w') keys.w = true;
+    if (key === 'a') keys.a = true;
+    if (key === 's') keys.s = true;
+    if (key === 'd') keys.d = true;
+    if (key === ' ') keys.space = true;
+    if (e.key === 'Shift') keys.shift = true;
+    if (key === 'f') setIsFlying(!isFlying());
+  };
+
+  const onKeyUp = (e) => {
+    const key = e.key.toLowerCase();
+    if (key === 'w') keys.w = false;
+    if (key === 'a') keys.a = false;
+    if (key === 's') keys.s = false;
+    if (key === 'd') keys.d = false;
+    if (key === ' ') keys.space = false;
+    if (e.key === 'Shift') keys.shift = false;
+  };
+
+  const onMouseMove = (e) => {
+    if (viewMode() === 'orbit' || !isActive()) return;
+    if (document.pointerLockElement !== containerRef) return;
+
+    // Standard FPS rotation (Z-up orientation for JotCAD)
+    const sensitivity = 0.002;
+    camera.rotation.order = 'ZXY'; // Yaw (Z), Pitch (X), Roll (Y)
+    camera.rotation.z -= e.movementX * sensitivity;
+    camera.rotation.x -= e.movementY * sensitivity;
+    
+    // Clamp pitch to allow nearly 180 degree vertical look (Horizon is PI/2)
+    camera.rotation.x = Math.max(0.1, Math.min(Math.PI - 0.1, camera.rotation.x));
+  };
+
+  const updateWalk = (dt) => {
+    if (viewMode() !== 'walk' || !scene || !isActive()) return;
+
+    const dir = new THREE.Vector3();
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const currentScale = speedScale();
+
+    if (isFlying()) {
+        if (keys.w) dir.add(forward);
+        if (keys.s) dir.sub(forward);
+        if (keys.a) dir.sub(right);
+        if (keys.d) dir.add(right);
+        if (keys.space) dir.z += 1;
+        if (keys.shift) dir.z -= 1;
+        
+        if (dir.lengthSq() > 0) {
+            velocity.copy(dir.normalize().multiplyScalar(baseFlySpeed * currentScale * dt));
+            camera.position.add(velocity);
+        }
+    } else {
+        // Walk mode (Locked to XY plane for movement)
+        forward.z = 0; 
+        if (forward.lengthSq() > 0.001) forward.normalize();
+        
+        right.z = 0; 
+        if (right.lengthSq() > 0.001) right.normalize();
+
+        if (keys.w) dir.add(forward);
+        if (keys.s) dir.sub(forward);
+        if (keys.a) dir.sub(right);
+        if (keys.d) dir.add(right);
+
+        const targetVelX = dir.x * baseMoveSpeed * currentScale;
+        const targetVelY = dir.y * baseMoveSpeed * currentScale;
+        
+        // Horizontal inertia (Speed per second)
+        velocity.x += (targetVelX - velocity.x) * 10 * dt;
+        velocity.y += (targetVelY - velocity.y) * 10 * dt;
+
+        // Gravity (Acceleration)
+        velocity.z -= getGravity() * dt;
+
+        if (isGrounded && keys.space) {
+            velocity.z = getJumpForce();
+            isGrounded = false;
+        }
+
+        camera.position.x += velocity.x * dt;
+        camera.position.y += velocity.y * dt;
+        camera.position.z += velocity.z * dt;
+
+        // --- FOOTPRINT PHYSICS (4-point raycast) ---
+        // Player has a radius of 300mm (scaled)
+        const radius = 300 * currentScale;
+        const offsets = [
+            new THREE.Vector3(0, 0, 0), // Center
+            new THREE.Vector3(radius, 0, 0),
+            new THREE.Vector3(-radius, 0, 0),
+            new THREE.Vector3(0, radius, 0),
+            new THREE.Vector3(0, -radius, 0)
+        ];
+
+        let maxGroundZ = 0;
+        const meshObjects = jotObjects.filter(obj => obj.type === 'Mesh');
+
+        for (const offset of offsets) {
+            const rayOrigin = camera.position.clone().add(offset);
+            rayOrigin.z += 1000 * currentScale; // Start 1m (scaled) above
+            
+            raycaster.set(rayOrigin, down);
+            const intersects = raycaster.intersectObjects(meshObjects, true);
+            if (intersects.length > 0) {
+                maxGroundZ = Math.max(maxGroundZ, intersects[0].point.z);
+            }
+        }
+
+        const floor = maxGroundZ + getEyeHeight();
+        setGroundHgt(camera.position.z - maxGroundZ);
+
+        if (camera.position.z <= floor) {
+            camera.position.z = floor;
+            velocity.z = 0;
+            isGrounded = true;
+        } else {
+            isGrounded = false;
+        }
+    }
+    if (camera) {
+        setCamPos({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
+        const d = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        setLookDir({ x: d.x, y: d.y, z: d.z });
+    }
+  };
+
+  const safeRequestLock = () => {
+    if (!containerRef || !containerRef.isConnected) return;
+    
+    // Pointer lock must be triggered by a user gesture.
+    // We use a small delay to ensure Solid has finished any DOM patching.
+    requestAnimationFrame(() => {
+        if (!containerRef || !containerRef.isConnected) return;
+        try {
+            const promise = containerRef.requestPointerLock();
+            if (promise && promise.catch) {
+                promise.catch(err => {
+                    // Ignore "user denied" or "already locked" errors
+                    if (err.name !== 'NotAllowedError' && err.name !== 'SecurityError') {
+                        console.warn('[Viewport] Pointer lock failed:', err);
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('[Viewport] Pointer lock exception:', e);
+        }
+    });
+  };
+
+  const toggleViewMode = () => {
+    const newMode = viewMode() === 'orbit' ? 'walk' : 'orbit';
+    
+    if (newMode === 'walk') {
+        const box = geoBox();
+        const maxDim = Math.max(box.size.x, box.size.y, box.size.z, 10);
+        
+        // Target Speed = 1% of maxDim
+        const newScale = (maxDim * 0.01) / baseMoveSpeed;
+        setSpeedScale(newScale);
+
+        setViewMode(newMode);
+        controls.enabled = false;
+        setIsFlying(false); // Default to walking
+        if (isActive()) safeRequestLock();
+        
+        // Orient camera forward along +Y axis (Z-up)
+        camera.rotation.order = 'ZXY';
+        camera.rotation.set(1.8, 0, 0, 'ZXY'); 
+
+        // Immediate snap to ground at (0,0)
+        if (scene) {
+            // Raycast from high above 0,0 downwards
+            raycaster.set(new THREE.Vector3(0, 0, 10000), down);
+            const intersects = raycaster.intersectObjects(jotObjects, true);
+            let groundZ = 0;
+            if (intersects.length > 0) groundZ = intersects[0].point.z;
+            
+            // USE LOCAL newScale for immediate height calculation
+            const currentEyeHgt = 1650 * newScale;
+            camera.position.set(0, 0, groundZ + currentEyeHgt);
+            velocity.set(0, 0, 0);
+        }
+        
+        const d = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        setLookDir({ x: d.x, y: d.y, z: d.z });
+        setCamPos({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
+    } else {
+        setViewMode(newMode);
+        controls.enabled = true;
+        try { document.exitPointerLock(); } catch(e) {}
+    }
+  };
+
+  const currentStepDist = () => {
+    const base = isFlying() ? baseFlySpeed : baseMoveSpeed;
+    return (base * speedScale()).toFixed(1);
+  };
 
   const init = () => {
     if (!containerRef) return;
@@ -23,6 +285,7 @@ export const Viewport = (props) => {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(45, width / height, 1, 20000);
     camera.position.set(100, 150, 200);
+    camera.up.set(0, 0, 1); // Ensure Z is UP
     camera.lookAt(0, 0, 0);
 
     controls = new OrbitControls(camera, containerRef);
@@ -84,10 +347,16 @@ export const Viewport = (props) => {
 
   onMount(() => {
     init();
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('mousemove', onMouseMove);
   });
 
   onCleanup(() => {
     if (controls) controls.dispose();
+    window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('keyup', onKeyUp);
+    window.removeEventListener('mousemove', onMouseMove);
   });
 
   const updateGridAndLabels = (maxPos) => {
@@ -157,11 +426,20 @@ export const Viewport = (props) => {
   };
 
   const handleActivate = () => {
-    if (isActive()) return;
+    if (isActive()) {
+        if (viewMode() === 'walk') safeRequestLock();
+        return;
+    }
     if (!scene) init();
     
     setIsActive(true);
-    activateViewport(id, containerRef, scene, camera, controls);
+    activateViewport(id, containerRef, scene, camera, controls, viewMode() === 'walk' ? updateWalk : null);
+    
+    // If we are already in walk mode, request lock on first click
+    if (viewMode() === 'walk') {
+        controls.enabled = false;
+        safeRequestLock();
+    }
     
     const deactivate = (e) => {
       if (containerRef && !containerRef.contains(e.target)) {
@@ -170,6 +448,11 @@ export const Viewport = (props) => {
         setSnapshot(snap);
 
         setIsActive(false);
+        if (viewMode() === 'walk') {
+            setViewMode('orbit');
+            controls.enabled = true;
+            try { document.exitPointerLock(); } catch(e) {}
+        }
         window.removeEventListener('pointerdown', deactivate);
       }
     };
@@ -204,11 +487,28 @@ export const Viewport = (props) => {
       await renderJotToScene(vfs, data, scene, threshold);
 
       const box = new THREE.Box3();
-      scene.traverse(obj => { if(obj.userData.isJot) box.expandByObject(obj); });
+      let count = 0;
+      jotObjects = [];
+      scene.traverse(obj => { 
+        if(obj.userData.isJot) {
+            box.expandByObject(obj); 
+            if (obj.type === 'Mesh') {
+                count++;
+                jotObjects.push(obj);
+            }
+        }
+      });
       
+      setMeshCount(count);
       if (!box.isEmpty()) {
         const center = box.getCenter(new THREE.Vector3());
-        const geoSize = box.getSize(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        setGeoBox({
+            center: { x: center.x, y: center.y, z: center.z },
+            size: { x: size.x, y: size.y, z: size.z }
+        });
+
+        const geoSize = size;
         const maxDim = Math.max(geoSize.x, geoSize.y, geoSize.z) || 1;
         updateGridAndLabels(box.max);
 
@@ -263,17 +563,53 @@ export const Viewport = (props) => {
   });
 
   const handleWheel = (e) => {
+    if (viewMode() === 'walk') {
+        e.preventDefault();
+        e.stopPropagation();
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        setSpeedScale(Math.max(0.01, Math.min(100, speedScale() * factor)));
+        return;
+    }
     e.stopPropagation();
   };
 
   return (
     <div class="relative w-full h-full">
-      <button 
-        onClick={() => setHasAutoZoomed(false)}
-        class="absolute top-2 left-2 z-10 px-2 py-1 text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded border border-cyan-400/20 transition-all font-black uppercase tracking-tighter"
-      >
-        Reset Camera
-      </button>
+      <div class="absolute top-2 left-2 z-10 flex gap-2">
+        <button 
+            onClick={() => setHasAutoZoomed(false)}
+            class="px-2 py-1 text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded border border-cyan-400/20 transition-all font-black uppercase tracking-tighter"
+        >
+            Reset Camera
+        </button>
+        <button 
+            onClick={(e) => { e.stopPropagation(); toggleViewMode(); }}
+            class={`px-2 py-1 text-[10px] rounded border transition-all font-black uppercase tracking-tighter ${
+                viewMode() === 'walk' 
+                ? 'bg-amber-500/20 border-amber-400 text-amber-400' 
+                : 'bg-cyan-500/10 border-cyan-400/20 text-cyan-400'
+            }`}
+        >
+            {viewMode() === 'walk' ? (isFlying() ? `Fly x${speedScale().toFixed(4)} (${currentStepDist()}mm/s)` : `Walk x${speedScale().toFixed(4)} (${currentStepDist()}mm/s)`) : 'Mode: Orbit'}
+        </button>
+        <Show when={viewMode() === 'walk'}>
+            <div class="px-2 py-1 text-[9px] bg-black/60 text-white/40 rounded border border-white/10 font-mono flex gap-2 items-center">
+                <span>KEYS: WASD (MOVE) | SPACE/SHIFT (UP/DN) | Q/E (SPEED)</span>
+                <span class="text-white border-l border-white/10 pl-2">
+                    HGT: {groundHgt().toFixed(1)}mm
+                </span>
+                <span class="text-cyan-400 border-l border-white/10 pl-2">
+                    POS: {camPos().x.toFixed(0)}, {camPos().y.toFixed(0)}, {camPos().z.toFixed(0)}
+                </span>
+                <span class="text-amber-400 border-l border-white/10 pl-2">
+                    DIR: {lookDir().x.toFixed(2)}, {lookDir().y.toFixed(2)}, {lookDir().z.toFixed(2)}
+                </span>
+                <span class="text-emerald-400 border-l border-white/10 pl-2">
+                    BOX: {geoBox().size.x.toFixed(0)}x{geoBox().size.y.toFixed(0)}x{geoBox().size.z.toFixed(0)} 
+                </span>
+            </div>
+        </Show>
+      </div>
       <div
         ref={containerRef}
         class="viewport-container w-full h-full rounded-lg overflow-hidden bg-slate-950 relative cursor-pointer"

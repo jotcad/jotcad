@@ -39,6 +39,16 @@ Both managers are fully integrated with the `Worksheet` persistence layer, savin
 -   **Tap Targets**: All interactive elements in maximized windows enforce a
     minimum **44x44px** hitbox.
 
+### 3D Viewports
+* **Orbit Mode** (Default): Left-click drag to rotate around the model center. Right-click drag or middle-click drag to pan. Scroll to zoom.
+* **Walk/Fly Mode**: Press **V** or use the UI toggle to enter first-person navigation.
+    * **WASD**: Move relative to view.
+    * **Mouse**: Look around (Pointer Lock enabled).
+    * **Space / Shift**: Fly Up / Down.
+    * **Q / E or Scroll**: Adjust movement speed scale (micro to macro).
+    * **F**: Toggle "Gravity" (Height Mapping) while in Walk mode.
+* **Heads-Up Display (HUD)**: Displays real-time camera position (POS), look direction (DIR), model dimensions (BOX), and eye-height (HGT).
+
 ## Unified Persistence (Worksheet)
 
 The `Worksheet` abstraction handles cross-device synchronization of:
