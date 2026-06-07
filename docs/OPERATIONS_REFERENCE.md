@@ -613,14 +613,14 @@ Vector = Trace(Photo, colors=12, smooth=2.0);
 Vector.on("#bcd3ee").ez(5);
 ```
 
-### `Relief(image, width=10.0, height=10.0, depth=2.0, base=1.0, levels=16, minArea=25.0, smooth=0.0, close=true)`
+### `Relief(image, width=10.0, breadth=10.0, height=2.0, base=1.0, levels=16, minArea=25.0, smooth=0.0, close=true)`
 Generates a 3D relief mesh from a 2D grayscale/bump map image.
 
 - **`image`**: An `Image()` object or direct URL to a bitmap.
 - **`width`**: Physical target width of the relief shape along the X-axis.
-- **`height`**: Physical target height of the relief shape along the Y-axis.
-- **`depth`**: Maximum extrusion height (along the Z-axis) corresponding to white pixels.
-- **`base`**: Thickness of the base bottom plate (below the heightmap surface).
+- **`breadth`**: Physical target breadth of the relief shape along the Y-axis.
+- **`height`**: Maximum extrusion height (along the Z-axis) corresponding to white pixels.
+- **`base`**: Thickness of the base bottom plate (starting from Z=0).
 - **`levels`**: Number of height quantization levels (default 16).
 - **`minArea`**: Minimum pixel area for component merging / despeckling (default 25.0).
 - **`smooth`**: Boundary smoothing parameter (default 0.0).
@@ -637,7 +637,7 @@ Generates a 3D relief mesh from a 2D grayscale/bump map image.
 Map = Image("heightmap.png");
 
 // Generate a 100x100mm relief, 5mm max displacement, with a 2mm base
-ReliefMesh = Relief(Map, width=100, height=100, depth=5, base=2, levels=16);
+ReliefMesh = Relief(Map, width=100, breadth=100, height=5, base=2, levels=16);
 
 // Export to STL
 ReliefMesh.stl("model.stl");

@@ -20,7 +20,7 @@ template <typename P = JotVfsProtocol>
 struct ReliefOp : P {
     static constexpr const char* path = "jot/relief";
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const nlohmann::json& image_identity, double width, double height, double depth, double base, int levels, double minArea, double smooth, bool close = true) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const nlohmann::json& image_identity, double width, double breadth, double height, double base, int levels, double minArea, double smooth, bool close = true) {
         try {
             std::cout << "[Relief] Loading image bytes..." << std::endl;
             fs::Selector img_sel = image_identity.get<fs::Selector>();
@@ -237,10 +237,10 @@ struct ReliefOp : P {
             };
 
             auto to_phys_x = [&](double px_pixel) { return -width / 2.0 + (px_pixel / W) * width; };
-            auto to_phys_y = [&](double py_pixel) { return -height / 2.0 + (py_pixel / H) * height; };
-            auto get_z = [&](int L) { return base + depth * (double)L / (levels - 1); };
+            auto to_phys_y = [&](double py_pixel) { return -breadth / 2.0 + (py_pixel / H) * breadth; };
+            auto get_z = [&](int L) { return base + height * (double)L / (levels - 1); };
 
-            double z_base = base - 1.0;
+            double z_base = 0.0; // The bottom is always at Z=0 for standard primitives
 
             // A. Top Horizontal Faces (for each component except border)
             for (int i = 0; i < comp_count - 1; ++i) {
@@ -462,7 +462,11 @@ struct ReliefOp : P {
                                 int a1 = add_vertex(px1, py1, hz2);
                                 int a2 = add_vertex(px2, py2, hz2);
 
-                                bool point_right = (c > l1) ? normal_right : !normal_right;
+                                // Correct orientation: 
+                                // normal_right assumes the component 'c' is on the 'right' of the segment (p1->p2)
+                                // If the component level is HIGHER than the current wall level segment (idx), 
+                                // the wall is an exterior face of component 'c'.
+                                bool point_right = (comp_levels[c] > l1) ? normal_right : !normal_right;
 
                                 if (point_right) {
                                     triangles.push_back({b1, b2, a1});
@@ -542,7 +546,7 @@ struct ReliefOp : P {
         }
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "width", "height", "depth", "base", "levels", "minArea", "smooth", "close"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "width", "breadth", "height", "base", "levels", "minArea", "smooth", "close"}; }
 
     static typename P::json schema() {
         return {
@@ -552,8 +556,8 @@ struct ReliefOp : P {
             }},
             {"arguments", nlohmann::json::array({
                 {{"name", "width"}, {"type", "jot:number"}, {"default", 10.0}},
-                {{"name", "height"}, {"type", "jot:number"}, {"default", 10.0}},
-                {{"name", "depth"}, {"type", "jot:number"}, {"default", 2.0}},
+                {{"name", "breadth"}, {"type", "jot:number"}, {"default", 10.0}},
+                {{"name", "height"}, {"type", "jot:number"}, {"default", 2.0}},
                 {{"name", "base"}, {"type", "jot:number"}, {"default", 1.0}},
                 {{"name", "levels"}, {"type", "jot:number"}, {"default", 16}},
                 {{"name", "minArea"}, {"type", "jot:number"}, {"default", 25.0}},

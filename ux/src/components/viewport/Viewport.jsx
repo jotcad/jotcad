@@ -67,16 +67,21 @@ export const Viewport = (props) => {
 
   const onKeyDown = (e) => {
     const key = e.key.toLowerCase();
-    if (key === 'v') { toggleViewMode(); return; }
     
+    // Global-ish toggle (only if this viewport is active)
+    if (key === 'v' && isActive()) { toggleViewMode(); return; }
+
+    // ALL OTHER KEYS (Movement, Speed, Fly) only work if the pointer is LOCKED
+    if (document.pointerLockElement !== containerRef) return;
+
     // Q/E Speed Scaling
-    if (key === 'q') { setSpeedScale(s => Math.max(0.01, s * 0.9)); e.preventDefault(); return; }
-    if (key === 'e') { setSpeedScale(s => Math.min(100, s * 1.1)); e.preventDefault(); return; }
+    if (key === 'q') { setSpeedScale(s => Math.max(1e-6, s * 0.8)); e.preventDefault(); return; }
+    if (key === 'e') { setSpeedScale(s => Math.min(100, s * 1.2)); e.preventDefault(); return; }
 
     if (viewMode() === 'orbit' || !isActive()) return;
     
     // Prevent WASD/Space/Shift from scrolling or triggering browser shortcuts
-    if (['w', 'a', 's', 'd', ' ', 'shift'].includes(key)) {
+    if (['w', 'a', 's', 'd', ' ', 'shift', 'f'].includes(key)) {
         e.preventDefault();
     }
 
@@ -91,6 +96,8 @@ export const Viewport = (props) => {
 
   const onKeyUp = (e) => {
     const key = e.key.toLowerCase();
+    
+    // Only clear keys if pointer is locked (or if we just lost lock)
     if (key === 'w') keys.w = false;
     if (key === 'a') keys.a = false;
     if (key === 's') keys.s = false;
@@ -625,7 +632,7 @@ export const Viewport = (props) => {
                     DIR: {lookDir().x.toFixed(2)}, {lookDir().y.toFixed(2)}, {lookDir().z.toFixed(2)}
                 </span>
                 <span class="text-emerald-400 border-l border-white/10 pl-2">
-                    BOX: {geoBox().size.x.toFixed(0)}x{geoBox().size.y.toFixed(0)}x{geoBox().size.z.toFixed(0)} 
+                    BOX: W:{geoBox().size.x.toFixed(0)} B:{geoBox().size.y.toFixed(0)} H:{geoBox().size.z.toFixed(0)} 
                 </span>
             </div>
         </Show>
