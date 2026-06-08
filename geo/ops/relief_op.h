@@ -236,8 +236,8 @@ struct ReliefOp : P {
                 return idx;
             };
 
-            auto to_phys_x = [&](double px_pixel) { return -width / 2.0 + (px_pixel / W) * width; };
-            auto to_phys_y = [&](double py_pixel) { return -breadth / 2.0 + (py_pixel / H) * breadth; };
+            auto to_phys_x = [&](double px_pixel) { return -width / 2.0 + ((px_pixel + 0.5) / W) * width; };
+            auto to_phys_y = [&](double py_pixel) { return -breadth / 2.0 + ((py_pixel - 0.5) / H) * breadth; };
             auto get_z = [&](int L) { return base + height * (double)L / (levels - 1); };
 
             double z_base = 0.0; // The bottom is always at Z=0 for standard primitives

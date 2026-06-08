@@ -47,6 +47,7 @@
 #include "wrap_op.h"
 #include "conform_op.h"
 #include "emboss_op.h"
+#include "decal_op.h"
 #include "smooth_op.h"
 #include "separate_op.h"
 #include "deform_op.h"
@@ -117,6 +118,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     wrap_init(vfs);
     conform_init(vfs);
     emboss_init(vfs);
+    decal_init(vfs);
     smooth_init(vfs);
     separate_init(vfs);
     deform_init(vfs);

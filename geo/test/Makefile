@@ -54,7 +54,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                simplify_test.cpp \
                relief_test.cpp \
                emboss_test.cpp \
-               trace_quant_test.cpp
+               trace_quant_test.cpp \
+               decal_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
@@ -77,6 +78,11 @@ $(BIN_DIR)/cid_consistency_test: $(OBJ_DIR)/cid_consistency_test.o $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
+# Rule for building the standalone decal_test binary
+$(BIN_DIR)/decal_test: $(OBJ_DIR)/decal_test.o $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
 # Compile unit_tests.o, generating unit_tests_run.h dynamically first
 $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h
 	@mkdir -p $(OBJ_DIR)
@@ -86,6 +92,12 @@ $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h
 $(OBJ_DIR)/cid_consistency_test.o: cid_consistency_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile decal_test.o
+$(OBJ_DIR)/decal_test.o: decal_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
 
 # Dynamic header generation listing all test functions inside namespaces
 unit_tests_run.h: Makefile

@@ -121,7 +121,7 @@ $(OBJ_DIR)/triangulation.o: render/triangulation.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/ops_library.o: infra/ops_library.cc
+$(OBJ_DIR)/ops_library.o: infra/ops_library.cc $(wildcard ops/*.h)
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

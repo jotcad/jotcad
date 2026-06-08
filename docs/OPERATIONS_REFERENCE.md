@@ -662,6 +662,24 @@ let relief_shape = Box(10, 10, [0.0, 2.0]).move(0, 0, -0.1);
 Box(30, 30, 10).emboss(Disk(10), relief_shape);
 ```
 
+### `decal(pattern, relief, seam="skirting", fade_radius=1.0)`
+Projects a 3D relief mesh shape onto the subject's surface, clipped by a 2D boundary pattern, using a robust 2D-clipping and 3D projection pipeline. Unlike standard emboss operators, it provides clean, watertight manifolds for all seam types.
+
+- **`pattern`**: The 2D boundary shape pattern.
+- **`relief`**: The open 3D relief shape (`close=false` required) representing the height displacement.
+- **`seam`**: The seam transition type:
+  - `"skirting"`: Sharp vertical walls at the boundary.
+  - `"attenuate"`: Linear attenuation of the displacement to 0 at the boundary.
+  - `"smooth"`: Hermite-interpolated smooth attenuation to 0 at the boundary.
+- **`fade_radius`**: The radius over which boundary height attenuation/fade is applied (for `"attenuate"` and `"smooth"` seam types).
+
+#### Example
+```js
+// Apply a smooth decal pattern on the top face of a box
+let relief_shape = Relief(mock_image, width=24.0, breadth=24.0, height=1.9, base=0.0, close=false);
+Box(30, 30, 10).decal(Disk(10), relief_shape, seam="smooth", fade_radius=2.0);
+```
+
 ## 17. Infinite Planes (Orientations)
 ...
 - **`X(offset=0)`**: Infinite plane on the YZ axis (normal +X).
