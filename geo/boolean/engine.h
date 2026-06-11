@@ -506,14 +506,14 @@ struct Engine {
 
     struct ToolNode { Geometry geo; Matrix world_tf; std::string type; bool is_gap = false; };
 
-    static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<ToolNode>& tool_nodes) {
+    static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& /*ignored_parent_tf*/, std::vector<ToolNode>& tool_nodes) {
         if (s.is_ghost() || s.is_mark() || s.is_mask()) return;
-        Matrix current_tf = parent_tf * s.tf;
+        Matrix current_tf = s.tf;
         std::string type = s.tags.value("type", "");
         bool is_gap = s.is_gap();
         if (s.geometry.has_value()) tool_nodes.push_back({vfs->read<Geometry>(s.geometry.value()), current_tf, type, is_gap});
         else if (type == "plane") tool_nodes.push_back({Geometry(), current_tf, type, is_gap});
-        for (const auto& child : s.components) collect_tool_geometry(vfs, child, current_tf, tool_nodes);
+        for (const auto& child : s.components) collect_tool_geometry(vfs, child, current_tf /* unused */, tool_nodes);
     }
 
     // --- Recursive Boolean Orchestrators ---

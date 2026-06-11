@@ -84,9 +84,31 @@ TEST_ENGINE_BIN = $(BIN_DIR)/test_engine
 $(TEST_ENGINE_BIN): $(OBJ_DIR)/test_engine.o $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
 
-test: $(OPS_BIN) $(TEST_LOGIC_BIN) $(TEST_ENGINE_BIN)
+TEST_DECAL_PIPELINE_BIN = $(BIN_DIR)/decal_pipeline_test
+TEST_DECAL_PIPELINE_OBJ = $(OBJ_DIR)/decal_pipeline_test.o
+
+$(OBJ_DIR)/decal_pipeline_test.o: test/decal_pipeline_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(TEST_DECAL_PIPELINE_BIN): $(TEST_DECAL_PIPELINE_OBJ) $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
+
+TEST_DECAL_VISUAL_BIN = $(BIN_DIR)/decal_visual_test
+TEST_DECAL_VISUAL_OBJ = $(OBJ_DIR)/decal_visual_test.o
+
+$(OBJ_DIR)/decal_visual_test.o: test/decal_visual_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(TEST_DECAL_VISUAL_BIN): $(TEST_DECAL_VISUAL_OBJ) $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
+
+test: $(OPS_BIN) $(TEST_LOGIC_BIN) $(TEST_ENGINE_BIN) $(TEST_DECAL_PIPELINE_BIN) $(TEST_DECAL_VISUAL_BIN)
 	$(TEST_LOGIC_BIN)
 	$(TEST_ENGINE_BIN)
+	$(TEST_DECAL_PIPELINE_BIN)
+	$(TEST_DECAL_VISUAL_BIN)
 
 # Explicit compilation rules
 $(OBJ_DIR)/vfs_core.o: ../fs/cpp/vfs_core.cpp

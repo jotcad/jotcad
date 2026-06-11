@@ -51,7 +51,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 ## Universal Protocol Rules
 
 - **STABILITY MANDATE (CRITICAL)**: JS unit tests MUST be executed sequentially (`--test-concurrency=1`) to prevent port deadlocks and race conditions in mesh-heavy tests.
-- **BUILD SYSTEM INTEGRITY**: Do NOT compile files using direct compiler invocations (e.g., `g++ ...`). Always compile and build via the system `Makefile`. Proactively clean the build objects (`make clean`) when introducing new files, adding includes, or changing registry files to prevent desynchronized GCC dependency (`.d`) files.
+- **BUILD SYSTEM INTEGRITY**: Do NOT compile files using direct compiler invocations (e.g., `g++ ...`). Always compile and build via the system `Makefile`. Ensure that the `Makefile` handles dependencies properly (e.g., using `-MMD -MP` to generate `.d` files) so that `make clean` is not required during regular development.
 - **PROTOCOL INTEGRITY (CRITICAL)**: Every structured address MUST be a formal `Selector` instance. "String-path guessing" or deconstructing Selectors into top-level keys in metadata or network messages is strictly prohibited.
 - **BOUNDARY HYDRATION**: All REST handlers, mesh ingress points, and UI entry points MUST explicitly hydrate incoming JSON into formal `Selector` instances using `Selector.fromObject()`.
 - **SEMANTIC GEOMETRY TAGGING (MANDATORY)**: All CAD-produced geometry (Meshes, LineSegments) MUST be tagged with `userData.isJot = true`. Bounding box and auto-zoom calculations MUST exclusively filter for this tag to ignore system helpers (grids, labels).

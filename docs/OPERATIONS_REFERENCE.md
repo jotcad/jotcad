@@ -662,22 +662,21 @@ let relief_shape = Box(10, 10, [0.0, 2.0]).move(0, 0, -0.1);
 Box(30, 30, 10).emboss(Disk(10), relief_shape);
 ```
 
-### `decal(pattern, relief, seam="skirting", fade_radius=1.0)`
-Projects a 3D relief mesh shape onto the subject's surface, clipped by a 2D boundary pattern, using a robust 2D-clipping and 3D projection pipeline. Unlike standard emboss operators, it provides clean, watertight manifolds for all seam types.
+### `decal(relief, seam="skirting", fade_radius=1.0)`
+Physically clips and re-places a 3D relief mesh onto the subject's surface using a **Surface-Preserving Unfolding** pipeline. To eliminate geometric distortion (stretching) on side faces, the operator "unrolls" the subject onto a flat plane, clips the relief exactly, and then "re-wraps" it back onto the 3D surface.
 
-- **`pattern`**: The 2D boundary shape pattern.
-- **`relief`**: The open 3D relief shape (`close=false` required) representing the height displacement.
+**Constraint**: The `relief` mesh must be large enough to completely cover the targeted subject area in the unfolded UV plane, otherwise a runtime error is thrown.
+
+- **`relief`**: The open 3D relief shape (`close=false` required) representing the topographical detail to be applied.
 - **`seam`**: The seam transition type:
-  - `"skirting"`: Sharp vertical walls at the boundary.
-  - `"attenuate"`: Linear attenuation of the displacement to 0 at the boundary.
-  - `"smooth"`: Hermite-interpolated smooth attenuation to 0 at the boundary.
-- **`fade_radius`**: The radius over which boundary height attenuation/fade is applied (for `"attenuate"` and `"smooth"` seam types).
+  - `"skirting"`: Sharp vertical walls at the boundary chunks.
+- **`fade_radius`**: (Reserved) The radius over which boundary height attenuation is applied.
 
 #### Example
 ```js
-// Apply a smooth decal pattern on the top face of a box
-let relief_shape = Relief(mock_image, width=24.0, breadth=24.0, height=1.9, base=0.0, close=false);
-Box(30, 30, 10).decal(Disk(10), relief_shape, seam="smooth", fade_radius=2.0);
+// Apply a 3D relief chessboard onto all sides of a box without distortion
+let relief_shape = Relief(chessboard_image, width=100.0, breadth=100.0, height=1.9, base=0.0, close=false);
+Box(10, 10, 10).decal(relief_shape);
 ```
 
 ## 17. Infinite Planes (Orientations)

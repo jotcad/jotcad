@@ -128,6 +128,10 @@ struct Matrix {
         return t.transform(p);
     }
 
+    EK::Vector_3 transform(const EK::Vector_3& v) const {
+        return t.transform(v);
+    }
+
     EK::Plane_3 transform(const EK::Plane_3& p) const {
         return t.transform(p);
     }

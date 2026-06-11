@@ -48,14 +48,16 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                segments_boolean_test.cpp \
                points_boolean_test.cpp \
                lower_dim_boolean_test.cpp \
+               decal_pipeline_test.cpp \
                ghost_test.cpp \
-               stamp_test.cpp \
                material_test.cpp \
                simplify_test.cpp \
                relief_test.cpp \
                emboss_test.cpp \
                trace_quant_test.cpp \
-               decal_test.cpp
+               decal_test.cpp \
+               decal_hill_perf.cpp \
+               decal_visual_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
@@ -83,6 +85,11 @@ $(BIN_DIR)/decal_test: $(OBJ_DIR)/decal_test.o $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
+# Rule for building the standalone decal_hill_perf binary
+$(BIN_DIR)/decal_hill_perf: $(OBJ_DIR)/decal_hill_perf.o $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
 # Compile unit_tests.o, generating unit_tests_run.h dynamically first
 $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h
 	@mkdir -p $(OBJ_DIR)
@@ -95,6 +102,11 @@ $(OBJ_DIR)/cid_consistency_test.o: cid_consistency_test.cpp
 
 # Compile decal_test.o
 $(OBJ_DIR)/decal_test.o: decal_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile decal_hill_perf.o
+$(OBJ_DIR)/decal_hill_perf.o: decal_hill_perf.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

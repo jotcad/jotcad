@@ -1,0 +1,135 @@
+import test from 'node:test';
+import assert from 'node:assert';
+import { VFS, MeshLink, MemoryStorage, Selector } from '../fs/src/index.js';
+import { launchSystem } from '../orchestrator.js';
+
+async function consumeBytes(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+    }
+    const len = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(len);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    return bytes;
+}
+
+test('jot/decal - 3D wrapping on cube', { timeout: 60000 }, async (t) => {
+  let sys;
+  let vfs;
+  let mesh;
+
+  t.after(async () => {
+    if (vfs) await vfs.close();
+    if (sys) await sys.stop();
+  });
+
+  // 1. Launch the TEST system
+  sys = await launchSystem('test/standard');
+  const OPS_URL = `http://localhost:${sys.ports.ops}`;
+
+  // 2. Start VFS Node
+  vfs = new VFS({
+    id: 'decal-integration-node',
+    storage: new MemoryStorage(),
+  });
+  mesh = new MeshLink(vfs, [OPS_URL]);
+  await vfs.init();
+  await mesh.start();
+
+  // Wait for mesh handshake
+  await new Promise(r => setTimeout(r, 2000));
+
+  // 1. Create a Cube Subject (1x1x1)
+  const cube_sel = new Selector('jot/Box', { width: 1, height: 1, depth: 1 }).withOutput('$out');
+  const cubeResp = await vfs.read(cube_sel);
+  const cube = JSON.parse(new TextDecoder().decode(await consumeBytes(cubeResp.stream)));
+  
+  // 2. Create a large Plane Relief (4x4) at Z=2 looking down
+  const relief_sel = new Selector('jot/Box', { width: 4, height: 4, depth: 0 }).withOutput('$out');
+  const reliefResp = await vfs.read(relief_sel);
+  const relief = JSON.parse(new TextDecoder().decode(await consumeBytes(reliefResp.stream)));
+  
+  const reliefShape = { 
+    geometry: relief.geometry, 
+    tf: { cartesian: [1,0,0,0, 0,1,0,0, 0,0,1,2] } // At Z=2
+  };
+
+  // 3. Apply Decal
+  const decal_sel = new Selector('jot/decal', { 
+    $in: cube, 
+    relief: reliefShape 
+  }).withOutput('$out');
+
+  const response = await vfs.read(decal_sel);
+  assert.ok(response, 'Should return a response');
+
+  const result = JSON.parse(new TextDecoder().decode(await consumeBytes(response.stream)));
+  assert.ok(result.geometry, 'Should produce geometry');
+  
+  const geoResp = await vfs.read(result.geometry);
+  const geoText = new TextDecoder().decode(await consumeBytes(geoResp.stream));
+  
+  assert.ok(geoText.startsWith('V '), 'Geometry should start with V tag');
+  assert.ok(geoText.includes('T '), 'Geometry should contain T (triangles) tag');
+});
+
+test('jot/decal - error on insufficient coverage', { timeout: 60000 }, async (t) => {
+  let sys;
+  let vfs;
+  let mesh;
+
+  t.after(async () => {
+    if (vfs) await vfs.close();
+    if (sys) await sys.stop();
+  });
+
+  sys = await launchSystem('test/standard');
+  vfs = new VFS({
+    id: 'decal-integration-node-2',
+    storage: new MemoryStorage(),
+  });
+  mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.ops}`]);
+  await vfs.init();
+  await mesh.start();
+
+  await new Promise(r => setTimeout(r, 2000));
+
+  // 1. Cube Subject
+  const cube_sel = new Selector('jot/Box', { width: 1, height: 1, depth: 1 }).withOutput('$out');
+  const cubeResp = await vfs.read(cube_sel);
+  const cube = JSON.parse(new TextDecoder().decode(await consumeBytes(cubeResp.stream)));
+  
+  // 2. Tiny Relief (0.1 x 0.1)
+  const tinyRelief_sel = new Selector('jot/Box', { width: 0.1, height: 0.1, depth: 0 }).withOutput('$out');
+  const tinyReliefResp = await vfs.read(tinyRelief_sel);
+  const tinyRelief = JSON.parse(new TextDecoder().decode(await consumeBytes(tinyReliefResp.stream)));
+  
+  const reliefShape = { 
+    geometry: tinyRelief.geometry, 
+    tf: { cartesian: [1,0,0,0, 0,1,0,0, 0,0,1,2] }
+  };
+
+  // 3. Apply Decal - Should throw
+  const decal_sel = new Selector('jot/decal', { 
+    $in: cube, 
+    relief: reliefShape 
+  }).withOutput('$out');
+  
+  try {
+    const response = await vfs.read(decal_sel);
+    // If it didn't throw during read, check if it returned an error object
+    const result = JSON.parse(new TextDecoder().decode(await consumeBytes(response.stream)));
+    if (result.error) {
+        assert.ok(result.error.includes('complete coverage'), 'Error message should mention coverage');
+    } else {
+        assert.fail('Should have thrown error for insufficient coverage');
+    }
+  } catch (e) {
+    assert.ok(e.message.includes('complete coverage') || e.message.includes('VFS Read Failed'), 'Error should mention coverage');
+  }
+});
