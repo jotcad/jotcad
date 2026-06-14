@@ -10,6 +10,22 @@ extern "C" unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int
 using namespace jotcad::geo;
 using namespace fs;
 
+std::vector<uint8_t> read_file_bytes(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        if (path.rfind("geo/test/", 0) != 0) {
+            file.open("geo/test/" + path, std::ios::binary);
+        } else {
+            file.open(path.substr(9), std::ios::binary);
+        }
+    }
+    if (!file) {
+        throw std::runtime_error("Test helper: Failed to read local file: " + path);
+    }
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+}
+
 int main() {
     MockVFS vfs("relief");
     register_all_ops(&vfs);
@@ -113,27 +129,31 @@ int main() {
         out.close();
         std::cout << "  - Saved verification PNG to actual/relief_test_final.png" << std::endl;
 
-        // 5. Test Case 2: Fetching an HTML page instead of an image
-        std::cout << "  - Executing Test Case 2 (HTML image fetch failure)..." << std::endl;
+        // 5. Test Case 2: Fetching a non-image page instead of an image
+        std::cout << "  - Executing Test Case 2 (Non-image fetch failure)..." << std::endl;
         try {
-            std::string html_url = "https://commons.wikimedia.org/wiki/Category:Heightmaps#/media/File:Heightmap_of_Trencrom_Hill.png";
+            std::string html_url = "mock://invalid-image";
             Selector image2_sel = Selector{"jot/Image", {{"url", html_url}}}.with_output("$out");
             
-            std::cout << "    - Executing ImageOp on HTML URL: " << html_url << std::endl;
+            std::cout << "    - Executing ImageOp on URL: " << html_url << std::endl;
             Processor::execute(&vfs, image2_sel);
             
-            std::cerr << "❌ FAIL: Expected ImageOp to throw error on HTML content, but it succeeded!" << std::endl;
+            std::cerr << "❌ FAIL: Expected ImageOp to throw error on non-image content, but it succeeded!" << std::endl;
             return 1;
         } catch (const std::exception& e) {
             std::cout << "    - SUCCESS: Caught expected error: " << e.what() << std::endl;
         }
 
-        // 6. Test Case 3: Fetching the correct PNG heightmap from Wikimedia Commons and building a relief
+        // 6. Test Case 3: Fetching the correct PNG heightmap and building a relief
         std::cout << "  - Executing Test Case 3 (Real heightmap fetch and relief generation)..." << std::endl;
         try {
-            std::string valid_url = "https://upload.wikimedia.org/wikipedia/commons/c/c3/Heightmap_of_Trencrom_Hill.png";
+            std::string valid_url = "mock://Heightmap_of_Trencrom_Hill.png";
             Selector image3_sel = Selector{"jot/Image", {{"url", valid_url}}}.with_output("$out");
             
+            std::cout << "    - Reading local heightmap image and pre-populating VFS..." << std::endl;
+            std::vector<uint8_t> real_img_bytes = read_file_bytes("geo/test/Heightmap_of_Trencrom_Hill.png");
+            vfs.write(image3_sel, real_img_bytes);
+
             std::cout << "    - Executing ImageOp on valid URL: " << valid_url << std::endl;
             Processor::execute(&vfs, image3_sel);
             
@@ -184,7 +204,7 @@ int main() {
                 std::cout << "⚠️ Network/Rate-limiting error: " << e.what() << std::endl;
                 std::cout << "⚠️ Skipping Test Case 3 due to unreachable Wikimedia server." << std::endl;
             } else {
-                std::cerr << "❌ FAIL: Fetch or ReliefOp failed on valid heightmap URL: " << e.what() << std::endl;
+                std::cerr << "❌ FAIL: Fetch or ReliefOp failed on valid heightmap: " << e.what() << std::endl;
                 return 1;
             }
         }

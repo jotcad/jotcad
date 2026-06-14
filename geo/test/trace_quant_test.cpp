@@ -9,6 +9,22 @@ extern "C" unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int
 using namespace jotcad::geo;
 using namespace fs;
 
+std::vector<uint8_t> read_file_bytes(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        if (path.rfind("geo/test/", 0) != 0) {
+            file.open("geo/test/" + path, std::ios::binary);
+        } else {
+            file.open(path.substr(9), std::ios::binary);
+        }
+    }
+    if (!file) {
+        throw std::runtime_error("Test helper: Failed to read local file: " + path);
+    }
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+}
+
 // Helper function to dynamically construct a cyan background shape behind a traced shape
 Shape make_cyan_background_for_shape(MockVFS& vfs, const Shape& s) {
     double min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
@@ -287,10 +303,19 @@ int main() {
     // ==========================================
     // PHASE 2: Real Heightmap Image Trace Integration
     // ==========================================
-    std::cout << "\n[Phase 2] Tracing real heightmap of Trencrom Hill from Wikimedia Commons..." << std::endl;
-    std::string real_img_url = "https://upload.wikimedia.org/wikipedia/commons/c/c3/Heightmap_of_Trencrom_Hill.png";
+    std::cout << "\n[Phase 2] Tracing real heightmap of Trencrom Hill..." << std::endl;
+    std::string real_img_url = "mock://Heightmap_of_Trencrom_Hill.png";
     Selector real_img_addr = Selector{"jot/Image", {{"url", real_img_url}}}.with_output("$out");
     
+    std::cout << "  - Reading local heightmap image and pre-populating VFS..." << std::endl;
+    try {
+        std::vector<uint8_t> real_img_bytes = read_file_bytes("geo/test/Heightmap_of_Trencrom_Hill.png");
+        vfs.write(real_img_addr, real_img_bytes);
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Failed to read heightmap file from disk: " << e.what() << std::endl;
+        return 1;
+    }
+
     std::cout << "  - Fetching image: " << real_img_url << std::endl;
     try {
         Processor::execute(&vfs, real_img_addr);
