@@ -164,11 +164,26 @@ export const editorActions = {
     const code = initialCode || existing?.script || DEFAULT_CODE;
     const schema = initialSchema || existing?.schema || { arguments: [] };
 
+    const args = (schema.arguments || []).map(arg => ({
+        name: arg.name,
+        type: arg.type,
+        testValue: arg.default
+    }));
+    const outputs = schema.outputs ? 
+        Object.entries(schema.outputs).map(([name, def]) => ({
+            name,
+            type: typeof def === 'string' ? def : (def.type || 'jot:shape')
+        })) : [
+            { name: '$out', type: 'jot:shape' }
+        ];
+
     console.log(`[DesktopState] openOp: Starting draft ${targetId} from ${id}`);
     
     windowActions.open('editor', targetId, { 
         code, 
         schema,
+        args,
+        outputs,
         opName: targetId, 
         label: targetId
     });

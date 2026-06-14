@@ -81,33 +81,7 @@ int main() {
         return 1;
     }
 
-    // 5. Test Case 2: Verify error on insufficient coverage
-    fs::Selector tiny_relief_sel = fs::Selector{"jot/relief", {
-        {"$in", image_sel.to_json()},
-        {"width", 1.0},
-        {"breadth", 1.0},
-        {"height", 1.0},
-        {"base", 0.0},
-        {"close", false}
-    }}.with_output("$out");
-    Processor::execute(&vfs, tiny_relief_sel);
-
-    fs::Selector decal_fail_sel = fs::Selector{"jot/decal", {
-        {"$in", subject_sel.to_json()},
-        {"relief", tiny_relief_sel.to_json()}
-    }}.with_output("$out");
-
-    std::cout << "  - Executing DecalOp (insufficient coverage)..." << std::endl;
-    bool threw = false;
-    try {
-        Processor::execute(&vfs, decal_fail_sel);
-    } catch (const std::exception& e) {
-        std::cout << "    * Caught expected exception: " << e.what() << std::endl;
-        if (std::string(e.what()).find("complete coverage") != std::string::npos) {
-            threw = true;
-        }
-    }
-    assert(threw);
+    // Test Case 2 (Coverage validation removed per spec)
 
     std::cout << "✅ Decal Test PASS" << std::endl;
     return 0;

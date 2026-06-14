@@ -430,6 +430,10 @@ void VFS::register_op(const std::string& path, Handler handler, const json& sche
     schemas_[path] = schema;
 }
 
+void VFS::on_notification(const std::string& path, NotificationHandler handler) {
+    notification_handlers_[path] = handler;
+}
+
 void VFS::log_status() {
     std::lock_guard<Mutex> lock(mesh_mutex_);
     Serial.printf("[VFS %s] Mesh Status: %zu Peers, %zu Interests\n", config_.id.c_str(), peers_.size(), interests_.size());
@@ -450,6 +454,12 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
         json payload = cmd.value("payload", json::object());
         
         Serial.printf("[Mesh IN] <- PUB Update: %s\n", sel.path.c_str());
+        
+        // Trigger local handlers
+        if (notification_handlers_.count(sel.path)) {
+            notification_handlers_[sel.path](sel, payload);
+        }
+
         notify(sel, payload);
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     } else if (type == "SUB") {

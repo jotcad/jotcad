@@ -57,7 +57,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                trace_quant_test.cpp \
                decal_test.cpp \
                decal_hill_perf.cpp \
-               decal_visual_test.cpp
+               decal_visual_test.cpp \
+               decal_concave_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))

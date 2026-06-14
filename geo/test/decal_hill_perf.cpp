@@ -16,7 +16,15 @@ int main() {
     
     std::ifstream img_file(img_path, std::ios::binary | std::ios::ate);
     if (!img_file.is_open()) {
-        std::cerr << "❌ Failed to open local image: " << img_path << std::endl;
+        img_path = "test/data/Trencrom_Hill.png";
+        img_file.open(img_path, std::ios::binary | std::ios::ate);
+        if (!img_file.is_open()) {
+            img_path = "geo/test/data/Trencrom_Hill.png";
+            img_file.open(img_path, std::ios::binary | std::ios::ate);
+        }
+    }
+    if (!img_file.is_open()) {
+        std::cerr << "❌ Failed to open local image at any expected path." << std::endl;
         return 1;
     }
     

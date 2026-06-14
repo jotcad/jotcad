@@ -240,56 +240,62 @@ void VFSNode::notify(const Selector& selector, const json& payload, const std::v
 
     prune_stale_connections();
 
-    std::cout << "[VFSNode " << config_.id << "] notify: " << (selector.path.empty() ? "null" : selector.path) << " from stack {";
+    std::cout << "[VFSNode " << config_.id << "] PUB: " << selector.to_json().dump() 
+              << " payload: " << payload.dump() 
+              << " stack: [";
     for(size_t i=0; i<stack.size(); ++i) std::cout << (i==0?"":",") << stack[i];
-    std::cout << "}" << std::endl;
+    std::cout << "]" << std::endl;
 
     std::vector<std::shared_ptr<Connection>> targets;
     {
         std::lock_guard<std::mutex> lock(interest_mutex_);
         long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         
-        std::cout << "[VFSNode " << config_.id << "]   Checking " << interests_.size() << " active interests..." << std::endl;
         for (auto& entry : interests_) {
-            // Protocol Rule: Strict bit-exact matching. Normalization MUST happen at the boundary.
-            if (entry.selector == selector) {
-                std::lock_guard<std::mutex> plock(peer_mutex_);
-                for (auto it_sub = entry.subs.begin(); it_sub != entry.subs.end(); ) {
-                    std::string peer_id = it_sub->first;
-                    long long expiresAt = it_sub->second;
+            bool path_match = (entry.selector.path == selector.path);
+            bool full_match = (entry.selector == selector);
 
-                    bool expired = (expiresAt > 0 && expiresAt < now);
-                    bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
-                    bool peer_exists = peers_.count(peer_id);
+            if (path_match) {
+                std::cout << "[VFSNode " << config_.id << "]   Checking Interest Path: " << entry.selector.path 
+                          << " (Full Match: " << (full_match ? "YES" : "NO") << ")" << std::endl;
+                
+                // If it's a path match but not a full match, and the interest has NO parameters, 
+                // we should consider it a match for sensor updates.
+                bool is_lenient_match = full_match || (entry.selector.parameters.empty() || entry.selector.parameters == json::object());
 
-                    if (peer_exists) {
-                        auto rev = std::dynamic_pointer_cast<ReverseConnection>(peers_[peer_id]);
-                        if (rev) {
-                            std::lock_guard<std::mutex> rlock(rev->mutex);
-                            if (now - rev->last_poll_at > PEER_POLL_TIMEOUT_MS) {
-                                std::cout << "[VFSNode " << config_.id << "] Pruning stale peer " << peer_id 
-                                          << " (no poll for " << (now - rev->last_poll_at) << "ms)" << std::endl;
-                                peers_.erase(peer_id);
-                                peer_exists = false;
+                if (is_lenient_match) {
+                    std::lock_guard<std::mutex> plock(peer_mutex_);
+                    for (auto it_sub = entry.subs.begin(); it_sub != entry.subs.end(); ) {
+                        std::string peer_id = it_sub->first;
+                        long long expiresAt = it_sub->second;
+
+                        bool expired = (expiresAt > 0 && expiresAt < now);
+                        bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
+                        bool peer_exists = peers_.count(peer_id);
+
+                        if (peer_exists) {
+                            auto rev = std::dynamic_pointer_cast<ReverseConnection>(peers_[peer_id]);
+                            if (rev) {
+                                std::lock_guard<std::mutex> rlock(rev->mutex);
+                                if (now - rev->last_poll_at > PEER_POLL_TIMEOUT_MS) {
+                                    std::cout << "[VFSNode " << config_.id << "] Pruning stale peer " << peer_id << std::endl;
+                                    peers_.erase(peer_id);
+                                    peer_exists = false;
+                                }
                             }
                         }
-                    }
 
-                    if (expired || !peer_exists) {
-                        it_sub = entry.subs.erase(it_sub);
-                        continue;
-                    }
+                        if (expired || !peer_exists) {
+                            it_sub = entry.subs.erase(it_sub);
+                            continue;
+                        }
 
-                    std::cout << "[VFSNode " << config_.id << "]   Match! Interest: " << entry.selector.path 
-                              << " Peer: " << peer_id 
-                              << " Expired: " << (expired?"Y":"N") 
-                              << " InStack: " << (in_stack?"Y":"N") 
-                              << " Exists: " << (peer_exists?"Y":"N") << std::endl;
-
-                    if (!in_stack) {
-                        targets.push_back(peers_[peer_id]);
+                        if (!in_stack) {
+                            std::cout << "[VFSNode " << config_.id << "]     MATCH! Routing to " << peer_id << std::endl;
+                            targets.push_back(peers_[peer_id]);
+                        }
+                        ++it_sub;
                     }
-                    ++it_sub;
                 }
             }
         }
@@ -323,9 +329,11 @@ void VFSNode::subscribe(const Selector& selector, long long expiresAt, const std
         return;
     }
 
-    std::string peer_id = stack.empty() ? "unknown" : stack.back();
+    std::string peer_id = stack.empty() ? "local" : stack.back();
 
-    std::cout << "[VFSNode " << config_.id << "] subscribe: " << selector.path << " from " << peer_id << " (stack size: " << stack.size() << ")" << std::endl;
+    std::cout << "[VFSNode " << config_.id << "] SUB: " << selector.to_json().dump() 
+              << " from " << peer_id 
+              << " expiresAt: " << expiresAt << std::endl;
     
     bool isNewInterest = false;
     {

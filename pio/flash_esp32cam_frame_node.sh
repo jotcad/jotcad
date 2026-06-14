@@ -11,6 +11,8 @@ SUFFIX=$(printf "%02d" $RAW_SUFFIX)
 NODE_ID="esp32cam-frame-node-$SUFFIX"
 
 echo "============================================================"
+echo "  JotCAD Node: ESP32-CAM Video Frame Streamer Node"
+echo "============================================================"
 echo "$NODE_ID MANUAL FLASHING INSTRUCTIONS"
 echo "============================================================"
 echo "1. Connect GPIO 0 to GND (use a jumper wire)."

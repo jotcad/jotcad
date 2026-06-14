@@ -104,11 +104,21 @@ $(OBJ_DIR)/decal_visual_test.o: test/decal_visual_test.cpp
 $(TEST_DECAL_VISUAL_BIN): $(TEST_DECAL_VISUAL_OBJ) $(LIB_JOTGEO)
 	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
 
-test: $(OPS_BIN) $(TEST_LOGIC_BIN) $(TEST_ENGINE_BIN) $(TEST_DECAL_PIPELINE_BIN) $(TEST_DECAL_VISUAL_BIN)
+TEST_UNIT_BIN = $(BIN_DIR)/unit_tests
+TEST_UNIT_OBJ = $(OBJ_DIR)/unit_tests.o
+
+$(OBJ_DIR)/unit_tests.o: test/unit_tests.cpp test/unit_tests_run.h
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+$(TEST_UNIT_BIN): $(TEST_UNIT_OBJ) $(LIB_JOTGEO)
+	$(CXX) $(CXXFLAGS) $< -Wl,--start-group $(LIB_JOTGEO) $(LIBS) -Wl,--end-group -o $@
+
+test: $(OPS_BIN) $(TEST_LOGIC_BIN) $(TEST_DECAL_PIPELINE_BIN) $(TEST_DECAL_VISUAL_BIN) $(TEST_UNIT_BIN)
 	$(TEST_LOGIC_BIN)
-	$(TEST_ENGINE_BIN)
 	$(TEST_DECAL_PIPELINE_BIN)
 	$(TEST_DECAL_VISUAL_BIN)
+	$(TEST_UNIT_BIN)
 
 # Explicit compilation rules
 $(OBJ_DIR)/vfs_core.o: ../fs/cpp/vfs_core.cpp

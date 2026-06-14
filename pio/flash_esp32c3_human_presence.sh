@@ -10,6 +10,10 @@ RAW_SUFFIX=${1:-1}
 SUFFIX=$(printf "%02d" $RAW_SUFFIX)
 NODE_ID="esp32-human-presence-$SUFFIX"
 
+echo "============================================================"
+echo "  JotCAD Node: ESP32-C3 Human Presence (LD2410C Radar) Node"
+echo "============================================================"
+echo ""
 echo "[JotCAD] Starting Build, Upload, and Monitor for $NODE_ID..."
 
 if DEVICE_NODE_ID="$NODE_ID" pio run -e esp32c3_human_presence -t upload -t monitor; then

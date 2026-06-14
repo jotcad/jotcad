@@ -73,7 +73,7 @@ void test_vectorized_expansion() {
     Selector sel("jot/Box", {{"width", 10.0}, {"height", 20.0}, {"depth", 0.1}});
     Shape s = vfs.read<Shape>(sel.with_output("$out"));
     
-    assert(s.tags["type"] == "box");
+    assert(s.tags["type"] == "closed");
     std::cout << "✅ Basic Processor Execution PASS" << std::endl;
     std::filesystem::remove_all(config.storage_dir);
 }

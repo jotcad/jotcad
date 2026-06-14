@@ -11,24 +11,29 @@ Geometry create_chessboard_geometry(double size, int cells) {
     double cell_size = size / cells;
     double offset = -size / 2.0;
 
+    std::map<std::pair<int, int>, int> v_map;
+    auto get_v = [&](int x, int y) {
+        if (v_map.count({x, y})) return v_map[{x, y}];
+        double vx = offset + x * cell_size;
+        double vy = offset + y * cell_size;
+        
+        // Height depends on the cells this vertex is part of.
+        // For simplicity, we just use the (x, y) coordinates.
+        // But a vertex is shared by 4 cells. Which height?
+        // Let's use the average height of neighboring cells or just x+y parity.
+        double vz = ((x + y) % 2 == 0) ? 0.5 : 0.0;
+        
+        int idx = geo.vertices.size();
+        geo.vertices.push_back({FT(vx), FT(vy), FT(vz)});
+        return v_map[{x, y}] = idx;
+    };
+
     for (int y = 0; y < cells; ++y) {
         for (int x = 0; x < cells; ++x) {
-            double x0 = offset + x * cell_size;
-            double y0 = offset + y * cell_size;
-            double x1 = x0 + cell_size;
-            double y1 = y0 + cell_size;
-            
-            // Alternating height: 0.0 or 0.2
-            double z = ((x + y) % 2 == 0) ? 0.5 : 0.0;
-
-            int v0 = geo.vertices.size();
-            geo.vertices.push_back({FT(x0), FT(y0), FT(z)});
-            int v1 = geo.vertices.size();
-            geo.vertices.push_back({FT(x1), FT(y0), FT(z)});
-            int v2 = geo.vertices.size();
-            geo.vertices.push_back({FT(x1), FT(y1), FT(z)});
-            int v3 = geo.vertices.size();
-            geo.vertices.push_back({FT(x0), FT(y1), FT(z)});
+            int v0 = get_v(x, y);
+            int v1 = get_v(x + 1, y);
+            int v2 = get_v(x + 1, y + 1);
+            int v3 = get_v(x, y + 1);
             
             geo.triangles.push_back({v0, v1, v2});
             geo.triangles.push_back({v0, v2, v3});
@@ -51,7 +56,7 @@ void test_decal_visuals() {
     subject.tf = Matrix::rotationX(0.01) * Matrix::rotationY(0.01);
 
     std::cout << "  - Creating Chessboard Relief..." << std::endl;
-    Geometry relief_geo = create_chessboard_geometry(100.0, 20);
+    Geometry relief_geo = create_chessboard_geometry(5.0, 10);
     Shape relief;
     relief.geometry = vfs.materialize<Geometry>(relief_geo);
     // Position relief at Z=10 world, looking down

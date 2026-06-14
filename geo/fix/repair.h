@@ -132,10 +132,12 @@ bool make_geometry_unambiguous(CGAL::Surface_mesh<typename K::Point_3>& mesh, ty
                 }
                 for (size_t i = 0; i < splits.size(); ++i) {
                     auto h1 = splits[i], h2 = splits[(i + 1) % splits.size()];
-                    if (mesh.face(h1) != Surface_mesh::null_face() && mesh.face(h1) == mesh.face(h2)) 
+                    if (h1 != h2 && mesh.face(h1) != Surface_mesh::null_face() && mesh.face(h1) == mesh.face(h2)) 
                         CGAL::Euler::split_face(h1, h2, mesh);
                 }
-                mesh.point(v) += (umbrella_sum / typename K::FT(splits.size())) / 2.0;
+                if (!splits.empty()) {
+                    mesh.point(v) += (umbrella_sum / typename K::FT(splits.size())) / 2.0;
+                }
             }
         }
     }
@@ -175,11 +177,13 @@ bool make_geometry_unambiguous(CGAL::Surface_mesh<typename K::Point_3>& mesh, ty
                     splits.push_back(new_h);
                 }
                 for (size_t i = 0; i < splits.size(); ++i) {
-                    auto h1 = splits[i], h2 = splits[(i+1)%splits.size()];
-                    if (mesh.face(h1) != Surface_mesh::null_face() && mesh.face(h1) == mesh.face(h2)) 
+                    auto h1 = splits[i], h2 = splits[(i + 1) % splits.size()];
+                    if (h1 != h2 && mesh.face(h1) != Surface_mesh::null_face() && mesh.face(h1) == mesh.face(h2)) 
                         CGAL::Euler::split_face(h1, h2, mesh);
                 }
-                mesh.point(v) += (umbrella_sum / typename K::FT(splits.size())) / 2.0;
+                if (!splits.empty()) {
+                    mesh.point(v) += (umbrella_sum / typename K::FT(splits.size())) / 2.0;
+                }
             }
         }
     }

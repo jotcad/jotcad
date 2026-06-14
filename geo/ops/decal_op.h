@@ -36,7 +36,7 @@ struct DecalOp : P {
             }
 
             // 2. Apply high-level pipeline
-            ExactMesh decal_mesh_subject_space = decal::apply_decal(subject_local, relief_local, in.tf, relief.tf);
+            ExactMesh decal_mesh_subject_space = decal::apply_decal(subject_local, relief_local, in.tf, relief.tf, fade_radius);
 
             // 3. Assemble: Combine decal chunks
             ExactMesh result_mesh = decal_mesh_subject_space;
