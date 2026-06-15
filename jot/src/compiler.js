@@ -21,6 +21,7 @@ export class JotCompiler {
       'jot:shapes': (p, a, c, s) => this.JotShapesConsumer(p, a, c, s),
       'jot:flags': (p, a, c, s) => this.JotFlagsConsumer(p, a, c, s),
       'jot:vec3': (p, a, c, s) => this.JotVec3Consumer(p, a, c, s),
+      'jot:vec3s': (p, a, c, s) => this.JotVec3sConsumer(p, a, c, s),
       'jot:interval': (p, a, c, s) => this.JotIntervalConsumer(p, a, c, s),
       'jot:operation': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
       'jot:op': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
@@ -231,6 +232,22 @@ export class JotCompiler {
     }
 
     switch (node.type) {
+      case 'MAP_COMPREHENSION': {
+        const list = await this._evaluateRecursive(node.iterable, parameters, subject, ctx);
+        if (!Array.isArray(list)) {
+            throw new Error(`Compiler Error: Iterable in map comprehension must evaluate to an array. Got ${typeof list}`);
+        }
+        const results = [];
+        for (const item of list) {
+            // Bind the parameter in a clean child lexical scope
+            const childParams = Object.create(parameters);
+            childParams[node.parameter] = item;
+            
+            const val = await this._evaluateRecursive(node.expression, childParams, subject, ctx);
+            results.push(val);
+        }
+        return results;
+      }
       case 'ASSIGNMENT': {
         const prevReserved = ctx.reservedName;
         ctx.reservedName = node.name;
@@ -671,6 +688,15 @@ export class JotCompiler {
     return this._isJotType(v, 'jot:vec3', a, c);
   }
 
+  _isJotVec3s(v, a, c) {
+    if (Array.isArray(v)) {
+        if (this._isJotVec3(v, a, c)) return true; // Single vec promoted
+        return v.every(item => this._isJotVec3(item, a, c));
+    }
+    if (v?.type === 'SYMBOL' && this._isSubtype(this._getTypeOfValue(v, c), 'jot:vec3s')) return true;
+    return false;
+  }
+
   _isJotInterval(v, a, c) {
     return this._isJotType(v, 'jot:interval', a, c) || this._isJotType(v, 'jot:number', a, c);
   }
@@ -868,6 +894,33 @@ export class JotCompiler {
     return undefined;
   }
 
+  async JotVec3sConsumer(pool, argDef, ctx, subject) {
+    const results = [];
+    if (subject !== null && this._isJotVec3s(subject, argDef, ctx)) {
+        if (Array.isArray(subject) && !this._isJotVec3(subject, argDef, ctx)) results.push(...subject);
+        else results.push(subject);
+    }
+
+    const startIndex = pool.findIndex(p => !p.consumed);
+    if (startIndex !== -1) {
+        for (let i = startIndex; i < pool.length; i++) {
+            const p = pool[i];
+            if (p.consumed) continue;
+            if (p.nameHint && p.nameHint !== argDef.name) break;
+
+            const val = await ctx.evaluate(p.node);
+            if (this._isJotVec3(val, argDef, ctx)) {
+                results.push(val);
+                p.consumed = true;
+            } else if (this._isJotVec3s(val, argDef, ctx)) {
+                results.push(...(Array.isArray(val) ? val : [val]));
+                p.consumed = true;
+            } else break;
+        }
+    }
+    return results.length > 0 ? this._normalize(results, ctx.fullType) : undefined;
+  }
+
   async JotIntervalConsumer(pool, argDef, ctx, subject) {
     const p = pool.find(p => !p.consumed);
     if (p) {
@@ -926,6 +979,8 @@ export class JotCompiler {
     if (typeof node !== 'object') return String(node);
     
     switch (node.type) {
+      case 'MAP_COMPREHENSION':
+        return `[${this.stringifyAST(node.iterable)} do ${node.parameter} => ${this.stringifyAST(node.expression)}]`;
       case 'ASSIGNMENT':
         return `${this.stringifyAST(node.value)} -> ${node.name}`;
       case 'CALL':

@@ -31,22 +31,33 @@ struct MoveOpBase : P {
 template <typename P = JotVfsProtocol>
 struct MoveOp : MoveOpBase<P> {
     static constexpr const char* path = "jot/move";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& offset) {
-        double x = offset.size() > 0 ? offset[0] : 0.0;
-        double y = offset.size() > 1 ? offset[1] : 0.0;
-        double z = offset.size() > 2 ? offset[2] : 0.0;
-        MoveOpBase<P>::execute_multi(vfs, fulfilling, in, {Matrix::translate(x, y, z)});
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<std::vector<double>>& offsets) {
+        std::vector<Matrix> tfs;
+        for (const auto& offset : offsets) {
+            double x = offset.size() > 0 ? offset[0] : 0.0;
+            double y = offset.size() > 1 ? offset[1] : 0.0;
+            double z = offset.size() > 2 ? offset[2] : 0.0;
+            tfs.push_back(Matrix::translate(x, y, z));
+        }
+        MoveOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "offset"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/move"},
-            {"description", "Translates the input shape by the given 3D offset vector [x, y, z]."},
-            {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to move."}}}}},
+            {"dsl_name", "move"},
+            {"role", "method"},
+            {"description", "Translates the input shape by one or more 3D offset vectors. Supports sequences (e.g. move([[x1,y1,z1], [x2,y2,z2]]))."},
+            {"synonyms", {"translate", "shift", "offset", "position"}},
+            {"inputs", {{"$in", {{"type", "jot:shape"}, {"binding", "implicit"}, {"description", "The shape to move."}}}}},
             {"arguments", json::array({
-                {{"name", "offset"}, {"type", "jot:vec3"}, {"default", {0.0, 0.0, 0.0}}, {"description", "The translation vector [x, y, z]."}},
+                {{"name", "offset"}, {"type", "jot:vec3s"}, {"default", {{0.0, 0.0, 0.0}}}, {"description", "The translation vector(s) [x, y, z]."}},
             })},
-            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The moved shape."}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The moved shape(s)."}}}}},
+            {"examples", {
+                "Box(10).move([5, 0, 0]) -> $out",
+                "Box(10).move([[0,0,0], [10,0,0]]) -> $out"
+            }}
         };
     }
 };
@@ -131,8 +142,8 @@ struct MoveZOp : MoveAxisOp<P> {
 };
 
 static void move_init(fs::VFSNode* vfs) {
-    Processor::register_op<MoveOp<>, Shape, std::vector<double>>(vfs, "jot/move");
-    Processor::register_op<MoveOp<>, Shape, std::vector<double>>(vfs, "jot/m"); 
+    Processor::register_op<MoveOp<>, Shape, std::vector<std::vector<double>>>(vfs, "jot/move");
+    Processor::register_op<MoveOp<>, Shape, std::vector<std::vector<double>>>(vfs, "jot/m"); 
     Processor::register_op<MoveXOp<>, Shape, std::vector<double>>(vfs, "jot/moveX");
     Processor::register_op<MoveXOp<>, Shape, std::vector<double>>(vfs, "jot/mx");
     Processor::register_op<MoveYOp<>, Shape, std::vector<double>>(vfs, "jot/moveY");

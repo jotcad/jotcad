@@ -81,18 +81,8 @@ test('Prompt Generation and Staircase Execution Integration', { timeout: 120000 
         // 4. Simulate LLM translating "build a 3 meter staircase"
         console.log('[Test] Evaluating simulated 3 meter staircase script...');
         const staircaseScript = `
-step0 = Box(1.5, 0.4, 0.4).move([0, 0.0, 0.0])
-step1 = Box(1.5, 0.4, 0.4).move([0, 0.3, 0.3])
-step2 = Box(1.5, 0.4, 0.4).move([0, 0.6, 0.6])
-step3 = Box(1.5, 0.4, 0.4).move([0, 0.9, 0.9])
-step4 = Box(1.5, 0.4, 0.4).move([0, 1.2, 1.2])
-step5 = Box(1.5, 0.4, 0.4).move([0, 1.5, 1.5])
-step6 = Box(1.5, 0.4, 0.4).move([0, 1.8, 1.8])
-step7 = Box(1.5, 0.4, 0.4).move([0, 2.1, 2.1])
-step8 = Box(1.5, 0.4, 0.4).move([0, 2.4, 2.4])
-step9 = Box(1.5, 0.4, 0.4).move([0, 2.7, 2.7])
-
-Fuse([step0, step1, step2, step3, step4, step5, step6, step7, step8, step9]) -> $out
+steps = Box(1.5, 0.4, 0.4).move([0 .. 2.7 by 0.3 inc do $ => [0, $, $]])
+Fuse(steps) -> $out
         `.trim();
 
         // 5. Compile and evaluate the generated JOT code

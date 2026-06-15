@@ -177,7 +177,7 @@ struct MoveOp : MoveOpBase<P> {
 };
 ```
 
-*(Note: Since the compiler maps over sequences before dispatching to C++, the C++ operator signature itself is kept simple, operating on single vector `offset` inputs. The mapping behavior is handled transparently by the compiler's Universal Mapping Principle).*
+*(Note: The Move operator in C++ is plural-aware. It accepts a sequence of vectors (jot:vec3s) and generates multiple translated shapes in a single VFS call using MoveOpBase::execute_multi. This is more efficient than compiler-level mapping and ensures consistency with MoveX/Y/Z).*
 
 ---
 
@@ -185,12 +185,12 @@ struct MoveOp : MoveOpBase<P> {
 
 1. **Unit Tests (`jot/test/comprehension.test.js`)**:
    Verify parsing and compilation of map comprehensions:
-   * Evaluate `[1..3 do x -> x * 2]` yields `[2, 4, 6]`.
-   * Evaluate `[0..2 by 1 do $ -> [0, $, $]]` yields `[[0, 0, 0], [0, 1, 1], [0, 2, 2]]`.
+   * Evaluate `[1..3 do x => x * 2]` yields `[2, 4, 6]`.
+   * Evaluate `[0..2 by 1 do $ => [0, $, $]]` yields `[[0, 0, 0], [0, 1, 1], [0, 2, 2]]`.
 
 2. **Integration Test (`integration/prompt_staircase.test.js`)**:
    Update the simulated JOT code to use the new comprehension syntax and verify end-to-end execution, solid union, and PNG snapshot generation:
    ```jot
-   steps = Box(1.5, 0.4, 0.4).move([0 .. 2.7 by 0.3 do $ -> [0, $, $]])
+   steps = Box(1.5, 0.4, 0.4).move([0 .. 2.7 by 0.3 do $ => [0, $, $]])
    Fuse(steps) -> $out
    ```
