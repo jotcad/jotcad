@@ -26,7 +26,9 @@ jobs:
       - name: Install JS Deps
         run: npm ci
       - name: Install Chrome for Puppeteer
-        run: npx puppeteer browsers install chrome
+        run: |
+          rm -rf ~/.cache/puppeteer
+          npx puppeteer browsers install chrome
       - name: Setup & Build Native Ops
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb libgbm1
