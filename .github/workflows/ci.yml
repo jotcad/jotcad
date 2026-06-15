@@ -28,7 +28,7 @@ jobs:
       - name: Install Chrome for Puppeteer
         run: |
           rm -rf ~/.cache/puppeteer
-          node scripts/install_chrome.cjs
+          DEBUG=puppeteer:* node scripts/install_chrome.cjs
       - name: Setup & Build Native Ops
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb libgbm1
