@@ -13,6 +13,8 @@ const DEFAULT_SYSTEM_ICONS = [
   { id: 'app:mesh', type: 'app', label: 'Mesh Graph', x: 140, y: 40, target: 'mesh', icon: 'Network' },
   { id: 'app:settings', type: 'app', label: 'Settings', x: 40, y: 140, target: 'settings', icon: 'Settings' },
   { id: 'app:console', type: 'app', label: 'Console', x: 140, y: 140, target: 'console', icon: 'Terminal' },
+  { id: 'app:materials', type: 'app', label: 'Materials', x: 240, y: 40, target: 'materials', icon: 'Palette' },
+  { id: 'app:skus', type: 'app', label: 'SKU Catalog', x: 240, y: 140, target: 'skus', icon: 'Tag' },
   { id: 'action:sync', type: 'action', label: 'Sync Cloud', x: 40, y: 240, target: 'sync_cloud', icon: 'Cloud' },
   { id: 'action:new', type: 'action', label: 'New Op', x: 140, y: 240, target: 'new_op', icon: 'Plus' }
 ];
@@ -162,11 +164,26 @@ export const editorActions = {
     const code = initialCode || existing?.script || DEFAULT_CODE;
     const schema = initialSchema || existing?.schema || { arguments: [] };
 
+    const args = (schema.arguments || []).map(arg => ({
+        name: arg.name,
+        type: arg.type,
+        testValue: arg.default
+    }));
+    const outputs = schema.outputs ? 
+        Object.entries(schema.outputs).map(([name, def]) => ({
+            name,
+            type: typeof def === 'string' ? def : (def.type || 'jot:shape')
+        })) : [
+            { name: '$out', type: 'jot:shape' }
+        ];
+
     console.log(`[DesktopState] openOp: Starting draft ${targetId} from ${id}`);
     
     windowActions.open('editor', targetId, { 
         code, 
         schema,
+        args,
+        outputs,
         opName: targetId, 
         label: targetId
     });

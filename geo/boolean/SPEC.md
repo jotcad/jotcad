@@ -1,23 +1,21 @@
 # Specification: Multi-Dimensional Booleans (`jot/cut`, `jot/join`, `jot/clip`)
 
 ## 1. Objective
-Extend the JotCAD Boolean system to support a robust, multi-dimensional dispatch matrix. The system must handle interactions between 3D Meshes (Open/Closed), 2D Polygons, 1D Segments, and 0D Points.
+Extend the JotCAD Boolean system to support a robust, multi-dimensional dispatch matrix. The system must handle interactions between 3D Meshes (Open/Closed), 2D Polygons, 1D Segments, and 0D Points. It also implements a "Ghost Workflow" where tools are preserved for visual reference.
 
 ## 2. Fundamental Rules
 
 ### A. The Dimensionality Rule
-**A Tool can only cut or modify a Target of equal or lower dimensionality.**
-- **3D Tool**: Cuts 3D, 2D, 1D, 0D.
-- **2D Tool**: Cuts 2D, 1D, 0D.
-- **1D Tool**: Cuts 1D, 0D.
-- **0D Tool**: Cuts only 0D (Point removal).
-- **Exceptions**: Points (0D) are cut by everything but can only cut other points.
-
+...
 ### B. Topology: Open vs. Closed
-- **Closed Mesh (Volume)**: Defines a bounded interior. Cutting a Target by a Volume removes all parts of the Target that fall `INSIDE`.
-- **Open Mesh (Surface)**: Does not define a volume. 
-  - **Cutting 3D by Open Surface**: Acts as a "Split" or "Clip" operation. The surface acts as an infinite boundary (if planar) or a finite divider.
-  - **Orientation**: For open surfaces, the "cut" side is defined by the surface normals (everything on the positive half-space of the normal is removed).
+...
+### C. The Role System (Disjoint Identifiers)
+Every shape carries a `role` tag that defines its participation in the assembly.
+- **Solid** (No tag): Standard matter. Participates in all booleans.
+- **`gap`**: Subtractive matter. Cuts into solids but cannot be cut.
+- **`ghost`**: Visual reference. **Ignored** by all boolean kernels and promoters.
+- **`mark`**: Annotation (Ruler, Label). **Ignored** by kernels. Included in PDF export, excluded from STL.
+- **`mask`**: Logical boundary. Used for filtering (`keep`/`drop`). Invisible in standard renders.
 
 ## 3. The Dispatch Matrix
 
@@ -28,29 +26,33 @@ Extend the JotCAD Boolean system to support a robust, multi-dimensional dispatch
 | **2D (Polygon)**| Slice + 2D GPS | Planar Clip | 2D GPS | N/A | N/A | Line/Half-space |
 | **1D (Segment)**| Raycast Clip | Surface Clip | Planar Clip | 1D Intersect | N/A | Plane Intersect |
 | **0D (Point)**  | In-Volume Test | Side-of-Surf | In-Polygon | Dist-to-Line | Identity | Side-of-Plane |
-
 ## 4. Implementation Details
 
+### Automatic Ghosting
+When a Boolean operator (`cut`, `clip`, `disjoint`) processes a tool:
+1.  The tool's geometry is used for the Boolean calculation.
+2.  A copy of the tool is created, tagged with `role: "ghost"` and `opacity: 0.3`.
+3.  The operator returns a `Group` containing the result of the calculation and the ghosted tools.
+
+### Kernel Filtering (Promoter Defense)
+Promoters like `extrude()`, `fill()`, and `sew()` MUST filter their input.
+- Any child component with `role: "ghost"`, `role: "mark"`, or `role: "mask"` is **silently ignored** during the promotion process.
+- This prevents a ghosted 2D circle from being "double-extruded" when the group it belongs to is extruded.
+
 ### Infinite Plane Tools
-A Plane tool represents an infinite half-space boundary. The "cut" side is defined by the plane normal.
-- **vs. 3D Mesh**: Use `CGAL::Polygon_mesh_processing::clip` with the plane.
-- **vs. 2D Polygon**: 
-  1. If the plane is coplanar with the target: No-op or full removal depending on orientation.
-  2. If the plane intersects the target plane: The intersection is an infinite line. Use this line to clip the 2D polygon boundaries.
-- **vs. 1D Segment**: Calculate the intersection point of the segment and the infinite plane; discard the half-space portion.
-- **vs. 0D Point**: Discard points where `plane.has_on_negative_side(p) == false` (keeping only the "bottom" or "back" side).
+...
+### 2D Target vs. 3D Tool
+- **Algorithm**: `CGAL::Polygon_mesh_processing::split(target, tool)`.
+- **Filtering**: Faces of the target are tested against the tool volume using `Side_of_triangle_mesh`. Faces `ON_BOUNDED_SIDE` are removed for `cut`, or kept for `clip`.
+- **Result**: Ensures 2D surfaces remain strictly planar after cutting by 3D solids.
+
+### Stamp Operator
+- **Algorithm**: Force 3D Corefinement (`corefine_and_compute_difference`) even for 2D targets.
+- **Result**: Grafts the tool's boundary onto the surface, creating a 3D embossed shell.
 
 ### 3D Target vs. 3D Tool
-- **Algorithm**: `CGAL::Polygon_mesh_processing::corefine_and_compute_difference`.
-- **Manifold Defense**: All 3D results MUST pass through `jotcad::geo::fix::make_geometry_unambiguous` to resolve singularities created at the intersection boundaries.
+...
 
-### 2D Target vs. 3D Tool
-- **Algorithm**: 
-  1. Slice the 3D Tool mesh using the plane of the 2D Target.
-  2. The result of the slice is a set of `Polygon_with_holes_2`.
-  3. Perform a 2D GPS `difference` between the Target and the Slice-Polygons.
-
-### 2D Target (Polygons/Facets) vs. 2D Tool
 - **Algorithm**: Planar 2D Boolean (Exact GPS).
   1. Detect if Target and Tool are coplanar (share a common 3D plane).
   2. Project both onto their common plane's $XY$ space.

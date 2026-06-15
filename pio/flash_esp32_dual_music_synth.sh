@@ -13,14 +13,14 @@ NODE_ID="esp32-dual-music-synth-$SUFFIX"
 # Set default serial port for classic ESP32 boards (typically /dev/ttyUSB0)
 PORT=${2:-/dev/ttyUSB0}
 
-echo "=========================================================================="
-echo "           JotCAD ESP32 DUAL MUSIC SYNTH HARDWARE REQUIREMENT             "
-echo "=========================================================================="
+echo "============================================================"
+echo "  JotCAD Node: ESP32 Dual Music Synth (Bluetooth A2DP & BLE-MIDI)"
+echo "============================================================"
 echo " * MUST use: Classic Dual-Core ESP32 (e.g., ESP32-WROOM-32, ESP32-WROVER)"
 echo " * NOT SUPPORTED: ESP32-S3, ESP32-S2, ESP32-C3, ESP32-C6 (no Classic BT)"
 echo " * This node streams high-fidelity music via Bluetooth A2DP Source, which"
 echo "   physically requires a Classic Bluetooth radio."
-echo "=========================================================================="
+echo "============================================================"
 echo ""
 echo "[JotCAD] Starting Build, Upload, and Monitor for $NODE_ID on $PORT..."
 

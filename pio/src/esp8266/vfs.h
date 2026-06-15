@@ -145,6 +145,7 @@ public:
 
     const std::string& id() const { return config_.id; }
     bool has_feature(VFSFeature feature) const { return (config_.enabled_features & feature) != 0; }
+    bool is_connected() const { return !peers_.empty(); }
 
     void register_with_neighbors();
     void add_peer(std::shared_ptr<Peer> peer);
@@ -153,6 +154,9 @@ public:
 
     using Handler = std::function<void(const json& params, VFSResponseWriter* response)>;
     void register_op(const std::string& path, Handler handler, const json& schema = json::object());
+
+    using NotificationHandler = std::function<void(const Selector& sel, const json& payload)>;
+    void on_notification(const std::string& path, NotificationHandler handler);
 
     int notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack = {});
     int notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
@@ -173,6 +177,7 @@ private:
     Config config_;
     std::map<std::string, Handler> handlers_;
     std::map<std::string, json> schemas_;
+    std::map<std::string, NotificationHandler> notification_handlers_;
 
     // Peer Management
     std::vector<std::shared_ptr<Peer>> peers_;

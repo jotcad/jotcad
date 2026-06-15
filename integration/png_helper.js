@@ -15,11 +15,11 @@ import { Selector } from '../fs/src/index.js';
  * @param {string} [expectedHash] - Optional SHA-256 hex string to assert against.
  * @returns {Promise<Buffer>} The PNG bytes.
  */
-export async function captureAndVerifyPNG(vfs, shapeSelector, filename, expectedHash = null) {
-    console.log(`[PNG Helper] Capturing snapshot for ${filename}...`);
+export async function captureAndVerifyPNG(vfs, shapeSelector, filename, expectedHash = null, options = {}) {
+    console.log(`[PNG Helper] Capturing snapshot for ${filename} with options:`, options);
     
     // 1. Create the PNG selector
-    const pngSelector = new Selector('jot/png', { '$in': shapeSelector }).withOutput('$out');
+    const pngSelector = new Selector('jot/png', { '$in': shapeSelector, ...options }).withOutput('$out');
     
     // 2. Read from VFS
     const result = await vfs.read(pngSelector);

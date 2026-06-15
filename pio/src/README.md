@@ -5,7 +5,8 @@ This directory contains the firmware source code for the JotCAD C++ VFS Node cli
 ## High-Level Summary of Sub-directories
 
 - **[esp32](file:///home/brian/github/jotcad/pio/src/esp32)**: The core VFS client library implementation for ESP32 microcontrollers, utilizing `mbedtls` and multi-threaded synchronization.
-- **[esp32dev_counter_node](file:///home/brian/github/jotcad/pio/src/esp32dev_counter_node)**: VFS sensor counter node application for standard ESP32 development boards.
-- **[esp32cam_frame_node](file:///home/brian/github/jotcad/pio/src/esp32cam_frame_node)**: VFS camera frame stream node application for ESP32-CAM boards, exposing camera frames as VFS assets.
+- **[esp32/human_presence_node](file:///home/brian/github/jotcad/pio/src/esp32/human_presence_node)**: VFS presence detection node (LD2410C radar) with persistent configuration utilities.
+- **[esp32/dht11_node](file:///home/brian/github/jotcad/pio/src/esp32/dht11_node)**: Environmental monitoring node (Temperature/Humidity).
 - **[esp8266](file:///home/brian/github/jotcad/pio/src/esp8266)**: Custom single-core cooperative VFS client library implementation for ESP8266 microcontrollers, utilizing native `BearSSL` for hashing.
-- **[esp8266_counter_node](file:///home/brian/github/jotcad/pio/src/esp8266_counter_node)**: VFS sensor counter node application for ESP8266 (e.g., WeMos D1/NodeMCU) boards.
+- **[esp8266/human_presence_node](file:///home/brian/github/jotcad/pio/src/esp8266/human_presence_node)**: Optimized radar node for ESP8266 using hardware UART swapping for stability at high baud rates.
+- **[esp8266/dht11_node](file:///home/brian/github/jotcad/pio/src/esp8266/dht11_node)**: Lightweight DHT11 environmental node for ESP8266.

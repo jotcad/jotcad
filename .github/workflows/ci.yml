@@ -25,6 +25,13 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: Install JS Deps
         run: npm ci
+      - name: Install Chrome for Puppeteer
+        run: |
+          rm -rf ~/.cache/puppeteer
+          mkdir -p ~/.cache/puppeteer/chrome/linux-148.0.7778.97
+          curl -L https://storage.googleapis.com/chrome-for-testing-public/148.0.7778.97/linux64/chrome-linux64.zip -o chrome.zip
+          unzip -q chrome.zip -d ~/.cache/puppeteer/chrome/linux-148.0.7778.97
+          rm chrome.zip
       - name: Setup & Build Native Ops
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb libgbm1

@@ -13,15 +13,27 @@ export function getSharedRenderer() {
     powerPreference: "high-performance"
   });
   sharedRenderer.setPixelRatio(window.devicePixelRatio);
-  sharedRenderer.setSize(300, 200); // Default size for snapshots
-  sharedRenderer.setClearColor(0x00ffff, 1); // Default Active: Cyan
+  sharedRenderer.setSize(300, 200);
+  sharedRenderer.setClearColor(0x00ffff, 1);
   sharedRenderer.autoClear = true;
+  
+  // Better color handling and realism
+  sharedRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  sharedRenderer.toneMappingExposure = 1.0;
 
+  let lastTime = performance.now();
   const loop = () => {
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+
     if (activeViewport && sharedRenderer) {
-      const { scene, camera, controls } = activeViewport;
-      if (controls) controls.update();
-      sharedRenderer.setClearColor(0x00ffff, 1); // Active: Cyan
+      const { scene, camera, controls, onUpdate } = activeViewport;
+      
+      if (onUpdate) onUpdate(dt);
+      if (controls && controls.enabled) controls.update();
+      
+      sharedRenderer.setClearColor(0x00ffff, 1);
       sharedRenderer.render(scene, camera);
     }
     requestAnimationFrame(loop);
@@ -31,9 +43,13 @@ export function getSharedRenderer() {
   return sharedRenderer;
 }
 
-export function activateViewport(id, container, scene, camera, controls) {
+export function activateViewport(id, container, scene, camera, controls, onUpdate) {
   const renderer = getSharedRenderer();
-  if (activeViewport && activeViewport.id === id && renderer.domElement.parentElement === container) return;
+  if (activeViewport && activeViewport.id === id && renderer.domElement.parentElement === container) {
+      // Still update the callback if it changed
+      activeViewport.onUpdate = onUpdate;
+      return;
+  }
 
   console.log(`[SharedRenderer] Activating Viewport: ${id}`);
 
@@ -53,7 +69,7 @@ export function activateViewport(id, container, scene, camera, controls) {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
 
-  activeViewport = { id, container, scene, camera, controls };
+  activeViewport = { id, container, scene, camera, controls, onUpdate };
 }
 
 export function captureSnapshot(scene, camera) {

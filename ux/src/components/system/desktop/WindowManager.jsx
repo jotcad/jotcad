@@ -8,6 +8,8 @@ import { Console } from '../../system/Console';
 import { FolderWindow } from './FolderWindow';
 import { SettingsApp } from '../../system/SettingsApp';
 import { CameraWindow } from './CameraWindow';
+import { MaterialsApp } from '../../system/MaterialsApp';
+import { SkusApp } from '../../system/SkusApp';
 
 export const WindowManager = (props) => {
   return (
@@ -33,6 +35,12 @@ export const WindowManager = (props) => {
               </Show>
               <Show when={win.type === 'settings'}>
                  <SettingsApp />
+              </Show>
+              <Show when={win.type === 'materials'}>
+                 <MaterialsApp isWindowed={true} />
+              </Show>
+              <Show when={win.type === 'skus'}>
+                 <SkusApp isWindowed={true} />
               </Show>
               <Show when={win.type === 'vision_debug'}>
                  <CameraWindow />

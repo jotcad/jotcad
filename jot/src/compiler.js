@@ -434,7 +434,7 @@ export class JotCompiler {
     for (const [name, inputDef] of Object.entries(inputList)) {
         const type = inputDef.type?.toLowerCase() || 'jot:any';
         const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
-        const consumer = this.consumers[fullType.split('<')[0]];
+        const consumer = this.consumers[fullType.split('<')[0]] || ((p, a, c, s) => this.JotTypedConsumer(p, a, c, s));
 
         if (name === '$in' && subject) {
             if (consumer) {
@@ -457,7 +457,7 @@ export class JotCompiler {
             if (argDef) {
                 const type = argDef.type?.toLowerCase() || 'jot:any';
                 const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
-                const consumer = this.consumers[fullType.split('<')[0]];
+                const consumer = this.consumers[fullType.split('<')[0]] || ((p, a, c, s) => this.JotTypedConsumer(p, a, c, s));
 
                 if (consumer) {
                     const res = await consumer(pool, argDef, { ...ctx, fullType, evaluate: evaluateHelper }, null);
@@ -481,7 +481,7 @@ export class JotCompiler {
       const fullType = type.startsWith('jot:') ? type : 'jot:' + type;
 
       // Greedy Consumer Pass
-      const consumer = this.consumers[fullType.split('<')[0]];
+      const consumer = this.consumers[fullType.split('<')[0]] || ((p, a, c, s) => this.JotTypedConsumer(p, a, c, s));
       if (consumer) {
         const sub = subjectConsumed ? null : subject;
         const res = await consumer(pool, argDef, { ...ctx, fullType, evaluate: evaluateHelper }, sub);
@@ -531,7 +531,9 @@ export class JotCompiler {
   // --- Type Predicates ---
 
   _getTypeOfValue(val, ctx) {
-    if (val instanceof Selector) return this._getSelectorOutputType(val);
+    if (val instanceof Selector || (val !== null && typeof val === 'object' && val.path)) {
+        return this._getSelectorOutputType(val);
+    }
     if (typeof val === 'number') return 'jot:number';
     if (typeof val === 'string') return 'jot:string';
     if (typeof val === 'boolean') return 'jot:boolean';
@@ -555,6 +557,11 @@ export class JotCompiler {
     if (a === 'jot:shape' && e === 'jot:shapes') return true;
     if (a === 'jot:number' && e === 'jot:numbers') return true;
     if (a === 'jot:string' && e === 'jot:strings') return true;
+
+    // Plural -> Singular Promotion (Injection/Expansion)
+    if (a === 'jot:shapes' && e === 'jot:shape') return true;
+    if (a === 'jot:numbers' && e === 'jot:number') return true;
+    if (a === 'jot:strings' && e === 'jot:string') return true;
 
     return false;
   }
@@ -604,12 +611,12 @@ export class JotCompiler {
 
   _getSelectorOutputType(sel) {
     if (!sel.output) {
-      throw new Error(`Protocol Violation: Cannot determine type of port-less selector for "${sel.path}". Use .withOutput(port) to specify a value source.`);
+      return 'jot:any';
     }
 
     const schema = this._getSchemaForPath(sel.path);
     if (!schema) {
-      throw new Error(`Compiler Error: Unregistered operator path "${sel.path}" during type resolution.`);
+      return 'jot:any';
     }
 
     const outDef = schema.outputs?.[sel.output];
@@ -622,31 +629,25 @@ export class JotCompiler {
     return type.startsWith('jot:') ? type : 'jot:' + type;
   }
 
-  _isJotNumber(v, a, c) {
-    const t = this._getTypeOfValue(v, c);
-    if (this._isSubtype(t, 'jot:number')) {
-       if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:number', a, c);
+  _isJotType(v, type, argDef, ctx) {
+    const t = this._getTypeOfValue(v, ctx);
+    if (this._isSubtype(t, type)) {
+       if (v?.type === 'SYMBOL') return this._checkSymbol(v, type, argDef, ctx);
        return true;
     }
     return false;
+  }
+
+  _isJotNumber(v, a, c) {
+    return this._isJotType(v, 'jot:number', a, c);
   }
 
   _isJotString(v, a, c) {
-    const t = this._getTypeOfValue(v, c);
-    if (this._isSubtype(t, 'jot:string')) {
-       if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:string', a, c);
-       return true;
-    }
-    return false;
+    return this._isJotType(v, 'jot:string', a, c);
   }
 
   _isJotBoolean(v, a, c) {
-    const t = this._getTypeOfValue(v, c);
-    if (this._isSubtype(t, 'jot:boolean')) {
-       if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:boolean', a, c);
-       return true;
-    }
-    return false;
+    return this._isJotType(v, 'jot:boolean', a, c);
   }
 
   _isJotShape(v, a, c) {
@@ -667,21 +668,11 @@ export class JotCompiler {
   }
 
   _isJotVec3(v, a, c) {
-    const t = this._getTypeOfValue(v, c);
-    if (this._isSubtype(t, 'jot:vec3')) {
-       if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:vec3', a, c);
-       return true;
-    }
-    return false;
+    return this._isJotType(v, 'jot:vec3', a, c);
   }
 
   _isJotInterval(v, a, c) {
-    const t = this._getTypeOfValue(v, c);
-    if (this._isSubtype(t, 'jot:interval') || t === 'jot:number') {
-       if (v?.type === 'SYMBOL') return this._checkSymbol(v, 'jot:interval', a, c);
-       return true;
-    }
-    return false;
+    return this._isJotType(v, 'jot:interval', a, c) || this._isJotType(v, 'jot:number', a, c);
   }
 
   // --- Helper Methods ---
@@ -778,6 +769,9 @@ export class JotCompiler {
             const val = await ctx.evaluate(p.node);
             if (this._isJotString(val, argDef, ctx)) {
                 results.push(val);
+                p.consumed = true;
+            } else if (Array.isArray(val) && val.every(v => this._isJotString(v, argDef, ctx))) {
+                results.push(...val);
                 p.consumed = true;
             } else break;
         }
@@ -886,6 +880,24 @@ export class JotCompiler {
         if (p.nameHint === argDef.name) return undefined;
     }
     if (subject !== null && this._isJotInterval(subject, argDef, ctx)) {
+        return this._normalize(subject, ctx.fullType);
+    }
+    return undefined;
+  }
+
+  async JotTypedConsumer(pool, argDef, ctx, subject) {
+    const p = pool.find(p => !p.consumed);
+    if (p) {
+        if (p.nameHint && p.nameHint !== argDef.name) return undefined;
+        const subCtx = (argDef.type || '').startsWith('jot:op') ? { allowTemplates: true } : {};
+        const val = await ctx.evaluate(p.node, subCtx);
+        if (this._isJotType(val, ctx.fullType, argDef, ctx)) {
+            p.consumed = true;
+            return this._normalize(val, ctx.fullType);
+        }
+        if (p.nameHint === argDef.name) return undefined;
+    }
+    if (subject !== null && this._isJotType(subject, ctx.fullType, argDef, ctx)) {
         return this._normalize(subject, ctx.fullType);
     }
     return undefined;

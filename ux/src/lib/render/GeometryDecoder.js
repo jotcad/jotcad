@@ -1,6 +1,12 @@
 import * as THREE from 'three';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import { ratioToNumber } from '../ft.js';
 import { JOTAssets, normalizeId } from './AssetManager.js';
+
+// --- INITIALIZE BVH ---
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 export const decodeGeometry = (text) => {
   const vertices = [], points = [], triangles = [], segments = [], faces = [];
@@ -97,14 +103,28 @@ const toColor = (tags) => {
 };
 
 export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) => {
-  if (!scene.getObjectByName('ambient_light')) {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6); ambient.name = 'ambient_light'; scene.add(ambient);
-    const directional = new THREE.DirectionalLight(0xffffff, 0.6); directional.position.set(10, 20, 10); directional.name = 'directional_light'; scene.add(directional);
-  }
   const walk = async (s) => {
     const worldMat = decodeTf(s.tf);
     const shapeColor = toColor(s.tags);
-    const isGap = s.tags?.gap || s.tags?.tags?.gap;
+    
+    // Material & Texture Support
+    const materialTag = s.tags?.material || s.tags?.tags?.material;
+    let texture = null;
+    if (materialTag && typeof materialTag === 'string') {
+        texture = await assets.getTexture(materialTag);
+        if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        }
+    }
+
+    // Ghost Workflow Support
+    const role = s.tags?.role || s.tags?.tags?.role;
+    const isGhost = role === 'ghost' || role === 'gap';
+    const tagOpacity = s.tags?.opacity !== undefined ? parseFloat(s.tags.opacity) : 
+                       (s.tags?.tags?.opacity !== undefined ? parseFloat(s.tags.tags.opacity) : 1.0);
+    const opacity = isGhost ? 0.3 : tagOpacity;
+    const transparent = opacity < 1.0;
+
     if (s.geometry) {
       const text = await assets.getText(s.geometry);
       if (text) {
@@ -117,16 +137,36 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             g.setIndex(triangles.flat());
             g.computeVertexNormals();
 
+            if (texture) {
+                // Simple box/planar projection for UVs if they are missing
+                const pos = vertices.flat();
+                const uvs = new Float32Array((pos.length / 3) * 2);
+                for (let i = 0; i < pos.length / 3; i++) {
+                    // Use a 100-unit scale for texture repeats
+                    uvs[i * 2] = pos[i * 3] / 100;
+                    uvs[i * 2 + 1] = pos[i * 3 + 1] / 100;
+                }
+                g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+            }
+
             const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ 
-                color: shapeColor, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
-                transparent: !!isGap, opacity: isGap ? 0.3 : 1.0 
+                color: texture ? 0xffffff : shapeColor,
+                map: texture,
+                side: THREE.DoubleSide, 
+                roughness: 0.4, 
+                metalness: 0.2,
+                transparent, opacity 
             }));
             mesh.userData.isJot = true;
+
+            // --- COMPUTE BVH ---
+            g.computeBoundsTree();
+
             mesh.applyMatrix4(worldMat); scene.add(mesh);
             
             const edgesGeo = new THREE.EdgesGeometry(g, edgeThreshold);
             const edgesLine = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ 
-                color: 0xffffff, transparent: true, opacity: isGap ? 0.2 : 0.5 
+                color: 0xffffff, transparent: true, opacity: isGhost ? 0.2 : 0.5 
             }));
             edgesLine.userData.isJot = true;
             edgesLine.applyMatrix4(worldMat); scene.add(edgesLine);
@@ -143,7 +183,7 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
                 const g = new THREE.BufferGeometry();
                 g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
                 const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ 
-                    color: shapeColor, linewidth: 2, transparent: !!isGap, opacity: isGap ? 0.3 : 1.0 
+                    color: shapeColor, linewidth: 2, transparent, opacity
                 }));
                 line.userData.isJot = true;
                 line.applyMatrix4(worldMat); 

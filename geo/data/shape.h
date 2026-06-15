@@ -44,8 +44,47 @@ struct Shape {
         tags[key] = value;
     }
 
+    std::string role() const {
+        if (tags.contains("role") && tags.at("role").is_string()) return tags.at("role").get<std::string>();
+        if (tags.value("gap", false)) return "gap"; // Legacy fallback
+        return "";
+    }
+
     bool is_gap() const {
-        return tags.value("gap", false);
+        return role() == "gap";
+    }
+
+    bool is_ghost() const {
+        return role() == "ghost";
+    }
+
+    bool is_mask() const {
+        return role() == "mask";
+    }
+
+    bool is_mark() const {
+        return role() == "mark";
+    }
+
+    bool is_solid() const {
+        std::string r = role();
+        return r == "" || r == "solid";
+    }
+
+    double opacity() const {
+        if (tags.contains("opacity") && tags.at("opacity").is_number()) {
+            return tags.at("opacity").get<double>();
+        }
+        std::string r = role();
+        if (r == "gap" || r == "ghost") return 0.3;
+        if (r == "mask") return 0.0;
+        return 1.0;
+    }
+
+    static Shape make_ghost(const Shape& s) {
+        Shape g = s;
+        g.add_tag("role", "ghost");
+        return g;
     }
 
     nlohmann::json to_json() const {

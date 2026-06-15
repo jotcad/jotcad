@@ -232,7 +232,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     },
     ux: (cfg) => {
       const useSsl = cfg.protocol === 'https';
-      const uxArgs = ['http-server', cfg.dist, '-p', String(cfg.port)];
+      const uxArgs = ['http-server', cfg.dist, '-p', String(cfg.port), '-c-1'];
       if (useSsl && hasCerts) uxArgs.push('--ssl', '--key', '.ssl/localhost-key.pem', '--cert', '.ssl/localhost-cert.pem');
 
       return {

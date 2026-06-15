@@ -25,13 +25,31 @@ public:
         if (polygons.empty()) return {};
         auto t_start = std::chrono::steady_clock::now();
         
+        auto get_inside_point = [](const Polygon& poly) {
+            if (poly.size() < 3) return poly[0];
+            size_t min_idx = 0;
+            auto min_x = poly[0].x();
+            for (size_t v = 1; v < poly.size(); ++v) {
+                if (poly[v].x() < min_x) {
+                    min_x = poly[v].x();
+                    min_idx = v;
+                }
+            }
+            size_t prev_idx = (min_idx + poly.size() - 1) % poly.size();
+            size_t next_idx = (min_idx + 1) % poly.size();
+            return EK::Point_2(
+                (poly[min_idx].x() * 2 + poly[prev_idx].x() + poly[next_idx].x()) / 4,
+                (poly[min_idx].y() * 2 + poly[prev_idx].y() + poly[next_idx].y()) / 4
+            );
+        };
+
         std::vector<bool> is_hole(polygons.size(), false);
         std::vector<CGAL::Bbox_2> bboxes;
         for (const auto& p : polygons) bboxes.push_back(p.bbox());
 
         for (size_t i = 0; i < polygons.size(); ++i) {
             int parent_count = 0;
-            auto test_p = polygons[i][0];
+            auto test_p = get_inside_point(polygons[i]);
             for (size_t j = 0; j < polygons.size(); ++j) {
                 if (i == j) continue;
                 // BBox Pruning: skip expensive check if point is outside the bounding box
@@ -52,14 +70,14 @@ public:
         for (size_t i = 0; i < polygons.size(); ++i) {
             if (is_hole[i]) {
                 int best_parent = -1;
-                auto test_p = polygons[i][0];
+                auto test_p = get_inside_point(polygons[i]);
                 for (size_t g = 0; g < groups.size(); ++g) {
                     size_t outer_idx = groups[g].outer;
                     if (test_p.x() < bboxes[outer_idx].xmin() || test_p.x() > bboxes[outer_idx].xmax() ||
                         test_p.y() < bboxes[outer_idx].ymin() || test_p.y() > bboxes[outer_idx].ymax()) continue;
 
                     if (polygons[outer_idx].bounded_side(test_p) == CGAL::ON_BOUNDED_SIDE) {
-                        if (best_parent == -1 || polygons[groups[best_parent].outer].bounded_side(polygons[groups[g].outer][0]) == CGAL::ON_BOUNDED_SIDE) {
+                        if (best_parent == -1 || polygons[groups[best_parent].outer].bounded_side(get_inside_point(polygons[groups[g].outer])) == CGAL::ON_BOUNDED_SIDE) {
                             best_parent = (int)g;
                         }
                     }
@@ -98,42 +116,103 @@ public:
     struct PointKey { 
         long long x, y; 
         bool operator<(const PointKey& o) const { if (x != o.x) return x < o.x; return y < o.y; }
+        bool operator==(const PointKey& o) const { return x == o.x && y == o.y; }
+        bool operator!=(const PointKey& o) const { return !(*this == o); }
     };
 
-    static std::vector<Polygon> weld_segments(const std::vector<std::pair<EK::Point_2, EK::Point_2>>& segments, double tolerance = 0.5, double min_area = 16.0) {
+    static std::vector<Polygon> weld_segments(const std::vector<std::pair<EK::Point_2, EK::Point_2>>& segments, double tolerance = 0.5, double min_area = 16.0, bool prune_collinear = true) {
         if (segments.empty()) return {};
         auto t_start = std::chrono::steady_clock::now();
 
-        std::map<PointKey, std::vector<EK::Point_2>> adj;
         auto to_key = [](const EK::Point_2& v) { 
             return PointKey{ (long long)std::round(CGAL::to_double(v.x()) * 1000000), 
                              (long long)std::round(CGAL::to_double(v.y()) * 1000000) }; 
         };
+
+        struct TrackedSegment {
+            EK::Point_2 p1;
+            EK::Point_2 p2;
+            bool used = false;
+        };
+
+        std::vector<TrackedSegment> track_segs;
+        track_segs.reserve(segments.size());
         for (const auto& seg : segments) {
-            adj[to_key(seg.first)].push_back(seg.second);
-            adj[to_key(seg.second)].push_back(seg.first);
+            track_segs.push_back({seg.first, seg.second, false});
+        }
+
+        std::map<PointKey, std::vector<size_t>> adj;
+        for (size_t i = 0; i < track_segs.size(); ++i) {
+            adj[to_key(track_segs[i].p1)].push_back(i);
+            adj[to_key(track_segs[i].p2)].push_back(i);
         }
 
         auto t_adj = std::chrono::steady_clock::now();
         std::vector<Polygon> polygons;
-        std::map<PointKey, bool> visited;
 
-        for (auto const& [key, neighbors] : adj) {
-            if (visited[key] || neighbors.empty()) continue;
+        for (size_t i = 0; i < track_segs.size(); ++i) {
+            if (track_segs[i].used) continue;
 
             std::vector<EK::Point_2> loop;
-            PointKey curr_key = key;
-            loop.push_back(EK::Point_2(FT(key.x) / 1000000, FT(key.y) / 1000000));
-            visited[curr_key] = true;
+            std::map<PointKey, size_t> loop_indices;
+
+            track_segs[i].used = true;
+            EK::Point_2 start_pt = track_segs[i].p1;
+            EK::Point_2 curr_pt = track_segs[i].p2;
+            
+            loop.push_back(start_pt);
+            loop_indices[to_key(start_pt)] = 0;
+
+            loop.push_back(curr_pt);
+            loop_indices[to_key(curr_pt)] = 1;
+
+            PointKey start_key = to_key(start_pt);
 
             while (true) {
+                PointKey curr_key = to_key(curr_pt);
+                if (curr_key == start_key) {
+                    break;
+                }
+
                 bool found = false;
-                for (const auto& next_v : adj[curr_key]) {
-                    PointKey next_key = to_key(next_v);
-                    if (!visited[next_key]) {
-                        visited[next_key] = true;
-                        curr_key = next_key;
-                        loop.push_back(next_v);
+                const auto& neighbors = adj[curr_key];
+                for (size_t seg_idx : neighbors) {
+                    if (!track_segs[seg_idx].used) {
+                        track_segs[seg_idx].used = true;
+                        EK::Point_2 next_pt = (to_key(track_segs[seg_idx].p1) == curr_key) ? track_segs[seg_idx].p2 : track_segs[seg_idx].p1;
+                        PointKey next_key = to_key(next_pt);
+                        
+                        if (next_key != start_key) {
+                            auto it = loop_indices.find(next_key);
+                            if (it != loop_indices.end()) {
+                                size_t cycle_start_idx = it->second;
+                                std::vector<EK::Point_2> sub_cycle;
+                                sub_cycle.reserve(loop.size() - cycle_start_idx);
+                                for (size_t k = cycle_start_idx; k < loop.size(); ++k) {
+                                    sub_cycle.push_back(loop[k]);
+                                    loop_indices.erase(to_key(loop[k]));
+                                }
+                                
+                                if (sub_cycle.size() >= 3) {
+                                    std::vector<EK::Point_2> simplified = simplify_douglas_peucker(sub_cycle, tolerance);
+                                    if (prune_collinear) {
+                                        simplified = remove_collinear(simplified);
+                                    }
+                                    if (simplified.size() >= 3) {
+                                        Polygon poly;
+                                        for (const auto& p : simplified) poly.push_back(p);
+                                        if (poly.is_simple() && std::abs(CGAL::to_double(poly.area())) > min_area) {
+                                            polygons.push_back(poly);
+                                        }
+                                    }
+                                }
+                                loop.resize(cycle_start_idx);
+                            }
+                        }
+
+                        curr_pt = next_pt;
+                        loop.push_back(curr_pt);
+                        loop_indices[to_key(curr_pt)] = loop.size() - 1;
                         found = true;
                         break;
                     }
@@ -142,22 +221,145 @@ public:
             }
 
             if (loop.size() >= 3) {
-                std::vector<EK::Point_2> simplified = simplify_douglas_peucker(loop, tolerance);
-                if (simplified.size() >= 3) {
-                    Polygon poly;
-                    for (const auto& p : simplified) poly.push_back(p);
-                    // Filter by Area to remove speckle noise
-                    if (poly.is_simple() && std::abs(CGAL::to_double(poly.area())) > min_area) polygons.push_back(poly);
+                if (to_key(loop.back()) == start_key) {
+                    loop.pop_back();
+                }
+                if (loop.size() >= 3) {
+                    std::vector<EK::Point_2> simplified = simplify_douglas_peucker(loop, tolerance);
+                    if (prune_collinear) {
+                        simplified = remove_collinear(simplified);
+                    }
+                    if (simplified.size() >= 3) {
+                        Polygon poly;
+                        for (const auto& p : simplified) poly.push_back(p);
+                        if (poly.is_simple() && std::abs(CGAL::to_double(poly.area())) > min_area) {
+                            polygons.push_back(poly);
+                        }
+                    }
                 }
             }
         }
+
         auto t_end = std::chrono::steady_clock::now();
         std::cout << "    [Weld] Segs=" << segments.size() << ", Polys=" << polygons.size() << ", Total=" << std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count() << "ms" << std::endl;
         
         return polygons;
     }
 
+    static std::vector<std::vector<std::pair<EK::Point_2, EK::Point_2>>> generate_marching_triangles_segments(
+        const std::vector<int>& padded, int p_w, int p_h, int H, const std::vector<int>& targets) {
+        // Build active target lookup
+        std::map<int, int> label_to_idx;
+        for (size_t i = 0; i < targets.size(); ++i) {
+            label_to_idx[targets[i]] = i;
+        }
+
+        std::vector<std::vector<std::pair<EK::Point_2, EK::Point_2>>> result(targets.size());
+
+        for (int y = 0; y < p_h - 1; ++y) {
+            for (int x = 0; x < p_w - 1; ++x) {
+                int v0_lbl = padded[y*p_w+x];
+                int v1_lbl = padded[y*p_w+(x+1)];
+                int v2_lbl = padded[(y+1)*p_w+(x+1)];
+                int v3_lbl = padded[(y+1)*p_w+x];
+
+                if (v0_lbl == v1_lbl && v1_lbl == v2_lbl && v2_lbl == v3_lbl) continue;
+
+                int active_colors[4];
+                int active_count = 0;
+                auto add_target = [&](int lbl) {
+                    auto it = label_to_idx.find(lbl);
+                    if (it == label_to_idx.end()) return;
+                    for (int i = 0; i < active_count; ++i) {
+                        if (active_colors[i] == lbl) return;
+                    }
+                    active_colors[active_count++] = lbl;
+                };
+                add_target(v0_lbl);
+                add_target(v1_lbl);
+                add_target(v2_lbl);
+                add_target(v3_lbl);
+
+                if (active_count == 0) continue;
+
+                FT fx(x-1), fy(H - (y-1)), h = FT(1)/2;
+                EK::Point_2 e0(fx+h, fy);
+                EK::Point_2 e1(fx+1, fy-h);
+                EK::Point_2 e2(fx+h, fy-1);
+                EK::Point_2 e3(fx, fy-h);
+                EK::Point_2 d0(fx+h, fy-h);
+
+                for (int idx = 0; idx < active_count; ++idx) {
+                    int c = active_colors[idx];
+                    int target_idx = label_to_idx[c];
+                    auto& segments = result[target_idx];
+
+                    // Triangle 1: v0_lbl, v1_lbl, v3_lbl
+                    bool v0 = (v0_lbl == c);
+                    bool v1 = (v1_lbl == c);
+                    bool v3 = (v3_lbl == c);
+                    if (v0) {
+                        if (!v1 && !v3) {
+                            if (v1_lbl == v3_lbl) segments.push_back({e0, e3});
+                            else { segments.push_back({e0, d0}); segments.push_back({d0, e3}); }
+                        } else if (v1 && !v3) segments.push_back({d0, e3});
+                        else if (v3 && !v1) segments.push_back({e0, d0});
+                    } else {
+                        if (v1 && v3) segments.push_back({e0, e3});
+                        else if (v1 && !v3) segments.push_back({e0, d0});
+                        else if (v3 && !v1) segments.push_back({d0, e3});
+                    }
+
+                    // Triangle 2: v1_lbl, v2_lbl, v3_lbl
+                    bool tv1 = (v1_lbl == c);
+                    bool tv2 = (v2_lbl == c);
+                    bool tv3 = (v3_lbl == c);
+                    if (tv1) {
+                        if (!tv2 && !tv3) {
+                            if (v2_lbl == v3_lbl) segments.push_back({e1, d0});
+                            else { segments.push_back({e1, e2}); segments.push_back({e2, d0}); }
+                        } else if (tv2 && !tv3) segments.push_back({e2, d0});
+                        else if (tv3 && !tv2) segments.push_back({e1, e2});
+                    } else {
+                        if (tv2 && tv3) segments.push_back({e1, d0});
+                        else if (tv2 && !tv3) segments.push_back({e1, e2});
+                        else if (tv3 && !tv2) segments.push_back({e2, d0});
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
 private:
+    static std::vector<EK::Point_2> remove_collinear(const std::vector<EK::Point_2>& pts) {
+        if (pts.size() < 3) return pts;
+        std::vector<EK::Point_2> result;
+        result.reserve(pts.size());
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const auto& p = pts[(i == 0) ? pts.size() - 1 : i - 1];
+            const auto& q = pts[i];
+            const auto& r = pts[(i == pts.size() - 1) ? 0 : i + 1];
+            if (!CGAL::collinear(p, q, r)) {
+                result.push_back(q);
+            }
+        }
+        if (result.size() < pts.size() && result.size() >= 3) {
+            std::vector<EK::Point_2> final_result;
+            final_result.reserve(result.size());
+            for (size_t i = 0; i < result.size(); ++i) {
+                const auto& p = result[(i == 0) ? result.size() - 1 : i - 1];
+                const auto& q = result[i];
+                const auto& r = result[(i == result.size() - 1) ? 0 : i + 1];
+                if (!CGAL::collinear(p, q, r)) {
+                    final_result.push_back(q);
+                }
+            }
+            return final_result;
+        }
+        return result;
+    }
+
     static std::vector<EK::Point_2> simplify_douglas_peucker(const std::vector<EK::Point_2>& pts, double tolerance) {
         if (pts.size() < 3 || tolerance <= 1e-9) return pts;
         std::vector<bool> keep(pts.size(), false);

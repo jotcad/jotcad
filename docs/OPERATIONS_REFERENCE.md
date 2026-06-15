@@ -17,7 +17,7 @@ Connects a series of points into a closed loop.
 
 - **`$in`**, **`tools`**, **`smooth`**, **`zag`**: Same as `Link`, but the final point is automatically connected back to the first point to close the loop.
 
-## 2. Hull (Convex Envelopes)
+## 2. Envelopes and Bounds
 
 ### `Hull(shapes=[])` / `hull()`
 Generates the convex hull of the input shape(s).
@@ -34,6 +34,26 @@ Hull(Cylinder(5), Box(10).m(20))
 // 2D Method call
 MyPath.hull().fill()
 ```
+
+### `boundingBox(grow=0.0)` (alias: `bb()`)
+Returns an axis-aligned bounding box for the subject.
+
+- **`grow`**: Optional padding to expand the box symmetrically in all directions.
+- **Dimensional Logic**: Returns a Box matching the subject's spatial dimensionality:
+  - **3D**: Manifold "closed" solid.
+  - **2D**: Planar "surface" face.
+  - **1D**: Linear "segments".
+  - **0D**: Single "points".
+- **Local Origin**: The produced box is generated in local space starting at `(0,0,0)` and transformed to the subject's minimum corner.
+- **Example**: `A.by(A.bb().o())` moves shape A so its minimum corner lands at the world origin.
+
+### `orientedBoundingBox(grow=0.0)` (alias: `obb()`)
+Returns the optimal (minimum volume) oriented bounding box for the subject.
+
+- **`grow`**: Optional padding to expand the box symmetrically in all directions.
+- **Efficiency**: Unlike the standard bounding box, the OBB rotates to find the tightest possible fit for the subject, regardless of its orientation in world space.
+- **Matrix**: The resulting shape includes a transformation matrix that aligns the local axes with the OBB's principal directions.
+- **Example**: `MyPart.obb().color("cyan")`
 
 ## 3. Primitives
 
@@ -182,6 +202,13 @@ Combines the subject with one or more tool shapes into a single manifold solid. 
 
 ### `cut(tools=[])`
 Subtracts one or more tool shapes from the subject.
+- **Dimensionality Aware**: When subtracting a 3D solid from a 2D surface, `cut` strictly produces a flat 2D hole in the surface, adhering to the dimensional plane.
+- **Example**: `Box(20, 20).cut(Orb(15))` results in a flat square with a circular hole.
+
+### `stamp(tools=[])`
+Topologically embosses the subject using 3D tool shapes.
+- **Membrane Effect**: Unlike `cut`, `stamp` grafts the intersecting boundary of the 3D tool onto the subject. If the subject is a 2D surface, it will be "pushed" into the shape of the tool, creating a manifold 3D shell (e.g., a hemispherical depression).
+- **Example**: `Box(20, 20).stamp(Orb(15))` results in a flat sheet with a hemispherical "dent" or pocket.
 
 ### `clip(tools=[])`
 Intersects the subject with one or more tool shapes, keeping only the overlapping volume.
@@ -217,82 +244,76 @@ Unfolds a 3D polyhedral mesh into one or more flat 2D patches (islands).
 - **Progressive Logging**: Outputs live candidate predictions, topological cuts, 2D intersection skips, and high-resolution timing details (elapsed time, candidate averages, ETA) alongside detailed material wastage metrics (solid area vs. bounding box) to `stdout` during execution.
 - **Example**: `FlatPattern = Part.unfold(rule="pair", minFold=1.5)`
 
-## 6. Metadata and Filtering
+## 6. Roles and Visibility
 
-Metadata allows you to attach non-geometric information (tags) to shapes, which can later be used for identification, logical branching, or selective filtering.
+The **`role`** tag defines how a shape interacts with the geometric kernel and the visualization engine. Most shapes are physical solids (no role tag), but special cases are explicitly tagged.
 
-### `set(key, value)`
-Attaches a tag to the subject shape.
-- **`key`**: The name of the tag (String).
-- **`value`**: The value to store (String or Number).
-- **Collision Logic**: Last-write-wins. Setting a value for an existing key overwrites the previous value.
-- **Example**: `Part = Box(10).set("material", "aluminum")`
+### `gap()`
+Tags the subject as a **Gap** (Persistent Negative Space).
+- **Boolean Logic**: Gaps are "matter-less." They automatically subtract from any non-gap shape they intersect with during `join()`, `clip()`, `fuse()`, or `disjoint()` operations.
+- **Persistency**: Gaps are never cut by other shapes.
+- **Visuals**: Rendered with **30% opacity** by default.
+- **Export**: Excluded from STL/PDF.
 
-### `get(key)`
-Retrieves the value of a tag from the subject.
-- **`key`**: The name of the tag to look up.
-- **Returns**: The stored value or `null` if not found.
+### `ghost()`
+Tags the subject as a **Ghost** (Visual Reference).
+- **Boolean Logic**: Ghosts are "non-matter." They are ignored by all Boolean kernels and promoters (like `extrude` or `fill`). They simply "pass through" other geometry.
+- **Usage**: Use for furnishings, reference parts, or "staged" assembly components.
+- **Visuals**: Rendered with **30% opacity** by default.
+- **Export**: Excluded from STL/PDF.
 
-### `has(key, value=null)`
-**Recursive Shape Filter.** Dynamically filters the subject tree, returning a new `Shape` containing only the sub-components that match the specified tags. Because it eagerly evaluates to a shape, it can be chained with style or geometric operations.
-- **`key`**: The tag name to search for.
-- **`value`**: Optional. If provided, matches only components where the tag value exactly matches.
-- **Example**: `unfolded.has("unfold", "fold").color("green")`
+### `mark()`
+Tags the subject as a **Mark** (Annotation).
+- **Usage**: Used for rulers, arrows, dimensions, and labels.
+- **Boolean Logic**: Ignored by all Boolean kernels.
+- **Visuals**: Rendered as **Opaque** by default.
+- **Export**: **Included in PDF** drawings but excluded from STL manufacturing files.
 
-### `keep(target)`
-Prunes the subject tree, retaining only the components that match the provided target (a shape query, selector, or sub-shape).
-- **Deep Semantic Matching**: Evaluates exact structure equality (comparing geometry CIDs, tags, and children) to safely distinguish and filter identical primitives (like multiple identical boxes) in complex assemblies without CID collision.
-- **Preservation**: Parents of matching components are retained to preserve world-space transforms, but their other children (which don't contain matches) are removed.
-- **Example**: `Assembly.keep(has("part", "bolt"))`
+### `mask()`
+Tags the subject as a **Mask** (Logical Filter).
+- **Usage**: Used for defining spatial boundaries or predicates.
+- **Logic**: Used with `keep()` and `drop()` for logical filtering without geometric union.
+- **Visuals**: **Invisible** in standard renders.
 
-### `drop(target)`
-The inverse of `keep`. Removes all components from the tree that match the provided target (a shape query, selector, or sub-shape) using deep semantic matching.
-- **Example**: `Assembly.drop(has("part", "bracket"))`
+### `clean()`
+Recursively removes all components tagged with `role: "ghost"` from the subject tree.
+- **Usage**: `Assembly.cut(Drill).clean()` results in the physical part without the ghosted drill reference.
 
-## 7. Export and Post-Processing
+### `opacity(alpha)`
+Overrides the visual transparency of a shape.
+- **`alpha`**: A number from `0.0` (invisible) to `1.0` (opaque).
+- **Note**: This is a visual override and does not affect the shape's geometric role.
 
-### `pdf(path="export.pdf", width=0, height=0)`
+## 7. Booleans and Nesting
 
-Generates a PDF document from the spatial representation of the input shape.
+### `join(tools=[])`
+Combines the subject with one or more tool shapes into a single manifold solid. Overlapping volumes are merged.
 
-- **`path`**: The suggested filename for the download.
-- **Outputs**:
-  - **`$out`**: The generated PDF binary blob (triggers download in the UX).
+### `cut(tools=[])`
+Subtracts one or more tool shapes from the subject.
+- **Automatic Ghosting**: By default, `cut` leaves the tool shapes behind as **ghosts**. This allows you to see the "scaffolding" of your design. Use `.clean()` to remove them.
+- **Dimensionality Aware**: When subtracting a 3D solid from a 2D surface, `cut` strictly produces a flat 2D hole in the surface, adhering to the dimensional plane.
+- **Example**: `Box(20, 20).cut(Orb(15))` results in a group: `[FlatSquareWithHole, OrbGhost]`.
 
-### `png()`
-Generates a PNG thumbnail for the input shape.
+### `stamp(tools=[])`
+Topologically embosses the subject using 3D tool shapes.
+- **Membrane Effect**: Unlike `cut`, `stamp` grafts the intersecting boundary of the 3D tool onto the subject. If the subject is a 2D surface, it will be "pushed" into the shape of the tool, creating a manifold 3D shell.
+- **Automatic Ghosting**: Like `cut`, `stamp` leaves the tools as ghosts.
 
-- **Outputs**:
-  - **`$out`**: The generated PNG binary blob.
+### `clip(tools=[])`
+Intersects the subject with one or more tool shapes, keeping only the overlapping volume.
+- **Automatic Ghosting**: Leaves the tools as ghosts.
 
-### `stl(path="export.stl")`
-Generates a binary STL file from the spatial representation of the input shape.
+### `fuse(tools=[])`
+Flattens a complex assembly into a set of disjoint manifolds. It merges overlapping solids and resolves intersections without removing material (unless `gap()` tags are present).
 
-- **`path`**: The suggested filename for the download.
-- **Outputs**:
-  - **`$out`**: The generated STL binary blob (triggers download in the UX).
+### `disjoint(tools=[])`
+Ensures the subject and tools are topologically disjoint by subtracting the intersection from the subject.
+- **Automatic Ghosting**: Leaves the tools as ghosts.
 
-### `section(planes=[])`
-Extracts 2D cross-sections of the input shape at specified planes.
-
-- **`planes`**: A list of shapes whose transforms define the sectioning planes.
-- **Default**: If no planes are provided, performs a section at local $Z=0$.
-- **Logic**: Slices the input geometry and merges overlapping/nested loops into clean 2D faces.
-
-### `separate()`
-Splits the input geometry into separate shapes based on connected components (disconnected geometric islands).
-
-- **Output**: A group containing one child shape for each disconnected piece of geometry.
-- **Support**: Works for 3D solids, 2D faces, 1D segments, and 0D points.
-- **Usage**: Useful after boolean operations (like `cut`) that result in multiple disjoint parts.
-
-#### Example
-```js
-// Cut a box in half and treat the two halves as separate objects
-Box(10).cut(Plane().m(0, 0, 5)).separate()
-```
-
-## 8. Plane and Normal Extraction
+### `pack(parts=null, sheet=null, spacing=2.0, margin=0.0)`
+...
+## 8. Metadata and Filtering
 
 ### `plane()`
 Extracts the coordinate system from the first face of a shape.
@@ -570,12 +591,13 @@ Downloads and validates a raster image (PNG/JPG) from a remote URL.
 - **Security**: Validates file headers (magic numbers) to ensure it is a valid image before ingestion.
 - **VFS Integration**: Images are automatically cached by the VFS; subsequent uses of the same URL are instant.
 
-### `Trace(image, colors=8, smooth=1.0)`
+### `Trace(image, colors=8, smooth=0.0, minArea=25.0)`
 Converts a raster image into vector geometry using automatic color quantization.
 
 - **`image`**: An `Image()` object or direct URL to a bitmap.
 - **`colors`**: Number of color buckets to automatically identify using K-Means clustering.
-- **`smooth`**: Simplification tolerance (Douglas-Peucker). Higher values result in fewer vertices and smoother curves.
+- **`smooth`**: Simplification tolerance (Douglas-Peucker). Higher values result in fewer vertices and smoother curves (default: 0.0).
+- **`minArea`**: Minimum area in pixels (default: 25.0). Small component regions with area less than `minArea` are merged into their closest HSV color neighbor.
 - **HSV Quantization**: Automatically identifies the most dominant colors in the image using HSV space, preserving color separation across varying brightness.
 - **Boundary Injection**: Automatically pads image edges to ensure large regions (like the sky) are correctly closed into manifold loops.
 - **Despeckling**: Includes a noise-reduction pass and area-based filtering to eliminate small, jagged "speckle" polygons.
@@ -589,6 +611,72 @@ Vector = Trace(Photo, colors=12, smooth=2.0);
 
 // Select and extrude the specific color region
 Vector.on("#bcd3ee").ez(5);
+```
+
+### `Relief(image, width=10.0, breadth=10.0, height=2.0, base=1.0, levels=16, minArea=25.0, smooth=0.0, close=true)`
+Generates a 3D relief mesh from a 2D grayscale/bump map image.
+
+- **`image`**: An `Image()` object or direct URL to a bitmap.
+- **`width`**: Physical target width of the relief shape along the X-axis.
+- **`breadth`**: Physical target breadth of the relief shape along the Y-axis.
+- **`height`**: Maximum extrusion height (along the Z-axis) corresponding to white pixels.
+- **`base`**: Thickness of the base bottom plate (starting from Z=0).
+- **`levels`**: Number of height quantization levels (default 16).
+- **`minArea`**: Minimum pixel area for component merging / despeckling (default 25.0).
+- **`smooth`**: Boundary smoothing parameter (default 0.0).
+- **`close`**: Seals the mesh by adding a flat bottom plane and vertical side-wall skirting to produce a watertight manifold suitable for 3D printing (default true).
+
+#### Implementation Details
+- **Connected Components**: Pixels are partitioned into connected components using Breadth-First Search (BFS) at each quantization level.
+- **Watertight Triangulation**: The top and bottom caps are robustly triangulated directly from 2D contour loops (`CGAL::Polygon_2<EK>`) using 2D Constrained Delaunay Triangulation (`CDT`). The longest loop of each component is treated as the outer boundary, and all other loops are treated as holes.
+- **Consecutive Panel Splitting**: Vertical side walls are split into stacks of panels at all intermediate quantization levels to prevent T-junctions, ensuring a 100% closed, watertight solid check in CGAL.
+
+#### Example
+```js
+// Load heightmap
+Map = Image("heightmap.png");
+
+// Generate a 100x100mm relief, 5mm max displacement, with a 2mm base
+ReliefMesh = Relief(Map, width=100, breadth=100, height=5, base=2, levels=16);
+
+// Export to STL
+ReliefMesh.stl("model.stl");
+```
+
+### `Conform(target, direction=[0,0,0], offset=0.0)`
+Wraps or projects the subject geometry onto a target surface. 
+- If `direction` is `[0,0,0]`, it performs a **closest-point (shrink-wrap)** projection.
+- If a `direction` is provided, it performs a **directional (raycast)** projection.
+- `offset` specifies the distance to maintain from the target surface.
+
+### `emboss(pattern, relief)`
+Topologically embosses a pattern onto the subject's surface using a 3D relief mesh shape to drive the local displacement height.
+
+- **`pattern`**: The 2D boundary shape pattern.
+- **`relief`**: The 3D relief mesh shape (e.g., generated from `jot/Relief` or any other primitive/compound shape). The Z-coordinate height of the relief mesh relative to $Z=0$ defines the local displacement distance at each point.
+
+#### Example
+```js
+// Emboss a disk using a flat box of height 2.0 shifted down by -0.1 as the relief
+let relief_shape = Box(10, 10, [0.0, 2.0]).move(0, 0, -0.1);
+Box(30, 30, 10).emboss(Disk(10), relief_shape);
+```
+
+### `decal(relief, seam="skirting", fade_radius=1.0)`
+Physically clips and re-places a 3D relief mesh onto the subject's surface using a **Surface-Preserving Unfolding** pipeline. To eliminate geometric distortion (stretching) on side faces, the operator "unrolls" the subject onto a flat plane, clips the relief exactly, and then "re-wraps" it back onto the 3D surface.
+
+**Constraint**: The `relief` mesh must be large enough to completely cover the targeted subject area in the unfolded UV plane, otherwise a runtime error is thrown.
+
+- **`relief`**: The open 3D relief shape (`close=false` required) representing the topographical detail to be applied.
+- **`seam`**: The seam transition type:
+  - `"skirting"`: Sharp vertical walls at the boundary chunks.
+- **`fade_radius`**: (Reserved) The radius over which boundary height attenuation is applied.
+
+#### Example
+```js
+// Apply a 3D relief chessboard onto all sides of a box without distortion
+let relief_shape = Relief(chessboard_image, width=100.0, breadth=100.0, height=1.9, base=0.0, close=false);
+Box(10, 10, 10).decal(relief_shape);
 ```
 
 ## 17. Infinite Planes (Orientations)

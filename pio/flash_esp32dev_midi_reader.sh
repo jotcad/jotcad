@@ -10,6 +10,10 @@ RAW_SUFFIX=${1:-1}
 SUFFIX=$(printf "%02d" $RAW_SUFFIX)
 NODE_ID="esp32-midi-reader-$SUFFIX"
 
+echo "============================================================"
+echo "  JotCAD Node: ESP32 dev MIDI Reader (BLE-MIDI) Node"
+echo "============================================================"
+echo ""
 echo "[JotCAD] Starting Build, Upload, and Monitor for $NODE_ID..."
 
 if DEVICE_NODE_ID="$NODE_ID" pio run -e esp32_midi_reader -t upload --upload-port /dev/ttyACM0 -t monitor --monitor-port /dev/ttyACM0; then

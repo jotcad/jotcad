@@ -4,8 +4,8 @@ import process from 'node:process';
 const suites = {
   jot: {
     name: 'JOT Unit Tests',
-    command: 'node',
-    args: ['--test', '--test-concurrency=1', 'jot/test/*.js'],
+    command: './geo/compile.sh && node --test --test-concurrency=1 jot/test/*.js',
+    args: [],
     env: {}
   },
   geo: {

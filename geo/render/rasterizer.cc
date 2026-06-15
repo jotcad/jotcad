@@ -5,6 +5,7 @@
 #include "matrix.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../../fs/cpp/vendor/stb_image_write.h"
+#include "../../fs/cpp/vendor/stb_image.h"
 
 namespace jotcad {
 namespace geo {
@@ -40,11 +41,31 @@ void Rasterizer::rasterize_triangle(
                 double depth = w0 * tri.p[0].z + w1 * tri.p[1].z + w2 * tri.p[2].z;
                 int idx = y * width + x;
                 if (depth >= z_buffer[idx]) {
-                    z_buffer[idx] = depth;
-                    pixels[idx * 4] = tri.color.r;
-                    pixels[idx * 4 + 1] = tri.color.g;
-                    pixels[idx * 4 + 2] = tri.color.b;
-                    pixels[idx * 4 + 3] = 255;
+                    ColorRGBA frag_color = tri.color;
+                    if (tri.texture && !tri.texture->pixels.empty()) {
+                        double u = w0 * tri.uv[0].x + w1 * tri.uv[1].x + w2 * tri.uv[2].x;
+                        double v = w0 * tri.uv[0].y + w1 * tri.uv[1].y + w2 * tri.uv[2].y;
+                        ColorRGBA tex_color = tri.texture->sample(u, v);
+                        // Multiply base lit color by texture color
+                        frag_color.r = (unsigned char)((frag_color.r * tex_color.r) / 255.0);
+                        frag_color.g = (unsigned char)((frag_color.g * tex_color.g) / 255.0);
+                        frag_color.b = (unsigned char)((frag_color.b * tex_color.b) / 255.0);
+                        frag_color.a = (unsigned char)((frag_color.a * tex_color.a) / 255.0);
+                    }
+                    
+                    if (frag_color.a == 255) {
+                        z_buffer[idx] = depth;
+                        pixels[idx * 4] = frag_color.r;
+                        pixels[idx * 4 + 1] = frag_color.g;
+                        pixels[idx * 4 + 2] = frag_color.b;
+                        pixels[idx * 4 + 3] = 255;
+                    } else {
+                        double a = frag_color.a / 255.0;
+                        pixels[idx * 4] = (unsigned char)(pixels[idx * 4] * (1.0 - a) + frag_color.r * a);
+                        pixels[idx * 4 + 1] = (unsigned char)(pixels[idx * 4 + 1] * (1.0 - a) + frag_color.g * a);
+                        pixels[idx * 4 + 2] = (unsigned char)(pixels[idx * 4 + 2] * (1.0 - a) + frag_color.b * a);
+                        // Do not update z_buffer for transparent fragments to allow back-to-front accumulation
+                    }
                 }
             }
         }
@@ -58,7 +79,14 @@ void Rasterizer::rasterize_line(int x0, int y0, int x1, int y1, ColorRGBA col, s
     while (true) {
         if (x0 >= 0 && x0 < width && y0 >= 0 && y0 < height) {
             int idx = (y0 * width + x0) * 4;
-            pixels[idx] = col.r; pixels[idx+1] = col.g; pixels[idx+2] = col.b; pixels[idx+3] = 255;
+            if (col.a == 255) {
+                pixels[idx] = col.r; pixels[idx+1] = col.g; pixels[idx+2] = col.b; pixels[idx+3] = 255;
+            } else {
+                double a = col.a / 255.0;
+                pixels[idx] = (unsigned char)(pixels[idx] * (1.0 - a) + col.r * a);
+                pixels[idx+1] = (unsigned char)(pixels[idx+1] * (1.0 - a) + col.g * a);
+                pixels[idx+2] = (unsigned char)(pixels[idx+2] * (1.0 - a) + col.b * a);
+            }
         }
         if (x0 == x1 && y0 == y1) break;
         e2 = 2 * err;
@@ -75,18 +103,59 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
     Camera cam(ax, ay);
     std::vector<RenderTriangle> triangles;
     std::vector<RenderLine> wireframe;
+    
+    std::map<std::string, Texture> texture_cache;
 
     // 1. Scene Collection
     auto collect = [&](auto self, const Shape& s, const std::string& current_color) -> void {
         Matrix current_tf = s.tf;
         std::string next_color = s.tags.value("color", current_color);
+        double opacity = s.opacity();
+        if (opacity <= 0.0) {
+            for (const auto& child : s.components) self(self, child, next_color);
+            return;
+        }
+        unsigned char alpha = (unsigned char)(opacity * 255);
 
-        if (s.geometry.has_value() && !s.is_gap()) {
+        std::string material = s.tags.value("material", "");
+        const Texture* active_texture = nullptr;
+        if (!material.empty() && vfs) {
+            if (texture_cache.find(material) == texture_cache.end()) {
+                try {
+                    fs::Selector req("jot/texture", {{"material", material}});
+                    req.output = "$out";
+                    // Attempt to resolve texture data. We might get raw bytes or a link to a CID.
+                    // The vfs->read<std::vector<uint8_t>> should handle link resolution.
+                    auto img_data = vfs->read<std::vector<uint8_t>>(req);
+                    if (!img_data.empty()) {
+                        int w, h, channels;
+                        unsigned char* data = stbi_load_from_memory(img_data.data(), img_data.size(), &w, &h, &channels, 0);
+                        if (data) {
+                            Texture tex{w, h, channels, std::vector<unsigned char>(data, data + w * h * channels)};
+                            stbi_image_free(data);
+                            texture_cache[material] = std::move(tex);
+                        } else {
+                            texture_cache[material] = Texture{};
+                        }
+                    } else {
+                        texture_cache[material] = Texture{};
+                    }
+                } catch (...) {
+                    texture_cache[material] = Texture{}; // Cache failure to avoid refetching
+                }
+            }
+            auto it = texture_cache.find(material);
+            if (it != texture_cache.end() && !it->second.pixels.empty()) {
+                active_texture = &it->second;
+            }
+        }
+
+        if (s.geometry.has_value() && vfs) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            ColorRGBA base_color = {200, 200, 200, 255};
+            ColorRGBA base_color = {200, 200, 200, alpha};
             if (!next_color.empty()) {
                 auto rgb = ContourUtils::parse_color(next_color);
-                base_color = {rgb.r, rgb.g, rgb.b, 255};
+                base_color = {rgb.r, rgb.g, rgb.b, alpha};
             }
 
             std::vector<Vec3> pts;
@@ -97,6 +166,10 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
 
             auto add_tri = [&](int i0, int i1, int i2) {
                 Vec3 p0 = pts[i0], p1 = pts[i1], p2 = pts[i2];
+                Vec2 uv0 = { CGAL::to_double(geo.vertices[i0].x) / 100.0, CGAL::to_double(geo.vertices[i0].y) / 100.0 };
+                Vec2 uv1 = { CGAL::to_double(geo.vertices[i1].x) / 100.0, CGAL::to_double(geo.vertices[i1].y) / 100.0 };
+                Vec2 uv2 = { CGAL::to_double(geo.vertices[i2].x) / 100.0, CGAL::to_double(geo.vertices[i2].y) / 100.0 };
+                
                 Vec3 normal = (p1 - p0).cross(p2 - p0).normalized();
                 double brightness = (normal.x + normal.y + normal.z + 1.5) / 4.5 + 0.3;
                 ColorRGBA lit_color = {
@@ -105,7 +178,7 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
                     (unsigned char)std::min(255.0, base_color.b * brightness),
                     base_color.a
                 };
-                triangles.push_back({{p0, p1, p2}, normal, lit_color, (p0.z + p1.z + p2.z) / 3.0});
+                triangles.push_back({{p0, p1, p2}, {uv0, uv1, uv2}, normal, lit_color, active_texture, (p0.z + p1.z + p2.z) / 3.0});
             };
 
             for (const auto& f : geo.faces) Triangulation::triangulate_face(f, pts, add_tri);

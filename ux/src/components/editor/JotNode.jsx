@@ -224,26 +224,28 @@ export const JotNode = (props) => {
       const files = [];
 
       for (const { selector: sel, schema: portDef } of terminals) {
-        const type = portDef?.type || 'jot:shape';
+        let type = portDef?.type || 'jot:shape';
+        if (!type.includes(':')) type = 'jot:' + type; // Canonicalize 'file' -> 'jot:file'
 
-        if (type === 'jot:shape' || type === 'shape') {
-          shapes.push(sel);
-        } else if (type === 'file') {
+        if (type === 'jot:file') {
           const portName = sel.output || '$out';
-          files.push({ label: sel.parameters.path || portName, selector: sel, mimeType: 'application/pdf' });
+          files.push({ label: sel.parameters.path || portName, selector: sel, mimeType: 'application/octet-stream' });
+        } else if (type === 'jot:shape') {
+          const data = await blackboard.readSelectorData(sel);
+          shapes.push({ selector: sel, data });
         }
       }
 
       setAssociatedFiles(files);
 
-      const resultList = await Promise.all(shapes.map(async (sel) => {
-        const data = await blackboard.readSelectorData(sel);
+      const resultList = await Promise.all(shapes.map(async ({ selector: sel, data }) => {
         let finalData = data;
         if (data && typeof data === 'object' && (data.geometry || data.components)) {
           finalData = await packZFS(vfs, data);
         }
         return { selector: sel, data: finalData, port: sel.output };
       }));
+
 
       setResults(resultList);
     } catch (err) {

@@ -1,7 +1,7 @@
 # JotCAD Operator Tests Makefile
 
 CXX = g++
-CXXFLAGS = -O1 -std=c++17 -MMD -MP
+CXXFLAGS = -O1 -std=c++17 -MMD -MP -fPIC
 INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../render -I../infra \
            -I../../fs/cpp -I../../fs/cpp/vendor \
            -I../cgal -I../cgal/boost \
@@ -13,8 +13,10 @@ LIBS = ../cgal/freetype/build/libfreetype.a \
        -lpthread -lssl -lcrypto -lz -ldl
 
 BIN_DIR = bin
+OBJ_DIR = obj
 LIB_GEO = ../bin/libjotgeo.a
 
+# List of all test source files
 TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                offset_test.cpp outline_test.cpp group_test.cpp rotate_test.cpp \
                pdf_test.cpp corners_test.cpp on_test.cpp cut_test.cpp \
@@ -45,36 +47,93 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                clip_surface_solid_test.cpp \
                segments_boolean_test.cpp \
                points_boolean_test.cpp \
-               lower_dim_boolean_test.cpp
-TEST_BINS = $(addprefix $(BIN_DIR)/, $(TEST_SOURCES:.cpp=))
-TEST_DEPS = $(TEST_BINS:=.d)
+               lower_dim_boolean_test.cpp \
+               decal_pipeline_test.cpp \
+               ghost_test.cpp \
+               material_test.cpp \
+               simplify_test.cpp \
+               relief_test.cpp \
+               emboss_test.cpp \
+               trace_quant_test.cpp \
+               decal_test.cpp \
+               decal_hill_perf.cpp \
+               decal_visual_test.cpp \
+               decal_concave_test.cpp
 
-TEST_RUNS = $(addprefix run-, $(TEST_SOURCES:.cpp=))
+# Filter out cid_consistency_test.cpp from combined build
+COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
 
-all: $(LIB_GEO) $(TEST_BINS)
+# Targets
+all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test
 
 # Ensure the library is built first
 .PHONY: $(LIB_GEO)
 $(LIB_GEO):
 	$(MAKE) -C ..
 
-# Template for building each test
-$(BIN_DIR)/%: %.cpp $(LIB_GEO)
+# Rule for building the combined unit_tests binary from a single translation unit
+$(BIN_DIR)/unit_tests: $(OBJ_DIR)/unit_tests.o $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) $< -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
--include $(TEST_DEPS)
+# Rule for building the standalone cid_consistency_test binary
+$(BIN_DIR)/cid_consistency_test: $(OBJ_DIR)/cid_consistency_test.o $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
-# Run an individual test
-run-%: $(BIN_DIR)/%
-	@./$<
+# Rule for building the standalone decal_test binary
+$(BIN_DIR)/decal_test: $(OBJ_DIR)/decal_test.o $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
-# Parallel-friendly test target
-unit_test: $(TEST_RUNS)
-	@echo "--------------------------------------"
-	@echo "✨ ALL UNIT TESTS PASSED"
+# Rule for building the standalone decal_hill_perf binary
+$(BIN_DIR)/decal_hill_perf: $(OBJ_DIR)/decal_hill_perf.o $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+# Compile unit_tests.o, generating unit_tests_run.h dynamically first
+$(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile cid_consistency_test.o
+$(OBJ_DIR)/cid_consistency_test.o: cid_consistency_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile decal_test.o
+$(OBJ_DIR)/decal_test.o: decal_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile decal_hill_perf.o
+$(OBJ_DIR)/decal_hill_perf.o: decal_hill_perf.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+
+# Dynamic header generation listing all test functions inside namespaces
+unit_tests_run.h: Makefile
+	@echo "// Automatically generated. Do not edit." > $@
+	@for t in $(COMBINED_TEST_SOURCES:.cpp=); do \
+		echo "namespace test_$$t {" >> $@; \
+		echo "  #define main run" >> $@; \
+		echo "  #include \"$$t.cpp\"" >> $@; \
+		echo "  #undef main" >> $@; \
+		echo "}" >> $@; \
+	done
+	@echo "struct TestEntry { const char* name; int (*func)(); };" >> $@
+	@echo "static TestEntry ALL_TESTS[] = {" >> $@
+	@for t in $(COMBINED_TEST_SOURCES:.cpp=); do \
+		echo "    { \"$$t\", test_$$t::run }," >> $@; \
+	done
+	@echo "    { nullptr, nullptr }" >> $@
+	@echo "};" >> $@
+
+# Include generated dependencies
+-include $(OBJ_DIR)/unit_tests.d $(OBJ_DIR)/cid_consistency_test.d
 
 clean:
-	rm -rf $(BIN_DIR)
+	rm -rf $(BIN_DIR) $(OBJ_DIR) unit_tests_run.h
 
-.PHONY: all clean test-% unit_test
+.PHONY: all clean

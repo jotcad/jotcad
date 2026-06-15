@@ -1,13 +1,20 @@
 import { createSignal, Show } from 'solid-js';
 import { syncStatus, lastSyncTime, cloudAccount } from '../../lib/state/SyncState';
-import { Cloud, Network, Shield, Trash2, RefreshCw } from 'lucide-solid';
+import { viewportSettings, setViewportSettings } from '../../lib/state/SystemState';
+import { Cloud, Network, Shield, Trash2, RefreshCw, LayoutGrid } from 'lucide-solid';
 import { CloudSync } from '../../lib/vfs/CloudSync';
 import { blackboard } from '../../lib/blackboard';
+import { MaterialsApp } from './MaterialsApp';
+import { SkusApp } from './SkusApp';
 
 export const SettingsApp = () => {
     const [showConnect, setShowConnect] = createSignal(false);
     const handleSync = () => {
         CloudSync.syncAll();
+    };
+
+    const toggleGrid = () => {
+        setViewportSettings(prev => ({ ...prev, hitchhikerGrid: !prev.hitchhikerGrid }));
     };
 
     return (
@@ -121,6 +128,33 @@ export const SettingsApp = () => {
                      </div>
                 </div>
             </section>
+
+            {/* Display Settings Section */}
+            <section class="flex flex-col gap-6">
+                <div class="flex items-center gap-3 text-cyan-400">
+                    <LayoutGrid size={24} />
+                    <h2 class="text-ui-label font-black uppercase tracking-[0.2em]">Display Settings</h2>
+                </div>
+                
+                <div class="bg-black/60 border border-white/10 rounded-2xl p-6 flex flex-col gap-6 shadow-xl">
+                    <div class="flex items-center justify-between">
+                        <div class="flex flex-col gap-1">
+                            <span class="text-ui-label text-white/40 uppercase font-bold tracking-widest">Hitchhiker Overlay Grid</span>
+                            <span class="text-[10px] text-white/30 uppercase font-bold">Experimental Scale-Invariant HUD</span>
+                        </div>
+                        <button 
+                            onClick={toggleGrid}
+                            class={`tap-target w-14 h-8 rounded-full transition-all relative border-2 ${viewportSettings().hitchhikerGrid ? 'bg-cyan-500/30 border-cyan-400' : 'bg-white/5 border-white/10'}`}
+                        >
+                            <div class={`absolute top-1 w-4 h-4 rounded-full transition-all ${viewportSettings().hitchhikerGrid ? 'left-7 bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]' : 'left-1 bg-white/20'}`} />
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <MaterialsApp isWindowed={false} />
+
+            <SkusApp isWindowed={false} />
 
             {/* Danger Zone */}
             <section class="flex flex-col gap-6 mt-auto">

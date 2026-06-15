@@ -59,7 +59,7 @@ A **Shape** is a lightweight, JSON-serializable container that carries the seman
 - **Fields:**
   - `geometry`: An optional **CID** (strictly a CID, *never* a Selector). It is a key used by the VFS to look up the `.data` (or `.meta`) for the raw mesh/math.
   - `tf`: An **Exact Rational Matrix** (16-coefficient string) representing the spatial transformation.
-  - `tags`: A map of semantic metadata (color, names, etc.).
+  - `tags`: A map of semantic metadata (color, material, names, etc.).
     - **Topological Identity (`type`)**: Every Shape MUST include a `type` tag to define its topological nature:
       - `points`: 0D discrete vertices.
       - `segments`: 1D wireframes, polylines, or paths.
@@ -67,6 +67,10 @@ A **Shape** is a lightweight, JSON-serializable container that carries the seman
       - `open`: **3D Open Shell**. Non-planar mesh that does not enclose a volume (e.g., sphere-cap).
       - `closed`: **3D Closed Solid**. A manifold 3D volume (e.g., Box, Orb).
       - `plane`: **Infinite**. Mathematical plane (Z=0 in its local coordinate system).
+    - **Material & Texture (`material`)**: A tag specifying a material name or a texture CID. The renderer utilizes this for surface mapping.
+    - **Bill of Materials (BOM)**: BOM generation relies on two distinct tags applied to stock materials. Because boolean operations propagate tags to resulting fragments, these markers survive destructive cuts.
+      - `provenance`: A **unique** instance identifier for the physical source material (e.g., `"sheet_1"`, `"bolt_A"`). The report generator groups parts by this ID to prevent overcounting split parts (e.g., a board cut into 10 pieces remains 1 board).
+      - `sku`: A **non-unique** catalog identifier (e.g., `"plywood_3/4"`, `"m3_bolt"`). This defines what item to order.
   - `components`: A list of child Shapes for hierarchical assemblies.
 - **Exact Transformation Pipeline:** Every transformation is stored as an exact rational mapping. Precision is NEVER lost during serialization or transport between C++ and JavaScript.
 - **VFS Interaction:** During execution, an operator fulfills its own ports by writing to its fulfilling Selector with the appropriate output set (e.g., `vfs->write(fulfilling.with_output("$out"), out_shape)`).

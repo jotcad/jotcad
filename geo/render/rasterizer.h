@@ -13,6 +13,24 @@ struct ColorRGBA {
     unsigned char r, g, b, a;
 };
 
+struct Texture {
+    int width, height, channels;
+    std::vector<unsigned char> pixels;
+    
+    ColorRGBA sample(double u, double v) const {
+        if (pixels.empty()) return {255, 255, 255, 255};
+        // Repeat wrapping
+        int x = (int)(std::floor(u * width)) % width;
+        int y = (int)(std::floor(v * height)) % height;
+        if (x < 0) x += width;
+        if (y < 0) y += height;
+        int idx = (y * width + x) * channels;
+        if (channels == 3) return {pixels[idx], pixels[idx+1], pixels[idx+2], 255};
+        if (channels == 4) return {pixels[idx], pixels[idx+1], pixels[idx+2], pixels[idx+3]};
+        return {255, 255, 255, 255};
+    }
+};
+
 class Rasterizer {
 public:
     /**
@@ -28,8 +46,10 @@ public:
 private:
     struct RenderTriangle {
         Vec3 p[3];
+        Vec2 uv[3];
         Vec3 normal;
         ColorRGBA color;
+        const Texture* texture = nullptr;
         double avg_z;
     };
 
