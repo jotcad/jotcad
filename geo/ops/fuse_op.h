@@ -8,10 +8,7 @@
 namespace jotcad {
 namespace geo {
 
-template <typename P = JotVfsProtocol>
-struct FuseOp : P {
-    static constexpr const char* path = "jot/fuse";
-
+struct FuseHelper {
     struct GeometryNode {
         Geometry geo;
         Matrix tf;
@@ -30,15 +27,7 @@ struct FuseOp : P {
         }
     }
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        std::vector<GeometryNode> all_nodes;
-        
-        // 1. Collect all geometry from subject and tools recursively (Independent Matrix Mandate compliant)
-        collect_geometries(vfs, in, all_nodes);
-        for (const auto& tool : tools) {
-            collect_geometries(vfs, tool, all_nodes);
-        }
-
+    static void execute_fuse_nodes(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<GeometryNode>& all_nodes) {
         if (all_nodes.empty()) {
             vfs->write(fulfilling.with_output("$out"), Shape());
             return;
@@ -167,6 +156,20 @@ struct FuseOp : P {
             vfs->write(fulfilling.with_output("$out"), out_group);
         }
     }
+};
+
+template <typename P = JotVfsProtocol>
+struct FuseOp : P {
+    static constexpr const char* path = "jot/fuse";
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
+        std::vector<FuseHelper::GeometryNode> all_nodes;
+        FuseHelper::collect_geometries(vfs, in, all_nodes);
+        for (const auto& tool : tools) {
+            FuseHelper::collect_geometries(vfs, tool, all_nodes);
+        }
+        FuseHelper::execute_fuse_nodes(vfs, fulfilling, all_nodes);
+    }
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }
     static typename P::json schema() {
@@ -181,8 +184,38 @@ struct FuseOp : P {
     }
 };
 
+template <typename P = JotVfsProtocol>
+struct FusePrimitiveOp : P {
+    static constexpr const char* path = "jot/Fuse";
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes) {
+        std::vector<FuseHelper::GeometryNode> all_nodes;
+        for (const auto& shape : shapes) {
+            FuseHelper::collect_geometries(vfs, shape, all_nodes);
+        }
+        FuseHelper::execute_fuse_nodes(vfs, fulfilling, all_nodes);
+    }
+
+    static std::vector<std::string> argument_keys() { return {"shapes"}; }
+    static typename P::json schema() {
+        return { 
+            {"path", "jot/Fuse"},
+            {"dsl_name", "Fuse"},
+            {"role", "constructor"},
+            {"description", "Fuses multiple shapes into a single union shape."},
+            {"synonyms", {"Union", "Combine"}},
+            {"inputs", nlohmann::json::object()}, 
+            {"arguments", nlohmann::json::array({ 
+                {{"name", "shapes"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "The list of shapes to fuse."}}
+            })}, 
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
+        };
+    }
+};
+
 static void fuse_init(fs::VFSNode* vfs) {
     Processor::register_op<FuseOp<>, Shape, std::vector<Shape>>(vfs, "jot/fuse");
+    Processor::register_op<FusePrimitiveOp<>, std::vector<Shape>>(vfs, "jot/Fuse");
 }
 
 } // namespace geo

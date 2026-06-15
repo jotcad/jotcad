@@ -47,15 +47,22 @@ struct AtOp : P {
     static typename P::json schema() {
         return {
             {"path", "jot/at"},
+            {"dsl_name", "at"},
+            {"role", "method"},
             {"description", "Applies an operation to the subject relative to one or more anchor locations (The Anchor Pattern)."},
+            {"synonyms", {"align", "snap", "mount", "place at", "position"}},
             {"inputs", {
-                {"$in", {{"type", "jot:shape"}}}
+                {"$in", {{"type", "jot:shape"}, {"binding", "implicit"}, {"description", "The primary subject shape to transform."}}}
             }},
             {"arguments", nlohmann::json::array({
-                {{"name", "target"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Anchor provider (e.g., eachCorner())"}},
-                {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply at each anchor"}}
+                {{"name", "target"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Anchor provider (e.g., eachCorner(), faces())"}},
+                {{"name", "op"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "Operation to apply at each anchor. Implicitly receives the local scoped copy of the subject as its $in."}}
             })},
-            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting combined shape."}}}}},
+            {"examples", {
+                "Box(10).at(eachCorner(), cut(Orb(2))) -> $out",
+                "Cylinder(5).at(faces().highest(z()), color(\"red\")) -> $out"
+            }}
         };
     }
 };

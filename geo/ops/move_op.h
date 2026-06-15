@@ -31,19 +31,20 @@ struct MoveOpBase : P {
 template <typename P = JotVfsProtocol>
 struct MoveOp : MoveOpBase<P> {
     static constexpr const char* path = "jot/move";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double x, double y, double z) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& offset) {
+        double x = offset.size() > 0 ? offset[0] : 0.0;
+        double y = offset.size() > 1 ? offset[1] : 0.0;
+        double z = offset.size() > 2 ? offset[2] : 0.0;
         MoveOpBase<P>::execute_multi(vfs, fulfilling, in, {Matrix::translate(x, y, z)});
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "x", "y", "z"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "offset"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/move"},
-            {"description", "Translates the input shape by the given x, y, z offsets."},
+            {"description", "Translates the input shape by the given 3D offset vector [x, y, z]."},
             {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to move."}}}}},
             {"arguments", json::array({
-                {{"name", "x"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Offset along the X-axis."}},
-                {{"name", "y"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Offset along the Y-axis."}},
-                {{"name", "z"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Offset along the Z-axis."}}
+                {{"name", "offset"}, {"type", "jot:vec3"}, {"default", {0.0, 0.0, 0.0}}, {"description", "The translation vector [x, y, z]."}},
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The moved shape."}}}}}
         };
@@ -130,8 +131,8 @@ struct MoveZOp : MoveAxisOp<P> {
 };
 
 static void move_init(fs::VFSNode* vfs) {
-    Processor::register_op<MoveOp<>, Shape, double, double, double>(vfs, "jot/move");
-    Processor::register_op<MoveOp<>, Shape, double, double, double>(vfs, "jot/m"); 
+    Processor::register_op<MoveOp<>, Shape, std::vector<double>>(vfs, "jot/move");
+    Processor::register_op<MoveOp<>, Shape, std::vector<double>>(vfs, "jot/m"); 
     Processor::register_op<MoveXOp<>, Shape, std::vector<double>>(vfs, "jot/moveX");
     Processor::register_op<MoveXOp<>, Shape, std::vector<double>>(vfs, "jot/mx");
     Processor::register_op<MoveYOp<>, Shape, std::vector<double>>(vfs, "jot/moveY");

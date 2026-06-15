@@ -86,14 +86,18 @@ struct BoxOp : P {
     static typename P::json schema() {
         return {
             {"path", "jot/Box"},
+            {"dsl_name", "Box"},
+            {"role", "constructor"},
             {"description", "Generates a box using symmetric or asymmetric intervals."},
+            {"synonyms", {"cube", "cuboid", "rectangle", "square", "block"}},
             {"inputs", nlohmann::json::object()},
             {"arguments", nlohmann::json::array({
-                {{"name", "width"}, {"type", "jot:interval"}, {"default", 10.0}},
-                {{"name", "height"}, {"type", "jot:interval"}, {"default", 10.0}},
-                {{"name", "depth"}, {"type", "jot:interval"}, {"default", 0.0}}
+                {{"name", "width"}, {"type", "jot:interval"}, {"default", 10.0}, {"description", "X-axis dimension. Accepts: scalar (symmetric), 1-item array (asymmetric), or 2-item array (explicit)."}},
+                {{"name", "height"}, {"type", "jot:interval"}, {"default", 10.0}, {"description", "Y-axis dimension. Same interval syntax as width."}},
+                {{"name", "depth"}, {"type", "jot:interval"}, {"default", 0.0}, {"description", "Z-axis dimension. If 0.0, generates a 2D surface instead of a 3D solid."}}
             })},
-            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The generated box geometry."}}}}},
+            {"examples", {"Box(10) -> $out", "Box(10, [20]) -> $out", "Box(width=[10, 20], height=30, depth=5) -> $out"}}
         };
     }
 };
