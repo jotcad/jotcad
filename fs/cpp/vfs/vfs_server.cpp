@@ -155,10 +155,12 @@ void VFSNode::listen() {
             res.set_header("X-VFS-Encoding", result.metadata.value("encoding", "json"));
             res.set_content((const char*)result.data.data(), result.data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
+            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
             json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "POST /read_selector"}};
             res.status = e.code;
             res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
         } catch (const std::exception& e) {
+            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
             json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /read_selector (std)"}};
             res.status = 500;
             res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
@@ -196,10 +198,12 @@ void VFSNode::listen() {
             res.set_header("X-VFS-Encoding", result.metadata.value("encoding", "json"));
             res.set_content((const char*)result.data.data(), result.data.size(), "application/octet-stream");
         } catch (const VFSException& e) {
+            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
             json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "POST /read_cid"}};
             res.status = e.code;
             res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
         } catch (const std::exception& e) {
+            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
             json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /read_cid (std)"}};
             res.status = 500;
             res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");

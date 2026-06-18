@@ -60,6 +60,7 @@
 #include "unfold_op.h"
 #include "pack_op.h"
 #include "item_ops.h"
+#include "snap_op.h"
 #include "bb_op.h"
 #include "obb_op.h"
 
@@ -89,6 +90,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     corners_init(vfs);
     on_init(vfs);
     at_init(vfs);
+    snap_init(vfs);
     cut_init(vfs);
     stamp_init(vfs);
     join_init(vfs);
