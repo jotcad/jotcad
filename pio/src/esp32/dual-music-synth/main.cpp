@@ -79,16 +79,75 @@ void i2s_output_callback(int16_t* samples, int numSamples) {
     i2s_write(I2S_NUM, stereoBuffer, sizeof(stereoBuffer), &bytes_written, portMAX_DELAY);
 }
 
-// --- Synthesizer Globals ---
-ESP32Synth synth;
-
-
-
 // 16-note polyphonic voice allocation mapper
 #define MAX_POLYPHONY 16
 static int active_notes[MAX_POLYPHONY];
 static int next_voice_index = 0;
 static portMUX_TYPE synth_mux = portMUX_INITIALIZER_UNLOCKED;
+
+// --- Synthesizer Globals ---
+ESP32Synth synth;
+
+// Available Instrument Configurations
+enum InstrumentType {
+    INST_POLY_SYNTH = 0,
+    INST_BRIGHT_LEAD,
+    INST_PLUCKED_HARP,
+    INST_CHIPTUNE_BASS,
+    INST_THEREMIN,
+    INST_COUNT
+};
+
+static int current_instrument = -1; // Force initial selection
+
+void select_instrument(int inst_idx) {
+    if (inst_idx < 0 || inst_idx >= INST_COUNT) return;
+    if (inst_idx == current_instrument) return; // Prevent redundant updates
+    
+    current_instrument = inst_idx;
+    
+    portENTER_CRITICAL(&synth_mux);
+    for (int i = 0; i < MAX_POLYPHONY; i++) {
+        switch (current_instrument) {
+            case INST_POLY_SYNTH:
+                synth.setWave(i, WAVE_TRIANGLE);
+                synth.setEnv(i, 20, 150, 192, 250);
+                break;
+            case INST_BRIGHT_LEAD:
+                synth.setWave(i, WAVE_SAW);
+                synth.setEnv(i, 10, 200, 220, 300);
+                break;
+            case INST_PLUCKED_HARP:
+                synth.setWave(i, WAVE_TRIANGLE);
+                synth.setEnv(i, 5, 250, 0, 150);
+                break;
+            case INST_CHIPTUNE_BASS:
+                synth.setWave(i, WAVE_PULSE);
+                synth.setPulseWidth(i, 50); // ~20% duty cycle (standard 8-bit scale 0-255)
+                synth.setEnv(i, 10, 100, 128, 100);
+                break;
+            case INST_THEREMIN:
+                synth.setWave(i, WAVE_SINE);
+                synth.setEnv(i, 100, 300, 255, 400);
+                break;
+        }
+    }
+    portEXIT_CRITICAL(&synth_mux);
+
+    const char* names[] = {
+        "Classic Poly Synth",
+        "Bright Lead (Sawtooth)",
+        "Plucked Harp",
+        "Chiptune Bass (Pulse)",
+        "Theremin / Flute (Sine)"
+    };
+    Serial.printf("[SYNTH] >>> ACTIVE INSTRUMENT CHANGED: %s <<<\n", names[current_instrument]);
+}
+
+
+
+
+
 
 // Standard BLE MIDI Service UUID
 static BLEUUID midiServiceUUID("03B80E5A-EDE8-4B33-A751-6CE34EC4C700");
@@ -216,6 +275,12 @@ void OnBLEControlChange(uint8_t channel, uint8_t control, uint8_t value, uint16_
     Serial.printf("[BLE-MIDI] CONTROL CHANGE - Ch: %d, CC: %d, Value: %d (Timestamp: %u)\n", 
                   channel, control, value, timestamp);
     
+    // Map CC 7 (typically volume, used as a selector knob here) to change active instrument
+    if (control == 7) {
+        int inst_idx = (int)value * INST_COUNT / 128; // Maps 0-127 values to 0-4
+        select_instrument(inst_idx);
+    }
+    
     fs::json event = {
         {"type", "control_change"},
         {"channel", channel},
@@ -292,13 +357,10 @@ void setup() {
     init_i2s();
     synth.beginCustom(44100, i2s_output_callback);
     
-    // Set standard ADSR instruments for all polyphonic voice channels
-    for (int i = 0; i < MAX_POLYPHONY; i++) {
-        synth.setWave(i, WAVE_TRIANGLE); // Warm, clean triangle wave
-        synth.setEnv(i, 20, 150, 192, 250); // ADSR: 20ms attack, 150ms decay, 75% sustain level, 250ms release stage
-    }
+    // Initialize default instrument (Classic Poly Synth)
+    select_instrument(INST_POLY_SYNTH);
     synth.setMasterVolume(255); // Set master volume to maximum 8-bit level
-    Serial.println("[SYNTH] 16 Polyphonic triangle-envelope voices initialized.");
+
 
 
 #if ENABLE_VFS

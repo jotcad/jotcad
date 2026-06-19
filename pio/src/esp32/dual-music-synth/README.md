@@ -68,16 +68,18 @@ The **LMD2718 + NS4168** module features **7 pins**. Connect them to your ESP32 
 
 ## 3. Polyphony & Synthesizer Settings
 
-The synthesizer is configured with a rich, clean-sounding default patch:
-*   **Polyphony**: Up to 16 concurrent voices using a thread-safe round-robin allocation.
-*   **Oscillator Waveform**: Clean, warm **Triangle waves** to minimize harmonic distortion and emulate analog synthesizers.
-*   **Envelope (ADSR)**:
-    *   **Attack**: 20ms (responsive, snappy onset).
-    *   **Decay**: 150ms.
-    *   **Sustain**: 75% level (`192` out of 255).
-    *   **Release**: 250ms (smooth, natural note decay after key release).
-*   **Master Volume**: Set to maximum 8-bit level (`255`) to provide a rich, loud signal without distortion.
-*   **Startup Verification**: Plays a sequential C-E-G-C chime on startup to verify the speaker connections.
+The synthesizer is configured with up to 16 concurrent voices using a thread-safe round-robin allocation and features a startup chime verification (playing sequential C-E-G-C notes on boot).
+
+### Instrument Selection (MIDI CC 7)
+You can dynamically switch between **5 different instrument presets** by turning the Control Change **CC 7** knob (mapping standard `0-127` values):
+
+| Instrument Index | CC 7 Value Range | Preset Name | Waveform | ADSR Configuration | Sound Profile |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **0** | `0` – `25` | **Classic Poly Synth** | Triangle | `20, 150, 192, 250` | Snappy, warm analog synthesizer default |
+| **1** | `26` – `51` | **Bright Lead** | Sawtooth | `10, 200, 220, 300` | Bright, rich leads with a classic sawtooth bite |
+| **2** | `52` – `76` | **Plucked Harp** | Triangle | `5, 250, 0, 150` | Plucked acoustic strings with no sustain stage |
+| **3** | `77` – `101` | **Chiptune Bass** | Pulse | `10, 100, 128, 100` | Vintage 8-bit square bass with 20% duty cycle |
+| **4** | `102` – `127` | **Theremin / Flute** | Sine | `100, 300, 255, 400` | Eerie, sweeping sine wave with a slow attack |
 
 ---
 
