@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { launchSystem } from '../orchestrator.js';
 import { VFS, MemoryStorage, MeshLink, Selector } from '../fs/src/index.js';
+import { encodeRecord, decodeRecordStream } from '../fs/src/mesh/forward_connection.js';
 
 test('Sovereign Packet Protocol Integration', async (t) => {
     // Launch the orchestrator profile which spins up a C++ ops node and a JS export node
@@ -49,20 +50,29 @@ test('Sovereign Packet Protocol Integration', async (t) => {
 
         // Query Node A to pull the data from the client via reverse long-polling
         try {
+            const body = encodeRecord({
+                op: 'READ_SELECTOR',
+                selector: selector.toJSON()
+            });
+
             const resp = await globalThis.fetch('http://localhost:8181/read_selector', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'x-vfs-op': 'READ_SELECTOR',
-                    'x-vfs-selector': JSON.stringify(selector)
-                }
+                    'Content-Type': 'application/octet-stream'
+                },
+                body: body
             });
 
             assert.strictEqual(resp.status, 200, 'Expected Node A to return 200 OK');
-            assert.strictEqual(resp.headers.get('x-vfs-encoding'), 'bytes', 'Expected binary packet encoding');
 
-            const buffer = await resp.arrayBuffer();
-            const received = new Uint8Array(buffer);
+            const { header, payloadStream } = await decodeRecordStream(resp.body);
+            assert.strictEqual(header.encoding, 'bytes', 'Expected binary packet encoding');
+
+            const chunks = [];
+            for await (const chunk of payloadStream) {
+                chunks.push(chunk);
+            }
+            const received = new Uint8Array(Buffer.concat(chunks));
             assert.deepStrictEqual(Array.from(received), [10, 20, 30, 40, 50]);
         } catch (e) {
             // Log assertions

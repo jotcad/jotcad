@@ -48,7 +48,7 @@ test('Conformal Wrapping (jot/conform)', { timeout: 60000 }, async (t) => {
   await t.test('should project a disk onto an orb with offset', async () => {
     const target_sel = new Selector('jot/Orb', { diameter: 50, zag: 0.1 }).withOutput('$out');
     const subject_sel = new Selector('jot/Disk', { diameter: 20, zag: 0.2 }).withOutput('$out');
-    const moved_subject = new Selector('jot/move', { $in: subject_sel, z: 30 }).withOutput('$out');
+    const moved_subject = new Selector('jot/mz', { $in: subject_sel, z: 30 }).withOutput('$out');
     const conform_sel = new Selector('jot/conform', {
         $in: moved_subject,
         target: target_sel,
@@ -89,7 +89,7 @@ test('Conformal Wrapping (jot/conform)', { timeout: 60000 }, async (t) => {
     // Subject inside the sphere, offset -5 (should move to Z=20 world, local Z=-10)
     const target_sel = new Selector('jot/Orb', { diameter: 50, zag: 0.1 }).withOutput('$out');
     const subject_sel = new Selector('jot/Disk', { diameter: 5, zag: 0.5 }).withOutput('$out');
-    const moved_subject = new Selector('jot/move', { $in: subject_sel, z: 30 }).withOutput('$out');
+    const moved_subject = new Selector('jot/mz', { $in: subject_sel, z: 30 }).withOutput('$out');
     
     const conform_sel = new Selector('jot/conform', {
         $in: moved_subject,

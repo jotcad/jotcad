@@ -103,12 +103,12 @@ The VFS uses specialized system paths for mesh management.
   - Content: `{ provider: "id", catalog: { "path": schema } }`
   - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
 
-### 3.4 Interest Forwarding (`POST /subscribe`)
+#### 3.4 Interest Forwarding (`POST /subscribe`)
 
 To support reactive workflows (e.g., interactive boolean previews), nodes propagate "Interests" across the mesh.
 
 - **Subscription Request:** `POST /subscribe`
-  - Content: `{ selector, expiresAt, stack }`
+  - **Payload Structure**: Sent as a binary `VfsRecord` where the JSON header includes `selector`, `expiresAt`, and `stack` fields.
 - **Mesh Painting:** When a node receives a subscription, it MUST:
   1.  Record the interest locally.
   2.  Forward the subscription to all OTHER connected peers (omitting any peer in the `stack` to prevent cycles).
@@ -121,6 +121,18 @@ Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sha
 - **Required Headers:** `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`.
 - **Allowed Headers:** MUST include `Content-Type`, `X-VFS-Peer-Id`, `X-VFS-Reply-To`, and `X-VFS-Id`.
 - **Preflight:** Nodes MUST handle `OPTIONS` requests for all mesh routes.
+
+### 3.6 Recursive Bread-crumb READ (`POST /read_selector` | `POST /read_cid`)
+
+The `read` operation is the primary mechanism for demand-driven data retrieval.
+
+- **Endpoints:**
+  - `POST /read_selector`: Retrieves data by its computational address (path + parameters).
+  - `POST /read_cid`: Retrieves data by its specific content hash.
+- **Atomic Wire Format:** Requests and responses MUST be wrapped and sent as a binary `VfsRecord`.
+  - For `POST /read_selector`, the request `VfsRecord` JSON header MUST contain the `selector` object, `expiresAt`, and the forwarding `stack` array.
+  - For `POST /read_cid`, the request `VfsRecord` JSON header MUST contain the `cid` string, `resolutionStack` array, `expiresAt`, and `stack`.
+- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status. The default TTL for requests without an explicit `expiresAt` is **30 seconds**.
 
 ### 3.7 Reverse Link Polling (`POST /listen`)
 
@@ -135,7 +147,18 @@ Peers without a stable incoming URL (e.g., Browsers) receive mesh events by poll
 - **Long-Polling Contract:** Servers MUST NOT return `204` immediately if the queue is empty. They MUST wait for a publication or a timeout (e.g., 30s) to keep the connection active for immediate delivery.
 - **Binary Constraint**: The `BATCH` operation is reserved for JSON frames. Raw binary notifications (`encoding: bytes`) MUST be delivered as individual standard `200 OK` responses to maintain framing integrity and efficiency.
 
-### 3.5 Formal Links (Unambiguous Redirection)
+### 3.8 Binary Wire Format (VfsRecord)
+
+To unify request routing and data delivery, the mesh utilizes a standardized binary layout called **VfsRecord** for all message bodies (including requests to `/read_selector`, `/read_cid`, `/subscribe`, `/notify`, `/spy`, `/listen`, and their responses).
+
+A **VfsRecord** payload is laid out sequentially as follows:
+1. **Header Length prefix (4 bytes):** 32-bit unsigned integer in Big Endian (`UInt32BE`) specifying the byte-length of the header JSON string.
+2. **JSON Header String (variable length):** UTF-8 encoded JSON string containing transport headers and metadata (e.g. `selector`, `stack`, `expiresAt`, `encoding`, `cid`, `info` etc.).
+3. **Raw Binary Payload (variable length):** The remaining bytes in the stream represent the raw payload data (e.g. geometry file, shape JSON bytes, error trace lines etc.).
+
+This format guarantees strict stream framing without relying on special HTTP headers, and enables direct piping of multi-gigabyte data payloads through proxy nodes without intermediate decoding overhead.
+
+### 3.9 Formal Links (Unambiguous Redirection)
 
 The VFS supports **Formal Links**, a mechanism for redirecting one Selector to another. 
 
@@ -147,31 +170,6 @@ The VFS supports **Formal Links**, a mechanism for redirecting one Selector to a
 - **Resolution Behavior:** When the VFS internal resolution (`_readResult`) encounters `encoding: "link"`, it MUST read the data payload, hydrate it into a formal `Selector`, and recursively resolve that Selector.
 - **Cycle Protection:** Nodes MUST maintain a `resolutionStack` of CIDs encountered during a single resolution chain. If a CID is encountered that is already in the stack, the resolution MUST fail with a "Circular Link Detected" error.
 - **Owner Sovereignty:** A Link is an independent entry owned by its source Selector. If the source Selector entry is deleted, the link is destroyed, but the target artifact remains unaffected.
-
-### 3.6 Recursive Bread-crumb READ (`POST /read_selector` | `POST /read_cid`)
-
-The `read` operation is the primary mechanism for demand-driven data retrieval.
-
-- **Endpoints:**
-  - `POST /read_selector`: Retrieves data by its computational address (path + parameters).
-  - `POST /read_cid`: Retrieves data by its specific content hash.
-- **Atomic Wire Format:** Requests MUST wrap the target Selector or CID in a top-level key.
-  ```json
-  {
-    "selector": { "path": "jot/Box", "parameters": { "width": 10 }, "output": "file" },
-    "expiresAt": 1700000000000,
-    "stack": ["node-A"]
-  }
-  ```
-  Or for direct CID retrieval:
-  ```json
-  {
-    "cid": "deadbeef1234567890...",
-    "expiresAt": 1700000000000,
-    "stack": ["node-A"]
-  }
-  ```
-- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status. The default TTL for requests without an explicit `expiresAt` is **30 seconds**.
 
 ## 4. Core Type System
 

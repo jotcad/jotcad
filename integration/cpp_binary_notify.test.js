@@ -4,6 +4,7 @@ import { VFS } from '../fs/src/vfs.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
 import { launchSystem, PROFILES } from '../orchestrator.js';
+import { encodeRecord } from '../fs/src/mesh/forward_connection.js';
 
 test('C++ -> Node.js Binary Notification Forwarding', async (t) => {
     // 1. Launch the TEST system (C++ Ops Node)
@@ -44,15 +45,18 @@ test('C++ -> Node.js Binary Notification Forwarding', async (t) => {
         console.log('[Test] Triggering binary notification on C++ Node...');
         const binaryData = new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x42, 0xFF]);
         
+        const body = encodeRecord({
+            op: 'PUB',
+            selector: topic.toJSON(),
+            encoding: 'bytes'
+        }, binaryData);
+
         const notifyRes = await fetch(`http://localhost:${CPP_PORT}/notify`, {
             method: 'POST',
             headers: {
-                'X-VFS-Op': 'PUB',
-                'X-VFS-Selector': JSON.stringify(topic.toJSON()),
-                'X-VFS-Encoding': 'bytes',
                 'Content-Type': 'application/octet-stream'
             },
-            body: binaryData
+            body: body
         });
         
         assert.strictEqual(notifyRes.status, 200, 'C++ node should accept binary /notify');

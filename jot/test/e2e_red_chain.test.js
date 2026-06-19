@@ -8,6 +8,7 @@ import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
 import { log } from '../../fs/src/log.js';
 import { Selector } from '../../fs/src/vfs_core.js';
+import { encodeRecord, decodeRecordStream } from '../../fs/src/mesh/forward_connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
@@ -104,29 +105,32 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', async
         // 7. Request Execution from the C++ Ops Node
         // The Ops Node will call back to the Test Node for user/Red.
         // The Test Node will resolve the expansion and return the result.
+        const body = encodeRecord({
+            op: 'READ_SELECTOR',
+            selector: finalSelector.toJSON()
+        });
+
         const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ selector: finalSelector.toJSON() })
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: body
         });
 
         if (!response.ok) {
-            const errBody = await response.text();
+            const { header } = await decodeRecordStream(response.body);
+            const errBody = header.info?.error || '';
             console.error('[E2E FAILURE TRACE]:');
-            errBody.split('\n').forEach((line, i) => {
-                if (line.trim()) {
-                    try {
-                        const parsed = JSON.parse(line);
-                        console.error(`  [${i}]`, parsed);
-                    } catch (e) {
-                        console.error(`  [${i}] ${line}`);
-                    }
-                }
-            });
-            throw new Error(`Ops Node failed: See trace above`);
+            console.error(errBody);
+            throw new Error(`Ops Node failed: ${errBody}`);
         }
 
-        const result = await response.json();
+        const { header, payloadStream } = await decodeRecordStream(response.body);
+        const chunks = [];
+        for await (const chunk of payloadStream) {
+            chunks.push(chunk);
+        }
+        const payloadBytes = Buffer.concat(chunks);
+        const result = JSON.parse(payloadBytes.toString());
         log('[E2E] Execution Result:', JSON.stringify(result, null, 2));
 
         // 8. Assertions: Deep equal vs Expected Shape

@@ -7,6 +7,7 @@ import { TestVFSNode } from '../../fs/test/vfs_test_helpers.js';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
 import { log } from '../../fs/src/log.js';
+import { encodeRecord, decodeRecordStream } from '../../fs/src/mesh/forward_connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
@@ -57,10 +58,15 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
         compiler.registerOperator('user/OpA', { path: 'user/OpA', schema: opASchema });
         const terminals = await compiler.evaluate((new JotParser()).parse('Box(10).OpA() -> $out'), {}, { outputs: { $out: 'jot:shape' } });
 
+        const body = encodeRecord({
+            op: 'READ_SELECTOR',
+            selector: terminals[0].selector.toJSON()
+        });
+
         const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ selector: terminals[0].selector.toJSON() })
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: body
         });
 
         if (!response.ok) {
@@ -68,7 +74,13 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
             throw new Error(`Execution failed: ${err}`);
         }
 
-        const result = await response.json();
+        const { header, payloadStream } = await decodeRecordStream(response.body);
+        const chunks = [];
+        for await (const chunk of payloadStream) {
+            chunks.push(chunk);
+        }
+        const payloadBytes = Buffer.concat(chunks);
+        const result = JSON.parse(payloadBytes.toString());
         assert.strictEqual(result.tags?.color, 'blue', 'Nested expansion should result in blue color');
         log('--- NESTED EXPANSION SUCCESS ---');
 

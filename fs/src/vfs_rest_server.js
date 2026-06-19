@@ -128,43 +128,28 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         vfsPath = vfsPath.slice(prefix.length);
       }
 
-      const vfsHeaders = parseHeaders(req);
-      let op = vfsHeaders.op;
-      let selector = vfsHeaders.selector;
-      let stack = vfsHeaders.stack;
-      let expiresAt = vfsHeaders.expiresAt;
-      let cid = null;
-      let resolutionStack = [];
-      let payload = null;
-      let isLegacy = !!op;
-
-      let recordHeader = null;
-      if (!isLegacy && req.method === 'POST') {
-        try {
-          const record = await decodeRecordBody(req);
-          recordHeader = record.header;
-          op = recordHeader.op;
-          selector = recordHeader.selector ? Selector.fromObject(recordHeader.selector) : null;
-          stack = recordHeader.stack || [];
-          expiresAt = recordHeader.expiresAt || null;
-          cid = recordHeader.cid || null;
-          resolutionStack = recordHeader.resolutionStack || [];
-          payload = record.payload;
-        } catch (e) {
-          isLegacy = true;
-        }
-      }
-
       if (req.method === 'POST' && vfsPath === '/read_selector') {
-        const s = isLegacy ? (selector || (await getBody(req)).selector) : selector;
-        const finalSelector = Selector.fromObject(s);
-        if (!finalSelector) {
-            const respHeader = { info: { error: 'Missing or invalid selector' }, encoding: 'json' };
-            res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
-            return res.end(encodeRecord(respHeader));
+        let record;
+        try {
+          record = await decodeRecordBody(req);
+        } catch (e) {
+          const respHeader = { info: { error: 'Malformed VfsRecord' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
         }
-        log(`[MeshServer ${vfs.id}] POST /read_selector: Selector(${finalSelector.path})`);
-        const result = await vfs.readSelector(finalSelector, { stack, expiresAt });
+
+        const selector = record.header.selector ? Selector.fromObject(record.header.selector) : null;
+        if (!selector) {
+          const respHeader = { info: { error: 'Missing or invalid selector' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
+        }
+        
+        const stack = record.header.stack || [];
+        const expiresAt = record.header.expiresAt || null;
+
+        log(`[MeshServer ${vfs.id}] POST /read_selector: Selector(${selector.path})`);
+        const result = await vfs.readSelector(selector, { stack, expiresAt });
 
         if (result) {
           const { stream, metadata } = result;
@@ -181,10 +166,27 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       }
 
       if (req.method === 'POST' && vfsPath === '/read_cid') {
-        const finalCid = isLegacy ? (await getBody(req)).cid : cid;
-        const finalResStack = isLegacy ? ((await getBody(req)).resolutionStack || []) : resolutionStack;
-        log(`[MeshServer ${vfs.id}] POST /read_cid: CID(${finalCid})`);
-        const result = await vfs.readCID(finalCid, { stack, resolutionStack: finalResStack, expiresAt });
+        let record;
+        try {
+          record = await decodeRecordBody(req);
+        } catch (e) {
+          const respHeader = { info: { error: 'Malformed VfsRecord' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
+        }
+
+        const cid = record.header.cid || null;
+        if (!cid) {
+          const respHeader = { info: { error: 'Missing cid' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
+        }
+        const stack = record.header.stack || [];
+        const resolutionStack = record.header.resolutionStack || [];
+        const expiresAt = record.header.expiresAt || null;
+
+        log(`[MeshServer ${vfs.id}] POST /read_cid: CID(${cid})`);
+        const result = await vfs.readCID(cid, { stack, resolutionStack, expiresAt });
 
         if (result) {
           const { stream, metadata } = result;
@@ -201,27 +203,27 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       }
 
       if (req.method === 'POST' && vfsPath === '/subscribe') {
-        let finalSelector = selector;
-        let finalExpiresAt = expiresAt;
-        let finalStack = stack;
-
-        if (isLegacy) {
-          if (!vfsHeaders.selector) {
-            const body = await getBody(req);
-            finalSelector = Selector.fromObject(body.selector);
-            finalExpiresAt = body.expiresAt;
-            finalStack = body.stack || [];
-          }
+        let record;
+        try {
+          record = await decodeRecordBody(req);
+        } catch (e) {
+          const respHeader = { info: { error: 'Malformed VfsRecord' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
         }
 
-        if (!finalSelector) {
-            const respHeader = { info: { error: 'Missing selector' }, encoding: 'json' };
-            res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
-            return res.end(encodeRecord(respHeader));
+        const selector = record.header.selector ? Selector.fromObject(record.header.selector) : null;
+        if (!selector) {
+          const respHeader = { info: { error: 'Missing selector' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
         }
-        vfs.validateSelector(finalSelector);
-        const peerId = req.headers['x-vfs-id'] || finalStack[0] || 'unknown';
-        meshLink?.addInterest(peerId, finalSelector, finalExpiresAt, finalStack);
+        const stack = record.header.stack || [];
+        const expiresAt = record.header.expiresAt || null;
+
+        vfs.validateSelector(selector);
+        const peerId = req.headers['x-vfs-id'] || stack[0] || 'unknown';
+        meshLink?.addInterest(peerId, selector, expiresAt, stack);
         
         const respHeader = { info: { state: 'AVAILABLE' }, encoding: 'json' };
         res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
@@ -229,24 +231,30 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       }
 
       if (req.method === 'POST' && vfsPath === '/notify') {
-        let finalSelector = selector;
-        let finalPayload = payload;
-        let finalStack = stack;
+        let record;
+        try {
+          record = await decodeRecordBody(req);
+        } catch (e) {
+          const respHeader = { info: { error: 'Malformed VfsRecord' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
+        }
 
-        if (isLegacy) {
-          if (vfsHeaders.selector) {
-            finalPayload = vfsHeaders.encoding === 'bytes' ? await getBinaryBody(req) : await getBody(req);
-          } else {
-            const body = await getBody(req);
-            finalSelector = body.selector ? Selector.fromObject(body.selector) : null;
-            finalPayload = body.payload;
-            finalStack = body.stack || [];
+        const selector = record.header.selector ? Selector.fromObject(record.header.selector) : null;
+        let payload = record.payload;
+        const stack = record.header.stack || [];
+
+        if (record.header.encoding === 'json' && payload && payload.length > 0) {
+          try {
+            payload = JSON.parse(payload.toString('utf8'));
+          } catch (e) {
+            // Keep original if parsing fails
           }
         }
 
-        info(`[MeshServer ${vfs.id}] POST /notify ${finalSelector?.path || 'null'} from stack ${finalStack}`);
-        if (finalSelector) vfs.validateSelector(finalSelector); 
-        meshLink?.notify(finalSelector, finalPayload, finalStack);
+        info(`[MeshServer ${vfs.id}] POST /notify ${selector?.path || 'null'} from stack ${stack}`);
+        if (selector) vfs.validateSelector(selector); 
+        meshLink?.notify(selector, payload, stack);
         
         const respHeader = { info: { state: 'AVAILABLE' }, encoding: 'json' };
         res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
@@ -254,31 +262,27 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
       }
 
       if (req.method === 'POST' && vfsPath === '/spy') {
-        let finalSelector = selector;
-        let finalExpiresAt = expiresAt;
-        let finalStack = stack;
-
-        if (isLegacy) {
-          if (vfsHeaders.selector) {
-            finalSelector = vfsHeaders.selector;
-            finalExpiresAt = vfsHeaders.expiresAt;
-            finalStack = vfsHeaders.stack;
-          } else {
-            const body = await getBody(req);
-            finalSelector = Selector.fromObject(body.selector);
-            finalExpiresAt = body.expiresAt;
-            finalStack = body.stack || [];
-          }
+        let record;
+        try {
+          record = await decodeRecordBody(req);
+        } catch (e) {
+          const respHeader = { info: { error: 'Malformed VfsRecord' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
         }
 
-        if (!finalSelector) {
-            const respHeader = { info: { error: 'Missing selector' }, encoding: 'json' };
-            res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
-            return res.end(encodeRecord(respHeader));
+        const selector = record.header.selector ? Selector.fromObject(record.header.selector) : null;
+        if (!selector) {
+          const respHeader = { info: { error: 'Missing selector' }, encoding: 'json' };
+          res.writeHead(400, { 'Content-Type': 'application/octet-stream' });
+          return res.end(encodeRecord(respHeader));
         }
-        vfs.validateSelector(finalSelector);
+        const stack = record.header.stack || [];
+        const expiresAt = record.header.expiresAt || null;
 
-        const stream = await vfs.spy(finalSelector, { stack: finalStack, expiresAt: finalExpiresAt });
+        vfs.validateSelector(selector);
+
+        const stream = await vfs.spy(selector, { stack, expiresAt });
         if (stream) {
           const respHeader = {
             info: { state: 'AVAILABLE' },

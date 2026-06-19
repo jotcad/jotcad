@@ -20,20 +20,17 @@ struct MemoryBridge : public VFSNode::Connection {
         neighbor_id = id;
     }
 
-    void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override {
-        target_node.notify(selector, payload, stack);
-    }
-
-    void subscribe(const json& selector, long long expiresAt, const std::vector<std::string>& stack) override {
-        target_node.subscribe(selector, expiresAt, stack);
-    }
-
-    VFSResult read(const VFSNode::VFSRequest& req) override {
-        // Not needed for pubsub test
+    VFSResult sendRequest(const VFSNode::VFSRequest& req) override {
+        if (req.op == "PUB") {
+            target_node.notify(req.selector.to_json(), req.data.empty() ? json::object() : json::parse(req.data), req.stack);
+        } else if (req.op == "SUB") {
+            target_node.subscribe(req.selector, req.expiresAt, req.stack);
+        }
         return {};
     }
 
     bool is_reverse() const override { return false; }
+    std::string get_protocol() const override { return "memory"; }
 };
 
 // A simple observer that records notifications
@@ -47,14 +44,17 @@ struct TestObserver : public VFSNode::Connection {
     std::vector<TestNotification> received_notifications;
     TestObserver(std::string id) { neighbor_id = id; }
 
-    void notify(const json& selector, const json& payload, const std::vector<std::string>& stack) override {
-        received_payloads.push_back(payload);
-        received_notifications.push_back({selector, payload});
+    VFSResult sendRequest(const VFSNode::VFSRequest& req) override {
+        if (req.op == "PUB") {
+            json payload = req.data.empty() ? json::object() : json::parse(req.data);
+            received_payloads.push_back(payload);
+            received_notifications.push_back({req.selector.to_json(), payload});
+        }
+        return {};
     }
 
-    void subscribe(const json&, long long, const std::vector<std::string>&) override {}
-    VFSResult read(const VFSNode::VFSRequest&) override { return {}; }
     bool is_reverse() const override { return false; }
+    std::string get_protocol() const override { return "memory"; }
 };
 
 void test_pubsub_propagation() {
