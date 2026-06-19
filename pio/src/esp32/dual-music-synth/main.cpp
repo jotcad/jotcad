@@ -10,21 +10,79 @@
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
 
-// Classic Bluetooth A2DP Source and Synthesizer imports
-#include "BluetoothA2DPSource.h"
+// Synthesizer imports
 #include "ESP32Synth.h"
+#include "driver/i2s.h"
 
-// --- Configuration Options ---
-// Set to 1 to enable VFS mesh networking (disabled by default for low-latency A2DP audio streaming)
-#define ENABLE_VFS 0
+static uint64_t total_frames_rendered = 0;
 
-// Target name of your Bluetooth Earphones/Speakers (e.g., "JBL Flip 6", "Sony WH-1000XM4").
-// If set to an empty string "", it will automatically connect to the first advertising Bluetooth audio receiver.
-#define BT_EARPHONES_NAME ""
+// Define I2S Pins for the LMD2718 + NS4168 Board. 
+// Standard ESP32 hardware I2S pins:
+#define I2S_BCLK GPIO_NUM_26
+#define I2S_WS GPIO_NUM_25
+#define I2S_DOUT GPIO_NUM_22
+#define I2S_SD_PIN GPIO_NUM_23
+#define I2S_NUM I2S_NUM_0
+
+void init_i2s() {
+    Serial.println("[I2S] Initializing standard I2S mode for NS4168 DAC/Amp (Legacy Driver)...");
+    
+    // Enable/unmute the amplifier via the SD (Shutdown/Mute) pin
+    pinMode(I2S_SD_PIN, OUTPUT);
+    digitalWrite(I2S_SD_PIN, HIGH);
+    
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate = 44100,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = (i2s_comm_format_t)I2S_COMM_FORMAT_STAND_I2S,
+        .dma_buf_count = 8,
+        .dma_buf_len = 256,
+        .use_apll = false,
+        .tx_desc_auto_clear = true,
+        .fixed_mclk = 0
+    };
+    
+    i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_BCLK,
+        .ws_io_num = I2S_WS,
+        .data_out_num = I2S_DOUT,
+        .data_in_num = I2S_PIN_NO_CHANGE
+    };
+    
+    esp_err_t err = i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL);
+    if (err != ESP_OK) {
+        Serial.printf("[I2S] Failed to install driver: %s\n", esp_err_to_name(err));
+        return;
+    }
+    
+    err = i2s_set_pin(I2S_NUM, &pin_config);
+    if (err != ESP_OK) {
+        Serial.printf("[I2S] Failed to set pins: %s\n", esp_err_to_name(err));
+        return;
+    }
+    Serial.println("[I2S] Standard I2S initialized successfully!");
+}
+
+void i2s_output_callback(int16_t* samples, int numSamples) {
+    total_frames_rendered += numSamples;
+
+    // Allocate stack buffer for stereo conversion
+    int16_t stereoBuffer[numSamples * 2];
+    for (int i = 0; i < numSamples; i++) {
+        stereoBuffer[i * 2] = samples[i];
+        stereoBuffer[i * 2 + 1] = samples[i];
+    }
+
+    size_t bytes_written = 0;
+    i2s_write(I2S_NUM, stereoBuffer, sizeof(stereoBuffer), &bytes_written, portMAX_DELAY);
+}
 
 // --- Synthesizer Globals ---
 ESP32Synth synth;
-BluetoothA2DPSource a2dp_source;
+
+
 
 // 16-note polyphonic voice allocation mapper
 #define MAX_POLYPHONY 16
@@ -83,15 +141,7 @@ void broadcast_vfs_event(const fs::json& event) {
 #endif
 }
 
-// --- Real-time Stereo Audio Stream Callback (Invoked on Core 0 by A2DP Thread) ---
-static uint64_t total_frames_rendered = 0;
 
-int32_t get_sound_data(Frame* data, int32_t len) {
-    // Fill the stereo frame buffer in real-time using fixed-point polyphonic mixing
-    synth.generateSamplesStereo((int16_t*)data, len);
-    total_frames_rendered += len;
-    return len;
-}
 
 // --- BLE-MIDI Client Event Callbacks ---
 void OnBLEConnected() {
@@ -177,45 +227,6 @@ void OnBLEControlChange(uint8_t channel, uint8_t control, uint8_t value, uint16_
     broadcast_vfs_event(event);
 }
 
-// --- Classic Bluetooth A2DP Device Discovery Callback ---
-bool my_ssid_callback(const char* ssid, esp_bd_addr_t address, int rssi) {
-    Serial.printf("[A2DP-SCANNER] Discovered device: Name: '%s' | MAC: %02X:%02X:%02X:%02X:%02X:%02X | RSSI: %d dBm\n",
-                  (ssid && strlen(ssid) > 0 ? ssid : "<Unknown>"),
-                  address[0], address[1], address[2], address[3], address[4], address[5],
-                  rssi);
-                  
-    // If we have a specific earphones target configured, check if this matches
-    if (strlen(BT_EARPHONES_NAME) > 0) {
-        if (ssid && strcmp(ssid, BT_EARPHONES_NAME) == 0) {
-            Serial.printf("[A2DP-SCANNER] ==> MATCH FOUND: Connecting to locked target '%s'!\n", BT_EARPHONES_NAME);
-            return true;
-        }
-        return false; // Continue scanning for the matching name
-    }
-    
-    // Otherwise, in generic discovery mode, automatically connect to the first audio receiver found
-    Serial.printf("[A2DP-SCANNER] ==> Connecting to first available receiver: '%s'...\n", (ssid && strlen(ssid) > 0 ? ssid : "<Unknown>"));
-    return true;
-}
-
-// --- A2DP State Changed Callbacks for Handshake Diagnostics ---
-void on_a2dp_connection_state(esp_a2d_connection_state_t state, void* obj) {
-    Serial.printf("[A2DP-CALLBACK] Connection State Changed: %d\n", (int)state);
-}
-
-void on_a2dp_audio_state(esp_a2d_audio_state_t state, void* obj) {
-    Serial.printf("[A2DP-CALLBACK] Audio State Changed: %d\n", (int)state);
-}
-
-// --- Active Bluetooth A2DP Source Connection Verification ---
-void verify_a2dp_connection() {
-    if (a2dp_source.is_connected()) {
-        Serial.println("[A2DP-AUDIO] >>> SUCCESS: Connected to Bluetooth Earphones! Streaming audio... <<<");
-        a2dp_source.set_volume(100); // Unmute and set volume to 100/127 on connection!
-    } else {
-        Serial.println("[A2DP-AUDIO] WARNING: Earphones disconnected or scanning. Retrying connection...");
-    }
-}
 
 void setup() {
     Serial.begin(115200);
@@ -276,9 +287,10 @@ void setup() {
         }
     }
 
-    // 4. Initialize ESP32Synth Engine (Custom output at standard A2DP CD sample rate of 44100Hz)
+    // 4. Initialize ESP32Synth Engine (Custom output at standard CD sample rate of 44100Hz)
     Serial.println("\n[SYNTH] Initializing Polyphonic Sound Engine...");
-    synth.beginCustom(44100); // Perfect sample rate match for A2DP
+    init_i2s();
+    synth.beginCustom(44100, i2s_output_callback);
     
     // Set standard ADSR instruments for all polyphonic voice channels
     for (int i = 0; i < MAX_POLYPHONY; i++) {
@@ -288,25 +300,6 @@ void setup() {
     synth.setMasterVolume(255); // Set master volume to maximum 8-bit level
     Serial.println("[SYNTH] 16 Polyphonic triangle-envelope voices initialized.");
 
-    // 5. Initialize Bluetooth A2DP Audio Streaming Source (earphones)
-    Serial.println("\n[A2DP-AUDIO] Bootstrapping Bluetooth A2DP Audio transmitter...");
-    a2dp_source.set_on_connection_state_changed(on_a2dp_connection_state);
-    a2dp_source.set_on_audio_state_changed(on_a2dp_audio_state);
-    a2dp_source.set_ssid_callback(my_ssid_callback);
-    
-    // Configure standard audio streaming configurations
-    std::vector<const char*> target_names;
-    if (strlen(BT_EARPHONES_NAME) > 0) {
-        target_names.push_back(BT_EARPHONES_NAME);
-        Serial.printf("[A2DP-AUDIO] Target earphone lock: '%s'\n", BT_EARPHONES_NAME);
-    } else {
-        Serial.println("[A2DP-AUDIO] Generic discovery mode. Will connect to first available audio receiver.");
-    }
-    
-    // Start transmitting stereo audio stream
-    a2dp_source.start(target_names, get_sound_data);
-    a2dp_source.set_volume(100); // Set absolute volume to 100/127 to prevent muted default!
-    Serial.println("[A2DP-AUDIO] Broadcasting A2DP streaming signals. Scanning for audio receivers...");
 
 #if ENABLE_VFS
     // 6. Setup VFS Node Config
@@ -324,6 +317,35 @@ void setup() {
 #else
     Serial.println("\n[VFS] VFS Mesh connection is temporarily DISABLED for standalone low-latency BLE/A2DP streaming.");
 #endif
+
+    // Play a startup chime to verify the speaker is working
+    Serial.println("[SYNTH] Playing startup chime...");
+    delay(500); // Wait for the amplifier to settle
+    
+    // Play Note C4 (MIDI 60 -> 261.63 Hz -> 26163 centihertz)
+    synth.noteOn(0, 26163, 127);
+    delay(250);
+    synth.noteOff(0);
+    delay(50);
+    
+    // Play Note E4 (MIDI 64 -> 329.63 Hz -> 32963 centihertz)
+    synth.noteOn(0, 32963, 127);
+    delay(250);
+    synth.noteOff(0);
+    delay(50);
+    
+    // Play Note G4 (MIDI 67 -> 392.00 Hz -> 39200 centihertz)
+    synth.noteOn(0, 39200, 127);
+    delay(250);
+    synth.noteOff(0);
+    delay(50);
+    
+    // Play Note C5 (MIDI 72 -> 523.25 Hz -> 52325 centihertz)
+    synth.noteOn(0, 52325, 127);
+    delay(500);
+    synth.noteOff(0);
+    
+    Serial.println("[SYNTH] Startup chime complete.");
 }
 
 void loop() {
@@ -340,12 +362,10 @@ void loop() {
         fs::json current = get_last_event();
         
         bool isBleConnected = BLEMidiClient.isConnected();
-        bool isA2dpConnected = a2dp_source.is_connected();
         
-        Serial.printf("[DIAGNOSTIC] Wi-Fi: %s | BLE Keyboard: %s | Earphones: %s | DSP Load: %.2f%% | Rendered Frames: %llu | Last Event: %s\n", 
+        Serial.printf("[DIAGNOSTIC] Wi-Fi: %s | BLE Keyboard: %s | Audio: I2S_NS4168 | DSP Load: %.2f%% | Rendered Frames: %llu | Last Event: %s\n", 
                       (WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED"), 
                       (isBleConnected ? "CONNECTED" : "DISCONNECTED"),
-                      (isA2dpConnected ? "CONNECTED" : "DISCONNECTED"),
                       synth.getCPULoad(),
                       total_frames_rendered,
                       current.dump().c_str());
@@ -361,9 +381,6 @@ void loop() {
                 }
             }
         }
-        
-        // B. Self-healing Bluetooth Earphones connection logger
-        verify_a2dp_connection();
     }
     delay(10); // Yield to prevent Core 1 CPU starvation
 }
