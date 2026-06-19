@@ -41,7 +41,7 @@ async function startMeshNode({ id, port, storageDir }) {
     };
 }
 
-test('ESP32 VFS Integration: Subscription & Notification', { timeout: 60000 }, async (t) => {
+test('ESP32 VFS Integration: Subscription & Notification', { timeout: 60000, skip: 'Wokwi simulator is disabled' }, async (t) => {
     // 1. Start a local JS VFS Node to act as the neighbor
     const node = await startMeshNode({
         id: 'js-test-neighbor',
