@@ -512,6 +512,13 @@ Moves the subject to the frame of the target shape, resetting any local transfor
 - **Algebra**: $T_{result} = T_{target}$
 - **Identity**: `a.to(b)` is equivalent to `a.origin().by(b)`.
 
+### `snap(source_anchor, target_anchor, target_shape)`
+Snaps the subject shape onto the target shape by aligning a source anchor on the subject with a target anchor on the target shape.
+- **`source_anchor`**: The anchor shape/face on the subject (e.g. `bottom()`).
+- **`target_anchor`**: The anchor recipe (e.g. `top().tx(0.5)`) to evaluate on the target shape.
+- **`target_shape`**: The target shape to snap onto.
+- **Behavior**: Evaluates the `target_anchor` recipe on the `target_shape`. It then computes the snapping transformation matrix that maps the `source_anchor` frame onto the evaluated `target_anchor` frame, applies this transform to the subject shape, and returns a group containing both the snapped subject and the target shape.
+
 ### `dup(count=1)`
 Duplicates the subject `count` times in place.
 - **`count`**: The number of copies to create.

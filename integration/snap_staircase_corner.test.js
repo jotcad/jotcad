@@ -90,6 +90,8 @@ test('Snap Staircase Corner Integration Test', { timeout: 120000 }, async (t) =>
         
         b1 -> $b1
         b2 -> $b2
+        s2 -> $s2
+        s3 -> $s3
         assembly -> $assembly
         Fuse(assembly) -> $out
         `.trim();
@@ -100,6 +102,8 @@ test('Snap Staircase Corner Integration Test', { timeout: 120000 }, async (t) =>
             outputs: {
                 $b1: { type: 'jot:shape' },
                 $b2: { type: 'jot:shape' },
+                $s2: { type: 'jot:shape' },
+                $s3: { type: 'jot:shape' },
                 $assembly: { type: 'jot:shape' },
                 $out: { type: 'jot:shape' }
             }
@@ -113,12 +117,43 @@ test('Snap Staircase Corner Integration Test', { timeout: 120000 }, async (t) =>
 
         const b1Shape = await getShapeData(results.find(r => r.port === '$b1').selector);
         const b2Shape = await getShapeData(results.find(r => r.port === '$b2').selector);
+        const s2Shape = await getShapeData(results.find(r => r.port === '$s2').selector);
+        const s3Shape = await getShapeData(results.find(r => r.port === '$s3').selector);
         const assemblyShape = await getShapeData(results.find(r => r.port === '$assembly').selector);
 
         console.log('--- DEBUG b1 ---');
         console.log(JSON.stringify(b1Shape, null, 2));
         console.log('--- DEBUG b2 ---');
         console.log(JSON.stringify(b2Shape, null, 2));
+        console.log('--- DEBUG s2 ---');
+        console.log(JSON.stringify(s2Shape, null, 2));
+        console.log('--- DEBUG s3 ---');
+        console.log(JSON.stringify(s3Shape, null, 2));
+
+        // Evaluate top() on s2
+        const s2TopSel = Selector.fromObject({
+            path: 'jot/top',
+            parameters: {
+                $in: results.find(r => r.port === '$s2').selector
+            },
+            output: '$out'
+        });
+        const s2TopShape = await getShapeData(s2TopSel);
+        console.log('--- DEBUG s2 top ---');
+        console.log(JSON.stringify(s2TopShape, null, 2));
+
+        // Evaluate top() on s3
+        const s3TopSel = Selector.fromObject({
+            path: 'jot/top',
+            parameters: {
+                $in: results.find(r => r.port === '$s3').selector
+            },
+            output: '$out'
+        });
+        const s3TopShape = await getShapeData(s3TopSel);
+        console.log('--- DEBUG s3 top ---');
+        console.log(JSON.stringify(s3TopShape, null, 2));
+
         console.log('--- DEBUG assembly ---');
         console.log(JSON.stringify(assemblyShape, null, 2));
 

@@ -10,8 +10,22 @@ template <typename P = JotVfsProtocol>
 struct SnapOp : P {
     static constexpr const char* path = "jot/snap";
 
+    static bool is_recipe_op(const std::string& path) {
+        return path == "jot/top" || path == "jot/bottom" || 
+               path == "jot/left" || path == "jot/right" || 
+               path == "jot/front" || path == "jot/back" ||
+               path == "jot/tx" || path == "jot/ty" || path == "jot/tz" ||
+               path == "jot/faces" || path == "jot/highest" || 
+               path == "jot/lowest" || path == "jot/facing";
+    }
+
     static void bind_innermost_input(nlohmann::json& param, const nlohmann::json& target_val) {
         if (param.is_object() && param.contains("path")) {
+            std::string path = param["path"].get<std::string>();
+            if (!is_recipe_op(path)) {
+                param = target_val;
+                return;
+            }
             if (!param.contains("parameters") || param["parameters"].is_null()) {
                 param["parameters"] = nlohmann::json::object();
             }

@@ -8,6 +8,8 @@
 
 namespace fs {
 
+
+
 void VFSNode::listen() {
     httplib::Server* svr = nullptr;
     bool is_ssl = !config_.cert_path.empty() && !config_.key_path.empty();
@@ -116,54 +118,79 @@ void VFSNode::listen() {
         try {
             VFSRequest vreq;
             vreq.op = "READ_SELECTOR";
-            json body;
-            if (!req.body.empty()) {
-                try { body = json::parse(req.body); } catch (...) {}
-            }
 
-            std::string sel_raw = req.get_header_value("X-VFS-Selector");
-            if (sel_raw.empty() && !body.is_null()) {
-                if (body.contains("selector")) {
-                    if (body["selector"].is_string()) sel_raw = body["selector"].get<std::string>();
-                    else sel_raw = body["selector"].dump();
+            bool is_legacy = req.has_header("X-VFS-Op");
+            if (is_legacy) {
+                json body;
+                if (!req.body.empty()) {
+                    try { body = json::parse(req.body); } catch (...) {}
                 }
-            }
-            try { vreq.selector = Selector::from_json(json::parse(sel_raw)); } catch (...) {
-                try { vreq.selector = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
-            }
-            vreq.selector.validate();
 
-            std::string stack_str = req.get_header_value("X-VFS-Stack");
-            if (!stack_str.empty()) {
-                std::stringstream ss(stack_str);
-                std::string item;
-                while (std::getline(ss, item, ',')) vreq.stack.push_back(item);
-            } else if (!body.is_null() && body.contains("stack")) {
-                vreq.stack = body["stack"].get<std::vector<std::string>>();
-            }
-            if (vreq.stack.empty() && req.has_header("x-vfs-id")) vreq.stack.push_back(req.get_header_value("x-vfs-id"));
+                std::string sel_raw = req.get_header_value("X-VFS-Selector");
+                if (sel_raw.empty() && !body.is_null()) {
+                    if (body.contains("selector")) {
+                        if (body["selector"].is_string()) sel_raw = body["selector"].get<std::string>();
+                        else sel_raw = body["selector"].dump();
+                    }
+                }
+                try { vreq.selector = Selector::from_json(json::parse(sel_raw)); } catch (...) {
+                    try { vreq.selector = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
+                }
+                vreq.selector.validate();
 
-            std::string expires_str = req.get_header_value("X-VFS-Expires");
-            if (!expires_str.empty()) vreq.expiresAt = std::stoll(expires_str);
-            else if (!body.is_null() && body.contains("expiresAt")) vreq.expiresAt = body["expiresAt"].get<long long>();
+                std::string stack_str = req.get_header_value("X-VFS-Stack");
+                if (!stack_str.empty()) {
+                    std::stringstream ss(stack_str);
+                    std::string item;
+                    while (std::getline(ss, item, ',')) vreq.stack.push_back(item);
+                } else if (!body.is_null() && body.contains("stack")) {
+                    vreq.stack = body["stack"].get<std::vector<std::string>>();
+                }
+                if (vreq.stack.empty() && req.has_header("x-vfs-id")) vreq.stack.push_back(req.get_header_value("x-vfs-id"));
+
+                std::string expires_str = req.get_header_value("X-VFS-Expires");
+                if (!expires_str.empty()) vreq.expiresAt = std::stoll(expires_str);
+                else if (!body.is_null() && body.contains("expiresAt")) vreq.expiresAt = body["expiresAt"].get<long long>();
+            } else {
+                std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
+                json rec_header;
+                std::vector<uint8_t> rec_payload;
+                if (!decode_record(req_body, rec_header, rec_payload)) {
+                    throw VFSException("Malformed VfsRecord", 400);
+                }
+                vreq.selector = Selector::from_json(rec_header.at("selector"));
+                vreq.selector.validate();
+                vreq.stack = rec_header.value("stack", std::vector<std::string>{});
+                vreq.expiresAt = rec_header.value("expiresAt", 0LL);
+            }
             
             vreq.followLinks = true;
             
             auto result = read_selector_impl(vreq);
             
-            res.set_header("x-vfs-info", result.metadata.dump());
-            res.set_header("X-VFS-Encoding", result.metadata.value("encoding", "json"));
-            res.set_content((const char*)result.data.data(), result.data.size(), "application/octet-stream");
+            json resp_header = {
+                {"info", result.metadata},
+                {"encoding", result.metadata.value("encoding", "json")}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header, result.data);
+            res.status = 200;
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         } catch (const VFSException& e) {
-            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
-            json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "POST /read_selector"}};
+            json resp_header = {
+                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
+                {"encoding", "json"}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = e.code;
-            res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         } catch (const std::exception& e) {
-            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
-            json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /read_selector (std)"}};
+            json resp_header = {
+                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
+                {"encoding", "json"}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = 500;
-            res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         }
     });
 
@@ -171,42 +198,67 @@ void VFSNode::listen() {
         try {
             VFSRequest vreq;
             vreq.op = "READ_CID";
-            json body = json::parse(req.body);
-            if (body.contains("cid")) vreq.cid = body["cid"].get<std::string>();
-            else throw VFSException("Missing cid in read_cid request", 400);
-            vreq.resolutionStack = body.value("resolutionStack", std::vector<std::string>{});
 
-            std::string stack_str = req.get_header_value("X-VFS-Stack");
-            if (!stack_str.empty()) {
-                std::stringstream ss(stack_str);
-                std::string item;
-                while (std::getline(ss, item, ',')) vreq.stack.push_back(item);
-            } else if (body.contains("stack")) {
-                vreq.stack = body["stack"].get<std::vector<std::string>>();
+            bool is_legacy = req.has_header("X-VFS-Op");
+            if (is_legacy) {
+                json body = json::parse(req.body);
+                if (body.contains("cid")) vreq.cid = body["cid"].get<std::string>();
+                else throw VFSException("Missing cid in read_cid request", 400);
+                vreq.resolutionStack = body.value("resolutionStack", std::vector<std::string>{});
+
+                std::string stack_str = req.get_header_value("X-VFS-Stack");
+                if (!stack_str.empty()) {
+                    std::stringstream ss(stack_str);
+                    std::string item;
+                    while (std::getline(ss, item, ',')) vreq.stack.push_back(item);
+                } else if (body.contains("stack")) {
+                    vreq.stack = body["stack"].get<std::vector<std::string>>();
+                }
+                if (vreq.stack.empty() && req.has_header("x-vfs-id")) vreq.stack.push_back(req.get_header_value("x-vfs-id"));
+
+                std::string expires_str = req.get_header_value("X-VFS-Expires");
+                if (!expires_str.empty()) vreq.expiresAt = std::stoll(expires_str);
+                else if (body.contains("expiresAt")) vreq.expiresAt = body["expiresAt"].get<long long>();
+            } else {
+                std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
+                json rec_header;
+                std::vector<uint8_t> rec_payload;
+                if (!decode_record(req_body, rec_header, rec_payload)) {
+                    throw VFSException("Malformed VfsRecord", 400);
+                }
+                vreq.cid = rec_header.at("cid").get<std::string>();
+                vreq.resolutionStack = rec_header.value("resolutionStack", std::vector<std::string>{});
+                vreq.stack = rec_header.value("stack", std::vector<std::string>{});
+                vreq.expiresAt = rec_header.value("expiresAt", 0LL);
             }
-            if (vreq.stack.empty() && req.has_header("x-vfs-id")) vreq.stack.push_back(req.get_header_value("x-vfs-id"));
-
-            std::string expires_str = req.get_header_value("X-VFS-Expires");
-            if (!expires_str.empty()) vreq.expiresAt = std::stoll(expires_str);
-            else if (body.contains("expiresAt")) vreq.expiresAt = body["expiresAt"].get<long long>();
             
             vreq.followLinks = true;
             
             auto result = read_cid_impl(vreq);
             
-            res.set_header("x-vfs-info", result.metadata.dump());
-            res.set_header("X-VFS-Encoding", result.metadata.value("encoding", "json"));
-            res.set_content((const char*)result.data.data(), result.data.size(), "application/octet-stream");
+            json resp_header = {
+                {"info", result.metadata},
+                {"encoding", result.metadata.value("encoding", "json")}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header, result.data);
+            res.status = 200;
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         } catch (const VFSException& e) {
-            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
-            json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "POST /read_cid"}};
+            json resp_header = {
+                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
+                {"encoding", "json"}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = e.code;
-            res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         } catch (const std::exception& e) {
-            res.set_header("x-vfs-info", json({{"error", e.what()}, {"state", "ERROR"}}).dump());
-            json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "POST /read_cid (std)"}};
+            json resp_header = {
+                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
+                {"encoding", "json"}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = 500;
-            res.set_content(ctx.dump() + "\n" + json({{"error", e.what()}}).dump(), "application/x-jsonlines");
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         }
     });
 
@@ -217,32 +269,54 @@ void VFSNode::listen() {
             long long expiresAt = 0;
             std::vector<std::string> stack;
 
-            if (req.has_header("X-VFS-Selector")) {
-                std::string sel_raw = req.get_header_value("X-VFS-Selector");
-                try { s = Selector::from_json(json::parse(sel_raw)); } catch (...) {
-                    try { s = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
-                }
-                std::string exp_str = req.get_header_value("X-VFS-Expires");
-                if (!exp_str.empty()) expiresAt = std::stoll(exp_str);
-                std::string stack_str = req.get_header_value("X-VFS-Stack");
-                if (!stack_str.empty()) {
-                    std::stringstream ss(stack_str);
-                    std::string item;
-                    while (std::getline(ss, item, ',')) stack.push_back(item);
+            bool is_legacy = req.has_header("X-VFS-Op");
+            if (is_legacy) {
+                if (req.has_header("X-VFS-Selector")) {
+                    std::string sel_raw = req.get_header_value("X-VFS-Selector");
+                    try { s = Selector::from_json(json::parse(sel_raw)); } catch (...) {
+                        try { s = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
+                    }
+                    std::string exp_str = req.get_header_value("X-VFS-Expires");
+                    if (!exp_str.empty()) expiresAt = std::stoll(exp_str);
+                    std::string stack_str = req.get_header_value("X-VFS-Stack");
+                    if (!stack_str.empty()) {
+                        std::stringstream ss(stack_str);
+                        std::string item;
+                        while (std::getline(ss, item, ',')) stack.push_back(item);
+                    }
+                } else {
+                    json body = json::parse(req.body);
+                    s = Selector::from_json(body.at("selector"));
+                    expiresAt = body.at("expiresAt");
+                    stack = body.value("stack", std::vector<std::string>{});
                 }
             } else {
-                json body = json::parse(req.body);
-                s = Selector::from_json(body.at("selector"));
-                expiresAt = body.at("expiresAt");
-                stack = body.value("stack", std::vector<std::string>{});
+                std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
+                json rec_header;
+                std::vector<uint8_t> rec_payload;
+                if (!decode_record(req_body, rec_header, rec_payload)) {
+                    throw VFSException("Malformed VfsRecord", 400);
+                }
+                s = Selector::from_json(rec_header.at("selector"));
+                expiresAt = rec_header.value("expiresAt", 0LL);
+                stack = rec_header.value("stack", std::vector<std::string>{});
             }
             
             std::cout << "[REST " << config_.id << "] <- SUB: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
             subscribe(s.to_json(), expiresAt, stack);
+            
+            json resp_header = {{"info", {{"state", "AVAILABLE"}}}, {"encoding", "json"}};
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = 200;
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         } catch (const std::exception& e) {
+            json resp_header = {
+                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
+                {"encoding", "json"}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = 500;
-            res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         }
     });
 
@@ -252,33 +326,51 @@ void VFSNode::listen() {
             json payload;
             std::vector<std::string> stack;
 
-            if (req.has_header("X-VFS-Selector")) {
-                std::string sel_raw = req.get_header_value("X-VFS-Selector");
-                Selector s;
-                try { s = Selector::from_json(json::parse(sel_raw)); } catch (...) {
-                    try { s = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
-                }
-                selector_json = s.to_json();
-                
-                std::string stack_str = req.get_header_value("X-VFS-Stack");
-                if (!stack_str.empty()) {
-                    std::stringstream ss(stack_str);
-                    std::string item;
-                    while (std::getline(ss, item, ',')) stack.push_back(item);
-                }
+            bool is_legacy = req.has_header("X-VFS-Op");
+            if (is_legacy) {
+                if (req.has_header("X-VFS-Selector")) {
+                    std::string sel_raw = req.get_header_value("X-VFS-Selector");
+                    Selector s;
+                    try { s = Selector::from_json(json::parse(sel_raw)); } catch (...) {
+                        try { s = Selector::from_json(decode_jcb(base64_decode(sel_raw))); } catch (...) {}
+                    }
+                    selector_json = s.to_json();
+                    
+                    std::string stack_str = req.get_header_value("X-VFS-Stack");
+                    if (!stack_str.empty()) {
+                        std::stringstream ss(stack_str);
+                        std::string item;
+                        while (std::getline(ss, item, ',')) stack.push_back(item);
+                    }
 
-                std::string encoding = req.get_header_value("X-VFS-Encoding");
-                if (encoding == "bytes") {
-                    std::vector<uint8_t> bytes(req.body.begin(), req.body.end());
-                    payload = json::binary(bytes);
+                    std::string encoding = req.get_header_value("X-VFS-Encoding");
+                    if (encoding == "bytes") {
+                        std::vector<uint8_t> bytes(req.body.begin(), req.body.end());
+                        payload = json::binary(bytes);
+                    } else {
+                        payload = json::parse(req.body);
+                    }
                 } else {
-                    payload = json::parse(req.body);
+                    json body = json::parse(req.body);
+                    selector_json = body.at("selector");
+                    payload = body.at("payload");
+                    stack = body.value("stack", std::vector<std::string>{});
                 }
             } else {
-                json body = json::parse(req.body);
-                selector_json = body.at("selector");
-                payload = body.at("payload");
-                stack = body.value("stack", std::vector<std::string>{});
+                std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
+                json rec_header;
+                std::vector<uint8_t> rec_payload;
+                if (!decode_record(req_body, rec_header, rec_payload)) {
+                    throw VFSException("Malformed VfsRecord", 400);
+                }
+                selector_json = rec_header.at("selector");
+                std::string encoding = rec_header.value("encoding", "json");
+                if (encoding == "bytes") {
+                    payload = json::binary(rec_payload);
+                } else {
+                    payload = json::parse(std::string(rec_payload.begin(), rec_payload.end()));
+                }
+                stack = rec_header.value("stack", std::vector<std::string>{});
             }
 
             if (!selector_json.is_null()) {
@@ -286,16 +378,37 @@ void VFSNode::listen() {
                 std::cout << "[REST " << config_.id << "] <- PUB: " << s.path << std::endl;
             }
             notify(selector_json, payload, stack);
+            
+            json resp_header = {{"info", {{"state", "AVAILABLE"}}}, {"encoding", "json"}};
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = 200;
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         } catch (const std::exception& e) {
+            json resp_header = {
+                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
+                {"encoding", "json"}
+            };
+            std::vector<uint8_t> record_bytes = encode_record(resp_header);
             res.status = 500;
-            res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
         }
     });
 
     svr->Post("/listen", [this](const httplib::Request& req, httplib::Response& res) {
         std::string peer_id = req.get_header_value("x-vfs-peer-id");
-        if (peer_id.empty()) { res.status = 400; res.set_content("Missing x-vfs-peer-id", "text/plain"); return; }
+        if (peer_id.empty()) {
+            std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
+            json rec_header;
+            std::vector<uint8_t> rec_payload;
+            if (decode_record(req_body, rec_header, rec_payload)) {
+                peer_id = rec_header.value("peerId", "");
+            }
+        }
+        if (peer_id.empty()) {
+            res.status = 400;
+            res.set_content("Missing x-vfs-peer-id", "text/plain");
+            return;
+        }
         register_reverse_peer(peer_id, res);
     });
 

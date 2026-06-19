@@ -243,6 +243,42 @@ private:
     void write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 };
 
+inline std::vector<uint8_t> encode_record(const json& header, const std::vector<uint8_t>& payload = {}) {
+    std::string header_str = header.dump();
+    uint32_t header_len = header_str.size();
+    
+    std::vector<uint8_t> record(4 + header_len + payload.size());
+    record[0] = (header_len >> 24) & 0xFF;
+    record[1] = (header_len >> 16) & 0xFF;
+    record[2] = (header_len >> 8) & 0xFF;
+    record[3] = header_len & 0xFF;
+    
+    std::memcpy(record.data() + 4, header_str.data(), header_len);
+    if (!payload.empty()) {
+        std::memcpy(record.data() + 4 + header_len, payload.data(), payload.size());
+    }
+    return record;
+}
+
+inline bool decode_record(const std::vector<uint8_t>& record, json& header_out, std::vector<uint8_t>& payload_out) {
+    if (record.size() < 4) return false;
+    uint32_t header_len = ((uint32_t)record[0] << 24) |
+                          ((uint32_t)record[1] << 16) |
+                          ((uint32_t)record[2] << 8)  |
+                          (uint32_t)record[3];
+    if (record.size() < 4 + header_len) return false;
+    
+    std::string header_str((const char*)record.data() + 4, header_len);
+    try {
+        header_out = json::parse(header_str);
+    } catch (...) {
+        return false;
+    }
+    
+    payload_out = std::vector<uint8_t>(record.begin() + 4 + header_len, record.end());
+    return true;
+}
+
 // --- EXPLICIT SPECIALIZATION DECLARATIONS ---
 
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel);

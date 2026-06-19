@@ -224,6 +224,8 @@ void VFSNode::register_reverse_peer(const std::string& peer_id, httplib::Respons
     res.status = 204;
 }
 
+
+
 VFSResult VFSNode::ForwardConnection::_do_read(const std::map<std::string, std::string>& headers, const std::string& body, const std::string& path) {
     httplib::Client cli(url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -232,91 +234,99 @@ VFSResult VFSNode::ForwardConnection::_do_read(const std::map<std::string, std::
     httplib::Headers h;
     for (auto const& [k, v] : headers) h.emplace(k, v);
 
-    if (auto res = cli.Post(path, h, body, "application/json")) {
+    if (auto res = cli.Post(path, h, body, "application/octet-stream")) {
         if (res->status == 200) {
-            VFSResult result;
-            result.data = std::vector<uint8_t>(res->body.begin(), res->body.end());
-            if (res->has_header("x-vfs-info")) {
-                std::string info_raw = res->get_header_value("x-vfs-info");
-                try {
-                    if (!info_raw.empty() && info_raw[0] == '{') result.metadata = json::parse(info_raw);
-                    else {
-                        std::vector<uint8_t> info_bytes = fs::base64_decode(info_raw);
-                        result.metadata = json::parse(std::string(info_bytes.begin(), info_bytes.end()));
-                    }
-                } catch(...) { result.metadata = {{"state", "AVAILABLE"}}; }
-            } else result.metadata = {{"state", "AVAILABLE"}};
-            return result;
-        } else throw VFSException(res->body, res->status);
+            std::vector<uint8_t> body_bytes(res->body.begin(), res->body.end());
+            json resp_header;
+            std::vector<uint8_t> payload;
+            if (decode_record(body_bytes, resp_header, payload)) {
+                VFSResult result;
+                result.data = payload;
+                result.metadata = resp_header.value("info", json::object());
+                if (!result.metadata.contains("encoding") && resp_header.contains("encoding")) {
+                    result.metadata["encoding"] = resp_header["encoding"];
+                }
+                return result;
+            } else {
+                throw VFSException("Invalid record format in response body", 500);
+            }
+        } else {
+            std::vector<uint8_t> body_bytes(res->body.begin(), res->body.end());
+            json resp_header;
+            std::vector<uint8_t> payload;
+            if (decode_record(body_bytes, resp_header, payload)) {
+                json info = resp_header.value("info", json::object());
+                throw VFSException(info.value("error", "HTTP " + std::to_string(res->status)), res->status);
+            }
+            throw VFSException(res->body, res->status);
+        }
     }
     throw VFSException("Network failure", 503);
 }
 
 VFSResult VFSNode::ForwardConnection::sendRequest(const VFSRequest& req) {
+    json header = {
+        {"op", req.op},
+        {"stack", req.stack},
+        {"expiresAt", req.expiresAt}
+    };
+
     if (req.op == "PUB") {
         bool is_binary = !req.binary_data.empty();
-        httplib::Headers headers = {
-            {"X-VFS-Op", "PUB"},
-            {"X-VFS-Selector", req.selector.to_json().dump()},
-            {"X-VFS-Stack", ""},
-            {"X-VFS-Encoding", is_binary ? "bytes" : "json"},
-            {"Content-Type", is_binary ? "application/octet-stream" : "application/json"}
-        };
-        for (size_t i = 0; i < req.stack.size(); ++i) {
-            auto it = headers.find("X-VFS-Stack");
-            it->second += (i == 0 ? "" : ",") + req.stack[i];
+        header["selector"] = req.selector.to_json();
+        header["encoding"] = is_binary ? "bytes" : "json";
+
+        std::vector<uint8_t> payload;
+        if (is_binary) {
+            payload = req.binary_data;
+        } else {
+            payload = std::vector<uint8_t>(req.data.begin(), req.data.end());
         }
 
-        std::string body = is_binary ? std::string(req.binary_data.begin(), req.binary_data.end()) : req.data;
+        std::vector<uint8_t> body_bytes = encode_record(header, payload);
+        std::string body(body_bytes.begin(), body_bytes.end());
+
         std::string target_url = url;
-        std::thread([target_url, body, headers, is_binary]() {
+        std::thread([target_url, body]() {
             httplib::Client cli(target_url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
             cli.enable_server_certificate_verification(false);
 #endif
-            cli.Post("/notify", headers, body, is_binary ? "application/octet-stream" : "application/json");
+            cli.Post("/notify", {}, body, "application/octet-stream");
         }).detach();
         return {};
     }
- else if (req.op == "SUB") {
-        httplib::Headers headers = {
-            {"X-VFS-Op", "SUB"},
-            {"X-VFS-Selector", req.selector.to_json().dump()},
-            {"X-VFS-Expires", std::to_string(req.expiresAt)},
-            {"X-VFS-Stack", ""}
-        };
-        for (size_t i = 0; i < req.stack.size(); ++i) headers.find("X-VFS-Stack")->second += (i == 0 ? "" : ",") + req.stack[i];
+    else if (req.op == "SUB") {
+        header["selector"] = req.selector.to_json();
+        std::vector<uint8_t> body_bytes = encode_record(header);
+        std::string body(body_bytes.begin(), body_bytes.end());
 
         std::string target_url = url;
-        std::thread([target_url, headers]() {
+        std::thread([target_url, body]() {
             httplib::Client cli(target_url);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
             cli.enable_server_certificate_verification(false);
 #endif
-            cli.Post("/subscribe", headers, "", "application/json");
+            cli.Post("/subscribe", {}, body, "application/octet-stream");
         }).detach();
         return {};
     } else if (req.op == "READ_SELECTOR" || req.op == "READ_CID") {
-        std::map<std::string, std::string> headers = {
-            {"X-VFS-Op", req.op},
-            {"X-VFS-Stack", ""},
-            {"X-VFS-Expires", std::to_string(req.expiresAt)}
-        };
-        for (size_t i = 0; i < req.stack.size(); ++i) headers["X-VFS-Stack"] += (i == 0 ? "" : ",") + req.stack[i];
-        
         std::string path;
-        std::string body = "";
+        std::vector<uint8_t> body_bytes;
         
         if (req.op == "READ_SELECTOR") {
-            headers["X-VFS-Selector"] = req.selector.to_json().dump();
+            header["selector"] = req.selector.to_json();
             path = "/read_selector";
+            body_bytes = encode_record(header);
         } else {
+            header["cid"] = req.cid;
+            header["resolutionStack"] = req.resolutionStack;
             path = "/read_cid";
-            json jbody = {{"cid", req.cid}, {"resolutionStack", req.resolutionStack}};
-            body = jbody.dump();
+            body_bytes = encode_record(header);
         }
         
-        return _do_read(headers, body, path);
+        std::string body(body_bytes.begin(), body_bytes.end());
+        return _do_read({}, body, path);
     }
     throw VFSException("ForwardConnection sendRequest unsupported op: " + req.op, 501);
 }
