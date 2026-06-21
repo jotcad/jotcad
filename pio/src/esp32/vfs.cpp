@@ -2,6 +2,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <set>
+#include <ArduinoOTA.h>
 
 namespace fs {
 
@@ -303,9 +304,34 @@ VFS::~VFS() {}
 
 void VFS::begin() {
     register_with_neighbors();
+
+    // Initialize ArduinoOTA for over-the-air firmware updates
+    ArduinoOTA.setHostname(config_.id.c_str());
+    ArduinoOTA.onStart([]() {
+        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+        Serial.println("[OTA] Start updating " + type);
+    });
+    ArduinoOTA.onEnd([]() {
+        Serial.println("\n[OTA] End successful");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("[OTA] Progress: %u%%\r", (progress / (total / 100)));
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("[OTA] Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+    ArduinoOTA.begin();
+    Serial.println("[OTA] Service initialized successfully");
 }
 
 void VFS::tick() {
+    ArduinoOTA.handle();
+
     // 1. Periodic Registration Retry (if no peers and we have neighbors configured)
     static unsigned long last_register_attempt = 0;
     if (peers_.empty() && !config_.neighbors.empty()) {
@@ -730,6 +756,15 @@ void VFS::subscribe(const Selector& sel, long long expiresAt, const std::vector<
 
     Serial.printf("[VFS %s] Subscription recorded for %s from %s\n", 
                   config_.id.c_str(), path.c_str(), remote_id.c_str());
+
+    // If someone subscribed to sys/ota, immediately publish our update info to satisfy it
+    if (path == "sys/ota" && WiFi.status() == WL_CONNECTED) {
+        json payload = {
+            {"id", config_.id},
+            {"ip", WiFi.localIP().toString().c_str()}
+        };
+        notify(sel, payload);
+    }
 
     if (!is_new_interest) return;
 

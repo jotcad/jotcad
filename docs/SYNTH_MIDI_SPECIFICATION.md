@@ -94,3 +94,28 @@ To balance this, each instrument features a **`volume_scale`** byte parameter (`
 *   **Non-Scaled Indexing**: Control Change **CC 7** is used to select the active instrument.
 *   **Behavior**: Unlike standard scaled volume mappings, CC 7 values (`0` to `127`) represent the **direct instrument index** in the loaded configuration list.
 *   **Capping**: If the CC 7 value exceeds the number of available instruments, it automatically caps at the highest valid index (size - 1). This ensures that standard controllers can query any of the 128 General MIDI instrument presets directly.
+
+---
+
+## 5. Over-The-Air (OTA) Firmware Updates
+
+To simplify updating microcontrollers in a deployed mesh network, all nodes automatically initialize the `ArduinoOTA` service upon successfully establishing a Wi-Fi connection.
+
+### How to Flash via OTA:
+A unified flash script `pio/ota_flash.sh` is provided in the repository.
+
+#### Option A: Interactive Mode
+Simply run the script with no arguments. It will display a menu of all available environments, prompt you for the target device IP address or hostname, and then build and upload the binary:
+```bash
+./pio/ota_flash.sh
+```
+
+#### Option B: Command Line Mode
+Pass the target environment name, device IP/hostname, and optional node suffix directly:
+```bash
+./pio/ota_flash.sh <env_name> <ip_or_hostname> [node_suffix]
+```
+Example for updating the dual music synthesizer at IP `192.168.0.50`:
+```bash
+./pio/ota_flash.sh esp32_dual_music_synth 192.168.0.50 1
+```
