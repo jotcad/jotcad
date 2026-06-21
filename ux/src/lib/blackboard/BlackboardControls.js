@@ -8,6 +8,7 @@ export const createBlackboardControls = (canvasRef, dragRef, setView, isWorldMod
   let isPanning = false;
 
   const handleWheel = (e) => {
+    if (e.target.closest('.viewport-container')) return;
     const worldIntent = isWorldMode() || e.ctrlKey;
     const win = e.target.closest('.jot-window');
     const isOverWindow = !!win;
@@ -45,6 +46,7 @@ export const createBlackboardControls = (canvasRef, dragRef, setView, isWorldMod
   };
 
   const handleTouchStart = (e) => {
+    if (e.target.closest('.viewport-container')) return;
     if (e.touches.length === 2) {
       lastTouchState.distance = 0;
     }
@@ -57,6 +59,7 @@ export const createBlackboardControls = (canvasRef, dragRef, setView, isWorldMod
   };
 
   const handleTouchMove = (e) => {
+      if (e.target.closest('.viewport-container')) return;
       if (e.touches.length === 2) {
         e.preventDefault();
         const t1 = e.touches[0];
@@ -92,6 +95,7 @@ export const createBlackboardControls = (canvasRef, dragRef, setView, isWorldMod
   };
 
   const handlePointerDown = (e) => {
+    if (e.target.closest('.viewport-container')) return;
     const isMiddle = e.button === 1;
     const isModDrag = isWorldMode() && e.button === 0;
     const isBackground = e.target === dragRef && e.button === 0;
