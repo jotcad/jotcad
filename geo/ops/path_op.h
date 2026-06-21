@@ -215,11 +215,99 @@ struct LoopConstructorOp : P {
     }
 };
 
+template <typename P = JotVfsProtocol>
+struct LinkCurveOp : P {
+    static constexpr const char* path = "jot/linkCurve";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, double zag = 0) {
+        LinkOp<P>::execute(vfs, fulfilling, in, tools, true, zag);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "tools", "zag"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/linkCurve"},
+            {"description", "Connects points into an open smooth curve (Catmull-Rom)."},
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
+                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct LoopCurveOp : P {
+    static constexpr const char* path = "jot/loopCurve";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, double zag = 0) {
+        LoopOp<P>::execute(vfs, fulfilling, in, tools, true, zag);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "tools", "zag"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/loopCurve"},
+            {"description", "Connects points into a closed smooth loop (Catmull-Rom)."},
+            {"inputs", nlohmann::json::object({{"$in", {{"type", "jot:shape"}}}})},
+            {"arguments", nlohmann::json::array({
+                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct LinkCurveConstructorOp : P {
+    static constexpr const char* path = "jot/LinkCurve";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes, double zag = 0) {
+        LinkConstructorOp<P>::execute(vfs, fulfilling, shapes, true, zag);
+    }
+    static std::vector<std::string> argument_keys() { return {"shapes", "zag"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/LinkCurve"},
+            {"description", "Creates an open smooth curve (Catmull-Rom) from a sequence of shapes or points."},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
+                {{"name", "shapes"}, {"type", "jot:shapes"}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct LoopCurveConstructorOp : P {
+    static constexpr const char* path = "jot/LoopCurve";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes, double zag = 0) {
+        LoopConstructorOp<P>::execute(vfs, fulfilling, shapes, true, zag);
+    }
+    static std::vector<std::string> argument_keys() { return {"shapes", "zag"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/LoopCurve"},
+            {"description", "Creates a closed smooth loop (Catmull-Rom) from a sequence of shapes or points."},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
+                {{"name", "shapes"}, {"type", "jot:shapes"}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
 static void path_init(fs::VFSNode* vfs) {
     Processor::register_op<LinkOp<>, Shape, std::vector<Shape>, bool, double>(vfs, "jot/link");
     Processor::register_op<LoopOp<>, Shape, std::vector<Shape>, bool, double>(vfs, "jot/loop");
     Processor::register_op<LinkConstructorOp<>, std::vector<Shape>, bool, double>(vfs, "jot/Link");
     Processor::register_op<LoopConstructorOp<>, std::vector<Shape>, bool, double>(vfs, "jot/Loop");
+    Processor::register_op<LinkCurveOp<>, Shape, std::vector<Shape>, double>(vfs, "jot/linkCurve");
+    Processor::register_op<LoopCurveOp<>, Shape, std::vector<Shape>, double>(vfs, "jot/loopCurve");
+    Processor::register_op<LinkCurveConstructorOp<>, std::vector<Shape>, double>(vfs, "jot/LinkCurve");
+    Processor::register_op<LoopCurveConstructorOp<>, std::vector<Shape>, double>(vfs, "jot/LoopCurve");
 }
 
 } // namespace geo

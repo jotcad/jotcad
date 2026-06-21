@@ -684,6 +684,18 @@ export class JotCompiler {
     return false;
   }
 
+  _promoteVecToPoint(v) {
+    if (v instanceof Selector) return v;
+    if (typeof v === 'object' && v !== null && v.path) return v;
+    if (Array.isArray(v) && (v.length === 2 || v.length === 3) && v.every(item => typeof item === 'number')) {
+        const x = v[0];
+        const y = v[1];
+        const z = v[2] || 0;
+        return new Selector('jot/Point', { x, y, z }).withOutput('$out');
+    }
+    return v;
+  }
+
   _isJotVec3(v, a, c) {
     return this._isJotType(v, 'jot:vec3', a, c);
   }
@@ -761,7 +773,6 @@ export class JotCompiler {
             }
         }
     }
-
     return results.length > 0 ? this._normalize(results, ctx.fullType) : undefined;
   }
 
@@ -799,7 +810,9 @@ export class JotCompiler {
             } else if (Array.isArray(val) && val.every(v => this._isJotString(v, argDef, ctx))) {
                 results.push(...val);
                 p.consumed = true;
-            } else break;
+            } else {
+                break;
+            }
         }
     }
     return results.length > 0 ? this._normalize(results, ctx.fullType) : undefined;
@@ -823,21 +836,34 @@ export class JotCompiler {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const val = await ctx.evaluate(p.node);
+        let val = await ctx.evaluate(p.node);
+        val = this._promoteVecToPoint(val);
         if (this._isJotShape(val, argDef, ctx)) { 
           p.consumed = true; 
           return this._normalize(val, ctx.fullType); 
         }
         if (p.nameHint === argDef.name) return undefined;
     }
-    return (subject !== null && this._isJotShape(subject, argDef, ctx)) ? this._normalize(subject, ctx.fullType) : undefined;
+    let promotedSubject = subject;
+    if (Array.isArray(subject) && subject.length > 0 && Array.isArray(subject[0])) {
+        promotedSubject = subject.map(item => this._promoteVecToPoint(item));
+    } else {
+        promotedSubject = this._promoteVecToPoint(subject);
+    }
+    return (subject !== null && this._isJotShape(promotedSubject, argDef, ctx)) ? this._normalize(promotedSubject, ctx.fullType) : undefined;
   }
 
   async JotShapesConsumer(pool, argDef, ctx, subject) {
     const results = [];
-    if (subject !== null && (this._isJotShape(subject, argDef, ctx) || this._isJotShapeList(subject, argDef, ctx))) {
-        if (Array.isArray(subject)) results.push(...subject);
-        else results.push(subject);
+    let promotedSubject = subject;
+    if (Array.isArray(subject) && subject.length > 0 && Array.isArray(subject[0])) {
+        promotedSubject = subject.map(item => this._promoteVecToPoint(item));
+    } else {
+        promotedSubject = this._promoteVecToPoint(subject);
+    }
+    if (subject !== null && (this._isJotShape(promotedSubject, argDef, ctx) || this._isJotShapeList(promotedSubject, argDef, ctx))) {
+        if (Array.isArray(promotedSubject)) results.push(...promotedSubject);
+        else results.push(promotedSubject);
     }
 
     const startIndex = pool.findIndex(p => !p.consumed);
@@ -847,7 +873,13 @@ export class JotCompiler {
             if (p.consumed) continue;
             if (p.nameHint && p.nameHint !== argDef.name) break;
 
-            const val = await ctx.evaluate(p.node);
+            let val = await ctx.evaluate(p.node);
+            if (Array.isArray(val) && val.length > 0 && Array.isArray(val[0])) {
+                val = val.map(item => this._promoteVecToPoint(item));
+            } else {
+                val = this._promoteVecToPoint(val);
+            }
+
             if (this._isJotShape(val, argDef, ctx)) {
                 results.push(val);
                 p.consumed = true;

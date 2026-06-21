@@ -2,6 +2,7 @@
 #include "protocols.h"
 #include "processor.h"
 #include "matrix.h"
+#include "math/zag.h"
 #include <map>
 
 namespace jotcad {
@@ -9,17 +10,33 @@ namespace geo {
 
 template <typename P = JotVfsProtocol>
 struct SpinOpBase : P {
-    static void execute_spin(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start_tau, double end_tau, int resolution, const Matrix& axis_tf = Matrix::identity()) {
+    static void execute_spin(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start_tau, double end_tau, int resolution, double zag_val = 0.0, const Matrix& axis_tf = Matrix::identity()) {
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
 
-        if (resolution < 3) resolution = 3;
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        double total_tau = end_tau - start_tau;
+
+        if (zag_val > 0.0) {
+            double max_R = 0.0;
+            Matrix from_axis = axis_tf.inverse();
+            for (const auto& v : geo.vertices) {
+                Point_3 p(v.x, v.y, v.z);
+                Point_3 tp = from_axis.transform(p);
+                double R = std::sqrt(CGAL::to_double(tp.x() * tp.x() + tp.y() * tp.y()));
+                if (R > max_R) max_R = R;
+            }
+            if (max_R > 0.0) {
+                int total_sides = zag(max_R * 2.0, zag_val);
+                resolution = (int)std::ceil(std::abs(total_tau) * total_sides);
+            }
+        }
+
+        if (resolution < 3) resolution = 3;
         Geometry res;
 
-        double total_tau = end_tau - start_tau;
         bool is_full = std::abs(std::abs(total_tau) - 1.0) < 1e-9;
         int num_slices = is_full ? resolution : resolution + 1;
 
@@ -140,10 +157,10 @@ struct SpinOpBase : P {
 template <typename P = JotVfsProtocol>
 struct SpinOp : SpinOpBase<P> {
     static constexpr const char* path = "jot/spin";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution) {
-        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution, double zag) {
+        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, zag);
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution", "zag"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/spin"},
@@ -152,7 +169,8 @@ struct SpinOp : SpinOpBase<P> {
             {"arguments", json::array({
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}},
-                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -162,10 +180,10 @@ struct SpinOp : SpinOpBase<P> {
 template <typename P = JotVfsProtocol>
 struct SpinXOp : SpinOpBase<P> {
     static constexpr const char* path = "jot/spinX";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution) {
-        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, Matrix::rotationY(0.25));
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution, double zag) {
+        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, zag, Matrix::rotationY(0.25));
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution", "zag"}; }
     static typename P::json schema() {
         return { 
             {"path", "jot/spinX"}, 
@@ -173,7 +191,8 @@ struct SpinXOp : SpinOpBase<P> {
             {"arguments", json::array({
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, 
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, 
-                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
@@ -183,10 +202,10 @@ struct SpinXOp : SpinOpBase<P> {
 template <typename P = JotVfsProtocol>
 struct SpinYOp : SpinOpBase<P> {
     static constexpr const char* path = "jot/spinY";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution) {
-        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, Matrix::rotationX(-0.25));
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution, double zag) {
+        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, zag, Matrix::rotationX(-0.25));
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution", "zag"}; }
     static typename P::json schema() {
         return { 
             {"path", "jot/spinY"}, 
@@ -194,7 +213,8 @@ struct SpinYOp : SpinOpBase<P> {
             {"arguments", json::array({
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, 
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, 
-                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
@@ -202,13 +222,13 @@ struct SpinYOp : SpinOpBase<P> {
 };
 
 static void spin_init(fs::VFSNode* vfs) {
-    Processor::register_op<SpinOp<>, Shape, double, double, int>(vfs, "jot/spin");
-    Processor::register_op<SpinXOp<>, Shape, double, double, int>(vfs, "jot/spinX");
-    Processor::register_op<SpinXOp<>, Shape, double, double, int>(vfs, "jot/sx"); // Alias for spinX
-    Processor::register_op<SpinYOp<>, Shape, double, double, int>(vfs, "jot/spinY");
-    Processor::register_op<SpinYOp<>, Shape, double, double, int>(vfs, "jot/sy"); // Alias for spinY
-    Processor::register_op<SpinOp<>, Shape, double, double, int>(vfs, "jot/spinZ");
-    Processor::register_op<SpinOp<>, Shape, double, double, int>(vfs, "jot/sz"); // Alias for spinZ
+    Processor::register_op<SpinOp<>, Shape, double, double, int, double>(vfs, "jot/spin");
+    Processor::register_op<SpinXOp<>, Shape, double, double, int, double>(vfs, "jot/spinX");
+    Processor::register_op<SpinXOp<>, Shape, double, double, int, double>(vfs, "jot/sx"); // Alias for spinX
+    Processor::register_op<SpinYOp<>, Shape, double, double, int, double>(vfs, "jot/spinY");
+    Processor::register_op<SpinYOp<>, Shape, double, double, int, double>(vfs, "jot/sy"); // Alias for spinY
+    Processor::register_op<SpinOp<>, Shape, double, double, int, double>(vfs, "jot/spinZ");
+    Processor::register_op<SpinOp<>, Shape, double, double, int, double>(vfs, "jot/sz"); // Alias for spinZ
 }
 
 } // namespace geo

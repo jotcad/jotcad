@@ -24,6 +24,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                offset_closure_test.cpp png_test.cpp corners_visual_test.cpp \
                hexagon_at_cut_test.cpp edges_visual_test.cpp move_test.cpp \
                snap_test.cpp \
+               spin_test.cpp \
                box_verification.cpp \
                cut_3d_test.cpp join_test.cpp clip_test.cpp fuse_test.cpp \
                disjoint_test.cpp disk_arc_test.cpp arc_variants_test.cpp orb_test.cpp path_test.cpp \
