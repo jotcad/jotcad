@@ -30,7 +30,7 @@
     }
 
 // Render: PCM Sample
-static FORCE_INLINE IRAM_ATTR void renderBlockSample(Voice* __restrict vo, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
+static __attribute__((noinline)) void renderBlockSample(Voice* __restrict vo, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
     if (vo->sampleFinished) return;
     const SampleData* sData = &registeredSamples[vo->curSampleId];
     if (!sData->data) return;
@@ -122,7 +122,7 @@ static FORCE_INLINE IRAM_ATTR void renderBlockSample(Voice* __restrict vo, int32
 }
 
 // Render: Wavetable
-static FORCE_INLINE IRAM_ATTR void renderBlockWavetable(Voice* __restrict vo, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
+static __attribute__((noinline)) void renderBlockWavetable(Voice* __restrict vo, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
     if (!vo->wtData) return;
 
     int32_t currentEnv = startEnv;
@@ -469,7 +469,7 @@ static FORCE_INLINE IRAM_ATTR void renderBlockBasic(Voice* __restrict vo, int32_
 }
 
 // Render: Noise
-static FORCE_INLINE IRAM_ATTR void renderBlockNoise(Voice* __restrict vo, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
+static __attribute__((noinline)) void renderBlockNoise(Voice* __restrict vo, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
     int32_t currentEnv = startEnv;
     int32_t volBase = ((uint32_t)vo->vol * vo->trmModGain) >> 8;
     uint32_t rng = vo->rngState;
@@ -507,7 +507,7 @@ static FORCE_INLINE IRAM_ATTR void renderBlockNoise(Voice* __restrict vo, int32_
 }
 
 // Render: Stream from RAM Buffer
-static FORCE_INLINE IRAM_ATTR void renderBlockStream(Voice* __restrict vo, StreamTrack* __restrict streamsArr, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
+static __attribute__((noinline)) void renderBlockStream(Voice* __restrict vo, StreamTrack* __restrict streamsArr, int32_t* __restrict mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
     if (vo->streamTrackId < 0 || vo->streamTrackId >= MAX_STREAMS) return;
     StreamTrack* trk = &streamsArr[vo->streamTrackId];
     if (!trk->playing) return;

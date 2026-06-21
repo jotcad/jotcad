@@ -11,6 +11,7 @@ import { Worksheet } from './vfs/Worksheet';
 import { registerUtilityOps } from './vfs/UtilityOps';
 import { registerTextureProvider } from './vfs/TextureProvider';
 import { registerFileProvider } from './vfs/FileProvider';
+import { registerInstrumentsProvider } from './vfs/InstrumentsProvider';
 import { JotRegistry } from './vfs/JotRegistry';
 import {
   setGraph, setSchemas, setPulse, setMeshTopology,
@@ -162,6 +163,7 @@ export const vfsActions = {
     registerUtilityOps(vfs);
     registerTextureProvider(vfs, mesh);
     registerFileProvider(vfs, mesh);
+    registerInstrumentsProvider(vfs, mesh);
 
     // 3. Event Handling
     vfs.events.on('state', async (event) => {

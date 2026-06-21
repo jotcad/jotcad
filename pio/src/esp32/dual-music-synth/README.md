@@ -70,16 +70,14 @@ The **LMD2718 + NS4168** module features **7 pins**. Connect them to your ESP32 
 
 The synthesizer is configured with up to 16 concurrent voices using a thread-safe round-robin allocation and features a startup chime verification (playing sequential C-E-G-C notes on boot).
 
-### Instrument Selection (MIDI CC 7)
-You can dynamically switch between **5 different instrument presets** by turning the Control Change **CC 7** knob (mapping standard `0-127` values):
+### Dynamic Instrument Loading & Selection (MIDI CC 7)
+The synthesizer dynamically registers a WebSocket VFS provider mapping the path `instrument/config`. On startup and network publications, the firmware pulls this configuration to hot-swap active instrument voice parameters. 
 
-| Instrument Index | CC 7 Value Range | Preset Name | Waveform | ADSR Configuration | Sound Profile |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **0** | `0` – `25` | **Classic Poly Synth** | Triangle | `20, 150, 192, 250` | Snappy, warm analog synthesizer default |
-| **1** | `26` – `51` | **Bright Lead** | Sawtooth | `10, 200, 220, 300` | Bright, rich leads with a classic sawtooth bite |
-| **2** | `52` – `76` | **Plucked Harp** | Triangle | `5, 250, 0, 150` | Plucked acoustic strings with no sustain stage |
-| **3** | `77` – `101` | **Chiptune Bass** | Pulse | `10, 100, 128, 100` | Vintage 8-bit square bass with 20% duty cycle |
-| **4** | `102` – `127` | **Theremin / Flute** | Sine | `100, 300, 255, 400` | Eerie, sweeping sine wave with a slow attack |
+By default, the config loads 128 General MIDI instrument definitions covering all **five generator engine types** (Basic oscillators, Wavetables, Samples, Streams, and Custom wave callbacks/FM) with individual **volume scaling factor leveling**.
+
+You can dynamically switch the active voice preset by sending a Control Change **CC 7** message. The CC 7 value (0-127) maps **directly to the active instrument index** in the configured list (capped at the maximum available index).
+
+For detailed configurations, wave tables, sample/stream tracks, custom carrier/modulator parameters, and volume leveling formulas, see the [SYNTH_MIDI_SPECIFICATION.md](file:///home/brian/github/jotcad/docs/SYNTH_MIDI_SPECIFICATION.md) in the project documentation directory.
 
 ---
 

@@ -439,6 +439,105 @@ void VFS::register_op(const std::string& path, Handler handler, const json& sche
     schemas_[path] = schema;
 }
 
+void VFS::register_notify_handler(NotifyHandler handler) {
+    notify_handlers_.push_back(handler);
+}
+
+json VFS::read_selector(const Selector& sel) {
+    if (config_.neighbors.empty()) {
+        Serial.println("[VFS] Cannot read selector: no neighbors configured");
+        return json();
+    }
+    
+    std::string neighbor_url = config_.neighbors[0];
+    if (neighbor_url.back() == '/') neighbor_url.pop_back();
+    std::string read_url = neighbor_url + "/read_selector";
+    
+    json header = {
+        {"op", "READ_SELECTOR"},
+        {"selector", sel.to_json()},
+        {"stack", json::array({config_.id})},
+        {"expiresAt", (long long)millis() + 10000}
+    };
+    
+    std::string header_str = header.dump();
+    uint32_t header_len = header_str.length();
+    
+    std::vector<uint8_t> body;
+    body.reserve(4 + header_len);
+    body.push_back((header_len >> 24) & 0xFF);
+    body.push_back((header_len >> 16) & 0xFF);
+    body.push_back((header_len >> 8) & 0xFF);
+    body.push_back(header_len & 0xFF);
+    body.insert(body.end(), header_str.begin(), header_str.end());
+    
+    HTTPClient http;
+    http.begin(read_url.c_str());
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.addHeader("Content-Type", "application/octet-stream");
+    
+    int code = http.POST(body.data(), body.size());
+    if (code != 200) {
+        Serial.printf("[VFS %s] read_selector failed with HTTP status: %d\n", config_.id.c_str(), code);
+        http.end();
+        return json();
+    }
+    
+    int len = http.getSize();
+    WiFiClient& stream = http.getStream();
+    std::vector<uint8_t> resp_bytes;
+    
+    if (len > 0) {
+        resp_bytes.resize(len);
+        stream.readBytes(resp_bytes.data(), len);
+    } else {
+        unsigned long start = millis();
+        while ((stream.connected() || stream.available() > 0) && millis() - start < 5000) {
+            if (stream.available() > 0) {
+                resp_bytes.push_back(stream.read());
+            } else {
+                delay(1);
+            }
+        }
+    }
+    http.end();
+    
+    if (resp_bytes.size() < 4) {
+        Serial.println("[VFS] Response too short to decode VfsRecord");
+        return json();
+    }
+    
+    uint32_t resp_header_len = ((uint32_t)resp_bytes[0] << 24) |
+                               ((uint32_t)resp_bytes[1] << 16) |
+                               ((uint32_t)resp_bytes[2] << 8)  |
+                               ((uint32_t)resp_bytes[3]);
+                               
+    if (4 + resp_header_len > resp_bytes.size()) {
+        Serial.println("[VFS] Response buffer size mismatch");
+        return json();
+    }
+    
+    std::string resp_header_str((char*)&resp_bytes[4], resp_header_len);
+    json resp_header;
+    try {
+        resp_header = json::parse(resp_header_str);
+    } catch (...) {
+        Serial.printf("[VFS] Failed to parse response VfsRecord header JSON: %s\n", resp_header_str.c_str());
+        return json();
+    }
+    
+    size_t payload_offset = 4 + resp_header_len;
+    size_t payload_len = resp_bytes.size() - payload_offset;
+    if (payload_len == 0) return json();
+    
+    std::string payload_str((char*)&resp_bytes[payload_offset], payload_len);
+    try {
+        return json::parse(payload_str);
+    } catch (...) {
+        return json(payload_str);
+    }
+}
+
 void VFS::handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
     if (!cmd.contains("type")) return;
     std::string type = cmd.at("type");
@@ -447,6 +546,13 @@ void VFS::handle_command(const json& cmd, std::function<void(int, const char*, c
         Selector sel = Selector::from_json(cmd.at("selector"));
         Serial.printf("[Mesh IN] <- PUB: %s\n", sel.path.c_str());
         trigger_activity();
+        for (auto const& handler : notify_handlers_) {
+            try {
+                handler(sel, cmd.at("payload"));
+            } catch (...) {
+                Serial.println("[VFS] Error in notify handler callback");
+            }
+        }
         notify(sel, cmd.at("payload"));
         respond(200, "text/plain", (const uint8_t*)"OK", 2);
     } else if (type == "SUB") {

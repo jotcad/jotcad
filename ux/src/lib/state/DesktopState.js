@@ -15,6 +15,7 @@ const DEFAULT_SYSTEM_ICONS = [
   { id: 'app:console', type: 'app', label: 'Console', x: 140, y: 140, target: 'console', icon: 'Terminal' },
   { id: 'app:materials', type: 'app', label: 'Materials', x: 240, y: 40, target: 'materials', icon: 'Palette' },
   { id: 'app:skus', type: 'app', label: 'SKU Catalog', x: 240, y: 140, target: 'skus', icon: 'Tag' },
+  { id: 'app:instruments', type: 'app', label: 'Instruments', x: 240, y: 240, target: 'instruments', icon: 'Music' },
   { id: 'action:sync', type: 'action', label: 'Sync Cloud', x: 40, y: 240, target: 'sync_cloud', icon: 'Cloud' },
   { id: 'action:new', type: 'action', label: 'New Op', x: 140, y: 240, target: 'new_op', icon: 'Plus' }
 ];

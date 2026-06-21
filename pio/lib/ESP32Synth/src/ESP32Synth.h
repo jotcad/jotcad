@@ -376,6 +376,14 @@ public:
     // --- Performance & Debug ---
     float getCPULoad(); // Retorna de 0.0 a 100.0%
 
+    struct WavetableEntry {
+        const void* data;
+        uint32_t    size;
+        BitDepth    depth;
+    };
+    Voice          voices[MAX_VOICES];
+    WavetableEntry wavetables[MAX_WAVETABLES];
+
     // --- PWM ---
     volatile bool _running = false;
     int16_t* pwm_ping_pong_buf[2] = {nullptr, nullptr};
@@ -387,20 +395,12 @@ public:
 
 
 private:
-    struct WavetableEntry {
-        const void* data;
-        uint32_t    size;
-        BitDepth    depth;
-    };
-
     StreamTrack   streams[MAX_STREAMS];
     TaskHandle_t  streamTaskHandle = NULL;
     TaskHandle_t  audioTaskHandle = NULL;
     static void   sdLoaderTask(void* param);
     bool parseWavHeader(fs::File& file, uint32_t& outSampleRate, uint32_t& outDataPos, uint32_t& outDataSize, uint16_t& outChannels, uint16_t& outBits);
     
-    Voice          voices[MAX_VOICES];
-    WavetableEntry wavetables[MAX_WAVETABLES];
     SampleData     samples[MAX_SAMPLES];
 
     uint32_t      _sampleRate = 48000;

@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#define ENABLE_VFS 1
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include "vfs.h"
@@ -6,9 +7,13 @@
 
 // BLE-MIDI and standard BLE scanning imports
 #include <BLEMidi.h>
+#ifdef MIDI_USE_NIMBLE
+#include <NimBLEDevice.h>
+#else
 #include <BLEDevice.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
+#endif
 
 // Synthesizer imports
 #include "ESP32Synth.h"
@@ -85,63 +90,133 @@ static int active_notes[MAX_POLYPHONY];
 static int next_voice_index = 0;
 static portMUX_TYPE synth_mux = portMUX_INITIALIZER_UNLOCKED;
 
+// --- Wavetable Data Definitions ---
+const uint8_t buzzy_wavetable[256] = {
+  128, 148, 168, 186, 202, 215, 225, 232, 236, 238, 237, 234, 229, 222, 214, 205,
+  195, 185, 175, 165, 155, 146, 137, 128, 120, 112, 104,  97,  90,  84,  78,  73,
+   69,  65,  62,  60,  58,  57,  57,  57,  58,  60,  62,  65,  68,  72,  76,  80,
+   85,  89,  94,  98, 102, 106, 110, 113, 117, 120, 123, 125, 127, 128, 128, 128,
+  128, 127, 125, 123, 120, 117, 113, 110, 106, 102,  98,  94,  89,  85,  80,  76,
+   72,  68,  65,  62,  60,  58,  57,  57,  57,  58,  60,  62,  65,  69,  73,  78,
+   84,  90,  97, 104, 112, 120, 128, 137, 146, 155, 165, 175, 185, 195, 205, 214,
+  222, 229, 234, 237, 238, 236, 232, 225, 215, 202, 186, 168, 148, 128, 107,  87,
+   69,  53,  40,  30,  23,  19,  17,  18,  21,  26,  33,  41,  50,  60,  70,  80,
+   90, 100, 109, 118, 127, 135, 143, 151, 158, 164, 170, 175, 179, 183, 186, 188,
+  190, 191, 191, 191, 190, 188, 186, 183, 179, 175, 170, 164, 158, 151, 143, 135,
+  127, 118, 109, 100,  90,  80,  70,  60,  50,  41,  33,  26,  21,  18,  17,  19,
+   23,  30,  40,  53,  69,  87, 107, 128
+};
+
+const uint8_t hollow_wavetable[256] = {
+  255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+  255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+  255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+  255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+  250, 240, 230, 220, 210, 200, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100,
+   90,  80,  70,  60,  50,  40,  30,  20,  10,   5,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    5,  10,  20,  30,  40,  50,  60,  70,  80,  90, 100, 110, 120, 130, 140, 150,
+   160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 255, 255, 255, 255, 255, 255,
+   255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+   255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
+};
+
+// --- Custom Wave DSP Callbacks ---
+void fm_custom_wave(Voice* vo, int32_t* mixBuffer, int samples, int32_t startEnv, int32_t envStep) {
+    int32_t currentEnv = startEnv;
+    int32_t volBase = ((uint32_t)vo->vol * vo->trmModGain) >> 8;
+    uint32_t ph = vo->phase;
+    uint32_t inc = vo->phaseInc + vo->vibOffset;
+    uint32_t modPhase = ph * 2; 
+
+    for (int i = 0; i < samples; i++) {
+        int32_t envSafe = currentEnv >> 14;
+        envSafe &= ~(envSafe >> 31);
+        int32_t finalVol = (int32_t)((envSafe * volBase) >> 14);
+        
+        // Simple FM carrier modulation by 2x modulator frequency
+        int16_t modVal = sineLUT[modPhase >> SINE_SHIFT];
+        uint32_t modulatedCarrierPhase = ph + ((int32_t)modVal * 4);
+        
+        mixBuffer[i] += (sineLUT[modulatedCarrierPhase >> SINE_SHIFT] * finalVol) >> 16;
+        
+        ph += inc;
+        modPhase += inc * 2;
+        currentEnv += envStep;
+    }
+    vo->phase = ph;
+}
+
 // --- Synthesizer Globals ---
 ESP32Synth synth;
 
-// Available Instrument Configurations
-enum InstrumentType {
-    INST_POLY_SYNTH = 0,
-    INST_BRIGHT_LEAD,
-    INST_PLUCKED_HARP,
-    INST_CHIPTUNE_BASS,
-    INST_THEREMIN,
-    INST_COUNT
+struct DynamicInstrument {
+    std::string name;
+    int8_t wave;
+    uint8_t pulse_width;
+    uint16_t attack;
+    uint16_t decay;
+    uint8_t sustain;
+    uint16_t release;
+    uint16_t wavetable_id;
+    uint16_t sample_id;
+    uint16_t stream_id;
+    uint16_t volume_scale; // To balance perceived loudness differences (e.g. 0-255)
 };
 
+static std::vector<DynamicInstrument> dynamic_instruments;
 static int current_instrument = -1; // Force initial selection
 
+void init_default_instruments() {
+    dynamic_instruments = {
+        {"Classic Poly Synth", WAVE_TRIANGLE, 128, 20, 150, 192, 250, 0, 0, 0, 240},
+        {"Bright Lead (Sawtooth)", WAVE_SAW, 128, 10, 200, 220, 300, 0, 0, 0, 120},
+        {"Plucked Harp", WAVE_TRIANGLE, 128, 5, 250, 0, 150, 0, 0, 0, 240},
+        {"Chiptune Bass (Pulse)", WAVE_PULSE, 50, 10, 100, 128, 100, 0, 0, 0, 110},
+        {"Theremin / Flute (Sine)", WAVE_SINE, 128, 100, 300, 255, 400, 0, 0, 0, 255}
+    };
+}
+
 void select_instrument(int inst_idx) {
-    if (inst_idx < 0 || inst_idx >= INST_COUNT) return;
+    if (dynamic_instruments.empty()) return;
+    if (inst_idx < 0) inst_idx = 0;
+    if (inst_idx >= (int)dynamic_instruments.size()) inst_idx = (int)dynamic_instruments.size() - 1;
     if (inst_idx == current_instrument) return; // Prevent redundant updates
     
     current_instrument = inst_idx;
+    const auto& inst = dynamic_instruments[current_instrument];
     
     portENTER_CRITICAL(&synth_mux);
     for (int i = 0; i < MAX_POLYPHONY; i++) {
-        switch (current_instrument) {
-            case INST_POLY_SYNTH:
-                synth.setWave(i, WAVE_TRIANGLE);
-                synth.setEnv(i, 20, 150, 192, 250);
-                break;
-            case INST_BRIGHT_LEAD:
-                synth.setWave(i, WAVE_SAW);
-                synth.setEnv(i, 10, 200, 220, 300);
-                break;
-            case INST_PLUCKED_HARP:
-                synth.setWave(i, WAVE_TRIANGLE);
-                synth.setEnv(i, 5, 250, 0, 150);
-                break;
-            case INST_CHIPTUNE_BASS:
-                synth.setWave(i, WAVE_PULSE);
-                synth.setPulseWidth(i, 50); // ~20% duty cycle (standard 8-bit scale 0-255)
-                synth.setEnv(i, 10, 100, 128, 100);
-                break;
-            case INST_THEREMIN:
-                synth.setWave(i, WAVE_SINE);
-                synth.setEnv(i, 100, 300, 255, 400);
-                break;
+        synth.setWave(i, (WaveType)inst.wave);
+        if (inst.wave == WAVE_PULSE) {
+            synth.setPulseWidth(i, inst.pulse_width);
         }
+        else if (inst.wave == WAVE_WAVETABLE) {
+            if (inst.wavetable_id < MAX_WAVETABLES) {
+                synth.setWavetable(i, synth.wavetables[inst.wavetable_id].data, 
+                                   synth.wavetables[inst.wavetable_id].size, 
+                                   (BitDepth)synth.wavetables[inst.wavetable_id].depth);
+            }
+        }
+        else if (inst.wave == WAVE_SAMPLE) {
+            synth.setSample(i, inst.sample_id);
+        }
+        else if (inst.wave == WAVE_STREAM) {
+            synth.voices[i].streamTrackId = inst.stream_id;
+        }
+        else if (inst.wave == WAVE_CUSTOM) {
+            synth.setCustomWave(i, fm_custom_wave);
+        }
+        synth.setEnv(i, inst.attack, inst.decay, inst.sustain, inst.release);
     }
     portEXIT_CRITICAL(&synth_mux);
 
-    const char* names[] = {
-        "Classic Poly Synth",
-        "Bright Lead (Sawtooth)",
-        "Plucked Harp",
-        "Chiptune Bass (Pulse)",
-        "Theremin / Flute (Sine)"
-    };
-    Serial.printf("[SYNTH] >>> ACTIVE INSTRUMENT CHANGED: %s <<<\n", names[current_instrument]);
+    Serial.printf("[SYNTH] >>> ACTIVE INSTRUMENT CHANGED: %s (Type: %d, VolScale: %d) <<<\n", 
+                  inst.name.c_str(), inst.wave, inst.volume_scale);
 }
 
 
@@ -153,6 +228,22 @@ void select_instrument(int inst_idx) {
 static BLEUUID midiServiceUUID("03B80E5A-EDE8-4B33-A751-6CE34EC4C700");
 
 // --- BLE-MIDI Discovery Scan Callbacks ---
+#ifdef MIDI_USE_NIMBLE
+class JotMidiDiscoveryCallbacks: public NimBLEAdvertisedDeviceCallbacks {
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+        Serial.print("[BLE-SCANNER] Discovered device: ");
+        Serial.printf("Name: '%s' | Addr: %s | RSSI: %d dBm", 
+                      advertisedDevice->getName().c_str(),
+                      advertisedDevice->getAddress().toString().c_str(),
+                      advertisedDevice->getRSSI());
+        
+        if (advertisedDevice->haveServiceUUID() && advertisedDevice->isAdvertisingService(midiServiceUUID)) {
+            Serial.print("  <== [MIDI-CAPABLE KEYBOARD DETECTED!]");
+        }
+        Serial.println();
+    }
+};
+#else
 class JotMidiDiscoveryCallbacks: public BLEAdvertisedDeviceCallbacks {
     void onResult(BLEAdvertisedDevice advertisedDevice) {
         Serial.print("[BLE-SCANNER] Discovered device: ");
@@ -167,6 +258,7 @@ class JotMidiDiscoveryCallbacks: public BLEAdvertisedDeviceCallbacks {
         Serial.println();
     }
 };
+#endif
 
 // --- Thread-Safe Event Tracker ---
 static fs::json last_midi_event = {{"type", "none"}};
@@ -192,11 +284,10 @@ fs::VFS *node = nullptr;
 void broadcast_vfs_event(const fs::json& event) {
     set_last_event(event);
 #if ENABLE_VFS
-    if (new_event) {
+    if (node) {
         fs::Selector selector("midi/event");
         node->notify(selector, event);
     }
-
 #endif
 }
 
@@ -231,6 +322,12 @@ void OnBLENoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t times
     
     // Scale standard 7-bit velocity (0-127) to synthesizer standard 8-bit volume (0-255)
     uint8_t synthVolume = (velocity > 127) ? 255 : (velocity << 1); 
+    
+    // Scale volume based on the active instrument's volume scale to balance loudness differences
+    if (current_instrument >= 0 && current_instrument < (int)dynamic_instruments.size()) {
+        uint32_t scale = dynamic_instruments[current_instrument].volume_scale;
+        synthVolume = (uint8_t)(((uint32_t)synthVolume * scale) / 255);
+    }
     
     synth.noteOn(voice, freqCentiHz, synthVolume);
     portEXIT_CRITICAL(&synth_mux);
@@ -277,8 +374,7 @@ void OnBLEControlChange(uint8_t channel, uint8_t control, uint8_t value, uint16_
     
     // Map CC 7 (typically volume, used as a selector knob here) to change active instrument
     if (control == 7) {
-        int inst_idx = (int)value * INST_COUNT / 128; // Maps 0-127 values to 0-4
-        select_instrument(inst_idx);
+        select_instrument(value);
     }
     
     fs::json event = {
@@ -293,6 +389,44 @@ void OnBLEControlChange(uint8_t channel, uint8_t control, uint8_t value, uint16_
 }
 
 
+void update_dynamic_instruments(const fs::json& config) {
+    if (!config.contains("instruments") || !config["instruments"].is_array()) {
+        Serial.println("[SYNTH] Invalid instrument config JSON payload");
+        return;
+    }
+    
+    std::vector<DynamicInstrument> new_insts;
+    for (auto const& item : config["instruments"]) {
+        try {
+            DynamicInstrument inst;
+            inst.name = item.value("name", "Unnamed");
+            inst.wave = item.value("wave", -2); // WAVE_TRIANGLE default
+            inst.pulse_width = item.value("pulse_width", 128);
+            inst.attack = item.value("attack", 20);
+            inst.decay = item.value("decay", 150);
+            inst.sustain = item.value("sustain", 192);
+            inst.release = item.value("release", 250);
+            inst.wavetable_id = item.value("wavetable_id", 0);
+            inst.sample_id = item.value("sample_id", 0);
+            inst.stream_id = item.value("stream_id", 0);
+            inst.volume_scale = item.value("volume_scale", 255);
+            new_insts.push_back(inst);
+        } catch (...) {
+            Serial.println("[SYNTH] Failed parsing individual instrument parameters");
+        }
+    }
+    
+    if (!new_insts.empty()) {
+        portENTER_CRITICAL(&synth_mux);
+        dynamic_instruments = new_insts;
+        current_instrument = -1; // Force re-evaluation
+        portEXIT_CRITICAL(&synth_mux);
+        
+        Serial.printf("[SYNTH] Successfully loaded %d dynamic instruments from VFS!\n", (int)dynamic_instruments.size());
+        select_instrument(0);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -304,6 +438,8 @@ void setup() {
         active_notes[i] = -1;
     }
     portEXIT_CRITICAL(&synth_mux);
+
+    init_default_instruments();
 
 #if ENABLE_VFS
     // 1. Initialize Wi-Fi connection
@@ -357,11 +493,13 @@ void setup() {
     init_i2s();
     synth.beginCustom(44100, i2s_output_callback);
     
+    // Register custom wavetables for WAVE_WAVETABLE engine type
+    synth.registerWavetable(0, buzzy_wavetable, 256, BITS_8);
+    synth.registerWavetable(1, hollow_wavetable, 256, BITS_8);
+
     // Initialize default instrument (Classic Poly Synth)
-    select_instrument(INST_POLY_SYNTH);
+    select_instrument(0);
     synth.setMasterVolume(255); // Set master volume to maximum 8-bit level
-
-
 
 #if ENABLE_VFS
     // 6. Setup VFS Node Config
@@ -376,6 +514,70 @@ void setup() {
     node = new fs::VFS(config);
     node->begin();
     Serial.println("[VFS] Node active!");
+
+    // Register notify listener for dynamic config updates
+    node->register_notify_handler([](const fs::Selector& sel, const fs::json& payload) {
+        if (sel.path == "instrument/config") {
+            Serial.println("[VFS] Received instrument/config notification!");
+            update_dynamic_instruments(payload);
+        }
+    });
+
+    // Register synth play endpoint for UX keyboard
+    node->register_op("synth/note", [](const fs::json& params, fs::VFSResponseWriter* response) {
+        if (params.contains("note") && params.contains("type")) {
+            int note = params["note"].get<int>();
+            std::string type = params["type"].get<std::string>();
+            int velocity = params.value("velocity", 127);
+            
+            if (type == "on") {
+                double freq = 440.0 * pow(2.0, (note - 69.0) / 12.0);
+                uint32_t freqCentiHz = (uint32_t)(freq * 100.0);
+                portENTER_CRITICAL(&synth_mux);
+                int voice = next_voice_index;
+                next_voice_index = (next_voice_index + 1) % MAX_POLYPHONY;
+                active_notes[voice] = note;
+                uint8_t synthVolume = (velocity > 127) ? 255 : (velocity << 1); 
+                
+                // Scale volume based on the active instrument's volume scale to balance loudness differences
+                if (current_instrument >= 0 && current_instrument < (int)dynamic_instruments.size()) {
+                    uint32_t scale = dynamic_instruments[current_instrument].volume_scale;
+                    synthVolume = (uint8_t)(((uint32_t)synthVolume * scale) / 255);
+                }
+                
+                synth.noteOn(voice, freqCentiHz, synthVolume);
+                portEXIT_CRITICAL(&synth_mux);
+            } else if (type == "off") {
+                portENTER_CRITICAL(&synth_mux);
+                for (int i = 0; i < MAX_POLYPHONY; i++) {
+                    if (active_notes[i] == note) {
+                        synth.noteOff(i);
+                        active_notes[i] = -1;
+                    }
+                }
+                portEXIT_CRITICAL(&synth_mux);
+            }
+            response->send(200, "application/json", "{\"status\":\"ok\"}");
+        } else {
+            response->send(400, "application/json", "{\"error\":\"Missing params\"}");
+        }
+    });
+
+    node->register_op("synth/control", [](const fs::json& params, fs::VFSResponseWriter* response) {
+        if (params.contains("control") && params.contains("value")) {
+            int control = params["control"].get<int>();
+            int value = params["value"].get<int>();
+            if (control == 7) {
+                select_instrument(value);
+            }
+            response->send(200, "application/json", "{\"status\":\"ok\"}");
+        } else {
+            response->send(400, "application/json", "{\"error\":\"Missing params\"}");
+        }
+    });
+
+    // Subscribe to live updates
+    node->subscribe(fs::Selector("instrument/config"), 2147483647LL);
 #else
     Serial.println("\n[VFS] VFS Mesh connection is temporarily DISABLED for standalone low-latency BLE/A2DP streaming.");
 #endif
@@ -441,6 +643,17 @@ void loop() {
                 if (BLEMidiClient.connect(0)) {
                     Serial.println("[BLE-MIDI] >>> SUCCESS: Reconnected successfully! <<<");
                 }
+            }
+        }
+
+        // B. Resilient pull: Fetching instrument configuration from VFS if not already pulled
+        static bool initial_pull_done = false;
+        if (!initial_pull_done && WiFi.status() == WL_CONNECTED && node) {
+            Serial.println("[VFS] Resilient pull: Fetching instrument configuration from VFS...");
+            fs::json initial_config = node->read_selector(fs::Selector("instrument/config"));
+            if (!initial_config.empty()) {
+                update_dynamic_instruments(initial_config);
+                initial_pull_done = true;
             }
         }
     }
