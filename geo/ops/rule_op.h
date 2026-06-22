@@ -207,24 +207,22 @@ struct RuleOp : P {
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
 
-            if (!geo.faces.empty()) {
-                auto boundary_chains = extract_mesh_boundary_chains(geo);
-                if (!boundary_chains.empty()) {
-                    chains = boundary_chains;
-                } else {
-                    for (const auto& face : geo.faces) {
-                        for (const auto& loop : face.loops) {
-                            ruled_surfaces::PolygonalChain chain;
-                            for (int idx : loop) {
-                                if (idx >= 0 && idx < (int)geo.vertices.size()) {
-                                    const auto& v = geo.vertices[idx];
-                                    chain.push_back(ruled_surfaces::PointCgal(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
-                                }
+            auto boundary_chains = extract_mesh_boundary_chains(geo);
+            if (!boundary_chains.empty()) {
+                chains = boundary_chains;
+            } else if (!geo.faces.empty()) {
+                for (const auto& face : geo.faces) {
+                    for (const auto& loop : face.loops) {
+                        ruled_surfaces::PolygonalChain chain;
+                        for (int idx : loop) {
+                            if (idx >= 0 && idx < (int)geo.vertices.size()) {
+                                const auto& v = geo.vertices[idx];
+                                chain.push_back(ruled_surfaces::PointCgal(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
                             }
-                            if (!chain.empty()) {
-                                if (chain.front() != chain.back()) chain.push_back(chain.front());
-                                chains.push_back(chain);
-                            }
+                        }
+                        if (!chain.empty()) {
+                            if (chain.front() != chain.back()) chain.push_back(chain.front());
+                            chains.push_back(chain);
                         }
                     }
                 }

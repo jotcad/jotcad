@@ -74,15 +74,24 @@ Dynamic operations are first-class mesh citizens:
 
 ## 6. Native Operation: Grow (Minkowski Sum)
 
-The `jot/grow` operator implements the Minkowski sum of a subject shape and a tool shape. It utilizes a robust **"Single Hull of Summed Points"** strategy to ensure manifold integrity across mixed dimensionality.
+The `jot/grow` operator implements the Minkowski sum of a subject shape and a tool shape. It utilizes a **Hybrid Minkowski Sum** strategy to preserve interior cavities in concave (non-convex) shapes while maintaining high performance for convex geometries.
 
-### 6.1 The "Single Hull" Strategy
-Unlike fragmented boolean unions, `jot/grow` calculates the Minkowski sum for each convex component (primitive) by:
+### 6.1 Fast Path: The "Single Hull" Strategy
+If the subject shape is strongly convex (determined using `CGAL::is_strongly_convex_3`), `jot/grow` calculates the Minkowski sum by:
 1. Collecting all vertices of the subject primitive ($V_s$) and the tool ($V_t$).
 2. Computing the combined point cloud $V_{sum} = \{ v_s + v_t \mid v_s \in V_s, v_t \in V_t \}$.
 3. Generating a single **3D Convex Hull** of the combined set.
 
-### 6.2 Dimensional Integrity
+### 6.2 Exact Path: Nef Polyhedron Sum (Concave Geometries)
+For concave or non-convex shapes, the operator falls back to an exact path using Nef Polyhedra to prevent filling in internal cavities:
+1. Converts the subject mesh into an exact 3D Nef Polyhedron (`CGAL::Nef_polyhedron_3<EK>`).
+2. Converts the tool shape to a 3D Nef Polyhedron (falling back to its convex hull if it has no geometry).
+3. Computes the exact Minkowski sum using `CGAL::minkowski_sum_3`.
+4. Converts the resulting Nef polyhedron back to a polygon mesh.
+5. Triangulates the faces of the resulting mesh using `CGAL::Polygon_mesh_processing::triangulate_faces` to satisfy the VFS kernel triangulation assertions.
+6. If the Nef Minkowski sum fails, it gracefully falls back to the convex hull of the combined point cloud.
+
+### 6.3 Dimensional Integrity
 The operator automatically adapts to the dimensionality of the result:
 - **3D Solid**: If the summed points form a volume, the result is tagged as `type: "closed"` and returned as a manifold 3D mesh.
 - **2D Surface**: If all summed points are coplanar (e.g., 2D subject + 2D tool), the operator extracts the faces of the hull and returns it as a formal `type: "surface"`, avoiding "pancake" instabilities in the 3D unioner.

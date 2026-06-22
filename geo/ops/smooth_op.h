@@ -29,7 +29,7 @@ struct SmoothOp : P {
         }
 
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
-        if (geo.faces.empty()) {
+        if (geo.faces.empty() && geo.triangles.empty()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
