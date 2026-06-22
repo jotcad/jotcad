@@ -28,8 +28,10 @@ struct JotVfsProtocol {
 
     static Shape make_shape(fs::VFSNode* vfs, const Geometry& geo, const json& tags) {
         Shape s;
+        Geometry copy = geo;
+        copy.triangulate();
         // Anonymous materialization (returns a CID)
-        s.geometry = vfs->materialize<Geometry>(geo);
+        s.geometry = vfs->materialize<Geometry>(copy);
         s.tags = tags;
         return s;
     }

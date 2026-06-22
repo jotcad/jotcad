@@ -50,6 +50,31 @@ test('Stitch Operator Regression: start=[0,10], end=[0,20]', async (t) => {
         }
     });
 
+    compiler.registerOperator('Rule', {
+        path: 'jot/Rule',
+        schema: {
+            inputs: {},
+            arguments: [
+                { name: '$a', type: 'jot:shape' },
+                { name: '$b', type: 'jot:shape' }
+            ],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
+    compiler.registerOperator('rule', {
+        path: 'jot/rule',
+        schema: {
+            inputs: {
+                '$in': { type: 'jot:shape', affiliate: '$out' }
+            },
+            arguments: [
+                { name: '$b', type: 'jot:shape' }
+            ],
+            outputs: { "$out": { type: "jot:shape" } }
+        }
+    });
+
     compiler.registerOperator('stitch', {
         path: 'jot/stitch',
         schema: {
@@ -121,5 +146,23 @@ test('Stitch Operator Regression: start=[0,10], end=[0,20]', async (t) => {
         assert.strictEqual(sel.parameters.shapes[0].output, '$out');
         assert.strictEqual(sel.parameters.shapes[3].path, 'jot/Point');
         assert.strictEqual(sel.parameters.shapes[3].output, '$out');
+    });
+
+    await t.test('Rule and rule operators resolution and mapping', async () => {
+        // Constructor Rule
+        const script1 = "Rule(Point(0,0,0), Point(10,10,10)) -> $out";
+        const ast1 = parser.parse(script1);
+        const res1 = await compiler.evaluate(ast1, {}, { outputs: { $out: 'jot:shape' } });
+        assert.strictEqual(res1[0].selector.path, 'jot/Rule');
+        assert.strictEqual(res1[0].selector.parameters.$a.path, 'jot/Point');
+        assert.strictEqual(res1[0].selector.parameters.$b.path, 'jot/Point');
+        
+        // Method rule
+        const script2 = "Point(0,0,0).rule(Point(10,10,10)) -> $out";
+        const ast2 = parser.parse(script2);
+        const res2 = await compiler.evaluate(ast2, {}, { outputs: { $out: 'jot:shape' } });
+        assert.strictEqual(res2[0].selector.path, 'jot/rule');
+        assert.strictEqual(res2[0].selector.parameters.$in.path, 'jot/Point');
+        assert.strictEqual(res2[0].selector.parameters.$b.path, 'jot/Point');
     });
 });

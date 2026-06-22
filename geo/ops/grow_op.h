@@ -90,6 +90,7 @@ struct GrowOp : P {
             Geometry res = grow_cloud(cloud, tool_pts);
             if (res.vertices.empty()) return;
             res.apply_tf(inv_tf);
+            res.triangulate();
             s.geometry = vfs->materialize(res);
             // type tag remains "surface" or "closed" as before
             return;
@@ -114,6 +115,7 @@ struct GrowOp : P {
         Shape union_container;
         for (auto& g : grown_geos) {
             Shape child;
+            g.triangulate();
             child.geometry = vfs->materialize(g);
             child.tags["type"] = g.is_plane() ? "surface" : "closed";
             union_container.components.push_back(child);
@@ -122,6 +124,7 @@ struct GrowOp : P {
         if (union_container.components.size() == 1) {
             Geometry final_geo = vfs->read<Geometry>(union_container.components[0].geometry.value());
             final_geo.apply_tf(inv_tf);
+            final_geo.triangulate();
             s.geometry = vfs->materialize(final_geo);
             s.tags["type"] = union_container.components[0].tags["type"];
             return;
@@ -137,6 +140,7 @@ struct GrowOp : P {
         
         Geometry final_geo = vfs->read<Geometry>(target.geometry.value());
         final_geo.apply_tf(inv_tf);
+        final_geo.triangulate();
         s.geometry = vfs->materialize(final_geo);
         s.tags["type"] = target.tags["type"];
     }

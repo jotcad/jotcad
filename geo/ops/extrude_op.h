@@ -102,6 +102,7 @@ struct ExtrudeOpBase : P {
         else if (in_type == "surface") out.add_tag("type", "closed");
         else if (in_type == "open") out.add_tag("type", "closed"); // Extruding a shell might close it, or keep it open. Default to closed if possible? Actually segments->open is safer.
         
+        res.triangulate();
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }

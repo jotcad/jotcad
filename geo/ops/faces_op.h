@@ -26,6 +26,7 @@ struct AsFacesOp : P {
         
         Shape out;
         out.tf = in.tf;
+        res.triangulate();
         out.geometry = vfs->materialize<Geometry>(res);
         out.add_tag("type", "faces");
         vfs->write(fulfilling.with_output("$out"), out);
@@ -257,6 +258,7 @@ struct FacesOp : P {
                         }
                     }
                     f_geo.faces.push_back(local_face);
+                    f_geo.triangulate();
                     f_shape.geometry = vfs->materialize<Geometry>(f_geo);
                 }
                 out.components.push_back(f_shape);

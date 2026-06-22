@@ -10,7 +10,9 @@
 #include "rs/ruled_surfaces_strategy_seam_search_all.h"
 #include "rs/ruled_surfaces_join_strategy_naive.h"
 #include "rs/ruled_surfaces_sa_stopping_rules.h"
+#include "boolean/engine.h"
 #include <CGAL/Surface_mesh.h>
+#include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <map>
 #include <set>
 
@@ -23,11 +25,75 @@ struct RuleOp : P {
 
     using FT = EK::FT;
 
+    static Geometry merge_and_weld(const Geometry& g1, const Geometry& g2, double tolerance = 1e-9) {
+        Geometry out = g1;
+        std::vector<int> v_map(g2.vertices.size());
+        for (size_t i = 0; i < g2.vertices.size(); ++i) {
+            const auto& v = g2.vertices[i];
+            double vx = CGAL::to_double(v.x);
+            double vy = CGAL::to_double(v.y);
+            double vz = CGAL::to_double(v.z);
+            
+            int match_idx = -1;
+            for (size_t j = 0; j < out.vertices.size(); ++j) {
+                const auto& ov = out.vertices[j];
+                double dx = CGAL::to_double(ov.x) - vx;
+                double dy = CGAL::to_double(ov.y) - vy;
+                double dz = CGAL::to_double(ov.z) - vz;
+                if (std::sqrt(dx*dx + dy*dy + dz*dz) < tolerance) {
+                    match_idx = (int)j;
+                    break;
+                }
+            }
+            if (match_idx != -1) {
+                v_map[i] = match_idx;
+            } else {
+                v_map[i] = (int)out.vertices.size();
+                out.vertices.push_back(v);
+            }
+        }
+
+        for (const auto& f : g2.faces) {
+            Geometry::Face new_f;
+            for (const auto& loop : f.loops) {
+                std::vector<int> new_loop;
+                for (int idx : loop) {
+                    new_loop.push_back(v_map[idx]);
+                }
+                new_f.loops.push_back(new_loop);
+            }
+            out.faces.push_back(new_f);
+        }
+
+        for (int p : g2.points) {
+            out.points.push_back(v_map[p]);
+        }
+
+        for (const auto& seg : g2.segments) {
+            out.segments.push_back({v_map[seg[0]], v_map[seg[1]]});
+        }
+
+        for (const auto& tri : g2.triangles) {
+            out.triangles.push_back({v_map[tri[0]], v_map[tri[1]], v_map[tri[2]]});
+        }
+
+        return out;
+    }
+
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& a, const Shape& b) {
         std::vector<ruled_surfaces::PolygonalChain> p_chains = extract_chains(vfs, a);
         std::vector<ruled_surfaces::PolygonalChain> q_chains = extract_chains(vfs, b);
 
+        std::cout << "[DEBUG RuleOp] p_chains size: " << p_chains.size() << ", q_chains size: " << q_chains.size() << std::endl;
+        for (size_t i = 0; i < p_chains.size(); ++i) {
+            std::cout << "  p_chain " << i << " vertices: " << p_chains[i].size() << ", closed: " << (p_chains[i].front() == p_chains[i].back()) << std::endl;
+        }
+        for (size_t i = 0; i < q_chains.size(); ++i) {
+            std::cout << "  q_chain " << i << " vertices: " << q_chains[i].size() << ", closed: " << (q_chains[i].front() == q_chains[i].back()) << std::endl;
+        }
+
         if (p_chains.empty() || q_chains.empty()) {
+            std::cout << "[DEBUG RuleOp] Empty chains, aborting" << std::endl;
             vfs->write(fulfilling.with_output("$out"), a);
             return;
         }
@@ -41,21 +107,18 @@ struct RuleOp : P {
         for (const auto& c : q_chains) if (c.front() != c.back()) all_closed = false;
 
         ruled_surfaces::SolutionStats::Status status;
-        // For simple ruling, use the Dijkstra-based strategy which is O(N^2)
-        // rather than the exhaustive permutation strategy which is O(2^N).
         using TriangulationStrategy = ruled_surfaces::LinearSearchSlg<ruled_surfaces::MinArea>;
         
         if (all_closed) {
-            // For loops, we search for the best seam alignment.
-            // Exhaustive search is fine for N < 50.
             using SeamStrategy = ruled_surfaces::SeamSearchAll<TriangulationStrategy>;
             status = ruled_surfaces::NaiveJoinStrategy<SeamStrategy>::generate(
                 p_chains, q_chains, objective, 1, &stats, &result_mesh);
         } else {
-            // For open polylines, no seam search needed.
             status = ruled_surfaces::NaiveJoinStrategy<TriangulationStrategy>::generate(
                 p_chains, q_chains, objective, 1, &stats, &result_mesh);
         }
+
+        std::cout << "[DEBUG RuleOp] NaiveJoinStrategy status: " << status << ", result_mesh faces: " << result_mesh.number_of_faces() << std::endl;
 
         if (status != ruled_surfaces::SolutionStats::OK) {
             vfs->write(fulfilling.with_output("$out"), a);
@@ -63,10 +126,78 @@ struct RuleOp : P {
         }
 
         Geometry res = mesh_to_geometry(result_mesh);
+        
+        Geometry g_a;
+        if (a.geometry.has_value()) {
+            g_a = vfs->read<Geometry>(a.geometry.value());
+            g_a.apply_tf(a.tf);
+        }
+        Geometry g_b;
+        if (b.geometry.has_value()) {
+            g_b = vfs->read<Geometry>(b.geometry.value());
+            g_b.apply_tf(b.tf);
+        }
+
+        std::cout << "[DEBUG RuleOp] res vertices: " << res.vertices.size() << ", faces: " << res.faces.size() << std::endl;
+        std::cout << "[DEBUG RuleOp] g_a vertices: " << g_a.vertices.size() << ", faces: " << g_a.faces.size() << std::endl;
+        std::cout << "[DEBUG RuleOp] g_b vertices: " << g_b.vertices.size() << ", faces: " << g_b.faces.size() << std::endl;
+
+        Geometry final_geo = res;
+        if (a.geometry.has_value()) {
+            final_geo = merge_and_weld(final_geo, g_a);
+        }
+        if (b.geometry.has_value()) {
+            final_geo = merge_and_weld(final_geo, g_b);
+        }
+
+        std::cout << "[DEBUG RuleOp] final_geo (before orient) vertices: " << final_geo.vertices.size() << ", faces: " << final_geo.faces.size() << ", triangles: " << final_geo.triangles.size() << std::endl;
+
+        try {
+            boolean::Surface_mesh mesh = boolean::Engine::geometry_to_mesh(final_geo);
+            std::cout << "[DEBUG RuleOp] converted Surface_mesh vertices: " << mesh.number_of_vertices() << ", faces: " << mesh.number_of_faces() << ", closed: " << CGAL::is_closed(mesh) << std::endl;
+            if (CGAL::is_closed(mesh)) {
+                CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
+            }
+            final_geo = boolean::Engine::mesh_to_geometry(mesh);
+        } catch (const std::exception& e) {
+            std::cout << "[DEBUG RuleOp] Mesh conversion exception: " << e.what() << std::endl;
+        } catch (...) {
+            std::cout << "[DEBUG RuleOp] Unknown mesh conversion exception" << std::endl;
+        }
+
+        std::cout << "[DEBUG RuleOp] final_geo (after orient) vertices: " << final_geo.vertices.size() << ", faces: " << final_geo.faces.size() << ", triangles: " << final_geo.triangles.size() << std::endl;
+
         Shape out;
-        out.geometry = vfs->materialize<Geometry>(res);
+        final_geo.triangulate();
+        out.geometry = vfs->materialize<Geometry>(final_geo);
         out.add_tag("type", "ruled_surface");
         vfs->write(fulfilling.with_output("$out"), out);
+    }
+
+    static std::vector<ruled_surfaces::PolygonalChain> extract_mesh_boundary_chains(const Geometry& geo) {
+        boolean::ExactMesh mesh = boolean::Engine::geometry_to_mesh(geo);
+        std::vector<ruled_surfaces::PolygonalChain> chains;
+        std::set<boolean::ExactMesh::Halfedge_index> visited;
+
+        for (auto h : mesh.halfedges()) {
+            if (mesh.is_border(h) && visited.find(h) == visited.end()) {
+                ruled_surfaces::PolygonalChain chain;
+                auto curr = h;
+                do {
+                    visited.insert(curr);
+                    auto v = mesh.target(curr);
+                    auto p = mesh.point(v);
+                    chain.push_back(ruled_surfaces::PointCgal(CGAL::to_double(p.x()), CGAL::to_double(p.y()), CGAL::to_double(p.z())));
+                    curr = mesh.next(curr);
+                } while (curr != h);
+
+                if (!chain.empty()) {
+                    chain.push_back(chain.front()); // RuleOp expects closed loops to have duplicate start/end
+                    chains.push_back(chain);
+                }
+            }
+        }
+        return chains;
     }
 
     static std::vector<ruled_surfaces::PolygonalChain> extract_chains(fs::VFSNode* vfs, const Shape& s) {
@@ -75,20 +206,26 @@ struct RuleOp : P {
 
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            geo.apply_tf(tf);
 
-            for (const auto& face : geo.faces) {
-                for (const auto& loop : face.loops) {
-                    ruled_surfaces::PolygonalChain chain;
-                    for (int idx : loop) {
-                        if (idx >= 0 && idx < (int)geo.vertices.size()) {
-                            const auto& v = geo.vertices[idx];
-                            chain.push_back(ruled_surfaces::PointCgal(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
+            if (!geo.faces.empty()) {
+                auto boundary_chains = extract_mesh_boundary_chains(geo);
+                if (!boundary_chains.empty()) {
+                    chains = boundary_chains;
+                } else {
+                    for (const auto& face : geo.faces) {
+                        for (const auto& loop : face.loops) {
+                            ruled_surfaces::PolygonalChain chain;
+                            for (int idx : loop) {
+                                if (idx >= 0 && idx < (int)geo.vertices.size()) {
+                                    const auto& v = geo.vertices[idx];
+                                    chain.push_back(ruled_surfaces::PointCgal(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
+                                }
+                            }
+                            if (!chain.empty()) {
+                                if (chain.front() != chain.back()) chain.push_back(chain.front());
+                                chains.push_back(chain);
+                            }
                         }
-                    }
-                    if (!chain.empty()) {
-                        if (chain.front() != chain.back()) chain.push_back(chain.front());
-                        chains.push_back(chain);
                     }
                 }
             }
@@ -126,6 +263,15 @@ struct RuleOp : P {
                 }
                 for (const auto& [v_idx, neighbors] : adj) {
                     if (neighbors.size() == 2 && visited.find(v_idx) == visited.end()) extract_path(v_idx, true);
+                }
+            }
+
+            // Transform all extracted chains by the shape's transform tf
+            for (auto& chain : chains) {
+                for (auto& pt : chain) {
+                    Point_3 p(pt.x(), pt.y(), pt.z());
+                    Point_3 tp = tf.transform(p);
+                    pt = ruled_surfaces::PointCgal(CGAL::to_double(tp.x()), CGAL::to_double(tp.y()), CGAL::to_double(tp.z()));
                 }
             }
         }
@@ -178,11 +324,32 @@ struct RuleOp : P {
         return {
             {"path", "jot/Rule"},
             {"description", "Generates a ruled surface triangulating between two sets of boundary loops, supporting holes."},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", nlohmann::json::array({
+                {{"name", "$a"}, {"type", "jot:shape"}},
+                {{"name", "$b"}, {"type", "jot:shape"}}
+            })},
+            {"outputs", {
+                {"$out", {{"type", "jot:shape"}}}
+            }}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct RuleMethodOp : RuleOp<P> {
+    static constexpr const char* path = "jot/rule";
+    static std::vector<std::string> argument_keys() { return {"$in", "$b"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/rule"},
+            {"description", "Generates a ruled surface triangulating between two sets of boundary loops, supporting holes."},
             {"inputs", {
-                {"$a", {{"type", "jot:shape"}, {"affiliate", "$out"}}},
-                {"$b", {{"type", "jot:shape"}}}
+                {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
             }},
-            {"arguments", nlohmann::json::array()},
+            {"arguments", nlohmann::json::array({
+                {{"name", "$b"}, {"type", "jot:shape"}}
+            })},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}}}
             }}
@@ -192,6 +359,7 @@ struct RuleOp : P {
 
 static void rule_init(fs::VFSNode* vfs) {
     Processor::register_op<RuleOp<>, Shape, Shape>(vfs, "jot/Rule");
+    Processor::register_op<RuleMethodOp<>, Shape, Shape>(vfs, "jot/rule");
 }
 
 } // namespace geo

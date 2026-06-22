@@ -33,6 +33,7 @@ struct Geometry {
     std::vector<std::array<int, 3>> triangles;
 
     void apply_tf(const Matrix& m);
+    void triangulate();
 
     // Exact rational serialization
     void encode_text(std::string& out) const {

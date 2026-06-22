@@ -138,6 +138,7 @@ struct FuseHelper {
             Geometry plane_geo = boolean::Engine::gps_to_geometry(gps);
             
             Shape s_plane;
+            plane_geo.triangulate();
             s_plane.geometry = vfs->materialize<Geometry>(plane_geo);
             s_plane.tf = rehydrate_tf;
             s_plane.add_tag("type", "surface");

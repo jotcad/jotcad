@@ -123,6 +123,7 @@ struct SimplifyOp : P {
         }
         
         Shape out = in;
+        res.triangulate();
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }

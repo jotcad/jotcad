@@ -13,12 +13,39 @@ void Geometry::apply_tf(const Matrix& m) {
         EK::Point_3 tp = m.transform(p);
         v.x = tp.x(); v.y = tp.y(); v.z = tp.z();
     }
-    // Involution: If reflection, flip faces to preserve outwards normals.
+    // Involution: If reflection, flip faces and triangles to preserve outwards normals.
     if (m.is_reflection()) {
         for (auto& face : faces) {
             for (auto& loop : face.loops) {
                 std::reverse(loop.begin(), loop.end());
             }
+        }
+        for (auto& t : triangles) {
+            std::swap(t[1], t[2]);
+        }
+    }
+}
+
+void Geometry::triangulate() {
+    if (faces.empty()) return;
+    triangles.clear();
+
+    std::vector<Vec3> pts;
+    for (const auto& v : vertices) {
+        pts.push_back({CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)});
+    }
+
+    for (const auto& face : faces) {
+        if (face.loops.empty()) continue;
+        
+        if (face.loops.size() == 1 && face.loops[0].size() == 3) {
+            // Optimization: Simple 3-sided face with no holes
+            triangles.push_back({face.loops[0][0], face.loops[0][1], face.loops[0][2]});
+        } else {
+            // Complex face or PWH: Use CDT triangulation
+            Triangulation::triangulate_face(face, pts, [&](int i0, int i1, int i2) {
+                triangles.push_back({i0, i1, i2});
+            });
         }
     }
 }
@@ -86,27 +113,9 @@ Selector VFSNode::write(const Selector& sel, const jotcad::geo::Shape& data) {
 template<> CID VFSNode::materialize<jotcad::geo::Geometry>(const jotcad::geo::Geometry& data) {
     jotcad::geo::Geometry copy = data;
 
-    // Redundant Triangulation Pass: Populate triangles (T tags) for rendering
-    // while preserving original faces (F tags) for kernel topology.
-    if (!copy.faces.empty()) {
-        std::vector<jotcad::geo::Vec3> pts;
-        for (const auto& v : copy.vertices) {
-            pts.push_back({CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)});
-        }
-
-        for (const auto& face : copy.faces) {
-            if (face.loops.empty()) continue;
-            
-            if (face.loops.size() == 1 && face.loops[0].size() == 3) {
-                // Optimization: Simple 3-sided face with no holes
-                copy.triangles.push_back({face.loops[0][0], face.loops[0][1], face.loops[0][2]});
-            } else {
-                // Complex face or PWH: Use CDT triangulation
-                jotcad::geo::Triangulation::triangulate_face(face, pts, [&](int i0, int i1, int i2) {
-                    copy.triangles.push_back({i0, i1, i2});
-                });
-            }
-        }
+    // Fallback Triangulation: Only triangulate if the producer forgot to populate triangles
+    if (copy.triangles.empty() && !copy.faces.empty()) {
+        copy.triangulate();
     }
 
     return materialize<std::string>(copy.encode_text());

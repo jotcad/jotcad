@@ -120,6 +120,12 @@ The `jot/on` operator implements the **Conjugation Pattern**: $T \times op \time
 
 When given a group of target frames, `jot/on` acts as an **Accumulator (Fold)**, sequentially applying the operation to each frame using the result of the previous step. This ensures features like multiple corner cuts correctly accumulate on a single manifold part.
 
+### 1.10 Geometry Triangulation & Transforms (Involution)
+
+*   **Transform Involution**: When applying spatial transformations via `Geometry::apply_tf`, if the transformation is a reflection (`m.is_reflection()`), the vertex winding of both `faces` (loops) and `triangles` (T tags) must be reversed (by swapping `t[1]` and `t[2]`) to preserve correct outward-pointing normals.
+*   **Producer Triangulation Mandate**: Native geometry producers (operators generating new shapes) are responsible for populating the `triangles` array (using `res.triangulate()`) before writing/materializing the shape to the VFS. 
+*   **Passive Materialization**: `vfs->materialize<Geometry>()` acts as a passive serialization wrapper. It only runs a lazy fallback triangulation if the `triangles` array is completely empty when `faces` is present, avoiding redundant CDT computation and preventing duplicate overlapping triangles.
+
 
 ## 2. Naming & Casing Standards
 

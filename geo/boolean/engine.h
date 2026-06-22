@@ -430,8 +430,28 @@ struct Engine {
         std::vector<EK::Point_3> pts;
         std::vector<std::vector<std::size_t>> faces;
         for (const auto& v : geo.vertices) pts.push_back(EK::Point_3(v.x, v.y, v.z));
-        if (!geo.triangles.empty()) for (const auto& t : geo.triangles) faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
-        else for (const auto& f : geo.faces) if (!f.loops.empty()) { std::vector<std::size_t> face; for (int idx : f.loops[0]) face.push_back((std::size_t)idx); faces.push_back(face); }
+        for (const auto& t : geo.triangles) faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
+        for (const auto& f : geo.faces) {
+            if (f.loops.empty()) continue;
+            bool represented = false;
+            if (!geo.triangles.empty()) {
+                std::set<int> f_verts;
+                for (const auto& loop : f.loops) {
+                    f_verts.insert(loop.begin(), loop.end());
+                }
+                for (const auto& t : geo.triangles) {
+                    if (f_verts.count(t[0]) && f_verts.count(t[1]) && f_verts.count(t[2])) {
+                        represented = true;
+                        break;
+                    }
+                }
+            }
+            if (!represented) {
+                std::vector<std::size_t> face;
+                for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
+                faces.push_back(face);
+            }
+        }
         CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
         CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
         ExactMesh mesh;
@@ -454,8 +474,28 @@ struct Engine {
         std::vector<IK::Point_3> pts;
         std::vector<std::vector<std::size_t>> faces;
         for (const auto& v : geo.vertices) pts.push_back(IK::Point_3(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)));
-        if (!geo.triangles.empty()) for (const auto& t : geo.triangles) faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
-        else for (const auto& f : geo.faces) if (!f.loops.empty()) { std::vector<std::size_t> face; for (int idx : f.loops[0]) face.push_back((std::size_t)idx); faces.push_back(face); }
+        for (const auto& t : geo.triangles) faces.push_back({(std::size_t)t[0], (std::size_t)t[1], (std::size_t)t[2]});
+        for (const auto& f : geo.faces) {
+            if (f.loops.empty()) continue;
+            bool represented = false;
+            if (!geo.triangles.empty()) {
+                std::set<int> f_verts;
+                for (const auto& loop : f.loops) {
+                    f_verts.insert(loop.begin(), loop.end());
+                }
+                for (const auto& t : geo.triangles) {
+                    if (f_verts.count(t[0]) && f_verts.count(t[1]) && f_verts.count(t[2])) {
+                        represented = true;
+                        break;
+                    }
+                }
+            }
+            if (!represented) {
+                std::vector<std::size_t> face;
+                for (int idx : f.loops[0]) face.push_back((std::size_t)idx);
+                faces.push_back(face);
+            }
+        }
         CGAL::Polygon_mesh_processing::repair_polygon_soup(pts, faces);
         CGAL::Polygon_mesh_processing::orient_polygon_soup(pts, faces);
         InexactMesh mesh;
