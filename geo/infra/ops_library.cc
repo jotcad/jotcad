@@ -64,6 +64,7 @@
 #include "bb_op.h"
 #include "obb_op.h"
 #include "convex_op.h"
+#include "rainbow_op.h"
 
 #include "measure_ops.h"
 #include "sort_ops.h"
@@ -140,6 +141,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     filter_ops_init(vfs);
     selection_init(vfs);
     convex_init(vfs);
+    rainbow_init(vfs);
 }
 
 } // namespace geo
