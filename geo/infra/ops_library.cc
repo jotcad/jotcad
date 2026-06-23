@@ -63,6 +63,7 @@
 #include "snap_op.h"
 #include "bb_op.h"
 #include "obb_op.h"
+#include "convex_op.h"
 
 #include "measure_ops.h"
 #include "sort_ops.h"
@@ -138,6 +139,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     measure_init(vfs);
     filter_ops_init(vfs);
     selection_init(vfs);
+    convex_init(vfs);
 }
 
 } // namespace geo
