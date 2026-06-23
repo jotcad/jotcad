@@ -103,5 +103,81 @@ public:
     }
 };
 
+class STLReader {
+public:
+    static bool read_binary(const std::vector<uint8_t>& buffer, Geometry& out_geo) {
+        if (buffer.size() < 84) return false;
+        
+        uint32_t count = 0;
+        std::memcpy(&count, buffer.data() + 80, 4);
+        
+        if (buffer.size() < 84 + count * 50) return false;
+        
+        out_geo.vertices.clear();
+        out_geo.triangles.clear();
+        out_geo.faces.clear();
+        out_geo.vertices.reserve(count * 3);
+        out_geo.triangles.reserve(count);
+        
+        // Map to deduplicate vertices and reuse indices
+        struct ComparePoint {
+            bool operator()(const std::array<float, 3>& a, const std::array<float, 3>& b) const {
+                if (std::abs(a[0] - b[0]) > 1e-5f) return a[0] < b[0];
+                if (std::abs(a[1] - b[1]) > 1e-5f) return a[1] < b[1];
+                return a[2] < b[2];
+            }
+        };
+        std::map<std::array<float, 3>, int, ComparePoint> vertex_map;
+        
+        auto get_or_add_vertex = [&](float x, float y, float z) -> int {
+            std::array<float, 3> pt = {x, y, z};
+            auto it = vertex_map.find(pt);
+            if (it != vertex_map.end()) {
+                return it->second;
+            }
+            int idx = (int)out_geo.vertices.size();
+            Vertex v;
+            v.x = (FT)x;
+            v.y = (FT)y;
+            v.z = (FT)z;
+            out_geo.vertices.push_back(v);
+            vertex_map[pt] = idx;
+            return idx;
+        };
+        
+        for (uint32_t i = 0; i < count; ++i) {
+            size_t offset = 84 + i * 50;
+            float normal[3];
+            float v1[3], v2[3], v3[3];
+            
+            std::memcpy(normal, buffer.data() + offset, 12);
+            std::memcpy(v1, buffer.data() + offset + 12, 12);
+            std::memcpy(v2, buffer.data() + offset + 24, 12);
+            std::memcpy(v3, buffer.data() + offset + 36, 12);
+            
+            int idx1 = get_or_add_vertex(v1[0], v1[1], v1[2]);
+            int idx2 = get_or_add_vertex(v2[0], v2[1], v2[2]);
+            int idx3 = get_or_add_vertex(v3[0], v3[1], v3[2]);
+            
+            out_geo.triangles.push_back({idx1, idx2, idx3});
+        }
+        
+        return true;
+    }
+
+    static bool read_file(const std::string& path, Geometry& out_geo) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) return false;
+        
+        file.seekg(0, std::ios::end);
+        size_t size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        
+        std::vector<uint8_t> buffer(size);
+        file.read((char*)buffer.data(), size);
+        return read_binary(buffer, out_geo);
+    }
+};
+
 } // namespace geo
 } // namespace jotcad

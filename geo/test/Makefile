@@ -64,7 +64,9 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                convex_test.cpp \
                convex_visual_test.cpp \
                rainbow_test.cpp \
-               rainbow_visual_test.cpp
+               rainbow_visual_test.cpp \
+               undercut_test.cpp \
+               undercut_visual_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
@@ -119,7 +121,7 @@ $(OBJ_DIR)/decal_hill_perf.o: decal_hill_perf.cpp
 
 
 # Dynamic header generation listing all test functions inside namespaces
-unit_tests_run.h: Makefile
+unit_tests_run.h: Makefile $(COMBINED_TEST_SOURCES)
 	@echo "// Automatically generated. Do not edit." > $@
 	@for t in $(COMBINED_TEST_SOURCES:.cpp=); do \
 		echo "namespace test_$$t {" >> $@; \
