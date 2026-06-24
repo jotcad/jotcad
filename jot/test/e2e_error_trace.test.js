@@ -7,6 +7,7 @@ import { TestVFSNode } from '../../fs/test/vfs_test_helpers.js';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
 import { log } from '../../fs/src/log.js';
+import { encodeRecord, decodeRecordStream } from '../../fs/src/mesh/forward_connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
@@ -42,14 +43,20 @@ test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
         const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'jot:shape' } });
         const finalSelector = terminals[0].selector;
 
+        const body = encodeRecord({
+            op: 'READ_SELECTOR',
+            selector: finalSelector.toJSON()
+        });
+
         const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ selector: finalSelector.toJSON() })
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: body
         });
 
         assert.strictEqual(response.status, 500, 'Should fail with 500');
-        const errBody = await response.text();
+        const { header } = await decodeRecordStream(response.body);
+        const errBody = header.info?.error || '';
 
         log('[E2E ERROR TRACE]:');
         errBody.split('\n').forEach((line, i) => log(`  [${i}] ${line}`));

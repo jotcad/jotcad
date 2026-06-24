@@ -147,6 +147,11 @@ public:
     using Handler = std::function<void(const json& params, VFSResponseWriter* response)>;
     void register_op(const std::string& path, Handler handler, const json& schema = json::object());
 
+    using NotifyHandler = std::function<void(const Selector& sel, const json& payload)>;
+    void register_notify_handler(NotifyHandler handler);
+
+    json read_selector(const Selector& sel);
+
     int notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack = {});
     int notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
     void subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack = {});
@@ -164,6 +169,7 @@ private:
     Config config_;
     std::map<std::string, Handler> handlers_;
     std::map<std::string, json> schemas_;
+    std::vector<NotifyHandler> notify_handlers_;
 
     // Peer Management
     std::vector<std::shared_ptr<Peer>> peers_;

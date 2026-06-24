@@ -4,6 +4,7 @@ import { VFS } from '../fs/src/vfs.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
 import { launchSystem } from '../orchestrator.js';
+import { encodeRecord } from '../fs/src/mesh/forward_connection.js';
 
 test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
     // 1. Launch the TEST system
@@ -40,13 +41,17 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
 
         // 5. Test 2: Notification Routing (C++ -> Node)
         console.log('[Test] Triggering notification from C++...');
+        const body = encodeRecord({
+            op: 'PUB',
+            selector: topic.toJSON()
+        }, new TextEncoder().encode(JSON.stringify({ hello: 'from-cpp' })));
+
         const notifyRes = await fetch(`http://localhost:${CPP_PORT}/notify`, {
             method: 'POST',
-            body: JSON.stringify({
-                selector: topic.toJSON(),
-                payload: { hello: 'from-cpp' },
-                stack: []
-            })
+            headers: {
+                'Content-Type': 'application/octet-stream'
+            },
+            body: body
         });
         assert.strictEqual(notifyRes.status, 200);
 

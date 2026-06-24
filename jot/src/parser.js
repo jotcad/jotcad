@@ -38,7 +38,7 @@ export class JotParser {
     // Preserve the newline character to avoid merging lines.
     const cleanText = text.replace(/(^|\s)\/\/.*(?=\n|$)/g, '$1');
     const regex =
-      /\s*([a-zA-Z_\$][a-zA-Z0-9_/]*|\->|-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/|\-|\+)\s*/g;
+      /\s*([a-zA-Z_\$][a-zA-Z0-9_/]*|\->|=>|-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/|\-|\+|>|<)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);
@@ -173,21 +173,52 @@ export class JotParser {
         return this._parseRangeContent(null);
     }
 
-    // Could be an array [1, 2] or a range [0..10]
     const firstExpr = this._parseExpression();
     const afterFirst = this._peek();
 
+    // Simple Map Comprehension [ someVar do x => x ]
+    if (afterFirst === 'do') {
+        this._consume('do');
+        const parameter = this._consume();
+        this._consume('=>');
+        const expression = this._parseExpression();
+        this._consume(']');
+        
+        return {
+            type: 'MAP_COMPREHENSION',
+            iterable: firstExpr,
+            parameter,
+            expression
+        };
+    }
+
+    // Array or Array-based Comprehension [1, 2, 3 do x => x]
     if (afterFirst === ',' || afterFirst === ']') {
         const elements = [firstExpr];
         while (this._peek() === ',') {
             this._consume(',');
             elements.push(this._parseExpression());
         }
+        
+        if (this._peek() === 'do') {
+            this._consume('do');
+            const parameter = this._consume();
+            this._consume('=>');
+            const expression = this._parseExpression();
+            this._consume(']');
+            return {
+                type: 'MAP_COMPREHENSION',
+                iterable: elements,
+                parameter,
+                expression
+            };
+        }
+
         this._consume(']');
         return elements;
     }
 
-    // It's a range starting with an expression [0..10]
+    // Range or Range-based Comprehension [0..10 do i => i]
     return this._parseRangeContent(firstExpr);
   }
 
@@ -216,9 +247,7 @@ export class JotParser {
       inclusiveEnd = true;
     }
 
-    this._consume(']');
-
-    return {
+    const rangeNode = {
       type: 'RANGE',
       start,
       end,
@@ -226,6 +255,23 @@ export class JotParser {
       count,
       inclusiveEnd
     };
+
+    if (this._peek() === 'do') {
+        this._consume('do');
+        const parameter = this._consume();
+        this._consume('=>');
+        const expression = this._parseExpression();
+        this._consume(']');
+        return {
+            type: 'MAP_COMPREHENSION',
+            iterable: rangeNode,
+            parameter,
+            expression
+        };
+    }
+
+    this._consume(']');
+    return rangeNode;
   }
 
   _parseArray() {

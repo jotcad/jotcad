@@ -14,6 +14,7 @@ struct OffsetOp : P {
         if (s.geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             applyOffset(geo, FT(diameter));
+            geo.triangulate();
             s.geometry = vfs->materialize<Geometry>(geo);
         }
         for (auto& child : s.components) {
@@ -51,6 +52,7 @@ struct OffsetClosureOp : P {
             applyOffset(expanded, FT(std::abs(diameter)));
             Geometry closed = expanded;
             applyOffset(closed, FT(-std::abs(diameter)));
+            closed.triangulate();
             s.geometry = vfs->materialize<Geometry>(closed);
         }
         for (auto& child : s.components) {

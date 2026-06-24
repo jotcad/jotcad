@@ -1,6 +1,84 @@
 import { Connection, VFSResult } from './connection.js';
-import { decodeInfo } from '../cid.js';
 import { log } from '../log.js';
+
+export function encodeRecord(header, payload = null) {
+  const headerStr = JSON.stringify(header);
+  const headerBytes = new TextEncoder().encode(headerStr);
+  
+  let payloadBytes;
+  if (payload === null || payload === undefined) {
+    payloadBytes = new Uint8Array(0);
+  } else if (payload instanceof Uint8Array) {
+    payloadBytes = payload;
+  } else if (typeof payload === 'string') {
+    payloadBytes = new TextEncoder().encode(payload);
+  } else {
+    payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
+  }
+  
+  const recordBytes = new Uint8Array(4 + headerBytes.length + payloadBytes.length);
+  const view = new DataView(recordBytes.buffer);
+  view.setUint32(0, headerBytes.length, false); // Big Endian
+  recordBytes.set(headerBytes, 4);
+  recordBytes.set(payloadBytes, 4 + headerBytes.length);
+  return recordBytes;
+}
+
+export async function decodeRecordStream(readableStream) {
+  const reader = readableStream.getReader();
+  let buffer = new Uint8Array(0);
+  
+  function append(chunk) {
+    if (!chunk || chunk.length === 0) return;
+    const next = new Uint8Array(buffer.length + chunk.length);
+    next.set(buffer, 0);
+    next.set(chunk, buffer.length);
+    buffer = next;
+  }
+  
+  while (buffer.length < 4) {
+    const { done, value } = await reader.read();
+    if (done) throw new Error("Stream closed before reading length prefix");
+    append(value);
+  }
+  
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const headerLen = view.getUint32(0, false);
+  
+  while (buffer.length < 4 + headerLen) {
+    const { done, value } = await reader.read();
+    if (done) throw new Error("Stream closed before reading header JSON");
+    append(value);
+  }
+  
+  const headerBytes = buffer.subarray(4, 4 + headerLen);
+  const header = JSON.parse(new TextDecoder().decode(headerBytes));
+  const remaining = buffer.subarray(4 + headerLen);
+  
+  let released = false;
+  const payloadStream = new ReadableStream({
+    async start(controller) {
+      if (remaining.length > 0) {
+        controller.enqueue(remaining);
+      }
+    },
+    async pull(controller) {
+      if (released) return;
+      const { done, value } = await reader.read();
+      if (done) {
+        released = true;
+        controller.close();
+      } else {
+        controller.enqueue(value);
+      }
+    },
+    cancel() {
+      reader.releaseLock();
+    }
+  });
+  
+  return { header, payloadStream };
+}
 
 /**
  * ForwardConnection: A pipe using outgoing HTTP requests to a stable neighbor URL.
@@ -26,57 +104,43 @@ export class ForwardConnection extends Connection {
    * @returns {Promise<VFSResult|void>}
    */
   async send(req) {
+    const header = {
+      op: req.op,
+      stack: req.stack,
+      expiresAt: req.expiresAt
+    };
+    if (this.localUrl) header.localUrl = this.localUrl;
+
     if (req.op === 'READ_SELECTOR') {
-      const headers = this._buildHeaders('READ_SELECTOR', req);
-      headers['x-vfs-selector'] = JSON.stringify(req.selector);
-      const resp = await this._doRequest(`${this.url}/read_selector`, headers, null, req.selector.path);
-      const info = decodeInfo(resp.headers.get('x-vfs-info')) || { state: 'AVAILABLE' };
-      return new VFSResult(resp.body, info);
+      header.selector = req.selector;
+      const body = encodeRecord(header);
+      return await this._doRequest(`${this.url}/read_selector`, body, req.selector.path);
     }
 
     if (req.op === 'READ_CID') {
-      const headers = this._buildHeaders('READ_CID', req);
-      const body = JSON.stringify({ cid: req.cid, resolutionStack: req.resolutionStack || [] });
-      const resp = await this._doRequest(`${this.url}/read_cid`, headers, body, req.cid);
-      const info = decodeInfo(resp.headers.get('x-vfs-info')) || { state: 'AVAILABLE' };
-      return new VFSResult(resp.body, info);
+      header.cid = req.cid;
+      header.resolutionStack = req.resolutionStack || [];
+      const body = encodeRecord(header);
+      return await this._doRequest(`${this.url}/read_cid`, body, req.cid);
     }
 
     if (req.op === 'SPY') {
-      const headers = this._buildHeaders('SPY', req);
-      headers['Content-Type'] = 'application/json';
-      headers['x-vfs-selector'] = JSON.stringify(req.selector);
-      const body = JSON.stringify({ resolutionStack: req.resolutionStack || [] });
-      
-      log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/spy`, req.selector.path);
-      const resp = await this.fetch(`${this.url}/spy`, {
-        method: 'POST',
-        headers,
-        signal: this.signal || AbortSignal.timeout(5000),
-        body,
-      });
-      log(`[MeshLink ${this.neighborId}] <- ${resp.status} ${this.url}/spy`);
-
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => 'no body');
-        throw new Error(`HTTP ${resp.status} on SPY: ${errText}`);
-      }
-      const info = decodeInfo(resp.headers.get('x-vfs-info')) || { state: 'AVAILABLE' };
-      return new VFSResult(resp.body, info);
+      header.selector = req.selector;
+      header.resolutionStack = req.resolutionStack || [];
+      const body = encodeRecord(header);
+      return await this._doRequest(`${this.url}/spy`, body, req.selector.path);
     }
 
     if (req.op === 'SUB') {
-      const headers = this._buildHeaders('SUB', req);
-      headers['x-vfs-selector'] = JSON.stringify(req.selector);
-      if (req.stack.length > 0) {
-        headers['x-vfs-id'] = req.stack[req.stack.length - 1];
-      }
-
+      header.selector = req.selector;
+      const body = encodeRecord(header);
+      
       log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/subscribe`, req.selector.path);
       const resp = await this.fetch(`${this.url}/subscribe`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/octet-stream' },
         signal: this.signal || AbortSignal.timeout(5000),
+        body,
       });
       log(`[MeshLink ${this.neighborId}] <- ${resp.status} ${this.url}/subscribe`);
 
@@ -91,17 +155,15 @@ export class ForwardConnection extends Connection {
       this.lastPulse = Date.now();
 
       const isBinary = req.payload instanceof Uint8Array;
-      const headers = this._buildHeaders('PUB', req);
-      headers['x-vfs-selector'] = JSON.stringify(req.selector);
-      headers['x-vfs-encoding'] = isBinary ? 'bytes' : 'json';
-      if (!isBinary) headers['Content-Type'] = 'application/json';
+      header.selector = req.selector;
+      header.encoding = isBinary ? 'bytes' : 'json';
 
-      const body = isBinary ? req.payload : JSON.stringify(req.payload);
+      const body = encodeRecord(header, req.payload);
 
       log(`[MeshLink ${this.neighborId}] -> POST ${this.url}/notify`, req.selector.path);
       const resp = await this.fetch(`${this.url}/notify`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/octet-stream' },
         signal: this.signal || AbortSignal.timeout(5000),
         body,
       });
@@ -114,37 +176,40 @@ export class ForwardConnection extends Connection {
     }
   }
 
-  _buildHeaders(op, req) {
-    const headers = { 
-        'x-vfs-id': req.stack[0] || 'unknown',
-        'x-vfs-op': op,
-        'x-vfs-stack': req.stack.join(','),
-        'x-vfs-expires': String(req.expiresAt)
-    };
-    if (this.localUrl) headers['x-vfs-local-url'] = this.localUrl;
-    return headers;
-  }
-
-  async _doRequest(url, headers, body, targetLabel) {
+  async _doRequest(url, body, targetLabel) {
     try {
-        log(`[MeshLink ${this.neighborId}] -> POST ${url} (${headers['x-vfs-op']})`, targetLabel);
+        log(`[MeshLink ${this.neighborId}] -> POST ${url}`, targetLabel);
         const resp = await this.fetch(url, {
           method: 'POST',
-          headers,
+          headers: { 'Content-Type': 'application/octet-stream' },
           signal: this.signal || AbortSignal.timeout(10000),
           body,
         });
         log(`[MeshLink ${this.neighborId}] <- ${resp.status} ${url}`);
 
-        if (resp.ok && resp.body) return { body: resp.body, headers: resp.headers };
-        
-        const info = decodeInfo(resp.headers.get('x-vfs-info'));
-        if (info.error) {
-            throw new Error(`Peer ${this.neighborId} reported error: ${info.error}`);
+        if (resp.body) {
+          try {
+            const { header, payloadStream } = await decodeRecordStream(resp.body);
+            if (resp.ok) {
+              const info = header.info || {};
+              if (!info.encoding && header.encoding) {
+                info.encoding = header.encoding;
+              }
+              return new VFSResult(payloadStream, info);
+            } else {
+              const info = header.info || {};
+              const errMsg = info.error || `HTTP ${resp.status}`;
+              throw new Error(`Peer ${this.neighborId} reported error: ${errMsg}`);
+            }
+          } catch (e) {
+            if (!resp.ok) {
+              const errText = await resp.text().catch(() => 'no body');
+              throw new Error(`HTTP ${resp.status}: ${errText}`);
+            }
+            throw e;
+          }
         }
-
-        const errText = await resp.text().catch(() => 'no body');
-        throw new Error(`HTTP ${resp.status}: ${errText}`);
+        throw new Error(`Peer ${this.neighborId} returned no body`);
     } catch (err) {
         log(`[MeshLink ${this.neighborId}] request error: ${err.message}`);
         throw err;

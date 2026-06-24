@@ -371,6 +371,36 @@ export const Viewport = (props) => {
 
   onMount(() => {
     init();
+
+    // Prevent browser/desktop zoom on 3D viewer pinch-zoom gestures (trackpad & touchscreen)
+    const onWheel = (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+      }
+    };
+    const onTouchMove = (e) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+    const onGesture = (e) => {
+      e.preventDefault();
+    };
+
+    if (containerRef) {
+      containerRef.addEventListener('wheel', onWheel, { passive: false });
+      containerRef.addEventListener('touchmove', onTouchMove, { passive: false });
+      containerRef.addEventListener('gesturestart', onGesture, { passive: false });
+      containerRef.addEventListener('gesturechange', onGesture, { passive: false });
+      
+      onCleanup(() => {
+        containerRef.removeEventListener('wheel', onWheel);
+        containerRef.removeEventListener('touchmove', onTouchMove);
+        containerRef.removeEventListener('gesturestart', onGesture);
+        containerRef.removeEventListener('gesturechange', onGesture);
+      });
+    }
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('mousemove', onMouseMove);

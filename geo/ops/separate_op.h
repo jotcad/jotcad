@@ -114,6 +114,7 @@ struct SeparateOp : P {
             if (!sub_geo.vertices.empty()) {
                 Shape component;
                 component.tags = in.tags;
+                sub_geo.triangulate();
                 component.geometry = vfs->materialize<Geometry>(sub_geo);
                 out_group.components.push_back(component);
             }

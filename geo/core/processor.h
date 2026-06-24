@@ -102,7 +102,7 @@ struct Processor {
         };
 
         if constexpr (is_optional<T>::value) {
-            if (!params.contains(key)) return std::nullopt;
+            if (!params.contains(key) || params.at(key).is_null()) return std::nullopt;
             return decode<typename T::value_type>(vfs, key, params, schema, stack, opPath);
         } else {
             if (!params.contains(key)) {

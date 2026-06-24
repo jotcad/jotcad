@@ -2,6 +2,7 @@
 #include "protocols.h"
 #include "processor.h"
 #include "matrix.h"
+#include "math/zag.h"
 #include <map>
 
 namespace jotcad {
@@ -9,17 +10,33 @@ namespace geo {
 
 template <typename P = JotVfsProtocol>
 struct SpinOpBase : P {
-    static void execute_spin(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start_tau, double end_tau, int resolution, const Matrix& axis_tf = Matrix::identity()) {
+    static void execute_spin(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start_tau, double end_tau, int resolution, double zag_val = 0.0, const Matrix& axis_tf = Matrix::identity()) {
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
 
-        if (resolution < 3) resolution = 3;
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
+        double total_tau = end_tau - start_tau;
+
+        if (zag_val > 0.0) {
+            double max_R = 0.0;
+            Matrix from_axis = axis_tf.inverse();
+            for (const auto& v : geo.vertices) {
+                Point_3 p(v.x, v.y, v.z);
+                Point_3 tp = from_axis.transform(p);
+                double R = std::sqrt(CGAL::to_double(tp.x() * tp.x() + tp.y() * tp.y()));
+                if (R > max_R) max_R = R;
+            }
+            if (max_R > 0.0) {
+                int total_sides = zag(max_R * 2.0, zag_val);
+                resolution = (int)std::ceil(std::abs(total_tau) * total_sides);
+            }
+        }
+
+        if (resolution < 3) resolution = 3;
         Geometry res;
 
-        double total_tau = end_tau - start_tau;
         bool is_full = std::abs(std::abs(total_tau) - 1.0) < 1e-9;
         int num_slices = is_full ? resolution : resolution + 1;
 
@@ -29,26 +46,63 @@ struct SpinOpBase : P {
         Matrix to_axis = axis_tf;
         Matrix from_axis = axis_tf.inverse();
 
-        for (int j = 0; j < num_slices; ++j) {
-            double turns = start_tau + (total_tau * j / resolution);
-            // Rotate around the local Z of the axis frame
-            Matrix rot = to_axis * Matrix::rotationZ(turns) * from_axis;
-            for (size_t i = 0; i < geo.vertices.size(); ++i) {
+        // Determine which vertices are on the axis of rotation
+        std::vector<bool> on_axis(geo.vertices.size(), false);
+        for (size_t i = 0; i < geo.vertices.size(); ++i) {
+            auto v = geo.vertices[i];
+            Point_3 p(v.x, v.y, v.z);
+            Point_3 tp = from_axis.transform(p);
+            double R = std::sqrt(CGAL::to_double(tp.x() * tp.x() + tp.y() * tp.y()));
+            if (R < 1e-9) {
+                on_axis[i] = true;
+            }
+        }
+
+        // Add axis vertices once
+        for (size_t i = 0; i < geo.vertices.size(); ++i) {
+            if (on_axis[i]) {
                 auto v = geo.vertices[i];
                 Point_3 p(v.x, v.y, v.z);
+                Matrix rot = to_axis * Matrix::rotationZ(start_tau) * from_axis;
                 Point_3 tp = rot.transform(p);
-                vertex_map[i][j] = (int)res.vertices.size();
+                int v_idx = (int)res.vertices.size();
                 res.vertices.push_back({tp.x(), tp.y(), tp.z()});
+                for (int j = 0; j < num_slices; ++j) {
+                    vertex_map[i][j] = v_idx;
+                }
+            }
+        }
+
+        // Generate non-axis vertices per slice
+        for (int j = 0; j < num_slices; ++j) {
+            double turns = start_tau + (total_tau * j / resolution);
+            Matrix rot = to_axis * Matrix::rotationZ(turns) * from_axis;
+            for (size_t i = 0; i < geo.vertices.size(); ++i) {
+                if (!on_axis[i]) {
+                    auto v = geo.vertices[i];
+                    Point_3 p(v.x, v.y, v.z);
+                    Point_3 tp = rot.transform(p);
+                    vertex_map[i][j] = (int)res.vertices.size();
+                    res.vertices.push_back({tp.x(), tp.y(), tp.z()});
+                }
             }
         }
 
         // 2. Process Points -> Arcs (Segments)
         for (int p_idx : geo.points) {
             for (int j = 0; j < num_slices - 1; ++j) {
-                res.segments.push_back({vertex_map[p_idx][j], vertex_map[p_idx][j+1]});
+                int v0 = vertex_map[p_idx][j];
+                int v1 = vertex_map[p_idx][j+1];
+                if (v0 != v1) {
+                    res.segments.push_back({v0, v1});
+                }
             }
             if (is_full) {
-                res.segments.push_back({vertex_map[p_idx][num_slices-1], vertex_map[p_idx][0]});
+                int v0 = vertex_map[p_idx][num_slices-1];
+                int v1 = vertex_map[p_idx][0];
+                if (v0 != v1) {
+                    res.segments.push_back({v0, v1});
+                }
             }
         }
 
@@ -59,14 +113,38 @@ struct SpinOpBase : P {
                 int v1 = vertex_map[seg[1]][j];
                 int v2 = vertex_map[seg[1]][j+1];
                 int v3 = vertex_map[seg[0]][j+1];
-                res.faces.push_back({{{v0, v1, v2, v3}}});
+                
+                std::vector<int> clean_loop;
+                for (int v : {v0, v1, v2, v3}) {
+                    if (clean_loop.empty() || clean_loop.back() != v) {
+                        clean_loop.push_back(v);
+                    }
+                }
+                if (!clean_loop.empty() && clean_loop.front() == clean_loop.back()) {
+                    clean_loop.pop_back();
+                }
+                if (clean_loop.size() >= 3) {
+                    res.faces.push_back({{clean_loop}});
+                }
             }
             if (is_full) {
                 int v0 = vertex_map[seg[0]][num_slices-1];
                 int v1 = vertex_map[seg[1]][num_slices-1];
                 int v2 = vertex_map[seg[1]][0];
                 int v3 = vertex_map[seg[0]][0];
-                res.faces.push_back({{{v0, v1, v2, v3}}});
+                
+                std::vector<int> clean_loop;
+                for (int v : {v0, v1, v2, v3}) {
+                    if (clean_loop.empty() || clean_loop.back() != v) {
+                        clean_loop.push_back(v);
+                    }
+                }
+                if (!clean_loop.empty() && clean_loop.front() == clean_loop.back()) {
+                    clean_loop.pop_back();
+                }
+                if (clean_loop.size() >= 3) {
+                    res.faces.push_back({{clean_loop}});
+                }
             }
         }
 
@@ -82,12 +160,18 @@ struct SpinOpBase : P {
                         int v2 = vertex_map[i1][j+1];
                         int v3 = vertex_map[i0][j+1];
                         
-                        // Degenerate check (on axis)
-                        auto p0 = res.vertices[v0];
-                        auto p2 = res.vertices[v2];
-                        if (p0.x == p2.x && p0.y == p2.y && p0.z == p2.z) continue;
-
-                        res.faces.push_back({{{v0, v1, v2, v3}}});
+                        std::vector<int> clean_l;
+                        for (int v : {v0, v1, v2, v3}) {
+                            if (clean_l.empty() || clean_l.back() != v) {
+                                clean_l.push_back(v);
+                            }
+                        }
+                        if (!clean_l.empty() && clean_l.front() == clean_l.back()) {
+                            clean_l.pop_back();
+                        }
+                        if (clean_l.size() >= 3) {
+                            res.faces.push_back({{clean_l}});
+                        }
                     }
                 }
             }
@@ -101,7 +185,19 @@ struct SpinOpBase : P {
                         int v1 = vertex_map[i1][j];
                         int v2 = vertex_map[i1][0];
                         int v3 = vertex_map[i0][0];
-                        res.faces.push_back({{{v0, v1, v2, v3}}});
+                        
+                        std::vector<int> clean_l;
+                        for (int v : {v0, v1, v2, v3}) {
+                            if (clean_l.empty() || clean_l.back() != v) {
+                                clean_l.push_back(v);
+                            }
+                        }
+                        if (!clean_l.empty() && clean_l.front() == clean_l.back()) {
+                            clean_l.pop_back();
+                        }
+                        if (clean_l.size() >= 3) {
+                            res.faces.push_back({{clean_l}});
+                        }
                     }
                 }
             } else {
@@ -109,19 +205,29 @@ struct SpinOpBase : P {
                 Geometry::Face bottom;
                 for (const auto& loop : face.loops) {
                     std::vector<int> l;
-                    for (int idx : loop) l.push_back(vertex_map[idx][0]);
-                    bottom.loops.push_back(l);
+                    for (int idx : loop) {
+                        int v = vertex_map[idx][0];
+                        if (l.empty() || l.back() != v) l.push_back(v);
+                    }
+                    if (!l.empty() && l.front() == l.back()) l.pop_back();
+                    if (l.size() >= 3) bottom.loops.push_back(l);
                 }
-                res.faces.push_back(bottom);
+                if (!bottom.loops.empty()) res.faces.push_back(bottom);
 
                 Geometry::Face top;
                 for (const auto& loop : face.loops) {
                     std::vector<int> l;
-                    for (int idx : loop) l.push_back(vertex_map[idx][num_slices-1]);
-                    std::reverse(l.begin(), l.end());
-                    top.loops.push_back(l);
+                    for (int idx : loop) {
+                        int v = vertex_map[idx][num_slices-1];
+                        if (l.empty() || l.back() != v) l.push_back(v);
+                    }
+                    if (!l.empty() && l.front() == l.back()) l.pop_back();
+                    if (l.size() >= 3) {
+                        std::reverse(l.begin(), l.end());
+                        top.loops.push_back(l);
+                    }
                 }
-                res.faces.push_back(top);
+                if (!top.loops.empty()) res.faces.push_back(top);
             }
         }
 
@@ -132,6 +238,7 @@ struct SpinOpBase : P {
         else if (in_type == "surface") out.add_tag("type", "closed");
         else if (in_type == "open") out.add_tag("type", "closed");
         
+        res.triangulate();
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }
@@ -140,10 +247,10 @@ struct SpinOpBase : P {
 template <typename P = JotVfsProtocol>
 struct SpinOp : SpinOpBase<P> {
     static constexpr const char* path = "jot/spin";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution) {
-        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution);
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution, double zag) {
+        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, zag);
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution", "zag"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/spin"},
@@ -152,7 +259,8 @@ struct SpinOp : SpinOpBase<P> {
             {"arguments", json::array({
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}},
-                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -162,10 +270,10 @@ struct SpinOp : SpinOpBase<P> {
 template <typename P = JotVfsProtocol>
 struct SpinXOp : SpinOpBase<P> {
     static constexpr const char* path = "jot/spinX";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution) {
-        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, Matrix::rotationY(0.25));
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution, double zag) {
+        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, zag, Matrix::rotationY(0.25));
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution", "zag"}; }
     static typename P::json schema() {
         return { 
             {"path", "jot/spinX"}, 
@@ -173,7 +281,8 @@ struct SpinXOp : SpinOpBase<P> {
             {"arguments", json::array({
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, 
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, 
-                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
@@ -183,10 +292,10 @@ struct SpinXOp : SpinOpBase<P> {
 template <typename P = JotVfsProtocol>
 struct SpinYOp : SpinOpBase<P> {
     static constexpr const char* path = "jot/spinY";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution) {
-        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, Matrix::rotationX(-0.25));
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double start, double end, int resolution, double zag) {
+        SpinOpBase<P>::execute_spin(vfs, fulfilling, in, start, end, resolution, zag, Matrix::rotationX(-0.25));
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "start", "end", "resolution", "zag"}; }
     static typename P::json schema() {
         return { 
             {"path", "jot/spinY"}, 
@@ -194,7 +303,8 @@ struct SpinYOp : SpinOpBase<P> {
             {"arguments", json::array({
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}}, 
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}}, 
-                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}}
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 32}},
+                {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.0}}
             })}, 
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
         };
@@ -202,13 +312,13 @@ struct SpinYOp : SpinOpBase<P> {
 };
 
 static void spin_init(fs::VFSNode* vfs) {
-    Processor::register_op<SpinOp<>, Shape, double, double, int>(vfs, "jot/spin");
-    Processor::register_op<SpinXOp<>, Shape, double, double, int>(vfs, "jot/spinX");
-    Processor::register_op<SpinXOp<>, Shape, double, double, int>(vfs, "jot/sx"); // Alias for spinX
-    Processor::register_op<SpinYOp<>, Shape, double, double, int>(vfs, "jot/spinY");
-    Processor::register_op<SpinYOp<>, Shape, double, double, int>(vfs, "jot/sy"); // Alias for spinY
-    Processor::register_op<SpinOp<>, Shape, double, double, int>(vfs, "jot/spinZ");
-    Processor::register_op<SpinOp<>, Shape, double, double, int>(vfs, "jot/sz"); // Alias for spinZ
+    Processor::register_op<SpinOp<>, Shape, double, double, int, double>(vfs, "jot/spin");
+    Processor::register_op<SpinXOp<>, Shape, double, double, int, double>(vfs, "jot/spinX");
+    Processor::register_op<SpinXOp<>, Shape, double, double, int, double>(vfs, "jot/spx"); // Alias for spinX
+    Processor::register_op<SpinYOp<>, Shape, double, double, int, double>(vfs, "jot/spinY");
+    Processor::register_op<SpinYOp<>, Shape, double, double, int, double>(vfs, "jot/spy"); // Alias for spinY
+    Processor::register_op<SpinOp<>, Shape, double, double, int, double>(vfs, "jot/spinZ");
+    Processor::register_op<SpinOp<>, Shape, double, double, int, double>(vfs, "jot/spz"); // Alias for spinZ
 }
 
 } // namespace geo

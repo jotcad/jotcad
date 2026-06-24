@@ -6,6 +6,7 @@ import { VFS } from '../fs/src/vfs.js';
 import { MeshLink, ReadSelectorRequest } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
 import { launchSystem } from '../orchestrator.js';
+import { encodeRecord, decodeRecordStream } from '../fs/src/mesh/forward_connection.js';
 
 test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', async (t) => {
     // instruct JS nodes to clean storage on initialization
@@ -131,17 +132,24 @@ test('VFS WebSocket Transport: Negotiation, Upgrade, and Fallback Recovery', asy
         // We make a REST call to Node A asking it to resolve a resource owned by our WS subscriber.
         // Node A must push this VFS request down the active WS socket to the client, receive the
         // binary reply, and stream it back over REST.
+        const body = encodeRecord({
+            op: 'READ_SELECTOR',
+            selector: { path: 'subscriber/data', parameters: {} }
+        });
+
         const gatewayReadResp = await fetch(`http://localhost:${PORT}/read_selector`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                selector: { path: 'subscriber/data', parameters: {} },
-                stack: []
-            })
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: body
         });
         assert.ok(gatewayReadResp.ok, 'Gateway node failed to resolve reverse WS resource.');
-        const arrayBuf = await gatewayReadResp.arrayBuffer();
-        const outputBytes = new Uint8Array(arrayBuf);
+        
+        const { header, payloadStream } = await decodeRecordStream(gatewayReadResp.body);
+        const chunks = [];
+        for await (const chunk of payloadStream) {
+            chunks.push(chunk);
+        }
+        const outputBytes = new Uint8Array(Buffer.concat(chunks));
         assert.equal(outputBytes.length, 3);
         assert.deepEqual(outputBytes, new Uint8Array([100, 101, 102]));
         console.log('✔ Reverse VFS read over persistent WebSocket tunnel successfully verified!');

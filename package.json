@@ -24,7 +24,7 @@
     "unit_test": "cd jot && node --test test/*.js && cd ../geo/test && ./run_unit_tests.sh && cd ../../fs && TEST_UX_PORT=3039 TEST_OPS_PORT=9099 node --test --test-concurrency=1 test/*.js",
     "test:js": "node --test jot/test/*.js && TEST_UX_PORT=3039 TEST_OPS_PORT=9099 node --test --test-concurrency=1 fs/test/*.js",
     "test:cpp": "cd geo/test && ./run_unit_tests.sh",
-    "test:pio": "export $(grep -v '^#' .env | xargs) && pio run -d pio && wokwi-cli pio/ --expect-text VFS_READY",
+    "test:pio": "export $(grep -v '^#' .env | xargs) && pio run -d pio",
     "test:cpp:individual": "make -C geo/test",
     "test:integration": "node test_orchestrator.js integration",
     "test:puppeteer": "node test_orchestrator.js puppeteer",

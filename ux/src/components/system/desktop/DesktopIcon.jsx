@@ -13,7 +13,8 @@ import {
   FileText, 
   Box,
   Palette,
-  Tag
+  Tag,
+  Music
 } from 'lucide-solid';
 import { IconShell } from './IconShell';
 import { blackboard } from '../../../lib/blackboard';
@@ -36,7 +37,8 @@ const ICON_MAP = {
     FileText,
     Box,
     Palette,
-    Tag
+    Tag,
+    Music
 };
 
 export const DesktopIcon = (props) => {

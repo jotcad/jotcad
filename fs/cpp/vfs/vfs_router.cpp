@@ -26,6 +26,9 @@ VFSNode::~VFSNode() {
 
 void VFSNode::register_op(const std::string& path, OpHandler handler, const json& schema) {
     std::lock_guard<std::mutex> lock(handlers_mutex_);
+    if (handlers_.find(path) != handlers_.end()) {
+        throw std::runtime_error("VFS Operator Registration Collision: Operator path '" + path + "' is already registered!");
+    }
     handlers_[path] = handler;
     schemas_[path] = schema;
 }

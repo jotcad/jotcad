@@ -23,6 +23,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                nested_cut_test.cpp cut_hexagon_test.cpp accumulator_test.cpp \
                offset_closure_test.cpp png_test.cpp corners_visual_test.cpp \
                hexagon_at_cut_test.cpp edges_visual_test.cpp move_test.cpp \
+               snap_test.cpp \
+               spin_test.cpp \
                box_verification.cpp \
                cut_3d_test.cpp join_test.cpp clip_test.cpp fuse_test.cpp \
                disjoint_test.cpp disk_arc_test.cpp arc_variants_test.cpp orb_test.cpp path_test.cpp \
@@ -58,7 +60,18 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                decal_test.cpp \
                decal_hill_perf.cpp \
                decal_visual_test.cpp \
-               decal_concave_test.cpp
+               decal_concave_test.cpp \
+               convex_test.cpp \
+               convex_visual_test.cpp \
+               rainbow_test.cpp \
+               rainbow_visual_test.cpp \
+               undercut_test.cpp \
+               undercut_visual_test.cpp \
+               part_line_test.cpp \
+               part_line_visual_test.cpp \
+               part_line_search_test.cpp \
+               mold_split_test.cpp \
+               extrusion_overlap_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
@@ -113,7 +126,7 @@ $(OBJ_DIR)/decal_hill_perf.o: decal_hill_perf.cpp
 
 
 # Dynamic header generation listing all test functions inside namespaces
-unit_tests_run.h: Makefile
+unit_tests_run.h: Makefile $(COMBINED_TEST_SOURCES)
 	@echo "// Automatically generated. Do not edit." > $@
 	@for t in $(COMBINED_TEST_SOURCES:.cpp=); do \
 		echo "namespace test_$$t {" >> $@; \

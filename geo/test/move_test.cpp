@@ -11,7 +11,7 @@ int main() {
 
     // 1. Move
     Selector box1 = Selector{"jot/Box", {{"width", 10.0}}}.with_output("$out");
-    Selector move1 = Selector{"jot/move", {{"$in", box1}, {"x", 10.0}, {"y", 20.0}}}.with_output("$out");
+    Selector move1 = Selector{"jot/move", {{"$in", box1}, {"offset", {{10.0, 20.0, 0.0}}}}}.with_output("$out");
     Processor::execute(&vfs, move1);
     Shape s1 = vfs.read<Shape>(move1);
     
@@ -43,7 +43,7 @@ int main() {
     if (s_array.components[2].tf.to_vec().find("20") == std::string::npos) return 1;
 
     // 4. m (alias)
-    Selector m1 = Selector{"jot/m", {{"$in", box1}, {"x", -2.0}}}.with_output("$out");
+    Selector m1 = Selector{"jot/m", {{"$in", box1}, {"offset", {{-2.0, 0.0, 0.0}}}}}.with_output("$out");
     Processor::execute(&vfs, m1);
     Shape s3 = vfs.read<Shape>(m1);
     std::cout << "  - m(x=-2): " << s3.tf.to_vec() << std::endl;

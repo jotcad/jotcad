@@ -10,6 +10,7 @@ import { SettingsApp } from '../../system/SettingsApp';
 import { CameraWindow } from './CameraWindow';
 import { MaterialsApp } from '../../system/MaterialsApp';
 import { SkusApp } from '../../system/SkusApp';
+import { InstrumentsApp } from '../../system/InstrumentsApp';
 
 export const WindowManager = (props) => {
   return (
@@ -41,6 +42,9 @@ export const WindowManager = (props) => {
               </Show>
               <Show when={win.type === 'skus'}>
                  <SkusApp isWindowed={true} />
+              </Show>
+              <Show when={win.type === 'instruments'}>
+                 <InstrumentsApp />
               </Show>
               <Show when={win.type === 'vision_debug'}>
                  <CameraWindow />

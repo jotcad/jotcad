@@ -141,9 +141,17 @@ struct Matrix {
     static Matrix lookAt(const EK::Point_3& origin, const EK::Vector_3& normal) {
         EK::Vector_3 Z_dir = normal;
         
-        EK::Vector_3 arbitrary(1, 0, 0);
-        if (std::abs(CGAL::to_double(Z_dir.x())) > 0.9) {
+        double ax = std::abs(CGAL::to_double(Z_dir.x()));
+        double ay = std::abs(CGAL::to_double(Z_dir.y()));
+        double az = std::abs(CGAL::to_double(Z_dir.z()));
+
+        EK::Vector_3 arbitrary;
+        if (ax <= ay && ax <= az) {
+            arbitrary = EK::Vector_3(1, 0, 0);
+        } else if (ay <= ax && ay <= az) {
             arbitrary = EK::Vector_3(0, 1, 0);
+        } else {
+            arbitrary = EK::Vector_3(0, 0, 1);
         }
 
         EK::Vector_3 X_dir = CGAL::cross_product(Z_dir, arbitrary);
@@ -152,6 +160,10 @@ struct Matrix {
         double dx = std::sqrt(CGAL::to_double(X_dir.squared_length()));
         double dy = std::sqrt(CGAL::to_double(Y_dir.squared_length()));
         double dz = std::sqrt(CGAL::to_double(Z_dir.squared_length()));
+
+        if (dx <= 1e-9 || dy <= 1e-9 || dz <= 1e-9) {
+            return identity();
+        }
 
         FT w(1000000);
         auto scale_v = [&](const EK::Vector_3& v, double len) {
@@ -176,9 +188,17 @@ struct Matrix {
     static Matrix fromNormal(const EK::Point_3& origin, const EK::Vector_3& normal) {
         EK::Vector_3 Z_dir = normal;
         
-        EK::Vector_3 arbitrary(1, 0, 0);
-        if (std::abs(CGAL::to_double(Z_dir.x())) > 0.9) {
+        double ax = std::abs(CGAL::to_double(Z_dir.x()));
+        double ay = std::abs(CGAL::to_double(Z_dir.y()));
+        double az = std::abs(CGAL::to_double(Z_dir.z()));
+
+        EK::Vector_3 arbitrary;
+        if (ax <= ay && ax <= az) {
+            arbitrary = EK::Vector_3(1, 0, 0);
+        } else if (ay <= ax && ay <= az) {
             arbitrary = EK::Vector_3(0, 1, 0);
+        } else {
+            arbitrary = EK::Vector_3(0, 0, 1);
         }
 
         EK::Vector_3 X_dir = CGAL::cross_product(Z_dir, arbitrary);
@@ -187,6 +207,10 @@ struct Matrix {
         double dx = std::sqrt(CGAL::to_double(X_dir.squared_length()));
         double dy = std::sqrt(CGAL::to_double(Y_dir.squared_length()));
         double dz = std::sqrt(CGAL::to_double(Z_dir.squared_length()));
+
+        if (dx <= 1e-9 || dy <= 1e-9 || dz <= 1e-9) {
+            return identity();
+        }
 
         FT w(1000000);
         auto scale_v = [&](const EK::Vector_3& v, double len) {

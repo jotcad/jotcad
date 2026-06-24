@@ -11,6 +11,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import { launchSystem, PROFILES } from '../orchestrator.js';
+import { encodeRecord } from '../fs/src/mesh/forward_connection.js';
 
 async function consumeBinary(stream) {
     const reader = stream.getReader();
@@ -124,16 +125,19 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
     const past = Date.now() - 5000;
     console.log('[Test Pipeline] Sending raw stale request to C++ node...');
 
+    const body = encodeRecord({
+      op: 'READ_SELECTOR',
+      selector: {
+        path: 'jot/Hexagon/diameter',
+        parameters: { diameter: 10 },
+      },
+      expiresAt: past
+    });
+
     const resp = await fetch(`http://localhost:${PORT_OPS}/read_selector`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        selector: {
-            path: 'jot/Hexagon/diameter',
-            parameters: { diameter: 10 },
-        },
-        expiresAt: past,
-      }),
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: body,
     });
 
     // Our new C++ implementation returns 404 for missing/expired/failed.

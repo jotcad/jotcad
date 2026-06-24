@@ -106,6 +106,73 @@ int main() {
     std::cout << "  - lowest(area(), 0) count: " << low_area.components.size() << std::endl;
     assert(low_area.components.size() == 1);
 
+    // 6. Test jot/top and jot/bottom on Box(10,10,10)
+    {
+        fs::Selector top_sel = fs::Selector("jot/top", {{"$in", vfs.materialize(box).value}}).with_output("$out");
+        Processor::execute(&vfs, top_sel);
+        Shape top_face = vfs.read<Shape>(top_sel);
+        assert(top_face.components.empty()); // Should be a single face component, not a group
+        assert(std::abs(CGAL::to_double(top_face.tf.t.cartesian(2, 3)) - 5.0) < 1e-6);
+
+        fs::Selector bottom_sel = fs::Selector("jot/bottom", {{"$in", vfs.materialize(box).value}}).with_output("$out");
+        Processor::execute(&vfs, bottom_sel);
+        Shape bottom_face = vfs.read<Shape>(bottom_sel);
+        assert(bottom_face.components.empty()); // Should be a single face component
+        assert(std::abs(CGAL::to_double(bottom_face.tf.t.cartesian(2, 3)) - (-5.0)) < 1e-6);
+        std::cout << "  - top() and bottom() on Box(10,10,10) passed" << std::endl;
+    }
+
+    // 7. Test jot/top and jot/bottom on composite steps (staircase)
+    {
+        fs::Selector b1_sel = fs::Selector("jot/Box", {{"width", 2.0}, {"height", 2.0}, {"depth", 2.0}}).with_output("$out");
+        Processor::execute(&vfs, b1_sel);
+        Shape b1 = vfs.read<Shape>(b1_sel); // Z center at 0, Z range [-1, 1]
+
+        fs::Selector b2_sel = fs::Selector("jot/Box", {{"width", 2.0}, {"height", 2.0}, {"depth", 2.0}}).with_output("$out");
+        Processor::execute(&vfs, b2_sel);
+        Shape b2 = vfs.read<Shape>(b2_sel);
+        b2.apply_transform(Matrix::translate(0, 0, 2.0)); // Z center at 2, Z range [1, 3]
+
+        fs::Selector fuse_sel = fs::Selector("jot/Fuse", {{"shapes", nlohmann::json::array({vfs.materialize(b1).value, vfs.materialize(b2).value})}}).with_output("$out");
+        Processor::execute(&vfs, fuse_sel);
+        Shape fused = vfs.read<Shape>(fuse_sel); // Fused solid Z range [-1, 3]
+
+        fs::Selector top_sel = fs::Selector("jot/top", {{"$in", vfs.materialize(fused).value}}).with_output("$out");
+        Processor::execute(&vfs, top_sel);
+        Shape top_face = vfs.read<Shape>(top_sel);
+        assert(top_face.components.empty()); // Should be a single face component
+        assert(std::abs(CGAL::to_double(top_face.tf.t.cartesian(2, 3)) - 3.0) < 1e-6); // Top-most face of fused steps is at Z=3
+
+        fs::Selector bottom_sel = fs::Selector("jot/bottom", {{"$in", vfs.materialize(fused).value}}).with_output("$out");
+        Processor::execute(&vfs, bottom_sel);
+        Shape bottom_face = vfs.read<Shape>(bottom_sel);
+        assert(bottom_face.components.empty()); // Should be a single face component
+        assert(std::abs(CGAL::to_double(bottom_face.tf.t.cartesian(2, 3)) - (-1.0)) < 1e-6); // Bottom-most face of fused steps is at Z=-1
+        std::cout << "  - top() and bottom() on composite steps passed" << std::endl;
+    }
+
+    // 8. Test a.by(top().o()) places the top of a at the origin
+    {
+        fs::Selector top_sel = fs::Selector("jot/top", {{"$in", vfs.materialize(box).value}}).with_output("$out");
+        
+        fs::Selector o_sel = fs::Selector("jot/o", {{"$in", top_sel}}).with_output("$out");
+        
+        fs::Selector by_sel = fs::Selector("jot/by", {
+            {"$in", vfs.materialize(box).value},
+            {"targets", nlohmann::json::array({o_sel})}
+        }).with_output("$out");
+        
+        Processor::execute(&vfs, by_sel);
+        Shape moved = vfs.read<Shape>(by_sel);
+        
+        // The top face of the 'moved' box should be at Z = 0
+        fs::Selector moved_top_sel = fs::Selector("jot/top", {{"$in", vfs.materialize(moved).value}}).with_output("$out");
+        Processor::execute(&vfs, moved_top_sel);
+        Shape moved_top = vfs.read<Shape>(moved_top_sel);
+        assert(std::abs(CGAL::to_double(moved_top.tf.t.cartesian(2, 3))) < 1e-6);
+        std::cout << "  - a.by(top().o()) places top at origin passed" << std::endl;
+    }
+
     std::cout << "✅ ALL Selection Tests Passed" << std::endl;
     return 0;
 }

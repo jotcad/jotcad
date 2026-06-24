@@ -36,14 +36,19 @@ struct CutOp : P {
     static typename P::json schema() {
         return { 
             {"path", "jot/cut"}, 
+            {"dsl_name", "cut"},
+            {"role", "method"},
+            {"description", "Subtracts the volume or area of the tool shapes from the primary subject shape."},
+            {"synonyms", {"subtract", "difference", "carve", "remove", "hole"}},
             {"inputs", {
-                {"$in", {{"type", "jot:shape"}}}
+                {"$in", {{"type", "jot:shape"}, {"binding", "implicit"}, {"description", "The primary subject to be cut."}}}
             }},
             {"arguments", nlohmann::json::array({ 
-                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}}, 
-                {{"name", "open"}, {"type", "jot:boolean"}, {"default", false}} 
+                {{"name", "tools"}, {"type", "jot:shapes"}, {"default", nlohmann::json::array()}, {"description", "A shape, list of shapes, or sequence to subtract."}}, 
+                {{"name", "open"}, {"type", "jot:boolean"}, {"default", false}, {"description", "If true, leaves the cut boundaries open."}} 
             })}, 
-            {"outputs", {{"$out", {{"type", "jot:shape"}}}}} 
+            {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The resulting cut shape."}}}}},
+            {"examples", {"Box(10).cut(Orb(3)) -> $out", "Box(10).cut([Orb(2), Cylinder(1)]) -> $out"}}
         };
     }
 };

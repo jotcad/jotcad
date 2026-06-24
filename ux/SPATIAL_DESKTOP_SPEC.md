@@ -58,6 +58,7 @@ A draggable component pinned to blackboard coordinates.
 - **Primary Action (Single Tap)**: Always "Open" or "Select".
 - **Secondary Action (Long Press)**: Shows a floating action bar or menu.
 - **Pan Conflict**: Panning the background is only inhibited if a pointer is captured by a draggable component (Icon or Window Header).
+- **Gesture Isolation**: Pinch-zooming (trackpad/touchscreen) and middle-click/modified panning gestures originating inside a 3D viewport (`.viewport-container`) are isolated to the viewport and blocked from propagating to the Blackboard to prevent unintended canvas zoom/pan during 3D model interaction.
 
 ## 5. State Schema Example
 
