@@ -66,6 +66,7 @@
 #include "convex_op.h"
 #include "rainbow_op.h"
 #include "undercut_op.h"
+#include "part_line_op.h"
 
 #include "measure_ops.h"
 #include "sort_ops.h"
@@ -144,6 +145,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     convex_init(vfs);
     rainbow_init(vfs);
     undercut_init(vfs);
+    part_line_init(vfs);
 }
 
 } // namespace geo

@@ -697,3 +697,36 @@ Box(10, 10, 10).decal(relief_shape);
 // Extrude along the world X axis
 Box(10).at(X()).extrude(5)
 ```
+
+## 18. Mold Operations
+
+These operations perform parting-line extraction and draft/undercut analysis for mold design.
+
+### `partLine(dx=0.0, dy=0.0, dz=1.0, optimize=false)`
+Generates the parting line (silhouette curve) of a shape relative to a pull direction vector.
+
+- **`dx`**, **`dy`**, **`dz`**: Components of the pull direction vector.
+- **`optimize`**: If `true`, runs an optimizer that sweeps a search grid to automatically find the optimal pull direction that minimizes parting line loops and self-intersections.
+- **Output**: Returns a set of 3D line segments representing the parting contour of the shape.
+
+#### Example
+```js
+// Find the optimal parting line direction and extract it
+Box(10, 10, 10).partLine(optimize=true)
+```
+
+### `undercut(dx=0.0, dy=0.0, dz=1.0, min_draft=0.5)`
+Analyzes the shape geometry for undercuts relative to a pull direction, checking for draft angles.
+
+- **`dx`**, **`dy`**, **`dz`**: Components of the pull direction vector.
+- **`min_draft`**: Minimum required draft angle in degrees.
+- **Output**: Returns a Group containing three sub-meshes categorized and colored as:
+  - `safe_faces` (colored green `#2bee2b`): Faces that draft away from the pull vector without trapping.
+  - `undercut_faces` (colored red `#ee2b2b`): Faces that form an undercut relative to the pull direction.
+  - `flat_faces` (colored yellow `#eeee2b`): Faces that are parallel to the pull direction (within the draft limit).
+
+#### Example
+```js
+// Run undercut analysis on a block along the Z axis
+Box(10, 10, 10).undercut(dz=1.0, min_draft=0.5)
+```

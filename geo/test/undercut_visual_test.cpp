@@ -10,28 +10,28 @@ void test_undercut_visuals() {
     MockVFS vfs("undercut_visuals");
     register_all_ops(&vfs);
 
-    // 1. Load the bunny STL
-    std::string bunny_path = "scratch/bunny.stl";
+    // 1. Load the bear STL
+    std::string bear_path = "scratch/bear.stl";
     {
-        std::ifstream check(bunny_path);
+        std::ifstream check(bear_path);
         if (!check.good()) {
-            bunny_path = "../../scratch/bunny.stl";
+            bear_path = "../../scratch/bear.stl";
         }
     }
-    std::cout << "  - Loading " << bunny_path << "..." << std::endl;
-    Geometry bunny_geo;
-    if (!STLReader::read_file(bunny_path, bunny_geo)) {
-        std::cerr << "  ❌ FAIL: Could not load bunny.stl from " << bunny_path << std::endl;
+    std::cout << "  - Loading " << bear_path << "..." << std::endl;
+    Geometry bear_geo;
+    if (!STLReader::read_file(bear_path, bear_geo)) {
+        std::cerr << "  ❌ FAIL: Could not load bear.stl from " << bear_path << std::endl;
         return;
     }
-    std::cout << "    - Loaded successfully with " << bunny_geo.triangles.size() << " triangles." << std::endl;
+    std::cout << "    - Loaded successfully with " << bear_geo.triangles.size() << " triangles." << std::endl;
 
-    Shape bunny_shape = JotVfsProtocol::make_shape(&vfs, bunny_geo, json::object());
+    Shape bear_shape = JotVfsProtocol::make_shape(&vfs, bear_geo, json::object());
 
     // 2. Perform Undercut Analysis relative to Z-up [0, 0, 1]
     std::cout << "  - Executing jot/undercut..." << std::endl;
     fs::Selector undercut_sel("jot/undercut");
-    undercut_sel.parameters["$in"] = bunny_shape.to_json();
+    undercut_sel.parameters["$in"] = bear_shape.to_json();
     undercut_sel.parameters["dx"] = 0.0;
     undercut_sel.parameters["dy"] = 0.0;
     undercut_sel.parameters["dz"] = 1.0;
@@ -58,9 +58,9 @@ void test_undercut_visuals() {
         auto png_data = Rasterizer::render_png(&vfs, final_result, 1024, 1024, 0.0, 0.0);
         if (!png_data.empty()) {
             std::filesystem::create_directories("actual");
-            std::ofstream out("actual/bunny_undercuts.png", std::ios::binary);
+            std::ofstream out("actual/bear_undercuts.png", std::ios::binary);
             out.write((const char*)png_data.data(), png_data.size());
-            std::cout << "  📸 Saved actual/bunny_undercuts.png" << std::endl;
+            std::cout << "  📸 Saved actual/bear_undercuts.png" << std::endl;
         } else {
             std::cerr << "  ⚠️  Failed to render PNG (Empty Geometry)" << std::endl;
         }

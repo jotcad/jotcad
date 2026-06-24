@@ -3,6 +3,10 @@
 #include <string>
 #include <fstream>
 #include <cstring>
+#include <sstream>
+#include <algorithm>
+#include <cctype>
+#include <map>
 #include "geometry.h"
 #include "triangulation.h"
 
@@ -105,6 +109,60 @@ public:
 
 class STLReader {
 public:
+    static bool read_ascii(const std::string& text, Geometry& out_geo) {
+        std::istringstream stream(text);
+        std::string token;
+        
+        out_geo.vertices.clear();
+        out_geo.triangles.clear();
+        out_geo.faces.clear();
+        
+        // Map to deduplicate vertices and reuse indices
+        struct ComparePoint {
+            bool operator()(const std::array<float, 3>& a, const std::array<float, 3>& b) const {
+                if (std::abs(a[0] - b[0]) > 1e-5f) return a[0] < b[0];
+                if (std::abs(a[1] - b[1]) > 1e-5f) return a[1] < b[1];
+                return a[2] < b[2];
+            }
+        };
+        std::map<std::array<float, 3>, int, ComparePoint> vertex_map;
+        
+        auto get_or_add_vertex = [&](float x, float y, float z) -> int {
+            std::array<float, 3> pt = {x, y, z};
+            auto it = vertex_map.find(pt);
+            if (it != vertex_map.end()) {
+                return it->second;
+            }
+            int idx = (int)out_geo.vertices.size();
+            Vertex v;
+            v.x = (FT)x;
+            v.y = (FT)y;
+            v.z = (FT)z;
+            out_geo.vertices.push_back(v);
+            vertex_map[pt] = idx;
+            return idx;
+        };
+        
+        std::vector<int> current_face_verts;
+        current_face_verts.reserve(3);
+        
+        while (stream >> token) {
+            for (char& c : token) c = (char)std::tolower(c);
+            
+            if (token == "vertex") {
+                float x, y, z;
+                if (!(stream >> x >> y >> z)) return false;
+                current_face_verts.push_back(get_or_add_vertex(x, y, z));
+            } else if (token == "endfacet") {
+                if (current_face_verts.size() == 3) {
+                    out_geo.triangles.push_back({current_face_verts[0], current_face_verts[1], current_face_verts[2]});
+                }
+                current_face_verts.clear();
+            }
+        }
+        return !out_geo.triangles.empty();
+    }
+
     static bool read_binary(const std::vector<uint8_t>& buffer, Geometry& out_geo) {
         if (buffer.size() < 84) return false;
         
@@ -175,7 +233,39 @@ public:
         
         std::vector<uint8_t> buffer(size);
         file.read((char*)buffer.data(), size);
-        return read_binary(buffer, out_geo);
+        
+        // Auto-detect format
+        bool is_ascii = false;
+        if (size >= 5) {
+            std::string header(buffer.begin(), buffer.begin() + std::min(size, (size_t)80));
+            size_t start = header.find_first_not_of(" \t\r\n");
+            if (start != std::string::npos && start + 5 <= header.size()) {
+                std::string prefix = header.substr(start, 5);
+                for (char& c : prefix) c = (char)std::tolower(c);
+                if (prefix == "solid") {
+                    if (size >= 84) {
+                        uint32_t count = 0;
+                        std::memcpy(&count, buffer.data() + 80, 4);
+                        if (size != 84 + count * 50) {
+                            is_ascii = true;
+                        }
+                    } else {
+                        is_ascii = true;
+                    }
+                }
+            }
+        }
+        
+        if (is_ascii) {
+            std::string text(buffer.begin(), buffer.end());
+            return read_ascii(text, out_geo);
+        } else {
+            if (read_binary(buffer, out_geo)) {
+                return true;
+            }
+            std::string text(buffer.begin(), buffer.end());
+            return read_ascii(text, out_geo);
+        }
     }
 };
 

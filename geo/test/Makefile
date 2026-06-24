@@ -66,7 +66,12 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                rainbow_test.cpp \
                rainbow_visual_test.cpp \
                undercut_test.cpp \
-               undercut_visual_test.cpp
+               undercut_visual_test.cpp \
+               part_line_test.cpp \
+               part_line_visual_test.cpp \
+               part_line_search_test.cpp \
+               mold_split_test.cpp \
+               extrusion_overlap_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
