@@ -25,7 +25,7 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
   1. **Cognitive Limit**: If a file's purpose cannot be described in a single sentence, or if it exceeds ~300 lines, it MUST be refactored.
   2. **Subdirectory Conversion**: "Fat" files MUST be converted into a subdirectory. The new directory must contain a `README.md` index and finer-grained files for discrete tasks.
   3. **Explicit Dependencies**: Logic must be moved into these discrete units to ensure all dependencies are explicitly visible via `include` or `import` statements, rather than hidden by proximity in a large file.
-- **VFS METADATA PURITY (CRITICAL)**: Persistent metadata (`.meta`) MUST ONLY contain whitelisted fields: `state` (AVAILABLE|PENDING), `encoding` (link|json|string|bytes|null), and `selector` (JSON). 
+- **VFS METADATA PURITY (CRITICAL)**: Persistent metadata (`.meta`) MUST ONLY contain whitelisted fields: `state` (AVAILABLE|PENDING), `encoding` (link|json|string|bytes|null), `selector` (JSON), and `filename` (string). 
 - **NO PERSISTENT CONTEXT**: Request-level context (e.g., `expiresAt`, `depth`, `tags`, `stack`) MUST NEVER be saved to disk. The VFS is a data router, not a request logger.
 - **LINK SYMMETRY**: A "Link" is an artifact with `encoding: "link"`. Its `.data` payload is a serialized Selector. The legacy `vfs:/` URI hack and "link-guessing" in raw data are strictly prohibited.
 - **UNAMBIGUOUS RESOLUTION**: The VFS MUST resolve links based on the `encoding` hint in metadata. It MUST NOT perform structural analysis (e.g. checking for a `.path` key) on `json` artifacts to decide whether to resolve them.

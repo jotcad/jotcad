@@ -1,454 +1,147 @@
+#define Z_FEATURE_UNSTABLE_API
 #include "vfs.h"
-#include <ESP8266HTTPClient.h>
-#include <ESP8266WiFi.h>
-#include <WiFiClient.h>
-#include <set>
 #include <ArduinoOTA.h>
 
 namespace fs {
 
-/**
- * VFSResponseWriter Implementation for Reverse Connection
- */
-class ReverseResponseWriter : public VFSResponseWriter {
-public:
-    ReverseResponseWriter(std::function<void(int, const char*, const uint8_t*, size_t)> respond) : respond_(respond) {}
-    void send(int code, const char* contentType, const char* body) override {
-        respond_(code, contentType, (const uint8_t*)body, strlen(body));
-    }
-    void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) override {
-        respond_(code, contentType, data, len);
-    }
-private:
-    std::function<void(int, const char*, const uint8_t*, size_t)> respond_;
+struct ReadSelectorContext {
+    bool done = false;
+    bool success = false;
+    json result_json;
 };
 
-/**
- * ReverseConnection Implementation
- */
-ReverseConnection::ReverseConnection(VFS* node, const std::string& neighbor_id, const std::string& url) 
-    : node_(node), id_(neighbor_id), url_(url) {
-    if (url_.back() == '/') url_.pop_back();
+static void reply_dropper(void *ctx) {
+    ReadSelectorContext* context = static_cast<ReadSelectorContext*>(ctx);
+    context->done = true;
 }
 
-void ReverseConnection::send(const VFSRequest& req) {
-    if (req.op == "PUB") {
-        std::string path = req.selector.path;
-        bool is_binary = (req.binary_payload != nullptr);
+static void reply_handler(z_loaned_reply_t *oreply, void *ctx) {
+    ReadSelectorContext* context = static_cast<ReadSelectorContext*>(ctx);
+    if (z_reply_is_ok(oreply)) {
+        const z_loaned_sample_t *sample = z_reply_ok(oreply);
+        z_loaned_bytes_t const* payload_bytes = z_sample_payload(sample);
         
-        Serial.printf("[Mesh OUT] -> PUB%s: %s to %s\n", is_binary ? " (BINARY)" : "", path.c_str(), id_.c_str());
-        node_->trigger_activity();
-
-        WiFiClient client;
-        HTTPClient http;
-        http.begin(client, (url_ + "/notify").c_str());
-        
-        std::string sel_json = req.selector.to_json().dump();
-        std::string stack_str;
-        for (size_t i = 0; i < req.stack.size(); ++i) {
-            stack_str += req.stack[i];
-            if (i < req.stack.size() - 1) stack_str += ",";
-        }
-
-        http.addHeader("X-VFS-Op", "PUB");
-        http.addHeader("X-VFS-Selector", sel_json.c_str());
-        http.addHeader("X-VFS-Stack", stack_str.c_str());
-        
-        int code;
-        if (is_binary) {
-            http.addHeader("X-VFS-Encoding", "bytes");
-            http.addHeader("Content-Type", "application/octet-stream");
-            code = http.POST((uint8_t*)req.binary_payload, req.binary_len);
-        } else {
-            http.addHeader("X-VFS-Encoding", "json");
-            http.addHeader("Content-Type", "application/json");
-            code = http.POST(req.payload.dump().c_str());
-        }
-
-        if (code != 200) {
-            Serial.printf("[ReverseConn %s] PUB failed: %d\n", id_.c_str(), code);
-        }
-        http.end();
-    } else if (req.op == "SUB") {
-        Serial.printf("[Mesh OUT] -> SUB: %s to %s\n", req.selector.path.c_str(), id_.c_str());
-        node_->trigger_activity();
-
-        WiFiClient client;
-        HTTPClient http;
-        http.begin(client, (url_ + "/subscribe").c_str());
-        
-        std::string sel_json = req.selector.to_json().dump();
-        std::string stack_str;
-        for (size_t i = 0; i < req.stack.size(); ++i) {
-            stack_str += req.stack[i];
-            if (i < req.stack.size() - 1) stack_str += ",";
-        }
-
-        http.addHeader("X-VFS-Op", "SUB");
-        http.addHeader("X-VFS-Selector", sel_json.c_str());
-        http.addHeader("X-VFS-Stack", stack_str.c_str());
-        http.addHeader("X-VFS-Expires", std::to_string(req.expiresAt).c_str());
-        
-        int code = http.POST("");
-        if (code != 200) {
-            Serial.printf("[ReverseConn %s] SUB failed: %d\n", id_.c_str(), code);
-        }
-        http.end();
-    }
-}
-
-void ReverseConnection::tick() {
-
-    unsigned long now = millis();
-    static unsigned long poll_interval = 100;
-    if (now - last_poll_ < poll_interval && last_poll_ != 0) return;
-
-    WiFiClient client;
-    HTTPClient http;
-    http.begin(client, (url_ + "/listen").c_str());
-    http.addHeader("x-vfs-peer-id", node_->id().c_str());
-    
-    const char * headerKeys[] = {"X-VFS-Op", "X-VFS-Selector", "X-VFS-Encoding", "X-VFS-Reply-To", "X-VFS-Stack", "X-VFS-Expires"};
-    http.collectHeaders(headerKeys, 6);
-
-    int code;
-    if (has_reply_) {
-        http.addHeader("X-VFS-Reply-To", reply_to_.c_str());
-        http.addHeader("X-VFS-Encoding", reply_encoding_.c_str());
-        http.addHeader("X-VFS-Selector", reply_selector_b64_.c_str());
-        code = http.POST(reply_body_.data(), reply_body_.size());
-        has_reply_ = false;
-        reply_body_.clear();
-    } else {
-        code = http.GET();
-    }
-
-    if (code == 200) {
-        last_poll_ = millis();
-        std::string op = http.header("X-VFS-Op").c_str();
-        std::string sel_b64 = http.header("X-VFS-Selector").c_str();
-        std::string encoding = http.header("X-VFS-Encoding").c_str();
-        std::string reply_to = http.header("X-VFS-Reply-To").c_str();
-        std::string stack_str = http.header("X-VFS-Stack").c_str();
-
-        if (op.length() > 0) {
-            Serial.printf("[Mesh IN] <- %s from %s\n", op.c_str(), id_.c_str());
-            Selector sel;
-            if (sel_b64.length() > 0) {
-                try {
-                    // Try parsing as JSON first
-                    sel = Selector::from_json(json::parse(sel_b64.c_str()));
-                } catch (...) {
-                    // Fallback to JCB/Base64
-                    try { sel = Selector::from_json(decode_jcb(base64_decode(sel_b64.c_str()))); } catch (...) {}
-                }
-            }
-
-            // Parse Stack for interest tracking
-            std::vector<std::string> stack;
-            size_t pos = 0;
-            while ((pos = stack_str.find(",")) != std::string::npos) {
-                stack.push_back(stack_str.substr(0, pos));
-                stack_str.erase(0, pos + 1);
-            }
-            if (stack_str.length() > 0) stack.push_back(stack_str);
-
-            auto respond = [this, reply_to, sel](int code, const char* ct, const uint8_t* data, size_t len) {
-                this->reply_to_ = reply_to;
-                this->reply_body_.assign(data, data + len);
-                this->reply_content_type_ = ct;
-                this->reply_encoding_ = (strstr(ct, "json") ? "json" : "bytes");
-                this->reply_selector_b64_ = base64_encode(encode_jcb(sel.to_json()));
-                this->has_reply_ = true;
-            };
-
-            if (encoding == "bytes") {
-                int len = http.getSize();
-                std::vector<uint8_t> body(len);
-                http.getStream().readBytes(body.data(), len);
-                node_->handle_binary_command(op, sel, body.data(), len, reply_to, respond);
-            } else {
-                json body = json::parse(http.getString().c_str());
-                if (op == "PUB") {
-                    node_->handle_command(body, respond);
-                } else {
-                    // COMMAND (READ/SUB/etc)
-                    json cmd = {{"type", "COMMAND"}, {"op", op}, {"selector", sel.to_json()}, {"stack", stack}};
-                    if (http.hasHeader("X-VFS-Expires")) cmd["expiresAt"] = atoll(http.header("X-VFS-Expires").c_str());
-                    node_->handle_command(cmd, respond);
+        z_view_slice_t view;
+        if (z_bytes_get_contiguous_view(payload_bytes, &view) >= 0) {
+            const uint8_t* data = view._val.start;
+            size_t len = view._val.len;
+            
+            if (len >= 4) {
+                uint32_t header_len = ((uint32_t)data[0] << 24) |
+                                      ((uint32_t)data[1] << 16) |
+                                      ((uint32_t)data[2] << 8)  |
+                                      ((uint32_t)data[3]);
+                if (4 + header_len <= len) {
+                    std::string header_str((const char*)&data[4], header_len);
+                    try {
+                        json resp_header = json::parse(header_str);
+                        if (resp_header.value("status", 200) == 200) {
+                            size_t payload_offset = 4 + header_len;
+                            size_t payload_len = len - payload_offset;
+                            if (payload_len > 0) {
+                                std::string payload_str((const char*)&data[payload_offset], payload_len);
+                                try {
+                                    context->result_json = json::parse(payload_str);
+                                } catch (...) {
+                                    context->result_json = json(payload_str);
+                                }
+                            }
+                            context->success = true;
+                        }
+                    } catch (...) {}
                 }
             }
         }
     }
-    http.end();
 }
 
-/**
- * WSConnection Implementation
- */
-WSConnection::WSConnection(VFS* node, const std::string& neighbor_id, const std::string& url) 
-    : node_(node), id_(neighbor_id), url_(url) {
-    
-    std::string host = url_;
-    int port = 80;
-    std::string path = "/";
-
-    if (host.find("ws://") == 0) {
-        host = host.substr(5);
-    } else if (host.find("wss://") == 0) {
-        host = host.substr(6);
-        port = 443;
-    }
-
-    size_t path_pos = host.find("/");
-    if (path_pos != std::string::npos) {
-        path = host.substr(path_pos);
-        host = host.substr(0, path_pos);
-    }
-
-    size_t port_pos = host.find(":");
-    if (port_pos != std::string::npos) {
-        port = std::stoi(host.substr(port_pos + 1));
-        host = host.substr(0, port_pos);
-    }
-
-    Serial.printf("[WS %s] Connecting to %s:%d%s\n", id_.c_str(), host.c_str(), port, path.c_str());
-    client_.begin(host.c_str(), port, path.c_str());
-    client_.onEvent([this](WStype_t type, uint8_t * payload, size_t length) {
-        this->on_event(type, payload, length);
-    });
-    client_.setReconnectInterval(5000);
-}
-
-WSConnection::~WSConnection() {
-    client_.disconnect();
-}
-
-void WSConnection::on_event(WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.printf("[WS %s] Disconnected!\n", id_.c_str());
-            connected_ = false;
-            break;
-        case WStype_CONNECTED:
-            Serial.printf("[WS %s] Connected!\n", id_.c_str());
-            connected_ = true;
-            client_.sendTXT(json({{"type", "IDENTIFY"}, {"peerId", node_->id()}}).dump().c_str());
-            break;
-        case WStype_TEXT: {
-            std::string msg((char*)payload, length);
-            try {
-                json frame = json::parse(msg);
-                if (frame.value("hasBinary", false)) {
-                    expecting_binary_header_ = frame;
-                } else {
-                    node_->handle_ws_frame(frame, this);
-                }
-            } catch (...) {}
-            break;
-        }
-        case WStype_BIN: {
-            if (!expecting_binary_header_.empty()) {
-                std::string op = expecting_binary_header_.value("type", "");
-                Selector sel = Selector::from_json(expecting_binary_header_.value("selector", json::object()));
-                if (op == "PUB") {
-                    node_->handle_binary_command("PUB", sel, payload, length, id_, [](int, const char*, const uint8_t*, size_t){});
-                }
-                expecting_binary_header_ = json::object();
-            }
-            break;
-        }
-        default: break;
-    }
-}
-
-void WSConnection::send(const VFSRequest& req) {
-    if (!connected_) return;
-    json frame = {
-        {"type", req.op},
-        {"selector", req.selector.to_json()},
-        {"stack", req.stack},
-        {"expiresAt", req.expiresAt}
-    };
-    if (!req.txId.empty()) frame["txId"] = req.txId;
-    if (req.op == "READ_RESPONSE") {
-        frame["status"] = req.payload.value("status", 200);
-        if (req.payload.contains("metadata")) frame["metadata"] = req.payload["metadata"];
-    }
-
-    if (req.binary_payload) {
-        frame["hasBinary"] = true;
-        client_.sendTXT(frame.dump().c_str());
-        client_.sendBIN((uint8_t*)req.binary_payload, req.binary_len);
-    } else {
-        if (!req.payload.empty()) frame["payload"] = req.payload;
-        client_.sendTXT(frame.dump().c_str());
-    }
-}
-
-void WSConnection::tick() {
-    client_.loop();
-}
-
-/**
- * VFS Implementation
- */
 VFS::VFS(const Config& config) : config_(config) {}
 
-VFS::~VFS() {}
+VFS::~VFS() {
+    for (auto& qable : z_queryables_) {
+        z_queryable_drop(z_queryable_move(&qable));
+    }
+    for (auto& sub : z_subscribers_) {
+        z_subscriber_drop(z_subscriber_move(&sub));
+    }
+    if (connected_) {
+        z_session_drop(z_session_move(&z_session_));
+    }
+}
 
 void VFS::begin() {
-    register_with_neighbors();
-
-    // Initialize ArduinoOTA for over-the-air firmware updates
+    // 1. Initialize ArduinoOTA for over-the-air firmware updates
     ArduinoOTA.setHostname(config_.id.c_str());
-    ArduinoOTA.onStart([]() {
-        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
-        Serial.println("[OTA] Start updating " + type);
-    });
-    ArduinoOTA.onEnd([]() {
-        Serial.println("\n[OTA] End successful");
-    });
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("[OTA] Progress: %u%%\r", (progress / (total / 100)));
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("[OTA] Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-        else if (error == OTA_END_ERROR) Serial.println("End Failed");
-    });
     ArduinoOTA.begin();
     Serial.println("[OTA] Service initialized successfully");
+
+    // 2. Initialize Zenoh Session
+    if (config_.neighbors.empty()) {
+        Serial.println("[VFS] No neighbors configured. Cannot initialize Zenoh session.");
+        return;
+    }
+
+    z_owned_config_t config;
+    z_config_default(&config);
+    zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_MODE_KEY, "client");
+
+    std::string neighbor = config_.neighbors[0];
+    std::string connect_endpoint = neighbor;
+    if (connect_endpoint.rfind("http://", 0) == 0) {
+        connect_endpoint = "tcp/" + connect_endpoint.substr(7);
+    } else if (connect_endpoint.rfind("https://", 0) == 0) {
+        connect_endpoint = "tcp/" + connect_endpoint.substr(8);
+    } else if (connect_endpoint.rfind("tcp/", 0) != 0 && connect_endpoint.rfind("ws/", 0) != 0) {
+        connect_endpoint = "tcp/" + connect_endpoint;
+    }
+
+    Serial.printf("[VFS %s] Connecting to Zenoh locator: %s\n", config_.id.c_str(), connect_endpoint.c_str());
+    zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_CONNECT_KEY, connect_endpoint.c_str());
+
+    // Open Zenoh session
+    if (z_open(&z_session_, z_config_move(&config), NULL) < 0) {
+        Serial.println("[VFS] CRITICAL: Unable to open Zenoh session!");
+        connected_ = false;
+        return;
+    }
+    connected_ = true;
+    Serial.println("[VFS] Zenoh session opened successfully.");
+
+    // 3. Declare operator queryables for all registered handlers
+    for (const auto& [op_path, handler] : handlers_) {
+        std::string key = "jot/vfs/op/" + op_path;
+        Serial.printf("[VFS] Declaring operator queryable on: %s\n", key.c_str());
+
+        z_owned_closure_query_t callback;
+        z_closure_query(&callback, [](z_loaned_query_t* query, void* ctx) {
+            VFS* node = static_cast<VFS*>(ctx);
+            node->handle_query(query);
+        }, NULL, this);
+
+        z_owned_queryable_t queryable;
+        z_view_keyexpr_t ke;
+        z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
+
+        if (z_declare_queryable(z_session_loan(&z_session_), &queryable, z_view_keyexpr_loan(&ke), z_closure_query_move(&callback), NULL) < 0) {
+            Serial.printf("[VFS] Failed to declare operator queryable for: %s\n", key.c_str());
+        } else {
+            z_queryables_.push_back(queryable);
+        }
+    }
 }
 
 void VFS::tick() {
     ArduinoOTA.handle();
 
-    // 1. Periodic Registration Retry (if no peers and we have neighbors configured)
-    static unsigned long last_register_attempt = 0;
-    if (peers_.empty() && !config_.neighbors.empty()) {
-        if (millis() - last_register_attempt > 10000) { // Retry every 10s
-            last_register_attempt = millis();
-            Serial.println("[VFS] No peers. Retrying registration...");
-            register_with_neighbors();
-        }
-    }
-
-    std::vector<std::shared_ptr<Peer>> current_peers;
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        current_peers = peers_;
-    }
-    for (auto& peer : current_peers) {
-        peer->tick();
+    if (connected_) {
+#if Z_FEATURE_MULTI_THREAD == 0
+        zp_spin_once(z_session_loan(&z_session_));
+#endif
     }
 }
 
 void VFS::trigger_activity() {
     led_state_ = !led_state_;
-}
-
-void VFS::register_with_neighbors() {
-    for (const auto& neighbor : config_.neighbors) {
-        WiFiClient client;
-        HTTPClient http;
-        http.begin(client, (neighbor + "/register").c_str());
-        http.addHeader("Content-Type", "application/json");
-        
-        json body = {{"id", config_.id}, {"url", ""}}; 
-        int code = http.POST(body.dump().c_str());
-
-        if (code == 200) {
-            json resp = json::parse(http.getString().c_str());
-            std::string neighbor_id = resp.value("id", neighbor);
-
-            Serial.printf("[VFS %s] Registered with %s\n", config_.id.c_str(), neighbor_id.c_str());
-
-            // WS Upgrade phase
-            bool upgraded = false;
-            if (resp.contains("wsUrl")) {
-                std::string wsUrl = resp["wsUrl"];
-                auto ws_conn = std::make_shared<WSConnection>(this, neighbor_id, wsUrl);
-                add_peer(ws_conn);
-                upgraded = true;
-                Serial.printf("[VFS %s] Upgraded peer %s to WebSocket\n", config_.id.c_str(), neighbor_id.c_str());
-            }
-
-            if (!upgraded) {
-                add_peer(std::make_shared<ReverseConnection>(this, neighbor_id, neighbor));
-            }
-        } else {
-            Serial.printf("[VFS %s] Registration failed: %d\n", config_.id.c_str(), code);
-        }
-        http.end();
-    }
-}
-
-json VFS::get_topology_payload() {
-    json neighbors = json::array();
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        for (auto const& p : peers_) {
-            neighbors.push_back({
-                {"id", p->id()},
-                {"reachability", p->reachability()},
-                {"protocol", p->protocol()}
-            });
-        }
-    }
-
-    json activeInterests = json::array();
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        for (auto const& [topic, subs] : interests_) {
-            bool has_remote = false;
-            for (auto const& [neighbor_id, expiry] : subs) {
-                // Approximate expiry check (assuming 60s window)
-                has_remote = true; 
-                break;
-            }
-            if (has_remote && interest_selectors_.count(topic)) {
-                activeInterests.push_back({
-                    {"path", interest_selectors_[topic]["path"]},
-                    {"local", false},
-                    {"remote", true}
-                });
-            }
-        }
-    }
-
-    return {{"id", config_.id}, {"neighbors", neighbors}, {"interests", activeInterests}};
-}
-
-void VFS::add_peer(std::shared_ptr<Peer> peer) {
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        peers_.push_back(peer);
-    }
-    notify(Selector("sys/topo"), get_topology_payload());
-}
-
-void VFS::upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> ws_conn) {
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        for (auto it = peers_.begin(); it != peers_.end(); ++it) {
-            if ((*it)->id() == peer_id) {
-                peers_.erase(it);
-                break;
-            }
-        }
-        peers_.push_back(ws_conn);
-    }
-    Serial.printf("[VFS] Peer %s upgraded to WebSocket!\n", peer_id.c_str());
-    notify(Selector("sys/topo"), get_topology_payload());
-}
-
-void VFS::clear_peers() {
-    std::lock_guard<Mutex> lock(mesh_mutex_);
-    peers_.clear();
 }
 
 void VFS::register_op(const std::string& path, Handler handler, const json& schema) {
@@ -457,249 +150,249 @@ void VFS::register_op(const std::string& path, Handler handler, const json& sche
 }
 
 void VFS::on_notification(const std::string& path, NotificationHandler handler) {
-    notification_handlers_[path] = handler;
-}
+    if (!connected_) return;
 
-void VFS::log_status() {
-    std::lock_guard<Mutex> lock(mesh_mutex_);
-    Serial.printf("[VFS %s] Mesh Status: %zu Peers, %zu Interests\n", config_.id.c_str(), peers_.size(), interests_.size());
-    for (auto const& peer : peers_) {
-        Serial.printf(" - Peer: %s (%s, %s)\n", peer->id().c_str(), peer->protocol().c_str(), peer->reachability().c_str());
-    }
-    for (auto const& [topic, subs] : interests_) {
-        if (interest_selectors_.count(topic)) {
-            Serial.printf(" - Sub: %s (%zu neighbors)\n", interest_selectors_[topic]["path"].get<std::string>().c_str(), subs.size());
-        }
-    }
-}
+    std::string key = "jot/vfs/pub/" + path;
+    Serial.printf("[VFS] Subscribing to notification topic: %s\n", key.c_str());
 
-void VFS::handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
-    std::string type = cmd.value("type", "unknown");
-    if (type == "PUB") {
-        Selector sel = Selector::from_json(cmd.value("selector", json::object()));
-        json payload = cmd.value("payload", json::object());
+    auto* ctx_handler = new NotificationHandler(handler);
+
+    z_owned_closure_sample_t callback;
+    z_closure_sample(&callback, [](z_loaned_sample_t* sample, void* ctx) {
+        NotificationHandler* h = static_cast<NotificationHandler*>(ctx);
         
-        Serial.printf("[Mesh IN] <- PUB Update: %s\n", sel.path.c_str());
+        z_view_string_t keystr;
+        z_keyexpr_as_view_string(z_sample_keyexpr(sample), &keystr);
+        std::string full_key(z_string_data(z_view_string_loan(&keystr)), z_string_len(z_view_string_loan(&keystr)));
         
-        // Trigger local handlers
-        if (notification_handlers_.count(sel.path)) {
-            notification_handlers_[sel.path](sel, payload);
-        }
-
-        notify(sel, payload);
-        respond(200, "text/plain", (const uint8_t*)"OK", 2);
-    } else if (type == "SUB") {
-        Selector sel = Selector::from_json(cmd.value("selector", json::object()));
-        long long expiresAt = cmd.value("expiresAt", 0LL);
-        std::vector<std::string> stack;
-        if (cmd.contains("stack")) {
-            for (auto const& s : cmd["stack"]) stack.push_back(s.get<std::string>());
-        }
-        this->subscribe(sel, expiresAt, stack);
-        respond(200, "text/plain", (const uint8_t*)"OK", 2);
-    }
-}
-
-class WSResponseWriter : public VFSResponseWriter {
-public:
-    WSResponseWriter(WSConnection* conn, const std::string& txId) : conn_(conn), txId_(txId) {}
-    void send(int code, const char* contentType, const char* body) override {
-        auto req = std::make_unique<VFSRequest>();
-        req->op = "READ_RESPONSE";
-        req->txId = txId_;
-        req->payload = {{"status", code}};
-        try { req->payload["data"] = json::parse(body); } catch(...) { req->payload["data"] = body; }
-        conn_->send(*req);
-    }
-    void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) override {
-        auto req = std::make_unique<VFSRequest>();
-        req->op = "READ_RESPONSE";
-        req->txId = txId_;
-        req->payload = {{"status", code}};
-        req->binary_payload = data;
-        req->binary_len = len;
-        conn_->send(*req);
-    }
-private:
-    WSConnection* conn_;
-    std::string txId_;
-};
-
-void VFS::handle_ws_frame(const json& frame, WSConnection* conn) {
-    std::string type = frame.value("type", "");
-    if (type == "READ" || type == "READ_SELECTOR" || type == "READ_CID") {
-        Selector sel = Selector::from_json(frame.value("selector", json::object()));
-        std::string tx_id = frame.value("txId", "");
+        std::string topic_path = (full_key.length() > 12) ? full_key.substr(12) : full_key;
         
-        Handler handler = nullptr;
-        {
-            std::lock_guard<Mutex> lock(mesh_mutex_);
-            if (handlers_.count(sel.path)) handler = handlers_[sel.path];
-        }
+        z_owned_string_t payload_str;
+        z_bytes_to_string(z_sample_payload(sample), &payload_str);
+        std::string raw_msg(z_string_data(z_string_loan(&payload_str)), z_string_len(z_string_loan(&payload_str)));
+        z_string_drop(z_string_move(&payload_str));
 
-        if (handler) {
-            WSResponseWriter resp(conn, tx_id);
-            handler(sel.parameters, &resp);
+        try {
+            json payload = json::parse(raw_msg);
+            (*h)(Selector(topic_path), payload);
+        } catch (...) {
+            (*h)(Selector(topic_path), json(raw_msg));
         }
-    } else if (type == "PUB") {
-        handle_command(frame, [](int, const char*, const uint8_t*, size_t){});
-    } else if (type == "SUB") {
-        handle_command(frame, [](int, const char*, const uint8_t*, size_t){});
-    }
-}
+    }, [](void* ctx) {
+        delete static_cast<NotificationHandler*>(ctx);
+    }, ctx_handler);
 
-void VFS::handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond) {
-    if (op == "PUB") {
-        Serial.printf("[Mesh IN] <- Sovereign Binary PUB: %s (%zu bytes)\n", sel.path.c_str(), len);
-        notify_binary(sel.to_json(), data, len, {replyTo});
-        respond(200, "text/plain", (const uint8_t*)"OK", 2);
+    z_owned_subscriber_t sub;
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
+
+    if (z_declare_subscriber(z_session_loan(&z_session_), &sub, z_view_keyexpr_loan(&ke), z_closure_sample_move(&callback), NULL) < 0) {
+        Serial.printf("[VFS] Failed to declare subscriber for: %s\n", key.c_str());
+        delete ctx_handler;
+    } else {
+        z_subscribers_.push_back(sub);
     }
 }
 
 int VFS::notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack) {
-    if (!has_feature(VFS_PUBLICATION)) return 0;
+    if (!connected_) return 0;
 
-    static bool is_notifying = false;
-    if (is_notifying) return 0;
-    is_notifying = true;
+    std::string key = "jot/vfs/pub/" + sel.path;
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
 
-    std::string path = sel.path;
-    std::vector<std::shared_ptr<Peer>> current_peers;
-    std::set<std::string> target_peer_ids;
+    std::string payload_str = payload.dump();
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, (const uint8_t*)payload_str.data(), payload_str.size());
 
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        // Protocol Rule: Match by path for sensor updates to tolerate normalization differences
-        if (interests_.count(path)) {
-             for (auto const& [peer_id, expiry] : interests_[path]) {
-                target_peer_ids.insert(peer_id);
-             }
-        }
-        current_peers = peers_;
-    }
+    z_put_options_t opts;
+    z_put_options_default(&opts);
 
-    if (target_peer_ids.empty()) {
-        is_notifying = false;
+    if (z_put(z_session_loan(&z_session_), z_view_keyexpr_loan(&ke), z_bytes_move(&bytes), &opts) < 0) {
+        Serial.printf("[VFS] Failed to put notification for: %s\n", key.c_str());
         return 0;
     }
-
-    auto req = std::make_unique<VFSRequest>();
-    req->op = "PUB";
-    req->selector = sel;
-    req->payload = payload;
-    req->stack = stack;
-    if (req->stack.empty()) req->stack.push_back(config_.id);
-    else if (std::find(req->stack.begin(), req->stack.end(), config_.id) == req->stack.end()) {
-        req->stack.push_back(config_.id);
-    }
-
-    int count = 0;
-    for (auto& peer : current_peers) {
-        if (target_peer_ids.count(peer->id())) {
-            if (std::find(stack.begin(), stack.end(), peer->id()) != stack.end()) continue;
-            trigger_activity();
-            peer->send(*req);
-            count++;
-        }
-    }
-    is_notifying = false;
-    return count;
+    return 1;
 }
 
 int VFS::notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
-    if (!has_feature(VFS_PUBLICATION)) return 0;
+    if (!connected_) return 0;
 
-    std::string path = sel.path;
-    std::vector<std::shared_ptr<Peer>> current_peers;
-    std::set<std::string> target_peer_ids;
+    std::string key = "jot/vfs/pub/" + sel.path;
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
 
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        if (interests_.count(path)) {
-            for (auto const& [peer_id, expiry] : interests_[path]) {
-                target_peer_ids.insert(peer_id);
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, data, len);
+
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+
+    if (z_put(z_session_loan(&z_session_), z_view_keyexpr_loan(&ke), z_bytes_move(&bytes), &opts) < 0) {
+        Serial.printf("[VFS] Failed to put notification for: %s\n", key.c_str());
+        return 0;
+    }
+    return 1;
+}
+
+json VFS::read_selector(const Selector& sel) {
+    std::string key = "jot/vfs/op/" + sel.path;
+    
+    std::string query_params = "";
+    bool first = true;
+    for (auto it = sel.parameters.begin(); it != sel.parameters.end(); ++it) {
+        if (!first) query_params += ";";
+        first = false;
+        query_params += it.key() + "=";
+        std::string val;
+        if (it.value().is_string()) val = it.value().get<std::string>();
+        else val = it.value().dump();
+        
+        std::string encoded = "";
+        for (char c : val) {
+            if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                encoded += c;
+            } else {
+                char hex[4];
+                std::snprintf(hex, sizeof(hex), "%%%02X", (unsigned char)c);
+                encoded += hex;
             }
         }
-        current_peers = peers_;
+        query_params += encoded;
     }
-
-    if (target_peer_ids.empty()) return 0;
-
-    auto req = std::make_unique<VFSRequest>();
-    req->op = "PUB";
-    req->selector = sel;
-    req->binary_payload = data;
-    req->binary_len = len;
-    req->stack = stack;
-    if (req->stack.empty()) req->stack.push_back(config_.id);
-    else if (std::find(req->stack.begin(), req->stack.end(), config_.id) == req->stack.end()) {
-        req->stack.push_back(config_.id);
+    if (!sel.output.empty()) {
+        if (!first) query_params += ";";
+        query_params += "output=" + sel.output;
     }
+    
+    ReadSelectorContext context;
+    z_get_options_t opts;
+    z_get_options_default(&opts);
+    opts.timeout_ms = 5000;
+    
+    z_owned_closure_reply_t callback;
+    z_closure_reply(&callback, reply_handler, reply_dropper, &context);
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
+    
+    if (!connected_) return json();
+    
+    if (z_get(z_session_loan(&z_session_), z_view_keyexpr_loan(&ke), query_params.c_str(), z_closure_reply_move(&callback), &opts) < 0) {
+        Serial.println("[VFS] Failed to send z_get query");
+        return json();
+    }
+    
+    unsigned long start_ms = millis();
+    while (!context.done && millis() - start_ms < 6000) {
+#if Z_FEATURE_MULTI_THREAD == 0
+        zp_spin_once(z_session_loan(&z_session_));
+#endif
+        delay(10);
+    }
+    
+    if (context.success) {
+        return context.result_json;
+    } else {
+        Serial.println("[VFS] read_selector failed to get valid reply");
+        return json();
+    }
+}
 
-    int count = 0;
-    for (auto& peer : current_peers) {
-        if (target_peer_ids.count(peer->id())) {
-            if (std::find(stack.begin(), stack.end(), peer->id()) != stack.end()) continue;
-            trigger_activity();
-            peer->send(*req);
-            count++;
+void VFS::handle_query(z_loaned_query_t* query) {
+    z_view_string_t key_string;
+    z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
+    std::string key(z_string_data(z_view_string_loan(&key_string)), z_string_len(z_view_string_loan(&key_string)));
+
+    std::string op_path = (key.length() > 11) ? key.substr(11) : key;
+
+    z_view_string_t params_str;
+    z_query_parameters(query, &params_str);
+    std::string params_raw(z_string_data(z_view_string_loan(&params_str)), z_string_len(z_view_string_loan(&params_str)));
+
+    json params = json::object();
+    std::stringstream ss(params_raw);
+    std::string item;
+    while (std::getline(ss, item, ';')) {
+        size_t eq = item.find('=');
+        if (eq != std::string::npos) {
+            std::string k = item.substr(0, eq);
+            std::string val_encoded = item.substr(eq + 1);
+            std::string val = "";
+            for (size_t i = 0; i < val_encoded.length(); ++i) {
+                if (val_encoded[i] == '%') {
+                    if (i + 2 < val_encoded.length()) {
+                        char hex[3] = { val_encoded[i+1], val_encoded[i+2], 0 };
+                        val += (char)std::strtol(hex, nullptr, 16);
+                        i += 2;
+                    }
+                } else if (val_encoded[i] == '+') {
+                    val += ' ';
+                } else {
+                    val += val_encoded[i];
+                }
+            }
+
+            try {
+                params[k] = json::parse(val);
+            } catch (...) {
+                params[k] = val;
+            }
         }
     }
-    return count;
-}
 
-void VFS::subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack) {
-    if (!has_feature(VFS_SUBSCRIPTION)) return;
-    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
-
-    std::string path = sel.path;
-    std::string remote_id = stack.empty() ? "local" : stack.back();
-    
-    bool is_new_interest = false;
-    std::vector<std::shared_ptr<Peer>> current_peers;
-    {
-        std::lock_guard<Mutex> lock(mesh_mutex_);
-        if (interests_[path].count(remote_id) == 0) is_new_interest = true;
-        interests_[path][remote_id] = expiresAt;
-        interest_selectors_[path] = sel.to_json();
-        current_peers = peers_;
-    }
-
-    if (is_new_interest) {
-        notify(Selector("sys/topo"), get_topology_payload());
-    }
-
-    // If someone subscribed to sys/ota, immediately publish our update info to satisfy it
-    if (path == "sys/ota" && WiFi.status() == WL_CONNECTED) {
-        json payload = {
-            {"id", config_.id},
-            {"ip", WiFi.localIP().toString().c_str()}
+    if (handlers_.count(op_path)) {
+        class ZenohResponseWriter : public VFSResponseWriter {
+        public:
+            ZenohResponseWriter(z_loaned_query_t* q) : query_(q) {}
+            void send(int code, const char* contentType, const char* body) override {
+                json resp_header = {
+                    {"status", code},
+                    {"metadata", {{"state", "AVAILABLE"}, {"encoding", "json"}}},
+                    {"encoding", "json"}
+                };
+                
+                std::string payload_str = body;
+                std::vector<uint8_t> payload_bytes(payload_str.begin(), payload_str.end());
+                std::vector<uint8_t> record = encode(resp_header, payload_bytes);
+                
+                z_owned_bytes_t reply_payload;
+                z_bytes_from_buf(&reply_payload, record.data(), record.size(), NULL, NULL);
+                z_query_reply(query_, z_query_keyexpr(query_), z_bytes_move(&reply_payload), NULL);
+            }
+            void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) override {
+                json resp_header = {
+                    {"status", code},
+                    {"metadata", {{"state", "AVAILABLE"}, {"encoding", "bytes"}}},
+                    {"encoding", "bytes"}
+                };
+                
+                std::vector<uint8_t> payload_bytes(data, data + len);
+                std::vector<uint8_t> record = encode(resp_header, payload_bytes);
+                
+                z_owned_bytes_t reply_payload;
+                z_bytes_from_buf(&reply_payload, record.data(), record.size(), NULL, NULL);
+                z_query_reply(query_, z_query_keyexpr(query_), z_bytes_move(&reply_payload), NULL);
+            }
+        private:
+            std::vector<uint8_t> encode(const json& header, const std::vector<uint8_t>& payload) {
+                std::string header_str = header.dump();
+                uint32_t header_len = header_str.length();
+                std::vector<uint8_t> record;
+                record.reserve(4 + header_len + payload.size());
+                record.push_back((header_len >> 24) & 0xFF);
+                record.push_back((header_len >> 16) & 0xFF);
+                record.push_back((header_len >> 8) & 0xFF);
+                record.push_back(header_len & 0xFF);
+                record.insert(record.end(), header_str.begin(), header_str.end());
+                record.insert(record.end(), payload.begin(), payload.end());
+                return record;
+            }
+            z_loaned_query_t* query_;
         };
-        notify(sel, payload);
+
+        ZenohResponseWriter writer(query);
+        handlers_[op_path](params, &writer);
     }
-
-    if (!is_new_interest) return;
-
-    auto req = std::make_unique<VFSRequest>();
-    req->op = "SUB";
-    req->selector = sel;
-    req->expiresAt = expiresAt;
-    req->stack = stack;
-    req->stack.push_back(config_.id);
-
-    for (auto& peer : current_peers) {
-        if (std::find(stack.begin(), stack.end(), peer->id()) != stack.end()) continue;
-        trigger_activity();
-        peer->send(*req);
-    }
-}
-
-std::string VFS::neighbor_url_from_peer_id(const std::string& peer_id) {
-    std::lock_guard<Mutex> lock(mesh_mutex_);
-    for (const auto& neighbor : config_.neighbors) {
-        if (neighbor.find(peer_id) != std::string::npos) return neighbor;
-    }
-    return "";
 }
 
 } // namespace fs

@@ -112,12 +112,14 @@ To prevent "zombie" requests from clogging the mesh:
 
 ## 4. Node Types & Registry
 
-The system utilizes two primary node implementations:
+The system utilizes three primary node implementations:
 
 - **C++ Native Node (`bin/ops`):** High-performance geometry provisioning using
   CGAL and `httplib`.
 - **Node.js Native Node:** Orchestration and Export services using `VFS` and
   `MeshLink` classes.
+- **Embedded IoT Nodes (ESP32 / ESP8266):** PlatformIO C++ VFS clients running
+  `zenoh-pico` for low-overhead pub/sub/queries over TCP.
 
 ## 5. Deployment Topology
 
@@ -165,18 +167,14 @@ implements a **Hop-by-Hop Pub-Sub** system.
 | **Formal Links**         | [DONE] | Recursive alias resolution for semantic standardization.|
 | **Reverse Tunneling**    | [DONE] | Encapsulated poll-loop in ReverseConnection.          |
 | **Identity Sovereignty** | [DONE] | Unique session IDs with 409 zombie detection.         |
+| **IoT Client Nodes**     | [DONE] | PlatformIO Zenoh-pico integration for ESP32/ESP8266.   |
 
 ## 8. Aspirational Goals
 
-### 8.1. Resource-Constrained Nodes (ESP/Microcontrollers)
+### 8.1. Resource-Constrained Nodes (ESP/Microcontrollers) [DONE]
 
-A primary long-term goal is to extend the JotCAD mesh to **Microcontroller-based
-nodes** (e.g., ESP32).
+The JotCAD mesh has been successfully extended to microcontroller-based nodes (ESP32 and ESP8266) using Eclipse Zenoh (`zenoh-pico`).
 
-- **Footprint:** The VFS and MeshLink logic must be optimized for extremely low
-  memory (RAM) and limited flash storage.
-- **Protocol Efficiency:** Implementation of a "Tiny Mesh" subset of the
-  protocol, potentially utilizing binary serialization or stripped-down HTTP to
-  minimize overhead.
-- **Hardware Integration:** Allowing hardware-level devices (CNC controllers,
-  sensors) to act as leaf providers or observers within the geometric mesh.
+- **Footprint:** The VFS and network logic compile under 10KB RAM (using custom memory-safe structures and bypasses for C++ limitations of `_Generic` macros).
+- **Protocol Efficiency:** Utilizes Zenoh sessions, queries, queryables, and subscription propagation to minimize network overhead and avoid HTTP/WebSocket polling.
+- **Hardware Integration:** Devices can register operator handlers (`register_op`), publish notifications (`notify`), and run cooperative scheduler spins (`zp_spin_once` on ESP8266).
