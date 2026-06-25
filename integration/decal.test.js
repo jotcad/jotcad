@@ -37,7 +37,7 @@ test('jot/decal - 3D wrapping on cube', { timeout: 60000 }, async (t) => {
     id: 'decal-integration-node',
     storage: new MemoryStorage(),
   });
-  mesh = new MeshLink(vfs, [OPS_URL]);
+  mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
   await vfs.init();
   await mesh.start();
 

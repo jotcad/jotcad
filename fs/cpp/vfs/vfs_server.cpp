@@ -1,393 +1,445 @@
 #include "../vfs_node.h"
 #include "../cid.h"
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-#include "../vendor/httplib.h"
+#include <zenoh.h>
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <mutex>
+#include <condition_variable>
+#include <sstream>
+#include <iomanip>
+#include <list>
 
 namespace fs {
 
+#ifndef ZENOH_STATE_DEFINED
+#define ZENOH_STATE_DEFINED
+struct ZenohState {
+    z_owned_session_t session;
+    std::vector<z_owned_queryable_t> queryable_ops;
+    z_owned_queryable_t queryable_cid;
+    z_owned_queryable_t queryable_catalog;
+    std::list<std::string> queryable_keys;
+    bool running = false;
+    std::mutex mutex;
+    std::condition_variable cv;
+};
+#endif
 
+// URL Decoder helper
+static std::string url_decode(const std::string& val) {
+    std::string decoded = "";
+    for (size_t i = 0; i < val.length(); ++i) {
+        if (val[i] == '%' && i + 2 < val.length()) {
+            char hex[3] = { val[i+1], val[i+2], 0 };
+            decoded += (char)std::strtol(hex, nullptr, 16);
+            i += 2;
+        } else if (val[i] == '+') {
+            decoded += ' ';
+        } else {
+            decoded += val[i];
+        }
+    }
+    return decoded;
+}
+
+// URL Parameter Parser helper with schema awareness
+static json parse_query_params(const std::string& query, const std::map<std::string, std::string>& arg_types, std::string& output_out, long long& expiresAt_out) {
+    json params = json::object();
+    std::stringstream ss(query);
+    std::string item;
+    while (std::getline(ss, item, ';')) {
+        size_t eq = item.find('=');
+        if (eq != std::string::npos) {
+            std::string key = item.substr(0, eq);
+            std::string val = url_decode(item.substr(eq + 1));
+            if (key == "output") {
+                output_out = val;
+            } else if (key == "expiresAt") {
+                try {
+                    expiresAt_out = std::stoll(val);
+                } catch (...) {
+                    expiresAt_out = 0;
+                }
+            } else {
+                bool is_string = false;
+                if (arg_types.count(key)) {
+                    std::string type = arg_types.at(key);
+                    if (type == "jot:string" || type == "string") {
+                        is_string = true;
+                    }
+                }
+
+                if (is_string) {
+                    params[key] = val;
+                } else {
+                    try {
+                        params[key] = json::parse(val);
+                    } catch (...) {
+                        params[key] = val;
+                    }
+                }
+            }
+        }
+    }
+    return params;
+}
+
+// Zero-copy vector deleter for Zenoh bytes
+static void delete_vector_u8(void* data, void* context) {
+    delete static_cast<std::vector<uint8_t>*>(context);
+}
+
+// Operator Query Handler
+static void query_handler_op(z_loaned_query_t* query, void* context) {
+    VFSNode* node = static_cast<VFSNode*>(context);
+    
+    // Extract key expression
+    z_view_string_t key_string;
+    z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
+    std::string key(z_string_data(z_loan(key_string)), z_string_len(z_loan(key_string)));
+    
+    // Extract parameters
+    z_view_string_t params_str;
+    z_query_parameters(query, &params_str);
+    std::string params(z_string_data(z_loan(params_str)), z_string_len(z_loan(params_str)));
+    std::cout << "[VFS Server] Raw parameters string received: " << params << std::endl;
+
+    // Strip "jot/vfs/op/" prefix (length 11) to match registered paths
+    std::string op_path = (key.length() > 11) ? key.substr(11) : key;
+
+    // Look up schema to extract argument types
+    std::map<std::string, std::string> arg_types;
+    {
+        std::lock_guard<std::mutex> lock(node->handlers_mutex_);
+        if (node->schemas_.count(op_path)) {
+            const auto& schema = node->schemas_[op_path];
+            if (schema.contains("arguments") && schema["arguments"].is_array()) {
+                for (const auto& arg : schema["arguments"]) {
+                    if (arg.contains("name") && arg["name"].is_string() && arg.contains("type") && arg["type"].is_string()) {
+                        arg_types[arg["name"].get<std::string>()] = arg["type"].get<std::string>();
+                    }
+                }
+            }
+        }
+    }
+
+    z_owned_query_t query_owned;
+    z_query_clone(&query_owned, query);
+
+    std::thread([node, query_owned = std::move(query_owned), op_path, key, params, arg_types]() mutable {
+        try {
+            VFSNode::VFSRequest req;
+            req.op = "READ_SELECTOR";
+            std::string output = "";
+            long long expiresAt = 0;
+            json parsed_params = parse_query_params(params, arg_types, output, expiresAt);
+            req.selector = Selector(op_path, parsed_params, output);
+            req.selector.validate();
+            req.expiresAt = expiresAt;
+            req.localOnly = true; // Queryable handler only services local resources
+            
+            // Execute the handler
+            VFSResult result = node->read<VFSResult>(req);
+            
+            json resp_header = {
+                {"status", 200},
+                {"metadata", result.metadata},
+                {"encoding", result.metadata.value("encoding", "json")}
+            };
+            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, result.data));
+            
+            z_owned_bytes_t reply_payload;
+            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+            
+            z_query_reply_options_t options;
+            z_query_reply_options_default(&options);
+            
+            z_view_keyexpr_t reply_keyexpr;
+            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            
+            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        } catch (const VFSException& e) {
+            if (e.code == 404) {
+                std::cout << "[VFS Server] query_handler_op not found locally for path: '" << op_path << "'. Silently ignoring to let other nodes reply." << std::endl;
+                z_drop(z_move(query_owned));
+                return;
+            }
+            std::string err_msg = "[" + node->config_.id + "] " + e.what();
+            json resp_header = {
+                {"status", e.code},
+                {"error", err_msg},
+                {"metadata", {{"state", "ERROR"}}},
+                {"encoding", "json"}
+            };
+            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header));
+            z_owned_bytes_t reply_payload;
+            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+            
+            z_query_reply_options_t options;
+            z_query_reply_options_default(&options);
+            z_view_keyexpr_t reply_keyexpr;
+            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        } catch (const std::exception& e) {
+            std::string err_msg = "[" + node->config_.id + "] " + e.what();
+            json resp_header = {
+                {"status", 500},
+                {"error", err_msg},
+                {"metadata", {{"state", "ERROR"}}},
+                {"encoding", "json"}
+            };
+            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header));
+            z_owned_bytes_t reply_payload;
+            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+            
+            z_query_reply_options_t options;
+            z_query_reply_options_default(&options);
+            z_view_keyexpr_t reply_keyexpr;
+            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        }
+        z_drop(z_move(query_owned));
+    }).detach();
+}
+
+// Content (CID) Query Handler
+static void query_handler_cid(z_loaned_query_t* query, void* context) {
+    VFSNode* node = static_cast<VFSNode*>(context);
+    
+    z_view_string_t key_string;
+    z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
+    std::string key(z_string_data(z_loan(key_string)), z_string_len(z_loan(key_string)));
+
+    // Strip "jot/vfs/cid/" prefix (length 12) to get raw CID
+    std::string cid = (key.length() > 12) ? key.substr(12) : key;
+
+    z_owned_query_t query_owned;
+    z_query_clone(&query_owned, query);
+
+    std::thread([node, query_owned = std::move(query_owned), cid, key]() mutable {
+        try {
+            VFSNode::VFSRequest req;
+            req.op = "READ_CID";
+            req.cid = cid;
+            req.localOnly = true; // Queryable handler only services local resources
+
+            VFSResult result = node->read<VFSResult>(req);
+            
+            json resp_header = {
+                {"status", 200},
+                {"metadata", result.metadata},
+                {"encoding", result.metadata.value("encoding", "json")}
+            };
+            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, result.data));
+            
+            z_owned_bytes_t reply_payload;
+            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+            
+            z_query_reply_options_t options;
+            z_query_reply_options_default(&options);
+            
+            z_view_keyexpr_t reply_keyexpr;
+            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            
+            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        } catch (const VFSException& e) {
+            if (e.code == 404) {
+                std::cout << "[VFS Server] query_handler_cid not found locally for CID: '" << cid << "'. Silently ignoring to let other nodes reply." << std::endl;
+                z_drop(z_move(query_owned));
+                return;
+            }
+            std::cout << "[VFS Server] VFSException in query_handler_cid: " << e.what() << std::endl;
+            std::string err_msg = "[" + node->config_.id + "] " + e.what();
+            json resp_header = {
+                {"status", e.code},
+                {"error", err_msg},
+                {"metadata", {{"state", "ERROR"}}},
+                {"encoding", "json"}
+            };
+            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header));
+            z_owned_bytes_t reply_payload;
+            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+            
+            z_query_reply_options_t options;
+            z_query_reply_options_default(&options);
+            z_view_keyexpr_t reply_keyexpr;
+            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        } catch (const std::exception& e) {
+            std::cout << "[VFS Server] Exception in query_handler_cid: " << e.what() << std::endl;
+            std::string err_msg = "[" + node->config_.id + "] " + e.what();
+            json resp_header = {
+                {"status", 500},
+                {"error", err_msg},
+                {"metadata", {{"state", "ERROR"}}},
+                {"encoding", "json"}
+            };
+            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header));
+            z_owned_bytes_t reply_payload;
+            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+            
+            z_query_reply_options_t options;
+            z_query_reply_options_default(&options);
+            z_view_keyexpr_t reply_keyexpr;
+            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        }
+        z_drop(z_move(query_owned));
+    }).detach();
+}
+
+static void query_handler_catalog(z_loaned_query_t* query, void* context) {
+    auto* node = static_cast<VFSNode*>(context);
+    z_view_string_t key_string;
+    z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
+    std::string key(z_string_data(z_loan(key_string)), z_string_len(z_loan(key_string)));
+
+    z_owned_query_t query_owned;
+    z_query_clone(&query_owned, query);
+
+    std::thread([node, query_owned = std::move(query_owned), key]() mutable {
+        try {
+            json catalog = node->get_catalog();
+            json resp_header = {
+                {"status", 200},
+                {"metadata", {{"state", "AVAILABLE"}, {"encoding", "json"}}},
+                {"encoding", "json"}
+            };
+            std::string payload_str = catalog.dump();
+            std::vector<uint8_t> payload_bytes(payload_str.begin(), payload_str.end());
+            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, payload_bytes));
+            
+            z_owned_bytes_t reply_payload;
+            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+            
+            z_query_reply_options_t options;
+            z_query_reply_options_default(&options);
+            
+            z_view_keyexpr_t reply_keyexpr;
+            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            
+            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        } catch (...) {}
+        z_drop(z_move(query_owned));
+    }).detach();
+}
 
 void VFSNode::listen() {
-    httplib::Server* svr = nullptr;
-    bool is_ssl = !config_.cert_path.empty() && !config_.key_path.empty();
-
-    if (is_ssl) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-        svr = new httplib::SSLServer(config_.cert_path.c_str(), config_.key_path.c_str());
-        std::cout << "[VFSNode " << config_.id << "] Using SSL with cert: " << config_.cert_path << std::endl;
-#else
-        std::cerr << "[VFSNode " << config_.id << "] CRITICAL: SSL requested but CPPHTTPLIB_OPENSSL_SUPPORT is not defined. Falling back to HTTP." << std::endl;
-        svr = new httplib::Server();
-        is_ssl = false;
-#endif
-    } else {
-        svr = new httplib::Server();
+    std::cout << "[VFSNode " << config_.id << "] Initializing Zenoh Session..." << std::endl;
+    
+    // Construct configuration JSON dynamically
+    std::string json_str = "{";
+    json_str += "\"listen\": {\"endpoints\": [\"tcp/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
+    if (!config_.neighbors.empty()) {
+        json_str += ", \"connect\": {\"endpoints\": [";
+        for (size_t i = 0; i < config_.neighbors.size(); ++i) {
+            std::string n = config_.neighbors[i];
+            if (n.rfind("http://", 0) == 0) {
+                n = "tcp/" + n.substr(7);
+            } else if (n.rfind("https://", 0) == 0) {
+                n = "tcp/" + n.substr(8);
+            }
+            json_str += (i == 0 ? "" : ", ") + ("\"" + n + "\"");
+        }
+        json_str += "]}";
     }
-    server_ptr_ = svr;
+    json_str += "}";
 
-    svr->set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, X-Requested-With, X-VFS-Peer-Id, X-VFS-Reply-To, X-VFS-Id, X-VFS-Info, X-VFS-Op, X-VFS-Selector, X-VFS-Encoding, X-VFS-Stack, X-VFS-Expires"},
-        {"Access-Control-Expose-Headers", "X-VFS-Info, X-VFS-Id, X-VFS-Peer-Id, X-VFS-Op, X-VFS-Selector, X-VFS-Encoding, X-VFS-Stack, X-VFS-Expires, X-VFS-Reply-To"}
-    });
-
-    svr->Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
-        res.status = 200;
-    });
-
-    svr->Get("/health", [this](const httplib::Request&, httplib::Response& res) {
-        res.set_content(json({{"status", "OK"}, {"id", config_.id}}).dump(), "application/json");
-    });
-
-    svr->Get("/catalog", [this](const httplib::Request&, httplib::Response& res) {
-        res.set_content(get_catalog().dump(), "application/json");
-    });
-
-    svr->Post("/register", [this, is_ssl](const httplib::Request& req, httplib::Response& res) {
-        try {
-            std::string peerId;
-            std::string url;
-
-            if (!req.body.empty()) {
-                try {
-                    json body = json::parse(req.body);
-                    if (body.contains("id")) peerId = body["id"];
-                    else if (body.contains("peerId")) peerId = body["peerId"];
-                    if (body.contains("url")) url = body["url"];
-                } catch (...) {}
-            }
-
-            if (peerId.empty() || url.empty()) {
-                auto get_param = [&](const std::string& key) {
-                    if (req.has_param(key)) return req.get_param_value(key);
-                    size_t pos = req.target.find("?");
-                    if (pos != std::string::npos) {
-                        std::string query = req.target.substr(pos + 1);
-                        size_t kpos = query.find(key + "=");
-                        if (kpos != std::string::npos) {
-                            size_t vpos = kpos + key.length() + 1;
-                            size_t vend = query.find("&", vpos);
-                            return query.substr(vpos, vend != std::string::npos ? vend - vpos : std::string::npos);
-                        }
-                    }
-                    return std::string("");
-                };
-                if (peerId.empty()) {
-                    peerId = get_param("peerId");
-                    if (peerId.empty()) peerId = get_param("id");
-                }
-                if (url.empty()) url = get_param("url");
-            }
-
-            json response_body = {{"id", config_.id}, {"transports", {"http", "ws"}}};
-            std::string ws_proto = is_ssl ? "wss" : "ws";
-            std::string host = req.get_header_value("Host");
-            if (host.empty()) host = "localhost:" + std::to_string(config_.port);
-            response_body["wsUrl"] = ws_proto + "://" + host + "/vfs-ws";
-
-            if (!peerId.empty()) {
-                if (!url.empty()) {
-                    add_peer(url);
-                    response_body["reachability"] = "DIRECT";
-                } else {
-                    bool exists = false;
-                    {
-                        std::lock_guard<std::mutex> lock(peer_mutex_);
-                        if (peers_.count(peerId)) exists = true;
-                    }
-                    if (!exists) add_connection(std::make_shared<ReverseConnection>(peerId));
-                    response_body["reachability"] = "REVERSE";
-                }
-                res.set_content(response_body.dump(), "application/json");
-            } else {
-                res.status = 400;
-                res.set_content("Missing peerId", "text/plain");
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "[VFSNode " << config_.id << "] /register CRITICAL ERROR: " << e.what() << std::endl;
-            res.status = 500;
-            res.set_content(std::string("Internal Server Error: ") + e.what(), "text/plain");
-        }
-    });
-
-    svr->Post("/read_selector", [this](const httplib::Request& req, httplib::Response& res) {
-        try {
-            VFSRequest vreq;
-            vreq.op = "READ_SELECTOR";
-
-            std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
-            json rec_header;
-            std::vector<uint8_t> rec_payload;
-            if (!decode_record(req_body, rec_header, rec_payload)) {
-                throw VFSException("Malformed VfsRecord", 400);
-            }
-            vreq.selector = Selector::from_json(rec_header.at("selector"));
-            vreq.selector.validate();
-            vreq.stack = rec_header.value("stack", std::vector<std::string>{});
-            vreq.expiresAt = rec_header.value("expiresAt", 0LL);
-            
-            vreq.followLinks = true;
-            
-            auto result = read_selector_impl(vreq);
-            
-            json resp_header = {
-                {"info", result.metadata},
-                {"encoding", result.metadata.value("encoding", "json")}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header, result.data);
-            res.status = 200;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        } catch (const VFSException& e) {
-            json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "read_selector"}};
-            std::string msg = e.what();
-            if (msg.empty() || msg[0] != '{') msg = json({{"error", msg}}).dump();
-            std::string full_error = ctx.dump() + "\n" + msg;
-
-            json resp_header = {
-                {"info", json({{"error", full_error}, {"state", "ERROR"}})},
-                {"encoding", "json"}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = e.code;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        } catch (const std::exception& e) {
-            json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "read_selector (std)"}};
-            std::string full_error = ctx.dump() + "\n" + json({{"error", e.what()}}).dump();
-
-            json resp_header = {
-                {"info", json({{"error", full_error}, {"state", "ERROR"}})},
-                {"encoding", "json"}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = 500;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        }
-    });
-
-    svr->Post("/read_cid", [this](const httplib::Request& req, httplib::Response& res) {
-        try {
-            VFSRequest vreq;
-            vreq.op = "READ_CID";
-
-            std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
-            json rec_header;
-            std::vector<uint8_t> rec_payload;
-            if (!decode_record(req_body, rec_header, rec_payload)) {
-                throw VFSException("Malformed VfsRecord", 400);
-            }
-            vreq.cid = rec_header.at("cid").get<std::string>();
-            vreq.resolutionStack = rec_header.value("resolutionStack", std::vector<std::string>{});
-            vreq.stack = rec_header.value("stack", std::vector<std::string>{});
-            vreq.expiresAt = rec_header.value("expiresAt", 0LL);
-            
-            vreq.followLinks = true;
-            
-            auto result = read_cid_impl(vreq);
-            
-            json resp_header = {
-                {"info", result.metadata},
-                {"encoding", result.metadata.value("encoding", "json")}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header, result.data);
-            res.status = 200;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        } catch (const VFSException& e) {
-            json ctx = {{"vfsId", config_.id}, {"status", e.code}, {"action", "read_cid"}};
-            std::string msg = e.what();
-            if (msg.empty() || msg[0] != '{') msg = json({{"error", msg}}).dump();
-            std::string full_error = ctx.dump() + "\n" + msg;
-
-            json resp_header = {
-                {"info", json({{"error", full_error}, {"state", "ERROR"}})},
-                {"encoding", "json"}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = e.code;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        } catch (const std::exception& e) {
-            json ctx = {{"vfsId", config_.id}, {"status", 500}, {"action", "read_cid (std)"}};
-            std::string full_error = ctx.dump() + "\n" + json({{"error", e.what()}}).dump();
-
-            json resp_header = {
-                {"info", json({{"error", full_error}, {"state", "ERROR"}})},
-                {"encoding", "json"}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = 500;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        }
-    });
-
-    svr->Post("/subscribe", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string source_id = req.get_header_value("x-vfs-id");
-        try {
-            Selector s;
-            long long expiresAt = 0;
-            std::vector<std::string> stack;
-
-            std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
-            json rec_header;
-            std::vector<uint8_t> rec_payload;
-            if (!decode_record(req_body, rec_header, rec_payload)) {
-                throw VFSException("Malformed VfsRecord", 400);
-            }
-            s = Selector::from_json(rec_header.at("selector"));
-            expiresAt = rec_header.value("expiresAt", 0LL);
-            stack = rec_header.value("stack", std::vector<std::string>{});
-            
-            std::cout << "[REST " << config_.id << "] <- SUB: " << s.path << " from " << (source_id.empty() ? "unknown" : source_id) << std::endl;
-            subscribe(s.to_json(), expiresAt, stack);
-            
-            json resp_header = {{"info", {{"state", "AVAILABLE"}}}, {"encoding", "json"}};
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = 200;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        } catch (const std::exception& e) {
-            json resp_header = {
-                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
-                {"encoding", "json"}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = 500;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        }
-    });
-
-    svr->Post("/notify", [this](const httplib::Request& req, httplib::Response& res) {
-        try {
-            json selector_json;
-            json payload;
-            std::vector<std::string> stack;
-
-            std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
-            json rec_header;
-            std::vector<uint8_t> rec_payload;
-            if (!decode_record(req_body, rec_header, rec_payload)) {
-                throw VFSException("Malformed VfsRecord", 400);
-            }
-            selector_json = rec_header.at("selector");
-            std::string encoding = rec_header.value("encoding", "json");
-            if (encoding == "bytes") {
-                payload = json::binary(rec_payload);
-            } else {
-                payload = json::parse(std::string(rec_payload.begin(), rec_payload.end()));
-            }
-            stack = rec_header.value("stack", std::vector<std::string>{});
-
-            if (!selector_json.is_null()) {
-                Selector s = Selector::from_json(selector_json);
-                std::cout << "[REST " << config_.id << "] <- PUB: " << s.path << std::endl;
-            }
-            notify(selector_json, payload, stack);
-            
-            json resp_header = {{"info", {{"state", "AVAILABLE"}}}, {"encoding", "json"}};
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = 200;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        } catch (const std::exception& e) {
-            json resp_header = {
-                {"info", json({{"error", e.what()}, {"state", "ERROR"}})},
-                {"encoding", "json"}
-            };
-            std::vector<uint8_t> record_bytes = encode_record(resp_header);
-            res.status = 500;
-            res.set_content((const char*)record_bytes.data(), record_bytes.size(), "application/octet-stream");
-        }
-    });
-
-    svr->Post("/listen", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string peer_id = req.get_header_value("x-vfs-peer-id");
-        if (peer_id.empty()) {
-            std::vector<uint8_t> req_body(req.body.begin(), req.body.end());
-            json rec_header;
-            std::vector<uint8_t> rec_payload;
-            if (decode_record(req_body, rec_header, rec_payload)) {
-                peer_id = rec_header.value("peerId", "");
-            }
-        }
-        if (peer_id.empty()) {
-            res.status = 400;
-            res.set_content("Missing x-vfs-peer-id", "text/plain");
-            return;
-        }
-        register_reverse_peer(peer_id, res);
-    });
-
-    svr->WebSocket("/vfs-ws", [this](const httplib::Request&, httplib::ws::WebSocket& ws) {
-        bool identified = false;
-        std::string peerId;
-        json expecting_binary_header;
-
-        std::string msg;
-        while (true) {
-            auto res = ws.read(msg);
-            if (res == httplib::ws::ReadResult::Fail) break;
-
-            if (res == httplib::ws::ReadResult::Binary) {
-                if (expecting_binary_header.empty()) continue;
-                std::vector<uint8_t> data(msg.begin(), msg.end());
-                handle_binary_frame(peerId, expecting_binary_header, data);
-                expecting_binary_header.clear();
-                continue;
-            }
-
-            try {
-                json frame = json::parse(msg);
-
-                std::string type = frame.value("type", "");
-
-                if (!identified) {
-                    if (type == "IDENTIFY" && frame.contains("peerId")) {
-                        peerId = frame["peerId"];
-                        identified = true;
-                        ws.send(json({{"type", "ACK"}, {"peerId", config_.id}}).dump());
-                        auto ws_conn = std::make_shared<WSReverseConnection>(peerId, &ws);
-                        ws_conn->node = this;
-                        upgrade_peer_to_ws(peerId, ws_conn);
-                    } else { ws.close(); break; }
-                    continue;
-                }
-
-                if (frame.value("hasBinary", false)) {
-                    expecting_binary_header = frame;
-                } else {
-                    handle_ws_frame(peerId, frame);
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[WS " << config_.id << "] Frame error from " << peerId << ": " << e.what() << std::endl;
-            }
-        }
-    });
-
-    while (server_ptr_) {
-        std::cout << "[VFSNode " << config_.id << "] Internal server listening on 0.0.0.0:" << config_.port << "..." << std::endl;
-        if (svr->listen("0.0.0.0", config_.port)) break;
-        if (!server_ptr_) break;
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+    z_owned_config_t config;
+    if (zc_config_from_str(&config, json_str.c_str()) != Z_OK) {
+        std::cerr << "[VFSNode " << config_.id << "] Failed parsing custom configuration, falling back to defaults." << std::endl;
+        z_config_default(&config);
     }
-    std::cout << "[VFSNode " << config_.id << "] Server has stopped." << std::endl;
+
+    ZenohState* state = new ZenohState();
+    if (z_open(&state->session, z_move(config), NULL) != Z_OK) {
+        std::cerr << "[VFSNode " << config_.id << "] CRITICAL: Failed to open Zenoh session!" << std::endl;
+        delete state;
+        return;
+    }
+    server_ptr_ = state;
+
+    // 1. Declare operator fulfillment queryables for all registered handlers
+    for (const auto& [op_path, handler] : handlers_) {
+        std::string key = "jot/vfs/op/" + op_path;
+        state->queryable_keys.push_back(key);
+        const std::string& persistent_key = state->queryable_keys.back();
+
+        z_view_keyexpr_t ke_op;
+        z_view_keyexpr_from_str(&ke_op, persistent_key.c_str());
+        z_owned_closure_query_t cb_op;
+        z_closure(&cb_op, query_handler_op, nullptr, this);
+        z_queryable_options_t opts_op;
+        z_queryable_options_default(&opts_op);
+
+        z_owned_queryable_t queryable;
+        if (z_declare_queryable(z_loan(state->session), &queryable, z_loan(ke_op), z_move(cb_op), &opts_op) != Z_OK) {
+            std::cerr << "[VFSNode " << config_.id << "] Failed declaring operator queryable for: " << persistent_key << std::endl;
+        } else {
+            state->queryable_ops.push_back(queryable);
+        }
+    }
+
+    // 2. Declare content (CID) queryable on: jot/vfs/cid/**
+    z_view_keyexpr_t ke_cid;
+    z_view_keyexpr_from_str(&ke_cid, "jot/vfs/cid/**");
+    z_owned_closure_query_t cb_cid;
+    z_closure(&cb_cid, query_handler_cid, nullptr, this);
+    z_queryable_options_t opts_cid;
+    z_queryable_options_default(&opts_cid);
+
+    if (z_declare_queryable(z_loan(state->session), &state->queryable_cid, z_loan(ke_cid), z_move(cb_cid), &opts_cid) != Z_OK) {
+        std::cerr << "[VFSNode " << config_.id << "] Failed declaring content queryable!" << std::endl;
+    }
+
+    // 3. Declare catalog queryable on: jot/vfs/catalog
+    z_view_keyexpr_t ke_cat;
+    z_view_keyexpr_from_str(&ke_cat, "jot/vfs/catalog");
+    z_owned_closure_query_t cb_cat;
+    z_closure(&cb_cat, query_handler_catalog, nullptr, this);
+    z_queryable_options_t opts_cat;
+    z_queryable_options_default(&opts_cat);
+
+    if (z_declare_queryable(z_loan(state->session), &state->queryable_catalog, z_loan(ke_cat), z_move(cb_cat), &opts_cat) != Z_OK) {
+        std::cerr << "[VFSNode " << config_.id << "] Failed declaring catalog queryable!" << std::endl;
+    }
+
+    std::cout << "[VFSNode " << config_.id << "] Zenoh listener successfully started on port " << config_.port << std::endl;
+
+    // Block the thread until stop() is called
+    {
+        std::unique_lock<std::mutex> lock(state->mutex);
+        state->running = true;
+        state->cv.wait(lock, [state] { return !state->running; });
+    }
+    
+    std::cout << "[VFSNode " << config_.id << "] Zenoh listener thread exiting." << std::endl;
+    delete state;
 }
 
 void VFSNode::stop() {
     if (server_ptr_) {
+        ZenohState* state = static_cast<ZenohState*>(server_ptr_);
         {
-            std::lock_guard<std::mutex> lock(peer_mutex_);
-            for (auto const& [id, peer] : peers_) {
-                auto rev = std::dynamic_pointer_cast<ReverseConnection>(peer);
-                if (rev) {
-                    std::lock_guard<std::mutex> rlock(rev->mutex);
-                    rev->current_poll_id++; 
-                    rev->cv.notify_all();
-                }
-            }
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (!state->running) return;
+            state->running = false;
         }
-        auto svr = (httplib::Server*)server_ptr_;
+        
+        std::cout << "[VFSNode " << config_.id << "] Shutting down Zenoh Session..." << std::endl;
+        
+        for (auto& q : state->queryable_ops) {
+            z_undeclare_queryable(z_move(q));
+        }
+        state->queryable_ops.clear();
+        z_undeclare_queryable(z_move(state->queryable_cid));
+        z_undeclare_queryable(z_move(state->queryable_catalog));
+        z_close(z_loan_mut(state->session), NULL);
+        z_drop(z_move(state->session));
+        
+        state->cv.notify_all();
         server_ptr_ = nullptr;
-        svr->stop();
     }
 }
 

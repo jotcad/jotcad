@@ -7,6 +7,7 @@ import {
   MeshLink,
   registerVFSRoutes,
   DiskStorage,
+  Selector,
 } from '../fs/src/index.js';
 
 import { JotCompiler } from '../jot/src/compiler.js';
@@ -39,7 +40,7 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
     id: 'js-test-client',
     storage: new DiskStorage(STORAGE_JS),
   });
-  const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
+  const mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`], {
     localUrl: `http://localhost:${PORT_JS}`,
   });
   server = http.createServer();
@@ -51,18 +52,32 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
 
   // 3. Register remote operators in compiler
   const compiler = new JotCompiler(jsVfs);
-  const catalogUrl = `http://localhost:${PORT_CPP}/catalog`;
-  console.log(`[Test] Fetching catalog from ${catalogUrl}`);
-  const resp = await fetch(catalogUrl);
-  if (!resp.ok) {
-      const text = await resp.text();
-      console.error(`[Test] Catalog fetch failed (${resp.status}): ${text}`);
-      throw new Error(`Catalog fetch failed: ${resp.status}`);
+  console.log("Waiting for geo-ops-node to connect...");
+  const { waitForMeshNodes } = await import('./vfs_test_helpers.js');
+  await waitForMeshNodes(jsVfs, ['geo-ops-node']);
+
+  console.log("Subscribing to sys/schema for catalog discovery...");
+  let catalogReceived = null;
+  jsVfs.events.on('notify', (selector, payload) => {
+      if (selector.path === 'sys/schema') {
+          catalogReceived = payload;
+      }
+  });
+
+  await mesh.subscribe(Selector.fromObject({ path: 'sys/schema' }), Date.now() + 10000);
+
+  let attempts = 0;
+  while (!catalogReceived && attempts < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
   }
-  const catalog = await resp.json();
-  console.log(`[Test] Catalog loaded with ${Object.keys(catalog.catalog).length} operators`);
-  
-  for (const [name, schema] of Object.entries(catalog.catalog)) {
+
+  if (!catalogReceived) {
+      throw new Error('Should have received schema catalog');
+  }
+  const catalog = catalogReceived.catalog;
+  console.log(`[Test] Catalog loaded with ${Object.keys(catalog).length} operators`);
+  for (const [name, schema] of Object.entries(catalog)) {
       compiler.registerOperator(name, { path: name, schema: schema });
   }
 

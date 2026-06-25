@@ -29,10 +29,14 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error(`Handshake timeout (Expected: ${EXPECTED_OPS_ID})`)), 45000);
       page.on('console', (msg) => {
+        console.log(`[Browser Console: ${msg.type()}] ${msg.text()}`);
         if (msg.text().includes(`Received Catalog from ${EXPECTED_OPS_ID}`)) {
           clearTimeout(timeout);
           resolve();
         }
+      });
+      page.on('pageerror', (err) => {
+        console.error(`[Browser PageError] ${err.stack || err}`);
       });
       // Force HTTPS as per orchestrator configuration
       page.goto(cluster.gatewayUrl, { waitUntil: 'domcontentloaded' });

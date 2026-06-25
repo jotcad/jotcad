@@ -1,143 +1,90 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MemoryStorage, Selector } from '../fs/src/index.js';
+import { VFS, Selector } from '../fs/src/index.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
-import { MockConnection } from './vfs_test_helpers.js';
+import { launchSystem } from '../orchestrator.js';
 
-test('Mesh Pub-Sub: Propagation & Backflow Prevention', async (t) => {
-  // Setup a 3-node chain: A <-> B <-> C
-  const vfsA = new VFS({ id: 'node-A', storage: new MemoryStorage() });
-  const vfsB = new VFS({ id: 'node-B', storage: new MemoryStorage() });
-  const vfsC = new VFS({ id: 'node-C', storage: new MemoryStorage() });
+test('Mesh Pub-Sub via Zenoh (ez pubsub)', { timeout: 60000 }, async (t) => {
+    // 1. Launch the TEST system
+    const sys = await launchSystem('test/standard');
+    const ROUTER_PORT = sys.ports.zenoh_router;
+    const routerUrl = `http://localhost:${ROUTER_PORT}`;
 
-  await vfsA.init();
-  await vfsB.init();
-  await vfsC.init();
+    // 2. Initialize VFS nodes and MeshLinks
+    const vfsSub = new VFS({ id: 'node-js-sub' });
+    const vfsPub = new VFS({ id: 'node-js-pub' });
 
-  const meshA = new MeshLink(vfsA);
-  const meshB = new MeshLink(vfsB);
-  const meshC = new MeshLink(vfsC);
+    await vfsSub.init();
+    await vfsPub.init();
 
-  t.after(() => {
-    meshA.stop();
-    meshB.stop();
-    meshC.stop();
-    vfsA.close();
-    vfsB.close();
-    vfsC.close();
-  });
+    const meshSub = new MeshLink(vfsSub, [routerUrl]);
+    const meshPub = new MeshLink(vfsPub, [routerUrl]);
 
-  // Mock direct peering (bypass HTTP for unit test)
-  const connect = (mA, mB) => {
-    const peerA = new MockConnection(mB.vfs.id, async (req) => {
-        if (req.op === 'SUB') {
-          mB.addInterest(mA.vfs.id, req.selector, req.expiresAt, req.stack);
-        } else if (req.op === 'PUB') {
-          mB.notify(req.selector, req.payload, req.stack);
+    try {
+        console.log('[Test] Starting MeshLinks connected to Zenoh router...');
+        await meshSub.start();
+        await meshPub.start();
+
+        // 3. Test JSON notification propagation
+        console.log('[Test] Testing JSON notification...');
+        const topicJson = new Selector('test/ez-json-topic');
+        let receivedJson = null;
+
+        vfsSub.events.on('notify', (selector, payload) => {
+            if (selector.path === topicJson.path) {
+                receivedJson = payload;
+            }
+        });
+
+        await vfsSub.subscribe(topicJson);
+        await new Promise(r => setTimeout(r, 500)); // Allow subscription to propagate
+
+        const jsonPayload = { greeting: 'Hello via Zenoh!', num: 42 };
+        meshPub.notify(topicJson, jsonPayload);
+
+        let attempts = 0;
+        while (!receivedJson && attempts < 50) {
+            await new Promise(r => setTimeout(r, 100));
+            attempts++;
         }
-    });
-    const peerB = new MockConnection(mA.vfs.id, async (req) => {
-        if (req.op === 'SUB') {
-          mA.addInterest(mB.vfs.id, req.selector, req.expiresAt, req.stack);
-        } else if (req.op === 'PUB') {
-          mA.notify(req.selector, req.payload, req.stack);
+
+        assert.ok(receivedJson, 'Subscriber should have received JSON notification');
+        assert.deepStrictEqual(receivedJson, jsonPayload);
+        console.log('✔ JSON notification received successfully');
+
+        // 4. Test Binary notification propagation
+        console.log('[Test] Testing Binary notification...');
+        const topicBin = new Selector('test/ez-bin-topic');
+        let receivedBin = null;
+
+        vfsSub.events.on('notify', (selector, payload) => {
+            if (selector.path === topicBin.path) {
+                receivedBin = payload;
+            }
+        });
+
+        await vfsSub.subscribe(topicBin);
+        await new Promise(r => setTimeout(r, 500));
+
+        const binaryData = new Uint8Array([0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
+        meshPub.notify(topicBin, binaryData);
+
+        attempts = 0;
+        while (!receivedBin && attempts < 50) {
+            await new Promise(r => setTimeout(r, 100));
+            attempts++;
         }
-    });
-    mA.peers.set(mB.vfs.id, peerA);
-    mB.peers.set(mA.vfs.id, peerB);
-  };
 
-  connect(meshA, meshB);
-  connect(meshB, meshC);
+        assert.ok(receivedBin, 'Subscriber should have received binary notification');
+        assert.ok(receivedBin instanceof Uint8Array, 'Received payload must be a Uint8Array');
+        assert.deepStrictEqual(Array.from(receivedBin), Array.from(binaryData));
+        console.log('✔ Binary notification received successfully');
 
-  await t.test('subscription should propagate through the chain', async () => {
-    const selector = new Selector('test/topic');
-    const topicString = JSON.stringify(selector);
-    const expiry = Date.now() + 10000;
-
-    // A subscribes
-    await meshA.subscribe(selector, expiry);
-
-    // Wait for async propagation B -> C
-    await new Promise((r) => setTimeout(r, 50));
-
-    // Verify B knows A is interested
-    const bEntry = meshB.interests.find(e => e.selector.path === selector.path);
-    assert.ok(
-      bEntry && bEntry.subs.has('node-A'),
-      'Node B should record Node A interest'
-    );
-
-    // Verify C knows B is interested (propagation)
-    const cEntry = meshC.interests.find(e => e.selector.path === selector.path);
-    assert.ok(
-      cEntry && cEntry.subs.has('node-B'),
-      'Node C should record Node B interest'
-    );
-  });
-
-  await t.test('notifications should route back to subscribers', async () => {
-    const selector = new Selector('test/topic');
-    let receivedByA = null;
-
-    // A listens for pulses
-    const originalNotifyA = meshA.notify.bind(meshA);
-    meshA.notify = (s, p, st) => {
-      if (s.path === 'test/topic') receivedByA = { payload: p, stack: st };
-      originalNotifyA(s, p, st);
-    };
-
-    // C publishes
-    const payload = { status: 'WORKING' };
-    meshC.notify(selector, payload);
-
-    // Wait for microtasks
-    await new Promise((r) => setTimeout(r, 50));
-
-    assert.ok(
-      receivedByA !== null,
-      'Node A should receive notification from C'
-    );
-    assert.deepStrictEqual(receivedByA.payload, payload);
-
-    // Path was C -> B -> A
-    // The stack arriving at A should be [C, B]
-    assert.ok(
-      receivedByA.stack.includes('node-C'),
-      'Stack should include origin node C'
-    );
-    assert.ok(
-      receivedByA.stack.includes('node-B'),
-      'Stack should include intermediate node B'
-    );
-  });
-
-  await t.test('backflow prevention should stop infinite loops', async () => {
-    const selector = new Selector('loop/topic');
-    // Create a cycle: C -> A
-    connect(meshC, meshA);
-
-    // B must have an interest to forward it
-    meshB.addInterest('node-C', selector, Date.now() + 10000);
-
-    let publishCount = 0;
-    const originalNotifyB = meshB.notify.bind(meshB);
-    meshB.notify = (s, p, st) => {
-      if (s.path === 'loop/topic') publishCount++;
-      return originalNotifyB(s, p, st);
-    };
-
-    // Publish from A
-    meshA.notify(selector, { data: 1 });
-
-    await new Promise((r) => setTimeout(r, 100));
-
-    // In a loop A -> B -> C -> A -> B...
-    // With stack protection, B should only be notified ONCE
-    assert.strictEqual(
-      publishCount,
-      1,
-      'Notification should only pass through Node B once'
-    );
-  });
+    } finally {
+        await meshSub.stop();
+        await meshPub.stop();
+        await vfsSub.close();
+        await vfsPub.close();
+        await sys.stop();
+    }
 });

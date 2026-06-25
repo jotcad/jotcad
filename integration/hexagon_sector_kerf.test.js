@@ -37,7 +37,7 @@ test('Complex Mesh Expression: Hexagon Sector with Kerf', { timeout: 30000 }, as
     });
     await vfs.init();
     
-    mesh = new MeshLink(vfs, [OPS_URL], {
+    mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`], {
         localUrl: `http://localhost:${PORT_CLIENT}`
     });
 

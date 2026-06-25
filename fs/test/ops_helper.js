@@ -58,44 +58,15 @@ export async function spawnOpsNode(opsPath, args, healthPort, options = {}) {
   };
 
   // Wait for node to be healthy
-  let healthy = false;
-  const maxRetries = 50;
-  for (let i = 0; i < maxRetries; i++) {
-    if (processError) {
-      throw new Error(
-        getFullErrorReport(`C++ Node failed to launch: ${processError.message}`)
-      );
-    }
-    if (exitCode !== null && exitCode !== 0) {
-      throw new Error(
-        getFullErrorReport(`C++ Node exited prematurely with code ${exitCode}`)
-      );
-    }
-
-    try {
-      // Reverted to HTTP
-      const resp = await fetch(`http://localhost:${healthPort}/health`);
-      if (resp.ok) {
-        const info = await resp.json();
-        if (info.status === 'OK') {
-          healthy = true;
-          break;
-        }
-      }
-    } catch (e) {
-      // Expected while starting
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-
-  if (!healthy) {
-    opsProcess.kill();
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  if (processError) {
     throw new Error(
-      getFullErrorReport(
-        `C++ Node at http://localhost:${healthPort} failed to become healthy within ${
-          maxRetries * 0.2
-        } seconds`
-      )
+      getFullErrorReport(`C++ Node failed to launch: ${processError.message}`)
+    );
+  }
+  if (exitCode !== null && exitCode !== 0) {
+    throw new Error(
+      getFullErrorReport(`C++ Node exited prematurely with code ${exitCode}`)
     );
   }
 

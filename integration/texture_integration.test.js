@@ -62,7 +62,7 @@ test('Texture Mesh Resolution Integration', { timeout: 60000 }, async (t) => {
     return null;
   });
 
-  const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
+  const mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`], {
     localUrl: `http://localhost:${PORT_JS}`,
   });
   server = http.createServer();

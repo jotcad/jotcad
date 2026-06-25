@@ -30,7 +30,7 @@ test('Prompt Generation and Staircase Execution Integration', { timeout: 120000 
 
     // Initialize VFS & Mesh Link
     const nodeVFS = new VFS({ id: 'prompt-test-node' });
-    const mesh = new MeshLink(nodeVFS, [`http://localhost:${CPP_PORT}`]);
+    const mesh = new MeshLink(nodeVFS, [`http://localhost:${sys.ports.zenoh_router}`]);
     await nodeVFS.init();
 
     try {

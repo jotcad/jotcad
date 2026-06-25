@@ -1,8 +1,9 @@
-import { VFS, MeshLink } from '../fs/src/index.js';
+import { VFS, MeshLink, Selector } from '../fs/src/index.js';
 import { JotCompiler } from '../jot/src/compiler.js';
 import { JotParser } from '../jot/src/parser.js';
 import { launchSystem, PROFILES } from '../orchestrator.js';
 import { captureAndVerifyPNG } from './png_helper.js';
+import { waitForMeshNodes } from './vfs_test_helpers.js';
 
 async function consumeJSON(stream) {
     const reader = stream.getReader();
@@ -77,24 +78,36 @@ async function test() {
 
     // 2. Setup VFS and MeshLink
     const vfs = new VFS({ id: 'test-client' });
-    const mesh = new MeshLink(vfs, [opsUrl]);
+    const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
     
     await vfs.init();
     await mesh.start();
+    
+    // Wait for the C++ ops node to be ready and sync catalog
+    await waitForMeshNodes(vfs, ['geo-ops-node']);
 
     // 3. Setup Jot Compiler
     const compiler = new JotCompiler(vfs);
     const parser = new JotParser();
     
-    // 3. Load all catalog operators from the ops server
-    const catalogUrl = `${opsUrl}/catalog`;
-    console.log("Fetching catalog from:", catalogUrl);
-    const resp = await fetch(catalogUrl);
-    if (!resp.ok) {
-        throw new Error(`Catalog fetch failed: ${resp.status}`);
+    // 3. Load all catalog operators from the ops server via Zenoh subscription
+    console.log("Subscribing to sys/schema for catalog discovery...");
+    let catalogReceived = null;
+    const unsubscribe = await vfs.subscribe(new Selector('sys/schema'), Date.now() + 10000, [], (s, payload) => {
+        catalogReceived = payload;
+    });
+
+    let attempts = 0;
+    while (!catalogReceived && attempts < 50) {
+        await new Promise(r => setTimeout(r, 100));
+        attempts++;
     }
-    const catalog = await resp.json();
-    for (const [name, schema] of Object.entries(catalog.catalog)) {
+    unsubscribe();
+    if (!catalogReceived) {
+        throw new Error('Should have received schema catalog');
+    }
+    const catalog = catalogReceived.catalog;
+    for (const [name, schema] of Object.entries(catalog)) {
         compiler.registerOperator(name, { path: name, schema: schema });
     }
 

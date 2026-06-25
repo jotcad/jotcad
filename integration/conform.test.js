@@ -38,7 +38,7 @@ test('Conformal Wrapping (jot/conform)', { timeout: 60000 }, async (t) => {
     id: 'conform-test-node',
     storage: new DiskStorage('.vfs_storage_conform_test'),
   });
-  mesh = new MeshLink(vfs, [OPS_URL]);
+  mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
   await vfs.init();
   await mesh.start();
 

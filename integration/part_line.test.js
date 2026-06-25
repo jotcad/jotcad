@@ -37,7 +37,7 @@ test('jot/partLine - Parting line extraction and optimization', { timeout: 60000
     id: 'partline-integration-node',
     storage: new MemoryStorage(),
   });
-  mesh = new MeshLink(vfs, [OPS_URL]);
+  mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
   await vfs.init();
   await mesh.start();
 

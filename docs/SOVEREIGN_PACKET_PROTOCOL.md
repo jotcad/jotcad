@@ -1,5 +1,9 @@
 # Sovereign Packet Protocol Specification
 
+> [!WARNING]
+> **OBSOLETE / DEPRECATED**
+> This protocol has been deprecated and superseded by the Eclipse Zenoh VFS integration (see [VFS_SPECIFICATION.md](file:///home/brian/github/jotcad_ez/docs/VFS_SPECIFICATION.md)). Zenoh natively manages session transport, binary routing, and connection polling.
+
 ## Motivation
 
 The JotCAD mesh network requires a unified architecture where physical hardware sensors (e.g., ESP32-CAM) can participate as first-class peers alongside C++ native nodes and JS web clients. Previously, the VFS protocol relied heavily on wrapping payloads inside structured JSON objects (e.g., `{"selector": {...}, "payload": <data>}`). 

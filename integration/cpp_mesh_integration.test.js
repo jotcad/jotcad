@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import {
   VFS,
   MeshLink,
-  registerVFSRoutes,
   DiskStorage,
   getSelectorKey,
   Selector,
@@ -36,17 +34,21 @@ async function consumeJSON(stream) {
 
 test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
   let sys;
-  let server;
   let jsVfs;
-  let stopServer;
+  let mesh;
 
-  const PORT_JS = 20102;
   const STORAGE_JS = path.resolve('.test_vfs_cpp_integration_js');
+
+  const hardTimeout = setTimeout(() => {
+    console.error('[Test] Hard timeout reached! Force exiting to prevent hang...');
+    process.exit(1);
+  }, 25000);
+  hardTimeout.unref();
 
   t.after(async () => {
     console.log('[Test] Cleaning up...');
-    if (stopServer) stopServer();
-    if (server) server.close();
+    clearTimeout(hardTimeout);
+    if (mesh) await mesh.stop();
     if (jsVfs) await jsVfs.close();
     if (sys) await sys.stop();
     await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
@@ -55,7 +57,6 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
   // 1. Launch the TEST system
   const profileKey = 'test/standard';
   sys = await launchSystem(profileKey);
-  const PORT_CPP = sys.ports.ops;
   const STORAGE_CPP = `${PROFILES[profileKey].storagePrefix}ops`;
 
   // 2. Start JS Node
@@ -63,32 +64,10 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
     id: 'js-test-client',
     storage: new DiskStorage(STORAGE_JS),
   });
-  const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
-    localUrl: `http://localhost:${PORT_JS}`,
-  });
-  server = http.createServer();
-  stopServer = registerVFSRoutes(jsVfs, server, '', mesh);
+  mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`]);
 
-  await new Promise((resolve) => server.listen(PORT_JS, '0.0.0.0', resolve));
   await jsVfs.init();
   await mesh.start();
-
-  await t.test('Health Check', async () => {
-    const resp = await fetch(`http://localhost:${PORT_CPP}/health`);
-    const info = await resp.json();
-    assert.strictEqual(info.status, 'OK');
-  });
-
-  await t.test('Peer Registration (Exercises probeDirectReachability)', async () => {
-    const resp = await fetch(`http://localhost:${PORT_JS}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: 'geo-ops-node', url: `http://localhost:${PORT_CPP}` })
-    });
-    assert.strictEqual(resp.status, 200, 'JS node should accept registration from C++ node');
-    const info = await resp.json();
-    assert.strictEqual(info.id, 'js-test-client');
-  });
 
   await t.test('CID Consistency', async () => {
     // Note: box op with these params produces a deterministic CID

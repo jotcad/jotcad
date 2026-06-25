@@ -54,7 +54,7 @@ test('User Operator Interaction Integration', { timeout: 120000 }, async (t) => 
     id: 'js-node',
     storage: new DiskStorage('.vfs_storage_user_op_js'),
   });
-  const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
+  const mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`], {
     localUrl: `http://localhost:${PORT_JS}`,
   });
   server = http.createServer();

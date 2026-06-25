@@ -27,6 +27,54 @@ export class MockConnection extends Connection {
  * as direct peers or as reported neighbors in topology updates.
  */
 export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
+  if (vfs.mesh && vfs.mesh.session) {
+    const startTime = Date.now();
+    const targetSet = new Set(targetIds);
+    const { decodeRecord } = await import('../fs/src/mesh/mesh_link.js');
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        const receiver = await vfs.mesh.session.get('jot/vfs/catalog', { 
+          timeout: Math.min(2000, timeout - (Date.now() - startTime)),
+          target: 1
+        });
+        if (receiver) {
+          for await (const reply of receiver) {
+            const result = reply.result();
+            if (result instanceof Error || result?.constructor?.name === 'ReplyError') {
+              continue;
+            }
+            
+            const sample = result;
+            const recordBytes = sample.payload().toBytes();
+            const decoded = decodeRecord(recordBytes);
+            if (!decoded) {
+              continue;
+            }
+            
+            const { header, payload } = decoded;
+            if (header.status === 200) {
+              const catalogPayload = JSON.parse(new TextDecoder().decode(payload));
+              const provider = catalogPayload.provider;
+              if (vfs.mesh && provider !== vfs.id) {
+                vfs.mesh.updateCatalog(catalogPayload);
+              }
+              if (targetSet.has(provider)) {
+                targetSet.delete(provider);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[waitForMeshNodes ${vfs.id}] query error:`, err);
+      }
+      if (targetSet.size === 0) {
+        return; // All target nodes found!
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    throw new Error(`waitForMeshNodes: Target nodes [${targetIds.join(', ')}] not found within ${timeout}ms`);
+  }
   const targetSet = new Set(targetIds);
   const seen = new Set([vfs.id]);
 

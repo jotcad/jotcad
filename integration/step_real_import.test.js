@@ -45,7 +45,7 @@ test('Real STEP File Import and Render Integration', async (t) => {
 
     // 2. Setup client VFS and MeshLink connected to the export node
     const vfs = new VFS({ id: 'test-real-step-client' });
-    const mesh = new MeshLink(vfs, [`https://localhost:${exportPort}`]);
+    const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
     
     await vfs.init();
     await mesh.start();

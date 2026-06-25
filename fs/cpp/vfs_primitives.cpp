@@ -210,6 +210,24 @@ template<> CID VFSNode::materialize<json>(const json& data) {
     return CID{cid_str};
 }
 
+template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint8_t>& data) {
+    std::string cid_str = vfs_hash256(data);
+    std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid_str + ".data");
+    std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid_str + ".meta");
+    
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        std::ofstream os(p, std::ios::binary);
+        os.write((const char*)data.data(), data.size());
+        
+        json meta = {{"state", "AVAILABLE"}, {"encoding", "bytes"}};
+        std::ofstream mos(mp);
+        mos << meta.dump();
+    }
+    
+    return CID{cid_str};
+}
+
 template<> CID VFSNode::materialize<std::string>(const std::string& data) {
     std::string cid_str = vfs_hash256_str(data);
     std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid_str + ".data");

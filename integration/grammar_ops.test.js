@@ -44,7 +44,7 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
     id: 'grammar-js-node',
     storage: new DiskStorage('.vfs_storage_grammar-js'),
   });
-  mesh = new MeshLink(vfs, [OPS_URL], { localUrl: 'http://localhost:9201' });
+  mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`], { localUrl: 'http://localhost:9201' });
   server = http.createServer();
   registerVFSRoutes(vfs, server, '', mesh);
 

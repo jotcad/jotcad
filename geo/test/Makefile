@@ -7,9 +7,11 @@ INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../rend
            -I../cgal -I../cgal/boost \
            -I../cgal/cgal/include -I../cgal/cgal/include/CGAL/include \
            -I../cgal/freetype/include \
+           -I../cgal/zenoh/include \
            -I../pack
 DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
 LIBS = ../cgal/freetype/build/libfreetype.a \
+       ../cgal/zenoh/lib/libzenohc.a \
        -lpthread -lssl -lcrypto -lz -ldl
 
 BIN_DIR = bin
@@ -77,12 +79,27 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
 
 # Targets
-all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test
+all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)/test_zenoh_link $(BIN_DIR)/test_zenoh_queryable $(BIN_DIR)/test_zenoh_caching
 
 # Ensure the library is built first
 .PHONY: $(LIB_GEO)
 $(LIB_GEO):
 	$(MAKE) -C ..
+
+# Rule for building the standalone test_zenoh_caching binary
+$(BIN_DIR)/test_zenoh_caching: $(OBJ_DIR)/test_zenoh_caching.o
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
+
+# Rule for building the standalone test_zenoh_queryable binary
+$(BIN_DIR)/test_zenoh_queryable: $(OBJ_DIR)/test_zenoh_queryable.o
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
+
+# Rule for building the standalone test_zenoh_link binary
+$(BIN_DIR)/test_zenoh_link: $(OBJ_DIR)/test_zenoh_link.o
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
 
 # Rule for building the combined unit_tests binary from a single translation unit
 $(BIN_DIR)/unit_tests: $(OBJ_DIR)/unit_tests.o $(LIB_GEO)
@@ -113,6 +130,22 @@ $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h
 $(OBJ_DIR)/cid_consistency_test.o: cid_consistency_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile test_zenoh_link.o
+$(OBJ_DIR)/test_zenoh_link.o: test_zenoh_link.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile test_zenoh_queryable.o
+$(OBJ_DIR)/test_zenoh_queryable.o: test_zenoh_queryable.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile test_zenoh_caching.o
+$(OBJ_DIR)/test_zenoh_caching.o: test_zenoh_caching.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
 
 # Compile decal_test.o
 $(OBJ_DIR)/decal_test.o: decal_test.cpp

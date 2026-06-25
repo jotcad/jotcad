@@ -55,7 +55,7 @@ test('Multi-Output Scoped Block Integration', { timeout: 60000 }, async (t) => {
     id: 'js-node',
     storage: new DiskStorage('.vfs_storage_multi_out_js'),
   });
-  const mesh = new MeshLink(jsVfs, [`http://localhost:${PORT_CPP}`], {
+  const mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`], {
     localUrl: `http://localhost:${PORT_JS}`,
   });
   server = http.createServer();

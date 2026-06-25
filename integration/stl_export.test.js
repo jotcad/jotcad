@@ -28,7 +28,7 @@ async function test() {
 
     // 2. Setup VFS and MeshLink
     const vfs = new VFS({ id: 'test-client' });
-    const mesh = new MeshLink(vfs, [opsUrl]);
+    const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
     
     await vfs.init();
     await mesh.start();

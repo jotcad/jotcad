@@ -12,39 +12,43 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PROFILES = {
   'live/standard': {
     storagePrefix: '.vfs_storage_live_',
-    gateway: 'export',
+    gateway: 'zenoh_router',
     components: {
-      ops:    { type: 'ops',    protocol: 'http',  port: 9091 },
-      export: { type: 'export', protocol: 'https', port: 9092 },
+      zenoh_router: { type: 'zenoh_router', port: 9000 },
+      ops:    { type: 'ops',    protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://localhost:9000' } },
+      export: { type: 'export', protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://localhost:9000' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
   },
   'test/standard': {
     storagePrefix: '.vfs_storage_test_',
-    gateway: 'export',
+    gateway: 'zenoh_router',
     components: {
-      ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node' } },
-      export: { type: 'export', protocol: 'https', port: 9197 },
+      zenoh_router: { type: 'zenoh_router', port: 9200 },
+      ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://localhost:9200' } },
+      export: { type: 'export', protocol: 'https', port: 9197, env: { NEIGHBORS: 'http://localhost:9200' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
   'live/esp32': {
     storagePrefix: '.vfs_storage_esp32_live_',
-    gateway: 'export',
+    gateway: 'zenoh_router',
     components: {
-      ops:        { type: 'ops',        protocol: 'http',  port: 9091 },
-      export:     { type: 'export',     protocol: 'https', port: 9092 },
-      subscriber: { type: 'subscriber', protocol: 'http',  port: 11223 },
+      zenoh_router: { type: 'zenoh_router', port: 9000 },
+      ops:        { type: 'ops',        protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://localhost:9000' } },
+      export:     { type: 'export',     protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://localhost:9000' } },
+      subscriber: { type: 'subscriber', protocol: 'http',  port: 11223, env: { NEIGHBORS: 'http://localhost:9000' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
   },
   'test/esp32': {
     storagePrefix: '.vfs_storage_esp32_test_',
-    gateway: 'export',
+    gateway: 'zenoh_router',
     components: {
-      ops:        { type: 'ops',        protocol: 'http',  port: 9191 },
-      export:     { type: 'export',     protocol: 'https', port: 9192 },
-      subscriber: { type: 'subscriber', protocol: 'http',  port: 11224 },
+      zenoh_router: { type: 'zenoh_router', port: 9200 },
+      ops:        { type: 'ops',        protocol: 'http',  port: 9191, env: { NEIGHBORS: 'http://localhost:9200' } },
+      export:     { type: 'export',     protocol: 'https', port: 9192, env: { NEIGHBORS: 'http://localhost:9200' } },
+      subscriber: { type: 'subscriber', protocol: 'http',  port: 11224, env: { NEIGHBORS: 'http://localhost:9200' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
@@ -52,37 +56,35 @@ export const PROFILES = {
     storagePrefix: '.vfs_storage_sovereign_js_',
     gateway: 'node_a',
     components: {
-      node_a: { type: 'node_a', protocol: 'http', port: 8181 },
-      node_b: { type: 'node_b', protocol: 'http', port: 8182 },
-      ops:    { type: 'ops',    protocol: 'http', port: 8183 }
-    },
-    env: {
-      NEIGHBORS: 'http://localhost:8181,http://localhost:8182,http://localhost:8183'
+      zenoh_router: { type: 'zenoh_router', port: 9400 },
+      node_a: { type: 'node_a', protocol: 'http', port: 8181, env: { NEIGHBORS: 'http://localhost:9400' } },
+      node_b: { type: 'node_b', protocol: 'http', port: 8182, env: { NEIGHBORS: 'http://localhost:9400' } },
+      ops:    { type: 'ops',    protocol: 'http', port: 8183, env: { NEIGHBORS: 'http://localhost:9400' } }
     }
   },
   'test/complex_topology': {
     storagePrefix: '.vfs_storage_complex_topo_',
     gateway: 'node_js',
     components: {
-      cpp_node_1: { type: 'vfs_cpp', protocol: 'http', port: 9591 },
-      cpp_node_2: { type: 'vfs_cpp', protocol: 'http', port: 9592 },
-      node_js:    { type: 'node_a',  protocol: 'http', port: 9593 }
-    },
-    env: {
-      NEIGHBORS: 'http://localhost:9591,http://localhost:9592'
+      zenoh_router: { type: 'zenoh_router', port: 9300 },
+      cpp_node_1: { type: 'vfs_cpp', protocol: 'http', port: 9591, env: { NEIGHBORS: 'http://localhost:9300' } },
+      cpp_node_2: { type: 'vfs_cpp', protocol: 'http', port: 9592, env: { NEIGHBORS: 'http://localhost:9300' } },
+      node_js:    { type: 'node_a',  protocol: 'http', port: 9593, env: { NEIGHBORS: 'http://localhost:9300' } }
     }
   },
   'live/direct_cpp': {
     storagePrefix: '.vfs_storage_direct_cpp_live_',
-    gateway: 'ops',
+    gateway: 'zenoh_router',
     components: {
-      ops: { type: 'ops', protocol: 'https', port: 9198, env: { PEER_ID: 'geo-ops-node' } },
+      zenoh_router: { type: 'zenoh_router', port: 9500 },
+      ops: { type: 'ops', protocol: 'https', port: 9198, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://localhost:9500' } },
       ux:  { type: 'ux',  protocol: 'https', port: 3232, dist: 'ux/dist/test' }
     }
   }
 };
 
 export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_LEVEL || 'INFO', options = {}) {
+  process.env.ZENOH_RUNTIME = '( app: (worker_threads: 8) )';
   if (!profileKey) {
     throw new Error('CRITICAL: No profileKey provided to launchSystem. You must explicitly choose a profile (e.g., "test/standard").');
   }
@@ -128,6 +130,19 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   }
 
   const componentConfigs = {
+    zenoh_router: (cfg) => {
+      return {
+        name: `Zenoh Router (${cfg.port})`,
+        command: '/home/brian/.cargo/bin/zenoh-bridge-remote-api',
+        args: [
+          '--listen', `tcp/127.0.0.1:${cfg.port}`,
+          '--ws-port', `127.0.0.1:${cfg.port + 1000}`,
+          '--no-multicast-scouting'
+        ],
+        cwd: __dirname,
+        env: { ...process.env }
+      };
+    },
     ops: (cfg) => {
       const useSsl = cfg.protocol === 'https';
       return {
@@ -161,7 +176,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
             VFS_ID: `${profileKey.replace('/', '_')}_export`,
             NEIGHBORS: `${componentMap.ops?.protocol || 'http'}://localhost:${componentMap.ops?.port || 80}`,
             DISABLE_SSL: useSsl ? '0' : '1',
-            ...env
+            ...env,
+            ...cfg.env
         }
       };
     },
@@ -178,7 +194,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
             PORT: String(cfg.port),
             VFS_ID: fullId,
             DISABLE_SSL: '1',
-            ...env
+            ...env,
+            ...cfg.env
         }
       };
     },
@@ -196,7 +213,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
             VFS_ID: fullId,
             NEIGHBORS: `http://localhost:${componentMap.node_a.port}`,
             DISABLE_SSL: '1',
-            ...env
+            ...env,
+            ...cfg.env
         }
       };
     },
@@ -211,7 +229,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
           PORT: String(cfg.port),
           VFS_ID: `${profileKey.replace('/', '_')}_subscriber`,
           NEIGHBORS: `${componentMap.ops?.protocol || 'http'}://localhost:${componentMap.ops?.port || 80}`,
-          ...env
+          ...env,
+          ...cfg.env
       }
     }),
     vfs_cpp: (cfg, key) => {
@@ -226,7 +245,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
             LOG_LEVEL: globalLogLevel,
             PORT: String(cfg.port),
             PEER_ID: fullId,
-            ...env
+            ...env,
+            ...cfg.env
         }
       };
     },
@@ -245,7 +265,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
             LOG_LEVEL: globalLogLevel,
             VITE_VFS_URL: gatewayUrl,
             VITE_HTTPS: String(useSsl && hasCerts),
-            ...env
+            ...env,
+            ...cfg.env
         }
       };
     }
@@ -265,6 +286,11 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       child.kill('SIGTERM');
     }
     await new Promise(r => setTimeout(r, 1000));
+    for (const [name, child] of processes) {
+      try {
+        child.kill('SIGKILL');
+      } catch (e) {}
+    }
     try {
         const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
         execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
@@ -314,13 +340,14 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   if (ports.ux) {
       info(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);
       let uxReady = false;
+      const protocol = (componentMap.ux.protocol === 'https' && hasCerts) ? 'https' : 'http';
       for (let i = 0; i < 50; i++) {
         try {
-          const url = `${componentMap.ux.protocol}://localhost:${ports.ux}`;
+          const url = `${protocol}://localhost:${ports.ux}`;
           const options = {};
-          if (componentMap.ux.protocol === 'https') options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
+          if (protocol === 'https') options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
           const resp = await fetch(url, options);
-          if (resp.ok) { uxReady = true; break; }
+          if (resp.ok || resp.status === 404) { uxReady = true; break; }
         } catch (e) {}
         await new Promise(r => setTimeout(r, 200));
       }

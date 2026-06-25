@@ -40,25 +40,41 @@ test('Mold Generation & Analysis - JOT Expression Integration', { timeout: 60000
     id: 'mold-integration-node',
     storage: new MemoryStorage(),
   });
-  mesh = new MeshLink(vfs, [OPS_URL]);
+  mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
   await vfs.init();
   await mesh.start();
 
   // Wait for mesh handshake
-  await new Promise(r => setTimeout(r, 2000));
+  console.log("Waiting for geo-ops-node to connect...");
+  const { waitForMeshNodes } = await import('./vfs_test_helpers.js');
+  await waitForMeshNodes(vfs, ['geo-ops-node']);
 
   // 3. Setup Jot Compiler and Parser
   const compiler = new JotCompiler(vfs);
   const parser = new JotParser();
 
-  // 4. Fetch the operators catalog to register all available schemas dynamically
-  const catalogUrl = `${OPS_URL}/catalog`;
-  const resp = await fetch(catalogUrl);
-  if (!resp.ok) {
-      throw new Error(`Catalog fetch failed: ${resp.status}`);
+  // 4. Fetch the operators catalog via Zenoh subscription
+  console.log("Subscribing to sys/schema for catalog discovery...");
+  let catalogReceived = null;
+  vfs.events.on('notify', (selector, payload) => {
+      if (selector.path === 'sys/schema') {
+          catalogReceived = payload;
+      }
+  });
+
+  await mesh.subscribe(Selector.fromObject({ path: 'sys/schema' }), Date.now() + 10000);
+
+  let attempts = 0;
+  while (!catalogReceived && attempts < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
   }
-  const catalog = await resp.json();
-  for (const [name, schema] of Object.entries(catalog.catalog)) {
+
+  if (!catalogReceived) {
+      throw new Error('Should have received schema catalog');
+  }
+  const catalog = catalogReceived.catalog;
+  for (const [name, schema] of Object.entries(catalog)) {
       compiler.registerOperator(name, { path: name, schema: schema });
   }
 

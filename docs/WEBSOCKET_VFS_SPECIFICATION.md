@@ -1,5 +1,9 @@
 # VFS WebSocket Transport Layer Specification
 
+> [!WARNING]
+> **OBSOLETE / DEPRECATED**
+> This transport layer specification is obsolete and has been superseded by the Eclipse Zenoh VFS integration (see [VFS_SPECIFICATION.md](file:///home/brian/github/jotcad_ez/docs/VFS_SPECIFICATION.md)). Peer discovery, reverse connections, and bi-directional message routing are handled natively by Zenoh.
+
 This document defines the architecture, message formats, handshake negotiation, and microcontroller (PIO) integration for an opportunistic WebSocket transport layer within the JotCAD Virtual File System (VFS) mesh.
 
 This transport layer is designed to run in parallel with the existing HTTP/REST and Long-Polling mechanisms, upgrading directly to WebSocket whenever negotiable, and falling back gracefully when needed.

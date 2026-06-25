@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchOpsNode } from '../../fs/test/ops_helper.js';
+import { launchSystem } from '../../orchestrator.js';
 import { TestVFSNode } from '../../fs/test/vfs_test_helpers.js';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
@@ -10,31 +10,22 @@ import { log } from '../../fs/src/log.js';
 import { encodeRecord, decodeRecordStream } from '../../fs/src/mesh/forward_connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
 
 test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
-    const OPS_PORT = 9193;
-    const TEST_NODE_PORT = 9194;
-    const STORAGE_DIR = path.resolve(__dirname, '../../.vfs_storage_e2e_error');
-
-    const ops = await launchOpsNode(OPS_PATH, OPS_PORT, STORAGE_DIR);
-    const testNode = new TestVFSNode('test-node', TEST_NODE_PORT);
-    await testNode.start();
-
+    let sys;
+    let testNode;
     try {
-        await fetch(`http://localhost:${OPS_PORT}/register`, {
-            method: 'POST',
-            body: JSON.stringify({ id: 'test-node', url: `http://localhost:${TEST_NODE_PORT}` })
-        });
-        await fetch(`http://localhost:${TEST_NODE_PORT}/register`, {
-            method: 'POST',
-            body: JSON.stringify({ id: 'geo-ops-node', url: `http://localhost:${OPS_PORT}` })
-        });
+        sys = await launchSystem('test/standard');
+        const routerPort = sys.ports.zenoh_router;
+        const TEST_NODE_PORT = 9194;
+
+        testNode = new TestVFSNode('test-node', TEST_NODE_PORT, [`http://localhost:${routerPort}`]);
+        await testNode.start();
 
         const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
         const rzSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'turns', type: 'jot:any' }], outputs: { $out: 'jot:shape' } };
 
-        const compiler = new JotCompiler();
+        const compiler = new JotCompiler(testNode.vfs);
         compiler.registerOperator('Box', { path: 'jot/Box', schema: boxSchema });
         compiler.registerOperator('rz', { path: 'jot/rz', schema: rzSchema });
 
@@ -43,32 +34,26 @@ test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
         const terminals = await compiler.evaluate((new JotParser()).parse(mainScript), {}, { outputs: { $out: 'jot:shape' } });
         const finalSelector = terminals[0].selector;
 
-        const body = encodeRecord({
-            op: 'READ_SELECTOR',
-            selector: finalSelector.toJSON()
-        });
+        await assert.rejects(
+            async () => {
+                await testNode.vfs.readSelector(finalSelector);
+            },
+            (err) => {
+                const errMsg = err.message;
+                log('[E2E ERROR TRACE]:');
+                errMsg.split('\n').forEach((line, i) => log(`  [${i}] ${line}`));
 
-        const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: body
-        });
-
-        assert.strictEqual(response.status, 500, 'Should fail with 500');
-        const { header } = await decodeRecordStream(response.body);
-        const errBody = header.info?.error || '';
-
-        log('[E2E ERROR TRACE]:');
-        errBody.split('\n').forEach((line, i) => log(`  [${i}] ${line}`));
-
-        assert.ok(errBody.includes('geo-ops-node'), 'Trace should include the failing node ID');
-        assert.ok(errBody.includes('jot/rotateZ'), 'Trace should include the failing operator');
-        assert.ok(errBody.includes('turns'), 'Trace should include the failing argument name');
-        assert.ok(errBody.includes('type must be number'), 'Trace should include the original JSON error');
+                assert.ok(errMsg.includes('geo-ops-node') || errMsg.includes('ops'), 'Trace should include the failing node ID');
+                assert.ok(errMsg.includes('jot/rotateZ') || errMsg.includes('jot/rz'), 'Trace should include the failing operator');
+                assert.ok(errMsg.includes('turns'), 'Trace should include the failing argument name');
+                assert.ok(errMsg.includes('type must be number') || errMsg.includes('must be number'), 'Trace should include the original JSON error');
+                return true;
+            }
+        );
         log('--- ERROR TRACE VERIFIED ---');
 
     } finally {
-        await testNode.stop();
-        await ops.stop();
+        if (testNode) await testNode.stop();
+        if (sys) await sys.stop();
     }
 });

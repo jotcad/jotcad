@@ -70,7 +70,7 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
     id: 'pipeline-client',
     storage: new DiskStorage('.vfs_storage_pipeline-client'),
   });
-  mesh = new MeshLink(clientVfs, [`${protocol}://localhost:${PORT_EXPORT}`], {
+  mesh = new MeshLink(clientVfs, [`http://localhost:${sys.ports.zenoh_router}`], {
     localUrl: `http://localhost:${PORT_CLIENT}`,
   });
   clientServer = http.createServer();
@@ -123,29 +123,15 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
 
   await t.test('should reject stale request at C++ node', async () => {
     const past = Date.now() - 5000;
-    console.log('[Test Pipeline] Sending raw stale request to C++ node...');
+    console.log('[Test Pipeline] Sending stale query to C++ node via Zenoh...');
 
-    const body = encodeRecord({
-      op: 'READ_SELECTOR',
-      selector: {
-        path: 'jot/Hexagon/diameter',
-        parameters: { diameter: 10 },
-      },
-      expiresAt: past
-    });
-
-    const resp = await fetch(`http://localhost:${PORT_OPS}/read_selector`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: body,
-    });
-
-    // Our new C++ implementation returns 404 for missing/expired/failed.
-    assert.strictEqual(
-      resp.status,
-      404,
-      'C++ node should return 404 for expired request'
-    );
-    console.log('[Test Pipeline] Remote C++ TTL rejection SUCCESS');
+    const selector = new Selector('jot/Hexagon/diameter', { diameter: 10 });
+    try {
+      await mesh.readSelector(selector, { expiresAt: past });
+      assert.fail('Should have been rejected');
+    } catch (err) {
+      assert.ok(err.message.includes('expired') || err.message.includes('408'), `Expected expiration error, got: ${err.message}`);
+      console.log('[Test Pipeline] Remote C++ TTL rejection SUCCESS:', err.message);
+    }
   });
 });

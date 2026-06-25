@@ -1,516 +1,549 @@
-import { normalizeSelector, Selector, decodeInfo } from '../cid.js';
-import { log, info } from '../log.js';
-import { ForwardConnection } from './forward_connection.js';
-import { ReverseConnection } from './reverse_connection.js';
-import { PEER_POLL_TIMEOUT_MS } from './constants.js';
-import {
-  ReadSelectorRequest,
-  ReadCIDRequest,
-  SpyRequest,
-  SubscribeRequest,
-  NotifyRequest
-} from './connection.js';
+import { open as zenohOpen, Config as ZenohConfig, KeyExpr as ZenohKeyExpr, ZBytes as ZenohZBytes, Selector as ZenohSelector } from '@eclipse-zenoh/zenoh-ts';
+import { normalizeSelector, Selector, getSelectorKey } from '../cid.js';
+import { log, info, error } from '../log.js';
 
-/**
- * MeshLink: Direct Neighbor Registry and Recursive Bread-crumb Router.
- * Honors Identity Duality: Explicit methods for Selector and CID searches.
- */
+// VfsRecord helper functions
+export function encodeRecord(header, payload = null) {
+  const headerStr = JSON.stringify(header);
+  const headerBytes = new TextEncoder().encode(headerStr);
+  const payloadBytes = payload || new Uint8Array(0);
+  const record = new Uint8Array(4 + headerBytes.length + payloadBytes.length);
+  const view = new DataView(record.buffer, record.byteOffset, record.byteLength);
+  view.setUint32(0, headerBytes.length, false);
+  record.set(headerBytes, 4);
+  record.set(payloadBytes, 4 + headerBytes.length);
+  return record;
+}
+
+export function decodeRecord(recordBytes) {
+  if (recordBytes.length < 4) return null;
+  const view = new DataView(recordBytes.buffer, recordBytes.byteOffset, recordBytes.byteLength);
+  const headerLen = view.getUint32(0, false);
+  if (recordBytes.length < 4 + headerLen) return null;
+  const headerBytes = recordBytes.subarray ? recordBytes.subarray(4, 4 + headerLen) : recordBytes.slice(4, 4 + headerLen);
+  const headerStr = new TextDecoder().decode(headerBytes);
+  const header = JSON.parse(headerStr);
+  const payload = recordBytes.subarray ? recordBytes.subarray(4 + headerLen) : recordBytes.slice(4 + headerLen);
+  return { header, payload };
+}
+
+// Legacy connection stubs to keep imports from breaking
+export class Connection {}
+export class ForwardConnection extends Connection {}
+export class ReverseConnection extends Connection {}
+export class VFSRequest {}
+export class VFSResult {}
+
 export class MeshLinkBase {
   constructor(vfs, neighborUrls = [], options = {}) {
     this.vfs = vfs;
     this.vfs.mesh = this;
     this.instanceId = Math.random().toString(36).slice(2, 8);
-    this.fetch = options.fetch || globalThis.fetch.bind(globalThis);
-    this.localUrl = options.localUrl;
-    log(`[MeshLink ${this.vfs.id}] Instance ${this.instanceId} created.`);
-    this.peers = new Map(); // neighborId -> Connection
-    this.connecting = new Set();
-    this.pollers = []; // Private client-side long-polling receivers
-    this.neighborUrls = neighborUrls.map((u) => u.replace(/\/$/, ''));
-    this.abortController = new AbortController();
-
-    this.interests = []; // List of { selector: Selector, subs: Map<neighborId, expiresAt>, localExpiresAt: number }
-
-    this._ppsInterval = setInterval(() => {
-      for (const conn of this.peers.values()) conn._tickPPS();
-    }, 1000);
-    if (this._ppsInterval.unref) this._ppsInterval.unref();
+    this.options = options;
+    this.neighborUrls = neighborUrls || [];
+    this.session = null;
+    this.queryableCid = null;
+    this.queryableOps = new Map();
+    this.subscriberNotify = null;
+    this.closed = false;
+    this.catalog = {};
+    this.discoveredProviders = new Set();
+    this.interests = new Map();
   }
 
-  /**
-   * INTERNAL: Enforce strictly one Connection per peer.
-   */
-  _setPeer(id, conn) {
-    if (this.peers.has(id)) {
-      const existing = this.peers.get(id);
-      throw new Error(`CRITICAL PROTOCOL VIOLATION: Peer ${id} already has an active connection (${existing.reachability}). Refusing to create duplicate.`);
+  get peers() {
+    const m = new Map();
+    if (this.discoveredProviders) {
+      for (const p of this.discoveredProviders) {
+        m.set(p, { id: p, pps: 0, reachability: 'DIRECT', protocol: 'zenoh' });
+      }
     }
-    this.peers.set(id, conn);
+    return m;
   }
 
-  _getTopologyPayload() {
-    this.pruneStaleConnections();
-    const activeInterests = [];
-    for (const entry of this.interests) {
-        const isLocal = entry.localExpiresAt > Date.now();
-        const hasRemote = [...entry.subs.values()].some(expiry => expiry > Date.now());
-        if ((isLocal || hasRemote) && entry.selector && entry.selector.path) {
-            activeInterests.push({
-                path: entry.selector.path,
-                local: isLocal,
-                remote: hasRemote
-            });
+  get connected() {
+    return !!this.session;
+  }
+
+  async start() {
+    if (this.neighborUrls.length === 0) {
+      log(`[MeshLink ${this.vfs.id}] No neighbors configured. Operating in standalone mode.`);
+      return;
+    }
+
+    // Try connecting to first reachable neighbor WS locator
+    let connected = false;
+    for (const url of this.neighborUrls) {
+      const locator = this.toZenohLocator(url);
+      log(`[MeshLink ${this.vfs.id}] Attempting connection to Zenoh locator: ${locator}`);
+      try {
+        const config = new ZenohConfig(locator);
+        config.messageResponseTimeoutMs = 5000;
+        this.session = await zenohOpen(config);
+        log(`[MeshLink ${this.vfs.id}] Connected to Zenoh session at ${locator}`);
+        connected = true;
+        break;
+      } catch (err) {
+        log(`[MeshLink ${this.vfs.id}] Failed connecting to ${locator}: ${err.message}`);
+      }
+    }
+
+    if (!connected) {
+      log(`[MeshLink ${this.vfs.id}] Warning: Could not connect to any Zenoh neighbors.`);
+      return;
+    }
+
+    // 1. Declare CID queryable: jot/vfs/cid/**
+    try {
+      this.queryableCid = await this.session.declareQueryable(`jot/vfs/cid/**`, {
+        handler: async (query) => {
+          try {
+            const key = query.keyExpr().toString();
+            const cid = key.slice(12);
+            info(`[MeshLink ${this.vfs.id}] Queryable CID: got request for ${cid}`);
+            let readResult = await this.vfs.readCID(cid, { localOnly: true }).catch(() => null);
+            if (readResult) {
+              const { stream, metadata } = readResult;
+              info(`[MeshLink ${this.vfs.id}] Queryable CID: Reading stream for ${cid}...`);
+              const payload = await this.streamToUint8Array(stream);
+              info(`[MeshLink ${this.vfs.id}] Queryable CID: Read stream for ${cid} completed (${payload.length} bytes). Replying...`);
+              const header = { status: 200, metadata, encoding: metadata.encoding || 'json' };
+              const record = encodeRecord(header, payload);
+              await query.reply(key, record);
+              info(`[MeshLink ${this.vfs.id}] Queryable CID: Replied to query for ${cid}`);
+            } else {
+              info(`[MeshLink ${this.vfs.id}] Queryable CID: CID ${cid} not found locally. Skipping reply.`);
+            }
+          } catch (err) {
+            info(`[MeshLink ${this.vfs.id}] Error in CID query handler: ${err.message}`);
+            try {
+              const header = { status: 500, error: err.message };
+              const record = encodeRecord(header);
+              await query.reply(query.keyExpr().toString(), record);
+            } catch (replyErr) {
+              info(`[MeshLink ${this.vfs.id}] Double fault: failed to reply error: ${replyErr.message}`);
+            }
+          } finally {
+            info(`[MeshLink ${this.vfs.id}] Queryable CID: Finalizing query.`);
+            await query.finalize();
+          }
         }
+      });
+    } catch (err) {
+      log(`[MeshLink ${this.vfs.id}] Error declaring CID queryable: ${err.message}`);
     }
 
-    const neighbors = [...this.peers.values()].map(c => ({
-        id: c.neighborId,
-        reachability: c.reachability || 'DIRECT',
-        protocol: c.getProtocol()
-    }));
+    // 1.5 Declare catalog queryable: jot/vfs/catalog
+    try {
+      this.queryableCatalog = await this.session.declareQueryable(`jot/vfs/catalog`, {
+        handler: async (query) => {
+          try {
+            const key = query.keyExpr().toString();
+            log(`[MeshLink ${this.vfs.id}] Queryable catalog: replying with local catalog`);
+            const payload = new TextEncoder().encode(JSON.stringify(this.vfs.getCatalog()));
+            const header = { status: 200, metadata: { state: 'AVAILABLE', encoding: 'json' }, encoding: 'json' };
+            const record = encodeRecord(header, payload);
+            await query.reply(key, record);
+          } catch (err) {
+            log(`[MeshLink ${this.vfs.id}] Error in catalog query handler: ${err.message}`);
+          } finally {
+            await query.finalize();
+          }
+        }
+      });
+    } catch (err) {
+      log(`[MeshLink ${this.vfs.id}] Error declaring catalog queryable: ${err.message}`);
+    }
 
-    return {
-        id: this.vfs.id,
-        interests: activeInterests,
-        neighbors: neighbors
-    };
+    // 2. Declare Operator queryables for all registered providers
+    for (const pattern of this.vfs.providers.keys()) {
+      await this.registerOp(pattern);
+    }
+
+    // 3. Declare notification subscriber: jot/vfs/pub/**
+    try {
+      this.subscriberNotify = await this.session.declareSubscriber(`jot/vfs/pub/**`, {
+        handler: (sample) => {
+          try {
+            const key = sample.keyexpr().toString();
+            const path = key.slice(12); // Strip "jot/vfs/pub/"
+            const payloadBytes = sample.payload().toBytes();
+            let payload;
+            try {
+              const payloadStr = new TextDecoder().decode(payloadBytes);
+              payload = JSON.parse(payloadStr);
+            } catch (err) {
+              payload = payloadBytes;
+            }
+            log(`[MeshLink ${this.vfs.id}] Subscriber Notify: received notification for ${path}`);
+            if (path === 'sys/schema') {
+              this.updateCatalog(payload);
+            } else {
+              this.notify(new Selector(path), payload, ['incoming']);
+            }
+          } catch (err) {
+            log(`[MeshLink ${this.vfs.id}] Error in notification subscriber: ${err.message}`);
+          }
+        }
+      });
+    } catch (err) {
+      log(`[MeshLink ${this.vfs.id}] Error declaring subscriber: ${err.message}`);
+    }
+    
+    // Initial catalog query
+    this.queryCatalog();
   }
 
-  pruneStaleConnections() {
-    const now = Date.now();
-    for (const [id, conn] of this.peers.entries()) {
-      if (conn instanceof ReverseConnection) {
-        if (now - conn.lastPollAt > PEER_POLL_TIMEOUT_MS) {
-          log(`[MeshLink ${this.vfs.id}] Authoritative pruning of stale peer ${id} (no poll for ${now - conn.lastPollAt}ms).`);
-          if (conn.stop) conn.stop();
-          this.peers.delete(id);
+  toZenohLocator(url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const parsed = new URL(url);
+      const port = parseInt(parsed.port, 10);
+      const wsPort = port + 1000;
+      return `ws://${parsed.hostname}:${wsPort}`;
+    }
+    if (url.startsWith('ws://') || url.startsWith('wss://')) {
+      return url;
+    }
+    return url;
+  }
+
+  async streamToUint8Array(stream) {
+    if (stream instanceof Uint8Array) return stream;
+    if (stream instanceof ArrayBuffer) return new Uint8Array(stream);
+    if (typeof Buffer !== 'undefined' && Buffer.isBuffer(stream)) return new Uint8Array(stream);
+    if (stream && typeof stream.getReader === 'function') {
+      const reader = stream.getReader();
+      const chunks = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      const len = chunks.reduce((acc, c) => acc + c.length, 0);
+      const bytes = new Uint8Array(len);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      return bytes;
+    }
+    throw new Error('Unsupported stream type in streamToUint8Array');
+  }
+
+  async readSelector(selector, context = {}) {
+    if (!this.session) return null;
+    const { expiresAt = Date.now() + 10000 } = context;
+
+    if (Date.now() > expiresAt) {
+      throw new Error(`[MeshLink ${this.vfs.id}] Request expired (expiresAt: ${expiresAt})`);
+    }
+
+    const path = selector.path;
+    const key = `jot/vfs/op/${path}`;
+    
+    const params = [];
+    if (selector.parameters) {
+      for (const [k, v] of Object.entries(selector.parameters)) {
+        const valStr = (typeof v === 'string') ? v : JSON.stringify(v);
+        params.push(`${k}=${encodeURIComponent(valStr)}`);
+      }
+    }
+    if (selector.output) {
+      params.push(`output=${encodeURIComponent(selector.output)}`);
+    }
+    params.push(`expiresAt=${expiresAt}`);
+    const queryExpr = params.length > 0 ? `${key}?${params.join(';')}` : key;
+    
+    log(`[MeshLink ${this.vfs.id}] readSelector generative: z_get(${queryExpr})`);
+    
+    try {
+      const receiver = await this.session.get(queryExpr, {
+        timeout: expiresAt - Date.now() > 0 ? expiresAt - Date.now() : 10000,
+        target: 1
+      });
+      if (receiver) {
+        for await (const reply of receiver) {
+          const result = reply.result();
+          if (result instanceof Error || result.constructor.name === 'ReplyError') {
+            throw new Error(result.payload ? result.payload().toString() : result.message);
+          }
           
-          // Scrub interests
-          for (const entry of this.interests) {
-            entry.subs.delete(id);
+          const sample = result;
+          const recordBytes = sample.payload().toBytes();
+          const decoded = decodeRecord(recordBytes);
+          if (!decoded) throw new Error("Failed to decode VfsRecord");
+          
+          const { header, payload } = decoded;
+          if (header.status !== 200) {
+            throw new Error(header.error || `Remote server returned status ${header.status}`);
+          }
+          
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(payload);
+              controller.close();
+            }
+          });
+          return { stream, metadata: header.metadata };
+        }
+      }
+    } catch (err) {
+      error(`[MeshLink ${this.vfs.id}] readSelector generative query failed: ${err.message}`);
+      throw err;
+    }
+
+    return null;
+  }
+
+  async readCID(cid, context = {}) {
+    if (!this.session) return null;
+    const { expiresAt = Date.now() + 10000 } = context;
+    
+    const key = `jot/vfs/cid/${cid}`;
+    log(`[MeshLink ${this.vfs.id}] readCID: z_get(${key})`);
+    
+    try {
+      const receiver = await this.session.get(key, {
+        timeout: expiresAt - Date.now() > 0 ? expiresAt - Date.now() : 10000,
+        target: 1
+      });
+      if (!receiver) throw new Error("No receiver returned");
+      
+      for await (const reply of receiver) {
+        const result = reply.result();
+        if (result instanceof Error || result.constructor.name === 'ReplyError') {
+          throw new Error(result.payload ? result.payload().toString() : result.message);
+        }
+        
+        const sample = result;
+        const recordBytes = sample.payload().toBytes();
+        const decoded = decodeRecord(recordBytes);
+        if (!decoded) throw new Error("Failed to decode VfsRecord");
+        
+        const { header, payload } = decoded;
+        if (header.status !== 200) {
+          throw new Error(header.error || `Remote server returned status ${header.status}`);
+        }
+        
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(payload);
+            controller.close();
+          }
+        });
+        return { stream, metadata: header.metadata };
+      }
+    } catch (err) {
+      error(`[MeshLink ${this.vfs.id}] readCID failed: ${err.message}`);
+      throw err;
+    }
+    return null;
+  }
+
+  async queryCatalog() {
+    if (!this.session) return;
+    log(`[MeshLink ${this.vfs.id}] Initial catalog query on Zenoh mesh...`);
+    try {
+      const receiver = await this.session.get('jot/vfs/catalog', {
+        timeout: 5000,
+        target: 1
+      });
+      if (receiver) {
+        for await (const reply of receiver) {
+          const result = reply.result();
+          if (result instanceof Error || result.constructor.name === 'ReplyError') continue;
+          
+          const sample = result;
+          const recordBytes = sample.payload().toBytes();
+          const decoded = decodeRecord(recordBytes);
+          if (!decoded) continue;
+          
+          const { header, payload } = decoded;
+          if (header.status === 200) {
+            const catalogPayload = JSON.parse(new TextDecoder().decode(payload));
+            if (catalogPayload.provider !== this.vfs.id) {
+              this.updateCatalog(catalogPayload);
+            }
           }
         }
       }
+    } catch (err) {
+      log(`[MeshLink ${this.vfs.id}] Catalog query failed: ${err.message}`);
     }
   }
 
-  upgradePeerToWS(id, wsConn) {
-    let reachability = wsConn.reachability;
-    if (this.peers.has(id)) {
-      const old = this.peers.get(id);
-      if (old.getProtocol && old.getProtocol().includes('ws')) {
-        log(`[MeshLink ${this.vfs.id}] Peer ${id} already has active WebSocket connection. Closing redundant new connection.`);
-        if (wsConn.stop) wsConn.stop();
-        return;
+  updateCatalog(payload) {
+    if (!payload || !payload.catalog) return;
+    this.catalog = this.catalog || {};
+    this.discoveredProviders = this.discoveredProviders || new Set();
+    
+    this.discoveredProviders.add(payload.provider);
+    
+    let changed = false;
+    for (const [name, schema] of Object.entries(payload.catalog)) {
+      if (!this.catalog[name]) {
+        this.catalog[name] = schema;
+        changed = true;
       }
-      reachability = old.reachability;
-      log(`[MeshLink ${this.vfs.id}] Upgrading peer ${id} to WS. Closing old ${old.reachability} connection.`);
-      if (old.stop) old.stop();
     }
-    wsConn.reachability = reachability;
-    this.peers.set(id, wsConn);
-    this.vfs.notify(new Selector('sys/topo'), this._getTopologyPayload());
+    
+    if (changed) {
+      log(`[MeshLink ${this.vfs.id}] Catalog updated from ${payload.provider}, now has ${Object.keys(this.catalog).length} operators.`);
+      const unifiedPayload = {
+        provider: payload.provider || 'mesh-union',
+        catalog: this.catalog
+      };
+      this.notify(new Selector('sys/schema'), unifiedPayload, ['incoming']);
+    }
   }
 
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
-    const s = normalizeSelector(selector);
-    if (stack.includes(this.vfs.id)) return;
-    
-    // Paint the local interest field
-    let entry = this.interests.find(e => e.selector.equals(s));
-    if (!entry) {
-        entry = { selector: s, subs: new Map(), localExpiresAt: 0 };
-        this.interests.push(entry);
-    }
-
-    const wasLocal = entry.localExpiresAt > Date.now();
-    entry.localExpiresAt = Math.max(entry.localExpiresAt, expiresAt);
-    log(`[MeshLink ${this.vfs.id}] Local interest in ${s.path} recorded (expiresAt: ${expiresAt})`);
-    
-    if (!wasLocal) {
-        this.vfs.notify(new Selector('sys/topo'), this._getTopologyPayload());
-    }
-
-    // Propagate the interest (Painting the mesh)
-    const nextStack = [...stack, this.vfs.id];
-    for (const conn of this.peers.values()) {
-      if (!nextStack.includes(conn.neighborId)) {
-        log(`[MeshLink ${this.vfs.id}] -> Propagating local interest in ${s.path} to peer ${conn.neighborId}`);
-        conn.send(new SubscribeRequest(s, expiresAt, nextStack)).catch((err) => {
-          log(`[MeshLink ${this.vfs.id}] Failed to propagate subscription interest to peer ${conn.neighborId}: ${err.message}`);
-        });
-      }
-    }
-  }
-
-  addInterest(neighborId, selector, expiresAt, stack = []) {
-    const s = normalizeSelector(selector);
-    log(`[MeshLink ${this.vfs.id}] addInterest: ${s.path} from ${neighborId} (stack: ${stack})`);
-    
-    let entry = this.interests.find(e => e.selector.equals(s));
-    if (!entry) {
-      entry = { selector: s, subs: new Map(), localExpiresAt: 0 };
-      this.interests.push(entry);
-    }
-    
-    const isNewNeighbor = !entry.subs.has(neighborId);
-    entry.subs.set(neighborId, expiresAt);
-
-    if (isNewNeighbor) {
-        this.notify(new Selector('sys/topo'), this._getTopologyPayload());
-    }
-
-    // Contribution phase (sys/schema, sys/topo)
-    if (isNewNeighbor && s.path === 'sys/schema') {
-        const conn = this.peers.get(neighborId);
-        if (conn) {
-            const catalog = this.vfs.getCatalog();
-            log(`[MeshLink ${this.vfs.id}] -> Contributing local catalog to ${neighborId} (${Object.keys(catalog.catalog).length} ops)`);
-            conn.send(new NotifyRequest(s, catalog, [this.vfs.id])).catch((err) => {
-              log(`[MeshLink ${this.vfs.id}] Failed to push local catalog to new peer ${neighborId}: ${err.message}`);
-            });
-        }
-    }
-
-    if (isNewNeighbor && s.path === 'sys/topo') {
-        const conn = this.peers.get(neighborId);
-        if (conn) {
-            log(`[MeshLink ${this.vfs.id}] -> Contributing local topology to new subscriber ${neighborId}`);
-            conn.send(new NotifyRequest(s, this._getTopologyPayload(), [this.vfs.id])).catch((err) => {
-              log(`[MeshLink ${this.vfs.id}] Failed to push topology to new peer ${neighborId}: ${err.message}`);
-            });
-        }
-    }
-
-    // PROPAGATION PHASE
-    if (isNewNeighbor) {
-      const nextStack = [...stack, this.vfs.id];
-      for (const conn of this.peers.values()) {
-        if (!nextStack.includes(conn.neighborId) && conn.neighborId !== neighborId) {
-          log(`[MeshLink ${this.vfs.id}] -> Propagating interest in ${s.path} from ${neighborId} to ${conn.neighborId}`);
-          conn.send(new SubscribeRequest(s, expiresAt, nextStack)).catch((err) => {
-            log(`[MeshLink ${this.vfs.id}] Failed to propagate subscription interest to neighbor ${conn.neighborId}: ${err.message}`);
-          });
-        }
+    log(`[MeshLink ${this.vfs.id}] subscribe interest registered: ${selector.path}`);
+    this.interests.set(selector.path, {
+      selector,
+      localExpiresAt: expiresAt
+    });
+    if (selector.path === 'sys/schema') {
+      if (this.catalog && Object.keys(this.catalog).length > 0) {
+        const primaryProvider = [...this.discoveredProviders][0] || 'mesh-union';
+        const unifiedPayload = {
+          provider: primaryProvider,
+          catalog: this.catalog
+        };
+        setTimeout(() => {
+          this.notify(new Selector('sys/schema'), unifiedPayload, ['incoming']);
+        }, 0);
+      } else {
+        this.queryCatalog();
       }
     }
   }
 
   notify(selector, payload, stack = []) {
-    this.pruneStaleConnections();
-    const s = normalizeSelector(selector);
-    if (stack.includes(this.vfs.id)) return;
-    const nextStack = [...stack, this.vfs.id];
-
-    info(`[MeshLink ${this.vfs.id}] notify: ${s.path} from stack ${stack}`);
-
-    // Logical Entry Matching
-    let entry = this.interests.find(e => e.selector.equals(s));
-    if (!entry) {
-        entry = { selector: s, subs: new Map(), localExpiresAt: 0 };
-        this.interests.push(entry);
+    if (stack && stack.includes('incoming')) {
+      this.vfs.events.emit('notify', selector, payload);
+      return;
     }
-
-    // 1. Local Delivery
-    if (entry.localExpiresAt > Date.now()) {
-      info(`[MeshLink ${this.vfs.id}] -> Local delivery for ${s.path}`);
-      this.vfs.events.emit('notify', s, payload);
+    if (!this.session) return;
+    const key = `jot/vfs/pub/${selector.path}`;
+    log(`[MeshLink ${this.vfs.id}] notify: publishing to ${key}`);
+    let bytes;
+    if (payload instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(payload))) {
+      bytes = payload;
+    } else {
+      bytes = new TextEncoder().encode(JSON.stringify(payload));
     }
-
-    // 2. Neighbor Propagation
-    for (const [neighborId, expiry] of entry.subs.entries()) {
-      if (Date.now() > expiry) { entry.subs.delete(neighborId); continue; }
-      if (stack.includes(neighborId)) continue;
-      
-      const conn = this.peers.get(neighborId);
-      if (conn) {
-          info(`[MeshLink ${this.vfs.id}] -> Forwarding notification for ${s.path} to ${neighborId}`);
-          conn.send(new NotifyRequest(s, payload, nextStack)).catch((err) => {
-            error(`[MeshLink ${this.vfs.id}] Failed to forward notification to neighbor ${neighborId}: ${err.message}`);
-          });
-      }
-    }
+    this.session.put(key, bytes).catch(err => {
+      error(`[MeshLink ${this.vfs.id}] notify failed: ${err.message}`);
+    });
   }
 
-  async start() {
-    this.vfs.mesh = this;
-    await Promise.all(this.neighborUrls.map((url) => this.addPeer(url)));
+  // Compatibility stubs for registerVFSRoutes
+  addInterest(peerId, selector, expiresAt, stack) {
+    this.subscribe(selector, expiresAt, stack);
   }
 
-  async addPeer(url) {
-    url = url.replace(/\/$/, '');
+  async registerPeer(peerId, peerUrl) {
+    return { id: this.vfs.id, reachability: 'DIRECT', transports: ['ws'] };
+  }
 
-    // Prevent redundant reciprocal handshakes if we already have an active peer connection pointing to this URL
-    for (const conn of this.peers.values()) {
-      const connUrl = conn.url || conn.baseUrl;
-      if (connUrl === url) {
-        log(`[MeshLink ${this.vfs.id}] addPeer: Already connected to URL ${url}, skipping handshake.`);
-        return null;
-      }
-    }
+  registerReversePeer(peerId, res, replyTo, stream, info) {}
+  upgradePeerToWS(peerId, activeConn) {}
 
-    log(`[MeshLink ${this.vfs.id}] addPeer startup: Attempting connection to ${url}`);
-    if (this.connecting.has(url)) {
-        log(`[MeshLink ${this.vfs.id}] addPeer: Already connecting to ${url}, skipping.`);
-        return null;
-    }
-    this.connecting.add(url);
+  async registerOp(pattern) {
+    if (!this.session) return;
+    this.queryableOps = this.queryableOps || new Map();
+    if (this.queryableOps.has(pattern)) return;
+
+    const key = `jot/vfs/op/${pattern}`;
+    log(`[MeshLink ${this.vfs.id}] Declaring specific queryable for operator: ${key}`);
     try {
-      log(`[MeshLink ${this.vfs.id}] -> POST ${url}/register (vfsId: ${this.vfs.id})`);
-      const resp = await this.fetch(`${url}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: this.vfs.id, url: this.localUrl, transports: ['http', 'ws'] }),
-        signal: this.abortController.signal || AbortSignal.timeout(5000),
-      });
-      log(`[MeshLink ${this.vfs.id}] <- ${resp.status} ${url}/register`);
-      if (resp.ok) {
-        const info = await resp.json();
-        log(`[MeshLink ${this.vfs.id}] Registration successful for ${url}:`, info);
-        if (info.id && info.id !== this.vfs.id) {
-          const existing = this.peers.get(info.id);
-          if (existing && (existing.ws || existing.constructor.name.includes('WS'))) {
-            log(`[MeshLink ${this.vfs.id}] Peer ${info.id} already has active WebSocket connection. Skipping redundant upgrade.`);
-            return info.id;
-          }
-
-          // WS upgrade phase - TIE-BREAKER: Only smaller ID initiates
-          if (info.transports && info.transports.includes('ws') && info.wsUrl && this.vfs.id < info.id) {
-            try {
-              log(`[MeshLink ${this.vfs.id}] Initiating deterministic WS upgrade to ${info.id} (Tie-breaker: ${this.vfs.id} < ${info.id})`);
-              let wsConn;
-              if (typeof window === 'undefined') {
-                const { WSNodeForwardConnection } = await import('../vfs_ws_transport_node.js');
-                wsConn = await WSNodeForwardConnection.connect(info.wsUrl, this.vfs.id, info.id);
-              } else {
-                const { WSBrowserForwardConnection } = await import('../vfs_ws_transport_browser.js');
-                wsConn = await WSBrowserForwardConnection.connect(info.wsUrl, this.vfs.id, info.id);
-              }
-
-              wsConn.vfs = this.vfs;
-              wsConn.mesh = this;
-              this.upgradePeerToWS(info.id, wsConn);
-              log(`[MeshLink ${this.vfs.id}] Successfully upgraded peer ${info.id} to WebSocket!`);
-              return info.id;
-            } catch (wsErr) {
-              log(`[MeshLink ${this.vfs.id}] WebSocket upgrade to ${info.wsUrl} failed: ${wsErr.message}. Falling back to HTTP.`);
-            }
-          }
-
-          let newConn = null;
-
-          if (!this.peers.has(info.id)) {
-            newConn = new ForwardConnection(info.id, url, this.fetch, { 
-                localUrl: this.localUrl, 
-                signal: this.abortController.signal,
-                reachability: info.reachability
-            });
-            this._setPeer(info.id, newConn);
-            log(`[MeshLink ${this.vfs.id}] Peer added: ${info.id} (${info.reachability})`);
-          }
-
-          // Reverse poll line for hidden nodes
-          if (info.reachability === 'REVERSE' || !this.localUrl) {
-            const pollerId = `${info.id}-poller`;
-            const hasExistingPoller = this.pollers.some(p => p.neighborId === pollerId);
-            if (!hasExistingPoller) {
-                log(`[MeshLink ${this.vfs.id}] Starting private reverse poll line for ${info.id}`);
-                const poller = new ReverseConnection(pollerId, this, { instanceId: this.instanceId });
-                poller.vfs = this.vfs; // Explicit assignment for the polling receiver
-                this.pollers.push(poller);
-                poller.startPolling(url, this.fetch);
-            }
-          }
-
-          // SYNC INTERESTS
-          if (newConn) {
-              for (const entry of this.interests.values()) {
-                let maxExp = entry.localExpiresAt || 0;
-                for (const exp of entry.subs.values()) if (exp > maxExp) maxExp = exp;
-                if (maxExp > Date.now()) {
-                  log(`[MeshLink ${this.vfs.id}] -> Syncing interest in ${entry.selector.path} to new peer ${newConn.neighborId}`);
-                  newConn.send(new SubscribeRequest(entry.selector, maxExp, [this.vfs.id])).catch((err) => {
-                    log(`[MeshLink ${this.vfs.id}] Failed to sync interest to new peer ${newConn.neighborId}: ${err.message}`);
-                  });
+      const queryable = await this.session.declareQueryable(key, {
+        handler: async (query) => {
+          try {
+            const key = query.keyExpr().toString();
+            const opPath = key.slice(11);
+            
+            const queryParams = new Map();
+            for (const [k, v] of query.parameters().iter()) {
+              const decoded = decodeURIComponent(v);
+              try {
+                const parsed = JSON.parse(decoded);
+                if (parsed && typeof parsed === 'object' && typeof parsed.path === 'string') {
+                  queryParams.set(k, Selector.fromObject(parsed));
+                } else {
+                  queryParams.set(k, parsed);
                 }
+              } catch {
+                queryParams.set(k, decoded);
               }
-          }
-
-          this.notify(new Selector('sys/topo'), this._getTopologyPayload());
-          return info.id;
-        }
-      } else {
-        const errText = await resp.text().catch(() => 'no body');
-        log(`[MeshLink ${this.vfs.id}] Handshake rejected by ${url} (Status ${resp.status}): ${errText}`);
-      }
-    } catch (e) {
-        log(`[MeshLink ${this.vfs.id}] Handshake failed for ${url}: ${e.message}`);
-    } finally { this.connecting.delete(url); }
-    return null;
-  }
-
-  async probeDirectReachability(url) {
-    if (!url) return false;
-    const target = `${url.replace(/\/$/, '')}/health`;
-    try {
-      const resp = await this.fetch(target, {
-        signal: AbortSignal.timeout(1000),
-      });
-      return resp.ok;
-    } catch (e) {
-      log(`[MeshLink ${this.vfs.id}] probeDirectReachability failed for ${target}: ${e.message}`);
-      return false;
-    }
-  }
-
-  async registerPeer(peerId, url) {
-    if (!peerId) throw new Error('Missing peerId');
-    const wsUrl = this.localUrl ? this.localUrl.replace(/^http/, 'ws') + '/vfs-ws' : null;
-
-    if (this.peers.has(peerId)) {
-      return { id: this.vfs.id, reachability: this.peers.get(peerId).reachability, transports: ['http', 'ws'], wsUrl };
-    }
-
-    if (url) {
-      const isReachable = await this.probeDirectReachability(url);
-      if (this.peers.has(peerId)) {
-        return { id: this.vfs.id, reachability: this.peers.get(peerId).reachability, transports: ['http', 'ws'], wsUrl };
-      }
-      if (isReachable) {
-        const conn = new ForwardConnection(peerId, url, this.fetch, {
-          localUrl: this.localUrl,
-          signal: this.abortController.signal,
-          reachability: 'DIRECT'
-        });
-        this._setPeer(peerId, conn);
-        this.notify(new Selector('sys/topo'), this._getTopologyPayload());
-        return { id: this.vfs.id, reachability: 'DIRECT', transports: ['http', 'ws'], wsUrl };
-      }
-    }
-
-    if (this.peers.has(peerId)) {
-      return { id: this.vfs.id, reachability: this.peers.get(peerId).reachability, transports: ['http', 'ws'], wsUrl };
-    }
-    const conn = new ReverseConnection(peerId, this, { instanceId: this.instanceId });
-    this._setPeer(peerId, conn);
-    this.notify(new Selector('sys/topo'), this._getTopologyPayload());
-    return { id: this.vfs.id, reachability: 'REVERSE', transports: ['http', 'ws'], wsUrl };
-  }
-
-  registerReversePeer(neighborId, res, replyTo = null, stream = null, info = null) {
-    if (!this.peers.has(neighborId)) {
-      this.registerPeer(neighborId);
-    }
-    const conn = this.peers.get(neighborId);
-    if (!(conn instanceof ReverseConnection)) {
-        throw new Error(`CRITICAL PROTOCOL VIOLATION: registerReversePeer called for ${neighborId} but connection is ${conn.constructor.name}`);
-    }
-    conn.addScanner(res, replyTo, stream, info);
-  }
-
-  async readSelector(selector, context = {}) {
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
-    const targetConns = [...this.peers.values()];
-    if (targetConns.length === 0) return null;
-
-    const fetchPromises = targetConns.map(async (conn) => {
-      const resp = await conn.send(new ReadSelectorRequest(selector, { ...context, stack, expiresAt }));
-      const metadata = decodeInfo(resp?.headers?.get('x-vfs-info'));
-      
-      if (metadata.error) {
-          if (metadata.error.includes('Backflow') || metadata.error.includes('403')) {
-              throw new Error(`Backflow: ${metadata.error}`);
-          }
-          throw new Error(`Peer ${conn.neighborId} reported error: ${metadata.error}`);
-      }
-      if (resp && resp.body) return { stream: resp.body, metadata };
-      throw new Error(`Peer ${conn.neighborId} returned no data for ${selector.path}`);
-    });
-
-    try { return await Promise.any(fetchPromises); } 
-    catch (e) { 
-        const errDetails = e.errors ? e.errors.map(err => err.message).join(', ') : e.message;
-        throw new Error(`Mesh-wide Selector Read Failure for ${selector.path}: ${errDetails}`); 
-    }
-    finally { for (const p of fetchPromises) p.catch(() => {}); }
-  }
-
-  async readCID(cid, context = {}) {
-    const { stack = [], resolutionStack = [], expiresAt = Date.now() + 30000 } = context;
-    const targetConns = [...this.peers.values()];
-    if (targetConns.length === 0) return null;
-
-    const fetchPromises = targetConns.map(async (conn) => {
-      const resp = await conn.send(new ReadCIDRequest(cid, { ...context, stack, resolutionStack, expiresAt }));
-      const metadata = decodeInfo(resp?.headers?.get('x-vfs-info'));
-      
-      if (metadata.error) {
-          if (metadata.error.includes('Backflow') || metadata.error.includes('403')) {
-              throw new Error(`Backflow: ${metadata.error}`);
-          }
-          throw new Error(`Peer ${conn.neighborId} reported error: ${metadata.error}`);
-      }
-      if (resp && resp.body) return { stream: resp.body, metadata };
-      throw new Error(`Peer ${conn.neighborId} returned no data for ${cid}`);
-    });
-
-    try { return await Promise.any(fetchPromises); } 
-    catch (e) { 
-        const errDetails = e.errors ? e.errors.map(err => err.message).join(', ') : e.message;
-        throw new Error(`Mesh-wide CID Read Failure for ${cid}: ${errDetails}`); 
-    }
-    finally { for (const p of fetchPromises) p.catch(() => {}); }
-  }
-
-  async spy(selector, context = {}) {
-    const s = normalizeSelector(selector);
-    const { stack = [], expiresAt = Date.now() + 30000 } = context;
-    const nextStack = stack.includes(this.vfs.id) ? stack : [...stack, this.vfs.id];
-    const targetConns = [...this.peers.values()].filter(c => !nextStack.includes(c.neighborId));
-    
-    if (targetConns.length === 0) return null;
-    
-    const fetchPromises = targetConns.map(async (conn) => {
-      try {
-        const result = await conn.send(new SpyRequest(s, { ...context, stack: nextStack, expiresAt }));
-        return result?.stream || null;
-      } catch (err) { return null; }
-    });
-    
-    try {
-      const results = await Promise.allSettled(fetchPromises);
-      const validStreams = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
-      
-      if (validStreams.length === 0) return null;
-      return new ReadableStream({
-        async start(controller) {
-          for (const s of validStreams) {
-            const reader = s.getReader();
-            try {
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                controller.enqueue(value);
-              }
-            } finally {
-              reader.releaseLock();
             }
+            
+            let output = "";
+            if (queryParams.has("output")) {
+              output = queryParams.get("output");
+              queryParams.delete("output");
+            }
+            
+            const paramsObj = Object.fromEntries(queryParams.entries());
+            let selector = new Selector(opPath, paramsObj);
+            if (output) {
+              selector = selector.withOutput(output);
+            }
+            log(`[MeshLink ${this.vfs.id}] Queryable OP (${pattern}): got request for ${selector.path}`);
+            
+            const result = await this.vfs.readSelector(selector);
+            if (result) {
+              const { stream, metadata } = result;
+              const payload = await this.streamToUint8Array(stream);
+              const header = { status: 200, metadata, encoding: metadata.encoding || 'json' };
+              const record = encodeRecord(header, payload);
+              await query.reply(key, record);
+            } else {
+              log(`[MeshLink ${this.vfs.id}] Queryable OP (${pattern}): Selector ${selector.path} not found locally. Skipping reply.`);
+            }
+          } catch (err) {
+            log(`[MeshLink ${this.vfs.id}] Error in OP query handler for ${pattern}: ${err.message}`);
+            const header = { status: 500, error: err.message };
+            const record = encodeRecord(header);
+            await query.reply(query.keyExpr().toString(), record);
+          } finally {
+            await query.finalize();
           }
-          controller.close();
-        },
+        }
       });
-    } finally {
-      for (const p of fetchPromises) p.catch(() => {});
+      this.queryableOps.set(pattern, queryable);
+    } catch (err) {
+      log(`[MeshLink ${this.vfs.id}] Error declaring specific queryable for ${key}: ${err.message}`);
     }
   }
 
-  stop() { 
-    this.abortController.abort(); 
-    clearInterval(this._ppsInterval); 
-    for (const conn of this.peers.values()) if (conn.stop) conn.stop();
-    for (const poller of this.pollers) if (poller.stop) poller.stop();
-    this.peers.clear(); 
-    this.pollers = [];
+  async stop() {
+    this.closed = true;
+    if (this.queryableCatalog) {
+      try { await this.queryableCatalog.undeclare(); } catch (e) {}
+      this.queryableCatalog = null;
+    }
+    if (this.queryableCid) {
+      try { await this.queryableCid.undeclare(); } catch (e) {}
+      this.queryableCid = null;
+    }
+    if (this.queryableOps) {
+      for (const queryable of this.queryableOps.values()) {
+        try { await queryable.undeclare(); } catch (e) {}
+      }
+      this.queryableOps.clear();
+    }
+    if (this.subscriberNotify) {
+      try { await this.subscriberNotify.undeclare(); } catch (e) {}
+      this.subscriberNotify = null;
+    }
+    if (this.session) {
+      try { await this.session.close(); } catch (e) {}
+      this.session = null;
+    }
   }
 }
 

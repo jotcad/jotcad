@@ -39,6 +39,9 @@ export class VFS {
     }
     this.providers.set(pattern, handler);
     if (options.schema) this.schemas.set(pattern, options.schema);
+    if (this.mesh && typeof this.mesh.registerOp === 'function') {
+      this.mesh.registerOp(pattern);
+    }
   }
 
   addSchema(path, schema) { this.schemas.set(path, schema); }
@@ -64,9 +67,74 @@ export class VFS {
     return info || null;
   }
 
+  async unnestSelector(selector, tasks = []) {
+    if (!isSelector(selector)) return { selector, tasks };
+
+    const newParams = {};
+    for (const [key, val] of Object.entries(selector.parameters)) {
+      if (isSelector(val)) {
+        const { selector: childSel } = await this.unnestSelector(val, tasks);
+        const childCID = await getSelectorKey(childSel);
+        newParams[key] = childCID;
+        tasks.push({
+          cid: childCID,
+          selector: childSel,
+          fn: () => this.readSelector(childSel, { unnested: true })
+        });
+      } else if (Array.isArray(val)) {
+        const newVal = [];
+        for (const item of val) {
+          if (isSelector(item)) {
+            const { selector: childSel } = await this.unnestSelector(item, tasks);
+            const childCID = await getSelectorKey(childSel);
+            newVal.push(childCID);
+            tasks.push({
+              cid: childCID,
+              selector: childSel,
+              fn: () => this.readSelector(childSel, { unnested: true })
+            });
+          } else {
+            newVal.push(item);
+          }
+        }
+        newParams[key] = newVal;
+      } else if (val && typeof val === 'object' && val.constructor === Object) {
+        const newObj = {};
+        for (const [k, v] of Object.entries(val)) {
+          if (isSelector(v)) {
+            const { selector: childSel } = await this.unnestSelector(v, tasks);
+            const childCID = await getSelectorKey(childSel);
+            newObj[k] = childCID;
+            tasks.push({
+              cid: childCID,
+              selector: childSel,
+              fn: () => this.readSelector(childSel, { unnested: true })
+            });
+          } else {
+            newObj[k] = v;
+          }
+        }
+        newParams[key] = newObj;
+      } else {
+        newParams[key] = val;
+      }
+    }
+
+    const resultSelector = new Selector(selector.path, newParams);
+    if (selector.output) resultSelector.output = selector.output;
+    return { selector: resultSelector, tasks };
+  }
+
   async readSelector(selector, context = {}) {
     this._checkClosed();
-    const s = normalizeSelector(selector);
+    let s = normalizeSelector(selector);
+    if (!context.unnested && (!context.stack || context.stack.length === 0)) {
+      const { selector: unnestedSelector, tasks } = await this.unnestSelector(s);
+      s = unnestedSelector;
+      for (const t of tasks) {
+        await t.fn();
+      }
+    }
     const packetContext = { 
         ...context, 
         stack: context.stack || [], 
@@ -171,7 +239,12 @@ export class VFS {
         throw new Error(`VFS.write: Size mismatch. Expected ${context.size} bytes, got ${bytes.length}`);
     }
 
-    const info = { state: 'AVAILABLE', encoding, ...(s ? { selector: s.toJSON() } : {}) };
+    const info = {
+      state: 'AVAILABLE',
+      encoding,
+      ...(s ? { selector: s.toJSON() } : {}),
+      ...(context.filename ? { filename: context.filename } : {})
+    };
     await this.storage.set(cid, bytes, info);
     if (s) this.events.emit('state', { selector: s, cid, state: 'AVAILABLE' });
     return { cid };
@@ -279,6 +352,9 @@ export class VFS {
 
   async close() {
     this.closed = true;
+    if (this.mesh && typeof this.mesh.stop === 'function') {
+      await this.mesh.stop();
+    }
     await this.storage.close();
   }
 }

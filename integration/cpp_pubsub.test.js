@@ -1,24 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { VFS } from '../fs/src/vfs.js';
 import { MeshLink } from '../fs/src/mesh_link.js';
 import { Selector } from '../fs/src/cid.js';
 import { launchSystem } from '../orchestrator.js';
 import { encodeRecord } from '../fs/src/mesh/forward_connection.js';
 
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
     // 1. Launch the TEST system
     const sys = await launchSystem('test/standard');
-    const CPP_PORT = sys.ports.ops;
+    const EXPORT_PORT = sys.ports.export;
+    const ROUTER_PORT = sys.ports.zenoh_router;
+
+    const hasCerts = fs.existsSync(path.join(__dirname, '../.ssl/localhost-key.pem')) && 
+                     fs.existsSync(path.join(__dirname, '../.ssl/localhost-cert.pem'));
+    const protocol = hasCerts ? 'https' : 'http';
 
     // Initialize VFS & Mesh
     const nodeVFS = new VFS({ id: 'node-js' });
-    const mesh = new MeshLink(nodeVFS, [`http://localhost:${CPP_PORT}`]);
+    const mesh = new MeshLink(nodeVFS, [`http://localhost:${ROUTER_PORT}`]);
     await nodeVFS.init();
 
     try {
         // 3. Connect Node.js -> C++
-        console.log('[Test] Connecting Node.js to C++...');
+        console.log('[Test] Connecting Node.js to Zenoh router...');
         await mesh.start();
         
         // Wait for Ops Node to see us
@@ -40,13 +52,13 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
         console.log('✔ Subscription interest sent');
 
         // 5. Test 2: Notification Routing (C++ -> Node)
-        console.log('[Test] Triggering notification from C++...');
+        console.log('[Test] Triggering notification from Export Node...');
         const body = encodeRecord({
             op: 'PUB',
             selector: topic.toJSON()
         }, new TextEncoder().encode(JSON.stringify({ hello: 'from-cpp' })));
 
-        const notifyRes = await fetch(`http://localhost:${CPP_PORT}/notify`, {
+        const notifyRes = await fetch(`${protocol}://localhost:${EXPORT_PORT}/notify`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/octet-stream'

@@ -206,18 +206,30 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
                 fileBytes = fs.readFileSync(file);
             } else if (/^[0-9a-fA-F]{64}$/.test(file)) {
                 try {
-                    fileBytes = await readExplicitData(v, file);
+                    const res = await v.readCID(file);
+                    if (res) {
+                        fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                        if (res.metadata?.filename) {
+                            filename = res.metadata.filename;
+                        }
+                    }
                 } catch (e) {
                     // Ignore and handle fallback
                 }
             }
         } else if (file && (file.path || file.cid || file instanceof Selector)) {
             try {
-                fileBytes = await readExplicitData(v, file);
-                if (file.parameters && file.parameters.path) {
-                    filename = file.parameters.path;
-                } else if (file.path) {
-                    filename = file.path;
+                const s = file instanceof Selector ? file : Selector.fromObject(file);
+                const res = await v.readSelector(s);
+                if (res) {
+                    fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                    if (res.metadata?.filename) {
+                        filename = res.metadata.filename;
+                    } else if (file.parameters && file.parameters.path) {
+                        filename = file.parameters.path;
+                    } else if (file.path) {
+                        filename = file.path;
+                    }
                 }
             } catch (e) {
                 // Ignore and handle fallback
