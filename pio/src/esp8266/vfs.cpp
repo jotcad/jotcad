@@ -61,8 +61,8 @@ VFS::~VFS() {
     for (auto& qable : z_queryables_) {
         z_queryable_drop(z_queryable_move(&qable));
     }
-    for (auto& sub : z_subscribers_) {
-        z_subscriber_drop(z_subscriber_move(&sub));
+    for (auto& pair : z_subscribers_) {
+        z_subscriber_drop(z_subscriber_move(&pair.second));
     }
     if (connected_) {
         z_session_drop(z_session_move(&z_session_));
@@ -190,7 +190,20 @@ void VFS::on_notification(const std::string& path, NotificationHandler handler) 
         Serial.printf("[VFS] Failed to declare subscriber for: %s\n", key.c_str());
         delete ctx_handler;
     } else {
-        z_subscribers_.push_back(sub);
+        auto it = z_subscribers_.find(path);
+        if (it != z_subscribers_.end()) {
+            z_subscriber_drop(z_subscriber_move(&it->second));
+        }
+        z_subscribers_[path] = sub;
+    }
+}
+
+void VFS::unlisten(const std::string& path) {
+    auto it = z_subscribers_.find(path);
+    if (it != z_subscribers_.end()) {
+        z_subscriber_drop(z_subscriber_move(&it->second));
+        z_subscribers_.erase(it);
+        Serial.printf("[VFS] Unlistened from topic: %s\n", path.c_str());
     }
 }
 

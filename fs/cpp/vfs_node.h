@@ -104,6 +104,19 @@ public:
     void subscribe(const Selector& selector, long long expiresAt, const std::vector<std::string>& stack) {}
     void notify(const Selector& selector, const json& payload, const std::vector<std::string>& stack = {});
 
+    void publish(const std::string& path, const json& payload);
+    void publish_binary(const std::string& path, const uint8_t* data, size_t len);
+
+    using SubscriptionCallback = std::function<void(const json& value)>;
+    void subscribe(const std::string& path, SubscriptionCallback callback);
+
+    // Path-oriented API
+    void write(const std::string& path, const json& value) { publish(path, value); }
+    void write_binary(const std::string& path, const uint8_t* data, size_t len) { publish_binary(path, data, len); }
+    void listen(const std::string& path, SubscriptionCallback callback) { subscribe(path, callback); }
+    void unlisten(const std::string& path);
+    json read(const std::string& path);
+
     void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
     void write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 
@@ -114,6 +127,11 @@ public:
     Config config_;
     std::map<std::string, OpHandler> handlers_;
     std::map<std::string, json> schemas_;
+    std::map<std::string, SubscriptionCallback> subscriptions_;
+    std::map<std::string, json> local_cache_;
+    std::map<std::string, std::pair<std::vector<uint8_t>, std::string>> local_cache_binary_;
+    std::map<std::string, bool> queryables_;
+    void declare_queryable_for_path(const std::string& path);
     void* server_ptr_; 
 
     std::mutex handlers_mutex_;

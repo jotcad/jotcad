@@ -21,6 +21,7 @@ struct ZenohState {
     std::vector<z_owned_queryable_t> queryable_ops;
     z_owned_queryable_t queryable_cid;
     z_owned_queryable_t queryable_catalog;
+    std::map<std::string, z_owned_subscriber_t> subscribers;
     std::list<std::string> queryable_keys;
     bool running = false;
     std::mutex mutex;
@@ -428,6 +429,149 @@ json VFSNode::get_catalog() {
         catalog[path] = schema;
     }
     return {{"catalog", catalog}, {"provider", config_.id}};
+}
+
+void VFSNode::publish(const std::string& path, const json& payload) {
+    if (!server_ptr_) return;
+    ZenohState* state = (ZenohState*)server_ptr_;
+    
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        local_cache_[path] = payload;
+    }
+
+    bool declare_now = false;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        if (queryables_.find(path) == queryables_.end()) {
+            queryables_[path] = true;
+            declare_now = true;
+        }
+    }
+    if (declare_now) {
+        declare_queryable_for_path(path);
+    }
+
+    std::string key = "jot/vfs/pub/" + path;
+    z_view_keyexpr_t ke;
+    if (z_view_keyexpr_from_str(&ke, key.c_str()) < 0) return;
+    
+    std::string payload_str;
+    if (payload.is_binary()) {
+        auto bin = payload.get_binary();
+        payload_str = std::string(bin.begin(), bin.end());
+    } else {
+        payload_str = payload.dump();
+    }
+    
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, (const uint8_t*)payload_str.data(), payload_str.size());
+    
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+    
+    z_put(z_loan(state->session), z_loan(ke), z_move(bytes), &opts);
+}
+
+void VFSNode::publish_binary(const std::string& path, const uint8_t* data, size_t len) {
+    if (!server_ptr_) return;
+    ZenohState* state = (ZenohState*)server_ptr_;
+    
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        local_cache_binary_[path] = std::make_pair(std::vector<uint8_t>(data, data + len), "application/octet-stream");
+    }
+
+    bool declare_now = false;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        if (queryables_.find(path) == queryables_.end()) {
+            queryables_[path] = true;
+            declare_now = true;
+        }
+    }
+    if (declare_now) {
+        declare_queryable_for_path(path);
+    }
+
+    std::string key = "jot/vfs/pub/" + path;
+    z_view_keyexpr_t ke;
+    if (z_view_keyexpr_from_str(&ke, key.c_str()) < 0) return;
+    
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, data, len);
+    
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+    
+    z_put(z_loan(state->session), z_loan(ke), z_move(bytes), &opts);
+}
+
+void VFSNode::subscribe(const std::string& path, SubscriptionCallback callback) {
+    std::lock_guard<std::mutex> lock(handlers_mutex_);
+    subscriptions_[path] = callback;
+    
+    if (server_ptr_) {
+        ZenohState* state = (ZenohState*)server_ptr_;
+        std::string key = "jot/vfs/pub/" + path;
+        state->queryable_keys.push_back(key);
+        const std::string& persistent_key = state->queryable_keys.back();
+        
+        z_view_keyexpr_t ke_sub;
+        z_view_keyexpr_from_str(&ke_sub, persistent_key.c_str());
+        
+        auto* cb_ctx = new SubscriptionCallback(callback);
+        
+        z_owned_closure_sample_t cb_sample;
+        z_closure_sample(&cb_sample, [](struct z_loaned_sample_t* sample, void* context) {
+            auto* cb = static_cast<SubscriptionCallback*>(context);
+            z_owned_string_t payload_str;
+            z_bytes_to_string(z_sample_payload(sample), &payload_str);
+            std::string raw_msg(z_string_data(z_string_loan(&payload_str)), z_string_len(z_string_loan(&payload_str)));
+            z_string_drop(z_string_move(&payload_str));
+            try {
+                json parsed = json::parse(raw_msg);
+                (*cb)(parsed);
+            } catch (...) {
+                (*cb)(json(raw_msg));
+            }
+        }, [](void* context) {
+            delete static_cast<SubscriptionCallback*>(context);
+        }, cb_ctx);
+        
+        z_owned_subscriber_t subscriber;
+        z_subscriber_options_t opts;
+        z_subscriber_options_default(&opts);
+        
+        if (z_declare_subscriber(z_loan(state->session), &subscriber, z_loan(ke_sub), z_move(cb_sample), &opts) == Z_OK) {
+            auto it = state->subscribers.find(path);
+            if (it != state->subscribers.end()) {
+                z_undeclare_subscriber(z_move(it->second));
+            }
+            state->subscribers[path] = subscriber;
+        } else {
+            std::cerr << "[VFSNode " << config_.id << "] Failed declaring subscriber dynamically for: " << persistent_key << std::endl;
+            delete cb_ctx;
+        }
+    }
+}
+
+void VFSNode::unlisten(const std::string& path) {
+    std::lock_guard<std::mutex> lock(handlers_mutex_);
+    subscriptions_.erase(path);
+    
+    if (server_ptr_) {
+        ZenohState* state = (ZenohState*)server_ptr_;
+        auto it = state->subscribers.find(path);
+        if (it != state->subscribers.end()) {
+            z_undeclare_subscriber(z_move(it->second));
+            state->subscribers.erase(it);
+        }
+    }
+}
+
+json VFSNode::read(const std::string& path) {
+    return read<json>(Selector(path));
 }
 
 } // namespace fs

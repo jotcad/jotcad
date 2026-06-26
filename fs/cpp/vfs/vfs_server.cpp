@@ -9,6 +9,7 @@
 #include <sstream>
 #include <iomanip>
 #include <list>
+#include <map>
 
 namespace fs {
 
@@ -19,6 +20,7 @@ struct ZenohState {
     std::vector<z_owned_queryable_t> queryable_ops;
     z_owned_queryable_t queryable_cid;
     z_owned_queryable_t queryable_catalog;
+    std::map<std::string, z_owned_subscriber_t> subscribers;
     std::list<std::string> queryable_keys;
     bool running = false;
     std::mutex mutex;
@@ -405,6 +407,46 @@ void VFSNode::listen() {
         std::cerr << "[VFSNode " << config_.id << "] Failed declaring catalog queryable!" << std::endl;
     }
 
+    // 4. Declare subscribers for all registered callbacks
+    for (const auto& [sub_path, callback] : subscriptions_) {
+        std::string key = "jot/vfs/pub/" + sub_path;
+        state->queryable_keys.push_back(key);
+        const std::string& persistent_key = state->queryable_keys.back();
+
+        z_view_keyexpr_t ke_sub;
+        z_view_keyexpr_from_str(&ke_sub, persistent_key.c_str());
+
+        auto* cb_ctx = new SubscriptionCallback(callback);
+
+        z_owned_closure_sample_t cb_sample;
+        z_closure_sample(&cb_sample, [](struct z_loaned_sample_t* sample, void* context) {
+            auto* cb = static_cast<SubscriptionCallback*>(context);
+            z_owned_string_t payload_str;
+            z_bytes_to_string(z_sample_payload(sample), &payload_str);
+            std::string raw_msg(z_string_data(z_string_loan(&payload_str)), z_string_len(z_string_loan(&payload_str)));
+            z_string_drop(z_string_move(&payload_str));
+            try {
+                json parsed = json::parse(raw_msg);
+                (*cb)(parsed);
+            } catch (...) {
+                (*cb)(json(raw_msg));
+            }
+        }, [](void* context) {
+            delete static_cast<SubscriptionCallback*>(context);
+        }, cb_ctx);
+
+        z_owned_subscriber_t subscriber;
+        z_subscriber_options_t opts;
+        z_subscriber_options_default(&opts);
+
+        if (z_declare_subscriber(z_loan(state->session), &subscriber, z_loan(ke_sub), z_move(cb_sample), &opts) == Z_OK) {
+            state->subscribers[sub_path] = subscriber;
+        } else {
+            std::cerr << "[VFSNode " << config_.id << "] Failed declaring subscriber on startup for: " << persistent_key << std::endl;
+            delete cb_ctx;
+        }
+    }
+
     std::cout << "[VFSNode " << config_.id << "] Zenoh listener successfully started on port " << config_.port << std::endl;
 
     // Block the thread until stop() is called
@@ -429,6 +471,11 @@ void VFSNode::stop() {
         
         std::cout << "[VFSNode " << config_.id << "] Shutting down Zenoh Session..." << std::endl;
         
+        for (auto& pair : state->subscribers) {
+            z_undeclare_subscriber(z_move(pair.second));
+        }
+        state->subscribers.clear();
+
         for (auto& q : state->queryable_ops) {
             z_undeclare_queryable(z_move(q));
         }
@@ -440,6 +487,98 @@ void VFSNode::stop() {
         
         state->cv.notify_all();
         server_ptr_ = nullptr;
+    }
+}
+
+void VFSNode::declare_queryable_for_path(const std::string& path) {
+    if (!server_ptr_) return;
+    ZenohState* state = static_cast<ZenohState*>(server_ptr_);
+
+    std::string key = "jot/vfs/op/" + path;
+    state->queryable_keys.push_back(key);
+    const std::string& persistent_key = state->queryable_keys.back();
+
+    z_view_keyexpr_t ke_op;
+    z_view_keyexpr_from_str(&ke_op, persistent_key.c_str());
+    
+    z_owned_closure_query_t cb_op;
+    z_closure(&cb_op, [](z_loaned_query_t* query, void* context) {
+        VFSNode* self = static_cast<VFSNode*>(context);
+        
+        z_view_string_t key_string;
+        z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
+        std::string key(z_string_data(z_loan(key_string)), z_string_len(z_loan(key_string)));
+        
+        // Strip "jot/vfs/op/" (length 11) to get path
+        std::string path = (key.length() > 11) ? key.substr(11) : key;
+
+        z_owned_query_t query_owned;
+        z_query_clone(&query_owned, query);
+
+        std::thread([self, query_owned = std::move(query_owned), path, key]() mutable {
+            try {
+                std::vector<uint8_t> payload_bytes;
+                std::string encoding = "json";
+                
+                // 1. Check binary cache first
+                bool is_binary = false;
+                {
+                    std::lock_guard<std::mutex> lock(self->storage_mutex_);
+                    auto it = self->local_cache_binary_.find(path);
+                    if (it != self->local_cache_binary_.end()) {
+                        payload_bytes = it->second.first;
+                        encoding = "bytes";
+                        is_binary = true;
+                    }
+                }
+                
+                // 2. Fall back to JSON cache
+                if (!is_binary) {
+                    json val;
+                    {
+                        std::lock_guard<std::mutex> lock(self->storage_mutex_);
+                        auto it = self->local_cache_.find(path);
+                        if (it != self->local_cache_.end()) {
+                            val = it->second;
+                        }
+                    }
+                    std::string val_str = val.dump();
+                    payload_bytes = std::vector<uint8_t>(val_str.begin(), val_str.end());
+                }
+
+                json resp_header = {
+                    {"status", 200},
+                    {"metadata", {{"state", "AVAILABLE"}, {"encoding", encoding}}},
+                    {"encoding", "json"}
+                };
+                
+                auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, payload_bytes));
+
+                z_owned_bytes_t reply_payload;
+                z_bytes_from_buf(&reply_payload, (uint8_t*)record_bytes->data(), record_bytes->size(), [](void* data, void* arg) {
+                    delete static_cast<std::vector<uint8_t>*>(arg);
+                }, record_bytes);
+
+                z_query_reply_options_t options;
+                z_query_reply_options_default(&options);
+
+                z_view_keyexpr_t reply_keyexpr;
+                z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+
+                z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+            } catch (...) {}
+            z_drop(z_move(query_owned));
+        }).detach();
+    }, nullptr, this);
+
+    z_queryable_options_t opts_op;
+    z_queryable_options_default(&opts_op);
+
+    z_owned_queryable_t queryable;
+    if (z_declare_queryable(z_loan(state->session), &queryable, z_loan(ke_op), z_move(cb_op), &opts_op) == Z_OK) {
+        state->queryable_ops.push_back(queryable);
+    } else {
+        std::cerr << "[VFSNode] Failed to declare queryable for path: " << path << std::endl;
     }
 }
 

@@ -93,6 +93,17 @@ public:
         });
     }
 
+    // Path-oriented API
+    void write(const std::string& path, const json& value) { publish(path, value); }
+    void write_binary(const std::string& path, const uint8_t* data, size_t len) { publish_binary(path, data, len); }
+    void listen(const std::string& path, SubscriptionCallback callback) { subscribe(path, callback); }
+    void unlisten(const std::string& path);
+    json read(const std::string& path) {
+        auto it = local_cache_.find(path);
+        if (it != local_cache_.end()) return it->second;
+        return json();
+    }
+
     // Internal callback for Zenoh queries
     void handle_query(z_loaned_query_t* query);
 
@@ -104,7 +115,7 @@ private:
     // Zenoh session and resources
     z_owned_session_t z_session_;
     std::vector<z_owned_queryable_t> z_queryables_;
-    std::vector<z_owned_subscriber_t> z_subscribers_;
+    std::map<std::string, z_owned_subscriber_t> z_subscribers_;
     bool connected_ = false;
 
     // Activity LED State
