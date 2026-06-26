@@ -127,17 +127,7 @@ void setup() {
     node = new fs::VFS(config);
 
     // Register presence endpoint
-    node->register_op("sensor/presence", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        fs::json data = {
-            {"state", current_radar.target_state},
-            {"moving_cm", current_radar.moving_dist},
-            {"moving_energy", current_radar.moving_energy},
-            {"static_cm", current_radar.static_dist},
-            {"static_energy", current_radar.static_energy},
-            {"distance_cm", current_radar.detect_dist}
-        };
-        response->send(200, "application/json", data.dump().c_str());
-    }, {{"output", "object"}});
+    
 
     node->begin();
     Serial.println("VFS_READY");
@@ -181,12 +171,12 @@ void loop() {
                         last_state = current_radar.target_state;
                         last_broadcast = millis();
                         
-                        fs::Selector selector("sensor/presence");
+                        
                         fs::json payload = {
                             {"state", current_radar.target_state},
                             {"distance_cm", current_radar.detect_dist}
                         };
-                        node->notify(selector, payload);
+                        node->publish("sensor/presence", payload);
                         Serial.printf("[RADAR] State: %d, Dist: %d cm\n", current_radar.target_state, current_radar.detect_dist);
                     }
                 }

@@ -54,13 +54,9 @@ void setup() {
     node = new fs::VFS(config);
 
     // Register sensor endpoints
-    node->register_op("sensor/temperature", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        response->send(200, "application/json", fs::json({{"value", current_temp}, {"node", vfs_node_id}}).dump().c_str());
-    }, {{"output", "number"}});
+    
 
-    node->register_op("sensor/humidity", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        response->send(200, "application/json", fs::json({{"value", current_humidity}, {"node", vfs_node_id}}).dump().c_str());
-    }, {{"output", "number"}});
+    
 
     node->begin();
     Serial.println("VFS_READY");
@@ -95,7 +91,7 @@ void loop() {
             last_sent_t = current_temp;
             last_broadcast = millis();
             fs::json params = {{"node", vfs_node_id}};
-            int sent_count = node->notify(fs::Selector("sensor/temperature", params), {{"value", current_temp}});
+            int sent_count = node->publish("sensor/temperature", {{"value", current_temp}});
             Serial.printf("[DHT] Published Temp (Sent to %d peers): %.1f C\n", sent_count, current_temp);
         }
 
@@ -103,7 +99,7 @@ void loop() {
             last_sent_h = current_humidity;
             last_broadcast = millis();
             fs::json params = {{"node", vfs_node_id}};
-            int sent_count = node->notify(fs::Selector("sensor/humidity", params), {{"value", current_humidity}});
+            int sent_count = node->publish("sensor/humidity", {{"value", current_humidity}});
             Serial.printf("[DHT] Published Humidity (Sent to %d peers): %.1f %%\n", sent_count, current_humidity);
         }
     }

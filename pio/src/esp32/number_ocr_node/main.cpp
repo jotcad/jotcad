@@ -365,30 +365,7 @@ void setup() {
     node = new fs::VFS(vfs_config);
 
     // Formally advertise sensor/camera capability to the mesh routing engine
-    node->register_op("sensor/camera", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        camera_fb_t * fb = esp_camera_fb_get();
-        if (!fb) {
-            response->send(500, "text/plain", "Camera capture failed");
-            return;
-        }
-        
-        // Crop the central 96x96 region and send as raw binary
-        const int cropSize = 96;
-        const int startX = (160 - cropSize) / 2; // = 32
-        const int startY = (120 - cropSize) / 2; // = 12
-        
-        std::vector<uint8_t> cropped_bytes(cropSize * cropSize);
-        for (int y = 0; y < cropSize; y++) {
-            int src_y = startY + y;
-            for (int x = 0; x < cropSize; x++) {
-                int src_x = startX + x;
-                cropped_bytes[y * cropSize + x] = fb->buf[src_y * 160 + src_x];
-            }
-        }
-        esp_camera_fb_return(fb);
-
-        response->send_binary(200, "image/x-raw-grayscale", cropped_bytes.data(), cropped_bytes.size());
-    }, {{"output", "image"}});
+    
 
     node->begin();
     Serial.println("VFS_READY");
@@ -534,7 +511,7 @@ void loop() {
         }
 
         // Publish OCR result dynamically to VFS subscribers on every frame
-        int sent = node->notify(selector, payload);
+        node->publish(selector.path, payload);
         if (sent > 0) {
             Serial.printf("[OCR Node] Published Digit Data (%d bytes, Sent to %d interested peers)\n", 
                           (int)payload.dump().length(), sent);

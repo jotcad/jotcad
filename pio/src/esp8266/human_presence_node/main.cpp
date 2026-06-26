@@ -121,9 +121,9 @@ void loop() {
                     static uint8_t last_state = 255;
                     if (current_radar.target_state != last_state) {
                         last_state = current_radar.target_state;
-                        fs::Selector selector("sensor/presence");
+                        
                         fs::json payload = {{"state", current_radar.target_state}, {"distance_cm", current_radar.detect_dist}};
-                        node->notify(selector, payload);
+                        node->publish("sensor/presence", payload);
                         DEBUG_LOG_F("[RADAR] State: %s (%d), Dist: %d cm\n", get_state_name(current_radar.target_state), current_radar.target_state, current_radar.detect_dist);
                     }
                 }

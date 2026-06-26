@@ -58,13 +58,7 @@ void setup() {
     node = new fs::VFS(config);
 
     // Register sensor endpoint
-    node->register_op("sensor/environment", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        fs::json data = {
-            {"temperature", current_temp},
-            {"humidity", current_humidity}
-        };
-        response->send(200, "application/json", data.dump().c_str());
-    }, {{"output", "object"}});
+    
 
     node->begin();
     Serial.println("VFS_READY");
@@ -96,12 +90,12 @@ void loop() {
             last_sent_t = current_temp;
             last_broadcast = millis();
 
-            fs::Selector selector("sensor/environment");
+            
             fs::json payload = {
                 {"temperature", current_temp},
                 {"humidity", current_humidity}
             };
-            node->notify(selector, payload);
+            node->publish("sensor/environment", payload);
             Serial.printf("[DHT] Temp: %.1f C, Humidity: %.1f %%\n", current_temp, current_humidity);
         }
     }

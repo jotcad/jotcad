@@ -100,17 +100,7 @@ static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Pleas
 
     node = new fs::VFS(config);
 
-    // 2. Register handler for on-demand camera reads
-    node->register_op("sensor/camera", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        camera_fb_t * fb = esp_camera_fb_get();
-        if (!fb) {
-            response->send(500, "text/plain", "Camera capture failed");
-            return;
-        }
 
-        response->send_binary(200, "image/jpeg", fb->buf, fb->len);
-        esp_camera_fb_return(fb);
-    }, {{"output", "image"}});
 
     node->begin();
     Serial.println("VFS_READY");
@@ -125,15 +115,9 @@ void loop() {
     if (millis() - last_capture > 500) {
         last_capture = millis();
 
-        fs::json selector = {{"path", "sensor/camera"}};
-
-        // We only capture if there is interest
         camera_fb_t * fb = esp_camera_fb_get();
         if (fb) {
-            int sent = node->notify_binary(selector, fb->buf, fb->len);
-            if (sent > 0) {
-                Serial.printf("[ESP32-CAM] Published Binary Image (%d bytes, Sent to: %d)\n", (int)fb->len, sent);
-            }
+            node->publish_binary("sensor/camera", fb->buf, fb->len);
             esp_camera_fb_return(fb);
         }
     }

@@ -74,9 +74,9 @@ void broadcast_vfs_event(const fs::json& event) {
     set_last_event(event);
 
     if (node) {
-        fs::Selector selector("midi/events");
+        
         Serial.printf("[VFS] Broadcasting event to mesh: %s\n", event.dump().c_str());
-        int sent = node->notify(selector, event);
+        int sent = node->publish("midi/events", event);
         Serial.printf("[VFS] Broadcast completed. Sent to %d peer(s).\n", sent);
     } else {
         Serial.println("[VFS] WARNING: VFS node not initialized, dropping broadcast.");
@@ -332,11 +332,7 @@ void setup() {
     node = new fs::VFS(config);
 
     // Register active handler so other nodes on the mesh can fetch the last event
-    node->register_op("midi/status", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        fs::json last_event = get_last_event();
-        Serial.printf("[VFS-RPC] Received read request for 'midi/status'. Replying with: %s\n", last_event.dump().c_str());
-        response->send(200, "application/json", last_event.dump().c_str());
-    }, {{"output", "object"}});
+    
 
     node->begin();
     Serial.println("[VFS] Node fully active! Registering VFS_READY signal.");

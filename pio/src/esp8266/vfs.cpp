@@ -194,46 +194,7 @@ void VFS::on_notification(const std::string& path, NotificationHandler handler) 
     }
 }
 
-int VFS::notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack) {
-    if (!connected_) return 0;
 
-    std::string key = "jot/vfs/pub/" + sel.path;
-    z_view_keyexpr_t ke;
-    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
-
-    std::string payload_str = payload.dump();
-    z_owned_bytes_t bytes;
-    z_bytes_copy_from_buf(&bytes, (const uint8_t*)payload_str.data(), payload_str.size());
-
-    z_put_options_t opts;
-    z_put_options_default(&opts);
-
-    if (z_put(z_session_loan(&z_session_), z_view_keyexpr_loan(&ke), z_bytes_move(&bytes), &opts) < 0) {
-        Serial.printf("[VFS] Failed to put notification for: %s\n", key.c_str());
-        return 0;
-    }
-    return 1;
-}
-
-int VFS::notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack) {
-    if (!connected_) return 0;
-
-    std::string key = "jot/vfs/pub/" + sel.path;
-    z_view_keyexpr_t ke;
-    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
-
-    z_owned_bytes_t bytes;
-    z_bytes_copy_from_buf(&bytes, data, len);
-
-    z_put_options_t opts;
-    z_put_options_default(&opts);
-
-    if (z_put(z_session_loan(&z_session_), z_view_keyexpr_loan(&ke), z_bytes_move(&bytes), &opts) < 0) {
-        Serial.printf("[VFS] Failed to put notification for: %s\n", key.c_str());
-        return 0;
-    }
-    return 1;
-}
 
 json VFS::read_selector(const Selector& sel) {
     std::string key = "jot/vfs/op/" + sel.path;
@@ -392,6 +353,123 @@ void VFS::handle_query(z_loaned_query_t* query) {
 
         ZenohResponseWriter writer(query);
         handlers_[op_path](params, &writer);
+    }
+}
+
+void VFS::publish(const std::string& path, const json& payload) {
+    if (!connected_) return;
+
+    local_cache_[path] = payload;
+
+    if (queryables_.find(path) == queryables_.end()) {
+        declare_queryable_for_path(path);
+    }
+
+    std::string key = "jot/vfs/pub/" + path;
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
+
+    std::string payload_str = payload.dump();
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, (const uint8_t*)payload_str.data(), payload_str.size());
+
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+
+    z_put(z_session_loan(&z_session_), z_view_keyexpr_loan(&ke), z_bytes_move(&bytes), &opts);
+}
+
+void VFS::publish_binary(const std::string& path, const uint8_t* data, size_t len) {
+    if (!connected_) return;
+
+    std::vector<uint8_t> vec(data, data + len);
+    local_cache_binary_[path] = std::make_pair(vec, "application/octet-stream");
+
+    if (queryables_.find(path) == queryables_.end()) {
+        declare_queryable_for_path(path);
+    }
+
+    std::string key = "jot/vfs/pub/" + path;
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
+
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, data, len);
+
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+
+    z_put(z_session_loan(&z_session_), z_view_keyexpr_loan(&ke), z_bytes_move(&bytes), &opts);
+}
+
+void VFS::declare_queryable_for_path(const std::string& path) {
+    std::string key = "jot/vfs/op/" + path;
+    queryable_keys_.push_back(key);
+    const std::string& persistent_key = queryable_keys_.back();
+
+    z_owned_closure_query_t callback;
+    z_closure_query(&callback, [](z_loaned_query_t* query, void* ctx) {
+        std::pair<VFS*, std::string>* params = static_cast<std::pair<VFS*, std::string>*>(ctx);
+        params->first->handle_cached_query(query, params->second);
+    }, [](void* ctx) {
+        delete static_cast<std::pair<VFS*, std::string>*>(ctx);
+    }, new std::pair<VFS*, std::string>(this, path));
+
+    z_owned_queryable_t queryable;
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, persistent_key.c_str());
+
+    if (z_declare_queryable(z_session_loan(&z_session_), &queryable, z_view_keyexpr_loan(&ke), z_closure_query_move(&callback), NULL) >= 0) {
+        z_queryables_.push_back(queryable);
+        queryables_[path] = true;
+    }
+}
+
+void VFS::handle_cached_query(z_loaned_query_t* query, const std::string& path) {
+    if (local_cache_.find(path) != local_cache_.end()) {
+        json val = local_cache_[path];
+        json resp_header = {
+            {"status", 200},
+            {"metadata", {{"state", "AVAILABLE"}, {"encoding", "json"}}},
+            {"encoding", "json"}
+        };
+        std::string body = val.dump();
+        std::vector<uint8_t> record;
+        std::string header_str = resp_header.dump();
+        uint32_t header_len = header_str.length();
+        record.reserve(4 + header_len + body.size());
+        record.push_back((header_len >> 24) & 0xFF);
+        record.push_back((header_len >> 16) & 0xFF);
+        record.push_back((header_len >> 8) & 0xFF);
+        record.push_back(header_len & 0xFF);
+        record.insert(record.end(), header_str.begin(), header_str.end());
+        record.insert(record.end(), body.begin(), body.end());
+
+        z_owned_bytes_t reply_payload;
+        z_bytes_from_buf(&reply_payload, record.data(), record.size(), NULL, NULL);
+        z_query_reply(query, z_query_keyexpr(query), z_bytes_move(&reply_payload), NULL);
+    }
+    else if (local_cache_binary_.find(path) != local_cache_binary_.end()) {
+        const auto& [data, mime] = local_cache_binary_[path];
+        json resp_header = {
+            {"status", 200},
+            {"metadata", {{"state", "AVAILABLE"}, {"encoding", "bytes"}}},
+            {"encoding", "bytes"}
+        };
+        std::vector<uint8_t> record;
+        std::string header_str = resp_header.dump();
+        uint32_t header_len = header_str.length();
+        record.reserve(4 + header_len + data.size());
+        record.push_back((header_len >> 24) & 0xFF);
+        record.push_back((header_len >> 16) & 0xFF);
+        record.push_back((header_len >> 8) & 0xFF);
+        record.push_back(header_len & 0xFF);
+        record.insert(record.end(), header_str.begin(), header_str.end());
+        record.insert(record.end(), data.begin(), data.end());
+
+        z_owned_bytes_t reply_payload;
+        z_bytes_from_buf(&reply_payload, record.data(), record.size(), NULL, NULL);
+        z_query_reply(query, z_query_keyexpr(query), z_bytes_move(&reply_payload), NULL);
     }
 }
 

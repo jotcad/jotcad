@@ -68,11 +68,30 @@ public:
 
     using NotificationHandler = std::function<void(const Selector& sel, const json& payload)>;
     void on_notification(const std::string& path, NotificationHandler handler);
+    void register_notify_handler(NotificationHandler handler) {
+        on_notification("instrument/config", handler);
+    }
+
+    void publish(const std::string& path, const json& payload);
+    void publish_binary(const std::string& path, const uint8_t* data, size_t len);
 
     json read_selector(const Selector& sel);
-    int notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack = {});
-    int notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
+    int notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack = {}) {
+        publish(sel.path, payload);
+        return 1;
+    }
+    int notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {}) {
+        publish_binary(sel.path, data, len);
+        return 1;
+    }
     void subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack = {}) {}
+    
+    using SubscriptionCallback = std::function<void(const json& value)>;
+    void subscribe(const std::string& path, SubscriptionCallback callback) {
+        on_notification(path, [callback](const Selector&, const json& payload) {
+            callback(payload);
+        });
+    }
 
     // Internal callback for Zenoh queries
     void handle_query(z_loaned_query_t* query);
@@ -90,6 +109,15 @@ private:
 
     // Activity LED State
     bool led_state_ = true;
+
+    // Dynamic state caching and query routing
+    void declare_queryable_for_path(const std::string& path);
+    void handle_cached_query(z_loaned_query_t* query, const std::string& path);
+
+    std::map<std::string, json> local_cache_;
+    std::map<std::string, std::pair<std::vector<uint8_t>, std::string>> local_cache_binary_;
+    std::map<std::string, bool> queryables_;
+    std::vector<std::string> queryable_keys_;
 };
 
 } // namespace fs
