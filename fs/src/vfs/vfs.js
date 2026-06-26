@@ -181,17 +181,93 @@ export class VFS {
     return { stream, metadata: result.metadata };
   }
 
+  async _drainStream(result) {
+    if (!result) return null;
+    const { stream, metadata } = result;
+    if (!stream) return null;
+    const reader = stream.getReader();
+    const chunks = [];
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    const encoding = metadata?.encoding;
+    if (encoding === 'json') {
+      try {
+        return JSON.parse(new TextDecoder().decode(bytes));
+      } catch (e) {
+        return new TextDecoder().decode(bytes);
+      }
+    } else if (encoding === 'string') {
+      return new TextDecoder().decode(bytes);
+    } else if (encoding === 'null') {
+      return null;
+    }
+    return bytes;
+  }
+
   /**
-   * Legacy method for backward compatibility. 
-   * @deprecated Use readSelector() or readCID() instead.
+   * Reads from VFS. Handles both Selector, CID, and path string.
    */
   async read(target, context = {}) {
-    if (isString(target)) return this.readCID(target, context);
-    return this.readSelector(target, context);
+    if (isSelector(target)) {
+      return this.readSelector(target, context);
+    }
+    if (isString(target)) {
+      if (target.match(/^[0-9a-f]{64}$/i)) {
+        return this.readCID(target, context);
+      }
+      // It's a path string!
+      const s = new Selector(target);
+      const result = await this.readSelector(s, context);
+      return this._drainStream(result);
+    }
+    throw new Error('VFS.read: invalid target');
+  }
+
+  /**
+   * Triggers resolution/fulfillment of target without returning payload bytes.
+   * Returns the metadata (status, encoding, state, etc.) of the fulfillment.
+   */
+  async fulfill(target, context = {}) {
+    this._checkClosed();
+    let result;
+    if (isSelector(target)) {
+      result = await this.readSelector(target, context);
+    } else if (isString(target)) {
+      if (target.match(/^[0-9a-f]{64}$/i)) {
+        result = await this.readCID(target, context);
+      } else {
+        // It's a path string!
+        const s = new Selector(target);
+        result = await this.readSelector(s, context);
+      }
+    } else {
+      throw new Error('VFS.fulfill: invalid target');
+    }
+    return result ? result.metadata : null;
   }
 
   async write(target, streamOrBytes, context = {}) {
     this._checkClosed();
+    if (isString(target) && !target.match(/^[0-9a-f]{64}$/i)) {
+      const s = new Selector(target);
+      const res = await this.write(s, streamOrBytes, context);
+      await this.notify(s, streamOrBytes);
+      return res;
+    }
     log(`[VFS ${this.id}] write(${target.path || target})`);
     
     let s = null, cid = null;
@@ -337,6 +413,33 @@ export class VFS {
 
     if (this.mesh) this.mesh.subscribe(s, expiresAt, stack);
     return unsubscribe;
+  }
+
+  async listen(path, callback) {
+    this._checkClosed();
+    if (!this._listeners) {
+      this._listeners = new Map();
+    }
+    const selector = new Selector(path);
+    const wrappedCallback = (notifiedSelector, payload) => {
+      callback(payload);
+    };
+    const unsubscribe = await this.subscribe(selector, Date.now() + 1000 * 60 * 60 * 24, [], wrappedCallback);
+    if (!this._listeners.has(path)) {
+      this._listeners.set(path, []);
+    }
+    this._listeners.get(path).push(unsubscribe);
+  }
+
+  async unlisten(path) {
+    this._checkClosed();
+    if (this._listeners && this._listeners.has(path)) {
+      const unsubscribes = this._listeners.get(path);
+      for (const unsub of unsubscribes) {
+        try { unsub(); } catch (e) {}
+      }
+      this._listeners.delete(path);
+    }
   }
 
   async notify(selector, payload, stack = []) {

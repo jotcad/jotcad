@@ -36,7 +36,8 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
       try {
         const receiver = await vfs.mesh.session.get('jot/vfs/catalog', { 
           timeout: Math.min(2000, timeout - (Date.now() - startTime)),
-          target: 1
+          target: 1,
+          consolidation: 1
         });
         if (receiver) {
           for await (const reply of receiver) {

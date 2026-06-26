@@ -376,8 +376,24 @@ export const vfsActions = {
     return vfs.readCID(cid, context);
   },
 
-  async write(selector, data) {
-    return vfs.write(selector, data);
+  async read(target, context = {}) {
+    return vfs.read(target, context);
+  },
+
+  async fulfill(target, context = {}) {
+    return vfs.fulfill(target, context);
+  },
+
+  async write(target, data, context = {}) {
+    return vfs.write(target, data, context);
+  },
+
+  async listen(path, callback) {
+    return vfs.listen(path, callback);
+  },
+
+  async unlisten(path) {
+    return vfs.unlisten(path);
   },
 
   async clearStorage() {

@@ -26,6 +26,7 @@ export const PROFILES = {
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
       ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://localhost:9200' } },
+      ops2:   { type: 'ops',    protocol: 'http',  port: 9192, env: { PEER_ID: 'geo-ops-node-2', NEIGHBORS: 'http://localhost:9200' } },
       export: { type: 'export', protocol: 'https', port: 9197, env: { NEIGHBORS: 'http://localhost:9200' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
@@ -143,18 +144,19 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
         env: { ...process.env }
       };
     },
-    ops: (cfg) => {
+    ops: (cfg, key) => {
       const useSsl = cfg.protocol === 'https';
+      const storageKey = key || 'ops';
       return {
         name: `Ops Node (${cfg.port})`,
         command: './geo/bin/ops',
-        args: [String(cfg.port), `${storagePrefix}ops`],
+        args: [String(cfg.port), `${storagePrefix}${storageKey}`],
         cwd: __dirname,
         env: { 
             ...process.env, 
             LOG_LEVEL: globalLogLevel,
             PORT: String(cfg.port),
-            PEER_ID: `${profileKey.replace('/', '_')}_ops`,
+            PEER_ID: `${profileKey.replace('/', '_')}_${storageKey}`,
             SSL_CERT_PATH: (useSsl && hasCerts) ? certPath : '',
             SSL_KEY_PATH: (useSsl && hasCerts) ? keyPath : '',
             ...env,
@@ -164,6 +166,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     },
     export: (cfg) => {
       const useSsl = cfg.protocol === 'https';
+      const opsNode = componentMap.ops || componentMap.ops1 || componentMap.ops2;
       return {
         name: `Export Node (${cfg.port})`,
         command: 'node',
@@ -174,7 +177,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
             LOG_LEVEL: globalLogLevel,
             PORT: String(cfg.port),
             VFS_ID: `${profileKey.replace('/', '_')}_export`,
-            NEIGHBORS: `${componentMap.ops?.protocol || 'http'}://localhost:${componentMap.ops?.port || 80}`,
+            NEIGHBORS: `${opsNode?.protocol || 'http'}://localhost:${opsNode?.port || 80}`,
             DISABLE_SSL: useSsl ? '0' : '1',
             ...env,
             ...cfg.env
@@ -218,21 +221,24 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
         }
       };
     },
-    subscriber: (cfg) => ({
-      name: `Counter Subscriber (${cfg.port})`,
-      command: 'node',
-      args: ['pio/counter_subscriber_node.js'],
-      cwd: __dirname,
-      env: { 
-          ...process.env, 
-          LOG_LEVEL: globalLogLevel,
-          PORT: String(cfg.port),
-          VFS_ID: `${profileKey.replace('/', '_')}_subscriber`,
-          NEIGHBORS: `${componentMap.ops?.protocol || 'http'}://localhost:${componentMap.ops?.port || 80}`,
-          ...env,
-          ...cfg.env
-      }
-    }),
+    subscriber: (cfg) => {
+      const opsNode = componentMap.ops || componentMap.ops1 || componentMap.ops2;
+      return {
+        name: `Counter Subscriber (${cfg.port})`,
+        command: 'node',
+        args: ['pio/counter_subscriber_node.js'],
+        cwd: __dirname,
+        env: { 
+            ...process.env, 
+            LOG_LEVEL: globalLogLevel,
+            PORT: String(cfg.port),
+            VFS_ID: `${profileKey.replace('/', '_')}_subscriber`,
+            NEIGHBORS: `${opsNode?.protocol || 'http'}://localhost:${opsNode?.port || 80}`,
+            ...env,
+            ...cfg.env
+        }
+      };
+    },
     vfs_cpp: (cfg, key) => {
       const fullId = `${profileKey.replace('/', '_')}_${key}`;
       return {

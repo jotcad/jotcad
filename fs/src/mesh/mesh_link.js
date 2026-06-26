@@ -253,7 +253,6 @@ export class MeshLinkBase {
     if (selector.output) {
       params.push(`output=${encodeURIComponent(selector.output)}`);
     }
-    params.push(`expiresAt=${expiresAt}`);
     const queryExpr = params.length > 0 ? `${key}?${params.join(';')}` : key;
     
     log(`[MeshLink ${this.vfs.id}] readSelector generative: z_get(${queryExpr})`);
@@ -348,7 +347,8 @@ export class MeshLinkBase {
     try {
       const receiver = await this.session.get('jot/vfs/catalog', {
         timeout: 5000,
-        target: 1
+        target: 1,
+        consolidation: 1
       });
       if (receiver) {
         for await (const reply of receiver) {

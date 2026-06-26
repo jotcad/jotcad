@@ -63,6 +63,8 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 - **SELECTOR WIRE FORMAT**: Network requests MUST wrap the identity in a top-level key: `{"selector": {...}}` OR `{"cid": "..."}`.
 - **STACK PROTECTION**: Nodes MUST NOT dispatch to neighbors already present in the `stack` property to prevent infinite loops.
 - **FORMAL VFS LINKS**: Use `vfs.link(src, tgt)` for semantic aliasing (the "remainer"). Aliases are strictly metadata-driven and MUST store the full target `Selector`.
+- **STABLE WIRE EXPRESSIONS (CRITICAL)**: Network queries and wire protocols MUST NOT append request-level context (such as `expiresAt` or query timestamps) as query string parameters, as this alters the query expression on the wire, breaks Zenoh-level caching, and compromises Selector hashing consistency. Timeout and expiration values MUST be passed strictly via native transportation options (e.g. Zenoh's `{ timeout }` option).
+- **NON-CONSOLIDATING CATALOGS**: Shared catalog lookups (e.g., `jot/vfs/catalog`) MUST be queried with `consolidation: 1` (`ConsolidationMode.NONE`) to prevent the Zenoh router from merging and discarding replies from multiple nodes under the same key expression.
 
 ## Refined Language Semantics
 

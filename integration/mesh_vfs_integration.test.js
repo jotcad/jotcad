@@ -46,7 +46,7 @@ test('Decentralized Mesh-VFS Integration via Zenoh', { timeout: 60000 }, async (
 
   // Wait for mesh to settle: Node A needs to see Node C
   console.log('[Test Mesh] Waiting for Node C to be visible...');
-  await waitForMeshNodes(vfsA, ['node-C']);
+  await waitForMeshNodes(vfsA, ['node-C'], 5000);
 
   await t.test('should implement Ephemeral Wipe on startup', async () => {
     const files = await vfsA.storage.iterateMeta();
@@ -68,7 +68,7 @@ test('Decentralized Mesh-VFS Integration via Zenoh', { timeout: 60000 }, async (
     await meshD.start();
     
     // Node A should now see Node D in discovery
-    await waitForMeshNodes(vfsA, ['node-D']);
+    await waitForMeshNodes(vfsA, ['node-D'], 5000);
     
     assert.ok(meshA.discoveredProviders.has('node-D'), 'Node A should have registered Node D');
     console.log('[Test Mesh] AUTO-PEERING SUCCESSful.');

@@ -22,26 +22,21 @@ export const RgbLedWidget = (props) => {
 
   onMount(() => {
     // 1. Listen to control state updates to keep widget visual in sync
-    const handleNotify = (selector, payload) => {
-      if (selector.path === 'control/rgb') {
-        const red = typeof payload.r !== 'undefined' ? payload.r : (payload.red || 0);
-        const green = typeof payload.g !== 'undefined' ? payload.g : (payload.green || 0);
-        const blue = typeof payload.b !== 'undefined' ? payload.b : (payload.blue || 0);
-        
-        setR(red);
-        setG(green);
-        setB(blue);
+    vfsActions.listen('control/rgb', (payload) => {
+      const red = typeof payload.r !== 'undefined' ? payload.r : (payload.red || 0);
+      const green = typeof payload.g !== 'undefined' ? payload.g : (payload.green || 0);
+      const blue = typeof payload.b !== 'undefined' ? payload.b : (payload.blue || 0);
+      
+      setR(red);
+      setG(green);
+      setB(blue);
 
-        setIsUpdating(true);
-        setTimeout(() => setIsUpdating(false), 200);
-      }
-    };
+      setIsUpdating(true);
+      setTimeout(() => setIsUpdating(false), 200);
+    });
 
-    vfs.events.on('notify', handleNotify);
-
-    // 2. Initial state read from VFS cache
-    const rgbSel = new Selector('control/rgb');
-    vfsActions.readSelectorData(rgbSel)
+    // 2. Initial state read from VFS
+    vfsActions.read('control/rgb')
       .then(data => {
         if (data) {
           setR(typeof data.r !== 'undefined' ? data.r : (data.red || 0));
@@ -53,16 +48,8 @@ export const RgbLedWidget = (props) => {
         // No initial state cached, default is 0, 0, 0
       });
 
-    // 3. Keep interest alive in the Zenoh mesh
-    const sub = () => {
-      mesh.subscribe(rgbSel, Date.now() + 3600000).catch(() => {});
-    };
-    sub();
-    const subTimer = setInterval(sub, 1800000); // Renew every 30 mins
-
     onCleanup(() => {
-      vfs.events.off('notify', handleNotify);
-      clearInterval(subTimer);
+      vfsActions.unlisten('control/rgb');
     });
   });
 

@@ -27,7 +27,7 @@ export const RgbLedWindow = (props) => {
     const performPublish = async () => {
       lastSentTime = Date.now();
       try {
-        await mesh.notify(new Selector('control/rgb'), { r: red, g: green, b: blue });
+        await vfsActions.write('control/rgb', { r: red, g: green, b: blue });
       } catch (err) {
         console.error('[RgbLedWindow] Mesh notify failed:', err);
       }
@@ -56,30 +56,25 @@ export const RgbLedWindow = (props) => {
     
     // Presets publish immediately
     if (pendingTimeout) clearTimeout(pendingTimeout);
-    mesh.notify(new Selector('control/rgb'), { r: red, g: green, b: blue }).catch(err => {
+    vfsActions.write('control/rgb', { r: red, g: green, b: blue }).catch(err => {
       console.error('[RgbLedWindow] Preset apply failed:', err);
     });
   };
 
   onMount(() => {
     // 1. Listen for mesh notifications to sync controls if color is modified externally
-    const handleNotify = (selector, payload) => {
-      if (selector.path === 'control/rgb') {
-        const red = typeof payload.r !== 'undefined' ? payload.r : (payload.red || 0);
-        const green = typeof payload.g !== 'undefined' ? payload.g : (payload.green || 0);
-        const blue = typeof payload.b !== 'undefined' ? payload.b : (payload.blue || 0);
+    vfsActions.listen('control/rgb', (payload) => {
+      const red = typeof payload.r !== 'undefined' ? payload.r : (payload.red || 0);
+      const green = typeof payload.g !== 'undefined' ? payload.g : (payload.green || 0);
+      const blue = typeof payload.b !== 'undefined' ? payload.b : (payload.blue || 0);
 
-        setR(red);
-        setG(green);
-        setB(blue);
-      }
-    };
-
-    vfs.events.on('notify', handleNotify);
+      setR(red);
+      setG(green);
+      setB(blue);
+    });
 
     // 2. Fetch initial state
-    const rgbSel = new Selector('control/rgb');
-    vfsActions.readSelectorData(rgbSel)
+    vfsActions.read('control/rgb')
       .then(data => {
         if (data) {
           setR(typeof data.r !== 'undefined' ? data.r : (data.red || 0));
@@ -92,7 +87,7 @@ export const RgbLedWindow = (props) => {
       });
 
     onCleanup(() => {
-      vfs.events.off('notify', handleNotify);
+      vfsActions.unlisten('control/rgb');
       if (pendingTimeout) clearTimeout(pendingTimeout);
     });
   });
