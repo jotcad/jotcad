@@ -15,8 +15,8 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9000 },
-      ops:    { type: 'ops',    protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://localhost:9000' } },
-      export: { type: 'export', protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://localhost:9000' } },
+      ops:    { type: 'ops',    protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      export: { type: 'export', protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
   },
@@ -25,9 +25,9 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
-      ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://localhost:9200' } },
-      ops2:   { type: 'ops',    protocol: 'http',  port: 9192, env: { PEER_ID: 'geo-ops-node-2', NEIGHBORS: 'http://localhost:9200' } },
-      export: { type: 'export', protocol: 'https', port: 9197, env: { NEIGHBORS: 'http://localhost:9200' } },
+      ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://127.0.0.1:9200' } },
+      ops2:   { type: 'ops',    protocol: 'http',  port: 9192, env: { PEER_ID: 'geo-ops-node-2', NEIGHBORS: 'http://127.0.0.1:9200' } },
+      export: { type: 'export', protocol: 'https', port: 9197, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
@@ -36,9 +36,9 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9000 },
-      ops:        { type: 'ops',        protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://localhost:9000' } },
-      export:     { type: 'export',     protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://localhost:9000' } },
-      subscriber: { type: 'subscriber', protocol: 'http',  port: 11223, env: { NEIGHBORS: 'http://localhost:9000' } },
+      ops:        { type: 'ops',        protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      export:     { type: 'export',     protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      subscriber: { type: 'subscriber', protocol: 'http',  port: 11223, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
   },
@@ -47,9 +47,9 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
-      ops:        { type: 'ops',        protocol: 'http',  port: 9191, env: { NEIGHBORS: 'http://localhost:9200' } },
-      export:     { type: 'export',     protocol: 'https', port: 9192, env: { NEIGHBORS: 'http://localhost:9200' } },
-      subscriber: { type: 'subscriber', protocol: 'http',  port: 11224, env: { NEIGHBORS: 'http://localhost:9200' } },
+      ops:        { type: 'ops',        protocol: 'http',  port: 9191, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
+      export:     { type: 'export',     protocol: 'https', port: 9192, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
+      subscriber: { type: 'subscriber', protocol: 'http',  port: 11224, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
@@ -58,9 +58,9 @@ export const PROFILES = {
     gateway: 'node_a',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9400 },
-      node_a: { type: 'node_a', protocol: 'http', port: 8181, env: { NEIGHBORS: 'http://localhost:9400' } },
-      node_b: { type: 'node_b', protocol: 'http', port: 8182, env: { NEIGHBORS: 'http://localhost:9400' } },
-      ops:    { type: 'ops',    protocol: 'http', port: 8183, env: { NEIGHBORS: 'http://localhost:9400' } }
+      node_a: { type: 'node_a', protocol: 'http', port: 8181, env: { NEIGHBORS: 'http://127.0.0.1:9400' } },
+      node_b: { type: 'node_b', protocol: 'http', port: 8182, env: { NEIGHBORS: 'http://127.0.0.1:9400' } },
+      ops:    { type: 'ops',    protocol: 'http', port: 8183, env: { NEIGHBORS: 'http://127.0.0.1:9400' } }
     }
   },
   'test/complex_topology': {
@@ -68,9 +68,9 @@ export const PROFILES = {
     gateway: 'node_js',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9300 },
-      cpp_node_1: { type: 'vfs_cpp', protocol: 'http', port: 9591, env: { NEIGHBORS: 'http://localhost:9300' } },
-      cpp_node_2: { type: 'vfs_cpp', protocol: 'http', port: 9592, env: { NEIGHBORS: 'http://localhost:9300' } },
-      node_js:    { type: 'node_a',  protocol: 'http', port: 9593, env: { NEIGHBORS: 'http://localhost:9300' } }
+      cpp_node_1: { type: 'vfs_cpp', protocol: 'http', port: 9591, env: { NEIGHBORS: 'http://127.0.0.1:9300' } },
+      cpp_node_2: { type: 'vfs_cpp', protocol: 'http', port: 9592, env: { NEIGHBORS: 'http://127.0.0.1:9300' } },
+      node_js:    { type: 'node_a',  protocol: 'http', port: 9593, env: { NEIGHBORS: 'http://127.0.0.1:9300' } }
     }
   },
   'live/direct_cpp': {
@@ -78,7 +78,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9500 },
-      ops: { type: 'ops', protocol: 'https', port: 9198, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://localhost:9500' } },
+      ops: { type: 'ops', protocol: 'https', port: 9198, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://127.0.0.1:9500' } },
       ux:  { type: 'ux',  protocol: 'https', port: 3232, dist: 'ux/dist/test' }
     }
   }
@@ -132,17 +132,22 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
 
   const componentConfigs = {
     zenoh_router: (cfg) => {
-      return {
-        name: `Zenoh Router (${cfg.port})`,
-        command: '/home/brian/.cargo/bin/zenoh-bridge-remote-api',
-        args: [
-          '--listen', `tcp/127.0.0.1:${cfg.port}`,
-          '--ws-port', `127.0.0.1:${cfg.port + 1000}`,
-          '--no-multicast-scouting'
-        ],
-        cwd: __dirname,
-        env: { ...process.env }
-      };
+      return [
+        {
+          name: `Zenoh Router (${cfg.port})`,
+          command: '/home/brian/.cargo/bin/zenohd',
+          args: ['-l', `tcp/0.0.0.0:${cfg.port}`, '--no-multicast-scouting'],
+          cwd: __dirname,
+          env: { ...process.env }
+        },
+        {
+          name: `Zenoh Bridge (${cfg.port})`,
+          command: '/home/brian/.cargo/bin/zenoh-bridge-remote-api',
+          args: ['-e', `tcp/127.0.0.1:${cfg.port}`, '--ws-port', String(cfg.port + 1000), '--no-multicast-scouting'],
+          cwd: __dirname,
+          env: { ...process.env }
+        }
+      ];
     },
     ops: (cfg, key) => {
       const useSsl = cfg.protocol === 'https';
@@ -278,7 +283,10 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     }
   };
 
-  const components = Object.entries(componentMap).map(([id, cfg]) => componentConfigs[cfg.type](cfg, id));
+  const components = Object.entries(componentMap).flatMap(([id, cfg]) => {
+    const res = componentConfigs[cfg.type](cfg, id);
+    return Array.isArray(res) ? res : [res];
+  });
 
   const processes = new Map();
   let shuttingDown = false;

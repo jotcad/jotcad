@@ -178,3 +178,12 @@ The JotCAD mesh has been successfully extended to microcontroller-based nodes (E
 - **Footprint:** The VFS and network logic compile under 10KB RAM (using custom memory-safe structures and bypasses for C++ limitations of `_Generic` macros).
 - **Protocol Efficiency:** Utilizes Zenoh sessions, queries, queryables, and subscription propagation to minimize network overhead and avoid HTTP/WebSocket polling.
 - **Hardware Integration:** Devices can register operator handlers (`register_op`), publish notifications (`notify`), and run cooperative scheduler spins (`zp_spin_once` on ESP8266).
+
+### 8.2. Single-Threaded Client Protocol Invariants [DONE]
+
+For resource-constrained client environments without multi-threading capabilities (`Z_FEATURE_MULTI_THREAD == 0`), the following constraints must be met to preserve link session integrity:
+1. **Clock Scaling**: The Zenoh-Pico system clock getter (`__z_clock_gettime`) must correctly scale Arduino's millisecond ticks (`millis()`) to standard UNIX seconds and nanoseconds, preventing clock slowdowns.
+2. **Socket Non-Blocking Invariant**: Driver-level read calls (like `_z_tcp_opencr_read`) must differentiate between empty socket streams (returning `SIZE_MAX` for `EWOULDBLOCK` / `EAGAIN` to yield CPU) and closed connections (returning `0` to signal EOF).
+3. **Manual Keep-Alive & Flushes**: Background executors do not run automatically. The application tick loop must manually call `zp_send_keep_alive()` and trigger `zp_batch_flush()` to force socket transmission.
+4. **NoDelay & Socket Level Flushing**: Disabling Nagle's algorithm (`setNoDelay(true)`) and calling `flush()` at the driver level ensures keep-alive packets are not queued locally and reach the router instantly.
+5. **Subscription Order**: A subscription callback registration requires `connected_ == true`. Therefore, subscriptions must always be registered *after* `node->begin()` establishes the connection.

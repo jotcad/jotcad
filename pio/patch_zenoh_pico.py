@@ -88,3 +88,116 @@ uint16_t z_random_u16(void) { return random(0xFFFF); }
 uint32_t z_random_u32(void) { return random(0xFFFFFFFF); }
 #endif"""
         patch_file(system_path, target_rand, replacement_rand_exact)
+
+        # 4. system.c clock gettime
+        target_clock = """void __z_clock_gettime(z_clock_t *ts) {
+    uint64_t m = millis();
+    ts->tv_sec = m / (uint64_t)1000000;
+    ts->tv_nsec = (m % (uint64_t)1000000) * (uint64_t)1000;
+}"""
+        replacement_clock = """void __z_clock_gettime(z_clock_t *ts) {
+    uint64_t m = millis();
+    ts->tv_sec = m / (uint64_t)1000;
+    ts->tv_nsec = (m % (uint64_t)1000) * (uint64_t)1000000;
+}"""
+        patch_file(system_path, target_clock, replacement_clock)
+
+        # 5. tcp_opencr.cpp
+        tcp_path = os.path.join(pico_dir, "src/link/transport/tcp/tcp_opencr.cpp")
+        
+        target_open = """static z_result_t _z_tcp_opencr_open(_z_sys_net_socket_t *sock, const _z_sys_net_endpoint_t endpoint, uint32_t tout) {
+    _ZP_UNUSED(tout);
+    z_result_t ret = _Z_RES_OK;
+
+    sock->_tcp = new WiFiClient();
+    if (!sock->_tcp->connect(*endpoint._iptcp._addr, endpoint._iptcp._port)) {"""
+        replacement_open = """static z_result_t _z_tcp_opencr_open(_z_sys_net_socket_t *sock, const _z_sys_net_endpoint_t endpoint, uint32_t tout) {
+    _ZP_UNUSED(tout);
+    z_result_t ret = _Z_RES_OK;
+
+    sock->_tcp = new WiFiClient();
+    sock->_tcp->setNoDelay(true); // Disable Nagle's algorithm
+    if (!sock->_tcp->connect(*endpoint._iptcp._addr, endpoint._iptcp._port)) {"""
+        patch_file(tcp_path, target_open, replacement_open)
+
+        target_read_write = """static size_t _z_tcp_opencr_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
+    if (sock._tcp->available() > 0) {
+        // flawfinder: ignore
+        int rb = sock._tcp->read(ptr, len);
+        if (rb < 0) {
+            return SIZE_MAX;
+        }
+        return (size_t)rb;
+    }
+    return 0;
+}
+
+static size_t _z_tcp_opencr_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
+    size_t n = 0;
+    uint8_t *pos = &ptr[0];
+
+    while (n < len && sock._tcp->connected()) {
+        size_t rb = _z_tcp_opencr_read(sock, pos, len - n);
+        if (rb == SIZE_MAX) {
+            return SIZE_MAX;
+        }
+        if (rb > 0) {
+            n += rb;
+            pos = _z_ptr_u8_offset(pos, rb);
+        } else {
+            delay(1);
+        }
+    }
+
+    return n;
+}
+
+static size_t _z_tcp_opencr_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
+    sock._tcp->write(ptr, len);
+    return len;
+}"""
+        replacement_read_write = """static size_t _z_tcp_opencr_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
+    if (!sock._tcp->connected()) {
+        return 0; // EOF (Connection closed)
+    }
+    if (sock._tcp->available() > 0) {
+        // flawfinder: ignore
+        int rb = sock._tcp->read(ptr, len);
+        if (rb < 0) {
+            return SIZE_MAX;
+        }
+        return (size_t)rb;
+    }
+    return SIZE_MAX; // EWOULDBLOCK (No data available right now)
+}
+
+static size_t _z_tcp_opencr_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
+    size_t n = 0;
+    uint8_t *pos = &ptr[0];
+
+    while (n < len && sock._tcp->connected()) {
+        if (sock._tcp->available() > 0) {
+            int rb = sock._tcp->read(pos, len - n);
+            if (rb > 0) {
+                n += rb;
+                pos = _z_ptr_u8_offset(pos, rb);
+            } else if (rb < 0) {
+                return SIZE_MAX;
+            }
+        } else {
+            delay(1);
+        }
+    }
+
+    return n;
+}
+
+static size_t _z_tcp_opencr_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
+    size_t bw = sock._tcp->write(ptr, len);
+    if (bw != len) {
+        Serial.printf("[TCP] Write mismatch: len=%d, written=%d\\n", len, bw);
+    }
+    sock._tcp->flush(); // Force transmission of outgoing bytes
+    return bw;
+}"""
+        patch_file(tcp_path, target_read_write, replacement_read_write)

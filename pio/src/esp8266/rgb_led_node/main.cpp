@@ -76,8 +76,8 @@ void setup() {
     config.id = unique_id;
     config.enabled_features = fs::VFS_HANDSHAKE | fs::VFS_FULFILLMENT | fs::VFS_PUBLICATION | fs::VFS_SUBSCRIPTION;
     config.neighbors = {MESH_NEIGHBOR_URL};
-
     node = new fs::VFS(config);
+    node->begin();
 
     // Subscribe to Zenoh control channel: control/rgb
     node->subscribe("control/rgb", [](const fs::json& payload) {
@@ -99,8 +99,6 @@ void setup() {
 
         Serial.printf("[ESP8266-RGB] Applied levels -> R: %d, G: %d, B: %d\n", r_val, g_val, b_val);
     });
-
-    node->begin();
 
     if (node->is_connected()) {
         was_connected = true;

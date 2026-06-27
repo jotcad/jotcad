@@ -134,9 +134,23 @@ void VFS::tick() {
     ArduinoOTA.handle();
 
     if (connected_) {
+        if (z_session_is_closed(z_session_loan(&z_session_))) {
+            connected_ = false;
+        } else {
 #if Z_FEATURE_MULTI_THREAD == 0
-        zp_spin_once(z_session_loan(&z_session_));
+            zp_spin_once(z_session_loan(&z_session_));
+
+            // Periodically send keep-alive every 2.5 seconds (2500 ms)
+            static unsigned long last_keep_alive = 0;
+            unsigned long now = millis();
+            if (now - last_keep_alive >= 2500) {
+                last_keep_alive = now;
+                z_result_t res = zp_send_keep_alive(z_session_loan(&z_session_), NULL);
+                zp_batch_flush(z_session_loan(&z_session_));
+                Serial.printf("[VFS] Keep-alive sent and flushed. Res: %d, Now: %lu\n", res, now);
+            }
 #endif
+        }
     }
 }
 
