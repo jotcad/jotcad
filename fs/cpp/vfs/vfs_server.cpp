@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <list>
 #include <map>
+#include <fstream>
 
 namespace fs {
 
@@ -327,12 +328,59 @@ static void query_handler_catalog(z_loaned_query_t* query, void* context) {
     }).detach();
 }
 
+inline bool file_exists_helper(const std::string& name) {
+    std::ifstream f(name.c_str());
+    return f.good();
+}
+
 void VFSNode::listen() {
     std::cout << "[VFSNode " << config_.id << "] Initializing Zenoh Session..." << std::endl;
     
+    std::string cert_path = "";
+    std::string key_path = "";
+    bool use_tls = false;
+
+    const char* env_cert = std::getenv("SSL_CERT_PATH");
+    const char* env_key = std::getenv("SSL_KEY_PATH");
+
+    if (env_cert && env_key) {
+        std::string s_cert(env_cert);
+        std::string s_key(env_key);
+        if (!s_cert.empty() && !s_key.empty()) {
+            if (file_exists_helper(s_cert) && file_exists_helper(s_key)) {
+                cert_path = s_cert;
+                key_path = s_key;
+                use_tls = true;
+            }
+        }
+    } else {
+        std::string c_path = ".ssl/localhost-cert.pem";
+        std::string k_path = ".ssl/localhost-key.pem";
+        if (!file_exists_helper(c_path)) {
+            c_path = "../.ssl/localhost-cert.pem";
+            k_path = "../.ssl/localhost-key.pem";
+            if (!file_exists_helper(c_path)) {
+                c_path = "../../.ssl/localhost-cert.pem";
+                k_path = "../../.ssl/localhost-key.pem";
+            }
+        }
+        if (file_exists_helper(c_path) && file_exists_helper(k_path)) {
+            cert_path = c_path;
+            key_path = k_path;
+            use_tls = true;
+        }
+    }
+
     // Construct configuration JSON dynamically
     std::string json_str = "{";
-    json_str += "\"listen\": {\"endpoints\": [\"tcp/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
+    if (use_tls) {
+        std::cout << "[VFSNode " << config_.id << "] Found SSL certificates. Enabling TLS/WSS transport encryption." << std::endl;
+        json_str += "\"listen\": {\"endpoints\": [\"tls/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
+    } else {
+        std::cout << "[VFSNode " << config_.id << "] No SSL certificates found. Using unencrypted tcp/ws transport." << std::endl;
+        json_str += "\"listen\": {\"endpoints\": [\"tcp/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
+    }
+
     if (!config_.neighbors.empty()) {
         json_str += ", \"connect\": {\"endpoints\": [";
         for (size_t i = 0; i < config_.neighbors.size(); ++i) {
@@ -340,11 +388,17 @@ void VFSNode::listen() {
             if (n.rfind("http://", 0) == 0) {
                 n = "tcp/" + n.substr(7);
             } else if (n.rfind("https://", 0) == 0) {
-                n = "tcp/" + n.substr(8);
+                n = "tls/" + n.substr(8); // Map https to tls
+            } else if (n.rfind("tcp/", 0) != 0 && n.rfind("ws/", 0) != 0 && n.rfind("tls/", 0) != 0 && n.rfind("wss/", 0) != 0) {
+                n = (use_tls ? "tls/" : "tcp/") + n;
             }
             json_str += (i == 0 ? "" : ", ") + ("\"" + n + "\"");
         }
         json_str += "]}";
+    }
+
+    if (use_tls) {
+        json_str += ", \"transport\": { \"link\": { \"tls\": { \"listen_certificate\": \"" + cert_path + "\", \"listen_private_key\": \"" + key_path + "\" } } }";
     }
     json_str += "}";
 

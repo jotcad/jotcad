@@ -199,7 +199,8 @@ export class MeshLinkBase {
       const parsed = new URL(url);
       const port = parseInt(parsed.port, 10);
       const wsPort = port + 1000;
-      const protocol = url.startsWith('https://') ? 'wss' : 'ws';
+      const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+      const protocol = (url.startsWith('https://') && !isLocal) ? 'wss' : 'ws';
       return `${protocol}://${parsed.hostname}:${wsPort}`;
     }
     if (url.startsWith('ws://') || url.startsWith('wss://')) {
