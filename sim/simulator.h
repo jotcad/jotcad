@@ -25,7 +25,9 @@ struct Cell {
     
     // Settlement & Infrastructure
     bool has_road;
+    bool has_sea_route;
     int settlement_type;   // 0 = none, 1 = hamlet, 2 = village, 3 = town, 4 = city
+    int nation_id;         // 0 = neutral, 1, 2, 3 = nations
     
     // Helper helper for D8 flow routing
     int flow_target_idx;   // index of cell this drains to (-1 if sink)
@@ -66,6 +68,7 @@ private:
         return y * width + x;
     }
     void connect_with_road(int from_idx, int to_idx);
+    void connect_with_sea_route(int from_idx, int to_idx);
 
 public:
     Simulator(int w, int h);

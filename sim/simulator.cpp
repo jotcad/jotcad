@@ -77,7 +77,9 @@ void Simulator::initialize(unsigned int seed) {
             cell.moisture = 0.2f;
             cell.arability = 0.0f;
             cell.has_road = false;
+            cell.has_sea_route = false;
             cell.settlement_type = 0;
+            cell.nation_id = 0;
             cell.temperature = 25.0f;
             cell.insolation = 1.0f;
             
@@ -728,6 +730,24 @@ bool Simulator::save_to_png(const std::string& filepath) const {
                 draw_settlement = 1;
             }
             
+            // Check for borders
+            bool is_border = false;
+            if (cell.nation_id != 0) {
+                int b_dx[] = {-1, 1, 0, 0};
+                int b_dy[] = {0, 0, -1, 1};
+                for (int d = 0; d < 4; ++d) {
+                    int nx = x + b_dx[d];
+                    int ny = y + b_dy[d];
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        int nidx = get_index(nx, ny);
+                        if (grid[nidx].nation_id != cell.nation_id) {
+                            is_border = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
             // Color mapping based on cell state
             float r = 0.0f, g = 0.0f, b = 0.0f;
             bool is_road_or_settlement = false;
@@ -762,12 +782,16 @@ bool Simulator::save_to_png(const std::string& filepath) const {
                 r = 230.0f; g = 180.0f; b = 20.0f;
                 is_road_or_settlement = true;
             } else if (draw_settlement == 1) {
-                // Hamlet: Cyan/Teal
+                // Hamlet: Cyan
                 r = 0.0f; g = 220.0f; b = 220.0f;
                 is_road_or_settlement = true;
             } else if (draw_road) {
                 // Roads: Pure White
                 r = 255.0f; g = 255.0f; b = 255.0f;
+                is_road_or_settlement = true;
+            } else if (is_border) {
+                // Borders: Black
+                r = 10.0f; g = 10.0f; b = 10.0f;
                 is_road_or_settlement = true;
             } else if (cell.water > 0.02f || cell.flow_accumulation > 80.0f) {
                 // Water / River / Lake (Blue depth gradient)
@@ -777,10 +801,20 @@ bool Simulator::save_to_png(const std::string& filepath) const {
                 g = (1.0f - t) * 180.0f + t * 40.0f;
                 b = (1.0f - t) * 230.0f + t * 120.0f;
                 
-                // Flat water surface normal
-                nx = 0.0f; ny = 0.0f; nz = 1.0f;
-                diff = nx * lx + ny * ly + nz * lz;
-                shade = 0.5f + 0.5f * diff;
+                // If it is ocean water and has a sea trade route, render a dashed lane
+                if (cell.terrain_height() < SEA_LEVEL && cell.has_sea_route) {
+                    if ((x + y) % 6 < 3) {
+                        r = 100.0f; g = 220.0f; b = 255.0f; // Glowing light cyan
+                        is_road_or_settlement = true;
+                    }
+                }
+                
+                if (!is_road_or_settlement) {
+                    // Flat water surface normal
+                    nx = 0.0f; ny = 0.0f; nz = 1.0f;
+                    diff = nx * lx + ny * ly + nz * lz;
+                    shade = 0.5f + 0.5f * diff;
+                }
             } else if (cell.arability > 0.45f) {
                 // Highly arable land: Golden yellow crops!
                 float t = (cell.arability - 0.45f) / 0.55f; // [0, 1]
@@ -804,6 +838,21 @@ bool Simulator::save_to_png(const std::string& filepath) const {
             // Apply hillshading (skipped for cartographical elements)
             if (!is_road_or_settlement) {
                 r *= shade; g *= shade; b *= shade;
+                
+                // Geopolitical Nation Translucent Tinting
+                if (cell.nation_id == 1) {
+                    r = r * 0.70f + 255.0f * 0.30f;
+                    g = g * 0.70f;
+                    b = b * 0.70f;
+                } else if (cell.nation_id == 2) {
+                    r = r * 0.70f + 180.0f * 0.30f;
+                    g = g * 0.70f;
+                    b = b * 0.70f + 180.0f * 0.30f;
+                } else if (cell.nation_id == 3) {
+                    r = r * 0.70f;
+                    g = g * 0.70f + 180.0f * 0.30f;
+                    b = b * 0.70f + 180.0f * 0.30f;
+                }
             }
             
             int pix_idx = (y * width + x) * 3;
@@ -959,6 +1008,7 @@ void Simulator::connect_with_road(int from_idx, int to_idx) {
 }
 
 void Simulator::run_settlement_simulation() {
+    std::cout << "  [Settlements] Calculating arability & slope suitability...\n";
     std::vector<float> suitability(width * height, 0.0f);
     
     for (int y = 0; y < height; ++y) {
@@ -1083,6 +1133,7 @@ void Simulator::run_settlement_simulation() {
         }
     }
     
+    std::cout << "  [Settlements] Placed " << settlements.size() << " settlements. Connecting cities with highways...\n";
     // Connect Cities with highways
     for (size_t i = 0; i < settlements.size(); ++i) {
         if (settlements[i].type != 4) continue;
@@ -1092,6 +1143,7 @@ void Simulator::run_settlement_simulation() {
         }
     }
     
+    std::cout << "  [Settlements] Connecting towns to highways...\n";
     // Connect Towns to nearest City or Town
     for (size_t i = 0; i < settlements.size(); ++i) {
         if (settlements[i].type != 3) continue;
@@ -1110,6 +1162,7 @@ void Simulator::run_settlement_simulation() {
         }
     }
     
+    std::cout << "  [Settlements] Connecting villages...\n";
     // Connect Villages to nearest Town or City
     for (size_t i = 0; i < settlements.size(); ++i) {
         if (settlements[i].type != 2) continue;
@@ -1126,6 +1179,206 @@ void Simulator::run_settlement_simulation() {
         if (best_target != -1) {
             connect_with_road(settlements[i].idx, best_target);
         }
+    }
+    
+    std::cout << "  [Settlements] Simulating geopolitical power projection...\n";
+    // 4. Geopolitical Influence & Boundaries Simulation (Power Projection)
+    std::vector<int> capitals;
+    for (const auto& s : settlements) {
+        if (s.type == 4) {
+            capitals.push_back(s.idx);
+        }
+    }
+    
+    int num_nations = capitals.size();
+    if (num_nations > 0) {
+        std::vector<std::vector<float>> dist_time(num_nations, std::vector<float>(width * height, 1e9f));
+        int dx[] = {-1, 1, 0, 0, -1, 1, -1, 1};
+        int dy[] = {0, 0, -1, 1, -1, -1, 1, 1};
+        float step_dist[] = {1.0f, 1.0f, 1.0f, 1.0f, 1.414f, 1.414f, 1.414f, 1.414f};
+        
+        for (int n = 0; n < num_nations; ++n) {
+            int start_idx = capitals[n];
+            std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> pq;
+            
+            dist_time[n][start_idx] = 0.0f;
+            pq.push({start_idx, 0.0f, 0.0f});
+            
+            while (!pq.empty()) {
+                PathNode curr = pq.top();
+                pq.pop();
+                
+                if (curr.g > dist_time[n][curr.idx]) continue;
+                
+                int cx = curr.idx % width;
+                int cy = curr.idx / width;
+                
+                for (int d = 0; d < 8; ++d) {
+                    int nx = cx + dx[d];
+                    int ny = cy + dy[d];
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        int nidx = ny * width + nx;
+                        const Cell& ncell = grid[nidx];
+                        
+                        float speed = 1.0f;
+                        if (ncell.has_road) {
+                            speed = 4.5f;
+                        } else if (ncell.terrain_height() < SEA_LEVEL || ncell.water > 0.05f) {
+                            speed = 0.05f;
+                        } else {
+                            if (ncell.tree > 0.3f) {
+                                speed = 0.5f;
+                            }
+                            float slope = std::abs(ncell.terrain_height() - grid[curr.idx].terrain_height()) / step_dist[d];
+                            speed *= std::exp(-4.0f * slope * slope);
+                        }
+                        
+                        float weight = step_dist[d] / (speed + 1e-4f);
+                        float next_dist = dist_time[n][curr.idx] + weight;
+                        
+                        if (next_dist < dist_time[n][nidx]) {
+                            dist_time[n][nidx] = next_dist;
+                            pq.push({nidx, next_dist, next_dist});
+                        }
+                    }
+                }
+            }
+        }
+        
+        for (int i = 0; i < width * height; ++i) {
+            Cell& cell = grid[i];
+            if (cell.terrain_height() < SEA_LEVEL || cell.water > 0.05f) {
+                cell.nation_id = 0;
+                continue;
+            }
+            
+            float max_influence = 0.0f;
+            int best_nation = 0;
+            
+            for (int n = 0; n < num_nations; ++n) {
+                float t = dist_time[n][i];
+                if (t > 1e6f) continue;
+                
+                float influence = 100.0f * std::exp(-0.04f * t);
+                if (influence > max_influence) {
+                    max_influence = influence;
+                    best_nation = n + 1;
+                }
+            }
+            
+            if (max_influence >= 3.0f) {
+                cell.nation_id = best_nation;
+            } else {
+                cell.nation_id = 0;
+            }
+        }
+    }
+
+    std::cout << "  [Settlements] Simulating sea trade routes...\n";
+    // 5. Sea Trade Route Simulation (connect coastal ports)
+    std::vector<int> ports;
+    int ndx[] = {-1, 1, 0, 0};
+    int ndy[] = {0, 0, -1, 1};
+    
+    for (size_t i = 0; i < settlements.size(); ++i) {
+        int idx = settlements[i].idx;
+        int type = settlements[i].type;
+        if (type < 3) continue; // Only cities and towns can be ports
+        
+        bool is_coastal = false;
+        int sx = idx % width;
+        int sy = idx / width;
+        for (int d = 0; d < 4; ++d) {
+            int nx = sx + ndx[d];
+            int ny = sy + ndy[d];
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                if (grid[ny * width + nx].terrain_height() < SEA_LEVEL) {
+                    is_coastal = true;
+                    break;
+                }
+            }
+        }
+        if (is_coastal) {
+            ports.push_back(idx);
+        }
+    }
+    
+    for (size_t i = 0; i < ports.size(); ++i) {
+        float min_d = 1e9f;
+        int best_target = -1;
+        for (size_t j = 0; j < ports.size(); ++j) {
+            if (i == j) continue;
+            float d = get_dist(ports[i], ports[j]);
+            if (d < min_d) {
+                min_d = d;
+                best_target = ports[j];
+            }
+        }
+        if (best_target != -1) {
+            connect_with_sea_route(ports[i], best_target);
+        }
+    }
+}
+
+void Simulator::connect_with_sea_route(int from_idx, int to_idx) {
+    if (from_idx == to_idx) return;
+    
+    std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> pq;
+    std::vector<float> dist(width * height, 1e9f);
+    std::vector<int> parent(width * height, -1);
+    
+    dist[from_idx] = 0.0f;
+    pq.push({from_idx, 0.0f, 0.0f});
+    
+    int dx[] = {-1, 1, 0, 0, -1, 1, -1, 1};
+    int dy[] = {0, 0, -1, 1, -1, -1, 1, 1};
+    float step_dist[] = {1.0f, 1.0f, 1.0f, 1.0f, 1.414f, 1.414f, 1.414f, 1.414f};
+    
+    int x_target = to_idx % width;
+    int y_target = to_idx / width;
+    
+    while (!pq.empty()) {
+        PathNode curr = pq.top();
+        pq.pop();
+        
+        if (curr.idx == to_idx) break;
+        if (curr.g > dist[curr.idx]) continue;
+        
+        int cx = curr.idx % width;
+        int cy = curr.idx / width;
+        
+        for (int d = 0; d < 8; ++d) {
+            int nx = cx + dx[d];
+            int ny = cy + dy[d];
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                int nidx = ny * width + nx;
+                const Cell& ncell = grid[nidx];
+                
+                float weight = step_dist[d];
+                // Sea routes can only traverse water cells, or start/target land ports
+                if (ncell.terrain_height() >= SEA_LEVEL && nidx != to_idx && nidx != from_idx) {
+                    weight = 1e9f; // Land is impassable for ships
+                }
+                
+                float sharing_bonus = ncell.has_sea_route ? 0.8f : 1.0f; // encourage sharing lanes
+                float final_weight = weight * sharing_bonus;
+                
+                float next_dist = dist[curr.idx] + final_weight;
+                float h = std::sqrt(static_cast<float>((nx - x_target)*(nx - x_target) + (ny - y_target)*(ny - y_target)));
+                
+                if (next_dist < dist[nidx]) {
+                    dist[nidx] = next_dist;
+                    parent[nidx] = curr.idx;
+                    pq.push({nidx, next_dist, next_dist + h});
+                }
+            }
+        }
+    }
+    
+    int curr_idx = to_idx;
+    while (curr_idx != -1) {
+        grid[curr_idx].has_sea_route = true;
+        curr_idx = parent[curr_idx];
     }
 }
 
