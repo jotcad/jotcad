@@ -32,22 +32,40 @@ void setup() {
 
     // Set PWM resolution to 8-bit (0-255) matching standard RGB values
     analogWriteRange(255);
+
+    // State 1: Booting / Before Connecting to WiFi -> Red
+    r_val = 255; g_val = 0; b_val = 0;
     analogWrite(RED_PIN, r_val);
     analogWrite(GREEN_PIN, g_val);
     analogWrite(BLUE_PIN, b_val);
+    Serial.println("[ESP8266-RGB] State: Booting. LED: Red");
+    delay(500); // Small delay to let the red LED color show clearly
 
     // Connect to WiFi
     WiFi.begin(WIFI_SSID, WIFI_PASS);
+    
+    // State 2: Connecting to WiFi -> Yellow/Orange
+    analogWrite(RED_PIN, 255);
+    analogWrite(GREEN_PIN, 128); // Yellow-Orange
+    analogWrite(BLUE_PIN, 0);
+    Serial.print("[ESP8266-RGB] State: Connecting to WiFi. LED: Yellow");
+
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
     }
-    Serial.println("\nWiFi Connected.");
+    Serial.println("\n[ESP8266-RGB] WiFi Connected.");
     Serial.printf("[ESP8266-RGB] IP Address: %s\n", WiFi.localIP().toString().c_str());
 
 #ifndef DEVICE_NODE_ID
 #error "DEVICE_NODE_ID macro is not defined!"
 #endif
+
+    // State 3: WiFi Connected, Configuring VFS -> Blue
+    analogWrite(RED_PIN, 0);
+    analogWrite(GREEN_PIN, 0);
+    analogWrite(BLUE_PIN, 255);
+    Serial.println("[ESP8266-RGB] State: WiFi Connected, Configuring VFS. LED: Blue");
 
     // Setup VFS Node
     fs::VFS::Config config;
@@ -82,6 +100,13 @@ void setup() {
     });
 
     node->begin();
+
+    // State 4: VFS Ready / Listening for control updates -> Green
+    r_val = 0; g_val = 255; b_val = 0;
+    analogWrite(RED_PIN, r_val);
+    analogWrite(GREEN_PIN, g_val);
+    analogWrite(BLUE_PIN, b_val);
+    Serial.println("[ESP8266-RGB] State: VFS Ready. LED: Green");
     Serial.println("VFS_READY");
 }
 
