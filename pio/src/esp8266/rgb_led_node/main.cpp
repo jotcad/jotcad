@@ -14,6 +14,7 @@ const int GREEN_PIN = D3;
 const int BLUE_PIN = D4;
 
 fs::VFS *node = nullptr;
+bool was_connected = false;
 
 // Current state variables
 int r_val = 0;
@@ -101,15 +102,47 @@ void setup() {
 
     node->begin();
 
-    // State 4: VFS Ready / Listening for control updates -> Green
-    r_val = 0; g_val = 255; b_val = 0;
-    analogWrite(RED_PIN, r_val);
-    analogWrite(GREEN_PIN, g_val);
-    analogWrite(BLUE_PIN, b_val);
-    Serial.println("[ESP8266-RGB] State: VFS Ready. LED: Green");
-    Serial.println("VFS_READY");
+    if (node->is_connected()) {
+        was_connected = true;
+        // State 4: VFS Ready / Listening for control updates -> Green
+        r_val = 0; g_val = 255; b_val = 0;
+        analogWrite(RED_PIN, r_val);
+        analogWrite(GREEN_PIN, g_val);
+        analogWrite(BLUE_PIN, b_val);
+        Serial.println("[ESP8266-RGB] State: VFS Ready. LED: Green");
+        Serial.println("VFS_READY");
+    } else {
+        was_connected = false;
+        // VFS Connection Failed -> Red
+        r_val = 255; g_val = 0; b_val = 0;
+        analogWrite(RED_PIN, r_val);
+        analogWrite(GREEN_PIN, g_val);
+        analogWrite(BLUE_PIN, b_val);
+        Serial.println("[ESP8266-RGB] State: VFS Connection Failed. LED: Red");
+    }
 }
 
 void loop() {
     node->tick();
+
+    bool current_connected = node->is_connected();
+    if (current_connected != was_connected) {
+        was_connected = current_connected;
+        if (current_connected) {
+            // Reconnected / VFS Ready -> Green
+            r_val = 0; g_val = 255; b_val = 0;
+            analogWrite(RED_PIN, r_val);
+            analogWrite(GREEN_PIN, g_val);
+            analogWrite(BLUE_PIN, b_val);
+            Serial.println("[ESP8266-RGB] State: VFS Reconnected. LED: Green");
+            Serial.println("VFS_READY");
+        } else {
+            // Connection Lost -> Red
+            r_val = 255; g_val = 0; b_val = 0;
+            analogWrite(RED_PIN, r_val);
+            analogWrite(GREEN_PIN, g_val);
+            analogWrite(BLUE_PIN, b_val);
+            Serial.println("[ESP8266-RGB] State: VFS Connection Lost. LED: Red");
+        }
+    }
 }
