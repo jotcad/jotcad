@@ -732,6 +732,23 @@ bool Simulator::save_to_png(const std::string& filepath) const {
             float r = 0.0f, g = 0.0f, b = 0.0f;
             bool is_road_or_settlement = false;
             
+            bool draw_road = cell.has_road;
+            if (!draw_road) {
+                // Thicken roads to 2 pixels for visibility
+                int rdx[] = {-1, 1, 0, 0};
+                int rdy[] = {0, 0, -1, 1};
+                for (int d = 0; d < 4; ++d) {
+                    int nx = x + rdx[d];
+                    int ny = y + rdy[d];
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (grid[ny * width + nx].has_road) {
+                            draw_road = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
             if (draw_settlement == 4) {
                 // City: Red
                 r = 255.0f; g = 30.0f; b = 30.0f;
@@ -745,12 +762,12 @@ bool Simulator::save_to_png(const std::string& filepath) const {
                 r = 230.0f; g = 180.0f; b = 20.0f;
                 is_road_or_settlement = true;
             } else if (draw_settlement == 1) {
-                // Hamlet: White
-                r = 250.0f; g = 250.0f; b = 250.0f;
+                // Hamlet: Cyan/Teal
+                r = 0.0f; g = 220.0f; b = 220.0f;
                 is_road_or_settlement = true;
-            } else if (cell.has_road) {
-                // Roads: Charcoal
-                r = 55.0f; g = 55.0f; b = 55.0f;
+            } else if (draw_road) {
+                // Roads: Pure White
+                r = 255.0f; g = 255.0f; b = 255.0f;
                 is_road_or_settlement = true;
             } else if (cell.water > 0.02f || cell.flow_accumulation > 80.0f) {
                 // Water / River / Lake (Blue depth gradient)
@@ -869,9 +886,10 @@ bool Simulator::save_arability_png(const std::string& filepath) const {
 
 struct PathNode {
     int idx;
-    float cost;
+    float g; // actual cost
+    float f; // f = g + h
     bool operator>(const PathNode& other) const {
-        return cost > other.cost;
+        return f > other.f;
     }
 };
 
@@ -883,7 +901,7 @@ void Simulator::connect_with_road(int from_idx, int to_idx) {
     std::vector<int> parent(width * height, -1);
     
     dist[from_idx] = 0.0f;
-    pq.push({from_idx, 0.0f});
+    pq.push({from_idx, 0.0f, 0.0f});
     
     int dx[] = {-1, 1, 0, 0, -1, 1, -1, 1};
     int dy[] = {0, 0, -1, 1, -1, -1, 1, 1};
@@ -897,7 +915,7 @@ void Simulator::connect_with_road(int from_idx, int to_idx) {
         pq.pop();
         
         if (curr.idx == to_idx) break;
-        if (curr.cost > dist[curr.idx]) continue;
+        if (curr.g > dist[curr.idx]) continue;
         
         int cx = curr.idx % width;
         int cy = curr.idx / width;
@@ -927,7 +945,7 @@ void Simulator::connect_with_road(int from_idx, int to_idx) {
                 if (next_dist < dist[nidx]) {
                     dist[nidx] = next_dist;
                     parent[nidx] = curr.idx;
-                    pq.push({nidx, next_dist + h});
+                    pq.push({nidx, next_dist, next_dist + h});
                 }
             }
         }
