@@ -35,9 +35,8 @@ void setup() {
     Serial.println("\n[ESP32-Joystick] Joystick VFS Node Booting...");
 
     // Setup joystick hardware
-    // GPIO 34 & 35 are ADC1 channels. GPIO 32 is standard GPIO.
-    pinMode(PIN_JOYSTICK_X, INPUT);
-    pinMode(PIN_JOYSTICK_Y, INPUT);
+    analogReadResolution(12);
+    // On ESP32, analog pins do not require pinMode configuration.
     pinMode(PIN_JOYSTICK_SW, INPUT_PULLUP);
 
     // Connect to WiFi
@@ -149,8 +148,12 @@ void loop() {
     if (now - last_read_time >= READ_INTERVAL_MS) {
         last_read_time = now;
 
-        // Read analog inputs (ESP32 ADC has 12-bit resolution: 0 to 4095)
+        // Read analog inputs with double-reading and delay to prevent ADC crosstalk
+        analogRead(PIN_JOYSTICK_X);
         int raw_x = analogRead(PIN_JOYSTICK_X);
+        delayMicroseconds(50);
+
+        analogRead(PIN_JOYSTICK_Y);
         int raw_y = analogRead(PIN_JOYSTICK_Y);
         
         // Joystick switch is active low (pressed == LOW)

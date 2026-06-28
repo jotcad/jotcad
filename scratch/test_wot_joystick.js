@@ -67,19 +67,53 @@ async function main() {
     // Clear console to prepare for visualizer loop
     process.stdout.write('\x1Bc');
 
-    // 3. Subscribe using the details dynamically resolved from the TD
-    await session.declareSubscriber(targetTopic, (sample) => {
-        try {
-            const data = JSON.parse(sample.value.toString());
-            const x = data.x;
-            const y = data.y;
-            const pressed = data.pressed;
+    let centerOffsetX = 0;
+    let centerOffsetY = 0;
+    let calibrated = false;
 
-            if (visualizerType === 'joystick-grid-2d') {
-                renderGrid(x, y, pressed);
+    // 3. Subscribe using the details dynamically resolved from the TD
+    const zenohTopic = targetTopic.startsWith("jot/vfs/pub/") ? targetTopic : `jot/vfs/pub/${targetTopic}`;
+    await session.declareSubscriber(zenohTopic, {
+        handler: (sample) => {
+            try {
+                const payloadBytes = sample.payload().toBytes();
+                const payloadString = new TextDecoder().decode(payloadBytes);
+                const data = JSON.parse(payloadString);
+                const x = data.x;
+                const y = data.y;
+                const pressed = data.pressed;
+
+                if (visualizerType === 'joystick-grid-2d') {
+                    if (!calibrated) {
+                        // Establish center offset based on first reading (resting position)
+                        centerOffsetX = x - 2048;
+                        centerOffsetY = y - 2048;
+                        calibrated = true;
+                    }
+
+                    // Apply calibration offset
+                    let calX = x - centerOffsetX;
+                    let calY = y - centerOffsetY;
+
+                    // Apply a small deadzone (150) to absorb minor resting jitter
+                    const DEADZONE = 150;
+                    if (Math.abs(calX - 2048) < DEADZONE) calX = 2048;
+                    if (Math.abs(calY - 2048) < DEADZONE) calY = 2048;
+
+                    // Scale deviation from center to compensate for mechanical limits (sensitivity multiplier)
+                    const SENSITIVITY = 1.35;
+                    let finalX = 2048 + (calX - 2048) * SENSITIVITY;
+                    let finalY = 2048 + (calY - 2048) * SENSITIVITY;
+
+                    // Clamp to safe 12-bit range [0, 4095]
+                    finalX = Math.min(Math.max(finalX, 0), 4095);
+                    finalY = Math.min(Math.max(finalY, 0), 4095);
+
+                    renderGrid(finalX, finalY, pressed);
+                }
+            } catch (err) {
+                console.error("Error rendering frame:", err);
             }
-        } catch (err) {
-            console.error("Error rendering frame:", err);
         }
     });
 

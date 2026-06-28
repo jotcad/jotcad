@@ -7,9 +7,13 @@ async function main() {
     console.log("[Joystick Monitor] Connected! Listening on 'sensor/joystick'...\n");
 
     // Subscribe to sensor/joystick
-    await session.declareSubscriber("sensor/joystick", (sample) => {
-        const payloadString = sample.value.toString();
-        console.log(`[Joystick Event] ${payloadString}`);
+    await session.declareSubscriber("jot/vfs/pub/**", {
+        handler: (sample) => {
+            const payloadBytes = sample.payload().toBytes();
+            const payloadString = new TextDecoder().decode(payloadBytes);
+            const key = sample.keyexpr().toString();
+            console.log(`[Joystick Event] ${key} -> ${payloadString}`);
+        }
     });
 
     // Keep running

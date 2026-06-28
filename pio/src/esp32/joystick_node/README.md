@@ -40,3 +40,19 @@ Choose the command corresponding to your target board:
 ```bash
 ./flash_esp32s3_joystick.sh
 ```
+
+## Technical Design & Wiring Constraints
+
+### ⚠️ Powering from 3.3V (VBUS Warning)
+Always power the joystick potentiometer module from the ESP32's **`3.3V`** pin, **never from `VBUS` (5V)**. 
+* The ESP32-S2/S3 is **not 5V tolerant** on its GPIO pins. 
+* Powering via 5V feeds excessive voltage into the ADC inputs, triggering internal ESD protection clamping diodes. This leaks current back into the 3.3V rail and causes severe crosstalk/axis bleed (e.g. Y movement modulating the X value).
+
+### ⚡ ADC Resolution & pinMode
+* **12-bit Override**: The ESP32 Arduino framework defaults to 13-bit resolution (0-8191) on ESP32-S2/S3. The firmware explicitly overrides this to 12-bit (`analogReadResolution(12)`) to output coordinates scaled to `0 - 4095`.
+* **No analog pinMode**: Do not call `pinMode(pin, INPUT)` on the VRx and VRy analog pins. This can override the ADC multiplexer or enable digital pull-ups, which pulls the analog voltage high.
+
+### 🔄 ADC Crosstalk Prevention
+Because the ESP32 shares a single internal sample-and-hold capacitor across its ADC channels, reading two high-impedance potentiometers consecutively can lead to charge bleed. The firmware mitigates this by:
+1. Reading each analog pin twice and discarding the first read.
+2. Adding a small `delayMicroseconds(50)` between the X and Y channel readings to give the sampling capacitor time to settle.
