@@ -39,6 +39,7 @@
 #include "scale_op.h"
 #include "spin_op.h"
 #include "simplify_op.h"
+#include "approximate_op.h"
 #include "hull_op.h"
 #include "sweep_op.h"
 #include "section_op.h"
@@ -116,6 +117,7 @@ void register_all_ops(fs::VFSNode* vfs) {
     scale_init(vfs);
     spin_init(vfs);
     simplify_init(vfs);
+    approximate_init(vfs);
     hull_init(vfs);
     sweep_init(vfs);
     section_init(vfs);

@@ -175,7 +175,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       return {
         name: `Export Node (${cfg.port})`,
         command: 'node',
-        args: ['geo/export_service.js'],
+        args: ['--stack-size=65536', 'geo/export_service.js'],
         cwd: __dirname,
         env: { 
             ...process.env, 
@@ -194,7 +194,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       return {
         name: `JS Node A (${cfg.port})`,
         command: 'node',
-        args: ['geo/export_service.js'],
+        args: ['--stack-size=65536', 'geo/export_service.js'],
         cwd: __dirname,
         env: { 
             ...process.env, 
@@ -212,7 +212,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       return {
         name: `JS Node B (${cfg.port})`,
         command: 'node',
-        args: ['geo/export_service.js'],
+        args: ['--stack-size=65536', 'geo/export_service.js'],
         cwd: __dirname,
         env: { 
             ...process.env, 

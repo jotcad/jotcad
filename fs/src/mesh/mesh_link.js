@@ -78,7 +78,7 @@ export class MeshLinkBase {
       log(`[MeshLink ${this.vfs.id}] Attempting connection to Zenoh locator: ${locator}`);
       try {
         const config = new ZenohConfig(locator);
-        config.messageResponseTimeoutMs = 5000;
+        config.messageResponseTimeoutMs = 600000;
         this.session = await zenohOpen(config);
         log(`[MeshLink ${this.vfs.id}] Connected to Zenoh session at ${locator}`);
         connected = true;

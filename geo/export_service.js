@@ -5,20 +5,46 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { Worker } from 'node:worker_threads';
 import { VFS, DiskStorage, MeshLink, registerVFSRoutes, getCID, Selector } from '../fs/src/index.js';
+
+function runTriangulationInWorker(fileBytes, deflection) {
+    return new Promise((resolve, reject) => {
+        const workerPath = path.resolve(__dirname, 'occt_worker.js');
+        const worker = new Worker(workerPath);
+        worker.postMessage({ fileBytes, deflection });
+        worker.on('message', (msg) => {
+            if (msg.success) {
+                resolve({ geometryText: msg.geometryText, typeTag: msg.typeTag });
+            } else {
+                reject(new Error(msg.error));
+            }
+            worker.terminate();
+        });
+        worker.on('error', (err) => {
+            reject(err);
+            worker.terminate();
+        });
+        worker.on('exit', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Worker stopped with exit code ${code}`));
+            }
+        });
+    });
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Explicit VFS Access Helper with boundary hydration for Selectors
-async function readExplicitData(v, target) {
+async function readExplicitData(v, target, context = {}) {
     if (typeof target === 'string' || Object.prototype.toString.call(target) === '[object String]') {
-        const res = await v.readCID(target);
+        const res = await v.readCID(target, context);
         if (!res || !res.stream) return null;
         return consumeStream(res.stream, res.metadata?.encoding || 'bytes');
     }
     const s = target instanceof Selector ? target : Selector.fromObject(target);
-    const res = await v.readSelector(s);
+    const res = await v.readSelector(s, context);
     if (!res || !res.stream) return null;
     return consumeStream(res.stream, res.metadata?.encoding || 'bytes');
 }
@@ -189,7 +215,7 @@ const meshLink = new MeshLink(vfs, neighbors, { localUrl: `${protocol}://localho
 
 
 // Register the Step (Import) Op as a VFS Provider
-vfs.registerProvider('jot/Step', async (v, selector) => {
+vfs.registerProvider('jot/Step', async (v, selector, context) => {
     try {
         const { file, deflection = 0.1 } = selector.parameters;
 
@@ -206,7 +232,7 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
                 fileBytes = fs.readFileSync(file);
             } else if (/^[0-9a-fA-F]{64}$/.test(file)) {
                 try {
-                    const res = await v.readCID(file);
+                    const res = await v.readCID(file, context);
                     if (res) {
                         fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
                         if (res.metadata?.filename) {
@@ -220,7 +246,7 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
         } else if (file && (file.path || file.cid || file instanceof Selector)) {
             try {
                 const s = file instanceof Selector ? file : Selector.fromObject(file);
-                const res = await v.readSelector(s);
+                const res = await v.readSelector(s, context);
                 if (res) {
                     fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
                     if (res.metadata?.filename) {
@@ -259,107 +285,10 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
         } else if (!fileBytes || fileBytes.length === 0) {
             throw new Error(`File not found or empty: ${filename}`);
         } else {
-            // Real STEP file parsing and triangulation
-            geometryText = await runInOCCT(async (oc) => {
-                oc.FS.writeFile("import.stp", fileBytes);
-                const reader = new oc.STEPControl_Reader_1();
-                const status = reader.ReadFile("import.stp");
-                if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) {
-                    oc.FS.unlink("import.stp");
-                    reader.delete();
-                    throw new Error(`Failed to read STEP file, status: ${status}`);
-                }
-                reader.TransferRoots();
-                const shape = reader.OneShape();
-                oc.FS.unlink("import.stp");
-
-                // Shape topology classification
-                const st = shape.ShapeType();
-                if (st === oc.TopAbs_ShapeEnum.TopAbs_FACE) {
-                    typeTag = "surface";
-                } else if (st === oc.TopAbs_ShapeEnum.TopAbs_SHELL) {
-                    typeTag = "open";
-                } else if (st === oc.TopAbs_ShapeEnum.TopAbs_SOLID) {
-                    typeTag = "closed";
-                }
-
-                // Meshing
-                const mesh = new oc.BRepMesh_IncrementalMesh_2(shape, deflection, false, 0.5, false);
-                const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-                
-                const vertexMap = new Map();
-                const globalVertices = [];
-                const globalTriangles = [];
-
-                function getOrCreateVertex(x, y, z) {
-                    const key = `${x.toFixed(10)},${y.toFixed(10)},${z.toFixed(10)}`;
-                    if (vertexMap.has(key)) {
-                        return vertexMap.get(key);
-                    }
-                    const idx = globalVertices.length;
-                    globalVertices.push([x, y, z]);
-                    vertexMap.set(key, idx);
-                    return idx;
-                }
-
-                while (explorer.More()) {
-                    const face = oc.TopoDS.Face_1(explorer.Current());
-                    const loc = new oc.TopLoc_Location_1();
-                    const triangulation = oc.BRep_Tool.Triangulation(face, loc);
-                    
-                    if (!triangulation.IsNull()) {
-                        const triObj = triangulation.get();
-                        const nNodes = triObj.NbNodes();
-                        const nTris = triObj.NbTriangles();
-                        const trsf = loc.Transformation();
-                        
-                        const localToGlobal = {};
-                        for (let i = 1; i <= nNodes; i++) {
-                            const pnt = triObj.Node(i);
-                            const transPnt = pnt.Transformed(trsf);
-                            const gIdx = getOrCreateVertex(transPnt.X(), transPnt.Y(), transPnt.Z());
-                            localToGlobal[i] = gIdx;
-
-                            pnt.delete();
-                            transPnt.delete();
-                        }
-                        
-                        for (let j = 1; j <= nTris; j++) {
-                            const triangle = triObj.Triangle(j);
-                            const idx1 = triangle.Value(1);
-                            const idx2 = triangle.Value(2);
-                            const idx3 = triangle.Value(3);
-                            
-                            globalTriangles.push([localToGlobal[idx1], localToGlobal[idx2], localToGlobal[idx3]]);
-                            triangle.delete();
-                        }
-                        trsf.delete();
-                        triObj.delete();
-                    }
-                    loc.delete();
-                    face.delete();
-                    explorer.Next();
-                }
-
-                mesh.delete();
-                explorer.delete();
-                reader.delete();
-                shape.delete();
-
-                // Format text Geometry representation (V F P S T)
-                let geoStr = `V ${globalVertices.length}\n`;
-                for (const v of globalVertices) {
-                    geoStr += `${v[0]} ${v[1]} ${v[2]}\n`;
-                }
-                geoStr += `F 0\n`;
-                geoStr += `P 0\n`;
-                geoStr += `S 0\n`;
-                geoStr += `T ${globalTriangles.length}\n`;
-                for (const t of globalTriangles) {
-                    geoStr += `${t[0]} ${t[1]} ${t[2]}\n`;
-                }
-                return geoStr;
-            });
+            // Real STEP file parsing and triangulation (run in background Worker thread)
+            const triangulateResult = await runTriangulationInWorker(fileBytes, deflection);
+            geometryText = triangulateResult.geometryText;
+            typeTag = triangulateResult.typeTag;
         }
 
         // Hash and write geometry to VFS to get a CID
@@ -388,7 +317,7 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
         };
 
     } catch (err) {
-        console.error(`[Export Node Step Error] ${err.message}`);
+        console.error(`[Export Node Step Error]`, err);
         return null;
     }
 }, {
@@ -405,8 +334,7 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
     }
 });
 
-// Register the step (Export) Op as a VFS Provider
-vfs.registerProvider('jot/step', async (v, selector) => {
+vfs.registerProvider('jot/step', async (v, selector, context) => {
     try {
         const { $in, path: stepPath = 'export.stp' } = selector.parameters;
         const output = selector.output || '$out';
@@ -415,7 +343,7 @@ vfs.registerProvider('jot/step', async (v, selector) => {
 
         console.log(`[Export Node] step export requested for path: ${stepPath}`);
 
-        const inShape = await readExplicitData(v, $in);
+        const inShape = await readExplicitData(v, $in, context);
         if (!inShape) throw new Error('Could not read input shape');
 
         // Traverse shape components to collect geometries
@@ -424,7 +352,7 @@ vfs.registerProvider('jot/step', async (v, selector) => {
             if (!shapeNode) return;
             
             if (shapeNode.geometry) {
-                const geoText = await readExplicitData(v, shapeNode.geometry);
+                const geoText = await readExplicitData(v, shapeNode.geometry, context);
                 if (geoText) {
                     const parsed = parseGeometryText(geoText);
                     const tf = shapeNode.tf || "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";

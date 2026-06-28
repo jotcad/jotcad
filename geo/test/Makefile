@@ -56,6 +56,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                ghost_test.cpp \
                material_test.cpp \
                simplify_test.cpp \
+               approximate_test.cpp \
                relief_test.cpp \
                emboss_test.cpp \
                trace_quant_test.cpp \

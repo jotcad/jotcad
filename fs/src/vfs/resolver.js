@@ -11,7 +11,7 @@ export async function _readResult(vfs, target, context = {}) {
     const { 
         stack = [], 
         resolutionStack = [],
-        expiresAt = Date.now() + 10000, 
+        expiresAt = Date.now() + 600000, 
         followLinks = true, 
         depth = 0 
     } = context;

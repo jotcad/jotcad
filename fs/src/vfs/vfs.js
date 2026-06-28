@@ -67,31 +67,31 @@ export class VFS {
     return info || null;
   }
 
-  async unnestSelector(selector, tasks = []) {
+  async unnestSelector(selector, context = {}, tasks = []) {
     if (!isSelector(selector)) return { selector, tasks };
 
     const newParams = {};
     for (const [key, val] of Object.entries(selector.parameters)) {
       if (isSelector(val)) {
-        const { selector: childSel } = await this.unnestSelector(val, tasks);
+        const { selector: childSel } = await this.unnestSelector(val, context, tasks);
         const childCID = await getSelectorKey(childSel);
         newParams[key] = childCID;
         tasks.push({
           cid: childCID,
           selector: childSel,
-          fn: () => this.readSelector(childSel, { unnested: true })
+          fn: () => this.readSelector(childSel, { ...context, unnested: true })
         });
       } else if (Array.isArray(val)) {
         const newVal = [];
         for (const item of val) {
           if (isSelector(item)) {
-            const { selector: childSel } = await this.unnestSelector(item, tasks);
+            const { selector: childSel } = await this.unnestSelector(item, context, tasks);
             const childCID = await getSelectorKey(childSel);
             newVal.push(childCID);
             tasks.push({
               cid: childCID,
               selector: childSel,
-              fn: () => this.readSelector(childSel, { unnested: true })
+              fn: () => this.readSelector(childSel, { ...context, unnested: true })
             });
           } else {
             newVal.push(item);
@@ -102,13 +102,13 @@ export class VFS {
         const newObj = {};
         for (const [k, v] of Object.entries(val)) {
           if (isSelector(v)) {
-            const { selector: childSel } = await this.unnestSelector(v, tasks);
+            const { selector: childSel } = await this.unnestSelector(v, context, tasks);
             const childCID = await getSelectorKey(childSel);
             newObj[k] = childCID;
             tasks.push({
               cid: childCID,
               selector: childSel,
-              fn: () => this.readSelector(childSel, { unnested: true })
+              fn: () => this.readSelector(childSel, { ...context, unnested: true })
             });
           } else {
             newObj[k] = v;
@@ -129,7 +129,7 @@ export class VFS {
     this._checkClosed();
     let s = normalizeSelector(selector);
     if (!context.unnested && (!context.stack || context.stack.length === 0)) {
-      const { selector: unnestedSelector, tasks } = await this.unnestSelector(s);
+      const { selector: unnestedSelector, tasks } = await this.unnestSelector(s, context);
       s = unnestedSelector;
       for (const t of tasks) {
         await t.fn();
@@ -140,7 +140,7 @@ export class VFS {
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
         // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
-        expiresAt: context.expiresAt || (Date.now() + 30000) 
+        expiresAt: context.expiresAt || (Date.now() + 600000) 
     };
     if (Date.now() > packetContext.expiresAt) return null;
 
@@ -165,7 +165,7 @@ export class VFS {
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
         // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
-        expiresAt: context.expiresAt || (Date.now() + 30000) 
+        expiresAt: context.expiresAt || (Date.now() + 600000) 
     };
     if (Date.now() > packetContext.expiresAt) return null;
 
