@@ -136,18 +136,16 @@ static size_t _z_tcp_opencr_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, s
     size_t n = 0;
     uint8_t *pos = &ptr[0];
 
-    while (n < len && sock._tcp->connected()) {
+    do {
         size_t rb = _z_tcp_opencr_read(sock, pos, len - n);
-        if (rb == SIZE_MAX) {
-            return SIZE_MAX;
+        if ((rb == SIZE_MAX) || (rb == 0)) {
+            n = rb;
+            break;
         }
-        if (rb > 0) {
-            n += rb;
-            pos = _z_ptr_u8_offset(pos, rb);
-        } else {
-            delay(1);
-        }
-    }
+
+        n = n + rb;
+        pos = _z_ptr_u8_offset(pos, rb);
+    } while (n != len);
 
     return n;
 }
@@ -194,9 +192,6 @@ static size_t _z_tcp_opencr_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, s
 
 static size_t _z_tcp_opencr_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
     size_t bw = sock._tcp->write(ptr, len);
-    if (bw != len) {
-        Serial.printf("[TCP] Write mismatch: len=%d, written=%d\\n", len, bw);
-    }
     sock._tcp->flush(); // Force transmission of outgoing bytes
     return bw;
 }"""
