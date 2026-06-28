@@ -80,6 +80,33 @@ void Simulator::initialize(unsigned int seed) {
             cell.has_sea_route = false;
             cell.settlement_type = 0;
             cell.nation_id = 0;
+            
+            // Procedural Bedrock: Granite (0), Limestone (1), Sandstone (2)
+            float bn1 = noiseGen.noise(nx * 2.0f, ny * 2.0f);
+            float bn2 = noiseGen.noise(nx * 5.0f, ny * 5.0f);
+            float bn = bn1 + 0.3f * bn2;
+            if (bn < -0.15f) {
+                cell.bedrock_type = 0; // Granite: hard mountain shields
+            } else if (bn < 0.20f) {
+                cell.bedrock_type = 1; // Limestone: soft soluble basins
+            } else {
+                cell.bedrock_type = 2; // Sandstone: sedimentary layers
+            }
+            
+            // Procedural Minerals: Coal (1), Iron (2), Gold (3) in clusters
+            cell.mineral_type = 0;
+            float mn_coal = noiseGen.noise(nx * 12.0f, ny * 12.0f);
+            float mn_iron = noiseGen.noise(nx * 15.0f, ny * 15.0f);
+            float mn_gold = noiseGen.noise(nx * 18.0f, ny * 18.0f);
+            
+            if (cell.bedrock_type == 0) { // Granite core yields Gold
+                if (mn_gold > 0.62f) cell.mineral_type = 3;
+            } else if (cell.bedrock_type == 1) { // Limestone basin yields Iron
+                if (mn_iron > 0.60f) cell.mineral_type = 2;
+            } else if (cell.bedrock_type == 2) { // Sandstone layer yields Coal
+                if (mn_coal > 0.58f) cell.mineral_type = 1;
+            }
+            
             cell.temperature = 25.0f;
             cell.insolation = 1.0f;
             
@@ -94,10 +121,23 @@ void Simulator::run_weathering(float dt) {
         Cell& cell = grid[i];
         float total_soil = cell.soil_mineral + cell.soil_organic;
         
+        float bedrock_chem_k = 1.0f;
+        float bedrock_mech_k = 1.0f;
+        if (cell.bedrock_type == 0) { // Granite
+            bedrock_chem_k = 0.2f;
+            bedrock_mech_k = 0.3f;
+        } else if (cell.bedrock_type == 1) { // Limestone
+            bedrock_chem_k = 2.0f;
+            bedrock_mech_k = 1.0f;
+        } else if (cell.bedrock_type == 2) { // Sandstone
+            bedrock_chem_k = 1.0f;
+            bedrock_mech_k = 1.8f;
+        }
+        
         // 1. Biological/Chemical Weathering: P = P0 * (1 + beta_g * grass + beta_t * tree) * exp(-alpha * h_soil)
         float bio_accel = 1.0f + 2.0f * cell.grass + 5.0f * cell.tree;
         float buffering = std::exp(-2.0f * total_soil);
-        float p_weather = BEDROCK_WEATHER_BASE * bio_accel * buffering * dt;
+        float p_weather = BEDROCK_WEATHER_BASE * bio_accel * buffering * bedrock_chem_k * dt;
         
         // Check bedrock availability
         p_weather = std::min(p_weather, cell.bedrock);
@@ -107,7 +147,7 @@ void Simulator::run_weathering(float dt) {
         // 2. Mechanical Weathering (Frost/Thermal Splintering)
         // Highly active on bare rock peaks, buffered by soil
         float temp_cycles = std::max(0.0f, 15.0f - std::abs(cell.temperature - 0.0f)); // close to freezing drives wedging
-        float w_splinter = SPLINTER_BASE * temp_cycles * std::exp(-4.0f * total_soil) * dt;
+        float w_splinter = SPLINTER_BASE * temp_cycles * std::exp(-4.0f * total_soil) * bedrock_mech_k * dt;
         w_splinter = std::min(w_splinter, cell.bedrock);
         cell.bedrock -= w_splinter;
         cell.soil_mineral += w_splinter;
@@ -411,7 +451,12 @@ void Simulator::run_hydraulic_incision(float dt) {
             cell.sediment += (mineral_eroded + organic_eroded);
         } else {
             float extra = e_depth - soil_depth;
-            float bedrock_eroded = std::min(cell.bedrock, extra);
+            float bedrock_k = 1.0f;
+            if (cell.bedrock_type == 0) bedrock_k = 0.05f;      // Granite: extremely hard & resistant
+            else if (cell.bedrock_type == 1) bedrock_k = 2.50f; // Limestone: soft & soluble
+            else if (cell.bedrock_type == 2) bedrock_k = 1.00f; // Sandstone: base hardness
+            
+            float bedrock_eroded = std::min(cell.bedrock, extra * bedrock_k);
             
             cell.bedrock = std::max(0.0f, cell.bedrock - bedrock_eroded);
             cell.soil_mineral = 0.0f;
@@ -504,7 +549,13 @@ void Simulator::run_vegetation_dynamics(float dt) {
             
             // Only land above sea level is arable
             if (cell.terrain_height() >= SEA_LEVEL) {
-                cell.arability = f_soil * f_slope * f_moist * f_temp;
+                float base_arable = f_soil * f_slope * f_moist * f_temp;
+                if (cell.bedrock_type == 1) {       // Limestone buffers soil (alkaline, nutrient-rich)
+                    base_arable = std::clamp(base_arable + 0.15f, 0.0f, 1.0f);
+                } else if (cell.bedrock_type == 0) { // Granite yields acidic, rocky soils
+                    base_arable = std::clamp(base_arable - 0.15f, 0.0f, 1.0f);
+                }
+                cell.arability = base_arable;
             } else {
                 cell.arability = 0.0f;
             }
@@ -730,21 +781,22 @@ bool Simulator::save_to_png(const std::string& filepath) const {
                 draw_settlement = 1;
             }
             
-            // Check for borders
+            // Check for borders (2-pixel thick boundary lines)
             bool is_border = false;
             if (cell.nation_id != 0) {
-                int b_dx[] = {-1, 1, 0, 0};
-                int b_dy[] = {0, 0, -1, 1};
-                for (int d = 0; d < 4; ++d) {
-                    int nx = x + b_dx[d];
-                    int ny = y + b_dy[d];
-                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                        int nidx = get_index(nx, ny);
-                        if (grid[nidx].nation_id != cell.nation_id) {
-                            is_border = true;
-                            break;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                            int nidx = get_index(nx, ny);
+                            if (grid[nidx].nation_id != cell.nation_id) {
+                                is_border = true;
+                                break;
+                            }
                         }
                     }
+                    if (is_border) break;
                 }
             }
             
@@ -753,21 +805,6 @@ bool Simulator::save_to_png(const std::string& filepath) const {
             bool is_road_or_settlement = false;
             
             bool draw_road = cell.has_road;
-            if (!draw_road) {
-                // Thicken roads to 2 pixels for visibility
-                int rdx[] = {-1, 1, 0, 0};
-                int rdy[] = {0, 0, -1, 1};
-                for (int d = 0; d < 4; ++d) {
-                    int nx = x + rdx[d];
-                    int ny = y + rdy[d];
-                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                        if (grid[ny * width + nx].has_road) {
-                            draw_road = true;
-                            break;
-                        }
-                    }
-                }
-            }
             
             if (draw_settlement == 4) {
                 // City: Red
@@ -790,9 +827,17 @@ bool Simulator::save_to_png(const std::string& filepath) const {
                 r = 255.0f; g = 255.0f; b = 255.0f;
                 is_road_or_settlement = true;
             } else if (is_border) {
-                // Borders: Black
-                r = 10.0f; g = 10.0f; b = 10.0f;
-                is_road_or_settlement = true;
+                // Dashed border lines: 5 pixels on, 3 pixels off
+                if ((x + y) % 8 < 5) {
+                    if (cell.nation_id == 1) {
+                        r = 255.0f; g = 30.0f; b = 30.0f; // Red Nation Border
+                    } else if (cell.nation_id == 2) {
+                        r = 180.0f; g = 0.0f; b = 180.0f; // Purple Nation Border
+                    } else if (cell.nation_id == 3) {
+                        r = 0.0f; g = 180.0f; b = 180.0f; // Cyan Nation Border
+                    }
+                    is_road_or_settlement = true;
+                }
             } else if (cell.water > 0.02f || cell.flow_accumulation > 80.0f) {
                 // Water / River / Lake (Blue depth gradient)
                 float depth = cell.water;
@@ -831,28 +876,36 @@ bool Simulator::save_to_png(const std::string& filepath) const {
                 // Soil (Brown)
                 r = 150.0f; g = 115.0f; b = 80.0f;
             } else {
-                // Bedrock (Gray)
-                r = 120.0f; g = 120.0f; b = 120.0f;
+                // Bedrock Shading: Granite (pinkish-gray), Limestone (cream white), Sandstone (red-tan)
+                if (cell.bedrock_type == 0) {
+                    r = 125.0f; g = 120.0f; b = 120.0f; // Granite
+                } else if (cell.bedrock_type == 1) {
+                    r = 210.0f; g = 205.0f; b = 195.0f; // Limestone
+                } else {
+                    r = 175.0f; g = 145.0f; b = 115.0f; // Sandstone
+                }
+            }
+            
+            // Overlay mineral deposits as bright cartographical sparkles (land only)
+            if (!is_road_or_settlement && cell.mineral_type != 0 && cell.terrain_height() >= SEA_LEVEL && cell.water <= 0.02f) {
+                if (cell.mineral_type == 3) {
+                    // Gold: bright metallic gold sparkle
+                    r = 255.0f; g = 215.0f; b = 0.0f;
+                    is_road_or_settlement = true;
+                } else if (cell.mineral_type == 2) {
+                    // Iron: metallic rust red
+                    r = 200.0f; g = 60.0f; b = 20.0f;
+                    is_road_or_settlement = true;
+                } else if (cell.mineral_type == 1) {
+                    // Coal: solid dark charcoal black
+                    r = 30.0f; g = 30.0f; b = 30.0f;
+                    is_road_or_settlement = true;
+                }
             }
             
             // Apply hillshading (skipped for cartographical elements)
             if (!is_road_or_settlement) {
                 r *= shade; g *= shade; b *= shade;
-                
-                // Geopolitical Nation Translucent Tinting
-                if (cell.nation_id == 1) {
-                    r = r * 0.70f + 255.0f * 0.30f;
-                    g = g * 0.70f;
-                    b = b * 0.70f;
-                } else if (cell.nation_id == 2) {
-                    r = r * 0.70f + 180.0f * 0.30f;
-                    g = g * 0.70f;
-                    b = b * 0.70f + 180.0f * 0.30f;
-                } else if (cell.nation_id == 3) {
-                    r = r * 0.70f;
-                    g = g * 0.70f + 180.0f * 0.30f;
-                    b = b * 0.70f + 180.0f * 0.30f;
-                }
             }
             
             int pix_idx = (y * width + x) * 3;
@@ -1069,7 +1122,12 @@ void Simulator::run_settlement_simulation() {
                 water_bonus = 1.4f; // Water trade access
             }
             
-            suitability[idx] = arability_factor * slope_factor * water_bonus;
+            float mineral_bonus = 0.0f;
+            if (cell.mineral_type == 1) mineral_bonus = 0.20f;      // Coal
+            else if (cell.mineral_type == 2) mineral_bonus = 0.25f; // Iron
+            else if (cell.mineral_type == 3) mineral_bonus = 0.40f; // Gold
+            
+            suitability[idx] = arability_factor * slope_factor * water_bonus + mineral_bonus;
         }
     }
     
