@@ -79,6 +79,65 @@ void setup() {
 
     // Start VFS node
     node = new fs::VFS(config);
+
+    // Register W3C Thing Description endpoint to serve schema dynamically
+    node->register_op("sensor/joystick/td", [](const fs::json&, fs::VFSResponseWriter* response) {
+        std::string td_json = R"({
+  "@context": [
+    "https://www.w3.org/2019/wot/td/v1",
+    {
+      "jot": "https://jotcad.org/ns#"
+    }
+  ],
+  "id": "urn:dev:ops:esp32-joystick-01",
+  "title": "ESP32 Joystick Node",
+  "description": "Dual-axis analog joystick with press button integrated via Zenoh VFS",
+  "securityDefinitions": {
+    "nosec_sc": {
+      "scheme": "nosec"
+    }
+  },
+  "security": [
+    "nosec_sc"
+  ],
+  "properties": {
+    "coordinates": {
+      "title": "Joystick Coordinates",
+      "description": "Raw 12-bit X and Y coordinates",
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer", "minimum": 0, "maximum": 4095 },
+        "y": { "type": "integer", "minimum": 0, "maximum": 4095 }
+      },
+      "jot:visualizer": "joystick-grid-2d",
+      "forms": [
+        {
+          "href": "ws://127.0.0.1:10000",
+          "jot:topic": "sensor/joystick",
+          "contentType": "application/json",
+          "op": ["observeproperty"]
+        }
+      ]
+    },
+    "pressed": {
+      "title": "Button State",
+      "description": "Digital switch button state",
+      "type": "boolean",
+      "jot:visualizer": "status-label",
+      "forms": [
+        {
+          "href": "ws://127.0.0.1:10000",
+          "jot:topic": "sensor/joystick",
+          "contentType": "application/json",
+          "op": ["observeproperty"]
+        }
+      ]
+    }
+  }
+})";
+        response->send(200, "application/json", td_json.c_str());
+    });
+
     node->begin();
     Serial.println("VFS_READY");
 }
