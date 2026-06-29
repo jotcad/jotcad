@@ -125,18 +125,42 @@ test('VSA Mesh Approximation Integration Test', async (t) => {
         await vfs.write(geoCID, geometryText, { encoding: 'string', filename: '28byj-48_5vdc.geo' });
         await vfs.write(shapeCID, shapeJSONText, { encoding: 'json', filename: '28byj-48_5vdc.json' });
 
-        const maxProxies = 40;
-        const approxSel = new Selector('jot/approximate', {
+        const context = { expiresAt: Date.now() + 600000 };
+
+        // Stage 1: jot/wrap
+        console.log("[Test] Querying wrap operator...");
+        const wrapSel = new Selector('jot/wrap', {
             $in: shapeCID,
+            alpha: 0.4,
+            offset: 0.05
+        }).withOutput('$out');
+
+        const wrapResult = await vfs.readSelector(wrapSel, context);
+        assert.ok(wrapResult, "Wrap operator must return a valid VFS entry");
+        const wrappedShape = await consumeJSON(wrapResult.stream);
+        assert.ok(wrappedShape.geometry, "Wrapped shape must carry a geometry CID reference");
+
+        const wrappedGeoRes = await vfs.readCID(wrappedShape.geometry, context);
+        const wrappedGeoText = await consumeText(wrappedGeoRes.stream);
+
+        // Write wrapped shape/geometry to client VFS for downstream approximate step
+        const wrappedShapeText = JSON.stringify(wrappedShape);
+        const wrappedShapeCID = await getCID(wrappedShapeText);
+        await vfs.write(wrappedShapeCID, wrappedShapeText, { encoding: 'json', filename: '28byj-48_5vdc_wrapped.json' });
+        await vfs.write(wrappedShape.geometry, wrappedGeoText, { encoding: 'string', filename: '28byj-48_5vdc_wrapped.geo' });
+
+        // Stage 2: jot/approximate
+        const maxProxies = 120;
+        const approxSel = new Selector('jot/approximate', {
+            $in: wrappedShapeCID,
             max_proxies: maxProxies
         }).withOutput('$out');
 
         console.log("[Test] Querying approximate operator...");
-        const context = { expiresAt: Date.now() + 600000 };
-        const result = await vfs.readSelector(approxSel, context);
+        const approxResult = await vfs.readSelector(approxSel, context);
 
-        assert.ok(result, "Approximate operator must return a valid VFS entry");
-        const approxShape = await consumeJSON(result.stream);
+        assert.ok(approxResult, "Approximate operator must return a valid VFS entry");
+        const approxShape = await consumeJSON(approxResult.stream);
         assert.ok(approxShape.geometry, "Approximated shape must carry a geometry CID reference");
 
         console.log("[Test] Fetching approximated geometry...");
@@ -144,22 +168,45 @@ test('VSA Mesh Approximation Integration Test', async (t) => {
         const approxGeoText = await consumeText(approxGeoRes.stream);
 
         const originalStats = parseGeo(geometryText);
+        const wrappedStats = parseGeo(wrappedGeoText);
         const approxStats = parseGeo(approxGeoText);
 
         console.log(`[Test] Original Triangles: ${originalStats.triangles}, Vertices: ${originalStats.vertices}`);
+        console.log(`[Test] Wrapped Triangles: ${wrappedStats.triangles}, Vertices: ${wrappedStats.vertices}`);
         console.log(`[Test] Approximated Triangles: ${approxStats.triangles}, Vertices: ${approxStats.vertices}`);
 
         // Topological Assertions
-        assert.ok(approxStats.triangles < originalStats.triangles, "Triangle count must be reduced");
-        assert.ok(approxStats.vertices < originalStats.vertices, "Vertex count must be reduced");
+        assert.strictEqual(wrappedStats.nonManifoldEdges, 0, "Wrapped shape must have 0 non-manifold edges");
+        assert.ok(approxStats.triangles < wrappedStats.triangles, "Triangle count must be reduced from wrap");
+        assert.ok(approxStats.vertices < wrappedStats.vertices, "Vertex count must be reduced from wrap");
         assert.strictEqual(approxStats.nonManifoldEdges, 0, "Approximated shape must have 0 non-manifold edges");
 
-        // Verify PNG rendering is functional
-        console.log("[Test] Verifying PNG render on approximated shape...");
+        // Write approximated shape to client VFS for rendering
+        const approxShapeText = JSON.stringify(approxShape);
+        const approxShapeCID = await getCID(approxShapeText);
+        await vfs.write(approxShapeCID, approxShapeText, { encoding: 'json', filename: '28byj-48_5vdc_approx.json' });
+        await vfs.write(approxShape.geometry, approxGeoText, { encoding: 'string', filename: '28byj-48_5vdc_approx.geo' });
+
+        // Verify PNG rendering is functional and save images for reference
+        console.log("[Test] Rendering and saving wrapped shape PNG...");
+        const wrapPngSel = new Selector('jot/png', {
+            $in: wrappedShapeCID,
+            width: 512,
+            height: 512,
+            ax: 45,
+            ay: 45
+        }).withOutput('$out');
+        const wrapPngRes = await vfs.readSelector(wrapPngSel, context);
+        assert.ok(wrapPngRes, "Wrap PNG render must return a valid VFS entry");
+        const wrapPngBytes = await consumeBinary(wrapPngRes.stream);
+        assert.ok(wrapPngBytes.length > 0, "Rendered wrap PNG must not be empty");
+        fs.writeFileSync(path.resolve(libDir, '28byj-48_5vdc_wrapped.png'), wrapPngBytes);
+
+        console.log("[Test] Rendering and saving approximated shape PNG...");
         const approxPngSel = new Selector('jot/png', {
-            $in: shapeCID,
-            width: 256,
-            height: 256,
+            $in: approxShapeCID,
+            width: 512,
+            height: 512,
             ax: 45,
             ay: 45
         }).withOutput('$out');
@@ -167,6 +214,7 @@ test('VSA Mesh Approximation Integration Test', async (t) => {
         assert.ok(approxPngRes, "PNG render must return a valid VFS entry");
         const pngBytes = await consumeBinary(approxPngRes.stream);
         assert.ok(pngBytes.length > 0, "Rendered PNG must not be empty");
+        fs.writeFileSync(path.resolve(libDir, '28byj-48_5vdc_approx.png'), pngBytes);
 
     } finally {
         console.log("[Test] Cleaning up...");

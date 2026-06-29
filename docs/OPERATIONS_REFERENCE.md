@@ -564,12 +564,13 @@ Reduces mesh complexity while preserving sharp features using edge-collapse.
 - **`count`**: Explicit target face count (overrides ratio if > 0).
 - **`threshold`**: Dihedral angle (in turns/tau) used to identify and protect sharp features.
 
-### `approximate(max_proxies=40)`
+### `approximate(max_proxies=40, tolerance=-1.0)`
 Simplifies complex 3D triangle meshes into a set of planar proxy facets using CGAL's Variational Shape Approximation (VSA).
 
-- **`max_proxies`**: The maximum number of planar proxy regions to partition the mesh into (default `40`). Lower numbers produce simpler blocky/prismatic approximations, while higher numbers capture more detail.
+- **`max_proxies`**: The target/minimum number of planar proxy regions to partition the mesh into (default `40`).
+- **`tolerance`**: Maximum allowed geometric deviation error (Hausdorff distance, default `-1.0` to disable). If set to a positive value (e.g. `0.5`), the algorithm will dynamically increase the proxy count in a search loop using an AABB tree until the error satisfies the tolerance constraint.
 - **Topological Cleanup**: VSA reconstructs the mesh as a set of planar regions, naturally repairing self-intersections, overlapping faces, and non-manifold edges.
-- **Example**: `MyModel.approximate(30)`
+- **Example**: `MyModel.approximate(max_proxies=40, tolerance=0.5)`
 
 ## 16. Typography
 
