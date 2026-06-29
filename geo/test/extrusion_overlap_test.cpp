@@ -117,7 +117,12 @@ void run_extrusion_overlap_test() {
     {
         std::ifstream check(bear_path);
         if (!check.good()) {
-            bear_path = "../../scratch/bear.stl";
+            check.open("../scratch/bear.stl");
+            if (check.good()) {
+                bear_path = "../scratch/bear.stl";
+            } else {
+                bear_path = "../../scratch/bear.stl";
+            }
         }
     }
     Geometry bear_geo;

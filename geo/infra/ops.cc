@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <csignal>
 
-namespace jotcad { namespace geo { void register_all_ops(fs::VFSNode* vfs); } }
+namespace jotcad { namespace geo { void register_ops(fs::VFSNode* vfs); } }
 
 using namespace jotcad::geo;
 
@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
             fs::VFSNode::Config config;
             config.id = "temp-schema-node";
             fs::VFSNode node(config);
-            register_all_ops(&node);
+            register_ops(&node);
             std::cout << node.get_catalog().dump(2) << std::endl;
             return 0;
         }
@@ -52,7 +52,10 @@ int main(int argc, char** argv) {
     }
 
     fs::VFSNode::Config config;
-    config.id = "geo-ops-node";
+#ifndef DEFAULT_NODE_ID
+#define DEFAULT_NODE_ID "geo-ops-node"
+#endif
+    config.id = DEFAULT_NODE_ID;
     if (const char* env_peer = std::getenv("PEER_ID")) {
         config.id = env_peer;
     } else if (const char* env_vfs = std::getenv("VFS_ID")) {
@@ -82,7 +85,7 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, signal_handler);
 
     // 1. Register everything from the compiled library onto this specific node instance
-    register_all_ops(&node);
+    register_ops(&node);
 
     std::cout << "[Ops Node] Starting Native VFS Node on port " << port << "..." << std::endl;
     node.listen();

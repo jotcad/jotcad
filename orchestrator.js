@@ -6,6 +6,24 @@ import { info, warn, error } from './fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function getSplitOpsComponents(routerPort, startPort) {
+  return {
+    ops_primitives: { type: 'ops_primitives', protocol: 'http', port: startPort,     env: { PEER_ID: 'geo-primitives-node', NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_booleans:   { type: 'ops_booleans',   protocol: 'http', port: startPort + 1, env: { PEER_ID: 'geo-booleans-node',   NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_transforms: { type: 'ops_transforms', protocol: 'http', port: startPort + 2, env: { PEER_ID: 'geo-transforms-node', NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_features:   { type: 'ops_features',   protocol: 'http', port: startPort + 3, env: { PEER_ID: 'geo-features-node',   NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_mapping:    { type: 'ops_mapping',    protocol: 'http', port: startPort + 4, env: { PEER_ID: 'geo-mapping-node',    NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_sweep:      { type: 'ops_sweep',      protocol: 'http', port: startPort + 5, env: { PEER_ID: 'geo-sweep-node',      NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_unfold:     { type: 'ops_unfold',     protocol: 'http', port: startPort + 6, env: { PEER_ID: 'geo-unfold-node',     NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_tooling:    { type: 'ops_tooling',    protocol: 'http', port: startPort + 7, env: { PEER_ID: 'geo-tooling-node',    NEIGHBORS: `http://127.0.0.1:${routerPort}` } },
+    ops_io:         { type: 'ops_io',         protocol: 'http', port: startPort + 8, env: { PEER_ID: 'geo-io-node',         NEIGHBORS: `http://127.0.0.1:${routerPort}` } }
+  };
+}
+
+const findOpsNode = (map) => {
+  return map.ops || map.ops_primitives || map.ops_transforms || map.ops_booleans || map.ops_features || map.ops_sweep || map.ops_io || map.ops_mapping || map.ops_unfold || map.ops_tooling;
+};
+
 /**
  * Explicit Profiles
  */
@@ -15,7 +33,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9000 },
-      ops:    { type: 'ops',    protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      ...getSplitOpsComponents(9000, 9091),
       export: { type: 'export', protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
@@ -25,8 +43,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
-      ops:    { type: 'ops',    protocol: 'http',  port: 9191, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://127.0.0.1:9200' } },
-      ops2:   { type: 'ops',    protocol: 'http',  port: 9192, env: { PEER_ID: 'geo-ops-node-2', NEIGHBORS: 'http://127.0.0.1:9200' } },
+      ...getSplitOpsComponents(9200, 9191),
       export: { type: 'export', protocol: 'https', port: 9197, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
@@ -36,7 +53,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9000 },
-      ops:        { type: 'ops',        protocol: 'http',  port: 9091, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      ...getSplitOpsComponents(9000, 9091),
       export:     { type: 'export',     protocol: 'https', port: 9092, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
       subscriber: { type: 'subscriber', protocol: 'http',  port: 11223, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3030, dist: 'ux/dist/live' }
@@ -47,7 +64,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
-      ops:        { type: 'ops',        protocol: 'http',  port: 9191, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
+      ...getSplitOpsComponents(9200, 9191),
       export:     { type: 'export',     protocol: 'https', port: 9192, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
       subscriber: { type: 'subscriber', protocol: 'http',  port: 11224, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3131, dist: 'ux/dist/test' }
@@ -60,7 +77,7 @@ export const PROFILES = {
       zenoh_router: { type: 'zenoh_router', port: 9400 },
       node_a: { type: 'node_a', protocol: 'http', port: 8181, env: { NEIGHBORS: 'http://127.0.0.1:9400' } },
       node_b: { type: 'node_b', protocol: 'http', port: 8182, env: { NEIGHBORS: 'http://127.0.0.1:9400' } },
-      ops:    { type: 'ops',    protocol: 'http', port: 8183, env: { NEIGHBORS: 'http://127.0.0.1:9400' } }
+      ...getSplitOpsComponents(9400, 8183)
     }
   },
   'test/complex_topology': {
@@ -78,7 +95,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9500 },
-      ops: { type: 'ops', protocol: 'https', port: 9198, env: { PEER_ID: 'geo-ops-node', NEIGHBORS: 'http://127.0.0.1:9500' } },
+      ...getSplitOpsComponents(9500, 9191),
       ux:  { type: 'ux',  protocol: 'https', port: 3232, dist: 'ux/dist/test' }
     }
   }
@@ -125,6 +142,27 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       throw new Error(`Invalid gateway port for "${gateway}": ${gatewayPort}. Port must be between 1 and 65535.`);
   }
 
+  const createOpsConfig = (binaryPath, cfg, key) => {
+    const useSsl = cfg.protocol === 'https';
+    const storageKey = key || path.basename(binaryPath);
+    return {
+      name: `${path.basename(binaryPath)} (${cfg.port})`,
+      command: binaryPath,
+      args: [String(cfg.port), `${storagePrefix}${storageKey}`],
+      cwd: __dirname,
+      env: { 
+          ...process.env, 
+          LOG_LEVEL: globalLogLevel,
+          PORT: String(cfg.port),
+          PEER_ID: `${profileKey.replace('/', '_')}_${storageKey}`,
+          SSL_CERT_PATH: (useSsl && hasCerts) ? certPath : '',
+          SSL_KEY_PATH: (useSsl && hasCerts) ? keyPath : '',
+          ...env,
+          ...cfg.env
+      }
+    };
+  };
+
   let gatewayUrl = '';
   if (componentMap.ux) {
       gatewayUrl = `${componentMap.ux.protocol}://localhost:${componentMap.ux.port}?gateway=${gatewayPort}`;
@@ -149,29 +187,19 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
         }
       ];
     },
-    ops: (cfg, key) => {
-      const useSsl = cfg.protocol === 'https';
-      const storageKey = key || 'ops';
-      return {
-        name: `Ops Node (${cfg.port})`,
-        command: './geo/bin/ops',
-        args: [String(cfg.port), `${storagePrefix}${storageKey}`],
-        cwd: __dirname,
-        env: { 
-            ...process.env, 
-            LOG_LEVEL: globalLogLevel,
-            PORT: String(cfg.port),
-            PEER_ID: `${profileKey.replace('/', '_')}_${storageKey}`,
-            SSL_CERT_PATH: (useSsl && hasCerts) ? certPath : '',
-            SSL_KEY_PATH: (useSsl && hasCerts) ? keyPath : '',
-            ...env,
-            ...cfg.env
-        }
-      };
-    },
+    ops: (cfg, key) => createOpsConfig('./geo/bin/ops', cfg, key),
+    ops_primitives: (cfg, key) => createOpsConfig('./geo/bin/ops_primitives', cfg, key),
+    ops_booleans: (cfg, key) => createOpsConfig('./geo/bin/ops_booleans', cfg, key),
+    ops_transforms: (cfg, key) => createOpsConfig('./geo/bin/ops_transforms', cfg, key),
+    ops_features: (cfg, key) => createOpsConfig('./geo/bin/ops_features', cfg, key),
+    ops_mapping: (cfg, key) => createOpsConfig('./geo/bin/ops_mapping', cfg, key),
+    ops_sweep: (cfg, key) => createOpsConfig('./geo/bin/ops_sweep', cfg, key),
+    ops_unfold: (cfg, key) => createOpsConfig('./geo/bin/ops_unfold', cfg, key),
+    ops_tooling: (cfg, key) => createOpsConfig('./geo/bin/ops_tooling', cfg, key),
+    ops_io: (cfg, key) => createOpsConfig('./geo/bin/ops_io', cfg, key),
     export: (cfg) => {
       const useSsl = cfg.protocol === 'https';
-      const opsNode = componentMap.ops || componentMap.ops1 || componentMap.ops2;
+      const opsNode = findOpsNode(componentMap);
       return {
         name: `Export Node (${cfg.port})`,
         command: 'node',
@@ -227,7 +255,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       };
     },
     subscriber: (cfg) => {
-      const opsNode = componentMap.ops || componentMap.ops1 || componentMap.ops2;
+      const opsNode = findOpsNode(componentMap);
       return {
         name: `Counter Subscriber (${cfg.port})`,
         command: 'node',

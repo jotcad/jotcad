@@ -1,153 +1,33 @@
-#include "hexagon_op.h"
-#include "box_op.h"
-#include "disk_op.h"
-#include "arc_op.h"
-#include "orb_op.h"
-#include "cone_op.h"
-#include "triangle_op.h"
-#include "offset_op.h"
-#include "outline_op.h"
-#include "points_op.h"
-#include "nth_op.h"
-#include "rotate_op.h"
-#include "color_op.h"
-#include "material_op.h"
-#include "group_op.h"
-#include "path_op.h"
-#include "corners_op.h"
-#include "on_op.h"
-#include "at_op.h"
-#include "cut_op.h"
-#include "stamp_op.h"
-#include "join_op.h"
-#include "clip_op.h"
-#include "fuse_op.h"
-#include "disjoint_op.h"
-#include "clean_op.h"
-#include "pdf_op.h"
-#include "stl_op.h"
-#include "png_op.h"
-#include "relief_op.h"
-#include "rule_op.h"
-#include "move_op.h"
-#include "fill_op.h"
-#include "sew_op.h"
-#include "plane_op.h"
-#include "extrude_op.h"
-#include "faces_op.h"
-#include "filter_ops.h"
-#include "scale_op.h"
-#include "spin_op.h"
-#include "simplify_op.h"
-#include "approximate_op.h"
-#include "hull_op.h"
-#include "sweep_op.h"
-#include "section_op.h"
-#include "place_op.h"
-#include "grow_op.h"
-#include "wrap_op.h"
-#include "conform_op.h"
-#include "emboss_op.h"
-#include "decal_op.h"
-#include "smooth_op.h"
-#include "separate_op.h"
-#include "deform_op.h"
-#include "text_op.h"
-#include "trace_op.h"
-#include "transform_ops.h"
-#include "tag_ops.h"
-#include "asset_ops.h"
-#include "stitch_op.h"
-#include "unfold_op.h"
-#include "pack_op.h"
-#include "item_ops.h"
-#include "snap_op.h"
-#include "bb_op.h"
-#include "obb_op.h"
-#include "convex_op.h"
-#include "rainbow_op.h"
-#include "undercut_op.h"
-#include "part_line_op.h"
-
-#include "measure_ops.h"
-#include "sort_ops.h"
+#include "../../fs/cpp/vfs_node.h"
 
 namespace jotcad {
 namespace geo {
 
+// Forward declarations of split registration functions
+void register_primitives_ops(fs::VFSNode* vfs);
+void register_booleans_ops(fs::VFSNode* vfs);
+void register_transforms_ops(fs::VFSNode* vfs);
+void register_features_ops(fs::VFSNode* vfs);
+void register_mapping_ops(fs::VFSNode* vfs);
+void register_sweep_ops(fs::VFSNode* vfs);
+void register_unfold_ops(fs::VFSNode* vfs);
+void register_tooling_ops(fs::VFSNode* vfs);
+void register_io_ops(fs::VFSNode* vfs);
+
 void register_all_ops(fs::VFSNode* vfs) {
-    hexagon_init(vfs);
-    box_init(vfs);
-    disk_init(vfs);
-    arc_init(vfs);
-    orb_init(vfs);
-    cone_init(vfs);
-    triangle_init(vfs);
-    offset_init(vfs);
-    outline_init(vfs);
-    points_init(vfs);
-    nth_init(vfs);
-    rotate_init(vfs);
-    color_init(vfs);
-    material_init(vfs);
-    group_init(vfs);
-    path_init(vfs);
-    corners_init(vfs);
-    on_init(vfs);
-    at_init(vfs);
-    snap_init(vfs);
-    cut_init(vfs);
-    stamp_init(vfs);
-    join_init(vfs);
-    clip_init(vfs);
-    fuse_init(vfs);
-    disjoint_init(vfs);
-    clean_init(vfs);
-    pdf_init(vfs);
-    stl_init(vfs);
-    png_init(vfs);
-    relief_init(vfs);
-    rule_init(vfs);
-    move_init(vfs);
-    fill_init(vfs);
-    sew_init(vfs);
-    plane_init(vfs);
-    extrude_init(vfs);
-    faces_init(vfs);
-    scale_init(vfs);
-    spin_init(vfs);
-    simplify_init(vfs);
-    approximate_init(vfs);
-    hull_init(vfs);
-    sweep_init(vfs);
-    section_init(vfs);
-    place_init(vfs);
-    grow_init(vfs);
-    wrap_init(vfs);
-    conform_init(vfs);
-    emboss_init(vfs);
-    decal_init(vfs);
-    smooth_init(vfs);
-    separate_init(vfs);
-    deform_init(vfs);
-    assets_init(vfs);
-    text_init(vfs);
-    trace_init(vfs);
-    transform_ops_init(vfs);
-    tag_ops_init(vfs);
-    stitch_init(vfs);
-    unfold_init(vfs);
-    pack_init(vfs);
-    item_init(vfs);
-    bb_init(vfs);
-    obb_init(vfs);
-    measure_init(vfs);
-    filter_ops_init(vfs);
-    selection_init(vfs);
-    convex_init(vfs);
-    rainbow_init(vfs);
-    undercut_init(vfs);
-    part_line_init(vfs);
+    register_primitives_ops(vfs);
+    register_booleans_ops(vfs);
+    register_transforms_ops(vfs);
+    register_features_ops(vfs);
+    register_mapping_ops(vfs);
+    register_sweep_ops(vfs);
+    register_unfold_ops(vfs);
+    register_tooling_ops(vfs);
+    register_io_ops(vfs);
+}
+
+void register_ops(fs::VFSNode* vfs) {
+    register_all_ops(vfs);
 }
 
 } // namespace geo
