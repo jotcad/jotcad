@@ -1,0 +1,4 @@
+*.o
+sim_rivers
+layers.csv
+*.png

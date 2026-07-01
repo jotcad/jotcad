@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JotCAD Landscape Simulation Viewer</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            --glass-bg: rgba(30, 41, 59, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.06);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+            --accent-glow: rgba(129, 140, 248, 0.2);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+            padding: 2rem 1rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            max-width: 800px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: var(--accent);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.05em;
+        }
+
+        header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+
+        /* Dashboard Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+            width: 100%;
+            max-width: 1200px;
+            padding: 0 1rem;
+        }
+
+        .card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(12px);
+            border-radius: 20px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.25);
+        }
+
+        .card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(129, 140, 248, 0.3);
+            box-shadow: 0 10px 40px var(--accent-glow);
+        }
+
+        .image-container {
+            width: 100%;
+            position: relative;
+            padding-top: 100%; /* 1:1 Aspect ratio square container */
+            background: #020617;
+            cursor: pointer;
+            overflow: hidden;
+        }
+
+        .image-container img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+
+        .card:hover .image-container img {
+            transform: scale(1.05);
+        }
+
+        .info-panel {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            justify-content: space-between;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            font-weight: 300;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>JotCAD Landscape Viewer</h1>
+        <p class="version-tag" style="font-size: 0.85rem; color: #3b82f6; font-family: monospace; letter-spacing: 0.05em; margin-bottom: 0.5rem; text-transform: uppercase;">v1.1.4 - Balanced Water Cycle</p>
+        <p>Interactive dashboard for physical terrain, strata core samples, and isometric 3D models.</p>
+        <div style="margin-top: 1.2rem;">
+            <button onclick="refreshAllImages()" style="background: var(--accent); border: none; color: #fff; padding: 0.7rem 1.6rem; border-radius: 50px; font-size: 0.9rem; font-weight: 600; box-shadow: 0 4px 15px rgba(129, 140, 248, 0.4); cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); outline: none;">
+                🔄 Refresh Dashboard Images
+            </button>
+        </div>
+    </header>
+    
+    <div class="dashboard-grid">
+        <!-- 2D Top-down Map Card -->
+        <div class="card">
+            <!-- Card timeline slider -->
+            <div class="card-timeline" style="padding: 0.8rem 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; border-bottom: 1px solid var(--glass-border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+                    <span style="font-weight: bold; color: var(--text-secondary);">Evolution Timeline</span>
+                    <span class="timeline-label" style="font-family: monospace; color: #3b82f6; font-weight: bold; background: rgba(59, 130, 246, 0.1); padding: 0.1rem 0.5rem; border-radius: 4px;">Step: 1000</span>
+                </div>
+                <input type="range" class="timeline-slider" min="0" max="11" step="1" value="11" style="width: 100%; cursor: pointer; accent-color: #3b82f6; margin: 0.2rem 0;">
+            </div>
+            <div class="image-container">
+                <img src="/terrain.png" alt="2D Top-down Map">
+            </div>
+            <div class="info-panel">
+                <h3 class="card-title">2D Top-Down Map</h3>
+                <p class="card-desc">Regional map spanning 256 km x 256 km. Topographic contour lines are drawn every 50 meters, displaying natural sediment flows and river paths.</p>
+            </div>
+        </div>
+ 
+        <!-- 1:1 Side-View Card -->
+        <div class="card">
+            <!-- Card timeline slider -->
+            <div class="card-timeline" style="padding: 0.8rem 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; border-bottom: 1px solid var(--glass-border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+                    <span style="font-weight: bold; color: var(--text-secondary);">Evolution Timeline</span>
+                    <span class="timeline-label" style="font-family: monospace; color: #3b82f6; font-weight: bold; background: rgba(59, 130, 246, 0.1); padding: 0.1rem 0.5rem; border-radius: 4px;">Step: 1000</span>
+                </div>
+                <input type="range" class="timeline-slider" min="0" max="11" step="1" value="11" style="width: 100%; cursor: pointer; accent-color: #3b82f6; margin: 0.2rem 0;">
+            </div>
+            <div class="image-container">
+                <img src="/terrain_side.png" alt="1:1 Side Cross-Section">
+            </div>
+            <div class="info-panel">
+                <h3 class="card-title">1:1 Side Cross-Section</h3>
+                <p class="card-desc">Geological slice across 256 km showing deep rock strata beds (Rock, Sand) and organic erosion layers.</p>
+            </div>
+        </div>
+ 
+        <!-- 3D Isometric Card -->
+        <div class="card">
+            <!-- Card timeline slider -->
+            <div class="card-timeline" style="padding: 0.8rem 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; border-bottom: 1px solid var(--glass-border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+                    <span style="font-weight: bold; color: var(--text-secondary);">Evolution Timeline</span>
+                    <span class="timeline-label" style="font-family: monospace; color: #3b82f6; font-weight: bold; background: rgba(59, 130, 246, 0.1); padding: 0.1rem 0.5rem; border-radius: 4px;">Step: 1000</span>
+                </div>
+                <input type="range" class="timeline-slider" min="0" max="11" step="1" value="11" style="width: 100%; cursor: pointer; accent-color: #3b82f6; margin: 0.2rem 0;">
+            </div>
+            <div class="image-container">
+                <img src="/terrain_iso.png" alt="3D Isometric View">
+            </div>
+            <div class="info-panel">
+                <h3 class="card-title">3D Isometric View</h3>
+                <p class="card-desc">Raymarching model of the 256 km regional terrain. Peaks reach up to 1,500m (1.0x Z-scale) mapped with detailed 50m topographic contour rings.</p>
+            </div>
+        </div>
+
+        <!-- Water Velocity Field Card -->
+        <div class="card">
+            <!-- Card timeline slider -->
+            <div class="card-timeline" style="padding: 0.8rem 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; border-bottom: 1px solid var(--glass-border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+                    <span style="font-weight: bold; color: var(--text-secondary);">Evolution Timeline</span>
+                    <span class="timeline-label" style="font-family: monospace; color: #3b82f6; font-weight: bold; background: rgba(59, 130, 246, 0.1); padding: 0.1rem 0.5rem; border-radius: 4px;">Step: 1000</span>
+                </div>
+                <input type="range" class="timeline-slider" min="0" max="11" step="1" value="11" style="width: 100%; cursor: pointer; accent-color: #3b82f6; margin: 0.2rem 0;">
+            </div>
+            <div class="image-container">
+                <img src="/terrain_velocity.png" alt="Water Velocity Field">
+            </div>
+            <div class="info-panel">
+                <h3 class="card-title">Water Velocity Field</h3>
+                <p class="card-desc">Glowing regional velocity map showing channel runoff velocity magnitudes and watershed paths across the country terrain.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightbox Overlay Removed -->
+
+    <script>
+        // Timeline Scrubber & Image Updates
+        window.addEventListener('DOMContentLoaded', () => {
+            const sliders = document.querySelectorAll('.timeline-slider');
+            const labels = document.querySelectorAll('.timeline-label');
+            const stepsArray = ['0', '1', '100', '200', '300', '400', '500', '600', '700', '800', '900', '1000'];
+            
+            function updateTimelineImages(stepIndexStr) {
+                const idx = parseInt(stepIndexStr, 10);
+                const step = stepsArray[idx] || '1000';
+
+                // Sync all slider values and labels
+                sliders.forEach(slider => {
+                    slider.value = idx;
+                });
+                labels.forEach(label => {
+                    label.textContent = `Step: ${step}`;
+                });
+                
+                const t = Date.now();
+                
+                // Map of target images
+                const imgSelectors = [
+                    { selector: '.card:nth-child(1) img', base: '/terrain' },
+                    { selector: '.card:nth-child(2) img', base: '/terrain_side' },
+                    { selector: '.card:nth-child(3) img', base: '/terrain_iso' },
+                    { selector: '.card:nth-child(4) img', base: '/terrain_velocity' }
+                ];
+                
+                imgSelectors.forEach(item => {
+                    const imgEl = document.querySelector(item.selector);
+                    if (imgEl) {
+                        imgEl.src = `${item.base}_${step}.png?t=${t}`;
+                    }
+                });
+            }
+            
+            // Attach input event listeners to all sliders to keep them synced
+            sliders.forEach(slider => {
+                slider.addEventListener('input', (e) => {
+                    updateTimelineImages(e.target.value);
+                });
+            });
+            
+            // Initialize with step 1000 images on page load (index 11)
+            updateTimelineImages('11');
+        });
+
+        function refreshAllImages() {
+            const sliders = document.querySelectorAll('.timeline-slider');
+            const currentIdx = sliders[0] ? sliders[0].value : '11';
+            const stepsArray = ['0', '1', '100', '200', '300', '400', '500', '600', '700', '800', '900', '1000'];
+            // Trigger refresh by reloading the image components
+            const t = Date.now();
+            const step = stepsArray[parseInt(currentIdx, 10)] || '1000';
+            
+            const imgSelectors = [
+                { selector: '.card:nth-child(1) img', base: '/terrain' },
+                { selector: '.card:nth-child(2) img', base: '/terrain_side' },
+                { selector: '.card:nth-child(3) img', base: '/terrain_iso' },
+                { selector: '.card:nth-child(4) img', base: '/terrain_velocity' }
+            ];
+            
+            imgSelectors.forEach(item => {
+                const imgEl = document.querySelector(item.selector);
+                if (imgEl) {
+                    imgEl.src = `${item.base}_${step}.png?t=${t}`;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
