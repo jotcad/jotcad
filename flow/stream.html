@@ -1087,7 +1087,10 @@
                                 line.setAttribute("y1", crossings[0].y.toFixed(1));
                                 line.setAttribute("x2", crossings[1].x.toFixed(1));
                                 line.setAttribute("y2", crossings[1].y.toFixed(1));
-                                line.setAttribute("stroke", "#000000");
+                                
+                                // Color negative contours (below 25.0m baseline) in red, others in solid black
+                                const isNegative = zc < 25.0;
+                                line.setAttribute("stroke", isNegative ? "#ef4444" : "#000000");
                                 line.setAttribute("stroke-width", "1.2");
                                 isoSvg.appendChild(line);
                             }
