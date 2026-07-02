@@ -760,8 +760,8 @@
                     const shadow = 1.0 - 0.20 * dx - 0.20 * dy;
                     const shadeFactor = Math.max(0.55, Math.min(1.45, shadow));
 
-                    // Base Soil height normalization (range 22m to 28m)
-                    const normH = Math.max(0.0, Math.min(1.0, (H_soil - 22.0) / 6.0));
+                    // Base Soil height normalization (range 23.5m to 26.5m)
+                    const normH = Math.max(0.0, Math.min(1.0, (H_soil - 23.5) / 3.0));
                     
                     // High: brown (80, 50, 25), Low: green (34, 197, 94)
                     let sr = Math.round(Math.max(0, Math.min(255, (34 + (80 - 34) * normH) * shadeFactor)));
@@ -1043,7 +1043,7 @@
 
                         // Height color coding
                         const cellH = H_soil[y][x];
-                        const normH = Math.max(0.0, Math.min(1.0, (cellH - 22.0) / 6.0));
+                        const normH = Math.max(0.0, Math.min(1.0, (cellH - 23.5) / 3.0));
                         let sr = Math.round(Math.max(0, Math.min(255, (34 + (80 - 34) * normH) * shadeFactor)));
                         let sg = Math.round(Math.max(0, Math.min(255, (197 + (50 - 197) * normH) * shadeFactor)));
                         let sb = Math.round(Math.max(0, Math.min(255, (94 + (25 - 94) * normH) * shadeFactor)));
@@ -1058,7 +1058,7 @@
                         isoSvg.appendChild(soilPoly);
 
                         // Draw topographic contour lines (rings) on the soil surface
-                        const contourLevels = [22.5, 23.0, 23.5, 24.0, 24.5, 25.0, 25.5, 26.0, 26.5, 27.0, 27.5];
+                        const contourLevels = [23.75, 24.0, 24.25, 24.5, 24.75, 25.0, 25.25, 25.5, 25.75, 26.0, 26.25];
                         const corners = [
                             { p: pSoilA, z: V_soil[y][x] },
                             { p: pSoilB, z: V_soil[y][x + 1] },

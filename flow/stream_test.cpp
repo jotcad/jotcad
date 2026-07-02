@@ -68,7 +68,7 @@ void save_bmp(const std::string& filename, const std::vector<std::vector<float>>
             float shadow = 1.0f - 0.20f * dx - 0.20f * dy;
             float shade = std::max(0.55f, std::min(1.45f, shadow));
 
-            float normH = std::max(0.0f, std::min(1.0f, (H - 22.0f) / 6.0f));
+            float normH = std::max(0.0f, std::min(1.0f, (H - 23.5f) / 3.0f));
             
             float sr = (34.0f + (80.0f - 34.0f) * normH) * shade;
             float sg = (197.0f + (50.0f - 197.0f) * normH) * shade;
@@ -187,7 +187,7 @@ int main() {
     for (int y = 0; y < GRID_SIZE; ++y) {
         for (int x = 0; x < GRID_SIZE; ++x) {
             float pn = perlin.noise(x * 0.25f, y * 0.25f);
-            H_soil[y][x] = 25.0f + pn * 2.50f;
+            H_soil[y][x] = 25.0f + pn * 1.20f;
         }
     }
 
