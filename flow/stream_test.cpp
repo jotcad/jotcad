@@ -142,10 +142,10 @@ struct PerlinNoise2D {
     }
 
     float grad(int hash, float x, float y) {
-        int h = hash & 7;
-        float u = h < 4 ? x : y;
-        float v = h < 4 ? y : x;
-        return ((h & 1) ? -u : u) + ((h & 2) ? -2.0f * v : 2.0f * v);
+        int h = hash & 3;
+        float u = h < 2 ? x : -x;
+        float v = (h == 0 || h == 2) ? y : -y;
+        return u + v;
     }
 
     float noise(float x, float y) {
