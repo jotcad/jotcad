@@ -98,7 +98,7 @@ void save_bmp(const std::string& filename, const std::vector<std::vector<float>>
             }
 
             // Mark the sink as red in BMP
-            if (x == 6 && y == 6) {
+            if (x == 12 && y == 12) {
                 r = 239; g = 68; b = 68;
             }
             f.put(b); f.put(g); f.put(r);
@@ -171,7 +171,7 @@ struct PerlinNoise2D {
 };
 
 int main() {
-    const int GRID_SIZE = 40; // Double the grid size
+    const int GRID_SIZE = 80; // Double the grid size again
     
     std::vector<std::vector<float>> H_soil(GRID_SIZE, std::vector<float>(GRID_SIZE, 0.0f));
     std::vector<std::vector<float>> h_surface(GRID_SIZE, std::vector<float>(GRID_SIZE, 0.0f));
@@ -214,8 +214,8 @@ int main() {
     float max_soil_capacity = 0.40f;
     float K_sub = 0.08f;
 
-    int total_sim_steps = 3000;
-    int export_stride = 15;    // Export 201 steps total to keep file size lightweight
+    int total_sim_steps = 6000;
+    int export_stride = 30;    // Export 201 steps total to keep file size lightweight
     
     float dt = 0.04f;           
     float g = 9.81f;             
@@ -505,9 +505,9 @@ int main() {
             }
         }
 
-        // 4. Internal Drain Sink at (6, 6)
-        int sink_x = 6;
-        int sink_y = 6;
+        // 4. Internal Drain Sink at (12, 12)
+        int sink_x = 12;
+        int sink_y = 12;
         h_surface[sink_y][sink_x] = 0.0f;
         h_soil_water[sink_y][sink_x] = 0.0f;
         sediment[sink_y][sink_x] = 0.0f;

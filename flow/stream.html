@@ -450,7 +450,7 @@
                             <option value="row">Horizontal Row</option>
                             <option value="col">Vertical Column</option>
                         </select>
-                        <input id="slice-idx-input" type="number" min="0" max="39" value="6" style="width: 50px; background: #1e293b; color: #f1f5f9; border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 6px; font-size: 0.75rem; font-family: inherit; outline: none; text-align: center;">
+                        <input id="slice-idx-input" type="number" min="0" max="79" value="12" style="width: 50px; background: #1e293b; color: #f1f5f9; border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 6px; font-size: 0.75rem; font-family: inherit; outline: none; text-align: center;">
                     </div>
                 </div>
                 <div class="cross-section-chart-container" style="position: relative; width: 100%; height: 160px; background: #070b13; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5);">
@@ -1010,12 +1010,12 @@
 
             // Helper to project grid x, y, z coordinates to isometric SVG layout
             function projectIso(x, y, z) {
-                const spacing = GRID_SIZE <= 20 ? 22 : 11;
+                const spacing = GRID_SIZE <= 20 ? 22 : (GRID_SIZE <= 40 ? 11 : 5.5);
                 const heightScale = 12;
                 const baseElevation = 20.0;
                 
                 const px = 500 + (x - y) * 0.866 * spacing;
-                const py = (GRID_SIZE <= 20 ? 160 : 120) + (x + y) * 0.5 * spacing - (z - baseElevation) * heightScale;
+                const py = (GRID_SIZE <= 20 ? 160 : (GRID_SIZE <= 40 ? 120 : 100)) + (x + y) * 0.5 * spacing - (z - baseElevation) * heightScale;
                 return { x: px, y: py };
             }
 
