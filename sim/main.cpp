@@ -7,26 +7,33 @@ void print_help() {
     std::cout << "JotCAD Physical Landscape Simulator CLI\n"
               << "Usage: sim [options]\n"
               << "Options:\n"
-              << "  --width <w>     Grid width (default: 128)\n"
-              << "  --height <h>    Grid height (default: 128)\n"
+              << "  --width <w>     Grid width (default: 256)\n"
+              << "  --height <h>    Grid height (default: 256)\n"
               << "  --steps <s>     Simulation iterations (default: 100)\n"
               << "  --dt <val>      Time step duration (default: 0.2)\n"
               << "  --seed <val>    Perlin noise seed (default: 1337)\n"
               << "  --out-mesh <f>  Output OBJ filename (default: terrain.obj)\n"
               << "  --out-data <f>  Output CSV filename (default: layers.csv)\n"
-              << "  --out-image <f> Output PNG visualization filename (default: terrain.png)\n"
+              << "  --out-image <f> Output 2D top-down PNG filename (default: terrain.png)\n"
+              << "  --out-side-image <f> Output side-view PNG filename (default: terrain_side.png)\n"
+              << "  --out-iso-image <f> Output 3D isometric PNG filename (default: terrain_iso.png)\n"
+              << "  --cutaway       Enable cutaway on the 3D isometric image\n"
               << "  --help          Show this message\n";
 }
 
 int main(int argc, char** argv) {
-    int width = 128;
-    int height = 128;
+    int width = 512;
+    int height = 512;
     int steps = 100;
     float dt = 0.2f;
     unsigned int seed = 1337;
     std::string out_mesh = "terrain.obj";
     std::string out_data = "layers.csv";
     std::string out_image = "terrain.png";
+    std::string out_side_image = "";
+    std::string out_iso_image = "";
+    bool cutaway = false;
+    std::string scenario = "standard";
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -49,6 +56,14 @@ int main(int argc, char** argv) {
             out_data = argv[++i];
         } else if (arg == "--out-image" && i + 1 < argc) {
             out_image = argv[++i];
+        } else if (arg == "--out-side-image" && i + 1 < argc) {
+            out_side_image = argv[++i];
+        } else if (arg == "--out-iso-image" && i + 1 < argc) {
+            out_iso_image = argv[++i];
+        } else if (arg == "--cutaway") {
+            cutaway = true;
+        } else if (arg == "--scenario" && i + 1 < argc) {
+            scenario = argv[++i];
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             print_help();
@@ -57,11 +72,12 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "Initializing simulator with grid: " << width << "x" << height 
-              << ", seed: " << seed << "...\n";
+              << ", seed: " << seed << ", scenario: " << scenario << "...\n";
               
     auto start_time = std::chrono::high_resolution_clock::now();
     
     jotcad::sim::Simulator simulator(width, height);
+    simulator.set_scenario(scenario);
     simulator.initialize(seed);
 
     std::cout << "Running " << steps << " simulation iterations (dt=" << dt << ")...\n";
@@ -91,9 +107,38 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << "Saving landscape visualization to " << out_image << "...\n";
-    if (!simulator.save_to_png(out_image)) {
-        std::cerr << "Error saving PNG visualization file.\n";
+    if (out_side_image.empty()) {
+        size_t dot_pos = out_image.find_last_of('.');
+        if (dot_pos != std::string::npos) {
+            out_side_image = out_image.substr(0, dot_pos) + "_side.png";
+        } else {
+            out_side_image = out_image + "_side.png";
+        }
+    }
+    if (out_iso_image.empty()) {
+        size_t dot_pos = out_image.find_last_of('.');
+        if (dot_pos != std::string::npos) {
+            out_iso_image = out_image.substr(0, dot_pos) + "_iso.png";
+        } else {
+            out_iso_image = out_image + "_iso.png";
+        }
+    }
+
+    std::cout << "Saving landscape top-view visualization to " << out_image << "...\n";
+    if (!simulator.save_top_view_png(out_image)) {
+        std::cerr << "Error saving top-view PNG visualization file.\n";
+        return 1;
+    }
+
+    std::cout << "Saving landscape side-view cross-section to " << out_side_image << "...\n";
+    if (!simulator.save_side_view_png(out_side_image)) {
+        std::cerr << "Error saving side-view PNG visualization file.\n";
+        return 1;
+    }
+
+    std::cout << "Saving landscape 3D isometric visualization to " << out_iso_image << "...\n";
+    if (!simulator.save_to_png(out_iso_image, cutaway)) {
+        std::cerr << "Error saving 3D isometric PNG visualization file.\n";
         return 1;
     }
 

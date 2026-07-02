@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coupled CFD Physics Visualizer Gallery</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-color: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.4);
+            --text-color: #f1f5f9;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            max-width: 800px;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #38bdf8, #818cf8, #f43f5e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+            letter-spacing: -0.05em;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.25rem;
+            line-height: 1.6;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            border-color: var(--accent-color);
+            box-shadow: 0 20px 40px -15px var(--accent-glow);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card.featured::before {
+            opacity: 1;
+            background: linear-gradient(to right, #f43f5e, #818cf8);
+        }
+
+        .badge {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-color);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            align-self: flex-start;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .card.featured .badge {
+            background: rgba(244, 63, 94, 0.1);
+            color: #f43f5e;
+            border-color: rgba(244, 63, 94, 0.2);
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            letter-spacing: -0.03em;
+        }
+
+        .card-desc {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin-bottom: 1.5rem;
+            flex-grow: 1;
+        }
+
+        .card-arrow {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--accent-color);
+            transition: gap 0.2s;
+        }
+
+        .card.featured .card-arrow {
+            color: #f43f5e;
+        }
+
+        .card:hover .card-arrow {
+            gap: 0.75rem;
+        }
+
+        footer {
+            margin-top: 4rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>JotCAD CFD Simulation Gallery</h1>
+        <p class="subtitle">Multi-page interactive visualization suite modeling 2D finite-difference wave propagation, shallow water bed erosion, groundwater Darcy seepage, sapping failure, and drainage networks</p>
+    </header>
+
+    <div class="gallery">
+        <!-- Stream Formation - Featured Latest -->
+        <a href="/stream.html" class="card featured">
+            <span class="badge">Version 5 (Latest Featured)</span>
+            <div>
+                <h2 class="card-title">Stream Drainage Formation</h2>
+                <p class="card-desc">Advanced landscape evolution model displaying continuous central spring discharge on a noisy topography, forming branching runoff networks and self-reinforcing drainage stream channels.</p>
+            </div>
+            <div class="card-arrow">Launch Simulation &rarr;</div>
+        </a>
+
+        <!-- Piping (Coupled Seepage & Erosion) -->
+        <a href="/piping.html" class="card">
+            <span class="badge">Version 4</span>
+            <div>
+                <h2 class="card-title">Coupled Seepage & Piping</h2>
+                <p class="card-desc">Fully coupled simulation modeling subsurface groundwater Darcy diffusion that bubbles up downstream as surface springs, inducing local bed shear stress and headward sapping erosion.</p>
+            </div>
+            <div class="card-arrow">Launch Simulation &rarr;</div>
+        </a>
+
+        <!-- Seepage & Infiltration -->
+        <a href="/seepage.html" class="card">
+            <span class="badge">Version 3</span>
+            <div>
+                <h2 class="card-title">Seepage & Springs</h2>
+                <p class="card-desc">Dual surface-subsurface hydrology model showcasing slow groundwater table infiltration, Darcy diffusion through a porous dam ridge, and active spring exfiltration.</p>
+            </div>
+            <div class="card-arrow">Launch Simulation &rarr;</div>
+        </a>
+
+        <!-- Bed Erosion -->
+        <a href="/erosion.html" class="card">
+            <span class="badge">Version 2</span>
+            <div>
+                <h2 class="card-title">Shallow Water & Erosion</h2>
+                <p class="card-desc">Dynamic morphological dam breach solver computing bed shear stress, soil detachment, sediment advection, and channel carving over time.</p>
+            </div>
+            <div class="card-arrow">Launch Simulation &rarr;</div>
+        </a>
+
+        <!-- Wave Propagation -->
+        <a href="/wave.html" class="card">
+            <span class="badge">Version 1</span>
+            <div>
+                <h2 class="card-title">Wave Propagation</h2>
+                <p class="card-desc">2D acoustic wave solver displaying continuous compression and expansion cycles originating from a high-energy fluid jet source.</p>
+            </div>
+            <div class="card-arrow">Launch Simulation &rarr;</div>
+        </a>
+    </div>
+
+    <footer>
+        <p>JotCAD Web VFS System &bull; Ports: 8085 (HTTPS) &bull; Core: C++ WebAssembly Engine</p>
+    </footer>
+</body>
+</html>

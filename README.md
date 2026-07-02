@@ -60,3 +60,5 @@ npm start
   syntax, casing rules, and "Tee" pattern.
 - [VFS Specification](docs/VFS_SPECIFICATION.md) - Decentralized Mesh protocol
   and identity.
+- [River Simulator Specification](docs/RIVER_SIMULATOR.md) - Two-fraction clay and
+  gravel sediment physics, boundary conditions, and rendering colors.

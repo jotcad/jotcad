@@ -330,6 +330,14 @@ void Simulator::loadsoil(const std::string& file) {
                 NWIND = std::stoi(val);
             } else if (tag == "NWATER") {
                 NWATER = std::stoi(val);
+            } else if (tag == "SPRING_X") {
+                SPRING_X = std::stoi(val);
+            } else if (tag == "SPRING_Y") {
+                SPRING_Y = std::stoi(val);
+            } else if (tag == "DRAIN_MARGINS") {
+                DRAIN_MARGINS = std::stoi(val);
+            } else if (tag == "BASE_SPILL") {
+                BASE_SPILL = std::stoi(val);
             }
         }
     }
@@ -510,9 +518,18 @@ void Simulator::seep_water(int x, int y) {
 
 void Simulator::cascade_water(int x, int y, int spill) {
     if (spill <= 0) return;
-    int idx = y * width + x;
-    sec* top = dat[idx];
+
+    int cell_idx = y * width + x;
+    sec* top = dat[cell_idx];
     if (top == nullptr || top->type != 0) return;
+
+    // Drain water at the grid margins (boundaries) to prevent bathtub flooding (if configured in profile)
+    if (DRAIN_MARGINS) {
+        if (x == 0 || x == width - 1 || y == 0 || y == height - 1) {
+            remove_layer(x, y, top->size);
+            return;
+        }
+    }
 
     static const int dx_n[] = {-1, 0, 1, -1, 1, -1, 0, 1};
     static const int dy_n[] = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -527,6 +544,7 @@ void Simulator::cascade_water(int x, int y, int spill) {
         int nx = x + dx_n[d];
         int ny = y + dy_n[d];
         if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+        
         double h_neigh = get_height(nx, ny);
         double diff = h_curr - h_neigh;
         if (diff > max_diff) {
@@ -593,7 +611,8 @@ void Simulator::initialize(unsigned int seed_val) {
     rng.seed(seed);
     step_count = 0;
 
-    loadsoil("rocksand.soil");
+    std::string soil_file = (scenario == "standard") ? "hills.soil" : (scenario + ".soil");
+    loadsoil(soil_file);
 
     for (size_t l = 0; l < layers.size(); ++l) {
         layers[l].init();
@@ -888,15 +907,70 @@ void Simulator::step(float dt) {
 
     for (int d = 0; d < NWATER; ++d) {
         WaterParticle p(width, height, soils, dat);
+        p.spill = BASE_SPILL;
+        if (SPRING_X >= 0 && SPRING_Y >= 0) {
+            // Pressure feedback on generation: spawn spring at lowest hydraulic head in 5x5 neighborhood around (SPRING_X, SPRING_Y)
+            int cx = std::clamp(SPRING_X, 0, width - 1);
+            int cy = std::clamp(SPRING_Y, 0, height - 1);
+            int spawn_x = cx;
+            int spawn_y = cy;
+            double min_head = grid[cy * width + cx].hydraulic_head();
+            for (int dy_off = -2; dy_off <= 2; ++dy_off) {
+                for (int dx_off = -2; dx_off <= 2; ++dx_off) {
+                    int nx = cx + dx_off;
+                    int ny = cy + dy_off;
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        double head = grid[ny * width + nx].hydraulic_head();
+                        if (head < min_head) {
+                            min_head = head;
+                            spawn_x = nx;
+                            spawn_y = ny;
+                        }
+                    }
+                }
+            }
+            p.pos.x = spawn_x;
+            p.pos.y = spawn_y;
+            int ipx = spawn_x;
+            int ipy = spawn_y;
+            sec* top = dat[ipy * width + ipx];
+            int surface = top ? top->type : 0;
+            p.contains = soils[surface].transports;
+        }
         while (true) {
             int ipx = std::round(p.pos.x);
             int ipy = std::round(p.pos.y);
             ipx = std::clamp(ipx, 0, width - 1);
             ipy = std::clamp(ipy, 0, height - 1);
-            water_track[ipy * width + ipx] += p.volume;
 
-            if (!water_move(p, water_frequency)) break;
-            if (!water_interact(p)) break;
+            // Calculate local slope magnitude to determine adaptive sub-stepping
+            float h_left = get_height(std::max(0, ipx - 1), ipy);
+            float h_right = get_height(std::min(width - 1, ipx + 1), ipy);
+            float h_up = get_height(ipx, std::max(0, ipy - 1));
+            float h_down = get_height(ipx, std::min(height - 1, ipy + 1));
+
+            float dx = -(h_right - h_left) * 0.5f;
+            float dy = -(h_down - h_up) * 0.5f;
+            float len3D = std::sqrt(dx * dx + 1.0f + dy * dy);
+            float slope_mag = std::sqrt(dx * dx + dy * dy) / len3D;
+
+            // Run 1 to 5 sub-steps depending on the steepness of the slope
+            int substeps = 1 + (int)std::round(4.0f * slope_mag);
+            bool terminated = false;
+
+            for (int s = 0; s < substeps; ++s) {
+                int cipx = std::round(p.pos.x);
+                int cipy = std::round(p.pos.y);
+                cipx = std::clamp(cipx, 0, width - 1);
+                cipy = std::clamp(cipy, 0, height - 1);
+
+                water_track[cipy * width + cipx] += p.volume / (float)substeps;
+
+                if (!water_move(p, water_frequency)) { terminated = true; break; }
+                if (!water_interact(p)) { terminated = true; break; }
+            }
+
+            if (terminated) break;
         }
         
         int ipx = std::round(p.pos.x);
@@ -908,9 +982,28 @@ void Simulator::step(float dt) {
             add_layer(ipx, ipy, pool.get(p.sediment * soils[p.contains].equrate, p.contains));
             cascade_scree(ipx, ipy, 0);
 
-            add_layer(ipx, ipy, pool.get(p.volume * 0.015, 0)); // water layer type = 0
-            seep_water(ipx, ipy);
-            cascade_water(ipx, ipy, p.spill);
+            // Pressure feedback on deposition: find the cell in 3x3 neighborhood with the lowest hydraulic head
+            int dep_x = ipx;
+            int dep_y = ipy;
+            double min_head = grid[ipy * width + ipx].hydraulic_head();
+            for (int dy_off = -1; dy_off <= 1; ++dy_off) {
+                for (int dx_off = -1; dx_off <= 1; ++dx_off) {
+                    int nx = ipx + dx_off;
+                    int ny = ipy + dy_off;
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        double head = grid[ny * width + nx].hydraulic_head();
+                        if (head < min_head) {
+                            min_head = head;
+                            dep_x = nx;
+                            dep_y = ny;
+                        }
+                    }
+                }
+            }
+
+            add_layer(dep_x, dep_y, pool.get(p.volume * 0.015, 0)); // water layer type = 0
+            seep_water(dep_x, dep_y);
+            cascade_water(dep_x, dep_y, p.spill);
         }
     }
 
@@ -933,7 +1026,20 @@ void Simulator::step(float dt) {
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             seep_water(x, y);
-            cascade_water(x, y, 3);
+            
+            // Calculate local slope to determine dynamic cascade spill depth (drainage speed)
+            float h_left = get_height(std::max(0, x - 1), y);
+            float h_right = get_height(std::min(width - 1, x + 1), y);
+            float h_up = get_height(x, std::max(0, y - 1));
+            float h_down = get_height(x, std::min(height - 1, y + 1));
+
+            float dx = -(h_right - h_left) * 0.5f;
+            float dy = -(h_down - h_up) * 0.5f;
+            float len3D = std::sqrt(dx * dx + 1.0f + dy * dy);
+            float slope = std::sqrt(dx * dx + dy * dy) / len3D;
+
+            int dynamic_spill = BASE_SPILL + (int)std::round(12.0f * slope);
+            cascade_water(x, y, dynamic_spill);
         }
     }
 
@@ -1161,11 +1267,20 @@ bool Simulator::save_side_view_png(const std::string& filepath) const {
             if (vz_float <= v_bedrock_top) {
                 r = 135; g = 125; b = 125;
             } else if (vz_float <= v_soil_top) {
-                float clay_ratio = cell.soil_clay / (total_soil + 1e-6f);
-                float gravel_ratio = cell.soil_gravel / (total_soil + 1e-6f);
-                float r_sed = clay_ratio * 130.0f + gravel_ratio * 190.0f;
-                float g_sed = clay_ratio * 75.0f + gravel_ratio * 175.0f;
-                float b_sed = clay_ratio * 55.0f + gravel_ratio * 155.0f;
+                float r_sed = 130.0f, g_sed = 75.0f, b_sed = 55.0f;
+                sec* curr_layer = dat[vy * width + vx];
+                while (curr_layer != nullptr) {
+                    if (curr_layer->type != 0) {
+                        int s_idx = curr_layer->type;
+                        if (s_idx >= 0 && s_idx < (int)soils.size()) {
+                            r_sed = soils[s_idx].color.r * 255.0f;
+                            g_sed = soils[s_idx].color.g * 255.0f;
+                            b_sed = soils[s_idx].color.b * 255.0f;
+                        }
+                        break;
+                    }
+                    curr_layer = curr_layer->next;
+                }
 
                 if (vz_float > v_soil_top - dz * 1.5f && water_depth <= 0.0f) {
                     unsigned char r_grass = 75; unsigned char g_grass = 145; unsigned char b_grass = 60;
@@ -1358,13 +1473,36 @@ bool Simulator::save_iso_view_png(const std::string& filepath) const {
                         float water_shade_h = 0.05f * scale_z;
                         if (cz > h_water - water_shade_h) shade = 1.0f;
                         
-                        float wf = water_frequency[cell_idx];
                         float f_acc = flow_acc[cell_idx];
+                        float depth_m = water_depth / scale_z * VERTICAL_UNIT_M;
                         float blend = 0.0f;
-                        if (f_acc > 12.0f) {
-                            // Boost river visibility inside channels
+                        float min_depth_m = 0.003f * VERTICAL_UNIT_M;
+                        float wf = water_frequency[cell_idx];
+                        
+                        // Draw stream lines using flow history (wf) so the channels are always visible on land
+                        if (f_acc > 12.0f && water_depth <= min_water_render_h) {
                             blend = std::clamp(2.5f * wf, 0.0f, 0.9f);
                         }
+
+                        // Color code rivers: sandy-brown if dry, and blue-navy if wet based on water depth
+                        float r_river = 180.0f;
+                        float g_river = 160.0f;
+                        float b_river = 130.0f;
+                        if (depth_m > 1e-4f) {
+                            float norm_depth = std::clamp(depth_m / min_depth_m, 0.0f, 1.0f);
+                            if (norm_depth < 0.5f) {
+                                float t_col = norm_depth / 0.5f;
+                                r_river = (1.0f - t_col) * 100.0f + t_col * 40.0f;
+                                g_river = (1.0f - t_col) * 200.0f + t_col * 100.0f;
+                                b_river = (1.0f - t_col) * 240.0f + t_col * 220.0f;
+                            } else {
+                                float t_col = (norm_depth - 0.5f) / 0.5f;
+                                r_river = (1.0f - t_col) * 40.0f + t_col * 10.0f;
+                                g_river = (1.0f - t_col) * 100.0f + t_col * 25.0f;
+                                b_river = (1.0f - t_col) * 220.0f + t_col * 120.0f;
+                            }
+                        }
+
 
                         bool draw_water = false;
                         bool draw_trees = false;
@@ -1391,13 +1529,25 @@ bool Simulator::save_iso_view_png(const std::string& filepath) const {
                             }
                         }
 
-                        // Base sediment and soil colors
+                        // Base sediment and soil colors (look up from the top-most soil layer under water)
                         float total_soil_raw = cell.soil_clay + cell.soil_gravel;
-                        float clay_ratio = cell.soil_clay / (total_soil_raw + 1e-6f);
-                        float gravel_ratio = cell.soil_gravel / (total_soil_raw + 1e-6f);
-                        float r_sed = clay_ratio * 130.0f + gravel_ratio * 190.0f;
-                        float g_sed = clay_ratio * 75.0f + gravel_ratio * 175.0f;
-                        float b_sed = clay_ratio * 55.0f + gravel_ratio * 155.0f;
+                        float r_sed = 130.0f;
+                        float g_sed = 75.0f;
+                        float b_sed = 55.0f;
+
+                        sec* curr_layer = dat[cell_idx];
+                        while (curr_layer != nullptr) {
+                            if (curr_layer->type != 0) { // Skip water
+                                int s_idx = curr_layer->type;
+                                if (s_idx >= 0 && s_idx < (int)soils.size()) {
+                                    r_sed = soils[s_idx].color.r * 255.0f;
+                                    g_sed = soils[s_idx].color.g * 255.0f;
+                                    b_sed = soils[s_idx].color.b * 255.0f;
+                                }
+                                break;
+                            }
+                            curr_layer = curr_layer->next;
+                        }
 
                         float r_grass = 75.0f; float g_grass = 145.0f; float b_grass = 60.0f;
                         float r_grass_final = 0.3f * r_sed + 0.7f * r_grass;
@@ -1420,15 +1570,15 @@ bool Simulator::save_iso_view_png(const std::string& filepath) const {
                             float g_base = fd * (g_forest * brightness) + (1.0f - fd) * g_bg;
                             float b_base = fd * (b_forest * brightness) + (1.0f - fd) * b_bg;
 
-                            r = (1.0f - blend) * r_base + blend * 69.0f;
-                            g = (1.0f - blend) * g_base + blend * 128.0f;
-                            b = (1.0f - blend) * b_base + blend * 179.0f;
+                            r = (1.0f - blend) * r_base + blend * r_river;
+                            g = (1.0f - blend) * g_base + blend * g_river;
+                            b = (1.0f - blend) * b_base + blend * b_river;
                         }
                         else if (draw_bedrock) {
                             float r_base = 135.0f; float g_base = 125.0f; float b_base = 125.0f;
-                            r = (1.0f - blend) * r_base + blend * 69.0f;
-                            g = (1.0f - blend) * g_base + blend * 128.0f;
-                            b = (1.0f - blend) * b_base + blend * 179.0f;
+                            r = (1.0f - blend) * r_base + blend * r_river;
+                            g = (1.0f - blend) * g_base + blend * g_river;
+                            b = (1.0f - blend) * b_base + blend * b_river;
                         }
                         else if (draw_soil_grass) {
                             float r_base = r_sed;
@@ -1443,27 +1593,26 @@ bool Simulator::save_iso_view_png(const std::string& filepath) const {
                                 b_base = b_grass_final;
                             }
 
-                            r = (1.0f - blend) * r_base + blend * 69.0f;
-                            g = (1.0f - blend) * g_base + blend * 128.0f;
-                            b = (1.0f - blend) * b_base + blend * 179.0f;
+                            r = (1.0f - blend) * r_base + blend * r_river;
+                            g = (1.0f - blend) * g_base + blend * g_river;
+                            b = (1.0f - blend) * b_base + blend * b_river;
                         }
                         else if (draw_water) {
                             // Render standing water!
-                            float total_soil_raw = cell.soil_clay + cell.soil_gravel;
-                            float r_bed, g_bed, b_bed;
+                            float r_bed = r_sed;
+                            float g_bed = g_sed;
+                            float b_bed = b_sed;
                             if (total_soil_raw <= 0.005f) {
                                 r_bed = 135.0f; g_bed = 125.0f; b_bed = 125.0f;
-                            } else {
-                                float clay_ratio = cell.soil_clay / (total_soil_raw + 1e-6f);
-                                float gravel_ratio = cell.soil_gravel / (total_soil_raw + 1e-6f);
-                                r_bed = clay_ratio * 130.0f + gravel_ratio * 190.0f;
-                                g_bed = clay_ratio * 75.0f + gravel_ratio * 175.0f;
-                                b_bed = clay_ratio * 55.0f + gravel_ratio * 155.0f;
                             }
 
-                            float depth_m = cell.water * VERTICAL_UNIT_M;
-                            float absorption = 1.0f - std::exp(-depth_m / 2.0f);
-                            absorption = std::clamp(absorption, 0.10f, 0.95f);
+                            float depth_m = water_depth / scale_z * VERTICAL_UNIT_M;
+                            float absorption;
+                            if (depth_m < 0.15f) {
+                                absorption = (depth_m / 0.15f) * 0.8f; // Transparent shore transition
+                            } else {
+                                absorption = 1.0f; // Fully opaque outside the shoreline
+                            }
 
                             // Blend from shallow turquoise (60, 165, 185) to deep navy (15, 35, 75)
                             float w_r = (1.0f - absorption) * 60.0f + absorption * 15.0f;

@@ -176,6 +176,10 @@ private:
     int SCALE = 80;
     int NWIND = 100;
     int NWATER = 250;
+    int SPRING_X = -1;
+    int SPRING_Y = -1;
+    int DRAIN_MARGINS = 0;
+    int BASE_SPILL = 3;
 
     // Water and Wind Particle tracking maps
     std::vector<float> water_frequency;

@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coupled Wave Propagation Visualizer</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-color: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.4);
+            --text-color: #f1f5f9;
+            --text-muted: #94a3b8;
+            --grid-line: rgba(255, 255, 255, 0.05);
+            --cell-active: rgba(56, 189, 248, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            max-width: 800px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.05em;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            max-width: 1100px;
+            width: 100%;
+        }
+
+        @media (max-width: 900px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .visualization-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            max-width: 450px;
+            max-height: 450px;
+        }
+
+        .legend {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            margin-top: 1rem;
+        }
+
+        .control-group {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+        }
+
+        .control-row span.label {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .control-row span.value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-color);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        button {
+            flex: 1;
+            background: linear-gradient(135deg, #0284c7, #0369a1);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(3, 105, 161, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(3, 105, 161, 0.4);
+            background: linear-gradient(135deg, #075985, #0369a1);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-color);
+            box-shadow: none;
+        }
+
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .table-container {
+            overflow-y: auto;
+            max-height: 480px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 0.75rem;
+            position: sticky;
+            top: 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        tr.active-row {
+            background: rgba(56, 189, 248, 0.08);
+        }
+
+        tr.active-row td {
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        /* Dynamic classes */
+        .vector-arrow {
+            stroke: rgba(255, 255, 255, 0.45);
+            stroke-width: 1.5px;
+            fill: none;
+            marker-end: url(#arrowhead-white);
+        }
+
+        .tracer-dot {
+            fill: #a7f3d0;
+            filter: drop-shadow(0 0 3px #10b981);
+        }
+
+        .tracer-trail {
+            fill: none;
+            stroke: #34d399;
+            stroke-width: 1.8px;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            opacity: 0.55;
+        }
+
+        .cell-height-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 17px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/index.html" class="back-link">&larr; Back to Gallery</a>
+        <h1>Coupled Wave Propagation Visualizer</h1>
+        <p class="subtitle">Compressible finite-difference acoustic wave simulation from a continuous jet source</p>
+    </header>
+
+    <div class="dashboard">
+        <!-- Visualizer Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>Wave Fields (Pressure Contours)</span>
+                <span class="value-badge" id="sim-status">Loading Module...</span>
+            </div>
+            <div class="visualization-container">
+                <svg id="grid-svg" viewBox="0 0 1000 1000">
+                    <defs>
+                        <!-- Marker for vector arrowheads -->
+                        <marker id="arrowhead-white" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                            <polygon points="0 1, 6 3, 0 5" fill="white" fill-opacity="0.45" />
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(20, 24, 33); border: 1px solid rgba(255,255,255,0.1)"></div>
+                    <span>Neutral Pressure</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(6, 182, 212);"></div>
+                    <span>High Pressure (Cyan)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(244, 63, 94);"></div>
+                    <span>Low Pressure (Rose)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgba(255,255,255,0.45); height: 2px;"></div>
+                    <span>Velocity Vector</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <div class="control-row">
+                        <span class="label">Governing Physics</span>
+                        <span class="value">Coupled Acoustic Wave Equations</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Forcing source</span>
+                        <span class="value">Continuous Jet at (5,5)</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Discretization Grid</span>
+                        <span class="value">Colocated Central Diff</span>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button id="animate-btn">Animate Wave</button>
+                    <button id="show-final-btn" class="secondary">Show Final State</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flow State Table Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>Acoustic Wave Step Logs</span>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Max Pressure</th>
+                            <th>Min Pressure</th>
+                            <th>Max Velocity</th>
+                            <th>Acoustic State</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body">
+                        <!-- Step logs loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the C++ output data as a ES6 module -->
+    <script type="module">
+        import { waveData } from './test_wave.js';
+
+        const GRID_SIZE = 10;
+        const CELL_SIZE = 100;
+
+        let stepIndex = 0;
+        let animationInterval = null;
+        let frameRequest = null;
+
+        // Passive Tracer Particle Setup
+        let tracers = [];
+        const MAX_TRACERS = 120;
+
+        // DOM elements
+        const gridSvg = document.getElementById('grid-svg');
+        const logBody = document.getElementById('log-body');
+        const simStatus = document.getElementById('sim-status');
+        const animateBtn = document.getElementById('animate-btn');
+        const showFinalBtn = document.getElementById('show-final-btn');
+
+        function initDashboard() {
+            simStatus.textContent = "Module Loaded";
+            simStatus.style.background = "rgba(75, 145, 60, 0.1)";
+            simStatus.style.color = "#4ade80";
+
+            initTracers();
+            renderGridState(0);
+            renderTable();
+            showFinalState();
+        }
+
+        function initTracers() {
+            tracers = [];
+            for (let i = 0; i < MAX_TRACERS; i++) {
+                tracers.push({
+                    x: Math.random() * 10.0,
+                    y: Math.random() * 10.0,
+                    path: [],
+                    age: Math.random() * 120
+                });
+            }
+        }
+
+        function renderGridState(idx) {
+            gridSvg.innerHTML = gridSvg.innerHTML.split('</defs>')[0] + '</defs>';
+            const stepData = waveData.steps[idx];
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const P = stepData.grid_P[y][x];
+
+                    let cellColor = "rgb(20, 24, 33)";
+                    if (P > 0.01) {
+                        const amt = Math.min(1.0, P / 2.0);
+                        cellColor = `rgb(${Math.round(20 + (6 - 20) * amt)}, ${Math.round(24 + (182 - 24) * amt)}, ${Math.round(33 + (212 - 33) * amt)})`;
+                    } else if (P < -0.01) {
+                        const amt = Math.min(1.0, -P / 2.0);
+                        cellColor = `rgb(${Math.round(20 + (244 - 20) * amt)}, ${Math.round(24 + (63 - 24) * amt)}, ${Math.round(33 + (94 - 33) * amt)})`;
+                    }
+
+                    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute("x", x * CELL_SIZE);
+                    rect.setAttribute("y", y * CELL_SIZE);
+                    rect.setAttribute("width", CELL_SIZE);
+                    rect.setAttribute("height", CELL_SIZE);
+                    rect.setAttribute("fill", cellColor);
+                    rect.setAttribute("stroke", "var(--grid-line)");
+                    group.appendChild(rect);
+
+                    // --- Numeric Pressure Overlay ---
+                    const pressureTxt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    pressureTxt.setAttribute("x", x * CELL_SIZE + 50);
+                    pressureTxt.setAttribute("y", y * CELL_SIZE + 55);
+                    pressureTxt.setAttribute("text-anchor", "middle");
+                    pressureTxt.setAttribute("class", "cell-height-text");
+                    pressureTxt.setAttribute("fill", "rgba(255, 255, 255, 0.45)");
+                    pressureTxt.textContent = P.toFixed(1);
+                    group.appendChild(pressureTxt);
+
+                    gridSvg.appendChild(group);
+                }
+            }
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const vx = stepData.grid_vx[y][x];
+                    const vy = stepData.grid_vy[y][x];
+                    const magnitude = Math.sqrt(vx * vx + vy * vy);
+
+                    if (magnitude > 0.01) {
+                        const cx = (x + 0.5) * CELL_SIZE;
+                        const cy = (y + 0.5) * CELL_SIZE;
+                        const length = Math.min(48.0, Math.sqrt(magnitude) * 30.0);
+                        const angle = Math.atan2(vy, vx);
+                        const endX = cx + length * Math.cos(angle);
+                        const endY = cy + length * Math.sin(angle);
+
+                        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                        arrow.setAttribute("x1", cx);
+                        arrow.setAttribute("y1", cy);
+                        arrow.setAttribute("x2", endX);
+                        arrow.setAttribute("y2", endY);
+                        arrow.setAttribute("class", "vector-arrow");
+                        arrow.style.opacity = Math.min(0.7, Math.sqrt(magnitude) / 1.0).toFixed(2);
+                        gridSvg.appendChild(arrow);
+                    }
+                }
+            }
+
+            tracers.forEach(tracer => {
+                if (tracer.path.length > 1) {
+                    let d = `M ${tracer.path[0].x * CELL_SIZE} ${tracer.path[0].y * CELL_SIZE}`;
+                    for (let i = 1; i < tracer.path.length; i++) {
+                        d += ` L ${tracer.path[i].x * CELL_SIZE} ${tracer.path[i].y * CELL_SIZE}`;
+                    }
+                    const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    poly.setAttribute("d", d);
+                    poly.setAttribute("class", "tracer-trail");
+                    gridSvg.appendChild(poly);
+                }
+                const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                dot.setAttribute("cx", tracer.x * CELL_SIZE);
+                dot.setAttribute("cy", tracer.y * CELL_SIZE);
+                dot.setAttribute("r", "5");
+                dot.setAttribute("class", "tracer-dot");
+                gridSvg.appendChild(dot);
+            });
+        }
+
+        // Interpolate velocity at any continuous coordinate (x, y) on the grid
+        function sampleVelocity(x, y, idx) {
+            const stepData = waveData.steps[idx];
+            
+            const x_clamp = Math.max(0.0, Math.min(8.99, x));
+            const y_clamp = Math.max(0.0, Math.min(8.99, y));
+            
+            const x0 = Math.floor(x_clamp);
+            const y0 = Math.floor(y_clamp);
+            const x1 = x0 + 1;
+            const y1 = y0 + 1;
+            
+            const tx = x_clamp - x0;
+            const ty = y_clamp - y0;
+
+            const vx = (1.0 - tx) * (1.0 - ty) * stepData.grid_vx[y0][x0] +
+                       tx * (1.0 - ty) * stepData.grid_vx[y0][x1] +
+                       (1.0 - tx) * ty * stepData.grid_vx[y1][x0] +
+                       tx * ty * stepData.grid_vx[y1][x1];
+
+            const vy = (1.0 - tx) * (1.0 - ty) * stepData.grid_vy[y0][x0] +
+                       tx * (1.0 - ty) * stepData.grid_vy[y0][x1] +
+                       (1.0 - tx) * ty * stepData.grid_vy[y1][x0] +
+                       tx * ty * stepData.grid_vy[y1][x1];
+
+            return { vx, vy };
+        }
+
+        // Update tracer positions continuously
+        function updateTracers(idx) {
+            const dt_micro = 0.05; // Small timestep for fluid particle integration
+            tracers.forEach((tracer, index) => {
+                const vel = sampleVelocity(tracer.x, tracer.y, idx);
+
+                // Push current position to trail history
+                tracer.path.push({ x: tracer.x, y: tracer.y });
+                if (tracer.path.length > 200) {
+                    tracer.path.shift();
+                }
+
+                // Update position
+                tracer.x += vel.vx * dt_micro;
+                tracer.y += vel.vy * dt_micro;
+                tracer.age += 1;
+
+                // Respawn particle if it leaves the domain, stops moving, or gets too old
+                const speed = Math.sqrt(vel.vx*vel.vx + vel.vy*vel.vy);
+                const outOfBounds = tracer.x < 0 || tracer.x > 9.9 || tracer.y < 0 || tracer.y > 9.9;
+                
+                if (outOfBounds || tracer.age > 300 || (tracer.age > 15 && speed < 0.005)) {
+                    // Respawn uniformly at random coordinates
+                    tracers[index] = {
+                        x: Math.random() * 10.0,
+                        y: Math.random() * 10.0,
+                        path: [],
+                        age: 0
+                    };
+                }
+            });
+        }
+
+        // Show the final state instantly
+        function showFinalState() {
+            clearInterval(animationInterval);
+            cancelAnimationFrame(frameRequest);
+            
+            // Advance tracers to final state
+            for (let k = 0; k < 100; k++) {
+                updateTracers(waveData.steps.length - 1);
+            }
+            renderGridState(waveData.steps.length - 1);
+            
+            waveData.steps.forEach((_, idx) => clearHighlight(idx));
+            highlightRow(waveData.steps.length - 1);
+        }
+
+        // Animate wave propagation with real-time smooth tracer rendering
+        function animateWave() {
+            clearInterval(animationInterval);
+            cancelAnimationFrame(frameRequest);
+            initTracers();
+            
+            stepIndex = 0;
+            highlightRow(0);
+
+            // Animation frame loop for smooth particle motion
+            function drawFrame() {
+                updateTracers(stepIndex);
+                renderGridState(stepIndex);
+                frameRequest = requestAnimationFrame(drawFrame);
+            }
+            frameRequest = requestAnimationFrame(drawFrame);
+
+            // Advance Eulerian steps at 1000ms intervals
+            animationInterval = setInterval(() => {
+                stepIndex++;
+                if (stepIndex >= waveData.steps.length) {
+                    clearInterval(animationInterval);
+                    cancelAnimationFrame(frameRequest);
+                    showFinalState();
+                    return;
+                }
+
+                // Highlight log row
+                clearHighlight(stepIndex - 1);
+                highlightRow(stepIndex);
+            }, 1000);
+        }
+
+        // Render logs containing diagnostic wave properties
+        function renderTable() {
+            logBody.innerHTML = '';
+            waveData.steps.forEach((st, index) => {
+                let maxP = 0, minP = 0, maxV = 0;
+                for(let y=0; y<GRID_SIZE; y++) {
+                    for(let x=0; x<GRID_SIZE; x++) {
+                        if (st.grid_P[y][x] > maxP) maxP = st.grid_P[y][x];
+                        if (st.grid_P[y][x] < minP) minP = st.grid_P[y][x];
+                        const v = Math.sqrt(st.grid_vx[y][x]*st.grid_vx[y][x] + st.grid_vy[y][x]*st.grid_vy[y][x]);
+                        if (v > maxV) maxV = v;
+                    }
+                }
+                let desc = index === 0 ? "Initial Pulse" : (maxP > 0.8 ? "Wave Propagating" : "Equalizing");
+
+                const tr = document.createElement('tr');
+                tr.id = `row-${index}`;
+                tr.innerHTML = `
+                    <td>Step ${st.step}</td>
+                    <td>${maxP.toFixed(2)} Pa</td>
+                    <td>${minP.toFixed(2)} Pa</td>
+                    <td>${maxV.toFixed(2)} m/s</td>
+                    <td>${desc}</td>
+                `;
+                logBody.appendChild(tr);
+            });
+        }
+
+        function highlightRow(index) {
+            const row = document.getElementById(`row-${index}`);
+            if (row) {
+                row.classList.add('active-row');
+            }
+        }
+
+        function clearHighlight(index) {
+            const row = document.getElementById(`row-${index}`);
+            if (row) row.classList.remove('active-row');
+        }
+
+        // Event listeners
+        animateBtn.addEventListener('click', animateWave);
+        showFinalBtn.addEventListener('click', showFinalState);
+
+        // Initial setup
+        initDashboard();
+    </script>
+</body>
+</html>

@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coupled Shallow Water & Erosion Visualizer</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-color: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.4);
+            --text-color: #f1f5f9;
+            --text-muted: #94a3b8;
+            --grid-line: rgba(255, 255, 255, 0.05);
+            --cell-active: rgba(56, 189, 248, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            max-width: 800px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.05em;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            max-width: 1100px;
+            width: 100%;
+        }
+
+        @media (max-width: 900px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .visualization-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            max-width: 450px;
+            max-height: 450px;
+        }
+
+        .legend {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-soil-high { background: rgb(67, 40, 24); border: 1px solid rgba(255,255,255,0.2); }
+        .legend-soil-low { background: rgb(34, 197, 94); border: 1px solid rgba(255,255,255,0.2); }
+        .legend-water { background: rgba(14, 165, 233, 0.8); }
+        .legend-sediment { background: rgba(120, 80, 20, 0.8); }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            margin-top: 1rem;
+        }
+
+        .control-group {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+        }
+
+        .control-row span.label {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .control-row span.value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-color);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        button {
+            flex: 1;
+            background: linear-gradient(135deg, #0284c7, #0369a1);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(3, 105, 161, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(3, 105, 161, 0.4);
+            background: linear-gradient(135deg, #075985, #0369a1);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-color);
+            box-shadow: none;
+        }
+
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .table-container {
+            overflow-y: auto;
+            max-height: 480px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+            font-weight: 600;
+            padding: 0.75rem;
+            position: sticky;
+            top: 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        tr.active-row {
+            background: rgba(56, 189, 248, 0.08);
+        }
+
+        tr.active-row td {
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        /* Dynamic classes */
+        .vector-arrow {
+            stroke: rgba(255, 255, 255, 0.45);
+            stroke-width: 1.5px;
+            fill: none;
+            marker-end: url(#arrowhead-white);
+        }
+
+        .tracer-dot {
+            fill: #a7f3d0;
+            filter: drop-shadow(0 0 3px #10b981);
+        }
+
+        .tracer-trail {
+            fill: none;
+            stroke: #34d399;
+            stroke-width: 1.8px;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            opacity: 0.55;
+        }
+
+        .cell-height-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 17px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/index.html" class="back-link">&larr; Back to Gallery</a>
+        <h1>Shallow Water & Bed Erosion Visualizer</h1>
+        <p class="subtitle">Coupled hydraulic dam breach simulation with dynamic soil detachment and sediment advection</p>
+    </header>
+
+    <div class="dashboard">
+        <!-- Visualizer Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>Morphology & Flow Field</span>
+                <span class="value-badge" id="sim-status">Loading Module...</span>
+            </div>
+            <div class="visualization-container">
+                <svg id="grid-svg" viewBox="0 0 1000 1000">
+                    <defs>
+                        <!-- Marker for vector arrowheads -->
+                        <marker id="arrowhead-white" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                            <polygon points="0 1, 6 3, 0 5" fill="white" fill-opacity="0.45" />
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color legend-soil-high"></div>
+                    <span>Soil Ridge (3D Hillshaded)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-soil-low"></div>
+                    <span>Soil Valley (Low)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-water"></div>
+                    <span>Water Depth (h)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-sediment"></div>
+                    <span>Suspended Mud</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <div class="control-row">
+                        <span class="label">Governing Physics</span>
+                        <span class="value">Shallow Water Equations (MAC)</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Erosion Solver</span>
+                        <span class="value">Partheniades Shear Stress</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Dam Notch Position</span>
+                        <span class="value">Cell (5, 5)</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Downstream Topography</span>
+                        <span class="value" style="color: #4ade80;">Flat Plain (No channels/walls)</span>
+                    </div>
+                    <div class="control-row" style="flex-direction: column; align-items: flex-start; gap: 0.25rem; font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.4;">
+                        <span>* Note: The 3D shading shows the dam wall as a ridge at x=5, and the downstream plain (x &ge; 6) as completely flat. When water exits the notch, it spreads because there are no lateral soil banks to contain it.</span>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button id="animate-btn">Animate Breach</button>
+                    <button id="show-final-btn" class="secondary">Show Final State</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flow State Table Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>C++ Runoff Morphological Logs</span>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Notch Soil</th>
+                            <th>Max Depth</th>
+                            <th>Max Mud</th>
+                            <th>Breach State</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body">
+                        <!-- Step logs loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the C++ output data as a ES6 module -->
+    <script type="module">
+        import { erosionData } from './test_erosion.js';
+
+        const GRID_SIZE = 10;
+        const CELL_SIZE = 100;
+
+        let stepIndex = 0;
+        let animationInterval = null;
+        let frameRequest = null;
+
+        // Passive Tracer Particle Setup
+        let tracers = [];
+        const MAX_TRACERS = 120;
+
+        // DOM elements
+        const gridSvg = document.getElementById('grid-svg');
+        const logBody = document.getElementById('log-body');
+        const simStatus = document.getElementById('sim-status');
+        const animateBtn = document.getElementById('animate-btn');
+        const showFinalBtn = document.getElementById('show-final-btn');
+
+        function initDashboard() {
+            simStatus.textContent = "Module Loaded";
+            simStatus.style.background = "rgba(75, 145, 60, 0.1)";
+            simStatus.style.color = "#4ade80";
+
+            initTracers();
+            renderGridState(0);
+            renderTable();
+            showFinalState();
+        }
+
+        function initTracers() {
+            tracers = [];
+            for (let i = 0; i < MAX_TRACERS; i++) {
+                tracers.push({
+                    x: Math.random() * 10.0,
+                    y: Math.random() * 10.0,
+                    path: [],
+                    age: Math.random() * 120
+                });
+            }
+        }
+
+        function renderGridState(idx) {
+            gridSvg.innerHTML = gridSvg.innerHTML.split('</defs>')[0] + '</defs>';
+            const stepData = erosionData.steps[idx];
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const H_soil = stepData.grid_H_soil[y][x];
+                    const h = stepData.grid_h[y][x];
+                    const sediment = stepData.grid_sediment[y][x];
+
+                    // Compute slopes for 3D hillshading (light source from top-left)
+                    const h_L = x > 0 ? stepData.grid_H_soil[y][x-1] : H_soil;
+                    const h_R = x < 9 ? stepData.grid_H_soil[y][x+1] : H_soil;
+                    const h_T = y > 0 ? stepData.grid_H_soil[y-1][x] : H_soil;
+                    const h_B = y < 9 ? stepData.grid_H_soil[y+1][x] : H_soil;
+                    
+                    const dx = h_R - h_L;
+                    const dy = h_B - h_T;
+                    const shadow = 1.0 - 0.10 * dx - 0.10 * dy;
+                    const shadeFactor = Math.max(0.60, Math.min(1.40, shadow));
+
+                    // Base dry soil elevation
+                    const normH = Math.max(0.0, Math.min(1.0, (H_soil - 2.0) / 10.2));
+                    const sr = Math.round(Math.max(0, Math.min(255, (34 + (67 - 34) * normH) * shadeFactor)));
+                    const sg = Math.round(Math.max(0, Math.min(255, (197 + (40 - 197) * normH) * shadeFactor)));
+                    const sb = Math.round(Math.max(0, Math.min(255, (94 + (24 - 94) * normH) * shadeFactor)));
+
+                    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+                    // Base Soil Rect
+                    const rectSoil = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rectSoil.setAttribute("x", x * CELL_SIZE);
+                    rectSoil.setAttribute("y", y * CELL_SIZE);
+                    rectSoil.setAttribute("width", CELL_SIZE);
+                    rectSoil.setAttribute("height", CELL_SIZE);
+                    rectSoil.setAttribute("fill", `rgb(${sr}, ${sg}, ${sb})`);
+                    rectSoil.setAttribute("stroke", "var(--grid-line)");
+                    group.appendChild(rectSoil);
+
+                    // --- Numeric Height Overlay ---
+                    const heightTxt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    heightTxt.setAttribute("x", x * CELL_SIZE + 50);
+                    heightTxt.setAttribute("y", y * CELL_SIZE + 35);
+                    heightTxt.setAttribute("text-anchor", "middle");
+                    heightTxt.setAttribute("class", "cell-height-text");
+                    const isDarkCell = (sr + sg + sb) < 320;
+                    heightTxt.setAttribute("fill", isDarkCell ? "rgba(255, 255, 255, 0.45)" : "rgba(15, 23, 42, 0.65)");
+                    heightTxt.textContent = H_soil.toFixed(1);
+                    group.appendChild(heightTxt);
+
+                    if (h > 0.01) {
+                        const rectWater = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                        rectWater.setAttribute("x", x * CELL_SIZE);
+                        rectWater.setAttribute("y", y * CELL_SIZE);
+                        rectWater.setAttribute("width", CELL_SIZE);
+                        rectWater.setAttribute("height", CELL_SIZE);
+                        rectWater.setAttribute("fill", "rgb(14, 165, 233)");
+                        rectWater.setAttribute("fill-opacity", Math.min(0.65, h * 0.25).toFixed(2));
+                        group.appendChild(rectWater);
+
+                        // Water depth text
+                        const waterTxt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        waterTxt.setAttribute("x", x * CELL_SIZE + 50);
+                        waterTxt.setAttribute("y", y * CELL_SIZE + 70);
+                        waterTxt.setAttribute("text-anchor", "middle");
+                        waterTxt.setAttribute("class", "cell-height-text");
+                        waterTxt.setAttribute("fill", "#0284c7");
+                        waterTxt.setAttribute("font-weight", "800");
+                        waterTxt.textContent = `w:${h.toFixed(1)}`;
+                        group.appendChild(waterTxt);
+                    }
+
+                    if (sediment > 0.005) {
+                        const rectSed = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                        rectSed.setAttribute("x", x * CELL_SIZE);
+                        rectSed.setAttribute("y", y * CELL_SIZE);
+                        rectSed.setAttribute("width", CELL_SIZE);
+                        rectSed.setAttribute("height", CELL_SIZE);
+                        rectSed.setAttribute("fill", "rgb(120, 80, 20)");
+                        rectSed.setAttribute("fill-opacity", Math.min(0.70, sediment * 0.55).toFixed(2));
+                        group.appendChild(rectSed);
+                    }
+
+                    gridSvg.appendChild(group);
+                }
+            }
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const vx = stepData.grid_vx[y][x];
+                    const vy = stepData.grid_vy[y][x];
+                    const magnitude = Math.sqrt(vx * vx + vy * vy);
+
+                    if (magnitude > 0.01) {
+                        const cx = (x + 0.5) * CELL_SIZE;
+                        const cy = (y + 0.5) * CELL_SIZE;
+                        const length = Math.min(48.0, Math.sqrt(magnitude) * 30.0);
+                        const angle = Math.atan2(vy, vx);
+                        const endX = cx + length * Math.cos(angle);
+                        const endY = cy + length * Math.sin(angle);
+
+                        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                        arrow.setAttribute("x1", cx);
+                        arrow.setAttribute("y1", cy);
+                        arrow.setAttribute("x2", endX);
+                        arrow.setAttribute("y2", endY);
+                        arrow.setAttribute("class", "vector-arrow");
+                        arrow.style.opacity = Math.min(0.7, Math.sqrt(magnitude) / 1.0).toFixed(2);
+                        gridSvg.appendChild(arrow);
+                    }
+                }
+            }
+
+            tracers.forEach(tracer => {
+                if (tracer.path.length > 1) {
+                    let d = `M ${tracer.path[0].x * CELL_SIZE} ${tracer.path[0].y * CELL_SIZE}`;
+                    for (let i = 1; i < tracer.path.length; i++) {
+                        d += ` L ${tracer.path[i].x * CELL_SIZE} ${tracer.path[i].y * CELL_SIZE}`;
+                    }
+                    const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    poly.setAttribute("d", d);
+                    poly.setAttribute("class", "tracer-trail");
+                    gridSvg.appendChild(poly);
+                }
+                const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                dot.setAttribute("cx", tracer.x * CELL_SIZE);
+                dot.setAttribute("cy", tracer.y * CELL_SIZE);
+                dot.setAttribute("r", "5");
+                dot.setAttribute("class", "tracer-dot");
+                gridSvg.appendChild(dot);
+            });
+        }
+
+        function sampleVelocity(x, y, idx) {
+            const stepData = erosionData.steps[idx];
+            const x_clamp = Math.max(0.0, Math.min(8.99, x));
+            const y_clamp = Math.max(0.0, Math.min(8.99, y));
+            const x0 = Math.floor(x_clamp);
+            const y0 = Math.floor(y_clamp);
+            const x1 = x0 + 1;
+            const y1 = y0 + 1;
+            const tx = x_clamp - x0;
+            const ty = y_clamp - y0;
+
+            const vx = (1.0 - tx) * (1.0 - ty) * stepData.grid_vx[y0][x0] +
+                       tx * (1.0 - ty) * stepData.grid_vx[y0][x1] +
+                       (1.0 - tx) * ty * stepData.grid_vx[y1][x0] +
+                       tx * ty * stepData.grid_vx[y1][x1];
+
+            const vy = (1.0 - tx) * (1.0 - ty) * stepData.grid_vy[y0][x0] +
+                       tx * (1.0 - ty) * stepData.grid_vy[y0][x1] +
+                       (1.0 - tx) * ty * stepData.grid_vy[y1][x0] +
+                       tx * ty * stepData.grid_vy[y1][x1];
+
+            return { vx, vy };
+        }
+
+        function updateTracers(idx) {
+            const dt_micro = 0.05;
+            tracers.forEach((tracer, index) => {
+                const vel = sampleVelocity(tracer.x, tracer.y, idx);
+                tracer.path.push({ x: tracer.x, y: tracer.y });
+                if (tracer.path.length > 200) {
+                    tracer.path.shift();
+                }
+                tracer.x += vel.vx * dt_micro;
+                tracer.y += vel.vy * dt_micro;
+                tracer.age += 1;
+
+                const speed = Math.sqrt(vel.vx*vel.vx + vel.vy*vel.vy);
+                const outOfBounds = tracer.x < 0 || tracer.x > 9.9 || tracer.y < 0 || tracer.y > 9.9;
+                
+                if (outOfBounds || tracer.age > 300 || (tracer.age > 15 && speed < 0.005)) {
+                    tracers[index] = {
+                        x: Math.random() * 10.0,
+                        y: Math.random() * 10.0,
+                        path: [],
+                        age: 0
+                    };
+                }
+            });
+        }
+
+        function showFinalState() {
+            clearInterval(animationInterval);
+            cancelAnimationFrame(frameRequest);
+            for (let k = 0; k < 100; k++) {
+                updateTracers(erosionData.steps.length - 1);
+            }
+            renderGridState(erosionData.steps.length - 1);
+            erosionData.steps.forEach((_, idx) => clearHighlight(idx));
+            highlightRow(erosionData.steps.length - 1);
+        }
+
+        function animateWave() {
+            clearInterval(animationInterval);
+            cancelAnimationFrame(frameRequest);
+            initTracers();
+            
+            stepIndex = 0;
+            highlightRow(0);
+
+            function drawFrame() {
+                updateTracers(stepIndex);
+                renderGridState(stepIndex);
+                frameRequest = requestAnimationFrame(drawFrame);
+            }
+            frameRequest = requestAnimationFrame(drawFrame);
+
+            animationInterval = setInterval(() => {
+                stepIndex++;
+                if (stepIndex >= erosionData.steps.length) {
+                    clearInterval(animationInterval);
+                    cancelAnimationFrame(frameRequest);
+                    showFinalState();
+                    return;
+                }
+                clearHighlight(stepIndex - 1);
+                highlightRow(stepIndex);
+            }, 1000);
+        }
+
+        function renderTable() {
+            logBody.innerHTML = '';
+            erosionData.steps.forEach((st, index) => {
+                const notchSoil = st.grid_H_soil[5][5];
+                let maxH = 0, maxSed = 0;
+                for(let y=0; y<GRID_SIZE; y++) {
+                    for(let x=0; x<GRID_SIZE; x++) {
+                        if (st.grid_h[y][x] > maxH) maxH = st.grid_h[y][x];
+                        if (st.grid_sediment[y][x] > maxSed) maxSed = st.grid_sediment[y][x];
+                    }
+                }
+                let stateDesc = "Reservoir Filling";
+                if (index > 0) {
+                    if (st.grid_h[5][5] > 0.1) {
+                        stateDesc = (notchSoil < 6.95) ? "Dam Breached!" : "Spillway Flow";
+                    } else {
+                        stateDesc = "Pooling behind Ridge";
+                    }
+                }
+
+                const tr = document.createElement('tr');
+                tr.id = `row-${index}`;
+                tr.innerHTML = `
+                    <td>Step ${st.step}</td>
+                    <td>${notchSoil.toFixed(2)} m</td>
+                    <td>${maxH.toFixed(2)} m</td>
+                    <td>${maxSed.toFixed(2)} kg/m³</td>
+                    <td>${stateDesc}</td>
+                `;
+                logBody.appendChild(tr);
+            });
+        }
+
+        function highlightRow(index) {
+            const row = document.getElementById(`row-${index}`);
+            if (row) row.classList.add('active-row');
+        }
+
+        function clearHighlight(index) {
+            const row = document.getElementById(`row-${index}`);
+            if (row) row.classList.remove('active-row');
+        }
+
+        animateBtn.addEventListener('click', animateWave);
+        showFinalBtn.addEventListener('click', showFinalState);
+
+        initDashboard();
+    </script>
+</body>
+</html>
