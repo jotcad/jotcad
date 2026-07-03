@@ -12,6 +12,24 @@ public:
     Hydrodynamics(float g, float d) : gravity(g), drag(d) {}
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
+
+        // Calculate dynamic CFL stability limit based on maximum water depth
+        float max_h = 0.0f;
+        for (int y = 0; y < sz; ++y) {
+            for (int x = 0; x < sz; ++x) {
+                max_h = std::max(max_h, g.h_surface[y][x]);
+            }
+        }
+        if (max_h > 0.01f) {
+            float c_max = std::sqrt(gravity * max_h);
+            float dt_max = 0.95f * (1.0f / (c_max + 0.001f)); // 0.95 safety factor
+            if (dt > dt_max) {
+                throw std::runtime_error("Hydrodynamics CFL Stability Violation: dt (" + std::to_string(dt) + 
+                                         ") exceeds maximum stable time step (" + std::to_string(dt_max) + 
+                                         ") for maximum water depth (" + std::to_string(max_h) + ")");
+            }
+        }
+
         std::vector<std::vector<float>> next_vx(sz + 1, std::vector<float>(sz, 0.0f));
         std::vector<std::vector<float>> next_vy(sz, std::vector<float>(sz + 1, 0.0f));
 

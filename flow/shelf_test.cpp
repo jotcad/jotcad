@@ -24,38 +24,38 @@ void export_shelf_data(const std::string& filename, const std::vector<ShelfState
         out << "    {\n";
         out << "      step: " << history[s].step << ",\n";
         out << "      grid_H_soil: [\n";
-        for (int y = 0; y < grid_size; ++y) {
+        for (int y = 0; y < grid_size; y += 2) { // Downsample grid resolution slightly for output compression (128x128)
             out << "        [";
-            for (int x = 0; x < grid_size; ++x) {
+            for (int x = 0; x < grid_size; x += 2) {
                 out << history[s].H_soil[y][x];
-                if (x < grid_size - 1) out << ", ";
+                if (x < grid_size - 2) out << ", ";
             }
             out << "]";
-            if (y < grid_size - 1) out << ",";
+            if (y < grid_size - 2) out << ",";
             out << "\n";
         }
         out << "      ],\n";
         out << "      grid_h_surface: [\n";
-        for (int y = 0; y < grid_size; ++y) {
+        for (int y = 0; y < grid_size; y += 2) {
             out << "        [";
-            for (int x = 0; x < grid_size; ++x) {
+            for (int x = 0; x < grid_size; x += 2) {
                 out << history[s].h_surface[y][x];
-                if (x < grid_size - 1) out << ", ";
+                if (x < grid_size - 2) out << ", ";
             }
             out << "]";
-            if (y < grid_size - 1) out << ",";
+            if (y < grid_size - 2) out << ",";
             out << "\n";
         }
         out << "      ],\n";
         out << "      grid_sediment: [\n";
-        for (int y = 0; y < grid_size; ++y) {
+        for (int y = 0; y < grid_size; y += 2) {
             out << "        [";
-            for (int x = 0; x < grid_size; ++x) {
+            for (int x = 0; x < grid_size; x += 2) {
                 out << history[s].sediment[y][x];
-                if (x < grid_size - 1) out << ", ";
+                if (x < grid_size - 2) out << ", ";
             }
             out << "]";
-            if (y < grid_size - 1) out << ",";
+            if (y < grid_size - 2) out << ",";
             out << "\n";
         }
         out << "      ]\n";
@@ -69,78 +69,84 @@ void export_shelf_data(const std::string& filename, const std::vector<ShelfState
 }
 
 int main() {
-    const int GRID_SIZE = 80;
+    const int GRID_SIZE = 256; // High resolution grid for a whole continent
     Orchestrator orch(GRID_SIZE);
     Grid& g = orch.get_grid();
 
-    // 1. Generate the passive margin continental shelf
-    std::cout << "Generating continental shelf topography..." << std::endl;
-    // Shoreline at x = 20 (0.25), Break at x = 48 (0.60), Abyssal Plain at x = 68 (0.85)
-    ShelfGenerator::generate(g, 0.25f, 0.60f, 0.85f, 0.20f, -0.60f, -4.50f);
+    // 1. Generate the radial continent and surrounding shelf
+    std::cout << "Generating radial continental shelf topography (GRID_SIZE = 256)..." << std::endl;
+    // Coast radius = 0.35, break radius = 0.60, abyssal start = 0.82
+    ShelfGenerator::generate(g, 0.35f, 0.60f, 0.82f, 0.15f, -0.60f, -4.50f);
 
-    // 2. Initialize sea water level to z = 0.0 (standing ocean)
-    const float SEA_LEVEL = 0.0f;
-    for (int y = 0; y < GRID_SIZE; ++y) {
-        for (int x = 0; x < GRID_SIZE; ++x) {
-            g.h_surface[y][x] = std::max(0.0f, SEA_LEVEL - g.H_soil[y][x]);
-        }
+    // 2. Setup Phase 1: Subaerial River Runoff (no initial ocean standing water, high dt)
+    const int steps_subaerial = 60;
+    float dt_subaerial = 0.35f;
+    Phase* p1 = orch.add_phase("Subaerial Runoff", dt_subaerial, steps_subaerial);
+    p1->add<Precipitation>(0.16f);
+    p1->add<Hydrodynamics>(9.81f, 0.018f);
+    p1->add<Erosion>(0.15f, 0.04f, 0.18f, 0.20f, 0.06f, 0.08f, 0.40f);
+    p1->add<Landslide>(0.48f, 255, 255);
+
+    // Setup Phase 2: Marine Inundation (standing ocean, low dt respecting CFL)
+    const int steps_marine = 240;
+    float dt_marine = 0.05f;
+    Phase* p2 = orch.add_phase("Marine Inundation", dt_marine, steps_marine);
+    p2->add<Precipitation>(0.16f);
+    p2->add<Hydrodynamics>(9.81f, 0.018f);
+    p2->add<Erosion>(0.15f, 0.04f, 0.18f, 0.20f, 0.06f, 0.08f, 0.40f);
+    p2->add<Landslide>(0.48f, 255, 255);
+
+    // Pre-allocate required fields
+    for (auto& element : p1->elements) {
+        for (std::type_index type : element->get_required_fields()) g.request_field_by_type_index(type);
     }
-
-    // 3. Setup Phase: Marine Progradation (Hydrology + Erosion + Landslides)
-    const int steps = 100;
-    float dt = 0.35f;
-    Phase* p = orch.add_phase("Shelf Sedimentation", dt, steps);
-    
-    // Rain discharges primarily on landward side (West half)
-    p->add<Precipitation>(0.15f);
-    p->add<Hydrodynamics>(9.81f, 0.015f);
-    // Erosion parameters: erodibility = 0.16, settle = 0.18, infiltration = 0.05
-    p->add<Erosion>(0.16f, 0.04f, 0.18f, 0.18f, 0.05f, 0.08f, 0.40f);
-    p->add<Landslide>(0.45f, 79, 79); // steeper landslides to model subaqueous slope collapses
-
-    // Pre-allocate sparse fields if any elements request them (none here, but good practice)
-    for (auto& element : p->elements) {
+    for (auto& element : p2->elements) {
         for (std::type_index type : element->get_required_fields()) g.request_field_by_type_index(type);
     }
 
     std::vector<ShelfState> history;
 
-    auto record_history_state = [&](int step_idx) {
-        history.push_back({
-            step_idx,
-            g.H_soil,
-            g.h_surface,
-            g.sediment
-        });
+    auto record_history_state = [&](int global_step) {
+        // Subsample global steps to keep exported JS file compact (every 10th step)
+        if (global_step % 10 == 0 || global_step == steps_subaerial + steps_marine) {
+            history.push_back({
+                global_step,
+                g.H_soil,
+                g.h_surface,
+                g.sediment
+            });
+        }
     };
 
     record_history_state(0);
 
-    // 4. Execute the step loop, enforcing the ocean standing sea level boundary condition
-    std::cout << "Running Marine Shelf progradation simulation..." << std::endl;
-    for (int step = 0; step < steps; ++step) {
-        // Run physics elements
-        for (auto& element : p->elements) {
-            element->step(g, dt, step, steps);
+    // 4. Run Phase 1: Subaerial Runoff
+    std::cout << "Running Phase 1: Subaerial River Runoff..." << std::endl;
+    for (int step = 0; step < steps_subaerial; ++step) {
+        for (auto& element : p1->elements) {
+            element->step(g, dt_subaerial, step, steps_subaerial);
         }
-
-        // Apply Ocean Sea Level Boundary Condition
-        // Eastern half is a large standing reservoir at SEA_LEVEL = 0.0
-        // We clamp the water height and reset boundary velocity to simulate open ocean
-        int break_x_idx = (int)(0.50f * GRID_SIZE);
-        for (int y = 0; y < GRID_SIZE; ++y) {
-            for (int x = break_x_idx; x < GRID_SIZE; ++x) {
-                g.h_surface[y][x] = std::max(0.0f, SEA_LEVEL - g.H_soil[y][x]);
-                
-                // Clear fluid momentum at ocean boundary using correct staggered [x][y] indexing
-                g.vx[x][y] = 0.0f;
-                if (x + 1 <= GRID_SIZE) g.vx[x+1][y] = 0.0f;
-                g.vy[x][y] = 0.0f;
-                if (y + 1 <= GRID_SIZE) g.vy[x][y+1] = 0.0f;
-            }
-        }
-
         record_history_state(step + 1);
+    }
+
+    // 5. Inundation: Flood the ocean basin to SEA_LEVEL = 0.0 before Phase 2 starts
+    std::cout << "Flooding ocean basin to sea level z = 0.0..." << std::endl;
+    const float SEA_LEVEL = 0.0f;
+    for (int y = 0; y < GRID_SIZE; ++y) {
+        for (int x = 0; x < GRID_SIZE; ++x) {
+            float water_needed = std::max(0.0f, SEA_LEVEL - g.H_soil[y][x]);
+            // Merge standing ocean with any existing puddle/river water
+            g.h_surface[y][x] = std::max(g.h_surface[y][x], water_needed);
+        }
+    }
+
+    // 6. Run Phase 2: Marine Inundation
+    std::cout << "Running Phase 2: Marine Inundation & Progradation..." << std::endl;
+    for (int step = 0; step < steps_marine; ++step) {
+        for (auto& element : p2->elements) {
+            element->step(g, dt_marine, step, steps_marine);
+        }
+        record_history_state(steps_subaerial + step + 1);
     }
 
     // Export dataset

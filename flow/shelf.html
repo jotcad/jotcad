@@ -234,8 +234,8 @@
         <!-- Telemetry -->
         <div class="telemetry">
             <span>Simulation Step: <strong id="step-txt" style="color: var(--accent-color);">0</strong></span>
-            <span>Coast Shoreline: <strong style="color: #10b981;">x = 20 (25%)</strong></span>
-            <span>Shelf Break: <strong style="color: #fbbf24;">x = 48 (60%)</strong></span>
+            <span>Coast Shoreline: <strong style="color: #10b981;">Radius = 35%</strong></span>
+            <span>Shelf Break: <strong style="color: #fbbf24;">Radius = 60%</strong></span>
         </div>
 
         <!-- Controls -->
@@ -248,7 +248,8 @@
     <script type="module">
         import { shelfData } from './test_shelf.js';
 
-        const GRID_SIZE = shelfData.grid_size || 80;
+        // Retrieve grid size dynamically from the actual exported array bounds (which is 128 due to downsampling)
+        const GRID_SIZE = shelfData.steps[0].grid_H_soil.length;
         const CELL_SIZE = 1000 / GRID_SIZE;
 
         let stepIndex = 0;
