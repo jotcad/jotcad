@@ -375,18 +375,26 @@
             marker-end: url(#arrowhead-white);
         }
 
-        .tracer-dot {
-            fill: #38bdf8;
-            filter: drop-shadow(0 0 3px #0284c7);
+        @keyframes flow-slide {
+            to {
+                stroke-dashoffset: -40;
+            }
         }
-
-        .tracer-trail {
+        .flow-streamline {
             fill: none;
-            stroke: #cc00ff;
-            stroke-width: 1.0px;
+            stroke: rgba(255, 255, 255, 0.75);
+            stroke-width: 1.5px;
             stroke-linecap: round;
-            stroke-linejoin: round;
-            opacity: 0.85;
+            stroke-dasharray: 10, 15;
+            animation: flow-slide 1.5s linear infinite;
+        }
+        .flow-streamline-3d {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.85);
+            stroke-width: 1.8px;
+            stroke-linecap: round;
+            stroke-dasharray: 12, 18;
+            animation: flow-slide 1.2s linear infinite;
         }
 
         .spring-indicator {
@@ -601,9 +609,8 @@
         let animationInterval = null;
         let frameRequest = null;
 
-        // Passive Tracer Particle Setup
-        let activeParticles = [];
-        let particleIdCounter = 0;
+        // Streamline flow vector path list
+        let activeStreamlines = [];
 
         // DOM elements
         const gridSvg = document.getElementById('grid-svg');
@@ -652,83 +659,67 @@
             });
         }
 
-        function updateJSParticles(idx, dt) {
+        function updateStreamlines(idx) {
             const stepData = streamData.steps[idx];
             const grid_vx = stepData.grid_vx;
             const grid_vy = stepData.grid_vy;
             const grid_h = stepData.grid_h_surface;
 
-            activeParticles.forEach(p => {
-                const cx = Math.floor(p.x);
-                const cy = Math.floor(p.y);
-                const sinkCoord = Math.floor(GRID_SIZE * 0.15);
-                if (cx < 0 || cx >= GRID_SIZE || cy < 0 || cy >= GRID_SIZE || (cx === sinkCoord && cy === sinkCoord)) {
-                    p.active = false;
-                    return;
-                }
-
-                const vx = grid_vx[cy][cx];
-                const vy = grid_vy[cy][cx];
-                const speed = Math.sqrt(vx*vx + vy*vy);
-
-                if (speed < 0.01) {
-                    p.stuck++;
-                    if (p.stuck > 40) {
-                        p.active = false;
-                        return;
-                    }
-                } else {
-                    p.stuck = 0;
-                }
-
-                // Increment age and check limited lifetime
-                p.age = (p.age || 0) + 1;
-                if (p.age >= p.maxAge) {
-                    p.active = false;
-                    return;
-                }
-
-                // Advect step scaled to CELL_SIZE layout
-                p.x += vx * dt;
-                p.y += vy * dt;
-                p.trail.push({ x: p.x, y: p.y });
-            });
-
-            activeParticles = activeParticles.filter(p => p.active);
-
-            // Maintain ~300 active particles
-            if (activeParticles.length < 300) {
-                const spawnCells = [];
-                for (let y = 0; y < GRID_SIZE; y++) {
-                    for (let x = 0; x < GRID_SIZE; x++) {
-                        if (grid_h[y][x] > 0.01) {
-                            spawnCells.push({ x, y });
-                        }
+            activeStreamlines = [];
+            const seeds = [];
+            const stride = 2; // Scan more cells for density
+            
+            // Collect seed points in active streams
+            for (let y = 1; y < GRID_SIZE - 1; y += stride) {
+                for (let x = 1; x < GRID_SIZE - 1; x += stride) {
+                    const h = grid_h[y][x];
+                    const vx = grid_vx[y][x];
+                    const vy = grid_vy[y][x];
+                    const speed = Math.sqrt(vx*vx + vy*vy);
+                    if (h > 0.01 && speed > 0.05) { // Sensitive thresholds
+                        seeds.push({ x, y, speed });
                     }
                 }
+            }
 
-                if (spawnCells.length > 0) {
-                    const toSpawn = Math.min(30, 300 - activeParticles.length);
-                    for (let k = 0; k < toSpawn; ++k) {
-                        const cell = spawnCells[Math.floor(Math.random() * spawnCells.length)];
-                        activeParticles.push({
-                            id: particleIdCounter++,
-                            x: cell.x + Math.random(),
-                            y: cell.y + Math.random(),
-                            active: true,
-                            stuck: 0,
-                            age: 0,
-                            maxAge: 120 + Math.random() * 160, // 120-280 frames lifetime
-                            trail: []
-                        });
-                    }
+            // Sort seeds by speed descending to pick the most active streams
+            seeds.sort((a, b) => b.speed - a.speed);
+
+            // Trace up to 60 streamlines
+            const limit = Math.min(seeds.length, 60);
+            for (let k = 0; k < limit; k++) {
+                const seed = seeds[k];
+                let px = seed.x + 0.5;
+                let py = seed.y + 0.5;
+                const path = [{ x: px, y: py }];
+                
+                // Tracing loop
+                for (let step = 0; step < 40; step++) {
+                    const cx = Math.floor(px);
+                    const cy = Math.floor(py);
+                    if (cx < 0 || cx >= GRID_SIZE || cy < 0 || cy >= GRID_SIZE) break;
+
+                    const vx = grid_vx[cy][cx];
+                    const vy = grid_vy[cy][cx];
+                    const speed = Math.sqrt(vx*vx + vy*vy);
+                    if (speed < 0.02) break; // Keep tracing
+
+                    // Step size relative to speed
+                    const stepSize = 0.35;
+                    px += (vx / speed) * stepSize;
+                    py += (vy / speed) * stepSize;
+                    path.push({ x: px, y: py });
+                }
+
+                if (path.length > 3) {
+                    activeStreamlines.push(path);
                 }
             }
         }
 
         function renderGridState(idx) {
-            updateJSParticles(idx, 0.05);
-            renderGridStateWithParticles(idx, activeParticles);
+            updateStreamlines(idx);
+            renderGridStateWithParticles(idx, activeStreamlines);
         }
 
         function renderGridStateWithParticles(idx, particlesList) {
@@ -761,7 +752,7 @@
                     const shadeFactor = Math.max(0.55, Math.min(1.45, shadow));
 
                     // Base Soil height normalization (range 23.5m to 26.5m)
-                    const normH = Math.max(0.0, Math.min(1.0, (H_soil - 23.5) / 3.0));
+                    const normH = Math.max(0.0, Math.min(1.0, (H_soil + 4.0) / 8.0));
                     
                     // High: brown (80, 50, 25), Low: green (34, 197, 94)
                     let sr = Math.round(Math.max(0, Math.min(255, (34 + (80 - 34) * normH) * shadeFactor)));
@@ -807,14 +798,18 @@
                         const hue = 190 + (220 - 190) * normH;
                         const lightness = 60 - (60 - 35) * normH;
                         
-                        rectWater.setAttribute("fill", `hsl(${hue.toFixed(0)}, 85%, ${lightness.toFixed(0)}%)`);
-                        rectWater.setAttribute("fill-opacity", Math.min(0.90, 0.40 + normH * 0.40).toFixed(2));
+                        const color = `hsl(${hue.toFixed(0)}, 85%, ${lightness.toFixed(0)}%)`;
+                        rectWater.setAttribute("fill", "none");
+                        rectWater.setAttribute("stroke", color);
+                        rectWater.setAttribute("stroke-opacity", "0.60");
+                        rectWater.setAttribute("stroke-width", "1.0");
                         group.appendChild(rectWater);
                     }
 
 
-                    const sinkCoord = Math.floor(GRID_SIZE * 0.15);
-                    if (x === sinkCoord && y === sinkCoord) {
+                    const sinkX = 74;
+                    const sinkY = 49;
+                    if (x === sinkX && y === sinkY) {
                         const sinkMark = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                         sinkMark.setAttribute("cx", x * CELL_SIZE + CELL_SIZE / 2);
                         sinkMark.setAttribute("cy", y * CELL_SIZE + CELL_SIZE / 2);
@@ -855,18 +850,16 @@
                 }
             }
 
-            // Render active particles and live trails
-            particlesList.forEach(p => {
-                if (p.trail && p.trail.length > 1) {
-                    let d = `M ${p.trail[0].x * CELL_SIZE} ${p.trail[0].y * CELL_SIZE}`;
-                    for (let i = 1; i < p.trail.length; i++) {
-                        d += ` L ${p.trail[i].x * CELL_SIZE} ${p.trail[i].y * CELL_SIZE}`;
-                    }
-                    const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                    poly.setAttribute("d", d);
-                    poly.setAttribute("class", "tracer-trail");
-                    gridSvg.appendChild(poly);
+            // Render active streamlines on the 2D grid
+            particlesList.forEach(path => {
+                let d = `M ${path[0].x * CELL_SIZE} ${path[0].y * CELL_SIZE}`;
+                for (let i = 1; i < path.length; i++) {
+                    d += ` L ${path[i].x * CELL_SIZE} ${path[i].y * CELL_SIZE}`;
                 }
+                const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                poly.setAttribute("d", d);
+                poly.setAttribute("class", "flow-streamline");
+                gridSvg.appendChild(poly);
             });
 
             // Draw active slice line on the 2D main grid
@@ -1043,7 +1036,7 @@
 
                         // Height color coding
                         const cellH = H_soil[y][x];
-                        const normH = Math.max(0.0, Math.min(1.0, (cellH - 23.5) / 3.0));
+                        const normH = Math.max(0.0, Math.min(1.0, (cellH + 4.0) / 8.0));
                         let sr = Math.round(Math.max(0, Math.min(255, (34 + (80 - 34) * normH) * shadeFactor)));
                         let sg = Math.round(Math.max(0, Math.min(255, (197 + (50 - 197) * normH) * shadeFactor)));
                         let sb = Math.round(Math.max(0, Math.min(255, (94 + (25 - 94) * normH) * shadeFactor)));
@@ -1057,8 +1050,31 @@
                         soilPoly.setAttribute("stroke-width", "0.5");
                         isoSvg.appendChild(soilPoly);
 
-                        // Draw topographic contour lines (rings) on the soil surface
-                        const contourLevels = [23.75, 24.0, 24.25, 24.5, 24.75, 25.0, 25.25, 25.5, 25.75, 26.0, 26.25];
+                        // Draw Water Quad first (if depth is significant) so it sits underneath contours
+                        const waterH = h_surface[y][x];
+                        if (waterH > 0.005) {
+                            const pWaterA = projectIso(x, y, V_water[y][x]);
+                            const pWaterB = projectIso(x + 1, y, V_water[y][x + 1]);
+                            const pWaterC = projectIso(x + 1, y + 1, V_water[y + 1][x + 1]);
+                            const pWaterD = projectIso(x, y + 1, V_water[y + 1][x]);
+
+                            const normW = Math.min(1.0, waterH / 0.50);
+                            const hue = 190 + (220 - 190) * normW;
+                            const lightness = 60 - (60 - 35) * normW;
+                            const fillOpacity = Math.min(0.30, 0.15 + normW * 0.15);
+
+                            const waterPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                            waterPoly.setAttribute("points", `${pWaterA.x.toFixed(1)},${pWaterA.y.toFixed(1)} ${pWaterB.x.toFixed(1)},${pWaterB.y.toFixed(1)} ${pWaterC.x.toFixed(1)},${pWaterC.y.toFixed(1)} ${pWaterD.x.toFixed(1)},${pWaterD.y.toFixed(1)}`);
+                            const color = `hsl(${hue.toFixed(0)}, 85%, ${lightness.toFixed(0)}%)`;
+                            waterPoly.setAttribute("fill", "none");
+                            waterPoly.setAttribute("stroke", color);
+                            waterPoly.setAttribute("stroke-opacity", "0.70");
+                            waterPoly.setAttribute("stroke-width", "1.2");
+                            isoSvg.appendChild(waterPoly);
+                        }
+
+                        // Draw topographic contour lines (rings) on top of the soil and water surface
+                        const contourLevels = [-3.0, -2.25, -1.5, -0.75, 0.0, 0.75, 1.5, 2.25, 3.0];
                         const corners = [
                             { p: pSoilA, z: V_soil[y][x] },
                             { p: pSoilB, z: V_soil[y][x + 1] },
@@ -1088,34 +1104,28 @@
                                 line.setAttribute("x2", crossings[1].x.toFixed(1));
                                 line.setAttribute("y2", crossings[1].y.toFixed(1));
                                 
-                                // Color negative contours (below 25.0m baseline) in red, others in solid black
-                                const isNegative = zc < 25.0;
-                                line.setAttribute("stroke", isNegative ? "#ef4444" : "#000000");
-                                line.setAttribute("stroke-width", "1.2");
+                                if (Math.abs(zc) < 0.001) { // Sea Level / Zero Contour Line
+                                    line.setAttribute("stroke", "#ffff00"); // Bright yellow
+                                    line.setAttribute("stroke-width", "1.6"); // Slightly thicker to emphasize
+                                } else {
+                                    // Color negative contours (below 0.0m sea level) in red, others in solid black
+                                    const isNegative = zc < 0.0;
+                                    line.setAttribute("stroke", isNegative ? "#ef4444" : "#000000");
+                                    line.setAttribute("stroke-width", "1.2");
+                                }
                                 isoSvg.appendChild(line);
                             }
                         });
 
-                        // Draw Water Quad if depth is significant
-                        const waterH = h_surface[y][x];
-                        if (waterH > 0.005) {
-                            const pWaterA = projectIso(x, y, V_water[y][x]);
-                            const pWaterB = projectIso(x + 1, y, V_water[y][x + 1]);
-                            const pWaterC = projectIso(x + 1, y + 1, V_water[y + 1][x + 1]);
-                            const pWaterD = projectIso(x, y + 1, V_water[y + 1][x]);
-
-                            const normW = Math.min(1.0, waterH / 0.50);
-                            const hue = 190 + (220 - 190) * normW;
-                            const lightness = 60 - (60 - 35) * normW;
-                            const fillOpacity = Math.min(0.90, 0.40 + normW * 0.40);
-
-                            const waterPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-                            waterPoly.setAttribute("points", `${pWaterA.x.toFixed(1)},${pWaterA.y.toFixed(1)} ${pWaterB.x.toFixed(1)},${pWaterB.y.toFixed(1)} ${pWaterC.x.toFixed(1)},${pWaterC.y.toFixed(1)} ${pWaterD.x.toFixed(1)},${pWaterD.y.toFixed(1)}`);
-                            waterPoly.setAttribute("fill", `hsl(${hue.toFixed(0)}, 85%, ${lightness.toFixed(0)}%)`);
-                            waterPoly.setAttribute("fill-opacity", fillOpacity.toFixed(2));
-                            waterPoly.setAttribute("stroke", "rgba(56, 189, 248, 0.15)");
-                            waterPoly.setAttribute("stroke-width", "0.5");
-                            isoSvg.appendChild(waterPoly);
+                        // Project and draw the pulsing red sink circle in the 3D view
+                        if (x === 74 && y === 49) {
+                            const pCenter = projectIso(74.5, 49.5, V_soil[49][74]);
+                            const sinkMark = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                            sinkMark.setAttribute("cx", pCenter.x.toFixed(1));
+                            sinkMark.setAttribute("cy", pCenter.y.toFixed(1));
+                            sinkMark.setAttribute("r", "12");
+                            sinkMark.setAttribute("class", "sink-indicator");
+                            isoSvg.appendChild(sinkMark);
                         }
                     }
                 }
@@ -1146,34 +1156,23 @@
             csLine.setAttribute("stroke-dasharray", "8,8");
             isoSvg.appendChild(csLine);
 
-            // Draw active tracer particles in 3D
-            activeParticles.forEach(p => {
-                const cx = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(p.x)));
-                const cy = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(p.y)));
+            // Draw active streamlines in 3D
+            activeStreamlines.forEach(path => {
+                const trail3d = path.map(pt => {
+                    const tcx = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.x)));
+                    const tcy = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.y)));
+                    const tz = H_soil[tcy][tcx] + h_surface[tcy][tcx] + 0.03; // Lifted slightly above water surface
+                    return projectIso(pt.x, pt.y, tz);
+                });
                 
-                // Height includes soil bed plus water surface depth
-                const z = H_soil[cy][cx] + h_surface[cy][cx];
-                
-                // Draw particle trail in 3D
-                if (p.trail && p.trail.length > 1) {
-                    const trail3d = p.trail.map(pt => {
-                        const tcx = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.x)));
-                        const tcy = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.y)));
-                        const tz = H_soil[tcy][tcx] + h_surface[tcy][tcx];
-                        return projectIso(pt.x, pt.y, tz);
-                    });
-                    
-                    let d = `M ${trail3d[0].x.toFixed(1)} ${trail3d[0].y.toFixed(1)}`;
-                    for (let i = 1; i < trail3d.length; i++) {
-                        d += ` L ${trail3d[i].x.toFixed(1)} ${trail3d[i].y.toFixed(1)}`;
-                    }
-                    const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                    poly.setAttribute("d", d);
-                    poly.setAttribute("stroke", "rgba(204, 0, 255, 0.70)");
-                    poly.setAttribute("stroke-width", "1.5");
-                    poly.setAttribute("fill", "none");
-                    isoSvg.appendChild(poly);
+                let d = `M ${trail3d[0].x.toFixed(1)} ${trail3d[0].y.toFixed(1)}`;
+                for (let i = 1; i < trail3d.length; i++) {
+                    d += ` L ${trail3d[i].x.toFixed(1)} ${trail3d[i].y.toFixed(1)}`;
                 }
+                const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                poly.setAttribute("d", d);
+                poly.setAttribute("class", "flow-streamline-3d");
+                isoSvg.appendChild(poly);
             });
         }
 
@@ -1244,7 +1243,7 @@
                         isAnimating = false;
                         stepIndex = streamData.steps.length - 1;
                         showFinalState();
-                        return;
+                        return; // Halt loop
                     }
                     
                     if (curIdx !== stepIndex) {
@@ -1252,12 +1251,14 @@
                         stepIndex = curIdx;
                         highlightRow(stepIndex);
                     }
+                    
+                    updateStreamlines(stepIndex);
+                    renderGridStateWithParticles(stepIndex, activeStreamlines);
+                    frameRequest = requestAnimationFrame(tick);
+                } else {
+                    // Render once and stop calling requestAnimationFrame
+                    renderGridStateWithParticles(stepIndex, activeStreamlines);
                 }
-                
-                updateJSParticles(stepIndex, dt);
-                renderGridStateWithParticles(stepIndex, activeParticles);
-                
-                frameRequest = requestAnimationFrame(tick);
             }
             
             frameRequest = requestAnimationFrame(tick);

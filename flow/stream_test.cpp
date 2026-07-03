@@ -68,7 +68,7 @@ void save_bmp(const std::string& filename, const std::vector<std::vector<float>>
             float shadow = 1.0f - 0.20f * dx - 0.20f * dy;
             float shade = std::max(0.55f, std::min(1.45f, shadow));
 
-            float normH = std::max(0.0f, std::min(1.0f, (H - 23.5f) / 3.0f));
+            float normH = std::max(0.0f, std::min(1.0f, (H + 4.0f) / 8.0f));
             
             float sr = (34.0f + (80.0f - 34.0f) * normH) * shade;
             float sg = (197.0f + (50.0f - 197.0f) * normH) * shade;
@@ -98,7 +98,7 @@ void save_bmp(const std::string& filename, const std::vector<std::vector<float>>
             }
 
             // Mark the sink as red in BMP
-            if (x == 12 && y == 12) {
+            if (x == 74 && y == 49) {
                 r = 239; g = 68; b = 68;
             }
             f.put(b); f.put(g); f.put(r);
@@ -169,8 +169,65 @@ struct PerlinNoise2D {
         return lerp(v, x1, x2);
     }
 };
+void apply_terrain_collapse(std::vector<std::vector<float>>& H_soil, float max_slope = 1.00f) {
+    int h = H_soil.size();
+    int w = H_soil[0].size();
+    int sink_x = 74;
+    int sink_y = 49;
+    
+    // Perform 3 sweeps to propagate sliding soil across steep banks
+    for (int sweep = 0; sweep < 3; ++sweep) {
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                // Non-Erodible Boundaries: Skip outer edges
+                if (x == 0 || x == w - 1 || y == 0 || y == h - 1) continue;
+                // Skip the internal drain sink
+                if (x == sink_x && y == sink_y) continue;
+                
+                float h_center = H_soil[y][x];
+                
+                int dx[4] = {0, 0, -1, 1};
+                int dy[4] = {-1, 1, 0, 0};
+                
+                for (int i = 0; i < 4; ++i) {
+                    int nx = x + dx[i];
+                    int ny = y + dy[i];
+                    
+                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                        // Skip boundary cells and the sink cell for neighbor checks
+                        if (nx == 0 || nx == w - 1 || ny == 0 || ny == h - 1) continue;
+                        if (nx == sink_x && ny == sink_y) continue;
+                        
+                        float h_neighbor = H_soil[ny][nx];
+                        float diff = h_center - h_neighbor;
+                        
+                        if (diff > max_slope) {
+                            // Transport a fraction of the excess soil to the neighbor
+                            float excess = (diff - max_slope) * 0.15f;
+                            H_soil[y][x] -= excess;
+                            H_soil[ny][nx] += excess;
+                            h_center -= excess;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
-int main() {
+int main(int argc, char* argv[]) {
+    bool run_regression_test = true;
+    int total_sim_steps = 1000;
+    int export_stride = 10;
+    bool export_js = false;
+
+    if (argc > 1 && std::string(argv[1]) == "--export") {
+        run_regression_test = false;
+        total_sim_steps = 20000;
+        export_stride = 100;
+        export_js = true;
+    }
+
     const int GRID_SIZE = 80; // Double the grid size again
     
     std::vector<std::vector<float>> H_soil(GRID_SIZE, std::vector<float>(GRID_SIZE, 0.0f));
@@ -179,25 +236,32 @@ int main() {
     
     std::vector<std::vector<float>> vx(GRID_SIZE + 1, std::vector<float>(GRID_SIZE, 0.0f));
     std::vector<std::vector<float>> vy(GRID_SIZE, std::vector<float>(GRID_SIZE + 1, 0.0f));
-
+ 
     std::srand(42);
-
-    // Generate terrain elevations using Perlin Noise only (no regional tilt, no funnel slope)
+ 
+    // Generate terrain elevations using Perlin Noise centered at 0.0f
     PerlinNoise2D perlin;
     for (int y = 0; y < GRID_SIZE; ++y) {
         for (int x = 0; x < GRID_SIZE; ++x) {
-            float pn = perlin.noise(x * 0.25f, y * 0.25f);
-            H_soil[y][x] = 25.0f + pn * 1.20f;
+            float pn = perlin.noise(x * 0.07f, y * 0.07f) + 0.30f * perlin.noise(x * 0.20f, y * 0.20f);
+            H_soil[y][x] = pn * 5.00f;
+        }
+    }
+ 
+    // Initialize surface water depth to 0.0f everywhere (completely dry start)
+    for (int y = 0; y < GRID_SIZE; ++y) {
+        for (int x = 0; x < GRID_SIZE; ++x) {
+            h_surface[y][x] = 0.0f;
         }
     }
 
-    // Start with water filled to a flat, uniform surface elevation (lake initialization)
-    float initial_water_z = 26.0f;
+    double initial_soil_volume = 0.0;
     for (int y = 0; y < GRID_SIZE; ++y) {
         for (int x = 0; x < GRID_SIZE; ++x) {
-            h_surface[y][x] = std::max(0.0f, initial_water_z - H_soil[y][x]);
+            initial_soil_volume += H_soil[y][x] + sediment[y][x];
         }
     }
+    double total_rain_volume = 0.0;
 
     std::vector<GridState> history;
     
@@ -214,9 +278,6 @@ int main() {
     float max_soil_capacity = 0.40f;
     float K_sub = 0.08f;
 
-    int total_sim_steps = 6000;
-    int export_stride = 30;    // Export 201 steps total to keep file size lightweight
-    
     float dt = 0.04f;           
     float g = 9.81f;             
     float drag = 0.15f;         
@@ -226,7 +287,12 @@ int main() {
     float tau_c = 0.04f;        
     float C_friction = 0.18f;   
     float settle_rate = 0.15f;   
-    float infiltration_rate = 0.005f;   
+    float infiltration_rate = 0.0f;   
+
+    double total_water_removed = 0.0;
+    double total_sediment_removed = 0.0;
+    double last_cycle_water_removed = 0.0;
+    double last_cycle_sediment_removed = 0.0;
 
     for (int step = 0; step <= total_sim_steps; ++step) {
         if (step % export_stride == 0) {
@@ -258,12 +324,37 @@ int main() {
         if (step == total_sim_steps) break;
 
         // --- Uniform Precipitation (Rainfall) ---
-        float rain_rate = 0.0040f;
+        // Limited to 14.2 m^3/s grid-wide (doubled)
+        float rain_rate = 14.2f / (GRID_SIZE * GRID_SIZE);
         for (int y = 0; y < GRID_SIZE; ++y) {
             for (int x = 0; x < GRID_SIZE; ++x) {
                 h_surface[y][x] += rain_rate * dt;
             }
         }
+        total_rain_volume += rain_rate * dt * GRID_SIZE * GRID_SIZE;
+
+        // Apply Terrain Collapse (Angle of Repose / Slope Stability)
+        apply_terrain_collapse(H_soil, 1.00f);
+
+        // Internal Drain Sink at (74, 49)
+        int sink_x = 74;
+        int sink_y = 49;
+        
+        float min_neighbor = std::min({H_soil[sink_y-1][sink_x], H_soil[sink_y+1][sink_x], H_soil[sink_y][sink_x-1], H_soil[sink_y][sink_x+1]});
+        float old_h = H_soil[sink_y][sink_x];
+        float new_h = min_neighbor - 0.01f;
+        H_soil[sink_y][sink_x] = new_h;
+        
+        total_water_removed += h_surface[sink_y][sink_x];
+        double sediment_excavated = sediment[sink_y][sink_x] + (old_h - new_h);
+        total_sediment_removed += sediment_excavated;
+        if (step == total_sim_steps - 1) {
+            last_cycle_water_removed = h_surface[sink_y][sink_x];
+            last_cycle_sediment_removed = sediment_excavated;
+        }
+        h_surface[sink_y][sink_x] = 0.0f;
+        h_soil_water[sink_y][sink_x] = 0.0f;
+        sediment[sink_y][sink_x] = 0.0f;
 
         // Update Surface Velocities with Dry Cell Gate protection
         std::vector<std::vector<float>> next_vx(GRID_SIZE + 1, std::vector<float>(GRID_SIZE, 0.0f));
@@ -440,12 +531,21 @@ int main() {
         }
         h_surface = next_h;
 
-        // Laplacian smoothing of surface water to prevent numerical checkerboard sloshing
+        // Perfectly conservative pairwise smoothing of surface water to prevent numerical checkerboard sloshing
         std::vector<std::vector<float>> smoothed_h = h_surface;
-        for (int y = 1; y < GRID_SIZE - 1; ++y) {
-            for (int x = 1; x < GRID_SIZE - 1; ++x) {
-                float laplacian = h_surface[y][x-1] + h_surface[y][x+1] + h_surface[y-1][x] + h_surface[y+1][x] - 4.0f * h_surface[y][x];
-                smoothed_h[y][x] = h_surface[y][x] + 0.01f * laplacian;
+        for (int y = 0; y < GRID_SIZE; ++y) {
+            for (int x = 0; x < GRID_SIZE; ++x) {
+                int dx[] = {1, -1, 0, 0};
+                int dy[] = {0, 0, 1, -1};
+                for (int i = 0; i < 4; ++i) {
+                    int nx = x + dx[i];
+                    int ny = y + dy[i];
+                    if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
+                        float amount = h_surface[y][x] * 0.0025f; 
+                        smoothed_h[y][x] -= amount;
+                        smoothed_h[ny][nx] += amount;
+                    }
+                }
             }
         }
         h_surface = smoothed_h;
@@ -505,16 +605,6 @@ int main() {
             }
         }
 
-        // 4. Internal Drain Sink at (12, 12)
-        int sink_x = 12;
-        int sink_y = 12;
-        h_surface[sink_y][sink_x] = 0.0f;
-        h_soil_water[sink_y][sink_x] = 0.0f;
-        sediment[sink_y][sink_x] = 0.0f;
-        // Keep the sink's soil elevation as the lowest local point
-        float min_neighbor = std::min({H_soil[sink_y-1][sink_x], H_soil[sink_y+1][sink_x], H_soil[sink_y][sink_x-1], H_soil[sink_y][sink_x+1]});
-        H_soil[sink_y][sink_x] = min_neighbor - 0.01f;
-
         // --- Diagnostic Water Progress Tracking ---
         static bool reached_mid = false;
         if (!reached_mid) {
@@ -549,7 +639,7 @@ int main() {
                     float tau = C_friction * u_mag * u_mag;
                     if (tau > tau_c) {
                         float E = M_erosion * (tau - tau_c) * dt;
-                        E = std::min(E, H_soil[y][x]);
+                        E = std::min(E, H_soil[y][x] + 10.0f);
                         H_soil[y][x] -= E;
                         sediment[y][x] += E;
                     } else {
@@ -658,7 +748,7 @@ int main() {
                 p.stuck_frames = 0;
             }
 
-            if (out_of_bounds || p.stuck_frames > 80 || (cx == 3 && cy == 3)) {
+            if (out_of_bounds || p.stuck_frames > 80 || (cx == 74 && cy == 49)) {
                 p.active = false;
             }
         }
@@ -672,11 +762,12 @@ int main() {
     }
 
     // REGRESSION ASSERTS
-    assert(history.size() == 201);
+    assert(history.size() == (total_sim_steps / export_stride + 1));
 
 
     // Save as test_stream.js using fixed float representation to keep file size lightweight
-    std::ofstream out("test_stream.js");
+    if (export_js) {
+        std::ofstream out("test_stream.js");
     out << std::fixed << std::setprecision(2); // Cut ASCII decimal footprint
     out << "export const streamData = {\n";
     out << "  grid_size: " << GRID_SIZE << ",\n";
@@ -757,12 +848,87 @@ int main() {
         if (s < history.size() - 1) out << ",";
         out << "\n";
     }
-    out << "  ]\n";
-    out << "};\n";
-    out.close();
+        out << "  ]\n";
+        out << "};\n";
+        out.close();
+    }
 
     save_bmp("final_state.bmp", H_soil, h_surface, history[0].H_soil);
 
+    double final_soil_volume = 0.0;
+    double final_water_volume = 0.0;
+    for (int y = 0; y < GRID_SIZE; ++y) {
+        for (int x = 0; x < GRID_SIZE; ++x) {
+            final_soil_volume += H_soil[y][x] + sediment[y][x];
+            final_water_volume += h_surface[y][x] + h_soil_water[y][x];
+        }
+    }
+    double soil_discrepancy = (final_soil_volume + total_sediment_removed) - initial_soil_volume;
+    double water_discrepancy = (final_water_volume + total_water_removed) - total_rain_volume;
+
     std::cout << "SUCCESS: Stream test completed successfully." << std::endl;
+    std::cout << "Sink Telemetry: Total Water Removed: " << total_water_removed << " m^3 | Total Sediment Removed: " << total_sediment_removed << " m^3" << std::endl;
+    std::cout << "Last Cycle Telemetry: Water Removed: " << last_cycle_water_removed << " m^3 | Sediment Removed: " << last_cycle_sediment_removed << " m^3" << std::endl;
+    std::cout << "Mass Balance Diagnostics:" << std::endl;
+    std::cout << "  Initial Soil Volume: " << initial_soil_volume << " m^3 | Final + Removed Soil: " << (final_soil_volume + total_sediment_removed) << " m^3 | Soil Discrepancy: " << soil_discrepancy << " m^3" << std::endl;
+    std::cout << "  Total Rain Added: " << total_rain_volume << " m^3 | Final + Removed Water: " << (final_water_volume + total_water_removed) << " m^3 | Water Discrepancy: " << water_discrepancy << " m^3" << std::endl;
+
+    if (run_regression_test) {
+        std::cout << "\nRunning Regression Test Assertions..." << std::endl;
+        
+        // 1. Mass Conservation Limits
+        if (std::abs(soil_discrepancy) > 0.05) {
+            std::cerr << "FAIL: Soil discrepancy too large: " << soil_discrepancy << " m^3" << std::endl;
+            return 1;
+        }
+        if (std::abs(water_discrepancy) > 0.05) {
+            std::cerr << "FAIL: Water discrepancy too large: " << water_discrepancy << " m^3" << std::endl;
+            return 1;
+        }
+        std::cout << "  [PASS] Mass Conservation verified." << std::endl;
+
+        // 2. Non-Negativity and Physical Bounds
+        for (int y = 0; y < GRID_SIZE; ++y) {
+            for (int x = 0; x < GRID_SIZE; ++x) {
+                if (h_surface[y][x] < 0.0f) {
+                    std::cerr << "FAIL: Negative water depth at (" << x << "," << y << "): " << h_surface[y][x] << std::endl;
+                    return 1;
+                }
+                if (sediment[y][x] < 0.0f) {
+                    std::cerr << "FAIL: Negative suspended sediment at (" << x << "," << y << "): " << sediment[y][x] << std::endl;
+                    return 1;
+                }
+                if (H_soil[y][x] < -10.01f) {
+                    std::cerr << "FAIL: Soil below bedrock limit at (" << x << "," << y << "): " << H_soil[y][x] << std::endl;
+                    return 1;
+                }
+                if (H_soil[y][x] > 4.79f) {
+                    std::cerr << "FAIL: Peak elevation exceeded limit at (" << x << "," << y << "): " << H_soil[y][x] << std::endl;
+                    return 1;
+                }
+            }
+        }
+        std::cout << "  [PASS] Non-negativity and physical bounds verified." << std::endl;
+
+        // 3. Velocity Bounds
+        for (int y = 0; y < GRID_SIZE; ++y) {
+            for (int x = 0; x <= GRID_SIZE; ++x) {
+                if (std::abs(vx[x][y]) > 15.0f) {
+                    std::cerr << "FAIL: Velocity vx out of bounds at (" << x << "," << y << "): " << vx[x][y] << std::endl;
+                    return 1;
+                }
+            }
+        }
+        for (int y = 0; y <= GRID_SIZE; ++y) {
+            for (int x = 0; x < GRID_SIZE; ++x) {
+                if (std::abs(vy[x][y]) > 15.0f) {
+                    std::cerr << "FAIL: Velocity vy out of bounds at (" << x << "," << y << "): " << vy[x][y] << std::endl;
+                    return 1;
+                }
+            }
+        }
+        std::cout << "  [PASS] Velocity bounds verified." << std::endl;
+        std::cout << "REGRESSION TEST PASSED SUCCESSFULLY!" << std::endl;
+    }
     return 0;
 }
