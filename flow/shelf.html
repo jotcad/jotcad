@@ -210,7 +210,7 @@
 <body>
     <header>
         <a href="/index.html" class="back-link">&larr; Back to Gallery</a>
-        <h1>Continental Shelf & Slope</h1>
+        <h1>Continental Shelf & Slope <span style="font-size: 1rem; vertical-align: middle; padding: 4px 8px; background: rgba(56, 189, 248, 0.15); color: var(--accent-color); border-radius: 6px; margin-left: 0.5rem; font-weight: 600;">v3.1 (Geophysical Margin)</span></h1>
         <p class="subtitle">Shallow marine margin displaying delta progradation and slope gully incisions</p>
     </header>
 
@@ -246,7 +246,7 @@
     </div>
 
     <script type="module">
-        import { shelfData } from './test_shelf.js';
+        import { shelfData } from './test_shelf_v6.js';
 
         // Retrieve grid size dynamically from the actual exported array bounds (which is 128 due to downsampling)
         const GRID_SIZE = shelfData.steps[0].grid_H_soil.length;
@@ -382,8 +382,8 @@
                         const zWaterD = V_water[y+1][x];
 
                         // Slopes
-                        const dx = zWaterB - zWaterA;
-                        const dy = zWaterD - zWaterA;
+                        const dx = zSoilB - zSoilA;
+                        const dy = zSoilD - zSoilA;
                         const shadow = 1.0 + 0.45 * dx + 0.45 * dy;
                         const shade = Math.max(0.4, Math.min(1.6, shadow));
 
@@ -404,10 +404,10 @@
                             b = Math.round((115 + 70 * height_t) * shade);
                         }
 
-                        const pA = project(x, y, zWaterA);
-                        const pB = project(x + 1, y, zWaterB);
-                        const pC = project(x + 1, y + 1, zWaterC);
-                        const pD = project(x, y + 1, zWaterD);
+                        const pA = project(x, y, zSoilA);
+                        const pB = project(x + 1, y, zSoilB);
+                        const pC = project(x + 1, y + 1, zSoilC);
+                        const pD = project(x, y + 1, zSoilD);
 
                         const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
                         poly.setAttribute("points", `${pA.x.toFixed(1)},${pA.y.toFixed(1)} ${pB.x.toFixed(1)},${pB.y.toFixed(1)} ${pC.x.toFixed(1)},${pC.y.toFixed(1)} ${pD.x.toFixed(1)},${pD.y.toFixed(1)}`);

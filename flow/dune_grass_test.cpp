@@ -195,8 +195,8 @@ int main() {
     }
 
     // Export dataset
-    std::cout << "Exporting coupled simulation dataset to test_dune_grass.js..." << std::endl;
-    export_dune_grass_data("test_dune_grass.js", history, GRID_SIZE);
+    std::cout << "Exporting coupled simulation dataset to test_dune_grass_v2.js..." << std::endl;
+    export_dune_grass_data("test_dune_grass_v2.js", history, GRID_SIZE);
     std::cout << "SUCCESS: Exported successfully!" << std::endl;
 
     return 0;

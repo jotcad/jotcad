@@ -150,8 +150,8 @@ int main() {
     }
 
     // Export dataset
-    std::cout << "Exporting shelf dataset to test_shelf.js..." << std::endl;
-    export_shelf_data("test_shelf.js", history, GRID_SIZE);
+    std::cout << "Exporting shelf dataset to test_shelf_v6.js..." << std::endl;
+    export_shelf_data("test_shelf_v6.js", history, GRID_SIZE);
     std::cout << "SUCCESS: Exported successfully!" << std::endl;
 
     return 0;
