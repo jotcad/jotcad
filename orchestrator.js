@@ -98,6 +98,28 @@ export const PROFILES = {
       ...getSplitOpsComponents(9500, 9191),
       ux:  { type: 'ux',  protocol: 'https', port: 3232, dist: 'ux/dist/test' }
     }
+  },
+  'live/webcam': {
+    storagePrefix: '.vfs_storage_webcam_live_',
+    gateway: 'zenoh_router',
+    components: {
+      zenoh_router: { type: 'zenoh_router', port: 9000 },
+      ...getSplitOpsComponents(9000, 9091),
+      export: { type: 'export', protocol: 'https', port: 9102, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      webcam: { type: 'webcam', protocol: 'https', port: 8080, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live' }
+    }
+  },
+  'test/webcam': {
+    storagePrefix: '.vfs_storage_webcam_test_',
+    gateway: 'zenoh_router',
+    components: {
+      zenoh_router: { type: 'zenoh_router', port: 9200 },
+      ...getSplitOpsComponents(9200, 9191),
+      export: { type: 'export', protocol: 'https', port: 9202, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
+      webcam: { type: 'webcam', protocol: 'https', port: 8180, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
+      ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
+    }
   }
 };
 
@@ -304,6 +326,27 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
             LOG_LEVEL: globalLogLevel,
             VITE_VFS_URL: gatewayUrl,
             VITE_HTTPS: String(useSsl && hasCerts),
+            ...env,
+            ...cfg.env
+        }
+      };
+    },
+    webcam: (cfg) => {
+      const useSsl = cfg.protocol === 'https';
+      const fullId = `${profileKey.replace('/', '_')}_webcam`;
+      return {
+        name: `Webcam Node (${cfg.port})`,
+        command: 'node',
+        args: ['--stack-size=65536', 'vfs_webcam_node.js'],
+        cwd: __dirname,
+        env: {
+            ...process.env,
+            LOG_LEVEL: globalLogLevel,
+            PORT: String(cfg.port),
+            VFS_ID: fullId,
+            NEIGHBORS: cfg.env?.NEIGHBORS || '',
+            WEBCAM_DEVICE: cfg.env?.WEBCAM_DEVICE || '/dev/video0',
+            DISABLE_SSL: useSsl ? '0' : '1',
             ...env,
             ...cfg.env
         }

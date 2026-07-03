@@ -54,6 +54,19 @@ Run the orchestration script to start the Peer Nodes (VFS Hub, Ops Node, Export 
 npm start
 ```
 
+#### Running with Webcam VFS Integration
+
+If you have a webcam connected (e.g., `/dev/video0`), you can launch the cluster with the webcam VFS node enabled:
+
+```bash
+node orchestrator.js webcam
+```
+
+This starts the secure VFS Webcam Node, which:
+* Registers a lazy, on-demand VFS provider under the path `jot/webcam/capture` (only spawns `ffmpeg` capture on-demand when requested by a subscriber/browser).
+* Serves a secure HTTPS interface at `https://localhost:8080` with a live reload preview.
+* Integrates with the Zenoh mesh, exposing standard VFS routing endpoints under `https://localhost:8080/vfs`.
+
 ## Documentation
 
 - [JotCAD Language Specification](docs/JOT_LANGUAGE_SPECIFICATION.md) - DSL
