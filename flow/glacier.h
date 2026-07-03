@@ -14,15 +14,19 @@ private:
     float deposit_rate;   // Deposition rate in low-pressure zones
     float erode_rate;     // Erosion rate in high-pressure compressional zones
     float drag_rate;      // Basal till dragging/advection speed
-    std::vector<std::vector<float>> h_till;
 
 public:
     Glacier(float v_x = 0.8f, float v_y = 0.8f, float dep = 0.15f, float er = 0.08f, float drag = 0.12f)
         : vx(v_x), vy(v_y), deposit_rate(dep), erode_rate(er), drag_rate(drag) {}
 
+    std::vector<FieldType> get_required_fields() const override {
+        return { FieldType::TILL };
+    }
+
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
-        if (h_till.empty()) {
+        auto& h_till = g.request_field(FieldType::TILL);
+        if (step == 0) {
             // Initialize with a uniform thin till sheet
             h_till.assign(sz, std::vector<float>(sz, 0.30f));
         }

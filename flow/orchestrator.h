@@ -3,38 +3,44 @@
 
 #include <vector>
 #include <memory>
-#include "element.h"
+#include <iostream>
+#include "grid.h"
+#include "phase.h"
 
-// Orchestrator class running simulations and managing elements
+// Orchestrator class running multi-phase simulations and managing elements
 class Orchestrator {
 private:
     Grid grid;
-    std::vector<std::shared_ptr<Element>> elements;
+    std::vector<std::unique_ptr<Phase>> phases;
 public:
     Orchestrator(int sz) : grid(sz) {}
     
     Grid& get_grid() { return grid; }
 
-    template<typename T, typename... Args>
-    std::shared_ptr<T> add(Args&&... args) {
-        auto el = std::make_shared<T>(std::forward<Args>(args)...);
-        elements.push_back(el);
-        return el;
+    Phase* add_phase(const std::string& name, float dt, int steps) {
+        phases.push_back(std::make_unique<Phase>(name, dt, steps));
+        return phases.back().get();
     }
 
-    template<typename T>
-    std::shared_ptr<T> get() {
-        for (auto& el : elements) {
-            auto casted = std::dynamic_pointer_cast<T>(el);
-            if (casted) return casted;
-        }
-        return nullptr;
+    const std::vector<std::unique_ptr<Phase>>& get_phases() const {
+        return phases;
     }
 
-    void run(int steps, float dt) {
-        for (int step = 0; step < steps; ++step) {
-            for (auto& element : elements) {
-                element->step(grid, dt, step, steps);
+    void run() {
+        for (auto& phase : phases) {
+            std::cout << "--- Starting Phase: " << phase->name << " (" << phase->steps << " steps, dt = " << phase->dt << ") ---" << std::endl;
+            
+            // Allocate all sparse fields required by the elements in this phase
+            for (auto& element : phase->elements) {
+                for (FieldType type : element->get_required_fields()) {
+                    grid.request_field(type);
+                }
+            }
+
+            for (int step = 0; step < phase->steps; ++step) {
+                for (auto& element : phase->elements) {
+                    element->step(grid, phase->dt, step, phase->steps);
+                }
             }
         }
     }

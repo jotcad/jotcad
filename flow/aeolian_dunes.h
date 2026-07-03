@@ -16,15 +16,20 @@ private:
     float slope_influence; // Sensitivity to topography slope
     float max_slope;       // Sand repose slope angle (tan 32 degrees = 0.62)
     float relaxation;      // Rate of adaptation to equilibrium capacity
-    std::vector<std::vector<float>> h_sand;
 
 public:
     AeolianDunes(float input = 0.25f, float carry = 0.55f, float alpha = 12.0f, float repose = 0.62f, float relax = 1.50f)
         : sand_input(input), transport_coef(carry), slope_influence(alpha), max_slope(repose), relaxation(relax) {}
 
+    std::vector<FieldType> get_required_fields() const override {
+        return { FieldType::SAND };
+    }
+
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
-        if (h_sand.empty()) {
+        auto& h_sand = g.request_field(FieldType::SAND);
+
+        if (step == 0) {
             // Seed random number generator with constant seed for deterministic test outputs
             std::srand(101);
             

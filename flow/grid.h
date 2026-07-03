@@ -2,7 +2,14 @@
 #define GRID_H
 
 #include <vector>
+#include <stdexcept>
 #include "perlin_noise.h"
+
+// Enum representing the sparse/allocated fields in the geomorphic grid
+enum class FieldType {
+    SAND,  // Aeolian sand layer
+    TILL   // Glacial basal till layer
+};
 
 // Simulation Grid holding all 2D simulation arrays
 struct Grid {
@@ -14,6 +21,10 @@ struct Grid {
     std::vector<std::vector<float>> sediment;
     std::vector<std::vector<float>> h_soil_water;
 
+    // Optional sparse/allocated layers (null by default)
+    std::vector<std::vector<float>>* sand = nullptr;
+    std::vector<std::vector<float>>* till = nullptr;
+
     Grid(int sz) : size(sz),
         H_soil(sz, std::vector<float>(sz, 0.0f)),
         h_surface(sz, std::vector<float>(sz, 0.0f)),
@@ -21,6 +32,25 @@ struct Grid {
         vy(sz, std::vector<float>(sz + 1, 0.0f)),
         sediment(sz, std::vector<float>(sz, 0.0f)),
         h_soil_water(sz, std::vector<float>(sz, 0.0f)) {}
+
+    // On-demand field allocator returning reference to flat memory
+    std::vector<std::vector<float>>& request_field(FieldType type) {
+        if (type == FieldType::SAND) {
+            if (!sand) sand = new std::vector<std::vector<float>>(size, std::vector<float>(size, 0.0f));
+            return *sand;
+        } else if (type == FieldType::TILL) {
+            if (!till) till = new std::vector<std::vector<float>>(size, std::vector<float>(size, 0.0f));
+            return *till;
+        }
+        throw std::runtime_error("Unknown field requested");
+    }
+
+    // Check if optional field is allocated
+    bool has_field(FieldType type) const {
+        if (type == FieldType::SAND) return sand != nullptr;
+        if (type == FieldType::TILL) return till != nullptr;
+        return false;
+    }
 
     void initialize_soil_perlin() {
         PerlinNoise2D perlin;
@@ -30,6 +60,11 @@ struct Grid {
                 H_soil[y][x] = pn * 5.00f;
             }
         }
+    }
+
+    ~Grid() {
+        delete sand;
+        delete till;
     }
 };
 
