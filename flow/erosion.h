@@ -98,6 +98,10 @@ public:
             }
         }
 
+        // Cache optional vegetation pointers once per step
+        const std::vector<std::vector<float>>* grass_ptr = g.has_field<GrassField>() ? &g.request_field<GrassField>() : nullptr;
+        const std::vector<std::vector<float>>* tree_ptr = g.has_field<TreeField>() ? &g.request_field<TreeField>() : nullptr;
+
         // Coupled Bed Erosion
         for (int y = 0; y < sz; ++y) {
             for (int x = 0; x < sz; ++x) {
@@ -107,8 +111,18 @@ public:
                     float u_mag = std::sqrt(vx_avg * vx_avg + vy_avg * vy_avg);
                     
                     float tau = C_friction * u_mag * u_mag;
+                    
+                    // Vegetation binding scales down the erodibility coefficient
+                    float erodibility = M_erosion;
+                    if (grass_ptr || tree_ptr) {
+                        float grass_val = grass_ptr ? (*grass_ptr)[y][x] : 0.0f;
+                        float tree_val = tree_ptr ? (*tree_ptr)[y][x] : 0.0f;
+                        // Grass roots reduce water erosion by up to 90%, tree roots by up to 98%
+                        erodibility *= std::exp(-2.3f * grass_val - 3.9f * tree_val);
+                    }
+
                     if (tau > tau_c) {
-                        float E = M_erosion * (tau - tau_c) * dt;
+                        float E = erodibility * (tau - tau_c) * dt;
                         E = std::min(E, g.H_soil[y][x] + 10.0f);
                         g.H_soil[y][x] -= E;
                         g.sediment[y][x] += E;

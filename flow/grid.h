@@ -2,16 +2,14 @@
 #define GRID_H
 
 #include <vector>
+#include <unordered_map>
+#include <typeindex>
+#include <memory>
 #include <stdexcept>
 #include "perlin_noise.h"
+#include "fields.h"
 
-// Enum representing the sparse/allocated fields in the geomorphic grid
-enum class FieldType {
-    SAND,  // Aeolian sand layer
-    TILL   // Glacial basal till layer
-};
-
-// Simulation Grid holding all 2D simulation arrays
+// Simulation Grid holding all 2D simulation arrays and a type-safe sparse field registry
 struct Grid {
     int size;
     std::vector<std::vector<float>> H_soil;
@@ -21,9 +19,8 @@ struct Grid {
     std::vector<std::vector<float>> sediment;
     std::vector<std::vector<float>> h_soil_water;
 
-    // Optional sparse/allocated layers (null by default)
-    std::vector<std::vector<float>>* sand = nullptr;
-    std::vector<std::vector<float>>* till = nullptr;
+    // Type-safe map of sparse fields, allocated on-demand
+    std::unordered_map<std::type_index, std::unique_ptr<std::vector<std::vector<float>>>> sparse_fields;
 
     Grid(int sz) : size(sz),
         H_soil(sz, std::vector<float>(sz, 0.0f)),
@@ -33,23 +30,26 @@ struct Grid {
         sediment(sz, std::vector<float>(sz, 0.0f)),
         h_soil_water(sz, std::vector<float>(sz, 0.0f)) {}
 
-    // On-demand field allocator returning reference to flat memory
-    std::vector<std::vector<float>>& request_field(FieldType type) {
-        if (type == FieldType::SAND) {
-            if (!sand) sand = new std::vector<std::vector<float>>(size, std::vector<float>(size, 0.0f));
-            return *sand;
-        } else if (type == FieldType::TILL) {
-            if (!till) till = new std::vector<std::vector<float>>(size, std::vector<float>(size, 0.0f));
-            return *till;
+    // Runtime type-index based field request (used by orchestrator)
+    std::vector<std::vector<float>>& request_field_by_type_index(std::type_index id) {
+        auto it = sparse_fields.find(id);
+        if (it == sparse_fields.end()) {
+            sparse_fields[id] = std::make_unique<std::vector<std::vector<float>>>(size, std::vector<float>(size, 0.0f));
+            return *sparse_fields[id];
         }
-        throw std::runtime_error("Unknown field requested");
+        return *it->second;
     }
 
-    // Check if optional field is allocated
-    bool has_field(FieldType type) const {
-        if (type == FieldType::SAND) return sand != nullptr;
-        if (type == FieldType::TILL) return till != nullptr;
-        return false;
+    // Compile-time template type-tag field request (used by elements)
+    template<typename T>
+    std::vector<std::vector<float>>& request_field() {
+        return request_field_by_type_index(std::type_index(typeid(T)));
+    }
+
+    // Check if a specific sparse field type has been allocated
+    template<typename T>
+    bool has_field() const {
+        return sparse_fields.find(std::type_index(typeid(T))) != sparse_fields.end();
     }
 
     void initialize_soil_perlin() {
@@ -60,11 +60,6 @@ struct Grid {
                 H_soil[y][x] = pn * 5.00f;
             }
         }
-    }
-
-    ~Grid() {
-        delete sand;
-        delete till;
     }
 };
 

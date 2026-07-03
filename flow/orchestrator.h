@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <iostream>
+#include <typeindex>
 #include "grid.h"
 #include "phase.h"
 
@@ -32,8 +33,8 @@ public:
             
             // Allocate all sparse fields required by the elements in this phase
             for (auto& element : phase->elements) {
-                for (FieldType type : element->get_required_fields()) {
-                    grid.request_field(type);
+                for (std::type_index type : element->get_required_fields()) {
+                    grid.request_field_by_type_index(type);
                 }
             }
 

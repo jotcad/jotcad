@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        window.addEventListener('error', function(e) {
+            let errDiv = document.getElementById('error-overlay');
+            if (!errDiv) {
+                errDiv = document.createElement('div');
+                errDiv.id = 'error-overlay';
+                errDiv.style.position = 'fixed';
+                errDiv.style.bottom = '20px';
+                errDiv.style.right = '20px';
+                errDiv.style.width = '480px';
+                errDiv.style.background = 'rgba(239, 68, 68, 0.95)';
+                errDiv.style.color = '#ffffff';
+                errDiv.style.padding = '20px';
+                errDiv.style.borderRadius = '8px';
+                errDiv.style.fontFamily = 'monospace';
+                errDiv.style.fontSize = '12px';
+                errDiv.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.7)';
+                errDiv.style.zIndex = '999999';
+                errDiv.style.whiteSpace = 'pre-wrap';
+                errDiv.style.border = '2px solid #f87171';
+                errDiv.style.maxHeight = '80vh';
+                errDiv.style.overflowY = 'auto';
+                document.documentElement.appendChild(errDiv);
+            }
+            errDiv.textContent = `🚨 [Browser JS Error]\n\nMessage: ${e.message || 'Script load failure / CORS error'}\nFile: ${e.filename || 'N/A'}\nLine/Col: ${e.lineno || 'N/A'}:${e.colno || 'N/A'}\n\nStack Trace:\n${e.error ? e.error.stack : 'N/A'}`;
+        }, true);
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coupled Eco-Hydrology & Vegetated Dunes Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #090b0e;
+            --card-bg: rgba(20, 26, 35, 0.65);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-color: #10b981; /* Emerald Green */
+            --accent-glow: rgba(16, 185, 129, 0.4);
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --grid-line: rgba(0, 0, 0, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            max-width: 850px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #10b981, #34d399, #0284c7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.05em;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 2rem;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        @media (max-width: 950px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .visualization-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            background: #06080c;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: crosshair;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .legend {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 0.75rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-water { background: #0ea5e9; }
+        .legend-sand { background: #fbbf24; }
+        .legend-grass { background: #22c55e; }
+        .legend-tree { background: #15803d; border: 1px solid #166534; }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        button {
+            flex: 1;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+            background: linear-gradient(135deg, #34d399, #059669);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-color);
+            box-shadow: none;
+        }
+
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .telemetry-card {
+            background: rgba(10, 15, 25, 0.85);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+        }
+
+        .telemetry-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .telemetry-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .telemetry-label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .telemetry-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .control-group {
+            background: rgba(10, 15, 25, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+        }
+
+        .control-row span.label {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .control-row span.value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/index.html" class="back-link">&larr; Back to Gallery</a>
+        <h1>Coupled Eco-Hydrology & Vegetated Dunes</h1>
+        <p class="subtitle">Multi-Era co-evolution displaying hydrology bank stabilization (meandering channels) and vegetation-anchored aeolian sand dunes</p>
+    </header>
+
+    <div class="dashboard">
+        <!-- Visualizer Card (Column 1) -->
+        <div class="card">
+            <div class="card-title">
+                <span>Topographic Surface Map (80x80 Grid)</span>
+                <span id="sim-phase" style="background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 0.8rem;">Era: Eco-Hydrology</span>
+            </div>
+            <div class="visualization-container" id="vis-container">
+                <svg id="grid-svg" viewBox="0 0 1000 1000"></svg>
+            </div>
+
+            <div class="btn-group">
+                <button id="animate-btn">Play Co-Evolution</button>
+                <button id="show-final-btn" class="secondary">Show Final State</button>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color legend-water"></div>
+                    <span>Shallow Runoff (Water)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-sand"></div>
+                    <span>Aeolian Sand Sheet / Dunes</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-grass"></div>
+                    <span>Grass Cover (Root Binding)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-tree"></div>
+                    <span>3D Tree Canopies (Windbreak)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3D Isometric Card & Telemetry (Column 2) -->
+        <div>
+            <div class="card">
+                <div class="card-title">
+                    <span>3D Isometric Landscape & Forest</span>
+                    <span style="background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">3D Surface Mesh</span>
+                </div>
+                <div class="visualization-container" id="iso-container" style="background: #06080c; border-radius: 8px; overflow: hidden; padding: 0.5rem; display: flex; justify-content: center; align-items: center; height: 420px;">
+                    <svg id="iso-svg" viewBox="0 0 1000 650" style="width: 100%; height: 100%;"></svg>
+                </div>
+            </div>
+
+            <!-- Telemetry Card -->
+            <div class="card" style="margin-top: 2rem;">
+                <div class="telemetry-card">
+                    <div class="telemetry-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        <span>Physical Telemetry (Hover Cursor)</span>
+                    </div>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-item" style="grid-column: span 2; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.75rem; margin-bottom: 0.5rem;">
+                            <span class="telemetry-label">Simulation Step</span>
+                            <span class="telemetry-value" id="tel-step" style="font-size: 1.6rem; font-weight: 700; color: var(--accent-color);">0</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Coordinate</span>
+                            <span class="telemetry-value" id="tel-coord">--</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Active Surface</span>
+                            <span class="telemetry-value" id="tel-layer" style="color: #38bdf8;">--</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Grass Cover</span>
+                            <span class="telemetry-value" id="tel-grass" style="color: #4ade80;">-- %</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Forest Density</span>
+                            <span class="telemetry-value" id="tel-tree" style="color: #10b981;">-- %</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <span class="label">Eco-Hydrology (Steps 0-60)</span>
+                        <span class="value" style="color: #38bdf8;">River Stabilization</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Vegetated Dunes (Steps 60-120)</span>
+                        <span class="value" style="color: #fbbf24;">Parabolic Dunes</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the C++ output data as an ES6 module -->
+    <script type="module">
+        import { duneGrassData } from './test_dune_grass.js';
+
+        const GRID_SIZE = duneGrassData.grid_size || 80;
+        const CELL_SIZE = 1000 / GRID_SIZE;
+
+        let stepIndex = 0;
+        const totalSteps = duneGrassData.steps.length - 1;
+        let animationInterval = null;
+
+        // DOM elements
+        const gridSvg = document.getElementById('grid-svg');
+        const isoSvg = document.getElementById('iso-svg');
+        const visContainer = document.getElementById('vis-container');
+        const animateBtn = document.getElementById('animate-btn');
+        const showFinalBtn = document.getElementById('show-final-btn');
+        const simPhaseText = document.getElementById('sim-phase');
+
+        // Telemetry DOM elements
+        const telStep = document.getElementById('tel-step');
+        const telCoord = document.getElementById('tel-coord');
+        const telLayer = document.getElementById('tel-layer');
+        const telGrass = document.getElementById('tel-grass');
+        const telTree = document.getElementById('tel-tree');
+
+        function initDashboard() {
+            updateStep(0);
+            visContainer.addEventListener('mousemove', handleHoverTelemetry);
+            animateBtn.addEventListener('click', togglePlay);
+            showFinalBtn.addEventListener('click', showFinalState);
+        }
+
+        function renderGridState(idx) {
+            stepIndex = idx;
+            telStep.textContent = idx;
+
+            gridSvg.innerHTML = '';
+            const stepData = duneGrassData.steps[idx];
+            simPhaseText.textContent = `Era: ${stepData.phase}`;
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const H_soil = stepData.grid_H_soil[y][x];
+                    const h_surf = stepData.grid_h_surface[y][x];
+                    const grass = stepData.grid_grass[y][x];
+                    
+                    // Compute slopes for 3D hillshading using TOTAL height!
+                    const h_L = x > 0 ? (stepData.grid_H_soil[y][x-1] + (stepData.phase === "Vegetated Dunes" ? stepData.grid_h_surface[y][x-1] : 0)) : H_soil;
+                    const h_R = x < GRID_SIZE - 1 ? (stepData.grid_H_soil[y][x+1] + (stepData.phase === "Vegetated Dunes" ? stepData.grid_h_surface[y][x+1] : 0)) : H_soil;
+                    const h_T = y > 0 ? (stepData.grid_H_soil[y-1][x] + (stepData.phase === "Vegetated Dunes" ? stepData.grid_h_surface[y-1][x] : 0)) : H_soil;
+                    const h_B = y < GRID_SIZE - 1 ? (stepData.grid_H_soil[y+1][x] + (stepData.phase === "Vegetated Dunes" ? stepData.grid_h_surface[y+1][x] : 0)) : H_soil;
+                    
+                    const dx = h_R - h_L;
+                    const dy = h_B - h_T;
+                    // Light from North-West
+                    const shadow = 1.0 + 0.45 * dx + 0.45 * dy;
+                    const shadeFactor = Math.max(0.35, Math.min(1.65, shadow));
+
+                    // Bedrock slate base: (47, 55, 69)
+                    let sr = 47, sg = 55, sb = 69;
+
+                    if (stepData.phase === "Eco-Hydrology") {
+                        // Hydrology Phase: active layer is standing water depth
+                        if (h_surf > 0.02) {
+                            const t_w = Math.min(0.85, h_surf / 0.40);
+                            sr = Math.round((1 - t_w) * sr + t_w * 14 * shadeFactor);
+                            sg = Math.round((1 - t_w) * sg + t_w * 165 * shadeFactor);
+                            sb = Math.round((1 - t_w) * sb + t_w * 233 * shadeFactor);
+                        }
+                    } else {
+                        // Dunes Phase: active layer is sand depth
+                        const t_s = Math.min(1.0, h_surf / 0.70);
+                        sr = Math.round((1 - t_s) * sr + t_s * 251 * shadeFactor);
+                        sg = Math.round((1 - t_s) * sg + t_s * 191 * shadeFactor);
+                        sb = Math.round((1 - t_s) * sb + t_s * 36 * shadeFactor);
+                    }
+
+                    // Blend Grass Cover (22, 197, 94) on top of sediment/bedrock
+                    if (grass > 0.05) {
+                        const t_g = Math.min(0.85, grass);
+                        sr = Math.round((1 - t_g) * sr + t_g * 22 * shadeFactor);
+                        sg = Math.round((1 - t_g) * sg + t_g * 197 * shadeFactor);
+                        sb = Math.round((1 - t_g) * sb + t_g * 94 * shadeFactor);
+                    }
+
+                    sr = Math.max(0, Math.min(255, sr));
+                    sg = Math.max(0, Math.min(255, sg));
+                    sb = Math.max(0, Math.min(255, sb));
+
+                    const rectSoil = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rectSoil.setAttribute("x", x * CELL_SIZE);
+                    rectSoil.setAttribute("y", y * CELL_SIZE);
+                    rectSoil.setAttribute("width", CELL_SIZE);
+                    rectSoil.setAttribute("height", CELL_SIZE);
+                    rectSoil.setAttribute("fill", `rgb(${sr}, ${sg}, ${sb})`);
+                    rectSoil.setAttribute("stroke", "var(--grid-line)");
+                    gridSvg.appendChild(rectSoil);
+                }
+            }
+
+            renderIsoState(idx);
+        }
+
+        function renderIsoState(idx) {
+            const stepData = duneGrassData.steps[idx];
+            const H_soil = stepData.grid_H_soil;
+            const h_surf = stepData.grid_h_surface;
+            const grass_grid = stepData.grid_grass;
+            const tree_grid = stepData.grid_tree;
+
+            isoSvg.innerHTML = '';
+
+            // Calculate vertex elevations
+            const V_soil = Array.from({length: GRID_SIZE + 1}, () => new Float32Array(GRID_SIZE + 1));
+            const V_surf = Array.from({length: GRID_SIZE + 1}, () => new Float32Array(GRID_SIZE + 1));
+
+            for (let y = 0; y <= GRID_SIZE; y++) {
+                for (let x = 0; x <= GRID_SIZE; x++) {
+                    let count = 0;
+                    let sumSoil = 0;
+                    let sumSurf = 0;
+
+                    for (let dy = -1; dy <= 0; dy++) {
+                        for (let dx = -1; dx <= 0; dx++) {
+                            const cy = y + dy;
+                            const cx = x + dx;
+                            if (cy >= 0 && cy < GRID_SIZE && cx >= 0 && cx < GRID_SIZE) {
+                                sumSoil += H_soil[cy][cx];
+                                if (stepData.phase === "Vegetated Dunes") {
+                                    sumSurf += (H_soil[cy][cx] + h_surf[cy][cx]);
+                                } else {
+                                    sumSurf += H_soil[cy][cx]; // water sits on top but we only mesh bedrock/dunes
+                                }
+                                count++;
+                            }
+                        }
+                    }
+                    V_soil[y][x] = sumSoil / count;
+                    V_surf[y][x] = sumSurf / count;
+                }
+            }
+
+            function projectIso(x, y, z) {
+                const spacing = 5.5; 
+                const heightScale = 22;
+                const baseElevation = 0.0;
+                
+                const px = 500 + (x - y) * 0.866 * spacing;
+                const py = 150 + (x + y) * 0.5 * spacing - (z - baseElevation) * heightScale;
+                return { x: px, y: py };
+            }
+
+            const rgbToHex = (r, g, b) => "#" + [r, g, b].map(w => w.toString(16).padStart(2, '0')).join('');
+
+            // Render grid quads (painter's algorithm)
+            for (let sum = 0; sum <= 2 * (GRID_SIZE - 1); sum++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    let y = sum - x;
+                    if (y >= 0 && y < GRID_SIZE) {
+                        const isDune = stepData.phase === "Vegetated Dunes";
+                        const zA = V_surf[y][x];
+                        const zB = V_surf[y][x + 1];
+                        const zC = V_surf[y + 1][x + 1];
+                        const zD = V_surf[y + 1][x];
+
+                        const pA = projectIso(x, y, zA);
+                        const pB = projectIso(x + 1, y, zB);
+                        const pC = projectIso(x + 1, y + 1, zC);
+                        const pD = projectIso(x, y + 1, zD);
+
+                        // Shading based on slope
+                        const dx = zB - zA;
+                        const dy = zD - zA;
+                        const shadow = 1.0 + 0.45 * dx + 0.45 * dy;
+                        const shadeFactor = Math.max(0.35, Math.min(1.65, shadow));
+
+                        // Bedrock slate base: (47, 55, 69)
+                        let sr = 47, sg = 55, sb = 69;
+
+                        if (isDune) {
+                            // Blend golden sand
+                            const t_s = Math.min(1.0, h_surf[y][x] / 0.70);
+                            sr = Math.round(((1 - t_s) * sr + t_s * 251) * shadeFactor);
+                            sg = Math.round(((1 - t_s) * sg + t_s * 191) * shadeFactor);
+                            sb = Math.round(((1 - t_s) * sb + t_s * 36) * shadeFactor);
+                        } else {
+                            // Eco-Hydrology phase: color water if deep enough
+                            const w_d = h_surf[y][x];
+                            if (w_d > 0.02) {
+                                const t_w = Math.min(0.85, w_d / 0.40);
+                                sr = Math.round(((1 - t_w) * sr + t_w * 14) * shadeFactor);
+                                sg = Math.round(((1 - t_w) * sg + t_w * 165) * shadeFactor);
+                                sb = Math.round(((1 - t_w) * sb + t_w * 233) * shadeFactor);
+                            }
+                        }
+
+                        // Blend Grass Cover (22, 197, 94)
+                        const grass = grass_grid[y][x];
+                        if (grass > 0.05) {
+                            const t_g = Math.min(0.85, grass);
+                            sr = Math.round(((1 - t_g) * sr + t_g * 22) * shadeFactor);
+                            sg = Math.round(((1 - t_g) * sg + t_g * 197) * shadeFactor);
+                            sb = Math.round(((1 - t_g) * sb + t_g * 94) * shadeFactor);
+                        }
+
+                        const cellColor = rgbToHex(
+                            Math.max(0, Math.min(255, sr)),
+                            Math.max(0, Math.min(255, sg)),
+                            Math.max(0, Math.min(255, sb))
+                        );
+
+                        // Draw Quad
+                        const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                        poly.setAttribute("points", `${pA.x.toFixed(1)},${pA.y.toFixed(1)} ${pB.x.toFixed(1)},${pB.y.toFixed(1)} ${pC.x.toFixed(1)},${pC.y.toFixed(1)} ${pD.x.toFixed(1)},${pD.y.toFixed(1)}`);
+                        poly.setAttribute("fill", cellColor);
+                        // Render outline parameters
+                        if (isDune && h_surf[y][x] > 0.15) {
+                            poly.setAttribute("stroke", "rgba(217, 119, 6, 0.35)");
+                        } else if (grass > 0.20) {
+                            poly.setAttribute("stroke", "rgba(34, 197, 94, 0.30)");
+                        } else {
+                            poly.setAttribute("stroke", "rgba(71, 85, 105, 0.30)");
+                        }
+                        poly.setAttribute("stroke-width", "0.5");
+                        isoSvg.appendChild(poly);
+
+                        // 3D Tree Canopies Rendering
+                        const tree = tree_grid[y][x];
+                        if (tree > 0.08) {
+                            const zTop = zA + (isDune ? h_surf[y][x] : 0.0);
+                            
+                            const pBase = projectIso(x + 0.5, y + 0.5, zTop);
+                            const pCrest = projectIso(x + 0.5, y + 0.5, zTop + 0.45 * tree + 0.15);
+
+                            // Draw Trunk
+                            const trunk = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                            trunk.setAttribute("x1", pBase.x.toFixed(1));
+                            trunk.setAttribute("y1", pBase.y.toFixed(1));
+                            trunk.setAttribute("x2", pCrest.x.toFixed(1));
+                            trunk.setAttribute("y2", pCrest.y.toFixed(1));
+                            trunk.setAttribute("stroke", "#5c2e0b");
+                            trunk.setAttribute("stroke-width", (1.2 * tree + 0.6).toFixed(1));
+                            isoSvg.appendChild(trunk);
+
+                            // Draw Canopy
+                            const canopy = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                            canopy.setAttribute("cx", pCrest.x.toFixed(1));
+                            canopy.setAttribute("cy", pCrest.y.toFixed(1));
+                            canopy.setAttribute("r", (4.0 * tree + 1.5).toFixed(1));
+                            canopy.setAttribute("fill", "#166534");
+                            canopy.setAttribute("stroke", "#14532d");
+                            canopy.setAttribute("stroke-width", "0.5");
+                            isoSvg.appendChild(canopy);
+                        }
+                    }
+                }
+            }
+        }
+
+        function handleHoverTelemetry(e) {
+            const gridRect = visContainer.getBoundingClientRect();
+            const px = e.clientX - gridRect.left;
+            const py = e.clientY - gridRect.top;
+
+            const cellSizeOnCanvas = gridRect.width / GRID_SIZE;
+            const x = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(px / cellSizeOnCanvas)));
+            const y = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(py / cellSizeOnCanvas)));
+
+            const stepData = duneGrassData.steps[stepIndex];
+            const H_soil = stepData.grid_H_soil[y][x];
+            const h_surf = stepData.grid_h_surface[y][x];
+            const grass = stepData.grid_grass[y][x];
+            const tree = stepData.grid_tree[y][x];
+
+            telCoord.textContent = `(${x}, ${y})`;
+            telGrass.textContent = `${(grass * 100).toFixed(0)} %`;
+            telTree.textContent = `${(tree * 100).toFixed(0)} %`;
+
+            if (stepData.phase === "Eco-Hydrology") {
+                telLayer.innerHTML = `<span style="color: #38bdf8;">Water: ${h_surf.toFixed(2)} m</span>`;
+            } else {
+                telLayer.innerHTML = `<span style="color: #fbbf24;">Sand: ${h_surf.toFixed(2)} m</span>`;
+            }
+        }
+
+        function updateStep(step) {
+            renderGridState(step);
+        }
+
+        function animateSimulation() {
+            if (stepIndex >= totalSteps) {
+                stepIndex = 0;
+            }
+            animationInterval = setInterval(() => {
+                if (stepIndex >= totalSteps) {
+                    clearInterval(animationInterval);
+                    animationInterval = null;
+                    animateBtn.textContent = "Play Co-Evolution";
+                } else {
+                    stepIndex++;
+                    renderGridState(stepIndex);
+                }
+            }, 75);
+        }
+
+        function togglePlay() {
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+                animateBtn.textContent = "Play Co-Evolution";
+            } else {
+                animateBtn.textContent = "Pause";
+                animateSimulation();
+            }
+        }
+
+        function showFinalState() {
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+                animateBtn.textContent = "Play Co-Evolution";
+            }
+            updateStep(totalSteps);
+        }
+
+        initDashboard();
+    </script>
+</body>
+</html>

@@ -21,13 +21,17 @@ public:
     AeolianDunes(float input = 0.25f, float carry = 0.55f, float alpha = 12.0f, float repose = 0.62f, float relax = 1.50f)
         : sand_input(input), transport_coef(carry), slope_influence(alpha), max_slope(repose), relaxation(relax) {}
 
-    std::vector<FieldType> get_required_fields() const override {
-        return { FieldType::SAND };
+    std::vector<std::type_index> get_required_fields() const override {
+        return { std::type_index(typeid(SandField)) };
     }
 
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
-        auto& h_sand = g.request_field(FieldType::SAND);
+        auto& h_sand = g.request_field<SandField>();
+
+        // Cache optional vegetation pointers once per step (outside the loops)
+        const std::vector<std::vector<float>>* grass_ptr = g.has_field<GrassField>() ? &g.request_field<GrassField>() : nullptr;
+        const std::vector<std::vector<float>>* tree_ptr = g.has_field<TreeField>() ? &g.request_field<TreeField>() : nullptr;
 
         if (step == 0) {
             // Seed random number generator with constant seed for deterministic test outputs
@@ -120,6 +124,15 @@ public:
 
                 // Carrying capacity Q_c scales with wind velocity cubed (Bagnold's Law: Q ~ U^3)
                 float Q_c = transport_coef * (U * U * U);
+
+                // Vegetation shielding (grass and trees block wind stress at the sand surface)
+                if (grass_ptr || tree_ptr) {
+                    float grass_val = grass_ptr ? (*grass_ptr)[y][x] : 0.0f;
+                    float tree_val = tree_ptr ? (*tree_ptr)[y][x] : 0.0f;
+                    // Exponential shielding factor: grass blocks 85%, trees block 95% at density 1.0
+                    float shield = std::exp(-2.0f * grass_val - 3.0f * tree_val);
+                    Q_c *= shield;
+                }
 
                 // Sheet saturation limit (wind capacity drops when sand is thin)
                 float saturation = std::min(1.0f, h_sand[y][x] / 0.40f);
