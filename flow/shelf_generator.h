@@ -16,7 +16,10 @@ public:
                          float abyssal_u = 0.82f,    // Abyssal plain start reference
                          float coast_z = 0.15f,      // Shoreline elevation reference
                          float break_z = -0.50f,     // Shelf break platform depth
-                         float abyssal_z = -4.50f)   // Abyssal plain depth
+                         float abyssal_z = -4.50f,   // Abyssal plain depth
+                         float land_height = 2.80f,  // Highlands max base height
+                         float noise_amp = 0.22f,    // Radial boundary deformation noise multiplier
+                         float ruggedness = 0.45f)   // Highlands mountain ruggedness noise multiplier
     {
         int sz = g.size;
         PerlinNoise2D perlin;
@@ -40,8 +43,8 @@ public:
                 float r_dist = std::sqrt(rx*rx + ry*ry);
                 
                 // Deform the radial coordinate with 2D Perlin noise to make the continent organic and irregular
-                float u_noise = perlin.noise(x_rot * 0.04f, y_rot * 0.04f) * 0.22f + 
-                                perlin.noise(x_rot * 0.12f, y_rot * 0.12f) * 0.08f;
+                float u_noise = perlin.noise(x_rot * 0.04f, y_rot * 0.04f) * noise_amp + 
+                                perlin.noise(x_rot * 0.12f, y_rot * 0.12f) * (noise_amp * 0.36f);
                 float u = r_dist / R_max + u_noise;
 
                 // Base profile calculation reflecting crustal thickness step zones
@@ -49,7 +52,6 @@ public:
                 if (u < coast_u) {
                     // 1. Thick Continental Crust (Highlands sloping to coast hinge line)
                     float t = u / coast_u;
-                    float land_height = 2.80f;
                     z_base = land_height * (1.0f - t) + coast_z * t;
                 } else if (u < break_u) {
                     // 2. Thinned Continental Crust (Shallow Shelf Platform basement)
@@ -66,8 +68,8 @@ public:
                 }
 
                 // Add subaerial mountain ruggedness to the highlands
-                float noise_land = perlin.noise(x_rot * 0.08f, y_rot * 0.08f) * 0.45f + 
-                                   perlin.noise(x_rot * 0.22f, y_rot * 0.22f) * 0.12f;
+                float noise_land = perlin.noise(x_rot * 0.08f, y_rot * 0.08f) * ruggedness + 
+                                   perlin.noise(x_rot * 0.22f, y_rot * 0.22f) * (ruggedness * 0.27f);
                 if (u < coast_u) {
                     z_base += noise_land * (1.0f - u / coast_u);
                 }

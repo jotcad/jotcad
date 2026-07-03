@@ -6,5 +6,6 @@ struct SandField {};
 struct TillField {};
 struct GrassField {};
 struct TreeField {};
+struct SoilField {};
 
 #endif // FIELDS_H

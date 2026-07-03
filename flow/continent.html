@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Continental Tectonic, Hydrological & Ecological Evolution</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #060913;
+            --card-bg: rgba(15, 23, 42, 0.6);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-color: #38bdf8;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --grid-line: rgba(255, 255, 255, 0.02);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.03) 0%, transparent 40%);
+        }
+
+        header {
+            margin-bottom: 2rem;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #fff 30%, var(--accent-color) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.75rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.05rem;
+            line-height: 1.5;
+            max-width: 800px;
+        }
+
+        .dashboard {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            max-width: 1000px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .card-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+        }
+
+        .visualization-container {
+            width: 100%;
+            aspect-ratio: 1;
+            position: relative;
+            background: #030508;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            overflow: hidden;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            background: var(--accent-color);
+            color: #000;
+        }
+
+        button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-water { background: #0e67b4; }
+        .legend-shelf { background: #0a8fa8; }
+        .legend-land { background: #646973; }
+        .legend-grass { background: #16c55e; }
+        .legend-tree { background: #166534; }
+        .legend-mountain { background: #a8a29e; }
+
+        .telemetry-card {
+            background: rgba(10, 15, 25, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .telemetry-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent-color);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .telemetry-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .telemetry-label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .telemetry-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .control-group {
+            background: rgba(10, 15, 25, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+        }
+
+        .control-row span.label {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .control-row span.value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/index.html" class="back-link">&larr; Back to Gallery</a>
+        <h1>Continental Tectonic, Hydrological & Ecological Evolution <span style="font-size: 1rem; vertical-align: middle; padding: 4px 8px; background: rgba(56, 189, 248, 0.15); color: var(--accent-color); border-radius: 6px; margin-left: 0.5rem; font-weight: 600;">v1.0 (Dynamic)</span></h1>
+        <p class="subtitle">Multi-era simulation tracing an organic, tectonically sheared continent undergoing drainage valley incision, marine delta progradation, and ecological colonization.</p>
+    </header>
+
+    <div class="dashboard">
+        <!-- Visualizer Card (Column 1) -->
+        <div class="card">
+            <div class="card-title">
+                <span>Topographic Bathymetry & Ecology Map</span>
+                <span id="sim-phase" style="background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 0.8rem;">Era: Tectonic Uplift</span>
+            </div>
+            <div class="visualization-container" id="vis-container">
+                <svg id="grid-svg" viewBox="0 0 1000 1000"></svg>
+            </div>
+
+            <div class="btn-group">
+                <button id="animate-btn">Play Evolution</button>
+                <button id="show-final-btn" class="secondary">Show Final State</button>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color legend-water"></div>
+                    <span>Abyssal Basin (Deep Water)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-shelf"></div>
+                    <span>Continental Shelf (Shallow)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-land"></div>
+                    <span>Plains / Valley Bedrock</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-mountain"></div>
+                    <span>Highland Uplift Peaks</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-grass"></div>
+                    <span>Grass Canopy (Stabilizer)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-tree"></div>
+                    <span>3D Forest (Windbreak)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3D Isometric Card & Telemetry -->
+        <div class="card">
+                <div class="card-title">
+                    <span>3D Isometric Topographic Mesh</span>
+                    <span style="background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">3D Relief Model</span>
+                </div>
+                <div class="visualization-container" id="iso-container" style="background: #030508; border-radius: 8px; overflow: hidden; padding: 0.5rem; display: flex; justify-content: center; align-items: center; height: 420px; aspect-ratio: auto;">
+                    <svg id="iso-svg" viewBox="0 0 1000 650" style="width: 100%; height: 100%;"></svg>
+                </div>
+            </div>
+
+            <!-- Telemetry Card -->
+            <div class="card" style="margin-top: 2rem;">
+                <div class="telemetry-card">
+                    <div class="telemetry-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        <span>Geological & Eco Telemetry (Hover Map)</span>
+                    </div>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-item" style="grid-column: span 2; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.75rem; margin-bottom: 0.5rem;">
+                            <span class="telemetry-label">Simulation Step</span>
+                            <span class="telemetry-value" id="tel-step" style="font-size: 1.6rem; font-weight: 700; color: var(--accent-color);">0</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Coordinate</span>
+                            <span class="telemetry-value" id="tel-coord">--</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Soil Elevation</span>
+                            <span class="telemetry-value" id="tel-elevation" style="color: #fbbf24;">-- m</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Water Depth</span>
+                            <span class="telemetry-value" id="tel-water" style="color: #38bdf8;">-- m</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Grass Cover</span>
+                            <span class="telemetry-value" id="tel-grass" style="color: #4ade80;">-- %</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Forest Density</span>
+                            <span class="telemetry-value" id="tel-tree" style="color: #10b981;">-- %</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <span class="label">Era 1 (Steps 0-30):</span>
+                        <span class="value" style="color: #fb7185;">Tectonic Transpression Uplift</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Era 2 (Steps 30-90):</span>
+                        <span class="value" style="color: #38bdf8;">Fluvial Drainage & Inundation</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Era 3 (Steps 90-150):</span>
+                        <span class="value" style="color: #34d399;">Eco-Vegetation Channel Stabilization</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <!-- Load the C++ output data as an ES6 module -->
+    <script type="module">
+        import { continentData } from './test_continent.js';
+
+        const GRID_SIZE = continentData.grid_size || 128;
+        const CELL_SIZE = 1000 / GRID_SIZE;
+
+        let stepIndex = 0;
+        const totalSteps = continentData.steps.length - 1;
+        let animationInterval = null;
+
+        // DOM elements
+        const gridSvg = document.getElementById('grid-svg');
+        const isoSvg = document.getElementById('iso-svg');
+        const visContainer = document.getElementById('vis-container');
+        const animateBtn = document.getElementById('animate-btn');
+        const showFinalBtn = document.getElementById('show-final-btn');
+        const simPhaseText = document.getElementById('sim-phase');
+        const telStep = document.getElementById('tel-step');
+        const telCoord = document.getElementById('tel-coord');
+        const telElevation = document.getElementById('tel-elevation');
+        const telWater = document.getElementById('tel-water');
+        const telGrass = document.getElementById('tel-grass');
+        const telTree = document.getElementById('tel-tree');
+
+        function initDashboard() {
+            updateStep(0);
+            visContainer.addEventListener('mousemove', handleHoverTelemetry);
+            animateBtn.addEventListener('click', togglePlay);
+            showFinalBtn.addEventListener('click', showFinalState);
+        }
+
+        function renderGridState(idx) {
+            stepIndex = idx;
+            telStep.textContent = idx;
+
+            gridSvg.innerHTML = '';
+            const stepData = continentData.steps[idx];
+            simPhaseText.textContent = `Era: ${stepData.phase}`;
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const H_soil = stepData.grid_H_soil[y][x];
+                    const h_surf = stepData.grid_h_surface[y][x];
+                    const grass = stepData.grid_grass[y][x];
+                    const tree = stepData.grid_tree[y][x];
+                    
+                    // Compute slopes for 2D hillshading
+                    const h_L = x > 0 ? stepData.grid_H_soil[y][x-1] : H_soil;
+                    const h_R = x < GRID_SIZE - 1 ? stepData.grid_H_soil[y][x+1] : H_soil;
+                    const h_T = y > 0 ? stepData.grid_H_soil[y-1][x] : H_soil;
+                    const h_B = y < GRID_SIZE - 1 ? stepData.grid_H_soil[y+1][x] : H_soil;
+                    
+                    const dx = h_R - h_L;
+                    const dy = h_B - h_T;
+                    const shadow = 1.0 + 0.45 * dx + 0.45 * dy;
+                    const shadeFactor = Math.max(0.35, Math.min(1.65, shadow));
+
+                    // Proximity to deep ocean check (determines beach)
+                    let isBeach = false;
+                    if (h_surf <= 0.02) {
+                        for (let dy = -2; dy <= 2 && !isBeach; dy++) {
+                            for (let dx = -2; dx <= 2; dx++) {
+                                const ny = y + dy;
+                                const nx = x + dx;
+                                if (ny >= 0 && ny < GRID_SIZE && nx >= 0 && nx < GRID_SIZE) {
+                                    if (stepData.grid_h_surface[ny][nx] > 0.45) {
+                                        isBeach = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Base Color Calculation (bedrock, beach, and ocean floor)
+                    let r = 100, g = 105, b = 115; // Plains grey base
+                    const H_val = stepData.grid_H_soil[y][x];
+ 
+                    if (isBeach) {
+                        // Sandy beach: warm pale golden yellow
+                        r = Math.round(240 * shadeFactor);
+                        g = Math.round(218 * shadeFactor);
+                        b = Math.round(165 * shadeFactor);
+                    } else if (H_val > -1.0) {
+                        const height_t = Math.min(1.0, (H_val + 1.0) / 4.0);
+                        // Lowlands: warm light brown. Highlands: rocky stone grey
+                        r = Math.round(((1 - height_t) * 110 + height_t * 168) * shadeFactor);
+                        g = Math.round(((1 - height_t) * 92 + height_t * 162) * shadeFactor);
+                        b = Math.round(((1 - height_t) * 75 + height_t * 155) * shadeFactor);
+                    } else {
+                        // Dark slate-grey bedrock for seabed
+                        r = Math.round(45 * shadeFactor);
+                        g = Math.round(52 * shadeFactor);
+                        b = Math.round(68 * shadeFactor);
+                    }
+
+                    // Blend vegetation only if above sea level (dry land)
+                    if (h_surf <= 0.01) {
+                        // Blend Grass Cover (34, 197, 94)
+                        if (grass > 0.05) {
+                            const t_g = Math.min(0.85, grass);
+                            r = Math.round((1 - t_g) * r + t_g * 34 * shadeFactor);
+                            g = Math.round((1 - t_g) * g + t_g * 197 * shadeFactor);
+                            b = Math.round((1 - t_g) * b + t_g * 94 * shadeFactor);
+                        }
+
+                        // Blend Tree Cover (21, 128, 61)
+                        if (tree > 0.05) {
+                            const t_t = Math.min(0.90, tree);
+                            r = Math.round((1 - t_t) * r + t_t * 21 * shadeFactor);
+                            g = Math.round((1 - t_t) * g + t_t * 128 * shadeFactor);
+                            b = Math.round((1 - t_t) * b + t_t * 61 * shadeFactor);
+                        }
+                    }
+
+                    // Overlay transparent water on top
+                    if (h_surf > 0.01) {
+                        const t_w = Math.min(0.75, 0.22 + h_surf / 4.0); // Water opacity scaled by depth
+                        r = Math.round((1 - t_w) * r + t_w * 14 * shadeFactor);
+                        g = Math.round((1 - t_w) * g + t_w * 120 * shadeFactor);
+                        b = Math.round((1 - t_w) * b + t_w * 210 * shadeFactor);
+                    }
+
+                    r = Math.max(0, Math.min(255, r));
+                    g = Math.max(0, Math.min(255, g));
+                    b = Math.max(0, Math.min(255, b));
+
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute("x", x * CELL_SIZE);
+                    rect.setAttribute("y", y * CELL_SIZE);
+                    rect.setAttribute("width", CELL_SIZE);
+                    rect.setAttribute("height", CELL_SIZE);
+                    rect.setAttribute("fill", `rgb(${r}, ${g}, ${b})`);
+                    rect.setAttribute("stroke", "var(--grid-line)");
+                    gridSvg.appendChild(rect);
+                }
+            }
+
+            renderIsoState(idx);
+        }
+
+        function renderIsoState(idx) {
+            const stepData = continentData.steps[idx];
+            const H_soil = stepData.grid_H_soil;
+            const h_surf = stepData.grid_h_surface;
+            const grass_grid = stepData.grid_grass;
+            const tree_grid = stepData.grid_tree;
+
+            isoSvg.innerHTML = '';
+
+            // Calculate vertex elevations from bedrock and water depth
+            const V_soil = Array.from({length: GRID_SIZE + 1}, () => new Float32Array(GRID_SIZE + 1));
+            const V_water = Array.from({length: GRID_SIZE + 1}, () => new Float32Array(GRID_SIZE + 1));
+
+            for (let y = 0; y <= GRID_SIZE; y++) {
+                for (let x = 0; x <= GRID_SIZE; x++) {
+                    let count = 0;
+                    let sumSoil = 0;
+                    let sumWater = 0;
+                    for (let dy = -1; dy <= 0; dy++) {
+                        for (let dx = -1; dx <= 0; dx++) {
+                            const cy = y + dy;
+                            const cx = x + dx;
+                            if (cy >= 0 && cy < GRID_SIZE && cx >= 0 && cx < GRID_SIZE) {
+                                sumSoil += H_soil[cy][cx];
+                                sumWater += h_surf[cy][cx];
+                                count++;
+                            }
+                        }
+                    }
+                    V_soil[y][x] = sumSoil / count;
+                    V_water[y][x] = sumWater / count;
+                }
+            }
+
+            function projectIso(x, y, z) {
+                const spacing = 5.2; 
+                const heightScale = 38; // Increased from 22 for dramatic topography
+                const px = 500 + (x - y) * 0.866 * spacing;
+                const py = 250 + (x + y) * 0.5 * spacing - z * heightScale;
+                return { x: px, y: py };
+            }
+
+            const rgbToHex = (r, g, b) => "#" + [r, g, b].map(w => w.toString(16).padStart(2, '0')).join('');
+
+            // Draw quads back-to-front
+            for (let sum = 0; sum <= 2 * (GRID_SIZE - 1); sum++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const y = sum - x;
+                    if (y >= 0 && y < GRID_SIZE) {
+                        const zA = V_soil[y][x];
+                        const zB = V_soil[y][x + 1];
+                        const zC = V_soil[y + 1][x + 1];
+                        const zD = V_soil[y + 1][x];
+
+                        const pA = projectIso(x, y, zA);
+                        const pB = projectIso(x + 1, y, zB);
+                        const pC = projectIso(x + 1, y + 1, zC);
+                        const pD = projectIso(x, y + 1, zD);
+
+                        const dx = zB - zA;
+                        const dy = zD - zA;
+                        const shadow = 1.0 + 0.45 * dx + 0.45 * dy;
+                        const shadeFactor = Math.max(0.35, Math.min(1.65, shadow));
+
+                        // Proximity to deep ocean check (determines beach)
+                        let isBeach = false;
+                        const h_w = h_surf[y][x];
+                        if (h_w <= 0.02) {
+                            for (let dy = -2; dy <= 2 && !isBeach; dy++) {
+                                for (let dx = -2; dx <= 2; dx++) {
+                                    const ny = y + dy;
+                                    const nx = x + dx;
+                                    if (ny >= 0 && ny < GRID_SIZE && nx >= 0 && nx < GRID_SIZE) {
+                                        if (h_surf[ny][nx] > 0.45) {
+                                            isBeach = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Base soil/plain color (always draw ground/seabed/beach)
+                        let sr = 100, sg = 105, sb = 115;
+                        const H_val = H_soil[y][x];
+
+                        if (isBeach) {
+                            // Sandy beach
+                            sr = Math.round(240 * shadeFactor);
+                            sg = Math.round(218 * shadeFactor);
+                            sb = Math.round(165 * shadeFactor);
+                        } else if (H_val > -1.0) {
+                            const height_t = Math.min(1.0, (H_val + 1.0) / 4.0);
+                            sr = Math.round(((1 - height_t) * 110 + height_t * 168) * shadeFactor);
+                            sg = Math.round(((1 - height_t) * 92 + height_t * 162) * shadeFactor);
+                            sb = Math.round(((1 - height_t) * 75 + height_t * 155) * shadeFactor);
+                        } else {
+                            // Dark slate-grey seabed floor bedrock
+                            sr = Math.round(45 * shadeFactor);
+                            sg = Math.round(52 * shadeFactor);
+                            sb = Math.round(68 * shadeFactor);
+                        }
+
+                        // Blend vegetation only on dry land cells
+                        if (h_surf[y][x] <= 0.01) {
+                            // Blend Grass Cover (34, 197, 94)
+                            const grass = grass_grid[y][x];
+                            if (grass > 0.05) {
+                                const t_g = Math.min(0.85, grass);
+                                sr = Math.round((1 - t_g) * sr + t_g * 34 * shadeFactor);
+                                sg = Math.round((1 - t_g) * sg + t_g * 197 * shadeFactor);
+                                sb = Math.round((1 - t_g) * sb + t_g * 94 * shadeFactor);
+                            }
+
+                            // Blend Tree Cover (21, 128, 61)
+                            const tree = tree_grid[y][x];
+                            if (tree > 0.05) {
+                                const t_t = Math.min(0.90, tree);
+                                sr = Math.round((1 - t_t) * sr + t_t * 21 * shadeFactor);
+                                sg = Math.round((1 - t_t) * sg + t_t * 128 * shadeFactor);
+                                sb = Math.round((1 - t_t) * sb + t_t * 61 * shadeFactor);
+                            }
+                        }
+
+                        const cellColor = rgbToHex(
+                            Math.max(0, Math.min(255, sr)),
+                            Math.max(0, Math.min(255, sg)),
+                            Math.max(0, Math.min(255, sb))
+                        );
+
+                        // Draw Quad
+                        const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                        poly.setAttribute("points", `${pA.x.toFixed(1)},${pA.y.toFixed(1)} ${pB.x.toFixed(1)},${pB.y.toFixed(1)} ${pC.x.toFixed(1)},${pC.y.toFixed(1)} ${pD.x.toFixed(1)},${pD.y.toFixed(1)}`);
+                        poly.setAttribute("fill", cellColor);
+                        poly.setAttribute("stroke", "rgba(71, 85, 105, 0.15)");
+                        poly.setAttribute("stroke-width", "0.5");
+                        isoSvg.appendChild(poly);
+
+                        // Draw Floating Opaque Water Wireframe Net
+                        if (h_w > 0.01) {
+                            const zAw = zA + V_water[y][x];
+                            const zBw = zB + V_water[y][x+1];
+                            const zCw = zC + V_water[y+1][x+1];
+                            const zDw = zD + V_water[y+1][x];
+
+                            const pAw = projectIso(x, y, zAw);
+                            const pBw = projectIso(x + 1, y, zBw);
+                            const pCw = projectIso(x + 1, y + 1, zCw);
+                            const pDw = projectIso(x, y + 1, zDw);
+
+                            const waterColor = "rgba(14, 116, 180, 0.18)"; // Semi-transparent blue water plane
+                            const depth_t = Math.min(1.0, h_w / 4.0);
+                            // Deep water net: dark blue. Shallow water net: bright cyan.
+                            const netColor = `rgba(${Math.round((1 - depth_t) * 56 + depth_t * 14)}, ${Math.round((1 - depth_t) * 189 + depth_t * 50)}, ${Math.round((1 - depth_t) * 248 + depth_t * 140)}, 0.45)`;
+
+                            const wPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                            wPoly.setAttribute("points", `${pAw.x.toFixed(1)},${pAw.y.toFixed(1)} ${pBw.x.toFixed(1)},${pBw.y.toFixed(1)} ${pCw.x.toFixed(1)},${pCw.y.toFixed(1)} ${pDw.x.toFixed(1)},${pDw.y.toFixed(1)}`);
+                            wPoly.setAttribute("fill", waterColor);
+                            wPoly.setAttribute("stroke", netColor);
+                            wPoly.setAttribute("stroke-width", "0.5");
+                            isoSvg.appendChild(wPoly);
+                        }
+
+                        // Draw Topographic Contour Loops
+                        const contourLevels = [-4.0, -3.0, -2.0, -1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
+                        const quadVerts = [
+                            { z: zA, p: pA },
+                            { z: zB, p: pB },
+                            { z: zC, p: pC },
+                            { z: zD, p: pD }
+                        ];
+
+                        for (const zc of contourLevels) {
+                            const crossings = [];
+                            for (let i = 0; i < 4; i++) {
+                                const v0 = quadVerts[i];
+                                const v1 = quadVerts[(i + 1) % 4];
+                                if ((v0.z < zc && v1.z >= zc) || (v1.z < zc && v0.z >= zc)) {
+                                    const t = (zc - v0.z) / (v1.z - v0.z);
+                                    crossings.push({
+                                        x: v0.p.x + t * (v1.p.x - v0.p.x),
+                                        y: v0.p.y + t * (v1.p.y - v0.p.y)
+                                    });
+                                }
+                            }
+                            if (crossings.length >= 2) {
+                                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                                line.setAttribute("x1", crossings[0].x.toFixed(1));
+                                line.setAttribute("y1", crossings[0].y.toFixed(1));
+                                line.setAttribute("x2", crossings[1].x.toFixed(1));
+                                line.setAttribute("y2", crossings[1].y.toFixed(1));
+                                
+                                if (zc === 0.0) {
+                                    // Crisp white shoreline outline
+                                    line.setAttribute("stroke", "rgba(255, 255, 255, 0.95)");
+                                    line.setAttribute("stroke-width", "1.5");
+                                } else if (zc < 0.0) {
+                                    // Blue subaqueous bathymetry contours
+                                    line.setAttribute("stroke", "rgba(56, 189, 248, 0.35)");
+                                    line.setAttribute("stroke-width", "0.6");
+                                } else {
+                                    // White land elevation contours
+                                    line.setAttribute("stroke", "rgba(255, 255, 255, 0.25)");
+                                    line.setAttribute("stroke-width", "0.6");
+                                }
+                                isoSvg.appendChild(line);
+                            }
+                        }
+
+                        // 3D Tree Canopies Rendering
+                        const tree = tree_grid[y][x];
+                        if (h_w <= 0.01 && tree > 0.08) {
+                            const pBase = projectIso(x + 0.5, y + 0.5, zA);
+                            const pCrest = projectIso(x + 0.5, y + 0.5, zA + 0.40 * tree + 0.12);
+
+                            // Draw Trunk
+                            const trunk = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                            trunk.setAttribute("x1", pBase.x.toFixed(1));
+                            trunk.setAttribute("y1", pBase.y.toFixed(1));
+                            trunk.setAttribute("x2", pCrest.x.toFixed(1));
+                            trunk.setAttribute("y2", pCrest.y.toFixed(1));
+                            trunk.setAttribute("stroke", "#5c2e0b");
+                            trunk.setAttribute("stroke-width", (1.2 * tree + 0.5).toFixed(1));
+                            isoSvg.appendChild(trunk);
+
+                            // Draw Canopy
+                            const canopy = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                            canopy.setAttribute("cx", pCrest.x.toFixed(1));
+                            canopy.setAttribute("cy", pCrest.y.toFixed(1));
+                            canopy.setAttribute("r", (4.0 * tree + 1.2).toFixed(1));
+                            canopy.setAttribute("fill", "#15803d");
+                            canopy.setAttribute("stroke", "#14532d");
+                            canopy.setAttribute("stroke-width", "0.5");
+                            isoSvg.appendChild(canopy);
+                        }
+                    }
+                }
+            }
+        }
+
+        function handleHoverTelemetry(e) {
+            const gridRect = visContainer.getBoundingClientRect();
+            const px = e.clientX - gridRect.left;
+            const py = e.clientY - gridRect.top;
+
+            const w = gridRect.width;
+            const h = gridRect.height;
+
+            const gridX = Math.floor((px / w) * GRID_SIZE);
+            const gridY = Math.floor((py / h) * GRID_SIZE);
+
+            if (gridX >= 0 && gridX < GRID_SIZE && gridY >= 0 && gridY < GRID_SIZE) {
+                const stepData = continentData.steps[stepIndex];
+                const H_soil = stepData.grid_H_soil[gridY][gridX];
+                const h_surf = stepData.grid_h_surface[gridY][gridX];
+                const grass = stepData.grid_grass[gridY][gridX];
+                const tree = stepData.grid_tree[gridY][gridX];
+
+                telCoord.textContent = `(${gridX}, ${gridY})`;
+                telElevation.textContent = `${(H_soil * 1000).toFixed(0)} m`;
+                
+                if (h_surf > 0.01) {
+                    telWater.textContent = `${(h_surf * 1000).toFixed(0)} m`;
+                } else {
+                    telWater.textContent = `0 m (Dry)`;
+                }
+                
+                telGrass.textContent = `${(grass * 100).toFixed(0)} %`;
+                telTree.textContent = `${(tree * 100).toFixed(0)} %`;
+            }
+        }
+
+        function updateStep(idx) {
+            renderGridState(idx);
+        }
+
+        function togglePlay() {
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+                animateBtn.textContent = 'Play Evolution';
+                animateBtn.classList.remove('secondary');
+            } else {
+                if (stepIndex >= totalSteps) {
+                    stepIndex = 0;
+                    updateStep(0);
+                }
+                animateBtn.textContent = 'Pause Evolution';
+                animateBtn.classList.add('secondary');
+                animationInterval = setInterval(() => {
+                    let next = stepIndex + 1;
+                    if (next > totalSteps) {
+                        togglePlay();
+                        return;
+                    }
+                    updateStep(next);
+                }, 180);
+            }
+        }
+
+        function showFinalState() {
+            if (animationInterval) togglePlay();
+            updateStep(totalSteps);
+        }
+
+        // Run dashboard
+        initDashboard();
+    </script>
+</body>
+</html>

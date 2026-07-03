@@ -2,6 +2,7 @@
 #define VEGETATION_H
 
 #include "element.h"
+#include "perlin_noise.h"
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -20,13 +21,15 @@ public:
         : grass_growth_rate(grass_rate), tree_growth_rate(tree_rate), carrying_capacity(cap) {}
 
     std::vector<std::type_index> get_required_fields() const override {
-        return { std::type_index(typeid(GrassField)), std::type_index(typeid(TreeField)) };
+        return { std::type_index(typeid(GrassField)), std::type_index(typeid(TreeField)), std::type_index(typeid(SoilField)) };
     }
 
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
         auto& grass = g.request_field<GrassField>();
         auto& tree = g.request_field<TreeField>();
+        auto& soil = g.request_field<SoilField>();
+        PerlinNoise2D perlin;
 
         // Retrieve optional sediment layers if present using type-tag keys
         const std::vector<std::vector<float>>* sand = g.has_field<SandField>() ? &g.request_field<SandField>() : nullptr;
@@ -76,23 +79,65 @@ public:
                     }
                 }
 
+                // In-situ soil weathering: bedrock slowly weathers into soil on dry land (where not flooded)
+                if (!is_flooded) {
+                    soil[y][x] += 0.0008f * dt; // Weathering rate: balanced for 5000 cycles
+                }
+
+                // Soil requirements for vegetation
+                float grass_soil_factor = std::min(1.0f, soil[y][x] / 0.05f); // Requires 5 cm of soil
+                float tree_soil_factor = (soil[y][x] < 0.08f) ? -0.15f : std::min(1.0f, soil[y][x] / 0.25f); // Trees require 25 cm of soil, decay if < 8 cm
+
+                // Beach constraint: trees cannot grow in the active wave-washed beach zone (near deep ocean water)
+                bool is_beach = false;
+                if (g.h_surface[y][x] <= 0.02f) {
+                    for (int dy = -2; dy <= 2 && !is_beach; ++dy) {
+                        for (int dx = -2; dx <= 2; ++dx) {
+                            int ny = y + dy;
+                            int nx = x + dx;
+                            if (ny >= 0 && ny < sz && nx >= 0 && nx < sz) {
+                                if (g.h_surface[ny][nx] > 0.45f) {
+                                    is_beach = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (is_beach) {
+                    tree_soil_factor = -0.12f; // Trees decay in loose, salty beach sand near the ocean
+                }
+
                 // 3. Logistic Growth equations
                 if (soil_support > 0.05f) {
                     // GRASS GROWTH
                     // Grass colonizes bare soil/sand if seeded
                     if (grass[y][x] < 0.01f) grass[y][x] += 0.01f * dt;
-                    float grass_growth = grass_growth_rate * grass[y][x] * (carrying_capacity - grass[y][x]) * moisture * dt;
+                    float grass_growth = grass_growth_rate * grass[y][x] * (carrying_capacity - grass[y][x]) * moisture * grass_soil_factor * dt;
                     grass[y][x] = std::max(0.0f, std::min(carrying_capacity, grass[y][x] + grass_growth));
 
                     // TREE GROWTH
                     // Trees grow slower, and grass competes with tree saplings
-                    if (tree[y][x] < 0.005f && grass[y][x] > 0.05f) tree[y][x] += 0.002f * dt;
+                    if (tree[y][x] < 0.005f && grass[y][x] > 0.05f && tree_soil_factor > 0.0f) {
+                        tree[y][x] += 0.002f * dt;
+                    }
                     float tree_cap = carrying_capacity - grass[y][x] * 0.35f; // Grass crowd-out factor
-                    float tree_growth = tree_growth_rate * tree[y][x] * (tree_cap - tree[y][x]) * moisture * dt;
+                    float tree_growth;
+                    if (tree_soil_factor < 0.0f) {
+                        tree_growth = tree_soil_factor * tree[y][x] * dt; // Decay due to lack of soil anchor
+                    } else {
+                        tree_growth = tree_growth_rate * tree[y][x] * (tree_cap - tree[y][x]) * moisture * tree_soil_factor * dt;
+                    }
                     tree[y][x] = std::max(0.0f, std::min(carrying_capacity, tree[y][x] + tree_growth));
                 }
 
                 // 4. Environmental Destruction
+                // - Marine saltwater death: terrestrial plants cannot grow below sea level in the ocean
+                if (g.H_soil[y][x] <= 0.0f && is_flooded) {
+                    grass[y][x] = 0.0f;
+                    tree[y][x] = 0.0f;
+                }
+
                 // - Submersion death: deep standing water kills land grass slowly
                 if (is_flooded && water_depth > 0.50f) {
                     grass[y][x] = std::max(0.0f, grass[y][x] - 0.15f * dt);
@@ -116,6 +161,12 @@ public:
                 if (sand && (*sand)[y][x] > 0.85f) {
                     float burial_factor = ((*sand)[y][x] - 0.85f) * 0.20f * dt;
                     grass[y][x] = std::max(0.01f, grass[y][x] - burial_factor);
+                }
+
+                // 5. Continuous Biogenic Bioturbation: churn bedrock and soil to maintain micro-scale roughness texture
+                if (!is_flooded && g.H_soil[y][x] > -1.0f) {
+                    float noise_val = perlin.noise(x * 0.45f + step * 0.05f, y * 0.45f + step * 0.05f);
+                    g.H_soil[y][x] += noise_val * 0.00004f * (dt / 0.05f);
                 }
             }
         }

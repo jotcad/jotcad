@@ -52,6 +52,90 @@ struct Grid {
         return sparse_fields.find(std::type_index(typeid(T))) != sparse_fields.end();
     }
 
+    void upscale_in_place(int target_size) {
+        if (size == target_size) return;
+        
+        int src_size = size;
+        auto src_H = H_soil;
+        auto src_h = h_surface;
+        auto src_sed = sediment;
+        auto src_sw = h_soil_water;
+        
+        std::unordered_map<std::type_index, std::vector<std::vector<float>>> src_sparse;
+        for (auto& pair : sparse_fields) {
+            src_sparse[pair.first] = *pair.second;
+        }
+        
+        size = target_size;
+        H_soil = std::vector<std::vector<float>>(target_size, std::vector<float>(target_size, 0.0f));
+        h_surface = std::vector<std::vector<float>>(target_size, std::vector<float>(target_size, 0.0f));
+        vx = std::vector<std::vector<float>>(target_size + 1, std::vector<float>(target_size, 0.0f));
+        vy = std::vector<std::vector<float>>(target_size, std::vector<float>(target_size + 1, 0.0f));
+        sediment = std::vector<std::vector<float>>(target_size, std::vector<float>(target_size, 0.0f));
+        h_soil_water = std::vector<std::vector<float>>(target_size, std::vector<float>(target_size, 0.0f));
+        
+        sparse_fields.clear();
+        
+        float scale = (float)src_size / (float)target_size;
+        for (int y = 0; y < target_size; ++y) {
+            for (int x = 0; x < target_size; ++x) {
+                float src_x = x * scale;
+                float src_y = y * scale;
+
+                int x0 = std::floor(src_x);
+                int y0 = std::floor(src_y);
+                int x1 = std::min(src_size - 1, x0 + 1);
+                int y1 = std::min(src_size - 1, y0 + 1);
+
+                float tx = src_x - x0;
+                float ty = src_y - y0;
+
+                H_soil[y][x] = (1.0f - tx) * (1.0f - ty) * src_H[y0][x0] +
+                               tx * (1.0f - ty) * src_H[y0][x1] +
+                               (1.0f - tx) * ty * src_H[y1][x0] +
+                               tx * ty * src_H[y1][x1];
+
+                h_surface[y][x] = (1.0f - tx) * (1.0f - ty) * src_h[y0][x0] +
+                                  tx * (1.0f - ty) * src_h[y0][x1] +
+                                  (1.0f - tx) * ty * src_h[y1][x0] +
+                                  tx * ty * src_h[y1][x1];
+
+                sediment[y][x] = (1.0f - tx) * (1.0f - ty) * src_sed[y0][x0] +
+                                 tx * (1.0f - ty) * src_sed[y0][x1] +
+                                 (1.0f - tx) * ty * src_sed[y1][x0] +
+                                 tx * ty * src_sed[y1][x1];
+
+                h_soil_water[y][x] = (1.0f - tx) * (1.0f - ty) * src_sw[y0][x0] +
+                                     tx * (1.0f - ty) * src_sw[y0][x1] +
+                                     (1.0f - tx) * ty * src_sw[y1][x0] +
+                                     tx * ty * src_sw[y1][x1];
+            }
+        }
+        
+        for (auto& pair : src_sparse) {
+            auto& dst_field = request_field_by_type_index(pair.first);
+            auto& src_field = pair.second;
+            
+            for (int y = 0; y < target_size; ++y) {
+                for (int x = 0; x < target_size; ++x) {
+                    float src_x = x * scale;
+                    float src_y = y * scale;
+                    int x0 = std::floor(src_x);
+                    int y0 = std::floor(src_y);
+                    int x1 = std::min(src_size - 1, x0 + 1);
+                    int y1 = std::min(src_size - 1, y0 + 1);
+                    float tx = src_x - x0;
+                    float ty = src_y - y0;
+                    
+                    dst_field[y][x] = (1.0f - tx) * (1.0f - ty) * src_field[y0][x0] +
+                                      tx * (1.0f - ty) * src_field[y0][x1] +
+                                      (1.0f - tx) * ty * src_field[y1][x0] +
+                                      tx * ty * src_field[y1][x1];
+                }
+            }
+        }
+    }
+
     void initialize_soil_perlin() {
         PerlinNoise2D perlin;
         for (int y = 0; y < size; ++y) {

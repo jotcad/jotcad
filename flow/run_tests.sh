@@ -202,7 +202,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # 16. Continental Shelf Sedimentation Test
-echo "--- [16/16] Continental Shelf Sedimentation Test ---"
+echo "--- [16/17] Continental Shelf Sedimentation Test ---"
 g++ -O3 -std=c++17 shelf_test.cpp -o shelf_test -lcrypto
 if [ $? -ne 0 ]; then
     echo "❌ Continental shelf test compilation failed"
@@ -214,7 +214,20 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# 17. Coupled Continental Evolution Test
+echo "--- [17/17] Coupled Continental Evolution Test ---"
+g++ -O3 -std=c++17 continental_evolution_test.cpp -o continental_evolution_test -lcrypto
+if [ $? -ne 0 ]; then
+    echo "❌ Coupled continental evolution test compilation failed"
+    exit 1
+fi
+./continental_evolution_test
+if [ $? -ne 0 ]; then
+    echo "❌ Coupled continental evolution test execution failed"
+    exit 1
+fi
+
 echo "=================================================="
-echo "✨ ALL 16 CFD REGRESSION TESTS PASSED SUCCESSFULLY"
+echo "✨ ALL 17 CFD REGRESSION TESTS PASSED SUCCESSFULLY"
 echo "=================================================="
 exit 0

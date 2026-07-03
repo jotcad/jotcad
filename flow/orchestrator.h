@@ -18,8 +18,8 @@ public:
     
     Grid& get_grid() { return grid; }
 
-    Phase* add_phase(const std::string& name, float dt, int steps) {
-        phases.push_back(std::make_unique<Phase>(name, dt, steps));
+    Phase* add_phase(const std::string& name, float dt, int steps, int target_sz = -1) {
+        phases.push_back(std::make_unique<Phase>(name, dt, steps, target_sz));
         return phases.back().get();
     }
 
@@ -29,6 +29,14 @@ public:
 
     void run() {
         for (auto& phase : phases) {
+            // Apply scale coherence dynamically at phase boundary
+            if (phase->target_grid_size > 0 && grid.size != phase->target_grid_size) {
+                std::cout << ">>> Phase Transition: Rescaling Grid from " << grid.size 
+                          << " to " << phase->target_grid_size << " for phase '" 
+                          << phase->name << "' <<<" << std::endl;
+                grid.upscale_in_place(phase->target_grid_size);
+            }
+
             std::cout << "--- Starting Phase: " << phase->name << " (" << phase->steps << " steps, dt = " << phase->dt << ") ---" << std::endl;
             
             // Allocate all sparse fields required by the elements in this phase

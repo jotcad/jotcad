@@ -98,9 +98,10 @@ public:
             }
         }
 
-        // Cache optional vegetation pointers once per step
+        // Cache optional vegetation and soil pointers once per step
         const std::vector<std::vector<float>>* grass_ptr = g.has_field<GrassField>() ? &g.request_field<GrassField>() : nullptr;
         const std::vector<std::vector<float>>* tree_ptr = g.has_field<TreeField>() ? &g.request_field<TreeField>() : nullptr;
+        std::vector<std::vector<float>>* soil_ptr = g.has_field<SoilField>() ? &g.request_field<SoilField>() : nullptr;
 
         // Coupled Bed Erosion
         for (int y = 0; y < sz; ++y) {
@@ -126,10 +127,16 @@ public:
                         E = std::min(E, g.H_soil[y][x] + 10.0f);
                         g.H_soil[y][x] -= E;
                         g.sediment[y][x] += E;
+                        if (soil_ptr) {
+                            (*soil_ptr)[y][x] = std::max(0.0f, (*soil_ptr)[y][x] - E);
+                        }
                     } else {
                         float D = settle_rate * g.sediment[y][x] * dt;
                         g.sediment[y][x] -= D;
                         g.H_soil[y][x] += D;
+                        if (soil_ptr) {
+                            (*soil_ptr)[y][x] += D;
+                        }
                     }
                 }
             }

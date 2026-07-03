@@ -17,9 +17,10 @@ public:
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
 
-        // Cache optional vegetation pointers once per step
+        // Cache optional vegetation and soil pointers once per step
         const std::vector<std::vector<float>>* grass_ptr = g.has_field<GrassField>() ? &g.request_field<GrassField>() : nullptr;
         const std::vector<std::vector<float>>* tree_ptr = g.has_field<TreeField>() ? &g.request_field<TreeField>() : nullptr;
+        std::vector<std::vector<float>>* soil_ptr = g.has_field<SoilField>() ? &g.request_field<SoilField>() : nullptr;
 
         for (int sweep = 0; sweep < 3; ++sweep) {
             for (int y = 0; y < sz; ++y) {
@@ -61,6 +62,13 @@ public:
                                 g.H_soil[y][x] -= mass;
                                 g.H_soil[ny][nx] += mass;
                                 h_center -= mass;
+                                
+                                // Slide soil downslope proportionally with landslide mass
+                                if (soil_ptr) {
+                                    float soil_to_move = std::min((*soil_ptr)[y][x], mass);
+                                    (*soil_ptr)[y][x] -= soil_to_move;
+                                    (*soil_ptr)[ny][nx] += soil_to_move;
+                                }
                             }
                         }
                     }

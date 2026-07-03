@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        // Intercept and display all browser runtime errors in a clean red overlay
+        window.addEventListener('error', function(e) {
+            let errDiv = document.getElementById('error-overlay');
+            if (!errDiv) {
+                errDiv = document.createElement('div');
+                errDiv.id = 'error-overlay';
+                errDiv.style.position = 'fixed';
+                errDiv.style.bottom = '20px';
+                errDiv.style.right = '20px';
+                errDiv.style.width = '480px';
+                errDiv.style.background = 'rgba(239, 68, 68, 0.95)';
+                errDiv.style.color = '#ffffff';
+                errDiv.style.padding = '20px';
+                errDiv.style.borderRadius = '8px';
+                errDiv.style.fontFamily = 'monospace';
+                errDiv.style.fontSize = '12px';
+                errDiv.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.7)';
+                errDiv.style.zIndex = '999999';
+                errDiv.style.whiteSpace = 'pre-wrap';
+                errDiv.style.border = '2px solid #f87171';
+                errDiv.style.maxHeight = '80vh';
+                errDiv.style.overflowY = 'auto';
+                document.documentElement.appendChild(errDiv);
+            }
+            errDiv.textContent = `🚨 [Browser JS Error]\n\nMessage: ${e.message || 'Script load failure / CORS error'}\nFile: ${e.filename || 'N/A'}\nLine/Col: ${e.lineno || 'N/A'}:${e.colno || 'N/A'}\n\nStack Trace:\n${e.error ? e.error.stack : 'N/A'}`;
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+            let errDiv = document.getElementById('error-overlay');
+            if (!errDiv) {
+                errDiv = document.createElement('div');
+                errDiv.id = 'error-overlay';
+                errDiv.style.position = 'fixed';
+                errDiv.style.bottom = '20px';
+                errDiv.style.right = '20px';
+                errDiv.style.width = '480px';
+                errDiv.style.background = 'rgba(239, 68, 68, 0.95)';
+                errDiv.style.color = '#ffffff';
+                errDiv.style.padding = '20px';
+                errDiv.style.borderRadius = '8px';
+                errDiv.style.fontFamily = 'monospace';
+                errDiv.style.fontSize = '12px';
+                errDiv.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.7)';
+                errDiv.style.zIndex = '999999';
+                errDiv.style.whiteSpace = 'pre-wrap';
+                errDiv.style.border = '2px solid #f87171';
+                errDiv.style.maxHeight = '80vh';
+                errDiv.style.overflowY = 'auto';
+                document.documentElement.appendChild(errDiv);
+            }
+            errDiv.textContent = `🚨 [Unhandled Promise Rejection]\n\nReason: ${e.reason ? (e.reason.stack || e.reason) : 'N/A'}`;
+        });
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tectonic Faulting & Landslide Visualizer</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-color: #f97316; /* Tectonic orange */
+            --accent-glow: rgba(249, 115, 22, 0.4);
+            --text-color: #f1f5f9;
+            --text-muted: #94a3b8;
+            --grid-line: rgba(255, 255, 255, 0.03);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            max-width: 800px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #f97316, #f43f5e, #fbbf24);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.05em;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 2rem;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        @media (max-width: 950px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .visualization-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: crosshair;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            max-width: 600px;
+            max-height: 600px;
+        }
+
+        .legend {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-uplift { background: rgb(151, 80, 50); border: 1px solid rgba(255,255,255,0.2); }
+        .legend-plain { background: rgb(90, 140, 75); border: 1px solid rgba(255,255,255,0.2); }
+        .legend-subside { background: rgb(34, 110, 94); border: 1px solid rgba(255,255,255,0.2); }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            margin-top: 1rem;
+        }
+
+        .control-group {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+        }
+
+        .control-row span.label {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .control-row span.value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-color);
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 0.25rem;
+        }
+
+        input[type="range"] {
+            flex-grow: 1;
+            accent-color: var(--accent-color);
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            height: 6px;
+            appearance: none;
+            outline: none;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        button {
+            flex: 1;
+            background: linear-gradient(135deg, #f97316, #ea580c);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(249, 115, 22, 0.4);
+            background: linear-gradient(135deg, #ea580c, #c2410c);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-color);
+            box-shadow: none;
+        }
+
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        /* Hover Telemetry Panel */
+        .telemetry-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(249, 115, 22, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 0 15px rgba(249, 115, 22, 0.1);
+        }
+
+        .telemetry-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .telemetry-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .telemetry-label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .telemetry-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .slice-line {
+            stroke: rgba(249, 115, 22, 0.85);
+            stroke-width: 1.5px;
+            stroke-dasharray: 4, 4;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/index.html" class="back-link">&larr; Back to Gallery</a>
+        <h1>Tectonic Faulting & Landslides</h1>
+        <p class="subtitle">Geological structural modeling of vertical dip-slip throw alongside active landslide angle stability</p>
+    </header>
+
+    <div class="dashboard">
+        <!-- Visualizer Card (Column 1) -->
+        <div class="card">
+            <div class="card-title">
+                <span>Topographical Elevation Map (80x80 Grid)</span>
+                <span id="sim-status" style="background: rgba(75, 145, 60, 0.1); color: #4ade80; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">Module Loaded</span>
+            </div>
+            <div class="visualization-container" id="vis-container">
+                <svg id="grid-svg" viewBox="0 0 1000 1000"></svg>
+            </div>
+
+            <div class="btn-group" style="margin-top: 1.5rem;">
+                <button id="animate-btn">Play Tectonics</button>
+                <button id="show-final-btn" class="secondary">Show Final State</button>
+            </div>
+
+            <!-- Vertical Cross Section Panel -->
+            <div class="cross-section-panel" style="margin-top: 1.5rem; padding: 1.25rem; background: rgba(15, 23, 42, 0.55); border: 1px solid var(--border-color); border-radius: 8px;">
+                <div class="cross-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <span style="font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-color);">Cross-Section Elevation Slice</span>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+                        <span>Slice:</span>
+                        <select id="slice-type-select" style="background: #1e293b; color: #f1f5f9; border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 8px; font-size: 0.75rem; cursor: pointer; outline: none;">
+                            <option value="row">Horizontal Row</option>
+                            <option value="col">Vertical Column</option>
+                        </select>
+                        <input id="slice-idx-input" type="number" min="0" max="79" value="40" style="width: 50px; background: #1e293b; color: #f1f5f9; border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 6px; font-size: 0.75rem; outline: none; text-align: center;">
+                    </div>
+                </div>
+                <div class="cross-section-chart-container" style="position: relative; width: 100%; height: 160px; background: #070b13; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); overflow: hidden;">
+                    <svg id="cross-section-svg" width="100%" height="100%" viewBox="0 0 500 150" preserveAspectRatio="none" style="display: block;">
+                        <g id="cs-gridlines"></g>
+                        <!-- Soil elevation polygon -->
+                        <polygon id="cs-soil-poly" points="" fill="#5c2d17" stroke="#92400e" stroke-width="2" />
+                    </svg>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; padding: 0 4px;">
+                    <span>Left Edge</span>
+                    <span style="color: #b45309; display: flex; align-items: center; gap: 4px;"><span style="display:inline-block; width:8px; height:8px; background:#5c2d17; border-radius:2px;"></span>Soil Bed Elevation</span>
+                    <span>Right Edge</span>
+                </div>
+            </div>
+
+            <!-- Hydrology Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color legend-uplift"></div>
+                    <span>Uplifted Hanging Block (> 2.0m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-plain"></div>
+                    <span>Pre-existing Valley Plain (0.0m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-subside"></div>
+                    <span>Subsided Footwall (< -2.0m)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3D Isometric Card & Telemetry (Column 2) -->
+        <div>
+            <!-- 3D Isometric View Card -->
+            <div class="card">
+                <div class="card-title">
+                    <span>3D Isometric Block Model</span>
+                    <span style="background: rgba(249, 115, 22, 0.1); color: #f97316; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">3D Surface Mesh</span>
+                </div>
+                <div class="visualization-container" id="iso-container" style="background: #070b13; border-radius: 8px; overflow: hidden; padding: 0.5rem; display: flex; justify-content: center; align-items: center; height: 420px;">
+                    <svg id="iso-svg" viewBox="0 0 1000 650" style="width: 100%; height: 100%;"></svg>
+                </div>
+            </div>
+
+            <!-- Telemetry Card -->
+            <div class="card" style="margin-top: 2rem;">
+                <div class="telemetry-card">
+                    <div class="telemetry-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        <span>Tectonic Indicators (Hover Cursor)</span>
+                    </div>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-item" style="grid-column: span 2; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.75rem; margin-bottom: 0.5rem;">
+                            <span class="telemetry-label">Simulation Step</span>
+                            <span class="telemetry-value" id="tel-step" style="font-size: 1.6rem; font-weight: 700; color: var(--accent-color);">0</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Geological Age</span>
+                            <span class="telemetry-value" id="tel-age">0 yr</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Throw Offset</span>
+                            <span class="telemetry-value" id="tel-throw">0.00m</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Coordinate</span>
+                            <span class="telemetry-value" id="tel-coord">--</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="telemetry-label">Soil Elevation</span>
+                            <span class="telemetry-value" id="tel-soil" style="color: #fbbf24;">-- m</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-row">
+                        <span class="label">Fault Segment</span>
+                        <span class="value">Diagonal (15,15) to (65,65)</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Uplift Speed</span>
+                        <span class="value">0.055 m per step</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="label">Stability relaxation</span>
+                        <span class="value">Landslip dry repose angle</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the C++ output data as an ES6 module -->
+    <script type="module">
+        import { faultData } from './test_fault.js';
+
+        const GRID_SIZE = faultData.grid_size || 80;
+        const CELL_SIZE = 1000 / GRID_SIZE;
+
+        let stepIndex = 0;
+        const totalSteps = faultData.steps.length - 1;
+        let animationInterval = null;
+
+        // DOM elements
+        const gridSvg = document.getElementById('grid-svg');
+        const isoSvg = document.getElementById('iso-svg');
+        const visContainer = document.getElementById('vis-container');
+        const animateBtn = document.getElementById('animate-btn');
+        const showFinalBtn = document.getElementById('show-final-btn');
+
+        // Telemetry DOM elements
+        const telStep = document.getElementById('tel-step');
+        const telAge = document.getElementById('tel-age');
+        const telThrow = document.getElementById('tel-throw');
+        const telCoord = document.getElementById('tel-coord');
+        const telSoil = document.getElementById('tel-soil');
+
+        function initDashboard() {
+            // Set slice index input limits dynamically based on the grid size
+            const sliceInput = document.getElementById('slice-idx-input');
+            sliceInput.max = GRID_SIZE - 1;
+            sliceInput.value = Math.floor(GRID_SIZE / 2);
+
+            updateStep(0);
+
+            // Set up hover telemetry listeners on the visualizer container
+            visContainer.addEventListener('mousemove', handleHoverTelemetry);
+            animateBtn.addEventListener('click', togglePlay);
+            showFinalBtn.addEventListener('click', showFinalState);
+
+            // Set up slice controls event listeners
+            document.getElementById('slice-type-select').addEventListener('change', () => {
+                renderGridState(stepIndex);
+            });
+            document.getElementById('slice-idx-input').addEventListener('input', () => {
+                let val = parseInt(document.getElementById('slice-idx-input').value) || 0;
+                val = Math.max(0, Math.min(GRID_SIZE - 1, val));
+                document.getElementById('slice-idx-input').value = val;
+                renderGridState(stepIndex);
+            });
+        }
+
+        function renderGridState(idx) {
+            stepIndex = idx;
+            telStep.textContent = idx;
+            telAge.textContent = `${(idx * 1000).toLocaleString()} yr`;
+            telThrow.textContent = `${(idx * (5.5 / totalSteps)).toFixed(2)}m`;
+
+            gridSvg.innerHTML = '';
+            const stepData = faultData.steps[idx];
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const H_soil = stepData.grid_H_soil[y][x];
+
+                    // Compute slopes for 3D hillshading (light source from top-left)
+                    const h_L = x > 0 ? stepData.grid_H_soil[y][x-1] : H_soil;
+                    const h_R = x < GRID_SIZE - 1 ? stepData.grid_H_soil[y][x+1] : H_soil;
+                    const h_T = y > 0 ? stepData.grid_H_soil[y-1][x] : H_soil;
+                    const h_B = y < GRID_SIZE - 1 ? stepData.grid_H_soil[y+1][x] : H_soil;
+                    
+                    const dx = h_R - h_L;
+                    const dy = h_B - h_T;
+                    const shadow = 1.0 - 0.20 * dx - 0.20 * dy;
+                    const shadeFactor = Math.max(0.55, Math.min(1.45, shadow));
+
+                    // Normalization scale for soil height (range -3.0m to 3.0m)
+                    const normH = Math.max(0.0, Math.min(1.0, (H_soil + 3.0) / 6.0));
+                    
+                    // High: brown (151, 80, 50), Low: teal (34, 110, 94)
+                    let sr = Math.round(Math.max(0, Math.min(255, (34 + (151 - 34) * normH) * shadeFactor)));
+                    let sg = Math.round(Math.max(0, Math.min(255, (110 + (80 - 110) * normH) * shadeFactor)));
+                    let sb = Math.round(Math.max(0, Math.min(255, (94 + (50 - 94) * normH) * shadeFactor)));
+
+                    const rectSoil = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rectSoil.setAttribute("x", x * CELL_SIZE);
+                    rectSoil.setAttribute("y", y * CELL_SIZE);
+                    rectSoil.setAttribute("width", CELL_SIZE);
+                    rectSoil.setAttribute("height", CELL_SIZE);
+                    rectSoil.setAttribute("fill", `rgb(${sr}, ${sg}, ${sb})`);
+                    rectSoil.setAttribute("stroke", "var(--grid-line)");
+                    gridSvg.appendChild(rectSoil);
+                }
+            }
+
+            // Draw Cross-Section Slice Line Overlay on 2D Top View
+            const sliceType = document.getElementById('slice-type-select').value;
+            const sliceIdx = parseInt(document.getElementById('slice-idx-input').value) || 0;
+            const sliceLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            if (sliceType === 'row') {
+                sliceLine.setAttribute("x1", 0);
+                sliceLine.setAttribute("y1", sliceIdx * CELL_SIZE + CELL_SIZE/2);
+                sliceLine.setAttribute("x2", 1000);
+                sliceLine.setAttribute("y2", sliceIdx * CELL_SIZE + CELL_SIZE/2);
+            } else {
+                sliceLine.setAttribute("x1", sliceIdx * CELL_SIZE + CELL_SIZE/2);
+                sliceLine.setAttribute("y1", 0);
+                sliceLine.setAttribute("x2", sliceIdx * CELL_SIZE + CELL_SIZE/2);
+                sliceLine.setAttribute("y2", 1000);
+            }
+            sliceLine.setAttribute("class", "slice-line");
+            gridSvg.appendChild(sliceLine);
+
+            renderSliceState(idx, sliceType, sliceIdx);
+            renderIsoState(idx);
+        }
+
+        function renderSliceState(idx, sliceType, sliceIdx) {
+            const stepData = faultData.steps[idx];
+            const H_soil = stepData.grid_H_soil;
+
+            const soilCoords = [];
+            for (let i = 0; i < GRID_SIZE; i++) {
+                let x_coord = i;
+                let y_coord = sliceIdx;
+                if (sliceType === 'col') {
+                    x_coord = sliceIdx;
+                    y_coord = i;
+                }
+
+                const x_bounded = Math.max(0, Math.min(GRID_SIZE - 1, x_coord));
+                const y_bounded = Math.max(0, Math.min(GRID_SIZE - 1, y_coord));
+                const soilVal = H_soil[y_bounded][x_bounded];
+
+                const svgX = (i / (GRID_SIZE - 1)) * 500;
+                
+                // Map elevation to Y-axis of the 500x150 SVG chart.
+                // Focus detail inside [-4.0m, 4.0m]
+                const minEl = -4.0;
+                const maxEl = 4.0;
+                const svgYSoil = 150 - Math.max(0, Math.min(150, ((soilVal - minEl) / (maxEl - minEl)) * 150));
+
+                soilCoords.push(`${svgX.toFixed(1)},${svgYSoil.toFixed(1)}`);
+            }
+
+            // Construct soil polygon (closes at bottom corners: bottom-right = 500,150; bottom-left = 0,150)
+            const soilPoints = soilCoords.join(" ") + " 500,150 0,150";
+            document.getElementById('cs-soil-poly').setAttribute('points', soilPoints);
+
+            // Draw vertical scale grid ticks
+            const gridlines = document.getElementById('cs-gridlines');
+            gridlines.innerHTML = '';
+
+            const minEl = -4.0;
+            const maxEl = 4.0;
+            for (let el = -3; el <= 3; el += 1) {
+                const y_svg = 150 - ((el - minEl) / (maxEl - minEl)) * 150;
+                
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", 0);
+                line.setAttribute("y1", y_svg);
+                line.setAttribute("x2", 500);
+                line.setAttribute("y2", y_svg);
+                line.setAttribute("stroke", "rgba(255,255,255,0.06)");
+                line.setAttribute("stroke-width", "1");
+                gridlines.appendChild(line);
+
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("x", 8);
+                text.setAttribute("y", y_svg - 3);
+                text.setAttribute("fill", "rgba(255,255,255,0.35)");
+                text.setAttribute("font-size", "8.5");
+                text.setAttribute("font-family", "monospace");
+                text.textContent = `${el > 0 ? '+' : ''}${el}m`;
+                gridlines.appendChild(text);
+            }
+        }
+
+        function renderIsoState(idx) {
+            const stepData = faultData.steps[idx];
+            const H_soil = stepData.grid_H_soil;
+
+            isoSvg.innerHTML = '';
+
+            // Calculate vertex elevations by averaging adjacent cells
+            const V_soil = Array.from({length: GRID_SIZE + 1}, () => new Float32Array(GRID_SIZE + 1));
+
+            for (let y = 0; y <= GRID_SIZE; y++) {
+                for (let x = 0; x <= GRID_SIZE; x++) {
+                    let count = 0;
+                    let sumSoil = 0;
+
+                    for (let dy = -1; dy <= 0; dy++) {
+                        for (let dx = -1; dx <= 0; dx++) {
+                            const cy = y + dy;
+                            const cx = x + dx;
+                            if (cy >= 0 && cy < GRID_SIZE && cx >= 0 && cx < GRID_SIZE) {
+                                sumSoil += H_soil[cy][cx];
+                                count++;
+                            }
+                        }
+                    }
+                    V_soil[y][x] = sumSoil / count;
+                }
+            }
+
+            // Helper to project grid coordinates to isometric layout
+            function projectIso(x, y, z) {
+                const spacing = 5.5; // Perfect 80x80 spacing
+                const heightScale = 15;
+                const baseElevation = 0.0;
+                
+                const px = 500 + (x - y) * 0.866 * spacing;
+                const py = 150 + (x + y) * 0.5 * spacing - (z - baseElevation) * heightScale;
+                return { x: px, y: py };
+            }
+
+            const rgbToHex = (r, g, b) => "#" + [r, g, b].map(w => w.toString(16).padStart(2, '0')).join('');
+
+            // Render grid quads (painter's algorithm)
+            for (let sum = 0; sum <= 2 * (GRID_SIZE - 1); sum++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    let y = sum - x;
+                    if (y >= 0 && y < GRID_SIZE) {
+                        const pSoilA = projectIso(x, y, V_soil[y][x]);
+                        const pSoilB = projectIso(x + 1, y, V_soil[y][x + 1]);
+                        const pSoilC = projectIso(x + 1, y + 1, V_soil[y + 1][x + 1]);
+                        const pSoilD = projectIso(x, y + 1, V_soil[y + 1][x]);
+
+                        // Soil shading based on slope
+                        const h_L = V_soil[y][x];
+                        const h_R = V_soil[y][x + 1];
+                        const h_T = V_soil[y][x];
+                        const h_B = V_soil[y + 1][x];
+                        const dx = h_R - h_L;
+                        const dy = h_B - h_T;
+                        const shadow = 1.0 - 0.20 * dx - 0.20 * dy;
+                        const shadeFactor = Math.max(0.55, Math.min(1.45, shadow));
+
+                        // Height color coding
+                        const cellH = H_soil[y][x];
+                        const normH = Math.max(0.0, Math.min(1.0, (cellH + 3.0) / 6.0));
+                        let sr = Math.round(Math.max(0, Math.min(255, (34 + (151 - 34) * normH) * shadeFactor)));
+                        let sg = Math.round(Math.max(0, Math.min(255, (110 + (80 - 110) * normH) * shadeFactor)));
+                        let sb = Math.round(Math.max(0, Math.min(255, (94 + (50 - 94) * normH) * shadeFactor)));
+                        const soilColor = rgbToHex(sr, sg, sb);
+
+                        // Draw Soil Quad
+                        const soilPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                        soilPoly.setAttribute("points", `${pSoilA.x.toFixed(1)},${pSoilA.y.toFixed(1)} ${pSoilB.x.toFixed(1)},${pSoilB.y.toFixed(1)} ${pSoilC.x.toFixed(1)},${pSoilC.y.toFixed(1)} ${pSoilD.x.toFixed(1)},${pSoilD.y.toFixed(1)}`);
+                        soilPoly.setAttribute("fill", soilColor);
+                        soilPoly.setAttribute("stroke", "rgba(0,0,0,0.15)");
+                        soilPoly.setAttribute("stroke-width", "0.4");
+                        isoSvg.appendChild(soilPoly);
+
+                        // Draw topographic contours
+                        const contourLevels = [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0];
+                        const corners = [
+                            { p: pSoilA, z: V_soil[y][x] },
+                            { p: pSoilB, z: V_soil[y][x + 1] },
+                            { p: pSoilC, z: V_soil[y + 1][x + 1] },
+                            { p: pSoilD, z: V_soil[y + 1][x] }
+                        ];
+
+                        contourLevels.forEach(zc => {
+                            const crossings = [];
+                            for (let i = 0; i < 4; i++) {
+                                const c1 = corners[i];
+                                const c2 = corners[(i + 1) % 4];
+                                const minZ = Math.min(c1.z, c2.z);
+                                const maxZ = Math.max(c1.z, c2.z);
+                                if (zc >= minZ && zc < maxZ && maxZ > minZ) {
+                                    const t = (zc - c1.z) / (c2.z - c1.z);
+                                    const px = c1.p.x + t * (c2.p.x - c1.p.x);
+                                    const py = c1.p.y + t * (c2.p.y - c1.p.y);
+                                    crossings.push({ x: px, y: py });
+                                }
+                            }
+                            if (crossings.length >= 2) {
+                                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                                line.setAttribute("x1", crossings[0].x.toFixed(1));
+                                line.setAttribute("y1", crossings[0].y.toFixed(1));
+                                line.setAttribute("x2", crossings[1].x.toFixed(1));
+                                line.setAttribute("y2", crossings[1].y.toFixed(1));
+                                line.setAttribute("stroke", "rgba(255,255,255,0.06)");
+                                line.setAttribute("stroke-width", "0.7");
+                                isoSvg.appendChild(line);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        function handleHoverTelemetry(e) {
+            const rect = visContainer.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+
+            // Map mouse coordinates to grid cells
+            const cellSizeOnCanvas = rect.width / GRID_SIZE;
+            const x = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(px / cellSizeOnCanvas)));
+            const y = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(py / cellSizeOnCanvas)));
+
+            const stepData = faultData.steps[stepIndex];
+            const H_soil = stepData.grid_H_soil[y][x];
+
+            telCoord.textContent = `(${x}, ${y})`;
+            telSoil.textContent = `${H_soil.toFixed(2)} m`;
+        }
+
+        function updateStep(step) {
+            renderGridState(step);
+        }
+
+        function animateTectonics() {
+            if (stepIndex >= totalSteps) {
+                stepIndex = 0;
+            }
+            animationInterval = setInterval(() => {
+                if (stepIndex >= totalSteps) {
+                    clearInterval(animationInterval);
+                    animationInterval = null;
+                    animateBtn.textContent = "Play Tectonics";
+                } else {
+                    stepIndex++;
+                    renderGridState(stepIndex);
+                }
+            }, 60);
+        }
+
+        function togglePlay() {
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+                animateBtn.textContent = "Play Tectonics";
+            } else {
+                animateBtn.textContent = "Pause";
+                animateTectonics();
+            }
+        }
+
+        function showFinalState() {
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+                animateBtn.textContent = "Play Tectonics";
+            }
+            updateStep(totalSteps);
+        }
+
+        // Initialize dashboard on load
+        initDashboard();
+    </script>
+</body>
+</html>
