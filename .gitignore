@@ -73,3 +73,13 @@ geo/test/unit_tests_run.h
 fs/cpp/test_server
 fs/cpp/test_links
 fs/cpp/test_pubsub
+
+# Local timelapse & scratch directories
+timelapse/
+scratch/
+zenoh_config_*.json
+geo/rule_test_spun_surface.actual.png
+pio/include/zenoh_log_decl.h
+geo/cgal/zenoh-c/
+geo/cgal/zenoh/
+

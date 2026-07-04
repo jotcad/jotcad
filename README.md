@@ -63,8 +63,12 @@ node orchestrator.js webcam
 ```
 
 This starts the secure VFS Webcam Node, which:
-* Registers a lazy, on-demand VFS provider under the path `jot/webcam/capture` (only spawns `ffmpeg` capture on-demand when requested by a subscriber/browser).
+* Registers a lazy, on-demand VFS provider under the path `jot/webcam/capture` (utilizes mutex locking to serialize V4L2 device access and share capture promises).
 * Serves a secure HTTPS interface at `https://localhost:8080` with a live reload preview.
+* Serves an MJPEG live stream route at `/stream` and single-frame captures at `/image`.
+* Supports automated background timelapse frame capture every 10 seconds, organizing frames into YYYY-MM-DD subdirectories (`timelapse/2026-07-04/frame_00001.jpg`).
+* Features an on-demand video compiler endpoint at `/timelapse.mp4` supporting HTTP range requests for seeking and duration metadata, compiling at 5 FPS with an explicit text timestamp overlay.
+* Exposes a frame count API at `/timelapse/count` supporting frontend AJAX polling.
 * Integrates with the Zenoh mesh, exposing standard VFS routing endpoints under `https://localhost:8080/vfs`.
 
 ## Documentation

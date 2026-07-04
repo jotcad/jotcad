@@ -11,37 +11,92 @@ const id = process.env.VFS_ID || 'webcam-node';
 const PORT = parseInt(process.env.PORT || '8080');
 const DEVICE = process.env.WEBCAM_DEVICE || '/dev/video0';
 const neighbors = (process.env.NEIGHBORS || '').split(',').filter(Boolean);
+const timelapseDir = path.resolve('./timelapse');
 
 // 1. Initialize the VFS instance
 const storageDir = path.resolve(`.vfs_storage_${id}`);
 const vfs = new VFS({ id, storage: new DiskStorage(storageDir) });
 await vfs.init();
 
+// Mutex lock to serialize webcam access and prevent simultaneous ffmpeg processes from colliding on /dev/video0
+let activeCapturePromise = null;
+
+function captureFrameDirect() {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-f', 'v4l2',
+      '-i', DEVICE,
+      '-vf', "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='%{localtime\\:%Y-%m-%d %H-%M-%S}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.4:x=10:y=10",
+      '-frames:v', '1',
+      '-f', 'image2pipe',
+      '-vcodec', 'mjpeg',
+      '-'
+    ]);
+
+    const timeout = setTimeout(() => {
+      ffmpeg.kill('SIGKILL');
+      reject(new Error('ffmpeg capture timed out after 5000ms'));
+    }, 5000);
+
+    const chunks = [];
+    ffmpeg.stdout.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+
+    ffmpeg.on('close', (code) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve(Buffer.concat(chunks));
+      } else {
+        reject(new Error(`ffmpeg exited with code ${code}`));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}
+
+async function getFrameSerialized() {
+  if (activeCapturePromise) {
+    // Return existing capture promise if one is already running
+    return activeCapturePromise;
+  }
+
+  activeCapturePromise = (async () => {
+    try {
+      return await captureFrameDirect();
+    } finally {
+      activeCapturePromise = null;
+    }
+  })();
+
+  return activeCapturePromise;
+}
+
 // 2. Register the VFS provider for the webcam capture operation
 vfs.registerProvider('jot/webcam/capture', async (vfsInstance, selector, context) => {
-  const ffmpeg = spawn('ffmpeg', [
-    '-f', 'v4l2',
-    '-i', DEVICE,
-    '-frames:v', '1',
-    '-f', 'image2pipe',
-    '-vcodec', 'mjpeg',
-    '-'
-  ]);
-
-  const webStream = Readable.toWeb(ffmpeg.stdout);
-
-  // Error handling for ffmpeg process
-  ffmpeg.on('error', (err) => {
-    console.error('[Webcam Provider] ffmpeg process error:', err);
-  });
-
-  return {
-    stream: webStream,
-    metadata: {
-      encoding: 'bytes',
-      filename: 'capture.jpg'
-    }
-  };
+  try {
+    const buffer = await getFrameSerialized();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(buffer));
+        controller.close();
+      }
+    });
+    return {
+      stream,
+      metadata: {
+        encoding: 'bytes',
+        filename: 'capture.jpg'
+      }
+    };
+  } catch (err) {
+    console.error('[Webcam Provider] Failed to capture frame:', err);
+    throw err;
+  }
 });
 
 // Helper to prune old cached files from storageDir in the background
@@ -80,7 +135,7 @@ const requestHandler = async (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JotCAD VFS Webcam Server</title>
+  <title>JotCAD VFS Webcam & Timelapse Server</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -96,31 +151,60 @@ const requestHandler = async (req, res) => {
       box-sizing: border-box;
     }
     h1 {
-      margin-bottom: 20px;
-      font-size: 24px;
+      margin-bottom: 30px;
+      font-size: 28px;
       font-weight: 600;
     }
-    .video-container {
-      background: #202024;
-      border-radius: 8px;
-      padding: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-      max-width: 100%;
+    .main-layout {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 1400px;
+      width: 100%;
     }
-    img {
-      display: block;
-      max-width: 100%;
-      height: auto;
-      border-radius: 4px;
+    .video-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #1a1a1e;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+      flex: 1;
+      min-width: 340px;
+      max-width: 640px;
+    }
+    h3 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      font-weight: 500;
+      color: #98a5b9;
+    }
+    .video-container {
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      width: 100%;
+      aspect-ratio: 4/3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    img, video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
       background: #000;
     }
     .controls {
       margin-top: 20px;
       display: flex;
       gap: 10px;
+      width: 100%;
+      justify-content: center;
     }
     button {
-      background: #4f46e5;
       color: #fff;
       border: none;
       padding: 10px 20px;
@@ -130,73 +214,295 @@ const requestHandler = async (req, res) => {
       font-weight: 500;
       transition: background 0.2s;
     }
-    button:hover {
-      background: #4338ca;
-    }
   </style>
 </head>
 <body>
-  <h1>VFS Webcam Feed</h1>
-  <div class="video-container">
-    <img id="feed" src="/image" alt="Webcam Live Feed" />
-  </div>
-  <div class="controls">
-    <button onclick="refreshImage()">Refresh Frame</button>
-    <button id="toggle-stream" onclick="toggleStream()">Start Auto-Refresh</button>
+  <h1>VFS Webcam & Timelapse</h1>
+  
+  <div class="main-layout">
+    <div class="video-section">
+      <h3>Live Feed</h3>
+      <div class="video-container">
+        <img id="feed" src="/stream" alt="Webcam Live Feed" />
+      </div>
+      <div class="controls">
+        <button id="btn-stream" onclick="playStream()" style="background: #10b981;">Play Live Video</button>
+        <button id="btn-refresh" onclick="refreshSingleFrame()" style="background: #4f46e5;">Capture Single Frame</button>
+      </div>
+    </div>
+    
+    <div class="video-section">
+      <h3>Timelapse Video (<span id="frame-count">0</span> frames collected)</h3>
+      <div class="video-container">
+        <video id="timelapse-player" controls>
+          <source id="video-src" src="/timelapse.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+      <div class="controls">
+        <button id="btn-rebuild" onclick="rebuildTimelapse()" style="background: #4f46e5;">Rebuild & Play Timelapse (5 FPS)</button>
+      </div>
+    </div>
   </div>
 
   <script>
-    let intervalId = null;
     const feed = document.getElementById('feed');
-    const toggleBtn = document.getElementById('toggle-stream');
+    const btnStream = document.getElementById('btn-stream');
+    const btnRefresh = document.getElementById('btn-refresh');
 
-    function refreshImage() {
-      feed.src = '/image?t=' + Date.now();
+    function playStream() {
+      feed.src = '/stream';
+      btnStream.style.background = '#10b981';
+      btnRefresh.style.background = '#4f46e5';
     }
 
-    function toggleStream() {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-        toggleBtn.innerText = 'Start Auto-Refresh';
-        toggleBtn.style.background = '#4f46e5';
-      } else {
-        refreshImage();
-        intervalId = setInterval(refreshImage, 1000);
-        toggleBtn.innerText = 'Stop Auto-Refresh';
-        toggleBtn.style.background = '#dc2626';
+    function refreshSingleFrame() {
+      feed.src = '/image?t=' + Date.now();
+      btnStream.style.background = '#4f46e5';
+      btnRefresh.style.background = '#10b981';
+    }
+
+    function rebuildTimelapse() {
+      const player = document.getElementById('timelapse-player');
+      const src = document.getElementById('video-src');
+      const btn = document.getElementById('btn-rebuild');
+      
+      btn.innerText = 'Rebuilding...';
+      btn.disabled = true;
+      btn.style.background = '#eab308'; // yellow loading
+
+      // Force a reload of the video source by appending timestamp
+      const newSrc = '/timelapse.mp4?t=' + Date.now();
+      src.src = newSrc;
+      player.load();
+      
+      player.oncanplay = () => {
+        player.play().catch(e => console.log('Autoplay blocked:', e));
+        btn.innerText = 'Rebuild & Play Timelapse (5 FPS)';
+        btn.disabled = false;
+        btn.style.background = '#4f46e5';
+      };
+      
+      player.onerror = () => {
+        btn.innerText = 'No Frames Found / Error';
+        btn.disabled = false;
+        btn.style.background = '#dc2626'; // red error
+      };
+    }
+
+    async function updateFrameCount() {
+      try {
+        const resp = await fetch('/timelapse/count');
+        if (resp.ok) {
+          const data = await resp.json();
+          document.getElementById('frame-count').innerText = data.count;
+        }
+      } catch (e) {
+        console.error('Failed to fetch frame count:', e);
       }
     }
+
+    // Periodically update the frame count
+    updateFrameCount();
+    setInterval(updateFrameCount, 5000);
   </script>
 </body>
 </html>
     `);
+  } else if (url.pathname === '/stream') {
+    res.writeHead(200, {
+      'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Connection': 'keep-alive',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+
+    const streamInterval = setInterval(async () => {
+      try {
+        const buffer = await getFrameSerialized();
+        res.write('--frame\r\n');
+        res.write('Content-Type: image/jpeg\r\n');
+        res.write(`Content-Length: ${buffer.length}\r\n\r\n`);
+        res.write(buffer);
+        res.write('\r\n');
+      } catch (err) {
+        console.error('[Webcam Stream] Frame capture failed:', err);
+      }
+    }, 1000);
+
+    req.on('close', () => {
+      clearInterval(streamInterval);
+      console.log('[Webcam Stream] Connection closed by client.');
+    });
   } else if (url.pathname === '/image') {
     try {
-      const t = url.searchParams.get('t') || String(Date.now());
-      const selector = new Selector('jot/webcam/capture', { t });
-      const result = await vfs.readSelector(selector);
+      const buffer = await getFrameSerialized();
 
-      // Trigger background pruning to prevent disk bloat
-      pruneStorage();
-
-      if (result && result.stream) {
-        res.writeHead(200, {
-          'Content-Type': 'image/jpeg',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        });
-        await pipeline(Readable.fromWeb(result.stream), res);
-      } else {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not Found');
-      }
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Content-Length': buffer.length,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      res.end(buffer);
     } catch (err) {
-      console.error('[Webcam Server] Error reading VFS Selector:', err);
+      console.error('[Webcam Server] Error retrieving image:', err);
       if (!res.headersSent) {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
         res.end('Failed to retrieve image from VFS.');
+      }
+    }
+  } else if (url.pathname === '/timelapse/count') {
+    try {
+      const files = await fs.promises.readdir(timelapseDir).catch(() => []);
+      let count = 0;
+      for (const file of files) {
+        const filePath = path.join(timelapseDir, file);
+        const stat = await fs.promises.stat(filePath).catch(() => null);
+        if (stat && stat.isDirectory() && file.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const subfiles = await fs.promises.readdir(filePath).catch(() => []);
+          count += subfiles.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
+        }
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      res.end(JSON.stringify({ count }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Error retrieving count.');
+    }
+  } else if (url.pathname === '/timelapse.mp4') {
+    const outputPath = path.join(timelapseDir, 'timelapse.mp4');
+
+    try {
+      // Clean up any 0-byte frame files in all date subdirectories to avoid breaking ffmpeg
+      const dateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
+      for (const dir of dateDirs) {
+        const dirPath = path.join(timelapseDir, dir);
+        const stat = await fs.promises.stat(dirPath).catch(() => null);
+        if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const files = await fs.promises.readdir(dirPath).catch(() => []);
+          for (const file of files) {
+            if (file.endsWith('.jpg')) {
+              const filePath = path.join(dirPath, file);
+              const stats = await fs.promises.stat(filePath).catch(() => null);
+              if (stats && stats.size === 0) {
+                await fs.promises.unlink(filePath).catch(() => {});
+              }
+            }
+          }
+        }
+      }
+
+      // Count remaining clean files
+      const cleanDateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
+      let totalFrames = 0;
+      for (const dir of cleanDateDirs) {
+        const dirPath = path.join(timelapseDir, dir);
+        const stat = await fs.promises.stat(dirPath).catch(() => null);
+        if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const files = await fs.promises.readdir(dirPath).catch(() => []);
+          totalFrames += files.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
+        }
+      }
+
+      if (totalFrames === 0) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('No timelapse frames collected yet.');
+        return;
+      }
+
+      console.log(`[Timelapse Video] Recompiling ${totalFrames} frames...`);
+
+      // Run ffmpeg using glob demuxer matching subdirectories at 5 FPS
+      const ffmpeg = spawn('ffmpeg', [
+        '-y',
+        '-framerate', '5',
+        '-pattern_type', 'glob',
+        '-i', path.join(timelapseDir, '*', 'frame_*.jpg'),
+        '-r', '5',
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        outputPath
+      ]);
+
+      ffmpeg.on('close', async (code) => {
+        if (code === 0) {
+          console.log('[Timelapse Video] Recompilation successful.');
+          
+          try {
+            const stat = await fs.promises.stat(outputPath);
+            const fileSize = stat.size;
+            const range = req.headers.range;
+
+            if (range) {
+              const parts = range.replace(/bytes=/, "").split("-");
+              const start = parseInt(parts[0], 10);
+              const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+              if (start >= fileSize || end >= fileSize) {
+                res.writeHead(416, {
+                  'Content-Range': `bytes */${fileSize}`,
+                  'Content-Type': 'text/plain'
+                });
+                res.end('Requested range not satisfiable.');
+                return;
+              }
+
+              const chunksize = (end - start) + 1;
+              res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': 'video/mp4',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+              });
+
+              const readStream = fs.createReadStream(outputPath, { start, end });
+              readStream.pipe(res);
+            } else {
+              res.writeHead(200, {
+                'Content-Length': fileSize,
+                'Content-Type': 'video/mp4',
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+              });
+              const readStream = fs.createReadStream(outputPath);
+              readStream.pipe(res);
+            }
+          } catch (statErr) {
+            console.error('[Timelapse Video] Failed to stat video file:', statErr);
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+              res.end('Failed to retrieve compiled video stats.');
+            }
+          }
+        } else {
+          console.error(`[Timelapse Video] ffmpeg exited with code ${code}`);
+          if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end('Failed to compile timelapse video.');
+          }
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        console.error('[Timelapse Video] ffmpeg spawn error:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Failed to start video compiler.');
+        }
+      });
+    } catch (err) {
+      console.error('[Timelapse Video] Error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end(err.message);
       }
     }
   } else if (url.pathname.startsWith('/vfs')) {
@@ -262,5 +568,110 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`HTTP VFS Routes exposed under: ${protocol}://0.0.0.0:${PORT}/vfs`);
   if (meshLink) {
     await meshLink.start();
+  }
+
+  // 8. Optional Timelapse Collector Loop
+  if (process.env.TIMELAPSE === 'true') {
+    const TIMELAPSE_INTERVAL = parseInt(process.env.TIMELAPSE_INTERVAL || '10000', 10); // default 10 seconds
+
+    if (!fs.existsSync(timelapseDir)) {
+      fs.mkdirSync(timelapseDir, { recursive: true });
+    }
+
+    // Migrate any existing frame_*.jpg files in root timelapseDir to date subfolders on startup based on their mtime
+    try {
+      const files = fs.readdirSync(timelapseDir);
+      for (const file of files) {
+        if (file.match(/^frame_\d+\.jpg$/)) {
+          const filePath = path.join(timelapseDir, file);
+          const stats = fs.statSync(filePath);
+          const dateStr = new Date(stats.mtimeMs).toISOString().split('T')[0]; // e.g. YYYY-MM-DD
+          const targetDir = path.join(timelapseDir, dateStr);
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          fs.renameSync(filePath, path.join(targetDir, file));
+          console.log(`[Timelapse] Migrated ${file} to ${dateStr}/`);
+        }
+      }
+    } catch (e) {
+      console.error('[Timelapse] Migration failed:', e);
+    }
+
+    // Find next sequential frame index by checking existing files in all YYYY-MM-DD subdirectories
+    let frameIndex = 1;
+    try {
+      const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
+        const fullPath = path.join(timelapseDir, f);
+        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
+      });
+      const frameNumbers = [];
+      for (const dir of dateDirs) {
+        const files = fs.readdirSync(path.join(timelapseDir, dir));
+        const numbers = files
+          .map(f => {
+            const match = f.match(/^frame_(\d+)\.jpg$/);
+            return match ? parseInt(match[1], 10) : 0;
+          })
+          .filter(n => n > 0);
+        frameNumbers.push(...numbers);
+      }
+      if (frameNumbers.length > 0) {
+        frameIndex = Math.max(...frameNumbers) + 1;
+      }
+    } catch (e) {
+      console.error('[Timelapse] Failed to scan timelapse directory:', e);
+    }
+
+    console.log(`[Timelapse] Starting collection every ${TIMELAPSE_INTERVAL}ms. Next index: ${frameIndex}`);
+
+    // Pre-clean 0-byte frame files at startup in date subdirectories
+    try {
+      const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
+        const fullPath = path.join(timelapseDir, f);
+        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
+      });
+      for (const dir of dateDirs) {
+        const dirPath = path.join(timelapseDir, dir);
+        const files = fs.readdirSync(dirPath);
+        for (const file of files) {
+          if (file.endsWith('.jpg')) {
+            const filePath = path.join(dirPath, file);
+            const stats = fs.statSync(filePath);
+            if (stats.size === 0) {
+              fs.unlinkSync(filePath);
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    setInterval(async () => {
+      try {
+        const t = Date.now();
+        const selector = new Selector('jot/webcam/capture', { t });
+        const result = await vfs.readSelector(selector);
+        
+        // Clean up old storage files to prevent bloat
+        pruneStorage();
+
+        if (result && result.stream) {
+          const dateStr = new Date().toISOString().split('T')[0];
+          const targetDir = path.join(timelapseDir, dateStr);
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          const filename = `frame_${String(frameIndex).padStart(5, '0')}.jpg`;
+          const filePath = path.join(targetDir, filename);
+          await pipeline(Readable.fromWeb(result.stream), fs.createWriteStream(filePath));
+          console.log(`[Timelapse] Saved frame: ${dateStr}/${filename}`);
+          frameIndex++;
+        } else {
+          console.warn('[Timelapse] Failed to capture frame: VFS stream was empty');
+        }
+      } catch (err) {
+        console.error('[Timelapse] Error capturing frame:', err);
+      }
+    }, TIMELAPSE_INTERVAL);
   }
 });

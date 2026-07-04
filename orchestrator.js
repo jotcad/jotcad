@@ -106,7 +106,7 @@ export const PROFILES = {
       zenoh_router: { type: 'zenoh_router', port: 9000 },
       ...getSplitOpsComponents(9000, 9091),
       export: { type: 'export', protocol: 'https', port: 9102, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
-      webcam: { type: 'webcam', protocol: 'https', port: 8080, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
+      webcam: { type: 'webcam', protocol: 'https', port: 8080, env: { NEIGHBORS: 'http://127.0.0.1:9000', TIMELAPSE: 'true' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live' }
     }
   },
@@ -117,7 +117,7 @@ export const PROFILES = {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
       ...getSplitOpsComponents(9200, 9191),
       export: { type: 'export', protocol: 'https', port: 9202, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
-      webcam: { type: 'webcam', protocol: 'https', port: 8180, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
+      webcam: { type: 'webcam', protocol: 'https', port: 8180, env: { NEIGHBORS: 'http://127.0.0.1:9200', TIMELAPSE: 'true' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   }
