@@ -1,10 +1,12 @@
 import http from 'http';
 import https from 'https';
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
+import { promisify } from 'util';
 import path from 'path';
+const execAsync = promisify(exec);
 import { VFS, DiskStorage, Selector, MeshLink, registerVFSRoutes } from './fs/src/index.js';
 
 const id = process.env.VFS_ID || 'webcam-node';
@@ -116,6 +118,17 @@ async function pruneStorage() {
   } catch (e) {}
 }
 
+async function getFrameCount(videoPath) {
+  try {
+    const { stdout } = await execAsync(`ffprobe -v error -select_streams v:0 -count_packets -show_entries stream=nb_read_packets -of csv=p=0 "${videoPath}"`);
+    const count = parseInt(stdout.trim(), 10);
+    return isNaN(count) ? 0 : count;
+  } catch (e) {
+    console.error(`[ffprobe] Failed to get frame count for ${videoPath}:`, e);
+    return 0;
+  }
+}
+
 // Helper to compile a specific hour directory into hour_HH.mp4
 async function compileHourVideo(dateStr, hourStr) {
   const hourDir = path.join(timelapseDir, dateStr, hourStr);
@@ -150,6 +163,7 @@ async function compileHourVideo(dateStr, hourStr) {
       '-framerate', '5',
       '-pattern_type', 'glob',
       '-i', path.join(hourDir, 'frame_*.jpg'),
+      '-vf', 'mpdecimate,setpts=N/5/TB',
       '-r', '5',
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
@@ -170,12 +184,15 @@ async function compileHourVideo(dateStr, hourStr) {
     ffmpeg.on('error', reject);
   });
 
+  // Get the true frame count from ffprobe (after mpdecimate has dropped duplicates)
+  const trueCount = await getFrameCount(hourVideoPath);
+
   // Write frame count metadata to a json file
-  fs.writeFileSync(hourVideoPath + '.json', JSON.stringify({ count: files.length }));
+  fs.writeFileSync(hourVideoPath + '.json', JSON.stringify({ count: trueCount }));
 
   // Delete source JPEGs and directory to save space
   fs.rmSync(hourDir, { recursive: true, force: true });
-  console.log(`[Timelapse] Cleaned up source JPEG folder: ${dateStr}/${hourStr}/`);
+  console.log(`[Timelapse] Cleaned up source JPEG folder: ${dateStr}/${hourStr}/ (Output: ${trueCount}/${files.length} frames)`);
 }
 
 // Helper to compile the full timelapse video on demand
@@ -241,6 +258,7 @@ async function compileVideo() {
             '-framerate', '5',
             '-pattern_type', 'glob',
             '-i', path.join(activeHourDir, 'frame_*.jpg'),
+            '-vf', 'mpdecimate,setpts=N/5/TB',
             '-r', '5',
             '-c:v', 'libx264',
             '-pix_fmt', 'yuv420p',
