@@ -116,6 +116,75 @@ async function pruneStorage() {
   } catch (e) {}
 }
 
+// Helper to compile the video from frames on demand
+async function compileVideo() {
+  // Clean up any 0-byte frame files in all date subdirectories to avoid breaking ffmpeg
+  const dateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
+  for (const dir of dateDirs) {
+    const dirPath = path.join(timelapseDir, dir);
+    const stat = await fs.promises.stat(dirPath).catch(() => null);
+    if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const files = await fs.promises.readdir(dirPath).catch(() => []);
+      for (const file of files) {
+        if (file.endsWith('.jpg')) {
+          const filePath = path.join(dirPath, file);
+          const stats = await fs.promises.stat(filePath).catch(() => null);
+          if (stats && stats.size === 0) {
+            await fs.promises.unlink(filePath).catch(() => {});
+          }
+        }
+      }
+    }
+  }
+
+  // Count remaining clean files
+  const cleanDateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
+  let totalFrames = 0;
+  for (const dir of cleanDateDirs) {
+    const dirPath = path.join(timelapseDir, dir);
+    const stat = await fs.promises.stat(dirPath).catch(() => null);
+    if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const files = await fs.promises.readdir(dirPath).catch(() => []);
+      totalFrames += files.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
+    }
+  }
+
+  if (totalFrames === 0) {
+    throw new Error('No timelapse frames collected yet.');
+  }
+
+  console.log(`[Timelapse Video] Recompiling ${totalFrames} frames...`);
+  const outputPath = path.join(timelapseDir, 'timelapse.mp4');
+
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-y',
+      '-framerate', '5',
+      '-pattern_type', 'glob',
+      '-i', path.join(timelapseDir, '*', 'frame_*.jpg'),
+      '-r', '5',
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-g', '1',
+      '-movflags', '+faststart',
+      outputPath
+    ]);
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        console.log('[Timelapse Video] Recompilation successful.');
+        resolve();
+      } else {
+        reject(new Error(`ffmpeg exited with code ${code}`));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
 // 3. Detect and configure SSL certificates
 const sslDir = path.resolve('./.ssl');
 const keyPath = path.join(sslDir, 'localhost-key.pem');
@@ -262,7 +331,7 @@ const requestHandler = async (req, res) => {
       btnRefresh.style.background = '#10b981';
     }
 
-    function rebuildTimelapse() {
+    async function rebuildTimelapse() {
       const player = document.getElementById('timelapse-player');
       const src = document.getElementById('video-src');
       const btn = document.getElementById('btn-rebuild');
@@ -271,23 +340,28 @@ const requestHandler = async (req, res) => {
       btn.disabled = true;
       btn.style.background = '#eab308'; // yellow loading
 
-      // Force a reload of the video source by appending timestamp
-      const newSrc = '/timelapse.mp4?t=' + Date.now();
-      src.src = newSrc;
-      player.load();
-      
-      player.oncanplay = () => {
-        player.play().catch(e => console.log('Autoplay blocked:', e));
-        btn.innerText = 'Rebuild & Play Timelapse (5 FPS)';
-        btn.disabled = false;
-        btn.style.background = '#4f46e5';
-      };
-      
-      player.onerror = () => {
+      try {
+        const resp = await fetch('/timelapse/rebuild');
+        if (!resp.ok) {
+          throw new Error('Rebuild failed');
+        }
+
+        // Force a reload of the video source by appending timestamp
+        const newSrc = '/timelapse.mp4?t=' + Date.now();
+        src.src = newSrc;
+        player.load();
+        
+        player.oncanplay = () => {
+          player.play().catch(e => console.log('Autoplay blocked:', e));
+          btn.innerText = 'Rebuild & Play Timelapse (5 FPS)';
+          btn.disabled = false;
+          btn.style.background = '#4f46e5';
+        };
+      } catch (e) {
         btn.innerText = 'No Frames Found / Error';
         btn.disabled = false;
         btn.style.background = '#dc2626'; // red error
-      };
+      }
     }
 
     async function updateFrameCount() {
@@ -375,129 +449,68 @@ const requestHandler = async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Error retrieving count.');
     }
+  } else if (url.pathname === '/timelapse/rebuild') {
+    try {
+      await compileVideo();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    } catch (err) {
+      console.error('[Timelapse Rebuild] Error:', err);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(err.message);
+    }
   } else if (url.pathname === '/timelapse.mp4') {
     const outputPath = path.join(timelapseDir, 'timelapse.mp4');
 
     try {
-      // Clean up any 0-byte frame files in all date subdirectories to avoid breaking ffmpeg
-      const dateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
-      for (const dir of dateDirs) {
-        const dirPath = path.join(timelapseDir, dir);
-        const stat = await fs.promises.stat(dirPath).catch(() => null);
-        if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          const files = await fs.promises.readdir(dirPath).catch(() => []);
-          for (const file of files) {
-            if (file.endsWith('.jpg')) {
-              const filePath = path.join(dirPath, file);
-              const stats = await fs.promises.stat(filePath).catch(() => null);
-              if (stats && stats.size === 0) {
-                await fs.promises.unlink(filePath).catch(() => {});
-              }
-            }
-          }
-        }
+      if (!fs.existsSync(outputPath)) {
+        await compileVideo();
       }
 
-      // Count remaining clean files
-      const cleanDateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
-      let totalFrames = 0;
-      for (const dir of cleanDateDirs) {
-        const dirPath = path.join(timelapseDir, dir);
-        const stat = await fs.promises.stat(dirPath).catch(() => null);
-        if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          const files = await fs.promises.readdir(dirPath).catch(() => []);
-          totalFrames += files.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
+      const stat = await fs.promises.stat(outputPath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+
+      console.log(`[Timelapse Stream] Range header: "${range || 'none'}" | File size: ${fileSize}`);
+
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (start >= fileSize || end >= fileSize) {
+          console.warn(`[Timelapse Stream] Out of range: ${start}-${end} (file size ${fileSize})`);
+          res.writeHead(416, {
+            'Content-Range': `bytes */${fileSize}`,
+            'Content-Type': 'text/plain'
+          });
+          res.end('Requested range not satisfiable.');
+          return;
         }
+
+        const chunksize = (end - start) + 1;
+        console.log(`[Timelapse Stream] Responding 206: bytes ${start}-${end}/${fileSize} | Chunk size: ${chunksize}`);
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': 'video/mp4',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+
+        const readStream = fs.createReadStream(outputPath, { start, end });
+        readStream.pipe(res);
+      } else {
+        console.log(`[Timelapse Stream] Responding 200: full file size ${fileSize}`);
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        const readStream = fs.createReadStream(outputPath);
+        readStream.pipe(res);
       }
-
-      if (totalFrames === 0) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('No timelapse frames collected yet.');
-        return;
-      }
-
-      console.log(`[Timelapse Video] Recompiling ${totalFrames} frames...`);
-
-      // Run ffmpeg using glob demuxer matching subdirectories at 5 FPS
-      const ffmpeg = spawn('ffmpeg', [
-        '-y',
-        '-framerate', '5',
-        '-pattern_type', 'glob',
-        '-i', path.join(timelapseDir, '*', 'frame_*.jpg'),
-        '-r', '5',
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        '-movflags', '+faststart',
-        outputPath
-      ]);
-
-      ffmpeg.on('close', async (code) => {
-        if (code === 0) {
-          console.log('[Timelapse Video] Recompilation successful.');
-          
-          try {
-            const stat = await fs.promises.stat(outputPath);
-            const fileSize = stat.size;
-            const range = req.headers.range;
-
-            if (range) {
-              const parts = range.replace(/bytes=/, "").split("-");
-              const start = parseInt(parts[0], 10);
-              const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-              if (start >= fileSize || end >= fileSize) {
-                res.writeHead(416, {
-                  'Content-Range': `bytes */${fileSize}`,
-                  'Content-Type': 'text/plain'
-                });
-                res.end('Requested range not satisfiable.');
-                return;
-              }
-
-              const chunksize = (end - start) + 1;
-              res.writeHead(206, {
-                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunksize,
-                'Content-Type': 'video/mp4',
-                'Cache-Control': 'no-cache, no-store, must-revalidate'
-              });
-
-              const readStream = fs.createReadStream(outputPath, { start, end });
-              readStream.pipe(res);
-            } else {
-              res.writeHead(200, {
-                'Content-Length': fileSize,
-                'Content-Type': 'video/mp4',
-                'Accept-Ranges': 'bytes',
-                'Cache-Control': 'no-cache, no-store, must-revalidate'
-              });
-              const readStream = fs.createReadStream(outputPath);
-              readStream.pipe(res);
-            }
-          } catch (statErr) {
-            console.error('[Timelapse Video] Failed to stat video file:', statErr);
-            if (!res.headersSent) {
-              res.writeHead(500, { 'Content-Type': 'text/plain' });
-              res.end('Failed to retrieve compiled video stats.');
-            }
-          }
-        } else {
-          console.error(`[Timelapse Video] ffmpeg exited with code ${code}`);
-          if (!res.headersSent) {
-            res.writeHead(500, { 'Content-Type': 'text/plain' });
-            res.end('Failed to compile timelapse video.');
-          }
-        }
-      });
-
-      ffmpeg.on('error', (err) => {
-        console.error('[Timelapse Video] ffmpeg spawn error:', err);
-        if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end('Failed to start video compiler.');
-        }
-      });
     } catch (err) {
       console.error('[Timelapse Video] Error:', err);
       if (!res.headersSent) {
