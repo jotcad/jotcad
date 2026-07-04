@@ -116,73 +116,214 @@ async function pruneStorage() {
   } catch (e) {}
 }
 
-// Helper to compile the video from frames on demand
-async function compileVideo() {
-  // Clean up any 0-byte frame files in all date subdirectories to avoid breaking ffmpeg
-  const dateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
-  for (const dir of dateDirs) {
-    const dirPath = path.join(timelapseDir, dir);
-    const stat = await fs.promises.stat(dirPath).catch(() => null);
-    if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const files = await fs.promises.readdir(dirPath).catch(() => []);
-      for (const file of files) {
-        if (file.endsWith('.jpg')) {
-          const filePath = path.join(dirPath, file);
-          const stats = await fs.promises.stat(filePath).catch(() => null);
-          if (stats && stats.size === 0) {
-            await fs.promises.unlink(filePath).catch(() => {});
-          }
-        }
+// Helper to compile a specific hour directory into hour_HH.mp4
+async function compileHourVideo(dateStr, hourStr) {
+  const hourDir = path.join(timelapseDir, dateStr, hourStr);
+  const hourVideoPath = path.join(timelapseDir, dateStr, `hour_${hourStr}.mp4`);
+
+  if (!fs.existsSync(hourDir)) return;
+
+  // Clean 0-byte files in the folder
+  try {
+    const files = fs.readdirSync(hourDir);
+    for (const file of files) {
+      const filePath = path.join(hourDir, file);
+      const stats = fs.statSync(filePath);
+      if (stats.size === 0) {
+        fs.unlinkSync(filePath);
       }
     }
+  } catch (e) {}
+
+  const files = fs.readdirSync(hourDir).filter(f => f.match(/^frame_\d+\.jpg$/));
+  if (files.length === 0) {
+    // Empty directory, just remove it
+    fs.rmSync(hourDir, { recursive: true, force: true });
+    return;
   }
 
-  // Count remaining clean files
-  const cleanDateDirs = await fs.promises.readdir(timelapseDir).catch(() => []);
-  let totalFrames = 0;
-  for (const dir of cleanDateDirs) {
-    const dirPath = path.join(timelapseDir, dir);
-    const stat = await fs.promises.stat(dirPath).catch(() => null);
-    if (stat && stat.isDirectory() && dir.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const files = await fs.promises.readdir(dirPath).catch(() => []);
-      totalFrames += files.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
-    }
-  }
+  console.log(`[Timelapse] Pre-compiling hourly video for ${dateStr} ${hourStr}:00 (${files.length} frames)...`);
 
-  if (totalFrames === 0) {
-    throw new Error('No timelapse frames collected yet.');
-  }
-
-  console.log(`[Timelapse Video] Recompiling ${totalFrames} frames...`);
-  const outputPath = path.join(timelapseDir, 'timelapse.mp4');
-
-  return new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', [
       '-y',
       '-framerate', '5',
       '-pattern_type', 'glob',
-      '-i', path.join(timelapseDir, '*', 'frame_*.jpg'),
+      '-i', path.join(hourDir, 'frame_*.jpg'),
       '-r', '5',
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
       '-g', '1',
       '-movflags', '+faststart',
-      outputPath
+      hourVideoPath
     ]);
 
     ffmpeg.on('close', (code) => {
       if (code === 0) {
-        console.log('[Timelapse Video] Recompilation successful.');
+        console.log(`[Timelapse] Successfully compiled hourly video: hour_${hourStr}.mp4`);
         resolve();
       } else {
-        reject(new Error(`ffmpeg exited with code ${code}`));
+        reject(new Error(`ffmpeg hourly exited with code ${code}`));
       }
     });
 
-    ffmpeg.on('error', (err) => {
-      reject(err);
-    });
+    ffmpeg.on('error', reject);
   });
+
+  // Write frame count metadata to a json file
+  fs.writeFileSync(hourVideoPath + '.json', JSON.stringify({ count: files.length }));
+
+  // Delete source JPEGs and directory to save space
+  fs.rmSync(hourDir, { recursive: true, force: true });
+  console.log(`[Timelapse] Cleaned up source JPEG folder: ${dateStr}/${hourStr}/`);
+}
+
+// Helper to compile the full timelapse video on demand
+async function compileVideo() {
+  const tempActivePath = path.join(timelapseDir, 'temp_active_hour.mp4');
+  const concatListPath = path.join(timelapseDir, 'concat_list.txt');
+  const outputPath = path.join(timelapseDir, 'timelapse.mp4');
+
+  try {
+    const now = new Date();
+    const activeDayStr = now.toISOString().split('T')[0];
+    const activeHourStr = String(now.getHours()).padStart(2, '0');
+
+    // 0. Auto-backfill any past completed hour JPEG directories that haven't been compiled yet
+    try {
+      const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
+        const fullPath = path.join(timelapseDir, f);
+        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
+      });
+
+      for (const dateDir of dateDirs) {
+        const datePath = path.join(timelapseDir, dateDir);
+        const hourDirs = fs.readdirSync(datePath).filter(f => {
+          const fullPath = path.join(datePath, f);
+          return fs.statSync(fullPath).isDirectory() && f.match(/^\d{2}$/);
+        });
+
+        for (const hourDir of hourDirs) {
+          if (dateDir !== activeDayStr || hourDir !== activeHourStr) {
+            await compileHourVideo(dateDir, hourDir).catch(err => {
+              console.error(`[Timelapse Rebuild] Failed to backfill compilation for past hour ${dateDir}/${hourDir}:`, err);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Timelapse Rebuild] On-demand backfill failed:', e);
+    }
+
+    // 1. Compile the active hour's JPEGs to a temporary video
+    const activeHourDir = path.join(timelapseDir, activeDayStr, activeHourStr);
+
+    let hasActiveFrames = false;
+    if (fs.existsSync(activeHourDir)) {
+      // Clean 0-byte files in active folder
+      try {
+        const files = fs.readdirSync(activeHourDir);
+        for (const file of files) {
+          const filePath = path.join(activeHourDir, file);
+          const stats = fs.statSync(filePath);
+          if (stats.size === 0) {
+            fs.unlinkSync(filePath);
+          }
+        }
+      } catch (e) {}
+
+      const activeJpegs = fs.readdirSync(activeHourDir).filter(f => f.match(/^frame_\d+\.jpg$/));
+      if (activeJpegs.length > 0) {
+        console.log(`[Timelapse Rebuild] Compiling temporary active hour video (${activeJpegs.length} frames)...`);
+        await new Promise((resolve, reject) => {
+          const ffmpeg = spawn('ffmpeg', [
+            '-y',
+            '-framerate', '5',
+            '-pattern_type', 'glob',
+            '-i', path.join(activeHourDir, 'frame_*.jpg'),
+            '-r', '5',
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-g', '1',
+            '-movflags', '+faststart',
+            tempActivePath
+          ]);
+          ffmpeg.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`ffmpeg active hour compile failed with code ${code}`));
+          });
+          ffmpeg.on('error', reject);
+        });
+        hasActiveFrames = true;
+      }
+    }
+
+    // 2. Gather all pre-compiled hourly videos in chronological order
+    const dateDirs = fs.readdirSync(timelapseDir)
+      .filter(f => {
+        const fullPath = path.join(timelapseDir, f);
+        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
+      })
+      .sort(); // sort day directories chronologically (alphabetical order works because format is YYYY-MM-DD)
+
+    const videoSegments = [];
+    for (const dateDir of dateDirs) {
+      const datePath = path.join(timelapseDir, dateDir);
+      const files = fs.readdirSync(datePath)
+        .filter(f => f.match(/^hour_\d{2}\.mp4$/))
+        .sort(); // sort hours chronologically (e.g. hour_09.mp4 < hour_10.mp4)
+      for (const file of files) {
+        videoSegments.push(path.join(datePath, file));
+      }
+    }
+
+    if (hasActiveFrames) {
+      videoSegments.push(tempActivePath);
+    }
+
+    if (videoSegments.length === 0) {
+      throw new Error('No hourly video segments or active frames found to compile.');
+    }
+
+    console.log(`[Timelapse Rebuild] Concatenating ${videoSegments.length} hourly segments...`);
+
+    // 3. If there is only one segment, we can just copy it directly to outputPath
+    if (videoSegments.length === 1) {
+      fs.copyFileSync(videoSegments[0], outputPath);
+    } else {
+      // Write the file list for concat demuxer
+      const listContent = videoSegments.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
+      fs.writeFileSync(concatListPath, listContent);
+
+      // Run ffmpeg concat demuxer with fast copy
+      await new Promise((resolve, reject) => {
+        const ffmpeg = spawn('ffmpeg', [
+          '-y',
+          '-f', 'concat',
+          '-safe', '0',
+          '-i', concatListPath,
+          '-c', 'copy',
+          '-movflags', '+faststart',
+          outputPath
+        ]);
+        ffmpeg.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`ffmpeg concat failed with code ${code}`));
+        });
+        ffmpeg.on('error', reject);
+      });
+    }
+
+    console.log('[Timelapse Rebuild] Timelapse video successfully stitched.');
+  } finally {
+    // Clean up temporary files
+    if (fs.existsSync(tempActivePath)) {
+      fs.rmSync(tempActivePath, { force: true });
+    }
+    if (fs.existsSync(concatListPath)) {
+      fs.rmSync(concatListPath, { force: true });
+    }
+  }
 }
 
 // 3. Detect and configure SSL certificates
@@ -437,7 +578,24 @@ const requestHandler = async (req, res) => {
         const stat = await fs.promises.stat(filePath).catch(() => null);
         if (stat && stat.isDirectory() && file.match(/^\d{4}-\d{2}-\d{2}$/)) {
           const subfiles = await fs.promises.readdir(filePath).catch(() => []);
-          count += subfiles.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
+          // Add counts from all JSON metadata files
+          for (const subfile of subfiles) {
+            if (subfile.endsWith('.mp4.json')) {
+              try {
+                const meta = JSON.parse(fs.readFileSync(path.join(filePath, subfile), 'utf8'));
+                count += meta.count || 0;
+              } catch (e) {}
+            }
+          }
+          // Also count any frames in active hour directory (which are JPEGs)
+          const hourDirs = subfiles.filter(f => {
+            const fp = path.join(filePath, f);
+            return fs.statSync(fp).isDirectory() && f.match(/^\d{2}$/);
+          });
+          for (const hourDir of hourDirs) {
+            const jpegs = await fs.promises.readdir(path.join(filePath, hourDir)).catch(() => []);
+            count += jpegs.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
+          }
         }
       }
       res.writeHead(200, {
@@ -446,6 +604,7 @@ const requestHandler = async (req, res) => {
       });
       res.end(JSON.stringify({ count }));
     } catch (err) {
+      console.error('[Timelapse Count] Error:', err);
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Error retrieving count.');
     }
@@ -591,93 +750,127 @@ server.listen(PORT, '0.0.0.0', async () => {
       fs.mkdirSync(timelapseDir, { recursive: true });
     }
 
-    // Migrate any existing frame_*.jpg files in root timelapseDir to date subfolders on startup based on their mtime
-    try {
-      const files = fs.readdirSync(timelapseDir);
-      for (const file of files) {
-        if (file.match(/^frame_\d+\.jpg$/)) {
-          const filePath = path.join(timelapseDir, file);
-          const stats = fs.statSync(filePath);
-          const dateStr = new Date(stats.mtimeMs).toISOString().split('T')[0]; // e.g. YYYY-MM-DD
-          const targetDir = path.join(timelapseDir, dateStr);
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-          }
-          fs.renameSync(filePath, path.join(targetDir, file));
-          console.log(`[Timelapse] Migrated ${file} to ${dateStr}/`);
-        }
-      }
-    } catch (e) {
-      console.error('[Timelapse] Migration failed:', e);
-    }
-
-    // Find next sequential frame index by checking existing files in all YYYY-MM-DD subdirectories
-    let frameIndex = 1;
+    // 1. Group any loose frame_*.jpg in YYYY-MM-DD directories into hourly subdirectories based on their mtime
     try {
       const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
         const fullPath = path.join(timelapseDir, f);
         return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
       });
-      const frameNumbers = [];
-      for (const dir of dateDirs) {
-        const files = fs.readdirSync(path.join(timelapseDir, dir));
+
+      for (const dateDir of dateDirs) {
+        const datePath = path.join(timelapseDir, dateDir);
+        const files = fs.readdirSync(datePath);
+        for (const file of files) {
+          if (file.match(/^frame_\d+\.jpg$/)) {
+            const filePath = path.join(datePath, file);
+            const stats = fs.statSync(filePath);
+            const date = new Date(stats.mtimeMs);
+            const hourStr = String(date.getHours()).padStart(2, '0');
+            const hourDir = path.join(datePath, hourStr);
+            if (!fs.existsSync(hourDir)) {
+              fs.mkdirSync(hourDir, { recursive: true });
+            }
+            fs.renameSync(filePath, path.join(hourDir, file));
+            console.log(`[Timelapse Migration] Moved ${dateDir}/${file} to hourly folder ${hourStr}/`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Timelapse] Startup frame grouping failed:', e);
+    }
+
+    // 2. Compile any past completed hourly folders into MP4 files
+    try {
+      const now = new Date();
+      const currentDayStr = now.toISOString().split('T')[0];
+      const currentHourStr = String(now.getHours()).padStart(2, '0');
+
+      const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
+        const fullPath = path.join(timelapseDir, f);
+        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
+      });
+
+      for (const dateDir of dateDirs) {
+        const datePath = path.join(timelapseDir, dateDir);
+        const hourDirs = fs.readdirSync(datePath).filter(f => {
+          const fullPath = path.join(datePath, f);
+          return fs.statSync(fullPath).isDirectory() && f.match(/^\d{2}$/);
+        });
+
+        for (const hourDir of hourDirs) {
+          if (dateDir !== currentDayStr || hourDir !== currentHourStr) {
+            await compileHourVideo(dateDir, hourDir).catch(err => {
+              console.error(`[Timelapse] Failed to compile past hour ${dateDir}/${hourDir}:`, err);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Timelapse] Startup hourly pre-compilation failed:', e);
+    }
+
+    // Keep track of active hour and its frameIndex
+    let activeDayStr = new Date().toISOString().split('T')[0];
+    let activeHourStr = String(new Date().getHours()).padStart(2, '0');
+    let frameIndex = 1;
+
+    // Find next index for the current hour
+    try {
+      const currentHourDir = path.join(timelapseDir, activeDayStr, activeHourStr);
+      if (fs.existsSync(currentHourDir)) {
+        const files = fs.readdirSync(currentHourDir).filter(f => f.match(/^frame_\d+\.jpg$/));
         const numbers = files
           .map(f => {
             const match = f.match(/^frame_(\d+)\.jpg$/);
             return match ? parseInt(match[1], 10) : 0;
           })
           .filter(n => n > 0);
-        frameNumbers.push(...numbers);
-      }
-      if (frameNumbers.length > 0) {
-        frameIndex = Math.max(...frameNumbers) + 1;
-      }
-    } catch (e) {
-      console.error('[Timelapse] Failed to scan timelapse directory:', e);
-    }
-
-    console.log(`[Timelapse] Starting collection every ${TIMELAPSE_INTERVAL}ms. Next index: ${frameIndex}`);
-
-    // Pre-clean 0-byte frame files at startup in date subdirectories
-    try {
-      const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
-        const fullPath = path.join(timelapseDir, f);
-        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
-      });
-      for (const dir of dateDirs) {
-        const dirPath = path.join(timelapseDir, dir);
-        const files = fs.readdirSync(dirPath);
-        for (const file of files) {
-          if (file.endsWith('.jpg')) {
-            const filePath = path.join(dirPath, file);
-            const stats = fs.statSync(filePath);
-            if (stats.size === 0) {
-              fs.unlinkSync(filePath);
-            }
-          }
+        if (numbers.length > 0) {
+          frameIndex = Math.max(...numbers) + 1;
         }
       }
     } catch (e) {}
 
+    console.log(`[Timelapse] Active hour: ${activeDayStr} ${activeHourStr}:00. Next frame index: ${frameIndex}`);
+
     setInterval(async () => {
       try {
+        const now = new Date();
+        const currentDayStr = now.toISOString().split('T')[0];
+        const currentHourStr = String(now.getHours()).padStart(2, '0');
+
+        // Check for hourly rollover
+        if (currentDayStr !== activeDayStr || currentHourStr !== activeHourStr) {
+          console.log(`[Timelapse] Hour rollover detected from ${activeDayStr} ${activeHourStr}:00 to ${currentDayStr} ${currentHourStr}:00`);
+          const oldDayStr = activeDayStr;
+          const oldHourStr = activeHourStr;
+
+          // Reset active hour properties
+          activeDayStr = currentDayStr;
+          activeHourStr = currentHourStr;
+          frameIndex = 1;
+
+          // Compile the completed hour in background
+          compileHourVideo(oldDayStr, oldHourStr).catch(err => {
+            console.error(`[Timelapse] Error compiling finished hour ${oldDayStr}/${oldHourStr}:`, err);
+          });
+        }
+
         const t = Date.now();
         const selector = new Selector('jot/webcam/capture', { t });
         const result = await vfs.readSelector(selector);
         
-        // Clean up old storage files to prevent bloat
         pruneStorage();
 
         if (result && result.stream) {
-          const dateStr = new Date().toISOString().split('T')[0];
-          const targetDir = path.join(timelapseDir, dateStr);
+          const targetDir = path.join(timelapseDir, activeDayStr, activeHourStr);
           if (!fs.existsSync(targetDir)) {
             fs.mkdirSync(targetDir, { recursive: true });
           }
           const filename = `frame_${String(frameIndex).padStart(5, '0')}.jpg`;
           const filePath = path.join(targetDir, filename);
           await pipeline(Readable.fromWeb(result.stream), fs.createWriteStream(filePath));
-          console.log(`[Timelapse] Saved frame: ${dateStr}/${filename}`);
+          console.log(`[Timelapse] Saved frame: ${activeDayStr}/${activeHourStr}/${filename}`);
           frameIndex++;
         } else {
           console.warn('[Timelapse] Failed to capture frame: VFS stream was empty');
