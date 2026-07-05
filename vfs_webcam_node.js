@@ -496,6 +496,45 @@ const requestHandler = async (req, res) => {
       font-weight: 500;
       transition: background 0.2s;
     }
+    .daily-videos-section {
+      background: #1a1a1e;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+      max-width: 1300px;
+      width: 100%;
+      margin-top: 30px;
+      box-sizing: border-box;
+    }
+    .video-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+      margin-top: 15px;
+    }
+    .video-card {
+      background: #26262b;
+      border-radius: 8px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid #323239;
+    }
+    .video-card-title {
+      font-weight: 500;
+      color: #e1e1e6;
+    }
+    .video-card a {
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .video-card a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -524,6 +563,13 @@ const requestHandler = async (req, res) => {
       <div class="controls">
         <button id="btn-rebuild" onclick="rebuildTimelapse()" style="background: #4f46e5;">Rebuild & Play Timelapse (5 FPS)</button>
       </div>
+    </div>
+  </div>
+
+  <div class="daily-videos-section">
+    <h3>Completed Daily Timelapses</h3>
+    <div id="daily-video-list" class="video-list">
+      <p style="color: #98a5b9; grid-column: 1/-1; text-align: center;">Loading completed daily timelapses...</p>
     </div>
   </div>
 
@@ -589,9 +635,36 @@ const requestHandler = async (req, res) => {
       }
     }
 
-    // Periodically update the frame count
+    async function loadDailyVideos() {
+      const list = document.getElementById('daily-video-list');
+      try {
+        const resp = await fetch('/timelapse/list');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.videos.length === 0) {
+            list.innerHTML = '<p style="color: #98a5b9; grid-column: 1/-1; text-align: center;">No completed daily timelapses yet.</p>';
+            return;
+          }
+          list.innerHTML = data.videos.map(v => \`
+            <div class="video-card">
+              <div class="video-card-title">\${v.replace('.mp4', '')}</div>
+              <video controls style="max-height: 160px; border-radius: 4px; background: #000; width: 100%;">
+                <source src="/timelapse/\${v}" type="video/mp4">
+              </video>
+              <a href="/timelapse/\${v}" download="\${v}">Download MP4</a>
+            </div>
+          \`).join('');
+        }
+      } catch (e) {
+        console.error('Failed to load daily videos:', e);
+        list.innerHTML = '<p style="color: #dc2626; grid-column: 1/-1; text-align: center;">Failed to load daily timelapses.</p>';
+      }
+    }
+
+    // Initialize UI data
     updateFrameCount();
     setInterval(updateFrameCount, 5000);
+    loadDailyVideos();
   </script>
 </body>
 </html>
@@ -687,6 +760,80 @@ const requestHandler = async (req, res) => {
       console.error('[Timelapse Rebuild] Error:', err);
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end(err.message);
+    }
+  } else if (url.pathname === '/timelapse/list') {
+    try {
+      const files = await fs.promises.readdir(timelapseDir).catch(() => []);
+      const dailyVideos = files
+        .filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.mp4$/))
+        .sort()
+        .reverse(); // Reverse chronological order (latest day first)
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      res.end(JSON.stringify({ videos: dailyVideos }));
+    } catch (err) {
+      console.error('[Timelapse List] Error:', err);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Error retrieving daily video list.');
+    }
+  } else if (url.pathname.match(/^\/timelapse\/\d{4}-\d{2}-\d{2}\.mp4$/)) {
+    const filename = path.basename(url.pathname);
+    const videoPath = path.join(timelapseDir, filename);
+
+    try {
+      if (!fs.existsSync(videoPath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Daily video not found');
+        return;
+      }
+
+      const stat = await fs.promises.stat(videoPath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (start >= fileSize || end >= fileSize) {
+          res.writeHead(416, {
+            'Content-Range': `bytes */${fileSize}`,
+            'Content-Type': 'text/plain'
+          });
+          res.end('Requested range not satisfiable.');
+          return;
+        }
+
+        const chunksize = (end - start) + 1;
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': 'video/mp4',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+
+        const readStream = fs.createReadStream(videoPath, { start, end });
+        readStream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        const readStream = fs.createReadStream(videoPath);
+        readStream.pipe(res);
+      }
+    } catch (err) {
+      console.error('[Daily Video Stream] Error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end(err.message);
+      }
     }
   } else if (url.pathname === '/timelapse.mp4') {
     const outputPath = path.join(timelapseDir, 'timelapse.mp4');
