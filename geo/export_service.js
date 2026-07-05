@@ -1266,6 +1266,275 @@ function dxfEntitiesToSegments(entities) {
     return { vertices, segments };
 }
 
+// Register the glTF/GLB (Export) Op as a VFS Provider
+vfs.registerProvider('jot/gltf', async (v, selector, context) => {
+    try {
+        const { $in, path: gltfPath = 'export.glb' } = selector.parameters;
+        const output = selector.output || '$out';
+
+        if (!$in) throw new Error('Missing input $in');
+
+        console.log(`[Export Node] glTF/GLB export requested for path: ${gltfPath}`);
+
+        const inShape = await readExplicitData(v, $in, context);
+        if (!inShape) throw new Error('Could not read input shape');
+
+        const glbBytes = await exportToGlb(v, inShape, context);
+
+        if (output === 'file') {
+            const stream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(glbBytes);
+                    controller.close();
+                }
+            });
+            return {
+                stream,
+                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
+            };
+        }
+
+        const bytes = new TextEncoder().encode(JSON.stringify(inShape));
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+            }
+        });
+        return {
+            stream,
+            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+        };
+
+    } catch (err) {
+        console.error(`[Export Node glTF Export Error]`, err);
+        return null;
+    }
+}, {
+    schema: {
+        path: 'jot/gltf',
+        description: 'Exports a shape to a GLB file (Binary glTF 2.0).',
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [
+            { name: 'path', type: 'jot:string', default: 'export.glb' }
+        ],
+        outputs: { 
+            '$out': { type: 'jot:shape' },
+            'file': { type: 'file', mimeType: 'model/gltf-binary' }
+        }
+    }
+});
+
+async function exportToGlb(v, inShape, context) {
+    const nodes = [];
+    const meshes = [];
+    const accessors = [];
+    const bufferViews = [];
+    const binaryDataChunks = [];
+    let currentByteOffset = 0;
+
+    function addBinaryData(typedArray, target) {
+        const bytes = new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
+        const padding = (4 - (bytes.byteLength % 4)) % 4;
+        const lengthWithPadding = bytes.byteLength + padding;
+        
+        const paddedBytes = new Uint8Array(lengthWithPadding);
+        paddedBytes.set(bytes);
+        
+        binaryDataChunks.push(paddedBytes);
+        
+        const byteOffset = currentByteOffset;
+        currentByteOffset += lengthWithPadding;
+        
+        const bufferViewIdx = bufferViews.length;
+        bufferViews.push({
+            buffer: 0,
+            byteOffset: byteOffset,
+            byteLength: bytes.byteLength,
+            target: target
+        });
+        
+        return bufferViewIdx;
+    }
+
+    async function processShape(shapeNode) {
+        const nodeIdx = nodes.length;
+        const node = {
+            name: shapeNode.tags?.name || `node_${nodeIdx}`,
+            children: []
+        };
+        nodes.push(node);
+
+        // Transpose row-major matrix to column-major for glTF
+        const tf = shapeNode.tf || "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";
+        const m = tf.trim().split(/\s+/).map(Number);
+        if (m.length === 16) {
+            node.matrix = [
+                m[0], m[4], m[8], m[12],
+                m[1], m[5], m[9], m[13],
+                m[2], m[6], m[10], m[14],
+                m[3], m[7], m[11], m[15]
+            ];
+        }
+
+        if (shapeNode.geometry) {
+            const geoText = await readExplicitData(v, shapeNode.geometry, context);
+            if (geoText) {
+                const parsed = parseGeometryText(geoText);
+                const primitives = [];
+
+                // 1. Export Triangles (mode 4)
+                if (parsed.triangles && parsed.triangles.length > 0) {
+                    const flatPositions = new Float32Array(parsed.vertices.flat());
+                    const posMin = [Infinity, Infinity, Infinity];
+                    const posMax = [-Infinity, -Infinity, -Infinity];
+                    for (const vtx of parsed.vertices) {
+                        for (let d = 0; d < 3; d++) {
+                            if (vtx[d] < posMin[d]) posMin[d] = vtx[d];
+                            if (vtx[d] > posMax[d]) posMax[d] = vtx[d];
+                        }
+                    }
+                    const posViewIdx = addBinaryData(flatPositions, 34962);
+                    const posAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: posViewIdx,
+                        byteOffset: 0,
+                        componentType: 5126,
+                        count: parsed.vertices.length,
+                        type: "VEC3",
+                        min: posMin,
+                        max: posMax
+                    });
+
+                    const flatIndices = new Uint32Array(parsed.triangles.flat());
+                    const indViewIdx = addBinaryData(flatIndices, 34963);
+                    const indAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: indViewIdx,
+                        byteOffset: 0,
+                        componentType: 5125,
+                        count: flatIndices.length,
+                        type: "SCALAR"
+                    });
+
+                    primitives.push({
+                        attributes: { POSITION: posAccessorIdx },
+                        indices: indAccessorIdx,
+                        mode: 4
+                    });
+                }
+
+                // 2. Export Segments/Lines (mode 1)
+                if (parsed.segments && parsed.segments.length > 0) {
+                    const flatPositions = new Float32Array(parsed.vertices.flat());
+                    const posMin = [Infinity, Infinity, Infinity];
+                    const posMax = [-Infinity, -Infinity, -Infinity];
+                    for (const vtx of parsed.vertices) {
+                        for (let d = 0; d < 3; d++) {
+                            if (vtx[d] < posMin[d]) posMin[d] = vtx[d];
+                            if (vtx[d] > posMax[d]) posMax[d] = vtx[d];
+                        }
+                    }
+                    const posViewIdx = addBinaryData(flatPositions, 34962);
+                    const posAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: posViewIdx,
+                        byteOffset: 0,
+                        componentType: 5126,
+                        count: parsed.vertices.length,
+                        type: "VEC3",
+                        min: posMin,
+                        max: posMax
+                    });
+
+                    const flatIndices = new Uint32Array(parsed.segments.flat());
+                    const indViewIdx = addBinaryData(flatIndices, 34963);
+                    const indAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: indViewIdx,
+                        byteOffset: 0,
+                        componentType: 5125,
+                        count: flatIndices.length,
+                        type: "SCALAR"
+                    });
+
+                    primitives.push({
+                        attributes: { POSITION: posAccessorIdx },
+                        indices: indAccessorIdx,
+                        mode: 1
+                    });
+                }
+
+                if (primitives.length > 0) {
+                    const meshIdx = meshes.length;
+                    meshes.push({ primitives });
+                    node.mesh = meshIdx;
+                }
+            }
+        }
+
+        if (Array.isArray(shapeNode.components)) {
+            for (const comp of shapeNode.components) {
+                const childIdx = await processShape(comp);
+                node.children.push(childIdx);
+            }
+        }
+
+        return nodeIdx;
+    }
+
+    await processShape(inShape);
+
+    const gltfJson = {
+        asset: { version: "2.0" },
+        scenes: [{ nodes: [0] }],
+        scene: 0,
+        nodes: nodes,
+        meshes: meshes,
+        accessors: accessors,
+        bufferViews: bufferViews,
+        buffers: [{ byteLength: currentByteOffset }]
+    };
+
+    const jsonString = JSON.stringify(gltfJson);
+    const jsonBytes = new TextEncoder().encode(jsonString);
+    const jsonPadding = (4 - (jsonBytes.byteLength % 4)) % 4;
+    const jsonLengthWithPadding = jsonBytes.byteLength + jsonPadding;
+
+    const finalJsonBytes = new Uint8Array(jsonLengthWithPadding);
+    finalJsonBytes.set(jsonBytes);
+    for (let i = 0; i < jsonPadding; i++) {
+        finalJsonBytes[jsonBytes.byteLength + i] = 0x20;
+    }
+
+    const totalBinLength = binaryDataChunks.reduce((acc, c) => acc + c.byteLength, 0);
+    const finalBinBytes = new Uint8Array(totalBinLength);
+    let binOffset = 0;
+    for (const chunk of binaryDataChunks) {
+        finalBinBytes.set(chunk, binOffset);
+        binOffset += chunk.byteLength;
+    }
+
+    const glbLength = 12 + 8 + finalJsonBytes.byteLength + 8 + finalBinBytes.byteLength;
+    const glbBuffer = new Uint8Array(glbLength);
+    const view = new DataView(glbBuffer.buffer);
+
+    view.setUint32(0, 0x46546C67, true);
+    view.setUint32(4, 2, true);
+    view.setUint32(8, glbLength, true);
+
+    view.setUint32(12, finalJsonBytes.byteLength, true);
+    view.setUint32(16, 0x4E4F534A, true);
+    glbBuffer.set(finalJsonBytes, 20);
+
+    const binHeaderOffset = 20 + finalJsonBytes.byteLength;
+    view.setUint32(binHeaderOffset, finalBinBytes.byteLength, true);
+    view.setUint32(binHeaderOffset + 4, 0x004E4942, true);
+    glbBuffer.set(finalBinBytes, binHeaderOffset + 8);
+
+    return glbBuffer;
+}
+
 registerVFSRoutes(vfs, server, '', meshLink);
 
 server.listen(port, '0.0.0.0', async () => {
