@@ -15,6 +15,27 @@ const DEVICE = process.env.WEBCAM_DEVICE || '/dev/video0';
 const neighbors = (process.env.NEIGHBORS || '').split(',').filter(Boolean);
 const timelapseDir = path.resolve('./timelapse');
 
+// Load .env file variables into process.env at startup
+try {
+  const envPath = path.resolve('.env');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const firstEquals = trimmed.indexOf('=');
+        if (firstEquals !== -1) {
+          const key = trimmed.slice(0, firstEquals).trim();
+          const val = trimmed.slice(firstEquals + 1).trim();
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+} catch (e) {
+  console.error('[Webcam Node] Failed to load .env file:', e);
+}
+
 function getLocalDateStr(date = new Date()) {
   const tzOffset = date.getTimezoneOffset() * 60000;
   return (new Date(date.getTime() - tzOffset)).toISOString().split('T')[0];
@@ -168,11 +189,13 @@ async function compileHourVideo(dateStr, hourStr) {
       '-framerate', '5',
       '-pattern_type', 'glob',
       '-i', path.join(hourDir, 'frame_*.jpg'),
-      '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB',
+      '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d',
       '-r', '5',
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
-      '-g', '1',
+      '-g', '150',
+      '-crf', '30',
+      '-tune', 'stillimage',
       '-movflags', '+faststart',
       hourVideoPath
     ]);
@@ -198,6 +221,220 @@ async function compileHourVideo(dateStr, hourStr) {
   // Delete source JPEGs and directory to save space
   fs.rmSync(hourDir, { recursive: true, force: true });
   console.log(`[Timelapse] Cleaned up source JPEG folder: ${dateStr}/${hourStr}/ (Output: ${trueCount}/${files.length} frames)`);
+}
+
+// Helper to perform focus analysis on a compiled daily video via Gemini API
+async function analyzeVideo(dateStr) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.log('[Timelapse Analysis] GEMINI_API_KEY environment variable not set. Skipping focus analysis.');
+    return;
+  }
+
+  const videoPath = path.join(timelapseDir, `${dateStr}.mp4`);
+  const analysisPath = path.join(timelapseDir, `${dateStr}_analysis.md`);
+
+  if (!fs.existsSync(videoPath)) {
+    console.error(`[Timelapse Analysis] Video file not found: ${videoPath}`);
+    return;
+  }
+
+  if (fs.existsSync(analysisPath)) {
+    console.log(`[Timelapse Analysis] Analysis already exists for ${dateStr}. Skipping.`);
+    return;
+  }
+
+  console.log(`[Timelapse Analysis] Starting Gemini multimodal focus analysis for ${dateStr}.mp4...`);
+
+  try {
+    const stats = fs.statSync(videoPath);
+    const fileLength = stats.size;
+    const displayName = `${dateStr}.mp4`;
+
+    // 1. Resumable Upload Session Initiation
+    const uploadInitUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
+    const initResponse = await fetch(uploadInitUrl, {
+      method: 'POST',
+      headers: {
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': String(fileLength),
+        'X-Goog-Upload-Header-Content-Type': 'video/mp4',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        file: { displayName }
+      })
+    });
+
+    if (!initResponse.ok) {
+      const errorText = await initResponse.text();
+      throw new Error(`Failed to initiate Gemini upload: ${initResponse.statusText}. Details: ${errorText}`);
+    }
+
+    const uploadUrl = initResponse.headers.get('x-goog-upload-url');
+    if (!uploadUrl) {
+      throw new Error('x-goog-upload-url header not returned in Gemini init response');
+    }
+
+    // 2. Upload Video Bytes
+    const videoBuffer = fs.readFileSync(videoPath);
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'X-Goog-Upload-Offset': '0',
+        'X-Goog-Upload-Command': 'upload, finalize'
+      },
+      body: videoBuffer
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Failed to upload video bytes to Gemini: ${uploadResponse.statusText}. Details: ${errorText}`);
+    }
+
+    const uploadResult = await uploadResponse.json();
+    const fileUri = uploadResult.file.uri;
+    const fileId = fileUri.split('/').pop();
+    console.log(`[Timelapse Analysis] Video uploaded to Gemini. URI: ${fileUri}, File ID: ${fileId}`);
+
+    // 3. Poll status until file is ACTIVE
+    let fileActive = false;
+    const maxPolls = 30; // 5 minutes max
+    for (let poll = 0; poll < maxPolls; poll++) {
+      console.log(`[Timelapse Analysis] Polling file status (attempt ${poll + 1}/${maxPolls})...`);
+      const statusResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/files/${fileId}?key=${apiKey}`);
+      if (statusResponse.ok) {
+        const statusResult = await statusResponse.json();
+        const state = statusResult.state;
+        console.log(`[Timelapse Analysis] Current file state: ${state}`);
+        if (state === 'ACTIVE') {
+          fileActive = true;
+          break;
+        } else if (state === 'FAILED') {
+          throw new Error('Gemini file processing failed');
+        }
+      }
+      await new Promise(r => setTimeout(r, 10000)); // Poll every 10 seconds
+    }
+
+    if (!fileActive) {
+      throw new Error('Gemini video processing timed out (exceeded 5 minutes)');
+    }
+
+    // 4. Generate focus analysis content using gemini-2.5-flash
+    const generateUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const promptText = `
+You are an expert activity and focus analysis assistant. Your task is to analyze the attached timelapse video of a study/work desk and generate a detailed chronological activity transcript, with a focus on measuring active attention and distractions.
+
+### Video Context:
+* The video contains a timestamp overlaid in the top-left corner of each frame (Format: YYYY-MM-DD HH:MM:SS). Use these overlay timestamps for all clock times in your report.
+* The desk is used for various activities (such as tablet drawing/writing, physical notebook study, or computer usage/gaming facing off-camera to the right).
+
+### Instructions:
+1. **Chronological Scan**: Identify the start and end overlay timestamps for every distinct block of activity (e.g., Desk Empty, Tablet Study, Notebook Study, PC Gaming, parent check-ins).
+2. **Focus/Distraction Segmentation**: For each active block where the user is at the desk, analyze their gaze direction, posture, and active movement to separate the time into:
+   - **Focused Duration**: Time spent actively looking at the work surface/tablet/screen, writing, typing, or playing.
+   - **Distracted/Idle Duration**: Time spent checking a phone, looking away, talking, stretching, or leaving the chair briefly.
+3. **Qualitative Focus Assessment**: Provide a brief descriptive summary of their posture and engagement during that chunk.
+4. **Gaming & Leisure**: Note that gaming is a valid activity; measure focus for it neutrally.
+
+### Output Format:
+You MUST respond with a single valid JSON object following this exact schema:
+{
+  "totalStudyTimeMinutes": number,
+  "totalGamingTimeMinutes": number,
+  "totalFocusedTimeMinutes": number,
+  "totalDistractedTimeMinutes": number,
+  "globalFocusRatioPercent": number,
+  "timeline": [
+    {
+      "timeRange": "string",
+      "activityName": "string",
+      "totalDurationMinutes": number,
+      "focusedDurationMinutes": number,
+      "distractedDurationMinutes": number,
+      "focusLevel": "High" | "Moderate" | "Low",
+      "focusAndPostureDetails": "string"
+    }
+  ]
+}
+`.trim();
+
+    const generateResponse = await fetch(generateUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { fileData: { fileUri, mimeType: 'video/mp4' } },
+              { text: promptText }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json'
+        }
+      })
+    });
+
+    if (!generateResponse.ok) {
+      const errorText = await generateResponse.text();
+      throw new Error(`Failed to generate content from Gemini: ${generateResponse.statusText}. Details: ${errorText}`);
+    }
+
+    const generateResult = await generateResponse.json();
+    const rawJson = generateResult.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!rawJson) {
+      throw new Error('Gemini returned an empty response candidate');
+    }
+
+    let formattedContent = rawJson;
+    try {
+      const reportObj = JSON.parse(rawJson.trim());
+      const mdLines = [];
+      mdLines.push(`# Daily Focus & Activity Report: ${dateStr}\n`);
+      mdLines.push(`### Daily Focus Summary:\n`);
+      mdLines.push(`* **Total Study Time**: ${reportObj.totalStudyTimeMinutes ?? 0} minutes`);
+      mdLines.push(`* **Total Gaming Time**: ${reportObj.totalGamingTimeMinutes ?? 0} minutes`);
+      mdLines.push(`* **Total Focused Time**: ${reportObj.totalFocusedTimeMinutes ?? 0} minutes`);
+      mdLines.push(`* **Total Distracted Time**: ${reportObj.totalDistractedTimeMinutes ?? 0} minutes`);
+      mdLines.push(`* **Global Focus-to-Distraction Ratio**: ${reportObj.globalFocusRatioPercent ?? 0}%\n`);
+      mdLines.push(`### Activity Timeline\n`);
+      mdLines.push(`| Time Range | Activity Name/Label | Total Duration (min) | Focused Duration (min) | Distracted Duration (min) | Focus Level | Focus & Posture Details |`);
+      mdLines.push(`| :--- | :--- | :---: | :---: | :---: | :---: | :--- |`);
+
+      if (Array.isArray(reportObj.timeline)) {
+        for (const item of reportObj.timeline) {
+          mdLines.push(`| ${item.timeRange ?? ''} | ${item.activityName ?? ''} | ${item.totalDurationMinutes ?? 0} | ${item.focusedDurationMinutes ?? 0} | ${item.distractedDurationMinutes ?? 0} | ${item.focusLevel ?? ''} | ${item.focusAndPostureDetails ?? ''} |`);
+        }
+      }
+      formattedContent = mdLines.join('\n');
+    } catch (parseErr) {
+      console.warn('[Timelapse Analysis] Failed to parse model output as JSON. Storing raw output:', parseErr);
+    }
+
+    // Write output analysis markdown
+    fs.writeFileSync(analysisPath, formattedContent);
+    console.log(`[Timelapse Analysis] Successfully saved focus analysis for ${dateStr} to ${analysisPath}`);
+
+    // 5. Clean up file from Gemini workspace
+    const deleteResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/files/${fileId}?key=${apiKey}`, {
+      method: 'DELETE'
+    });
+    if (deleteResponse.ok) {
+      console.log(`[Timelapse Analysis] Cleaned up file ${fileId} from Gemini.`);
+    } else {
+      console.warn(`[Timelapse Analysis] Failed to clean up file ${fileId} from Gemini workspace.`);
+    }
+
+  } catch (err) {
+    console.error(`[Timelapse Analysis] Error analyzing video for ${dateStr}:`, err);
+  }
 }
 
 // Helper to compile a past completed day folder into a single daily video
@@ -254,6 +491,11 @@ async function compileDailyVideo(dateStr) {
   // Delete source directory and files to save space
   fs.rmSync(datePath, { recursive: true, force: true });
   console.log(`[Timelapse] Successfully compiled daily video: ${dateStr}.mp4 and cleaned up folder.`);
+
+  // Trigger focus analysis in background
+  analyzeVideo(dateStr).catch(err => {
+    console.error('[Timelapse Analysis] Failed to run focus analysis:', err);
+  });
 }
 
 // Helper to compile the today's partial timelapse video on demand
@@ -326,11 +568,13 @@ async function compileVideo() {
             '-framerate', '5',
             '-pattern_type', 'glob',
             '-i', path.join(activeHourDir, 'frame_*.jpg'),
-            '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB',
+            '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d',
             '-r', '5',
             '-c:v', 'libx264',
             '-pix_fmt', 'yuv420p',
-            '-g', '1',
+            '-g', '150',
+            '-crf', '30',
+            '-tune', 'stillimage',
             '-movflags', '+faststart',
             tempActivePath
           ]);
@@ -775,7 +1019,12 @@ const requestHandler = async (req, res) => {
       const dailyVideos = files
         .filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.mp4$/))
         .sort()
-        .reverse(); // Reverse chronological order (latest day first)
+        .reverse()
+        .map(name => {
+          const dateStr = name.replace('.mp4', '');
+          const hasAnalysis = fs.existsSync(path.join(timelapseDir, `${dateStr}_analysis.md`));
+          return { name, hasAnalysis };
+        });
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
@@ -785,6 +1034,27 @@ const requestHandler = async (req, res) => {
       console.error('[Timelapse List] Error:', err);
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Error retrieving daily video list.');
+    }
+  } else if (url.pathname.match(/^\/timelapse\/\d{4}-\d{2}-\d{2}_analysis\.md$/)) {
+    const filename = path.basename(url.pathname);
+    const filePath = path.join(timelapseDir, filename);
+    try {
+      if (!fs.existsSync(filePath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Analysis file not found');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      fs.createReadStream(filePath).pipe(res);
+    } catch (err) {
+      console.error('[Timelapse Analysis Stream] Error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end(err.message);
+      }
     }
   } else if (url.pathname.match(/^\/timelapse\/\d{4}-\d{2}-\d{2}\.mp4$/)) {
     const filename = path.basename(url.pathname);
@@ -1052,6 +1322,26 @@ server.listen(PORT, '0.0.0.0', async () => {
       }
     } catch (e) {
       console.error('[Timelapse] Startup daily pre-compilation failed:', e);
+    }
+
+    // 4. Backfill any missing focus analysis markdown files
+    try {
+      const files = fs.readdirSync(timelapseDir);
+      for (const file of files) {
+        const match = file.match(/^(\d{4}-\d{2}-\d{2})\.mp4$/);
+        if (match) {
+          const dateStr = match[1];
+          const analysisFile = path.join(timelapseDir, `${dateStr}_analysis.md`);
+          if (!fs.existsSync(analysisFile)) {
+            console.log(`[Timelapse Analysis] Found missing focus analysis for ${dateStr}.mp4. Queueing backfill...`);
+            analyzeVideo(dateStr).catch(err => {
+              console.error(`[Timelapse Analysis] Startup analysis backfill failed for ${dateStr}:`, err);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Timelapse Analysis] Startup focus analysis backfill failed:', e);
     }
 
     // Keep track of active hour and its frameIndex
