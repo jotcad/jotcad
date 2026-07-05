@@ -69,6 +69,8 @@ This starts the secure VFS Webcam Node, which:
 * Supports automated background timelapse capture every 10 seconds, organizing frames into hourly subfolders (`timelapse/YYYY-MM-DD/HH/`) and automatically compiling finished hours into independent `hour_HH.mp4` segments in the background, deleting source JPEGs to optimize disk space.
 * Features a decoupled video compiler: `/timelapse/rebuild` triggers compilation (which backfills any missing segments and instantly concatenates hourly MP4s in milliseconds via packet copying), while `/timelapse.mp4` serves the finalized static file using H.264 high keyframe density (`-g 1`) and HTTP range-requests for zero-lag seeking.
 * Exposes a frame count API at `/timelapse/count` which efficiently sums segment frame counts from JSON metadata files.
+* **Gemini Focus & Activity Analysis**: Integrates automated daily focus and activity report generation on finalized timelapse videos using the Gemini 2.5 Flash API, producing detailed stats (study time, distraction ratios) and segmenting user presence.
+* **Interactive Timeline UX**: Features a modern, vertical timeline on the secure dashboard modal displaying active study sessions, focus level badges, and expandable nested sub-activities (e.g. phone checks or stretches) with event-delegated UI handlers.
 * Integrates with the Zenoh mesh, exposing standard VFS routing endpoints under `https://localhost:8080/vfs`.
 
 ## Documentation

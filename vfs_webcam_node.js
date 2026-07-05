@@ -9,6 +9,8 @@ import path from 'path';
 const execAsync = promisify(exec);
 import { VFS, DiskStorage, Selector, MeshLink, registerVFSRoutes } from './fs/src/index.js';
 
+process.env.TZ = 'Asia/Seoul';
+
 const id = process.env.VFS_ID || 'webcam-node';
 const PORT = parseInt(process.env.PORT || '8080');
 const DEVICE = process.env.WEBCAM_DEVICE || '/dev/video0';
@@ -232,7 +234,7 @@ async function analyzeVideo(dateStr) {
   }
 
   const videoPath = path.join(timelapseDir, `${dateStr}.mp4`);
-  const analysisPath = path.join(timelapseDir, `${dateStr}_analysis.md`);
+  const analysisPath = path.join(timelapseDir, `${dateStr}_analysis.json`);
 
   if (!fs.existsSync(videoPath)) {
     console.error(`[Timelapse Analysis] Video file not found: ${videoPath}`);
@@ -332,12 +334,15 @@ You are an expert activity and focus analysis assistant. Your task is to analyze
 * The desk is used for various activities (such as tablet drawing/writing, physical notebook study, or computer usage/gaming facing off-camera to the right).
 
 ### Instructions:
-1. **Chronological Scan**: Identify the start and end overlay timestamps for every distinct block of activity (e.g., Desk Empty, Tablet Study, Notebook Study, PC Gaming, parent check-ins).
+1. **Chronological Scan**: Identify the start and end overlay timestamps for every active study or gaming session where the user is present at the desk.
 2. **Focus/Distraction Segmentation**: For each active block where the user is at the desk, analyze their gaze direction, posture, and active movement to separate the time into:
    - **Focused Duration**: Time spent actively looking at the work surface/tablet/screen, writing, typing, or playing.
    - **Distracted/Idle Duration**: Time spent checking a phone, looking away, talking, stretching, or leaving the chair briefly.
 3. **Qualitative Focus Assessment**: Provide a brief descriptive summary of their posture and engagement during that chunk.
 4. **Gaming & Leisure**: Note that gaming is a valid activity; measure focus for it neutrally.
+5. **Consolidation**: Consolidate contiguous similar activities into single blocks where possible. Do NOT break study sessions into multiple 1-minute blocks; group them into larger blocks (e.g. 15-30 minutes) to keep the timeline concise and prevent token limit truncation.
+6. **Nested Sub-Activities**: For major study and gaming blocks where the user is active at the desk, populate the 'subActivities' array with key micro-events that occurred inside it (e.g. phone checks, stretches, parent check-ins, or blocks of focused study). Group consecutive study stretches into single larger sub-activity blocks rather than minute-by-minute entries.
+7. **EXCLUSION MANDATE (CRITICAL)**: Exclude any timeline blocks where nothing is happening (e.g., "Desk Empty" or "Brief Absence") or transient walkbys (like a parent briefly checking the room or a child walking past the camera without sitting down to study). The timeline array MUST ONLY contain blocks where the user is actively working, studying, or playing at the desk.
 
 ### Output Format:
 You MUST respond with a single valid JSON object following this exact schema:
@@ -355,11 +360,78 @@ You MUST respond with a single valid JSON object following this exact schema:
       "focusedDurationMinutes": number,
       "distractedDurationMinutes": number,
       "focusLevel": "High" | "Moderate" | "Low",
-      "focusAndPostureDetails": "string"
+      "focusAndPostureDetails": "string",
+      "subActivities": [
+        {
+          "timeRange": "string",
+          "activityName": "string",
+          "durationMinutes": number,
+          "isFocused": boolean,
+          "details": "string"
+        }
+      ]
     }
   ]
 }
 `.trim();
+
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        totalStudyTimeMinutes: { type: "NUMBER" },
+        totalGamingTimeMinutes: { type: "NUMBER" },
+        totalFocusedTimeMinutes: { type: "NUMBER" },
+        totalDistractedTimeMinutes: { type: "NUMBER" },
+        globalFocusRatioPercent: { type: "NUMBER" },
+        timeline: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              timeRange: { type: "STRING" },
+              activityName: { type: "STRING" },
+              totalDurationMinutes: { type: "NUMBER" },
+              focusedDurationMinutes: { type: "NUMBER" },
+              distractedDurationMinutes: { type: "NUMBER" },
+              focusLevel: { type: "STRING", enum: ["High", "Moderate", "Low"] },
+              focusAndPostureDetails: { type: "STRING" },
+              subActivities: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    timeRange: { type: "STRING" },
+                    activityName: { type: "STRING" },
+                    durationMinutes: { type: "NUMBER" },
+                    isFocused: { type: "BOOLEAN" },
+                    details: { type: "STRING" }
+                  },
+                  required: ["timeRange", "activityName", "durationMinutes", "isFocused", "details"]
+                }
+              }
+            },
+            required: [
+              "timeRange",
+              "activityName",
+              "totalDurationMinutes",
+              "focusedDurationMinutes",
+              "distractedDurationMinutes",
+              "focusLevel",
+              "focusAndPostureDetails",
+              "subActivities"
+            ]
+          }
+        }
+      },
+      required: [
+        "totalStudyTimeMinutes",
+        "totalGamingTimeMinutes",
+        "totalFocusedTimeMinutes",
+        "totalDistractedTimeMinutes",
+        "globalFocusRatioPercent",
+        "timeline"
+      ]
+    };
 
     const generateResponse = await fetch(generateUrl, {
       method: 'POST',
@@ -376,7 +448,12 @@ You MUST respond with a single valid JSON object following this exact schema:
           }
         ],
         generationConfig: {
-          responseMimeType: 'application/json'
+          responseMimeType: 'application/json',
+          responseSchema: schema,
+          maxOutputTokens: 8192,
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
         }
       })
     });
@@ -393,33 +470,18 @@ You MUST respond with a single valid JSON object following this exact schema:
       throw new Error('Gemini returned an empty response candidate');
     }
 
-    let formattedContent = rawJson;
+    // Parse to validate JSON. If it throws, it will fail the analyzeVideo task (no file saved)
+    let reportObj;
     try {
-      const reportObj = JSON.parse(rawJson.trim());
-      const mdLines = [];
-      mdLines.push(`# Daily Focus & Activity Report: ${dateStr}\n`);
-      mdLines.push(`### Daily Focus Summary:\n`);
-      mdLines.push(`* **Total Study Time**: ${reportObj.totalStudyTimeMinutes ?? 0} minutes`);
-      mdLines.push(`* **Total Gaming Time**: ${reportObj.totalGamingTimeMinutes ?? 0} minutes`);
-      mdLines.push(`* **Total Focused Time**: ${reportObj.totalFocusedTimeMinutes ?? 0} minutes`);
-      mdLines.push(`* **Total Distracted Time**: ${reportObj.totalDistractedTimeMinutes ?? 0} minutes`);
-      mdLines.push(`* **Global Focus-to-Distraction Ratio**: ${reportObj.globalFocusRatioPercent ?? 0}%\n`);
-      mdLines.push(`### Activity Timeline\n`);
-      mdLines.push(`| Time Range | Activity Name/Label | Total Duration (min) | Focused Duration (min) | Distracted Duration (min) | Focus Level | Focus & Posture Details |`);
-      mdLines.push(`| :--- | :--- | :---: | :---: | :---: | :---: | :--- |`);
-
-      if (Array.isArray(reportObj.timeline)) {
-        for (const item of reportObj.timeline) {
-          mdLines.push(`| ${item.timeRange ?? ''} | ${item.activityName ?? ''} | ${item.totalDurationMinutes ?? 0} | ${item.focusedDurationMinutes ?? 0} | ${item.distractedDurationMinutes ?? 0} | ${item.focusLevel ?? ''} | ${item.focusAndPostureDetails ?? ''} |`);
-        }
-      }
-      formattedContent = mdLines.join('\n');
+      reportObj = JSON.parse(rawJson.trim());
     } catch (parseErr) {
-      console.warn('[Timelapse Analysis] Failed to parse model output as JSON. Storing raw output:', parseErr);
+      console.error(`[Timelapse Analysis] JSON parsing failed. Raw response text was:\n${rawJson}`);
+      console.error(`[Timelapse Analysis] Full API Response result:`, JSON.stringify(generateResult, null, 2));
+      throw parseErr;
     }
 
-    // Write output analysis markdown
-    fs.writeFileSync(analysisPath, formattedContent);
+    // Write output analysis JSON
+    fs.writeFileSync(analysisPath, JSON.stringify(reportObj, null, 2));
     console.log(`[Timelapse Analysis] Successfully saved focus analysis for ${dateStr} to ${analysisPath}`);
 
     // 5. Clean up file from Gemini workspace
@@ -821,24 +883,86 @@ const requestHandler = async (req, res) => {
     .close-btn:hover {
       color: #fff;
     }
-    .analysis-table {
-      width: 100%;
-      border-collapse: collapse;
+    .timeline-container {
       margin-top: 20px;
+      position: relative;
+      padding-left: 24px;
+      border-left: 2px solid #334155;
+    }
+    .timeline-item {
+      position: relative;
+      margin-bottom: 24px;
+    }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -31px;
+      top: 4px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #475569;
+      border: 2px solid #1a1a1e;
+    }
+    .timeline-item.active-focus::before {
+      background: #10b981;
+    }
+    .timeline-item.active-distracted::before {
+      background: #ef4444;
+    }
+    .timeline-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .timeline-time {
+      font-family: monospace;
+      color: #94a3b8;
       font-size: 13px;
     }
-    .analysis-table th, .analysis-table td {
-      border: 1px solid #323239;
-      padding: 10px;
-      text-align: left;
+    .focus-badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: bold;
+      text-transform: uppercase;
     }
-    .analysis-table th {
-      background-color: #26262b;
-      color: #98a5b9;
-      font-weight: 600;
+    .focus-badge.high {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
     }
-    .analysis-table tr:nth-child(even) {
-      background-color: #1f1f23;
+    .focus-badge.moderate {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+    }
+    .focus-badge.low {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+    }
+    .timeline-details {
+      margin-top: 6px;
+      color: #cbd5e1;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .timeline-stats {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .timeline-sub-list {
+      margin-top: 8px;
+      padding-left: 14px;
+      border-left: 1.5px dashed #475569;
+    }
+    .timeline-sub-item {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #94a3b8;
+      position: relative;
     }
     .analysis-btn {
       background: #10b981;
@@ -968,75 +1092,71 @@ const requestHandler = async (req, res) => {
       }
     }
 
-    function renderMarkdown(md) {
-      let lines = md.split('\n');
+    function renderAnalysisJSON(reportObj) {
       let html = '';
-      let inTable = false;
-      let inList = false;
-      let tableHtml = '';
+      html += '<h1 style="margin-top: 0; color: #fff; font-size: 24px; font-weight: 600;">Daily Focus & Activity Report</h1>';
+      html += '<h3 style="margin-top: 20px; color: #98a5b9;">Daily Focus Summary:</h3>';
+      html += '<ul style="padding-left: 20px; line-height: 1.6;">';
+      html += '<li><strong>Total Study Time</strong>: ' + (reportObj.totalStudyTimeMinutes ?? 0) + ' minutes</li>';
+      html += '<li><strong>Total Gaming Time</strong>: ' + (reportObj.totalGamingTimeMinutes ?? 0) + ' minutes</li>';
+      html += '<li><strong>Total Focused Time</strong>: ' + (reportObj.totalFocusedTimeMinutes ?? 0) + ' minutes</li>';
+      html += '<li><strong>Total Distracted Time</strong>: ' + (reportObj.totalDistractedTimeMinutes ?? 0) + ' minutes</li>';
+      html += '<li><strong>Global Focus-to-Distraction Ratio</strong>: ' + (reportObj.globalFocusRatioPercent ?? 0) + '%</li>';
+      html += '</ul>';
 
-      for (let i = 0; i < lines.length; i++) {
-        let line = lines[i].trim();
+      html += '<h3 style="margin-top: 25px; color: #98a5b9;">Activity Timeline:</h3>';
+      html += '<div class="timeline-container">';
 
-        if (line.startsWith('|')) {
-          if (inList) {
-            html += '</ul>';
-            inList = false;
+      if (Array.isArray(reportObj.timeline)) {
+        for (let i = 0; i < reportObj.timeline.length; i++) {
+          const item = reportObj.timeline[i];
+          
+          let activeClass = '';
+          if (item.focusLevel === 'High') {
+            activeClass = ' active-focus';
+          } else if (item.focusLevel === 'Low' && item.activityName !== 'Desk Empty') {
+            activeClass = ' active-distracted';
           }
-          if (line.includes(':---') || line.includes('---:')) {
-            continue;
-          }
-          if (!inTable) {
-            inTable = true;
-            tableHtml = '<table class="analysis-table"><thead>';
-          }
-          const cells = line.split('|').slice(1, -1).map(c => c.trim());
-          if (tableHtml.includes('<thead>') && !tableHtml.includes('</thead>')) {
-            tableHtml += '<tr>' + cells.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
-          } else {
-            tableHtml += '<tr>' + cells.map(c => '<td>' + c + '</td>').join('') + '</tr>';
-          }
-        } else {
-          if (inTable) {
-            inTable = false;
-            tableHtml += '</tbody></table>';
-            html += tableHtml;
-          }
-
-          if (line.startsWith('* ')) {
-            if (!inList) {
-              inList = true;
-              html += '<ul style="padding-left: 20px; line-height: 1.6;">';
+          
+          let badgeClass = 'low';
+          if (item.focusLevel === 'High') badgeClass = 'high';
+          else if (item.focusLevel === 'Moderate') badgeClass = 'moderate';
+          
+          html += '<div class="timeline-item' + activeClass + '">';
+          html += '  <div class="timeline-header">';
+          html += '    <span class="timeline-time">[' + (item.timeRange ?? '') + ']</span>';
+          html += '    <span>' + (item.activityName ?? '') + '</span>';
+          html += '    <span class="focus-badge ' + badgeClass + '">' + (item.focusLevel ?? 'Low') + ' Focus</span>';
+          html += '  </div>';
+          
+          html += '  <div class="timeline-stats">';
+          html += '    Duration: <strong>' + (item.totalDurationMinutes ?? 0) + 'm</strong> | ';
+          html += '    Focused: <span style="color: #34d399; font-weight: 500;">' + (item.focusedDurationMinutes ?? 0) + 'm</span> | ';
+          html += '    Distracted: <span style="color: #f87171; font-weight: 500;">' + (item.distractedDurationMinutes ?? 0) + 'm</span>';
+          html += '  </div>';
+          
+          html += '  <div class="timeline-details">' + (item.focusAndPostureDetails ?? '') + '</div>';
+          
+          if (Array.isArray(item.subActivities) && item.subActivities.length > 0) {
+            html += '  <div class="timeline-sub-list">';
+            for (let j = 0; j < item.subActivities.length; j++) {
+              const sub = item.subActivities[j];
+              const subColor = sub.isFocused ? '#34d399' : '#f87171';
+              const subTag = sub.isFocused ? '[Focused]' : '[Distracted]';
+              
+              html += '    <div class="timeline-sub-item">';
+              html += '      <span style="font-family: monospace; color: #94a3b8;">' + sub.timeRange + '</span> (' + sub.durationMinutes + 'm) - ';
+              html += '      <span style="color: ' + subColor + '; font-weight: 500;">' + subTag + '</span> ';
+              html += '      <strong>' + sub.activityName + '</strong>: ' + sub.details;
+              html += '    </div>';
             }
-            const content = line.substring(2).replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');
-            html += '<li>' + content + '</li>';
-          } else {
-            if (inList) {
-              inList = false;
-              html += '</ul>';
-            }
-
-            if (line.startsWith('### ')) {
-              html += '<h3 style="margin-top: 20px; color: #98a5b9;">' + line.substring(4) + '</h3>';
-            } else if (line.startsWith('## ')) {
-              html += '<h2 style="margin-top: 25px; color: #e1e1e6; border-bottom: 1px solid #323239; padding-bottom: 8px;">' + line.substring(3) + '</h2>';
-            } else if (line.startsWith('# ')) {
-              html += '<h1 style="margin-top: 0; color: #fff; font-size: 24px; font-weight: 600;">' + line.substring(2) + '</h1>';
-            } else if (line !== '') {
-              const formattedLine = line.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');
-              html += '<p style="line-height: 1.5; margin: 10px 0;">' + formattedLine + '</p>';
-            }
+            html += '  </div>';
           }
+          
+          html += '</div>';
         }
       }
-
-      if (inTable) {
-        tableHtml += '</tbody></table>';
-        html += tableHtml;
-      }
-      if (inList) {
-        html += '</ul>';
-      }
+      html += '</div>';
       return html;
     }
 
@@ -1046,10 +1166,10 @@ const requestHandler = async (req, res) => {
       modal.style.display = 'block';
       content.innerHTML = '<h3>Loading analysis for ' + dateStr + '...</h3>';
       try {
-        const resp = await fetch('/timelapse/' + dateStr + '_analysis.md');
+        const resp = await fetch('/timelapse/' + dateStr + '_analysis.json');
         if (resp.ok) {
-          const mdText = await resp.text();
-          content.innerHTML = renderMarkdown(mdText);
+          const reportObj = await resp.json();
+          content.innerHTML = renderAnalysisJSON(reportObj);
         } else {
           content.innerHTML = '<p style="color: #dc2626;">Analysis file not found.</p>';
         }
@@ -1085,7 +1205,7 @@ const requestHandler = async (req, res) => {
           list.innerHTML = data.videos.map(v => {
             const dateStr = v.name.replace('.mp4', '');
             const analysisBtn = v.hasAnalysis 
-              ? '<button class="analysis-btn" onclick="viewAnalysis(\'' + dateStr + '\')">View Focus Analysis</button>'
+              ? '<button class="analysis-btn" data-date="' + dateStr + '">View Focus Analysis</button>'
               : '';
             return '<div class="video-card">' +
               '<div class="video-card-title">' + dateStr + '</div>' +
@@ -1104,6 +1224,14 @@ const requestHandler = async (req, res) => {
         list.innerHTML = '<p style="color: #dc2626; grid-column: 1/-1; text-align: center;">Failed to load daily timelapses.</p>';
       }
     }
+
+    // Event delegation for focus analysis buttons
+    document.getElementById('daily-video-list').addEventListener('click', (event) => {
+      if (event.target.classList.contains('analysis-btn')) {
+        const dateStr = event.target.getAttribute('data-date');
+        viewAnalysis(dateStr);
+      }
+    });
 
     // Initialize UI data
     updateFrameCount();
@@ -1214,7 +1342,7 @@ const requestHandler = async (req, res) => {
         .reverse()
         .map(name => {
           const dateStr = name.replace('.mp4', '');
-          const hasAnalysis = fs.existsSync(path.join(timelapseDir, `${dateStr}_analysis.md`));
+          const hasAnalysis = fs.existsSync(path.join(timelapseDir, `${dateStr}_analysis.json`));
           return { name, hasAnalysis };
         });
       res.writeHead(200, {
@@ -1227,7 +1355,7 @@ const requestHandler = async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Error retrieving daily video list.');
     }
-  } else if (url.pathname.match(/^\/timelapse\/\d{4}-\d{2}-\d{2}_analysis\.md$/)) {
+  } else if (url.pathname.match(/^\/timelapse\/\d{4}-\d{2}-\d{2}_analysis\.json$/)) {
     const filename = path.basename(url.pathname);
     const filePath = path.join(timelapseDir, filename);
     try {
@@ -1237,7 +1365,7 @@ const requestHandler = async (req, res) => {
         return;
       }
       res.writeHead(200, {
-        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
       fs.createReadStream(filePath).pipe(res);
@@ -1523,7 +1651,7 @@ server.listen(PORT, '0.0.0.0', async () => {
         const match = file.match(/^(\d{4}-\d{2}-\d{2})\.mp4$/);
         if (match) {
           const dateStr = match[1];
-          const analysisFile = path.join(timelapseDir, `${dateStr}_analysis.md`);
+          const analysisFile = path.join(timelapseDir, `${dateStr}_analysis.json`);
           if (!fs.existsSync(analysisFile)) {
             console.log(`[Timelapse Analysis] Found missing focus analysis for ${dateStr}.mp4. Queueing backfill...`);
             analyzeVideo(dateStr).catch(err => {
