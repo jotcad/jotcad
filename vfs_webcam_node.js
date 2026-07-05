@@ -189,7 +189,7 @@ async function compileHourVideo(dateStr, hourStr) {
       '-framerate', '5',
       '-pattern_type', 'glob',
       '-i', path.join(hourDir, 'frame_*.jpg'),
-      '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d',
+      '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d,scale=-2:360',
       '-r', '5',
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
@@ -568,7 +568,7 @@ async function compileVideo() {
             '-framerate', '5',
             '-pattern_type', 'glob',
             '-i', path.join(activeHourDir, 'frame_*.jpg'),
-            '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d',
+            '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d,scale=-2:360',
             '-r', '5',
             '-c:v', 'libx264',
             '-pix_fmt', 'yuv420p',
@@ -1071,10 +1071,13 @@ const requestHandler = async (req, res) => {
 
     async function loadDailyVideos() {
       const list = document.getElementById('daily-video-list');
+      console.log('[Webcam UI] loadDailyVideos starting fetch...');
       try {
         const resp = await fetch('/timelapse/list');
+        console.log('[Webcam UI] fetch(/timelapse/list) response status:', resp.status);
         if (resp.ok) {
           const data = await resp.json();
+          console.log('[Webcam UI] Daily videos data loaded:', data);
           if (data.videos.length === 0) {
             list.innerHTML = '<p style="color: #98a5b9; grid-column: 1/-1; text-align: center;">No completed daily timelapses yet.</p>';
             return;
@@ -1093,9 +1096,11 @@ const requestHandler = async (req, res) => {
               analysisBtn +
             '</div>';
           }).join('');
+        } else {
+          list.innerHTML = '<p style="color: #dc2626; grid-column: 1/-1; text-align: center;">Failed to load daily timelapses (HTTP ' + resp.status + ').</p>';
         }
       } catch (e) {
-        console.error('Failed to load daily videos:', e);
+        console.error('[Webcam UI] Failed to load daily videos:', e);
         list.innerHTML = '<p style="color: #dc2626; grid-column: 1/-1; text-align: center;">Failed to load daily timelapses.</p>';
       }
     }
