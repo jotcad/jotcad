@@ -784,6 +784,79 @@ const requestHandler = async (req, res) => {
     .video-card a:hover {
       text-decoration: underline;
     }
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.85);
+      backdrop-filter: blur(5px);
+    }
+    .modal-content {
+      background-color: #1a1a1e;
+      margin: 5% auto;
+      padding: 30px;
+      border: 1px solid #323239;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 1000px;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.9);
+      color: #e1e1e6;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .close-btn {
+      color: #98a5b9;
+      float: right;
+      font-size: 30px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .close-btn:hover {
+      color: #fff;
+    }
+    .analysis-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      font-size: 13px;
+    }
+    .analysis-table th, .analysis-table td {
+      border: 1px solid #323239;
+      padding: 10px;
+      text-align: left;
+    }
+    .analysis-table th {
+      background-color: #26262b;
+      color: #98a5b9;
+      font-weight: 600;
+    }
+    .analysis-table tr:nth-child(even) {
+      background-color: #1f1f23;
+    }
+    .analysis-btn {
+      background: #10b981;
+      padding: 8px 16px;
+      font-size: 13px;
+      margin-top: 5px;
+      border-radius: 6px;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s;
+      width: 100%;
+      text-align: center;
+    }
+    .analysis-btn:hover {
+      background: #059669;
+    }
   </style>
 </head>
 <body>
@@ -820,6 +893,14 @@ const requestHandler = async (req, res) => {
     <h3>Completed Daily Timelapses</h3>
     <div id="daily-video-list" class="video-list">
       <p style="color: #98a5b9; grid-column: 1/-1; text-align: center;">Loading completed daily timelapses...</p>
+    </div>
+  </div>
+
+  <!-- Modal for Focus Analysis -->
+  <div id="analysis-modal" class="modal">
+    <div class="modal-content">
+      <span class="close-btn" onclick="closeModal()">&times;</span>
+      <div id="analysis-content">Loading focus analysis...</div>
     </div>
   </div>
 
@@ -887,6 +968,107 @@ const requestHandler = async (req, res) => {
       }
     }
 
+    function renderMarkdown(md) {
+      let lines = md.split('\n');
+      let html = '';
+      let inTable = false;
+      let inList = false;
+      let tableHtml = '';
+
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+
+        if (line.startsWith('|')) {
+          if (inList) {
+            html += '</ul>';
+            inList = false;
+          }
+          if (line.includes(':---') || line.includes('---:')) {
+            continue;
+          }
+          if (!inTable) {
+            inTable = true;
+            tableHtml = '<table class="analysis-table"><thead>';
+          }
+          const cells = line.split('|').slice(1, -1).map(c => c.trim());
+          if (tableHtml.includes('<thead>') && !tableHtml.includes('</thead>')) {
+            tableHtml += '<tr>' + cells.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+          } else {
+            tableHtml += '<tr>' + cells.map(c => '<td>' + c + '</td>').join('') + '</tr>';
+          }
+        } else {
+          if (inTable) {
+            inTable = false;
+            tableHtml += '</tbody></table>';
+            html += tableHtml;
+          }
+
+          if (line.startsWith('* ')) {
+            if (!inList) {
+              inList = true;
+              html += '<ul style="padding-left: 20px; line-height: 1.6;">';
+            }
+            const content = line.substring(2).replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');
+            html += '<li>' + content + '</li>';
+          } else {
+            if (inList) {
+              inList = false;
+              html += '</ul>';
+            }
+
+            if (line.startsWith('### ')) {
+              html += '<h3 style="margin-top: 20px; color: #98a5b9;">' + line.substring(4) + '</h3>';
+            } else if (line.startsWith('## ')) {
+              html += '<h2 style="margin-top: 25px; color: #e1e1e6; border-bottom: 1px solid #323239; padding-bottom: 8px;">' + line.substring(3) + '</h2>';
+            } else if (line.startsWith('# ')) {
+              html += '<h1 style="margin-top: 0; color: #fff; font-size: 24px; font-weight: 600;">' + line.substring(2) + '</h1>';
+            } else if (line !== '') {
+              const formattedLine = line.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');
+              html += '<p style="line-height: 1.5; margin: 10px 0;">' + formattedLine + '</p>';
+            }
+          }
+        }
+      }
+
+      if (inTable) {
+        tableHtml += '</tbody></table>';
+        html += tableHtml;
+      }
+      if (inList) {
+        html += '</ul>';
+      }
+      return html;
+    }
+
+    async function viewAnalysis(dateStr) {
+      const modal = document.getElementById('analysis-modal');
+      const content = document.getElementById('analysis-content');
+      modal.style.display = 'block';
+      content.innerHTML = '<h3>Loading analysis for ' + dateStr + '...</h3>';
+      try {
+        const resp = await fetch('/timelapse/' + dateStr + '_analysis.md');
+        if (resp.ok) {
+          const mdText = await resp.text();
+          content.innerHTML = renderMarkdown(mdText);
+        } else {
+          content.innerHTML = '<p style="color: #dc2626;">Analysis file not found.</p>';
+        }
+      } catch (e) {
+        content.innerHTML = '<p style="color: #dc2626;">Error loading analysis.</p>';
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('analysis-modal').style.display = 'none';
+    }
+
+    window.onclick = function(event) {
+      const modal = document.getElementById('analysis-modal');
+      if (event.target === modal) {
+        modal.style.display = 'none';
+      }
+    }
+
     async function loadDailyVideos() {
       const list = document.getElementById('daily-video-list');
       try {
@@ -897,15 +1079,20 @@ const requestHandler = async (req, res) => {
             list.innerHTML = '<p style="color: #98a5b9; grid-column: 1/-1; text-align: center;">No completed daily timelapses yet.</p>';
             return;
           }
-          list.innerHTML = data.videos.map(v => \`
-            <div class="video-card">
-              <div class="video-card-title">\${v.replace('.mp4', '')}</div>
-              <video controls style="max-height: 160px; border-radius: 4px; background: #000; width: 100%;">
-                <source src="/timelapse/\${v}" type="video/mp4">
-              </video>
-              <a href="/timelapse/\${v}" download="\${v}">Download MP4</a>
-            </div>
-          \`).join('');
+          list.innerHTML = data.videos.map(v => {
+            const dateStr = v.name.replace('.mp4', '');
+            const analysisBtn = v.hasAnalysis 
+              ? '<button class="analysis-btn" onclick="viewAnalysis(\'' + dateStr + '\')">View Focus Analysis</button>'
+              : '';
+            return '<div class="video-card">' +
+              '<div class="video-card-title">' + dateStr + '</div>' +
+              '<video controls style="max-height: 160px; border-radius: 4px; background: #000; width: 100%;">' +
+                '<source src="/timelapse/' + v.name + '" type="video/mp4">' +
+              '</video>' +
+              '<a href="/timelapse/' + v.name + '" download="' + v.name + '">Download MP4</a>' +
+              analysisBtn +
+            '</div>';
+          }).join('');
         }
       } catch (e) {
         console.error('Failed to load daily videos:', e);
