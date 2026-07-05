@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
+import { JSDOM } from 'jsdom';
 import { VFS, DiskStorage, MeshLink, registerVFSRoutes, getCID, Selector } from '../fs/src/index.js';
 
 function runTriangulationInWorker(fileBytes, deflection) {
@@ -31,6 +32,285 @@ function runTriangulationInWorker(fileBytes, deflection) {
             }
         });
     });
+}
+
+function runSvgTriangulationInWorker(faces, deflection) {
+    return new Promise((resolve, reject) => {
+        const workerPath = path.resolve(__dirname, 'occt_worker.js');
+        const worker = new Worker(workerPath);
+        worker.postMessage({ type: 'svg', faces, deflection });
+        worker.on('message', (msg) => {
+            if (msg.success) {
+                resolve({ results: msg.results });
+            } else {
+                reject(new Error(msg.error));
+            }
+            worker.terminate();
+        });
+        worker.on('error', (err) => {
+            reject(err);
+            worker.terminate();
+        });
+        worker.on('exit', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Worker stopped with exit code ${code}`));
+            }
+        });
+    });
+}
+
+function parseSvgToFaces(svgString) {
+    const dom = new JSDOM(svgString);
+    const doc = dom.window.document;
+    
+    const loops = [];
+    
+    // 1. Paths
+    const paths = doc.querySelectorAll('path');
+    for (const p of paths) {
+        const d = p.getAttribute('d');
+        if (d) {
+            const pathLoops = parseSvgPath(d);
+            loops.push(...pathLoops);
+        }
+    }
+    
+    // 2. Rectangles
+    const rects = doc.querySelectorAll('rect');
+    for (const r of rects) {
+        const x = parseFloat(r.getAttribute('x') || '0');
+        const y = parseFloat(r.getAttribute('y') || '0');
+        const w = parseFloat(r.getAttribute('width') || '0');
+        const h = parseFloat(r.getAttribute('height') || '0');
+        if (w > 0 && h > 0) {
+            const rectLoop = [
+                [x, y],
+                [x + w, y],
+                [x + w, y + h],
+                [x, y + h],
+                [x, y]
+            ];
+            loops.push(rectLoop);
+        }
+    }
+    
+    // 3. Circles
+    const circles = doc.querySelectorAll('circle');
+    for (const c of circles) {
+        const cx = parseFloat(c.getAttribute('cx') || '0');
+        const cy = parseFloat(c.getAttribute('cy') || '0');
+        const r = parseFloat(c.getAttribute('r') || '0');
+        if (r > 0) {
+            const circleLoop = [];
+            const steps = 32;
+            for (let s = 0; s <= steps; s++) {
+                const angle = (s / steps) * 2 * Math.PI;
+                circleLoop.push([cx + r * Math.cos(angle), cy + r * Math.sin(angle)]);
+            }
+            loops.push(circleLoop);
+        }
+    }
+    
+    // 4. Polygons
+    const polygons = doc.querySelectorAll('polygon');
+    for (const poly of polygons) {
+        const pointsStr = poly.getAttribute('points');
+        if (pointsStr) {
+            const pts = parsePointsString(pointsStr);
+            if (pts.length > 2) {
+                const first = pts[0];
+                const last = pts[pts.length - 1];
+                if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1e-5) {
+                    pts.push([first[0], first[1]]);
+                }
+                loops.push(pts);
+            }
+        }
+    }
+    
+    // 5. Polylines
+    const polylines = doc.querySelectorAll('polyline');
+    for (const poly of polylines) {
+        const pointsStr = poly.getAttribute('points');
+        if (pointsStr) {
+            const pts = parsePointsString(pointsStr);
+            if (pts.length > 1) {
+                loops.push(pts);
+            }
+        }
+    }
+    
+    // 6. Lines
+    const lines = doc.querySelectorAll('line');
+    for (const l of lines) {
+        const x1 = parseFloat(l.getAttribute('x1') || '0');
+        const y1 = parseFloat(l.getAttribute('y1') || '0');
+        const x2 = parseFloat(l.getAttribute('x2') || '0');
+        const y2 = parseFloat(l.getAttribute('y2') || '0');
+        loops.push([[x1, y1], [x2, y2]]);
+    }
+    
+    return classifyLoops(loops);
+}
+
+function parsePointsString(str) {
+    const coords = str.trim().split(/[\s,]+/);
+    const pts = [];
+    for (let i = 0; i < coords.length; i += 2) {
+        if (coords[i] && coords[i+1]) {
+            pts.push([parseFloat(coords[i]), parseFloat(coords[i+1])]);
+        }
+    }
+    return pts;
+}
+
+function parseSvgPath(d) {
+    const loops = [];
+    let currentLoop = [];
+    let cx = 0, cy = 0;
+    let startX = 0, startY = 0;
+    
+    const tokens = d.match(/[a-df-z]|[+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?/gi) || [];
+    let i = 0;
+    while (i < tokens.length) {
+        const cmd = tokens[i++];
+        if (cmd === 'M' || cmd === 'm') {
+            if (currentLoop.length > 0) {
+                loops.push(currentLoop);
+            }
+            const relative = (cmd === 'm');
+            const tx = parseFloat(tokens[i++]);
+            const ty = parseFloat(tokens[i++]);
+            cx = relative ? cx + tx : tx;
+            cy = relative ? cy + ty : ty;
+            startX = cx;
+            startY = cy;
+            currentLoop = [[cx, cy]];
+        } else if (cmd === 'L' || cmd === 'l') {
+            const relative = (cmd === 'l');
+            const tx = parseFloat(tokens[i++]);
+            const ty = parseFloat(tokens[i++]);
+            cx = relative ? cx + tx : tx;
+            cy = relative ? cy + ty : ty;
+            currentLoop.push([cx, cy]);
+        } else if (cmd === 'H' || cmd === 'h') {
+            const relative = (cmd === 'h');
+            const tx = parseFloat(tokens[i++]);
+            cx = relative ? cx + tx : tx;
+            currentLoop.push([cx, cy]);
+        } else if (cmd === 'V' || cmd === 'v') {
+            const relative = (cmd === 'v');
+            const ty = parseFloat(tokens[i++]);
+            cy = relative ? cy + ty : ty;
+            currentLoop.push([cx, cy]);
+        } else if (cmd === 'C' || cmd === 'c') {
+            const relative = (cmd === 'c');
+            const x1 = parseFloat(tokens[i++]);
+            const y1 = parseFloat(tokens[i++]);
+            const x2 = parseFloat(tokens[i++]);
+            const y2 = parseFloat(tokens[i++]);
+            const x = parseFloat(tokens[i++]);
+            const y = parseFloat(tokens[i++]);
+            
+            const px1 = relative ? cx + x1 : x1;
+            const py1 = relative ? cy + y1 : y1;
+            const px2 = relative ? cx + x2 : x2;
+            const py2 = relative ? cy + y2 : y2;
+            const targetX = relative ? cx + x : x;
+            const targetY = relative ? cy + y : y;
+            
+            for (let t = 1; t <= 8; t++) {
+                const nt = t / 8;
+                const omt = 1 - nt;
+                const bx = omt*omt*omt*cx + 3*omt*omt*nt*px1 + 3*omt*nt*nt*px2 + nt*nt*nt*targetX;
+                const by = omt*omt*omt*cy + 3*omt*omt*nt*py1 + 3*omt*nt*nt*py2 + nt*nt*nt*targetY;
+                currentLoop.push([bx, by]);
+            }
+            cx = targetX;
+            cy = targetY;
+        } else if (cmd === 'Q' || cmd === 'q') {
+            const relative = (cmd === 'q');
+            const x1 = parseFloat(tokens[i++]);
+            const y1 = parseFloat(tokens[i++]);
+            const x = parseFloat(tokens[i++]);
+            const y = parseFloat(tokens[i++]);
+            
+            const px1 = relative ? cx + x1 : x1;
+            const py1 = relative ? cy + y1 : y1;
+            const targetX = relative ? cx + x : x;
+            const targetY = relative ? cy + y : y;
+            
+            for (let t = 1; t <= 8; t++) {
+                const nt = t / 8;
+                const omt = 1 - nt;
+                const bx = omt*omt*cx + 2*omt*nt*px1 + nt*nt*targetX;
+                const by = omt*omt*cy + 2*omt*nt*py1 + nt*nt*targetY;
+                currentLoop.push([bx, by]);
+            }
+            cx = targetX;
+            cy = targetY;
+        } else if (cmd === 'Z' || cmd === 'z') {
+            cx = startX;
+            cy = startY;
+            if (currentLoop.length > 1) {
+                const first = currentLoop[0];
+                const last = currentLoop[currentLoop.length - 1];
+                if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1e-5) {
+                    currentLoop.push([first[0], first[1]]);
+                }
+            }
+            loops.push(currentLoop);
+            currentLoop = [];
+        }
+    }
+    if (currentLoop.length > 1) {
+        loops.push(currentLoop);
+    }
+    return loops;
+}
+
+function classifyLoops(loops) {
+    const polygonLoops = loops.map(loop => {
+        let area = 0;
+        for (let j = 0; j < loop.length; j++) {
+            const p1 = loop[j];
+            const p2 = loop[(j + 1) % loop.length];
+            area += p1[0] * p2[1] - p2[0] * p1[1];
+        }
+        return { points: loop, absArea: Math.abs(area) };
+    }).filter(l => l.absArea > 1e-5);
+
+    polygonLoops.sort((a, b) => b.absArea - a.absArea);
+
+    const faces = [];
+    for (const loop of polygonLoops) {
+        let isHole = false;
+        const testPoint = loop.points[0];
+        for (const face of faces) {
+            if (isPointInPolygon(testPoint, face.outer)) {
+                face.holes.push(loop.points);
+                isHole = true;
+                break;
+            }
+        }
+        if (!isHole) {
+            faces.push({ outer: loop.points, holes: [] });
+        }
+    }
+    return faces;
+}
+
+function isPointInPolygon(pt, poly) {
+    let inside = false;
+    const x = pt[0], y = pt[1];
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1];
+        const xj = poly[j][0], yj = poly[j][1];
+        const intersect = ((yi > y) !== (yj > y))
+            && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -212,6 +492,119 @@ await vfs.init();
 
 console.log(`[Export Node ${id}] Starting Native Mesh Node with neighbors: [${neighbors.join(', ')}]`);
 const meshLink = new MeshLink(vfs, neighbors, { localUrl: `${protocol}://localhost:${port}` });
+
+
+// Register the Svg (Import) Op as a VFS Provider
+vfs.registerProvider('jot/Svg', async (v, selector, context) => {
+    try {
+        const { file, deflection = 0.1 } = selector.parameters;
+
+        if (!file) throw new Error('Missing input parameter: file');
+
+        console.log(`[Export Node] Svg import requested for file: ${typeof file === 'object' ? JSON.stringify(file) : file}`);
+
+        let fileBytes = null;
+        let filename = "imported_svg";
+
+        if (typeof file === 'string') {
+            filename = file;
+            if (fs.existsSync(file)) {
+                fileBytes = fs.readFileSync(file);
+            } else if (/^[0-9a-fA-F]{64}$/.test(file)) {
+                try {
+                    const res = await v.readCID(file, context);
+                    if (res) {
+                        fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                        if (res.metadata?.filename) {
+                            filename = res.metadata.filename;
+                        }
+                    }
+                } catch (e) {}
+            }
+        } else if (file && (file.path || file.cid || file instanceof Selector)) {
+            try {
+                const s = file instanceof Selector ? file : Selector.fromObject(file);
+                const res = await v.readSelector(s, context);
+                if (res) {
+                    fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                    if (res.metadata?.filename) {
+                        filename = res.metadata.filename;
+                    } else if (file.parameters && file.parameters.path) {
+                        filename = file.parameters.path;
+                    } else if (file.path) {
+                        filename = file.path;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (!fileBytes || fileBytes.length === 0) {
+            throw new Error(`File not found or empty: ${filename}`);
+        }
+
+        const svgString = new TextDecoder().decode(fileBytes);
+        const faces = parseSvgToFaces(svgString);
+
+        if (faces.length === 0) {
+            throw new Error(`No valid shapes or paths parsed from SVG: ${filename}`);
+        }
+
+        const triangulateResult = await runSvgTriangulationInWorker(faces, deflection);
+        const results = triangulateResult.results;
+
+        const components = [];
+        const baseName = path.basename(filename);
+
+        for (let i = 0; i < results.length; i++) {
+            const geoText = results[i].geometryText;
+            const geoCID = await getCID(geoText);
+            await v.write(geoCID, geoText, { encoding: 'string' });
+
+            components.push({
+                geometry: geoCID,
+                tf: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+                tags: { type: "surface", name: `${baseName}_shape_${i}` },
+                components: []
+            });
+        }
+
+        const outShape = {
+            geometry: null,
+            tf: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+            tags: { type: "group", name: baseName },
+            components: components
+        };
+
+        const bytes = new TextEncoder().encode(JSON.stringify(outShape));
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+            }
+        });
+
+        return {
+            stream,
+            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+        };
+
+    } catch (err) {
+        console.error(`[Export Node Svg Error]`, err);
+        return null;
+    }
+}, {
+    schema: {
+        path: 'jot/Svg',
+        description: 'Imports an SVG file as a hierarchy of disjoint 2D surfaces.',
+        arguments: [
+            { name: 'file', type: 'jot:file' },
+            { name: 'deflection', type: 'jot:number', default: 0.1 }
+        ],
+        outputs: { 
+            '$out': { type: 'jot:shape' }
+        }
+    }
+});
 
 
 // Register the Step (Import) Op as a VFS Provider
