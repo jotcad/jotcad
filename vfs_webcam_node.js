@@ -15,6 +15,11 @@ const DEVICE = process.env.WEBCAM_DEVICE || '/dev/video0';
 const neighbors = (process.env.NEIGHBORS || '').split(',').filter(Boolean);
 const timelapseDir = path.resolve('./timelapse');
 
+function getLocalDateStr(date = new Date()) {
+  const tzOffset = date.getTimezoneOffset() * 60000;
+  return (new Date(date.getTime() - tzOffset)).toISOString().split('T')[0];
+}
+
 // 1. Initialize the VFS instance
 const storageDir = path.resolve(`.vfs_storage_${id}`);
 const vfs = new VFS({ id, storage: new DiskStorage(storageDir) });
@@ -259,7 +264,7 @@ async function compileVideo() {
 
   try {
     const now = new Date();
-    const activeDayStr = now.toISOString().split('T')[0];
+    const activeDayStr = getLocalDateStr(now);
     const activeHourStr = String(now.getHours()).padStart(2, '0');
 
     // 0. Auto-backfill any past completed hour JPEG directories that haven't been compiled yet
@@ -720,7 +725,7 @@ const requestHandler = async (req, res) => {
   } else if (url.pathname === '/timelapse/count') {
     try {
       const now = new Date();
-      const activeDayStr = now.toISOString().split('T')[0];
+      const activeDayStr = getLocalDateStr(now);
       const datePath = path.join(timelapseDir, activeDayStr);
       let count = 0;
       if (fs.existsSync(datePath)) {
@@ -1002,7 +1007,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     // 2. Compile any past completed hourly folders into MP4 files
     try {
       const now = new Date();
-      const currentDayStr = now.toISOString().split('T')[0];
+      const currentDayStr = getLocalDateStr(now);
       const currentHourStr = String(now.getHours()).padStart(2, '0');
 
       const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
@@ -1032,7 +1037,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     // 3. Compile any past completed day folders into YYYY-MM-DD.mp4
     try {
       const now = new Date();
-      const currentDayStr = now.toISOString().split('T')[0];
+      const currentDayStr = getLocalDateStr(now);
       const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
         const fullPath = path.join(timelapseDir, f);
         return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
@@ -1050,7 +1055,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     }
 
     // Keep track of active hour and its frameIndex
-    let activeDayStr = new Date().toISOString().split('T')[0];
+    let activeDayStr = getLocalDateStr();
     let activeHourStr = String(new Date().getHours()).padStart(2, '0');
     let frameIndex = 1;
 
@@ -1076,7 +1081,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     setInterval(async () => {
       try {
         const now = new Date();
-        const currentDayStr = now.toISOString().split('T')[0];
+        const currentDayStr = getLocalDateStr(now);
         const currentHourStr = String(now.getHours()).padStart(2, '0');
 
         // Check for hourly rollover
