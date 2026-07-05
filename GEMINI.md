@@ -44,7 +44,8 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 | `fs/cpp/cid.cpp` | `docs/CORE_DATA_MODELS.md` | JCB & Cryptographic Identity |
 | `fs/cpp/selector.h` | `docs/VFS_SPECIFICATION.md` | Universal Addressing |
 | `geo/impl/processor.h` | `docs/JOT_LANGUAGE_SPECIFICATION.md` | Port Injection & Typed Execution |
-| `geo/ops/stl_op.h` | `docs/DYNAMIC_OPERATIONS.md` | STL Binary Export |
+| `geo/ops/stl_op.h` | `docs/DYNAMIC_OPERATIONS.md` | STL Binary Export & Import |
+| `geo/ops/obj_op.h` | `docs/DYNAMIC_OPERATIONS.md` | Wavefront OBJ Import & Export |
 | `geo/ops/*.h` | `docs/DYNAMIC_OPERATIONS.md` | Kernel Logic & Tolerances |
 | `docs/TODO_SIMPLIFICATION.md` | `legacy/` | Edge-Collapse & Garland-Heckbert |
 

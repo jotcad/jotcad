@@ -99,3 +99,15 @@ The operator automatically adapts to the dimensionality of the result:
 ### 6.3 Mixed-Dimensionality Support
 - **Solid Subject + Flat Tool**: Correctly produces a 3D solid (e.g., a $12 \times 12 \times 10$ box from a $10 \times 10 \times 10$ cube grown by a $2 \times 2$ square).
 - **Flat Subject + Solid Tool**: Correctly promotes the result to a 3D solid.
+
+## 7. File Format Integration (STL and Wavefront OBJ)
+
+JotCAD supports importing and exporting common 3D mesh formats through standard native operators registered in the VFS.
+
+### 7.1 STL Operators
+- **Export (`jot/stl`)**: Exposes the `stl` exporter (lowercase). It traverses the spatial representation of a Shape, triangulates complex non-convex face loops via Constrained Delaunay Triangulation (CDT), and writes a standardized binary STL stream to the `$out` port.
+- **Import (`jot/Stl`)**: Exposes the `Stl` constructor (capitalized). It accepts a `jot:file` Selector, reads the raw bytes, auto-detects binary vs. ASCII formatting, parses the facets, and returns a formal CAD Shape of `type: "closed"`.
+
+### 7.2 Wavefront OBJ Operators
+- **Export (`jot/obj`)**: Exposes the `obj` exporter (lowercase). It serializes shapes to Wavefront OBJ format, preserving vertex coordinates and face loops.
+- **Import (`jot/Obj`)**: Exposes the `Obj` constructor (capitalized). It accepts a `jot:file` Selector, reads the OBJ text stream, parses the 1-based or relative index face patterns, triangulates polygon loops as triangle fans, and materializes the result as a formal CAD Shape of `type: "closed"`.

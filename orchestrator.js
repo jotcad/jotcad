@@ -381,7 +381,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       info(`[Orchestrator] Killing ${name}...`);
       child.kill('SIGTERM');
     }
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 200));
     for (const [name, child] of processes) {
       try {
         child.kill('SIGKILL');
