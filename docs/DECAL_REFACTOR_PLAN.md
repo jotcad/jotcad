@@ -94,3 +94,15 @@ As of June 2026, the non-manifold / open-mesh issue during surface replacement h
    * Solved the STEP integration test hang where empty/zero-length file bytes returned by the file provider in `ux/src/lib/vfs/FileProvider.js` bypassed the old `!fileBytes` null-check in `geo/export_service.js`.
    * Updated the check to `(!fileBytes || fileBytes.length === 0)` to correctly trigger the mock geometry fallback, preventing empty files from hanging the OpenCascade parser.
 
+### July 2026 Integration & Test Suite Refinement
+
+1. **Correction of Matrix Representation**:
+   * Replaced non-standard `cartesian` matrix structures in the decal tests with standard space-separated homogeneous matrix strings. This ensures compliance with raw selector validation (`normalizeSelector`) and prevents type hydration errors.
+
+2. **MeshLink Lifecycle Control**:
+   * Resolved hanging sockets in JS integration tests by wrapping setup, execution, and cleanup in a standard `finally` block that explicitly invokes `mesh.stop()` on the `MeshLink` instance, freeing Zenoh resources.
+
+3. **Catalog Race Condition Resolution**:
+   * Replaced static delays with `waitForMeshNodes` calls in the decal test to ensure that the VFS client waits until the necessary C++ provider nodes have synchronized their operators on the Zenoh mesh before executing shape queries.
+
+

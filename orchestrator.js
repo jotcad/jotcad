@@ -44,7 +44,7 @@ export const PROFILES = {
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
       ...getSplitOpsComponents(9200, 9191),
-      export: { type: 'export', protocol: 'https', port: 9197, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
+      export: { type: 'export', protocol: 'https', port: 9202, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
     }
   },
@@ -131,6 +131,17 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   const config = PROFILES[profileKey];
   if (!config) {
     throw new Error(`Unknown profile: ${profileKey}. Available: ${Object.keys(PROFILES).join(', ')}`);
+  }
+
+  // Config validation: Check for port conflicts before starting any components
+  const portToComponent = new Map();
+  for (const [id, cfg] of Object.entries(config.components)) {
+    if (cfg.port) {
+      if (portToComponent.has(cfg.port)) {
+        throw new Error(`Configuration Error in profile "${profileKey}": Components "${portToComponent.get(cfg.port)}" and "${id}" both attempt to use port ${cfg.port}.`);
+      }
+      portToComponent.set(cfg.port, id);
+    }
   }
 
   const capturedLogs = [];
@@ -421,6 +432,19 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   };
 
   components.forEach(launch);
+
+  // Verify that all launched processes stay up
+  await new Promise(r => setTimeout(r, 1000));
+  for (const component of components) {
+    const child = processes.get(component.name);
+    if (!child || child.exitCode !== null) {
+      const code = child ? child.exitCode : 'unknown';
+      const errorMsg = `CRITICAL: Component "${component.name}" exited prematurely during launch (exit code: ${code}).`;
+      error(errorMsg);
+      await shutdown();
+      throw new Error(errorMsg);
+    }
+  }
 
   if (ports.ux) {
       info(`[Orchestrator] Waiting for UX on port ${ports.ux}...`);

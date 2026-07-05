@@ -74,7 +74,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                part_line_visual_test.cpp \
                part_line_search_test.cpp \
                mold_split_test.cpp \
-               extrusion_overlap_test.cpp
+               extrusion_overlap_test.cpp \
+               rig_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
@@ -85,7 +86,7 @@ all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)
 # Ensure the library is built first
 .PHONY: $(LIB_GEO)
 $(LIB_GEO):
-	$(MAKE) -C ..
+	$(MAKE) -C .. all ops
 
 # Rule for building the standalone test_zenoh_caching binary
 $(BIN_DIR)/test_zenoh_caching: $(OBJ_DIR)/test_zenoh_caching.o
@@ -102,10 +103,21 @@ $(BIN_DIR)/test_zenoh_link: $(OBJ_DIR)/test_zenoh_link.o
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
 
+REG_OBJS = ../obj/ops_library.o \
+           ../obj/ops_primitives_reg.o \
+           ../obj/ops_booleans_reg.o \
+           ../obj/ops_transforms_reg.o \
+           ../obj/ops_features_reg.o \
+           ../obj/ops_mapping_reg.o \
+           ../obj/ops_sweep_reg.o \
+           ../obj/ops_unfold_reg.o \
+           ../obj/ops_tooling_reg.o \
+           ../obj/ops_io_reg.o
+
 # Rule for building the combined unit_tests binary from a single translation unit
-$(BIN_DIR)/unit_tests: $(OBJ_DIR)/unit_tests.o $(LIB_GEO)
+$(BIN_DIR)/unit_tests: $(OBJ_DIR)/unit_tests.o $(REG_OBJS) $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)/unit_tests.o $(REG_OBJS) -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
 # Rule for building the standalone cid_consistency_test binary
 $(BIN_DIR)/cid_consistency_test: $(OBJ_DIR)/cid_consistency_test.o $(LIB_GEO)
