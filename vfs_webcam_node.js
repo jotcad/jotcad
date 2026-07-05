@@ -195,7 +195,63 @@ async function compileHourVideo(dateStr, hourStr) {
   console.log(`[Timelapse] Cleaned up source JPEG folder: ${dateStr}/${hourStr}/ (Output: ${trueCount}/${files.length} frames)`);
 }
 
-// Helper to compile the full timelapse video on demand
+// Helper to compile a past completed day folder into a single daily video
+async function compileDailyVideo(dateStr) {
+  const datePath = path.join(timelapseDir, dateStr);
+  const dailyVideoPath = path.join(timelapseDir, `${dateStr}.mp4`);
+
+  if (fs.existsSync(dailyVideoPath)) {
+    // Already compiled
+    return;
+  }
+
+  if (!fs.existsSync(datePath)) return;
+
+  const files = fs.readdirSync(datePath)
+    .filter(f => f.match(/^hour_\d{2}\.mp4$/))
+    .sort();
+
+  if (files.length === 0) {
+    // Clean up empty directory if any
+    fs.rmSync(datePath, { recursive: true, force: true });
+    return;
+  }
+
+  console.log(`[Timelapse] Compiling daily video for ${dateStr} from ${files.length} hourly segments...`);
+
+  const segmentPaths = files.map(f => path.join(datePath, f));
+  const dailyConcatListPath = path.join(datePath, 'daily_concat_list.txt');
+
+  if (segmentPaths.length === 1) {
+    fs.copyFileSync(segmentPaths[0], dailyVideoPath);
+  } else {
+    const listContent = segmentPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
+    fs.writeFileSync(dailyConcatListPath, listContent);
+
+    await new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', dailyConcatListPath,
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        dailyVideoPath
+      ]);
+      ffmpeg.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg daily concat exited with code ${code}`));
+      });
+      ffmpeg.on('error', reject);
+    });
+  }
+
+  // Delete source directory and files to save space
+  fs.rmSync(datePath, { recursive: true, force: true });
+  console.log(`[Timelapse] Successfully compiled daily video: ${dateStr}.mp4 and cleaned up folder.`);
+}
+
+// Helper to compile the today's partial timelapse video on demand
 async function compileVideo() {
   const tempActivePath = path.join(timelapseDir, 'temp_active_hour.mp4');
   const concatListPath = path.join(timelapseDir, 'concat_list.txt');
@@ -226,6 +282,13 @@ async function compileVideo() {
               console.error(`[Timelapse Rebuild] Failed to backfill compilation for past hour ${dateDir}/${hourDir}:`, err);
             });
           }
+        }
+
+        // Compile past day into YYYY-MM-DD.mp4 if it is a completed past day
+        if (dateDir !== activeDayStr) {
+          await compileDailyVideo(dateDir).catch(err => {
+            console.error(`[Timelapse Rebuild] Failed to compile daily video for past day ${dateDir}:`, err);
+          });
         }
       }
     } catch (e) {
@@ -276,22 +339,15 @@ async function compileVideo() {
       }
     }
 
-    // 2. Gather all pre-compiled hourly videos in chronological order
-    const dateDirs = fs.readdirSync(timelapseDir)
-      .filter(f => {
-        const fullPath = path.join(timelapseDir, f);
-        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
-      })
-      .sort(); // sort day directories chronologically (alphabetical order works because format is YYYY-MM-DD)
-
+    // 2. Gather only today's hourly videos in chronological order
     const videoSegments = [];
-    for (const dateDir of dateDirs) {
-      const datePath = path.join(timelapseDir, dateDir);
-      const files = fs.readdirSync(datePath)
+    const todayPath = path.join(timelapseDir, activeDayStr);
+    if (fs.existsSync(todayPath)) {
+      const files = fs.readdirSync(todayPath)
         .filter(f => f.match(/^hour_\d{2}\.mp4$/))
-        .sort(); // sort hours chronologically (e.g. hour_09.mp4 < hour_10.mp4)
+        .sort();
       for (const file of files) {
-        videoSegments.push(path.join(datePath, file));
+        videoSegments.push(path.join(todayPath, file));
       }
     }
 
@@ -300,20 +356,18 @@ async function compileVideo() {
     }
 
     if (videoSegments.length === 0) {
-      throw new Error('No hourly video segments or active frames found to compile.');
+      throw new Error("No active frames or hourly segments collected yet for today.");
     }
 
-    console.log(`[Timelapse Rebuild] Concatenating ${videoSegments.length} hourly segments...`);
+    console.log(`[Timelapse Rebuild] Concatenating ${videoSegments.length} segments for today (${activeDayStr})...`);
 
-    // 3. If there is only one segment, we can just copy it directly to outputPath
+    // 3. If there is only one segment, copy it directly to outputPath
     if (videoSegments.length === 1) {
       fs.copyFileSync(videoSegments[0], outputPath);
     } else {
-      // Write the file list for concat demuxer
       const listContent = videoSegments.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
       fs.writeFileSync(concatListPath, listContent);
 
-      // Run ffmpeg concat demuxer with fast copy
       await new Promise((resolve, reject) => {
         const ffmpeg = spawn('ffmpeg', [
           '-y',
@@ -332,7 +386,7 @@ async function compileVideo() {
       });
     }
 
-    console.log('[Timelapse Rebuild] Timelapse video successfully stitched.');
+    console.log('[Timelapse Rebuild] Today\'s partial video successfully compiled.');
   } finally {
     // Clean up temporary files
     if (fs.existsSync(tempActivePath)) {
@@ -589,31 +643,29 @@ const requestHandler = async (req, res) => {
     }
   } else if (url.pathname === '/timelapse/count') {
     try {
-      const files = await fs.promises.readdir(timelapseDir).catch(() => []);
+      const now = new Date();
+      const activeDayStr = now.toISOString().split('T')[0];
+      const datePath = path.join(timelapseDir, activeDayStr);
       let count = 0;
-      for (const file of files) {
-        const filePath = path.join(timelapseDir, file);
-        const stat = await fs.promises.stat(filePath).catch(() => null);
-        if (stat && stat.isDirectory() && file.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          const subfiles = await fs.promises.readdir(filePath).catch(() => []);
-          // Add counts from all JSON metadata files
-          for (const subfile of subfiles) {
-            if (subfile.endsWith('.mp4.json')) {
-              try {
-                const meta = JSON.parse(fs.readFileSync(path.join(filePath, subfile), 'utf8'));
-                count += meta.count || 0;
-              } catch (e) {}
-            }
+      if (fs.existsSync(datePath)) {
+        const subfiles = await fs.promises.readdir(datePath).catch(() => []);
+        // Add counts from all JSON metadata files of today
+        for (const subfile of subfiles) {
+          if (subfile.endsWith('.mp4.json')) {
+            try {
+              const meta = JSON.parse(fs.readFileSync(path.join(datePath, subfile), 'utf8'));
+              count += meta.count || 0;
+            } catch (e) {}
           }
-          // Also count any frames in active hour directory (which are JPEGs)
-          const hourDirs = subfiles.filter(f => {
-            const fp = path.join(filePath, f);
-            return fs.statSync(fp).isDirectory() && f.match(/^\d{2}$/);
-          });
-          for (const hourDir of hourDirs) {
-            const jpegs = await fs.promises.readdir(path.join(filePath, hourDir)).catch(() => []);
-            count += jpegs.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
-          }
+        }
+        // Also count JPEGs in active hour directories of today
+        const hourDirs = subfiles.filter(f => {
+          const fp = path.join(datePath, f);
+          return fs.statSync(fp).isDirectory() && f.match(/^\d{2}$/);
+        });
+        for (const hourDir of hourDirs) {
+          const jpegs = await fs.promises.readdir(path.join(datePath, hourDir)).catch(() => []);
+          count += jpegs.filter(f => f.match(/^frame_\d+\.jpg$/)).length;
         }
       }
       res.writeHead(200, {
@@ -827,6 +879,26 @@ server.listen(PORT, '0.0.0.0', async () => {
       console.error('[Timelapse] Startup hourly pre-compilation failed:', e);
     }
 
+    // 3. Compile any past completed day folders into YYYY-MM-DD.mp4
+    try {
+      const now = new Date();
+      const currentDayStr = now.toISOString().split('T')[0];
+      const dateDirs = fs.readdirSync(timelapseDir).filter(f => {
+        const fullPath = path.join(timelapseDir, f);
+        return fs.statSync(fullPath).isDirectory() && f.match(/^\d{4}-\d{2}-\d{2}$/);
+      });
+
+      for (const dateDir of dateDirs) {
+        if (dateDir !== currentDayStr) {
+          await compileDailyVideo(dateDir).catch(err => {
+            console.error(`[Timelapse] Failed to backfill daily video for past day ${dateDir}:`, err);
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[Timelapse] Startup daily pre-compilation failed:', e);
+    }
+
     // Keep track of active hour and its frameIndex
     let activeDayStr = new Date().toISOString().split('T')[0];
     let activeHourStr = String(new Date().getHours()).padStart(2, '0');
@@ -869,7 +941,13 @@ server.listen(PORT, '0.0.0.0', async () => {
           frameIndex = 1;
 
           // Compile the completed hour in background
-          compileHourVideo(oldDayStr, oldHourStr).catch(err => {
+          compileHourVideo(oldDayStr, oldHourStr).then(async () => {
+            if (oldDayStr !== currentDayStr) {
+              await compileDailyVideo(oldDayStr).catch(err => {
+                console.error(`[Timelapse] Failed to compile daily video for rolled-over day ${oldDayStr}:`, err);
+              });
+            }
+          }).catch(err => {
             console.error(`[Timelapse] Error compiling finished hour ${oldDayStr}/${oldHourStr}:`, err);
           });
         }
