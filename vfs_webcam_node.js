@@ -552,7 +552,7 @@ const requestHandler = async (req, res) => {
       </div>
     </div>
     
-    <div class="video-section">
+     <div class="video-section">
       <h3>Timelapse Video (<span id="frame-count">0</span> frames collected)</h3>
       <div class="video-container">
         <video id="timelapse-player" controls>
@@ -560,9 +560,17 @@ const requestHandler = async (req, res) => {
           Your browser does not support the video tag.
         </video>
       </div>
-      <div class="controls">
+      <div class="controls" style="flex-direction: column; align-items: center; gap: 8px;">
         <button id="btn-rebuild" onclick="rebuildTimelapse()" style="background: #4f46e5;">Rebuild & Play Timelapse (5 FPS)</button>
+        <a id="timelapse-download" href="/timelapse.mp4" download="timelapse.mp4" style="color: #60a5fa; text-decoration: none; font-size: 14px; font-weight: 500; margin-top: 5px;">Download Full Partial MP4</a>
       </div>
+    </div>
+  </div>
+
+  <div class="daily-videos-section">
+    <h3>Today's Hourly Segments</h3>
+    <div id="hourly-video-list" class="video-list">
+      <p style="color: #98a5b9; grid-column: 1/-1; text-align: center;">Loading today's hourly segments...</p>
     </div>
   </div>
 
@@ -594,6 +602,7 @@ const requestHandler = async (req, res) => {
       const player = document.getElementById('timelapse-player');
       const src = document.getElementById('video-src');
       const btn = document.getElementById('btn-rebuild');
+      const dlLink = document.getElementById('timelapse-download');
       
       btn.innerText = 'Rebuilding...';
       btn.disabled = true;
@@ -608,6 +617,7 @@ const requestHandler = async (req, res) => {
         // Force a reload of the video source by appending timestamp
         const newSrc = '/timelapse.mp4?t=' + Date.now();
         src.src = newSrc;
+        dlLink.href = newSrc;
         player.load();
         
         player.oncanplay = () => {
@@ -615,6 +625,7 @@ const requestHandler = async (req, res) => {
           btn.innerText = 'Rebuild & Play Timelapse (5 FPS)';
           btn.disabled = false;
           btn.style.background = '#4f46e5';
+          loadHourlyVideos();
         };
       } catch (e) {
         btn.innerText = 'No Frames Found / Error';
@@ -632,6 +643,32 @@ const requestHandler = async (req, res) => {
         }
       } catch (e) {
         console.error('Failed to fetch frame count:', e);
+      }
+    }
+
+    async function loadHourlyVideos() {
+      const list = document.getElementById('hourly-video-list');
+      try {
+        const resp = await fetch('/timelapse/hourly');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.videos.length === 0) {
+            list.innerHTML = '<p style="color: #98a5b9; grid-column: 1/-1; text-align: center;">No hourly videos recorded today yet.</p>';
+            return;
+          }
+          list.innerHTML = data.videos.map(v => \`
+            <div class="video-card">
+              <div class="video-card-title">\${v.replace('.mp4', '').replace('hour_', 'Hour ')}:00</div>
+              <video controls style="max-height: 160px; border-radius: 4px; background: #000; width: 100%;">
+                <source src="/timelapse/hourly/\${v}" type="video/mp4">
+              </video>
+              <a href="/timelapse/hourly/\${v}" download="\${v}">Download MP4</a>
+            </div>
+          \`).join('');
+        }
+      } catch (e) {
+        console.error('Failed to load hourly videos:', e);
+        list.innerHTML = '<p style="color: #dc2626; grid-column: 1/-1; text-align: center;">Failed to load hourly videos.</p>';
       }
     }
 
@@ -664,6 +701,7 @@ const requestHandler = async (req, res) => {
     // Initialize UI data
     updateFrameCount();
     setInterval(updateFrameCount, 5000);
+    loadHourlyVideos();
     loadDailyVideos();
   </script>
 </body>
@@ -777,6 +815,87 @@ const requestHandler = async (req, res) => {
       console.error('[Timelapse List] Error:', err);
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Error retrieving daily video list.');
+    }
+  } else if (url.pathname === '/timelapse/hourly') {
+    try {
+      const now = new Date();
+      const activeDayStr = now.toISOString().split('T')[0];
+      const todayPath = path.join(timelapseDir, activeDayStr);
+      let videos = [];
+      if (fs.existsSync(todayPath)) {
+        videos = fs.readdirSync(todayPath)
+          .filter(f => f.match(/^hour_\d{2}\.mp4$/))
+          .sort()
+          .reverse(); // Newest first
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      res.end(JSON.stringify({ videos }));
+    } catch (err) {
+      console.error('[Hourly Timelapse List] Error:', err);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Error retrieving hourly video list.');
+    }
+  } else if (url.pathname.match(/^\/timelapse\/hourly\/hour_\d{2}\.mp4$/)) {
+    const filename = path.basename(url.pathname);
+    const now = new Date();
+    const activeDayStr = now.toISOString().split('T')[0];
+    const videoPath = path.join(timelapseDir, activeDayStr, filename);
+
+    try {
+      if (!fs.existsSync(videoPath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Hourly video not found');
+        return;
+      }
+
+      const stat = await fs.promises.stat(videoPath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (start >= fileSize || end >= fileSize) {
+          res.writeHead(416, {
+            'Content-Range': `bytes */${fileSize}`,
+            'Content-Type': 'text/plain'
+          });
+          res.end('Requested range not satisfiable.');
+          return;
+        }
+
+        const chunksize = (end - start) + 1;
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': 'video/mp4',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+
+        const readStream = fs.createReadStream(videoPath, { start, end });
+        readStream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        const readStream = fs.createReadStream(videoPath);
+        readStream.pipe(res);
+      }
+    } catch (err) {
+      console.error('[Hourly Video Stream] Error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end(err.message);
+      }
     }
   } else if (url.pathname.match(/^\/timelapse\/\d{4}-\d{2}-\d{2}\.mp4$/)) {
     const filename = path.basename(url.pathname);
