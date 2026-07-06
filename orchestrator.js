@@ -2,6 +2,7 @@ import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import { info, warn, error } from './fs/src/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -216,7 +217,11 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     zenoh_router: (cfg) => {
       const multicastAddress = env.ZENOH_MULTICAST_ADDRESS;
       const routerArgs = ['-l', `tcp/0.0.0.0:${cfg.port}`];
-      const bridgeArgs = ['-e', `tcp/127.0.0.1:${cfg.port}`, '--ws-port', String(cfg.port + 1000)];
+      const bridgeArgs = [
+        '-e', `tcp/127.0.0.1:${cfg.port}`,
+        '--ws-port', String(cfg.port + 1000),
+        '--no-multicast-scouting'
+      ];
       
       if (multicastAddress) {
         routerArgs.push('--cfg', `scouting/multicast/address:"${multicastAddress}"`);
@@ -224,17 +229,18 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
         routerArgs.push('--cfg', 'scouting/multicast/enabled:false');
       }
 
+      const home = os.homedir();
       return [
         {
           name: `Zenoh Router (${cfg.port})`,
-          command: '/home/brian/.cargo/bin/zenohd',
+          command: path.join(home, '.cargo/bin/zenohd'),
           args: routerArgs,
           cwd: __dirname,
           env: { ...process.env, ...env }
         },
         {
           name: `Zenoh Bridge (${cfg.port})`,
-          command: '/home/brian/.cargo/bin/zenoh-bridge-remote-api',
+          command: path.join(home, '.cargo/bin/zenoh-bridge-remote-api'),
           args: bridgeArgs,
           cwd: __dirname,
           env: { ...process.env, ...env }
