@@ -88,7 +88,7 @@ test('C++ -> Node.js Binary Notification Forwarding', async (t) => {
         console.log('✔ JS Node received correct binary data from C++ forwarding!');
 
     } finally {
-        mesh.stop();
+        await mesh.stop();
         await nodeVFS.close();
         await sys.stop();
     }

@@ -1,6 +1,7 @@
 #include "vfs_node.h"
 #include "cid.h"
 #include <fstream>
+#include <iostream>
 #include <filesystem>
 
 namespace fs {

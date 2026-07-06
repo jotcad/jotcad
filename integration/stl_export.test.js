@@ -98,7 +98,7 @@ async function test() {
         console.log("Wrote test.stl");
     } finally {
         console.log("Cleaning up...");
-        mesh.stop();
+        await mesh.stop();
         await vfs.close();
         await sys.stop();
     }

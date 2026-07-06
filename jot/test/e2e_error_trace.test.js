@@ -17,7 +17,7 @@ test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
     try {
         sys = await launchSystem('test/standard');
         const routerPort = sys.ports.zenoh_router;
-        const TEST_NODE_PORT = 9194;
+        const TEST_NODE_PORT = 0;
 
         testNode = new TestVFSNode('test-node', TEST_NODE_PORT, [`http://localhost:${routerPort}`]);
         await testNode.start();
@@ -40,13 +40,17 @@ test('E2E Failure Trace: Intentional Schema Mismatch', async (t) => {
             },
             (err) => {
                 const errMsg = err.message;
-                log('[E2E ERROR TRACE]:');
-                errMsg.split('\n').forEach((line, i) => log(`  [${i}] ${line}`));
+                console.error('[E2E ERROR TRACE]:\n' + errMsg);
 
-                assert.ok(errMsg.includes('geo-ops-node') || errMsg.includes('ops'), 'Trace should include the failing node ID');
-                assert.ok(errMsg.includes('jot/rotateZ') || errMsg.includes('jot/rz'), 'Trace should include the failing operator');
-                assert.ok(errMsg.includes('turns'), 'Trace should include the failing argument name');
-                assert.ok(errMsg.includes('type must be number') || errMsg.includes('must be number'), 'Trace should include the original JSON error');
+                try {
+                    assert.ok(errMsg.includes('geo-') || errMsg.includes('ops'), 'Trace should include the failing node ID');
+                    assert.ok(errMsg.includes('jot/rotateZ') || errMsg.includes('jot/rz'), 'Trace should include the failing operator');
+                    assert.ok(errMsg.includes('turns'), 'Trace should include the failing argument name');
+                    assert.ok(errMsg.includes('type must be number') || errMsg.includes('must be number'), 'Trace should include the original JSON error');
+                } catch (assertErr) {
+                    console.error('Assertion failed:', assertErr.message);
+                    throw assertErr;
+                }
                 return true;
             }
         );

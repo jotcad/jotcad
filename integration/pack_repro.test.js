@@ -19,13 +19,20 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
   let server;
   let jsVfs;
   let stopServer;
+  let mesh;
 
   const PORT_JS = 20105;
   const STORAGE_JS = path.resolve('.test_vfs_pack_repro_js');
 
   t.after(async () => {
     if (stopServer) stopServer();
-    if (server) server.close();
+    if (server) await new Promise(resolve => server.close(resolve));
+    if (mesh) {
+        await Promise.race([
+            mesh.stop(),
+            new Promise((resolve) => setTimeout(resolve, 1000))
+        ]);
+    }
     if (jsVfs) await jsVfs.close();
     if (sys) await sys.stop();
     await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
@@ -40,7 +47,7 @@ test('Pack Repro: Triangle(20).dup(1).pack(sheet=Box(30,30))', { timeout: 60000 
     id: 'js-test-client',
     storage: new DiskStorage(STORAGE_JS),
   });
-  const mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`], {
+  mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`], {
     localUrl: `http://localhost:${PORT_JS}`,
   });
   server = http.createServer();

@@ -193,7 +193,7 @@ test('Snap Staircase Corner Integration Test', { timeout: 120000 }, async (t) =>
         console.log('✔ Staircase corner snapped and saved to integration/actual/snap_staircase_corner.png');
 
     } finally {
-        mesh.stop();
+        await mesh.stop();
         await nodeVFS.close();
         await sys.stop();
     }

@@ -249,8 +249,35 @@ export const vfsActions = {
           }
       } catch (e) { console.error('[MeshVFS] Interest extraction error:', e); }
 
+      // 1. Initialize browser node
       nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [], interests: localInterests });
       
+      // 2. Add peers from mesh.peers (active Zenoh providers discovered via sys/schema)
+      try {
+          for (const p of mesh.peers.values()) {
+              if (!nodes.has(p.id)) {
+                  nodes.set(p.id, {
+                      id: p.id,
+                      type: 'PEER',
+                      pps: p.pps || 0,
+                      reachability: p.reachability || 'DIRECT',
+                      protocol: p.protocol || 'zenoh',
+                      neighbors: [{ id: vfs.id, reachability: p.reachability || 'DIRECT', protocol: p.protocol || 'zenoh' }],
+                      interests: []
+                  });
+              }
+              const browserNode = nodes.get(vfs.id);
+              if (browserNode && !browserNode.neighbors.some(n => n.id === p.id)) {
+                  browserNode.neighbors.push({
+                      id: p.id,
+                      reachability: p.reachability || 'DIRECT',
+                      protocol: p.protocol || 'zenoh'
+                  });
+              }
+          }
+      } catch (e) { console.error('[MeshVFS] Error populating Zenoh peers:', e); }
+
+      // 3. Keep compatibility for meshMap (e.g. if any node is broadcasting sys/topo)
       for (const [peerId, data] of meshMap.entries()) {
         const { neighbors, interests } = data;
         if (!nodes.has(peerId)) {
@@ -262,7 +289,7 @@ export const vfsActions = {
         }
       }
 
-      // Add missing neighbor nodes to the topology list so they render as leaf nodes!
+      // 4. Add missing neighbor nodes to the topology list so they render as leaf nodes!
       for (const data of meshMap.values()) {
         const { neighbors } = data;
         for (const neighbor of neighbors) {
@@ -272,6 +299,7 @@ export const vfsActions = {
         }
       }
 
+      // 5. Update pps and reachability from mesh.peers for mapped nodes
       for (const p of mesh.peers.values()) {
         if (nodes.has(p.id)) {
           const n = nodes.get(p.id);

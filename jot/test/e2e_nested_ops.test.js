@@ -17,7 +17,7 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
     try {
         sys = await launchSystem('test/standard');
         const routerPort = sys.ports.zenoh_router;
-        const TEST_NODE_PORT = 9196;
+        const TEST_NODE_PORT = 0;
 
         testNode = new TestVFSNode('test-node', TEST_NODE_PORT, [`http://localhost:${routerPort}`]);
         await testNode.start();

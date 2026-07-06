@@ -124,6 +124,12 @@ To maintain unified decentralized routing lists and enable UX interceptors to ac
 * **All-Target Querying (target: 1):** Discovery query actions on `jot/vfs/catalog` MUST explicitly pass `target: 1` (`QueryTarget.ALL`) to the Zenoh `session.get` call. Using the default target (`QueryTarget.BEST_MATCHING`) causes Zenoh to only route the query to a single "best-matching" node (typically the closest native C++ peer), ignoring all other nodes' catalogs.
 * **UX Interceptor Integration:** The client UX layer (via SolidJS) overrides and intercepts `mesh.notify(selector, payload, stack)` to monitor schemas and update frontend states. Incoming Zenoh sub/pub notification updates MUST be routed through `this.notify(selector, payload, ['incoming'])` rather than using direct event emitter calls, allowing the UX state machine to populate operations without entering infinite network loops.
 
+### 3.9 Multicast Domain & Mesh Isolation (Broadcast Separation)
+To prevent discovery cross-talk and data leaks between concurrent meshes running on the same local network or subnet:
+* **Custom Multicast Port Configuration:** By default, Zenoh nodes scout on UDP multicast group `224.0.0.224:7446`. To run distinct meshes (e.g. `test/standard` vs `live/webcam`), each profile MUST use a unique multicast group address/port.
+* **Environment Overrides:** The orchestrator and the C++ nodes dynamically support the `ZENOH_MULTICAST_ADDRESS` environment variable (e.g., `224.0.0.224:7447`).
+* **Secure by Default:** If `ZENOH_MULTICAST_ADDRESS` is not defined in the environment, the VFS node MUST default to disabling multicast scouting entirely (`"scouting": {"multicast": {"enabled": false}}`), relying strictly on explicit TCP connection endpoints (unicast) for its network sessions.
+
 ## 4. Core Type System
 
 ### 4.1 Geometry Type (`geometry`)

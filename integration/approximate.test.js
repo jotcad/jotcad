@@ -218,7 +218,7 @@ test('VSA Mesh Approximation Integration Test', async (t) => {
 
     } finally {
         console.log("[Test] Cleaning up...");
-        mesh.stop();
+        await mesh.stop();
         await vfs.close();
         await sys.stop();
     }

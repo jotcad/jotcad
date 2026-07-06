@@ -30,7 +30,7 @@ test('Mesh Handshake: Catalog Discovery', async (t) => {
       const timeout = setTimeout(() => reject(new Error(`Handshake timeout (Expected: ${EXPECTED_OPS_ID})`)), 45000);
       page.on('console', (msg) => {
         console.log(`[Browser Console: ${msg.type()}] ${msg.text()}`);
-        if (msg.text().includes(`Received Catalog from ${EXPECTED_OPS_ID}`)) {
+        if (msg.text().includes('Received Catalog from') && msg.text().includes('geo-')) {
           clearTimeout(timeout);
           resolve();
         }

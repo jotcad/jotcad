@@ -123,6 +123,14 @@ export const PROFILES = {
   }
 };
 
+// Programmatically assign a unique multicast discovery port per profile to ensure mesh isolation
+let multicastPort = 7447;
+for (const [key, profile] of Object.entries(PROFILES)) {
+  profile.env = profile.env || {};
+  profile.env.ZENOH_MULTICAST_ADDRESS = `224.0.0.224:${multicastPort++}`;
+}
+
+
 export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_LEVEL || 'INFO', options = {}) {
   process.env.ZENOH_RUNTIME = '( app: (worker_threads: 8) )';
   if (!profileKey) {
@@ -156,9 +164,12 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   info(`[Orchestrator] Launching ${profileKey.toUpperCase()} Cluster (Log: ${globalLogLevel})...`);
 
   const ports = Object.fromEntries(Object.entries(componentMap).map(([id, cfg]) => [id, cfg.port]));
+  if (ports.zenoh_router) {
+    ports.zenoh_bridge = ports.zenoh_router + 1000;
+  }
 
   try {
-    const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
+    const portList = Object.values(ports).filter(Boolean).map(p => `${p}/tcp`).join(' ');
     info(`[Orchestrator] Cleaning up ports: ${portList}`);
     execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
     execSync(`rm -rf ${storagePrefix}* || true`);
@@ -379,13 +390,19 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     info(`\n[Orchestrator] Shutting down ${profileKey.toUpperCase()} cluster...`);
     for (const [name, child] of processes) {
       info(`[Orchestrator] Killing ${name}...`);
-      child.kill('SIGTERM');
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch (e) {
+        try { child.kill('SIGTERM'); } catch (err) {}
+      }
     }
     await new Promise(r => setTimeout(r, 200));
     for (const [name, child] of processes) {
       try {
-        child.kill('SIGKILL');
-      } catch (e) {}
+        process.kill(-child.pid, 'SIGKILL');
+      } catch (e) {
+        try { child.kill('SIGKILL'); } catch (err) {}
+      }
     }
     try {
         const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
@@ -398,7 +415,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     const child = spawn(component.command, component.args, {
       cwd: component.cwd,
       env: component.env,
-      stdio: 'pipe'
+      stdio: 'pipe',
+      detached: true
     });
 
     // TRANSPARENT RELAY: All output is printed with a prefix, regardless of content.
@@ -444,6 +462,23 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       await shutdown();
       throw new Error(errorMsg);
     }
+  }
+
+  if (ports.export) {
+      info(`[Orchestrator] Waiting for Export Node on port ${ports.export}...`);
+      let exportReady = false;
+      const protocol = (componentMap.export.protocol === 'https' && hasCerts) ? 'https' : 'http';
+      for (let i = 0; i < 50; i++) {
+        try {
+          const url = `${protocol}://localhost:${ports.export}/health`;
+          const options = {};
+          if (protocol === 'https') options.dispatcher = new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } });
+          const resp = await fetch(url, options);
+          if (resp.ok) { exportReady = true; break; }
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 200));
+      }
+      if (!exportReady) warn(`[Orchestrator] Export Node port ${ports.export} not responding after 10s.`);
   }
 
   if (ports.ux) {

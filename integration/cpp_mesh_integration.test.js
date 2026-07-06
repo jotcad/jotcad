@@ -57,7 +57,7 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
   // 1. Launch the TEST system
   const profileKey = 'test/standard';
   sys = await launchSystem(profileKey);
-  const STORAGE_CPP = `${PROFILES[profileKey].storagePrefix}ops`;
+  const STORAGE_CPP = `${PROFILES[profileKey].storagePrefix}ops_primitives`;
 
   // 2. Start JS Node
   jsVfs = new VFS({
@@ -79,7 +79,7 @@ test('C++ Native Node Integration', { timeout: 60000 }, async (t) => {
     // The selector hash identifies BOTH the .meta and .data files
     const metaFile = path.join(STORAGE_CPP, `${jsAddrKey}.meta`);
     const dataFile = path.join(STORAGE_CPP, `${jsAddrKey}.data`);
-    
+    console.log(`[Test] Listing files in ${STORAGE_CPP}:`, await fs.readdir(STORAGE_CPP).catch(e => e.message));
     await fs.access(metaFile); 
     await fs.access(dataFile);
     

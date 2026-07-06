@@ -138,7 +138,7 @@ Fuse(steps) -> $out
         console.log('✔ Staircase rendered and saved to integration/actual/staircase.png');
 
     } finally {
-        mesh.stop();
+        await mesh.stop();
         await nodeVFS.close();
         await sys.stop();
     }

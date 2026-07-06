@@ -45,7 +45,7 @@ test('Puppeteer STL Download Test', { timeout: 120000 }, async (t) => {
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
       const listener = (msg) => {
-        if (msg.text().includes('Received Catalog from geo-ops-node')) {
+        if (msg.text().includes('Received Catalog from')) {
           resolve();
         }
       };

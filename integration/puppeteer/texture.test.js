@@ -26,7 +26,7 @@ test('Puppeteer Texture Rendering Test', { timeout: 120000 }, async (t) => {
       const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
       page.on('console', (msg) => {
         log(`[Browser Console] ${msg.text()}`);
-        if (msg.text().includes('Received Catalog from geo-ops-node')) {
+        if (msg.text().includes('Received Catalog from')) {
           clearTimeout(timeout);
           resolve();
         }

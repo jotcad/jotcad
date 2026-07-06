@@ -134,7 +134,7 @@ test('OBJ Import and Export End-to-End Integration', async (t) => {
         if (fs.existsSync(testFile)) {
             fs.unlinkSync(testFile);
         }
-        mesh.stop();
+        await mesh.stop();
         await vfs.close();
         await sys.stop();
         setTimeout(() => process.exit(0), 500);

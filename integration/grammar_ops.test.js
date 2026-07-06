@@ -29,7 +29,8 @@ test('Geometric Grammar Integration', { timeout: 30000 }, async (t) => {
 
   t.after(async () => {
     console.log('[Test Grammar] Cleaning up...');
-    if (server) server.close();
+    if (mesh) await mesh.stop();
+    if (server) await new Promise(resolve => server.close(resolve));
     if (vfs) await vfs.close();
     if (sys) await sys.stop();
   });

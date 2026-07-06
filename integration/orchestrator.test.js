@@ -43,7 +43,7 @@ test('Orchestrator Lifecycle: Cluster Launch and Shutdown', async (t) => {
                 assert.ok(catalogReceived, 'Should have received schema catalog');
                 assert.ok(catalogReceived.catalog, 'Catalog payload should contain catalog object');
             } finally {
-                mesh.stop();
+                await mesh.stop();
                 await vfs.close();
             }
         });

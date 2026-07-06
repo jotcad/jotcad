@@ -371,14 +371,22 @@ void VFSNode::listen() {
         }
     }
 
-    // Construct configuration JSON dynamically
+    // Construct configuration JSON dynamically, disabling multicast scouting unless a custom address is provided
     std::string json_str = "{";
+    if (const char* env_multicast = std::getenv("ZENOH_MULTICAST_ADDRESS")) {
+        std::cout << "[VFSNode " << config_.id << "] Setting custom multicast scouting address: " << env_multicast << std::endl;
+        json_str += "\"scouting\": {\"multicast\": {\"address\": \"" + std::string(env_multicast) + "\", \"enabled\": true}}";
+    } else {
+        std::cout << "[VFSNode " << config_.id << "] Disabling multicast scouting to ensure environment isolation." << std::endl;
+        json_str += "\"scouting\": {\"multicast\": {\"enabled\": false}}";
+    }
+
     if (use_tls) {
         std::cout << "[VFSNode " << config_.id << "] Found SSL certificates. Enabling TLS/WSS transport encryption." << std::endl;
-        json_str += "\"listen\": {\"endpoints\": [\"tls/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
+        json_str += ", \"listen\": {\"endpoints\": [\"tls/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
     } else {
         std::cout << "[VFSNode " << config_.id << "] No SSL certificates found. Using unencrypted tcp/ws transport." << std::endl;
-        json_str += "\"listen\": {\"endpoints\": [\"tcp/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
+        json_str += ", \"listen\": {\"endpoints\": [\"tcp/0.0.0.0:" + std::to_string(config_.port) + "\", \"ws/0.0.0.0:" + std::to_string(config_.port + 1000) + "\"]}";
     }
 
     if (!config_.neighbors.empty()) {

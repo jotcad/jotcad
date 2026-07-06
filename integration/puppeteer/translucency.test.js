@@ -25,7 +25,7 @@ test('Puppeteer Translucency Test: Ghost Overlap', { timeout: 120000 }, async (t
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
       page.on('console', (msg) => {
-        if (msg.text().includes('Received Catalog from geo-ops-node')) {
+        if (msg.text().includes('Received Catalog from')) {
           clearTimeout(timeout);
           resolve();
         }

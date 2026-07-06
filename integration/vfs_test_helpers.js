@@ -27,9 +27,17 @@ export class MockConnection extends Connection {
  * as direct peers or as reported neighbors in topology updates.
  */
 export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
+  const targets = targetIds.map(id => id === 'geo-ops-node' ? 'geo-' : id);
+
+  const matchProvider = (provider, target) => {
+    if (target === 'geo-') {
+      return provider.startsWith('geo-');
+    }
+    return provider === target;
+  };
+
   if (vfs.mesh && vfs.mesh.session) {
     const startTime = Date.now();
-    const targetSet = new Set(targetIds);
     const { decodeRecord } = await import('../fs/src/mesh/mesh_link.js');
     
     while (Date.now() - startTime < timeout) {
@@ -60,8 +68,11 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
               if (vfs.mesh && provider !== vfs.id) {
                 vfs.mesh.updateCatalog(catalogPayload);
               }
-              if (targetSet.has(provider)) {
-                targetSet.delete(provider);
+              for (let i = 0; i < targets.length; i++) {
+                if (matchProvider(provider, targets[i])) {
+                  targets.splice(i, 1);
+                  i--;
+                }
               }
             }
           }
@@ -69,15 +80,20 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
       } catch (err) {
         console.error(`[waitForMeshNodes ${vfs.id}] query error:`, err);
       }
-      if (targetSet.size === 0) {
+      if (targets.length === 0) {
         return; // All target nodes found!
       }
       await new Promise(r => setTimeout(r, 200));
     }
     throw new Error(`waitForMeshNodes: Target nodes [${targetIds.join(', ')}] not found within ${timeout}ms`);
   }
-  const targetSet = new Set(targetIds);
+
   const seen = new Set([vfs.id]);
+  const hasAllTargets = () => {
+    return targets.every(target => {
+      return [...seen].some(provider => matchProvider(provider, target));
+    });
+  };
 
   return new Promise(async (resolve, reject) => {
     let unsubscribe = () => {};
@@ -106,7 +122,7 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
             }
 
             // Check if we have everything
-            if ([...targetSet].every(id => seen.has(id))) {
+            if (hasAllTargets()) {
                 cleanup();
                 resolve();
             }
@@ -120,7 +136,10 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
 
     const timer = setTimeout(() => {
         cleanup();
-        const missing = [...targetSet].filter(id => !seen.has(id));
+        const missing = targetIds.filter((id, idx) => {
+            const target = targets[idx];
+            return ![...seen].some(provider => matchProvider(provider, target));
+        });
         reject(new Error(`waitForMeshNodes timeout after ${timeout}ms. \n  Missing: [${missing.join(', ')}]\n  Discovered: [${[...seen].join(', ')}]`));
     }, timeout);
 
@@ -137,7 +156,7 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
     if (vfs.mesh) {
         for (const peerId of vfs.mesh.peers.keys()) seen.add(peerId);
     }
-    if ([...targetSet].every(id => seen.has(id))) {
+    if (hasAllTargets()) {
         cleanup();
         resolve();
     }

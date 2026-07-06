@@ -40,7 +40,8 @@ test('Multi-Output Scoped Block Integration', { timeout: 60000 }, async (t) => {
 
   t.after(async () => {
     if (stopServer) stopServer();
-    if (server) server.close();
+    if (mesh) await mesh.stop();
+    if (server) await new Promise(resolve => server.close(resolve));
     if (jsVfs) await jsVfs.close();
     if (sys) await sys.stop();
   });

@@ -34,13 +34,13 @@ test('Full Mesh Pipeline (C++ Ops + JS Export)', { timeout: 30000 }, async (t) =
 
   t.after(async () => {
     console.log('[Test Pipeline] Cleaning up...');
-    if (mesh) mesh.stop();
+    if (mesh) await mesh.stop();
     if (clientVfs) await clientVfs.close();
     if (clientServer) {
-      clientServer.close();
       if (typeof clientServer.closeAllConnections === 'function') {
         clientServer.closeAllConnections();
       }
+      await new Promise(resolve => clientServer.close(resolve));
     }
     if (sys) await sys.stop();
 

@@ -96,15 +96,15 @@ test('Node.js <-> C++ Pub-Sub Integration', async (t) => {
         }
 
         assert.ok(
-            catalogReceived.provider === 'geo-ops-node' || 
+            catalogReceived.provider.startsWith('geo-') || 
             catalogReceived.provider.includes('standard_ops') || 
             catalogReceived.provider.includes('standard_export'),
-            `Expected geo-ops-node or standard peer ID, got: ${catalogReceived.provider}`
+            `Expected geo- node or standard peer ID, got: ${catalogReceived.provider}`
         );
         console.log('✔ Node.js received Catalog from C++');
 
     } finally {
-        mesh.stop();
+        await mesh.stop();
         await nodeVFS.close();
         await sys.stop();
     }

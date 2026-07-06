@@ -201,7 +201,7 @@ async function test() {
         console.log("SUCCESS: Hollow Orb packed sections test passed.");
     } finally {
         console.log("Cleaning up...");
-        mesh.stop();
+        await mesh.stop();
         await vfs.close();
         await sys.stop();
     }

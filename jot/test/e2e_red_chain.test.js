@@ -14,6 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', { timeout: 60000 }, async (t) => {
     let sys;
     let jsVfs;
+    let mesh;
     const STORAGE_JS = path.resolve(__dirname, '../../.vfs_storage_e2e_test');
 
     const hardTimeout = setTimeout(() => {
@@ -25,6 +26,12 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', { tim
     t.after(async () => {
         console.log('[Test] Cleaning up...');
         clearTimeout(hardTimeout);
+        if (mesh) {
+            await Promise.race([
+                mesh.stop(),
+                new Promise((resolve) => setTimeout(resolve, 1000))
+            ]);
+        }
         if (jsVfs) await jsVfs.close();
         if (sys) await sys.stop();
         await fs.rm(STORAGE_JS, { recursive: true, force: true }).catch(() => {});
@@ -38,7 +45,7 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', { tim
         id: 'js-test-client',
         storage: new DiskStorage(STORAGE_JS),
     });
-    const mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`]);
+    mesh = new MeshLink(jsVfs, [`http://localhost:${sys.ports.zenoh_router}`]);
     await jsVfs.init();
     await mesh.start();
 

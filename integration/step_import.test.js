@@ -150,7 +150,7 @@ test('STEP File Import and Export Integration', async (t) => {
 
     } finally {
         console.log("[Test] Cleaning up...");
-        mesh.stop();
+        await mesh.stop();
         await vfs.close();
         await sys.stop();
     }

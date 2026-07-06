@@ -26,7 +26,12 @@ test('Mold Generation & Analysis - JOT Expression Integration', { timeout: 60000
   let mesh;
 
   t.after(async () => {
-    if (mesh) mesh.stop();
+    if (mesh) {
+        await Promise.race([
+            await mesh.stop(),
+            new Promise((resolve) => setTimeout(resolve, 1000))
+        ]);
+    }
     if (vfs) await vfs.close();
     if (sys) await sys.stop();
   });

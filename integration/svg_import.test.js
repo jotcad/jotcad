@@ -41,6 +41,27 @@ test('SVG File Import Integration', async (t) => {
     // 1. Launch the TEST system profile
     const sys = await launchSystem('test/standard');
 
+    // Wait for Export Node (port 9202) to be fully ready
+    console.log("[Test] Waiting for Export Node to start...");
+    let exportReady = false;
+    for (let i = 0; i < 50; i++) {
+        try {
+            const resp = await fetch('https://localhost:9202', {
+                dispatcher: new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } })
+            });
+            if (resp.ok || resp.status === 404 || resp.status === 400) {
+                exportReady = true;
+                break;
+            }
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 200));
+    }
+    if (!exportReady) {
+        console.warn("[Test] Export Node port 9202 not responding after 10s. Continuing anyway...");
+    } else {
+        console.log("[Test] Export Node is ready.");
+    }
+
     // 2. Setup client VFS and MeshLink connected to the router
     const vfs = new VFS({ id: 'test-svg-client' });
     const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
