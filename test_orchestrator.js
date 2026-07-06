@@ -118,7 +118,9 @@ async function runSuite(id, suite) {
 
 async function main() {
   try {
-    execSync('rm -rf .vfs_storage_* .test_vfs_* || true');
+    // Clean up test VFS directories, leaving production/live directories intact
+    execSync('find . -maxdepth 1 -name ".vfs_storage_*" ! -name "*live*" -exec rm -rf {} + || true');
+    execSync('rm -rf .test_vfs_* || true');
   } catch (e) {}
   const args = process.argv.slice(2);
   let selectedIds = args.length > 0 ? args.filter(id => suites[id] || id === 'all') : Object.keys(suites);
