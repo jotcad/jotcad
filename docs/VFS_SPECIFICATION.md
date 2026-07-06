@@ -130,6 +130,12 @@ To prevent discovery cross-talk and data leaks between concurrent meshes running
 * **Environment Overrides:** The orchestrator and the C++ nodes dynamically support the `ZENOH_MULTICAST_ADDRESS` environment variable (e.g., `224.0.0.224:7447`).
 * **Secure by Default:** If `ZENOH_MULTICAST_ADDRESS` is not defined in the environment, the VFS node MUST default to disabling multicast scouting entirely (`"scouting": {"multicast": {"enabled": false}}`), relying strictly on explicit TCP connection endpoints (unicast) for its network sessions.
 
+### 3.10 Query Target & Consolidation
+To prevent query deadlocks and ensure correct data resolution in a distributed P2P mesh:
+* **Mesh-Wide Query Targeting (`QueryTarget::ALL`):** Content CID queries (`jot/vfs/cid/<CID>`) and shared catalog queries (`jot/vfs/catalog`) MUST be queried with `ALL` targeting. This guarantees that queries are routed to all matching queryables on the mesh instead of terminating early on the first responder (which may return a `404`).
+* **Disabled Consolidation (`ConsolidationMode::NONE`):** To prevent Zenoh routers from merging and discarding replies from multiple matching nodes, CID and catalog queries MUST disable consolidation. This ensures that the client receives all individual node responses, allowing it to find the owner's `200` reply in the presence of `404` responses from non-owners.
+* **Clamped Selector Cache Lookups:** Before evaluating a Selector, clients check if its output is already cached on the mesh by querying its CID. Since this cache lookup results in a miss for new computations, to prevent Zenoh's mesh-wide `ALL` query from blocking for the full timeout (defaulting to `2s`), Selector cache lookups MUST clamp their timeout (e.g., `200ms`). This enables rapid fallback to operator evaluation.
+
 ## 4. Core Type System
 
 ### 4.1 Geometry Type (`geometry`)

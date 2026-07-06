@@ -1,4 +1,4 @@
-import { open as zenohOpen, Config as ZenohConfig, KeyExpr as ZenohKeyExpr, ZBytes as ZenohZBytes, Selector as ZenohSelector } from '@eclipse-zenoh/zenoh-ts';
+import { open as zenohOpen, Config as ZenohConfig, KeyExpr as ZenohKeyExpr, ZBytes as ZenohZBytes, Selector as ZenohSelector, QueryTarget, ConsolidationMode } from '@eclipse-zenoh/zenoh-ts';
 import { normalizeSelector, Selector, getSelectorKey } from '../cid.js';
 import { log, info, error } from '../log.js';
 
@@ -112,7 +112,10 @@ export class MeshLinkBase {
               await query.reply(key, record);
               info(`[MeshLink ${this.vfs.id}] Queryable CID: Replied to query for ${cid}`);
             } else {
-              info(`[MeshLink ${this.vfs.id}] Queryable CID: CID ${cid} not found locally. Skipping reply.`);
+              info(`[MeshLink ${this.vfs.id}] Queryable CID: CID ${cid} not found locally. Replying 404.`);
+              const header = { status: 404, error: `CID not found locally: ${cid}` };
+              const record = encodeRecord(header);
+              await query.reply(key, record);
             }
           } catch (err) {
             info(`[MeshLink ${this.vfs.id}] Error in CID query handler: ${err.message}`);
@@ -300,7 +303,7 @@ export class MeshLinkBase {
 
   async readCID(cid, context = {}) {
     if (!this.session) return null;
-    const { expiresAt = Date.now() + 10000 } = context;
+    const expiresAt = Math.min(context.expiresAt || Infinity, Date.now() + 2000);
     
     const key = `jot/vfs/cid/${cid}`;
     log(`[MeshLink ${this.vfs.id}] readCID: z_get(${key})`);
@@ -308,7 +311,8 @@ export class MeshLinkBase {
     try {
       const receiver = await this.session.get(key, {
         timeout: expiresAt - Date.now() > 0 ? expiresAt - Date.now() : 10000,
-        target: 1
+        target: QueryTarget.ALL,
+        consolidation: ConsolidationMode.NONE
       });
       if (!receiver) throw new Error("No receiver returned");
       
@@ -324,7 +328,9 @@ export class MeshLinkBase {
         if (!decoded) throw new Error("Failed to decode VfsRecord");
         
         const { header, payload } = decoded;
+        log(`[MeshLink ${this.vfs.id}] readCID got reply status: ${header.status} for CID: ${cid}`);
         if (header.status !== 200) {
+          if (header.status === 404) continue;
           throw new Error(header.error || `Remote server returned status ${header.status}`);
         }
         
@@ -349,7 +355,7 @@ export class MeshLinkBase {
     try {
       const receiver = await this.session.get('jot/vfs/catalog', {
         timeout: 5000,
-        target: 1,
+        target: QueryTarget.ALL,
         consolidation: 1
       });
       if (receiver) {

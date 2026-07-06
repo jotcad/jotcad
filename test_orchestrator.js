@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import process from 'node:process';
 
 const suites = {
@@ -117,6 +117,9 @@ async function runSuite(id, suite) {
 }
 
 async function main() {
+  try {
+    execSync('rm -rf .vfs_storage_* .test_vfs_* || true');
+  } catch (e) {}
   const args = process.argv.slice(2);
   let selectedIds = args.length > 0 ? args.filter(id => suites[id] || id === 'all') : Object.keys(suites);
 

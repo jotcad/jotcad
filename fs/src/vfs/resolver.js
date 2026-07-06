@@ -99,7 +99,13 @@ export async function _readResult(vfs, target, context = {}) {
         if (resultData === null && vfs.mesh && !isBackflow && !context.localOnly) {
           // 1. Check if the Selector/CID fulfillment result already exists on the mesh (Content Path lookup)
           try {
-            const meshCIDResult = await vfs.mesh.readCID(targetCID, { ...context, stack: nextStack, resolutionStack });
+            const cacheTimeout = s ? Math.min(expiresAt, Date.now() + 200) : expiresAt;
+            const meshCIDResult = await vfs.mesh.readCID(targetCID, { 
+              ...context, 
+              expiresAt: cacheTimeout,
+              stack: nextStack, 
+              resolutionStack 
+            });
             if (meshCIDResult) {
               resultData = meshCIDResult.stream;
               meshInfo = meshCIDResult.metadata;

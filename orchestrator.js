@@ -214,20 +214,30 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
 
   const componentConfigs = {
     zenoh_router: (cfg) => {
+      const multicastAddress = env.ZENOH_MULTICAST_ADDRESS;
+      const routerArgs = ['-l', `tcp/0.0.0.0:${cfg.port}`];
+      const bridgeArgs = ['-e', `tcp/127.0.0.1:${cfg.port}`, '--ws-port', String(cfg.port + 1000)];
+      
+      if (multicastAddress) {
+        routerArgs.push('--cfg', `scouting/multicast/address:"${multicastAddress}"`);
+      } else {
+        routerArgs.push('--cfg', 'scouting/multicast/enabled:false');
+      }
+
       return [
         {
           name: `Zenoh Router (${cfg.port})`,
           command: '/home/brian/.cargo/bin/zenohd',
-          args: ['-l', `tcp/0.0.0.0:${cfg.port}`, '--no-multicast-scouting'],
+          args: routerArgs,
           cwd: __dirname,
-          env: { ...process.env }
+          env: { ...process.env, ...env }
         },
         {
           name: `Zenoh Bridge (${cfg.port})`,
           command: '/home/brian/.cargo/bin/zenoh-bridge-remote-api',
-          args: ['-e', `tcp/127.0.0.1:${cfg.port}`, '--ws-port', String(cfg.port + 1000), '--no-multicast-scouting'],
+          args: bridgeArgs,
           cwd: __dirname,
-          env: { ...process.env }
+          env: { ...process.env, ...env }
         }
       ];
     },

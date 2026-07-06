@@ -213,6 +213,7 @@ static void query_handler_cid(z_loaned_query_t* query, void* context) {
     z_view_string_t key_string;
     z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
     std::string key(z_string_data(z_loan(key_string)), z_string_len(z_loan(key_string)));
+    std::cout << "[VFS Server] query_handler_cid received query for key: '" << key << "' on node '" << node->config_.id << "'" << std::endl;
 
     // Strip "jot/vfs/cid/" prefix (length 12) to get raw CID
     std::string cid = (key.length() > 12) ? key.substr(12) : key;
@@ -234,6 +235,7 @@ static void query_handler_cid(z_loaned_query_t* query, void* context) {
                 {"metadata", result.metadata},
                 {"encoding", result.metadata.value("encoding", "json")}
             };
+            std::cout << "[VFS Server] query_handler_cid replying 200 for CID: '" << cid << "' on node '" << node->config_.id << "' with data size: " << result.data.size() << std::endl;
             auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, result.data));
             
             z_owned_bytes_t reply_payload;
@@ -245,30 +247,45 @@ static void query_handler_cid(z_loaned_query_t* query, void* context) {
             z_view_keyexpr_t reply_keyexpr;
             z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
             
-            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+            int ret = z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+            std::cout << "[VFS Server] query_handler_cid z_query_reply returned: " << ret << " for CID: " << cid << std::endl;
         } catch (const VFSException& e) {
             if (e.code == 404) {
-                std::cout << "[VFS Server] query_handler_cid not found locally for CID: '" << cid << "'. Silently ignoring to let other nodes reply." << std::endl;
-                z_drop(z_move(query_owned));
-                return;
+                std::cout << "[VFS Server] query_handler_cid not found locally for CID: '" << cid << "'. Replying 404." << std::endl;
+                json resp_header = {
+                    {"status", 404},
+                    {"error", "CID not found locally: " + cid},
+                    {"metadata", {{"state", "ERROR"}}},
+                    {"encoding", "json"}
+                };
+                auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header));
+                z_owned_bytes_t reply_payload;
+                z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+                
+                z_query_reply_options_t options;
+                z_query_reply_options_default(&options);
+                z_view_keyexpr_t reply_keyexpr;
+                z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+                z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+            } else {
+                std::cout << "[VFS Server] VFSException in query_handler_cid: " << e.what() << std::endl;
+                std::string err_msg = "[" + node->config_.id + "] " + e.what();
+                json resp_header = {
+                    {"status", e.code},
+                    {"error", err_msg},
+                    {"metadata", {{"state", "ERROR"}}},
+                    {"encoding", "json"}
+                };
+                auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header));
+                z_owned_bytes_t reply_payload;
+                z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+                
+                z_query_reply_options_t options;
+                z_query_reply_options_default(&options);
+                z_view_keyexpr_t reply_keyexpr;
+                z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+                z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
             }
-            std::cout << "[VFS Server] VFSException in query_handler_cid: " << e.what() << std::endl;
-            std::string err_msg = "[" + node->config_.id + "] " + e.what();
-            json resp_header = {
-                {"status", e.code},
-                {"error", err_msg},
-                {"metadata", {{"state", "ERROR"}}},
-                {"encoding", "json"}
-            };
-            auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header));
-            z_owned_bytes_t reply_payload;
-            z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
-            
-            z_query_reply_options_t options;
-            z_query_reply_options_default(&options);
-            z_view_keyexpr_t reply_keyexpr;
-            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
-            z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
         } catch (const std::exception& e) {
             std::cout << "[VFS Server] Exception in query_handler_cid: " << e.what() << std::endl;
             std::string err_msg = "[" + node->config_.id + "] " + e.what();
@@ -412,7 +429,7 @@ void VFSNode::listen() {
 
     z_owned_config_t config;
     if (zc_config_from_str(&config, json_str.c_str()) != Z_OK) {
-        std::cerr << "[VFSNode " << config_.id << "] Failed parsing custom configuration, falling back to defaults." << std::endl;
+        std::cerr << "[VFSNode " << config_.id << "] Failed parsing custom configuration, falling back to defaults. JSON was: " << json_str << std::endl;
         z_config_default(&config);
     }
 

@@ -83,7 +83,9 @@ VFSResult VFSNode::read_cid_impl(const VFSRequest& req) {
 
     z_get_options_t get_opts;
     z_get_options_default(&get_opts);
-    get_opts.timeout_ms = 10000; // 10s default
+    get_opts.timeout_ms = 2000; // 2s default
+    get_opts.target = Z_QUERY_TARGET_ALL;
+    get_opts.consolidation.mode = Z_CONSOLIDATION_MODE_NONE;
 
     z_get(z_loan(state->session), z_loan(q_ke), nullptr, z_move(closure), &get_opts);
 
@@ -115,7 +117,8 @@ VFSResult VFSNode::read_cid_impl(const VFSRequest& req) {
                     success = true;
                     // Write cache locally
                     write_local(req.cid, result.data, "", json::object());
-                } else {
+                    break;
+                } else if (status != 404) {
                     err_code = status;
                     err_msg = rec_header.value("error", "Remote fetch error");
                 }

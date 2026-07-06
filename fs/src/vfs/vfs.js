@@ -139,7 +139,7 @@ export class VFS {
         ...context, 
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
-        // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
+        // Default 10-minute timeout for generative Selector calculations
         expiresAt: context.expiresAt || (Date.now() + 600000) 
     };
     if (Date.now() > packetContext.expiresAt) return null;
@@ -164,8 +164,8 @@ export class VFS {
         ...context, 
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
-        // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
-        expiresAt: context.expiresAt || (Date.now() + 600000) 
+        // Enforce a maximum 2-second timeout for non-generative content-addressed fetches
+        expiresAt: Math.min(context.expiresAt || Infinity, Date.now() + 2000)
     };
     if (Date.now() > packetContext.expiresAt) return null;
 
