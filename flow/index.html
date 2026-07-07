@@ -205,6 +205,22 @@
             flex-grow: 1;
         }
 
+        .card-preview-img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-top: 0.5rem;
+            margin-bottom: 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: border-color 0.2s, transform 0.2s;
+        }
+
+        .card:hover .card-preview-img {
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: scale(1.02);
+        }
+
         .card-arrow {
             display: flex;
             align-items: center;
@@ -259,8 +275,20 @@
                 <div>
                     <h2 class="card-title" style="color: #f43f5e;">Mountain Catchment & Meandering River</h2>
                     <p class="card-desc">Advanced catchment simulation displaying a massive, rugged northwest mountain range feeding heavy orographic rainfall into a single primary river system, meandering across a broad flat continent to the ocean.</p>
+                    <img src="final_iso_render.png" class="card-preview-img" alt="Catchment Meander Preview">
                 </div>
                 <div class="card-arrow" style="color: #f43f5e;">Launch Simulation &rarr;</div>
+            </a>
+
+            <!-- Realistic Island Map (New Scenario) -->
+            <a href="/realistic_map.html" class="card featured">
+                <span class="badge" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border-color: rgba(56, 189, 248, 0.2);">Version 9 (New Scenario)</span>
+                <div>
+                    <h2 class="card-title" style="color: #38bdf8;">Realistic Island Map</h2>
+                    <p class="card-desc">Advanced simulation modeling a realistic ocean island with SW-NE mountains, opposing diagonal canyons, delta river networks, sandy beaches, and coupled eco-vegetation systems.</p>
+                    <img src="realistic_map_3d.png" class="card-preview-img" alt="Realistic Map Preview">
+                </div>
+                <div class="card-arrow" style="color: #38bdf8;">Launch Simulation &rarr;</div>
             </a>
 
             <!-- Continental Evolution (Latest Featured) -->

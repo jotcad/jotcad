@@ -21,10 +21,17 @@ const server = https.createServer(options, (req, res) => {
     const ext = path.extname(baseName);
     const filePath = path.join(__dirname, baseName);
     
-    let contentType = 'text/html';
-    if (ext === '.js') {
-        contentType = 'text/javascript';
-    }
+    const mimeTypes = {
+        '.html': 'text/html',
+        '.css': 'text/css',
+        '.js': 'text/javascript',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.json': 'application/json'
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
 
     console.log(`[REQUEST] ${req.method} ${req.url} -> File: ${baseName}`);
 
