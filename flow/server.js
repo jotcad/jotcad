@@ -16,10 +16,8 @@ const options = {
 };
 
 const server = https.createServer(options, (req, res) => {
-    let urlPath = req.url === '/' || req.url === '' ? '/index.html' : req.url;
-    
-    // Sanitize path to prevent directory traversal
-    const baseName = path.basename(urlPath);
+    const cleanUrl = (req.url === '/' || req.url === '' ? '/index.html' : req.url).split('?')[0];
+    const baseName = path.basename(cleanUrl);
     const ext = path.extname(baseName);
     const filePath = path.join(__dirname, baseName);
     

@@ -14,9 +14,10 @@ private:
     float infiltration_rate;
     float K_sub;
     float max_soil_capacity;
+    bool allow_bedrock_erosion;
 public:
-    Erosion(float M, float tc, float Cf, float sr, float ir, float k_sub = 0.08f, float cap = 0.40f)
-        : M_erosion(M), tau_c(tc), C_friction(Cf), settle_rate(sr), infiltration_rate(ir), K_sub(k_sub), max_soil_capacity(cap) {}
+    Erosion(float M, float tc, float Cf, float sr, float ir, float k_sub = 0.08f, float cap = 0.40f, bool allow_bedrock = true)
+        : M_erosion(M), tau_c(tc), C_friction(Cf), settle_rate(sr), infiltration_rate(ir), K_sub(k_sub), max_soil_capacity(cap), allow_bedrock_erosion(allow_bedrock) {}
 
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
@@ -124,6 +125,9 @@ public:
 
                     if (tau > tau_c) {
                         float E = erodibility * (tau - tau_c) * dt;
+                        if (!allow_bedrock_erosion && soil_ptr) {
+                            E = std::min(E, (*soil_ptr)[y][x]);
+                        }
                         E = std::min(E, g.H_soil[y][x] + 10.0f);
                         g.H_soil[y][x] -= E;
                         g.sediment[y][x] += E;

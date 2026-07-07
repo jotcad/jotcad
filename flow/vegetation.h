@@ -104,8 +104,8 @@ public:
                         }
                     }
                 }
-                if (is_beach) {
-                    tree_soil_factor = -0.12f; // Trees decay in loose, salty beach sand near the ocean
+                if (is_beach || is_flooded) {
+                    tree_soil_factor = -0.20f; // Trees decay in loose, salty beach sand or in flooded river channels
                 }
 
                 // 3. Logistic Growth equations
@@ -122,6 +122,9 @@ public:
                         tree[y][x] += 0.002f * dt;
                     }
                     float tree_cap = carrying_capacity - grass[y][x] * 0.35f; // Grass crowd-out factor
+                    if (moisture < 0.35f) {
+                        tree_cap = std::min(tree_cap, 0.22f); // Savanna constraint: scattered tree groves (22% capacity) on dry plains
+                    }
                     float tree_growth;
                     if (tree_soil_factor < 0.0f) {
                         tree_growth = tree_soil_factor * tree[y][x] * dt; // Decay due to lack of soil anchor
