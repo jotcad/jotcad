@@ -231,14 +231,20 @@ async function compileHourVideo(dateStr, hourStr) {
   const cleanFiles = [];
   
   for (let i = 0; i < files.length; i++) {
-    if (i > 0 && i < files.length - 1) {
-      const sigPrev = signatures[i - 1];
-      const sigNext = signatures[i + 1];
-      const dist = getFrameDistance(sigPrev, sigNext);
+    if (i >= 2 && i < files.length - 2) {
+      const dist1 = getFrameDistance(signatures[i - 1], signatures[i + 1]);
+      const dist2 = getFrameDistance(signatures[i - 2], signatures[i + 2]);
       
-      // If neighbor frames are very similar (distance < 200), drop this frame
+      // If neighbors in the window of 4 are very similar, drop the transient middle frame
+      if (dist1 < 200 && dist2 < 200) {
+        console.log(`[Timelapse Filter] Dropping transient frame (window-4 neighbors similar): ${files[i]} (dist1: ${dist1}, dist2: ${dist2})`);
+        continue;
+      }
+    } else if (i > 0 && i < files.length - 1) {
+      // Fallback for boundary frames (index 1 and files.length - 2)
+      const dist = getFrameDistance(signatures[i - 1], signatures[i + 1]);
       if (dist < 200) {
-        console.log(`[Timelapse Filter] Dropping transient frame (neighbors similar): ${files[i]} (dist: ${dist})`);
+        console.log(`[Timelapse Filter] Dropping boundary transient frame (neighbors similar): ${files[i]} (dist: ${dist})`);
         continue;
       }
     }
