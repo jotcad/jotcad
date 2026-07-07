@@ -112,8 +112,8 @@ export async function _readResult(vfs, target, context = {}) {
             }
           } catch (err) {
             // If it is a hard error (e.g. expired request), propagate it immediately.
-            // 404 not found is ignored so we can try operator computation next.
-            if (err.message && !err.message.includes('404')) {
+            // 404 not found and Timeout are ignored so we can try operator computation next.
+            if (err.message && !err.message.includes('404') && !err.message.includes('Timeout')) {
               throw err;
             }
           }

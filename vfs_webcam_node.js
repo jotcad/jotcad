@@ -157,6 +157,47 @@ async function getFrameCount(videoPath) {
   }
 }
 
+function getFrameSignature(filePath) {
+  return new Promise((resolve) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', filePath,
+      '-vf', 'scale=8:8,format=gray',
+      '-f', 'rawvideo',
+      '-'
+    ]);
+    const chunks = [];
+    ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
+    ffmpeg.on('close', (code) => {
+      if (code === 0 && chunks.length > 0) {
+        resolve(Buffer.concat(chunks));
+      } else {
+        resolve(Buffer.alloc(64));
+      }
+    });
+  });
+}
+
+function getFrameDistance(sigA, sigB) {
+  let diff = 0;
+  for (let i = 0; i < 64; i++) {
+    diff += Math.abs(sigA[i] - sigB[i]);
+  }
+  return diff;
+}
+
+async function getSignatures(dir, files) {
+  const signatures = new Array(files.length);
+  const concurrency = 8;
+  for (let i = 0; i < files.length; i += concurrency) {
+    const chunk = files.slice(i, i + concurrency);
+    await Promise.all(chunk.map(async (file, idx) => {
+      const actualIdx = i + idx;
+      signatures[actualIdx] = await getFrameSignature(path.join(dir, file));
+    }));
+  }
+  return signatures;
+}
+
 // Helper to compile a specific hour directory into hour_HH.mp4
 async function compileHourVideo(dateStr, hourStr) {
   const hourDir = path.join(timelapseDir, dateStr, hourStr);
@@ -176,7 +217,7 @@ async function compileHourVideo(dateStr, hourStr) {
     }
   } catch (e) {}
 
-  const files = fs.readdirSync(hourDir).filter(f => f.match(/^frame_\d+\.jpg$/));
+  const files = fs.readdirSync(hourDir).filter(f => f.match(/^frame_\d+\.jpg$/)).sort();
   if (files.length === 0) {
     // Empty directory, just remove it
     fs.rmSync(hourDir, { recursive: true, force: true });
@@ -185,12 +226,41 @@ async function compileHourVideo(dateStr, hourStr) {
 
   console.log(`[Timelapse] Pre-compiling hourly video for ${dateStr} ${hourStr}:00 (${files.length} frames)...`);
 
+  // Analyze frame sequences in batch to detect and filter transient glitches
+  const signatures = await getSignatures(hourDir, files);
+  const cleanFiles = [];
+  
+  for (let i = 0; i < files.length; i++) {
+    if (i > 0 && i < files.length - 1) {
+      const sigPrev = signatures[i - 1];
+      const sigNext = signatures[i + 1];
+      const dist = getFrameDistance(sigPrev, sigNext);
+      
+      // If neighbor frames are very similar (distance < 200), drop this frame
+      if (dist < 200) {
+        console.log(`[Timelapse Filter] Dropping transient frame (neighbors similar): ${files[i]} (dist: ${dist})`);
+        continue;
+      }
+    }
+    cleanFiles.push(files[i]);
+  }
+
+  if (cleanFiles.length === 0 && files.length > 0) {
+    cleanFiles.push(files[0]);
+  }
+
+  const cleanDir = path.join(hourDir, 'clean');
+  fs.mkdirSync(cleanDir, { recursive: true });
+  for (const file of cleanFiles) {
+    fs.symlinkSync(path.join(hourDir, file), path.join(cleanDir, file));
+  }
+
   await new Promise((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', [
       '-y',
       '-framerate', '5',
       '-pattern_type', 'glob',
-      '-i', path.join(hourDir, 'frame_*.jpg'),
+      '-i', path.join(cleanDir, 'frame_*.jpg'),
       '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d,scale=-2:360',
       '-r', '5',
       '-c:v', 'libx264',
@@ -204,7 +274,7 @@ async function compileHourVideo(dateStr, hourStr) {
 
     ffmpeg.on('close', (code) => {
       if (code === 0) {
-        console.log(`[Timelapse] Successfully compiled hourly video: hour_${hourStr}.mp4`);
+        console.log(`[Timelapse] Successfully compiled hourly video: hour_${hourStr}.mp4 (kept ${cleanFiles.length}/${files.length} frames)`);
         resolve();
       } else {
         reject(new Error(`ffmpeg hourly exited with code ${code}`));
