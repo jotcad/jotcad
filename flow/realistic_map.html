@@ -637,9 +637,15 @@
                     const h_surf = stepData.grid_h_surface[gridY][gridX];
                     const tree = stepData.grid_tree[gridY][gridX];
 
-                    telCoord.textContent = `(${gridX}, ${gridY})`;
-                    telElevation.textContent = `${(H_soil * 1000).toFixed(0)} m`;
-                    telWater.textContent = h_surf > 0.01 ? `${(h_surf * 1000).toFixed(0)} m` : `0 m (Dry)`;
+                    const cellSpacing = realisticMapData.cell_spacing_m || 100.0;
+                    const heightScale = realisticMapData.height_scale_m || 1000.0;
+
+                    const kmX = ((gridX * cellSpacing) / 1000.0).toFixed(2);
+                    const kmY = ((gridY * cellSpacing) / 1000.0).toFixed(2);
+
+                    telCoord.textContent = `${gridX}, ${gridY} (${kmX} km, ${kmY} km)`;
+                    telElevation.textContent = H_soil > 0.0 ? `${(H_soil * heightScale).toFixed(0)} m` : `${(H_soil * heightScale).toFixed(0)} m (Subsea)`;
+                    telWater.textContent = h_surf > 0.008 ? `${(h_surf * heightScale).toFixed(1)} m` : `0.0 m (Dry)`;
                     telTree.textContent = `${(tree * 100).toFixed(0)} %`;
                 }
             }
@@ -749,7 +755,7 @@
                     }
 
                     // Overlay transparent water on top
-                    if (h_surf > 0.008) {
+                    if (h_surf > 0.020) {
                         let t_w = Math.min(0.75, 0.22 + h_surf / 4.0);
                         let wr = 14, wg = 120, wb = 210; // Ocean blue
                         if (H_val > -1.0) {
@@ -771,7 +777,10 @@
                     rect.setAttribute("width", CELL_SIZE);
                     rect.setAttribute("height", CELL_SIZE);
                     rect.setAttribute("fill", `rgb(${r}, ${g}, ${b})`);
-                    rect.setAttribute("stroke", "var(--grid-line)");
+                    if (GRID_SIZE <= 128) {
+                        rect.setAttribute("stroke", "var(--grid-line)");
+                        rect.setAttribute("stroke-width", "0.4");
+                    }
                     gridSvg.appendChild(rect);
                 }
             }
@@ -804,6 +813,9 @@
             const drawContours = showContoursChk.checked;
             const drawStreamlines = showStreamlinesChk.checked;
 
+            const sizeRatio = 128.0 / GRID_SIZE;
+            const projectIsoScaled = (x, y, z) => projectIso(x, y, z, { spacing: 5.2 * sizeRatio });
+
             isoSvg.innerHTML = '';
 
             // Calculate vertex elevations
@@ -819,10 +831,10 @@
                         const zC = V_soil[y + 1][x + 1];
                         const zD = V_soil[y + 1][x];
 
-                        const pA = projectIso(x, y, zA);
-                        const pB = projectIso(x + 1, y, zB);
-                        const pC = projectIso(x + 1, y + 1, zC);
-                        const pD = projectIso(x, y + 1, zD);
+                        const pA = projectIsoScaled(x, y, zA);
+                        const pB = projectIsoScaled(x + 1, y, zB);
+                        const pC = projectIsoScaled(x + 1, y + 1, zC);
+                        const pD = projectIsoScaled(x, y + 1, zD);
 
                         const dx = zB - zA;
                         const dy = zD - zA;
@@ -902,16 +914,16 @@
                         isoSvg.appendChild(poly);
 
                         // Draw Floating Opaque Water Plane
-                        if (h_w > 0.008) {
+                        if (h_w > 0.020) {
                             const zAw = zA + V_water[y][x];
                             const zBw = zB + V_water[y][x+1];
                             const zCw = zC + V_water[y+1][x+1];
                             const zDw = zD + V_water[y+1][x];
 
-                            const pAw = projectIso(x, y, zAw);
-                            const pBw = projectIso(x + 1, y, zBw);
-                            const pCw = projectIso(x + 1, y + 1, zCw);
-                            const pDw = projectIso(x, y + 1, zDw);
+                            const pAw = projectIsoScaled(x, y, zAw);
+                            const pBw = projectIsoScaled(x + 1, y, zBw);
+                            const pCw = projectIsoScaled(x + 1, y + 1, zCw);
+                            const pDw = projectIsoScaled(x, y + 1, zDw);
 
                             let waterColor = "rgba(14, 116, 180, 0.18)"; // Ocean blue
                             if (H_soil[y][x] > -1.0) {
@@ -976,8 +988,8 @@
                         // 3D Trees
                         const tree = tree_grid[y][x];
                         if (showTrees && h_w <= 0.002 && H_val > 0.0 && tree > 0.08) {
-                            const pBase = projectIso(x + 0.5, y + 0.5, zA);
-                            const pCrest = projectIso(x + 0.5, y + 0.5, zA + 0.40 * tree + 0.12);
+                            const pBase = projectIsoScaled(x + 0.5, y + 0.5, zA);
+                            const pCrest = projectIsoScaled(x + 0.5, y + 0.5, zA + 0.40 * tree + 0.12);
 
                             const trunk = document.createElementNS("http://www.w3.org/2000/svg", "line");
                             trunk.setAttribute("x1", pBase.x.toFixed(1));
@@ -1008,7 +1020,7 @@
                         const tcx = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.x)));
                         const tcy = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.y)));
                         const tz = H_soil[tcy][tcx] + h_surf[tcy][tcx] + 0.03;
-                        return projectIso(pt.x, pt.y, tz);
+                        return projectIsoScaled(pt.x, pt.y, tz);
                     });
                     
                     let d = `M ${trail3d[0].x.toFixed(1)} ${trail3d[0].y.toFixed(1)}`;

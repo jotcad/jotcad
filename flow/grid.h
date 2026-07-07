@@ -9,9 +9,15 @@
 #include "perlin_noise.h"
 #include "fields.h"
 
+struct ScaleConfig {
+    float cell_spacing_m = 100.0f; // cell size in meters
+    float height_scale_m = 500.0f; // vertical elevation multiplier in meters
+};
+
 // Simulation Grid holding all 2D simulation arrays and a type-safe sparse field registry
 struct Grid {
     int size;
+    ScaleConfig scale;
     std::vector<std::vector<float>> H_soil;
     std::vector<std::vector<float>> h_surface;
     std::vector<std::vector<float>> vx; // (size + 1) x size
@@ -56,6 +62,7 @@ struct Grid {
         if (size == target_size) return;
         
         int src_size = size;
+        scale.cell_spacing_m *= (float)src_size / (float)target_size;
         auto src_H = H_soil;
         auto src_h = h_surface;
         auto src_sed = sediment;

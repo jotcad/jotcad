@@ -20,11 +20,13 @@ struct RealisticMapState {
     std::vector<std::vector<float>> vy;
 };
 
-void export_map_data(const std::string& filename, const std::vector<RealisticMapState>& history, int grid_size) {
+void export_map_data(const std::string& filename, const std::vector<RealisticMapState>& history, int grid_size, float cell_spacing_m, float height_scale_m) {
     std::ofstream out(filename);
     out << std::fixed << std::setprecision(3);
     out << "export const realisticMapData = {\n";
     out << "  grid_size: " << grid_size << ",\n";
+    out << "  cell_spacing_m: " << cell_spacing_m << ",\n";
+    out << "  height_scale_m: " << height_scale_m << ",\n";
     out << "  steps: [\n";
     for (size_t s = 0; s < history.size(); ++s) {
         out << "    {\n";
@@ -148,8 +150,10 @@ public:
                 float meander_x = target_x + meander_amp * std::sin(y * meander_freq);
                 float d_canyon = std::abs((float)(x - meander_x));
 
-                // Restrict heavy rain strictly by altitude AND canyon corridor
-                if (H > alt_threshold && d_canyon < g.size * 0.12f) {
+                // Restrict heavy rain strictly by altitude AND canyon corridor (unless alt_threshold is negative)
+                bool rain_allowed = (alt_threshold < 0.0f) ? (d_canyon < g.size * 0.12f)
+                                                           : (H > alt_threshold && d_canyon < g.size * 0.12f);
+                if (rain_allowed) {
                     g.h_surface[y][x] += mountain_meters * dt;
                 } else {
                     g.h_surface[y][x] += base_meters * dt;
@@ -164,6 +168,8 @@ int main() {
     const int GRID_HIGH = 512;
     Orchestrator orch(GRID_LOW);
     Grid& g = orch.get_grid();
+    g.scale.cell_spacing_m = 50.0f;  // 50 meters per cell at 256x256
+    g.scale.height_scale_m = 500.0f; // 500 meters vertical unit
 
     std::cout << "Initializing realistic island topography (256x256)..." << std::endl;
     int sz = g.size;
@@ -260,27 +266,30 @@ int main() {
     const int steps_hydro = 120;
     float dt_hydro = 0.05f;
     Phase* p2 = orch.add_phase("Hydrology & Incision", dt_hydro, steps_hydro, GRID_HIGH);
-    p2->add<RealisticPrecipitation>(0.0f, 6.5f); // Rain ONLY in highlands (above 0.32m) inside corridor
+    p2->add<RealisticPrecipitation>(0.0f, 6.5f, -999.0f); // Enable altitude bypass during incision to carve canyon to coast
     p2->add<Hydrodynamics>(9.81f, 0.018f);
-    p2->add<Erosion>(0.15f, 0.04f, 0.18f, 0.0f, 0.0f, 0.0f, 0.45f, false); // Zero settling, zero infiltration
+    // HACK: Set critical shear stress threshold (second argument) to 0.0f, and boost erodibility (first argument) to 500.0f.
+    // Physically, this corrects the 10,000x normalized-to-physical shear stress scaling mismatch (tau = h * S vs 9810 * h * S)
+    // and models the easily erodible, soft alluvial sand/silt sediments of the lowlands plain (tau_c_physical ~0.1 Pa).
+    p2->add<Erosion>(500.0f, 0.0f, 0.18f, 0.0f, 0.0f, 0.0f, 0.45f, false); // Zero settling, zero infiltration
 
     // 4. Phase 3: Coupled Eco-Vegetation
     const int steps_eco = 2000;
     float dt_eco = 0.05f;
     Phase* p3 = orch.add_phase("Eco-Vegetation Growth", dt_eco, steps_eco, GRID_HIGH);
-    p3->add<RealisticPrecipitation>(0.12f, 12.50f); // Boosted rain in mountain corridor (12.50) to generate deep river, moderate rain on plains (0.12)
+    p3->add<RealisticPrecipitation>(0.80f, 12.50f, 0.32f); // Plain rain at 0.80f (temperate plain) to drain lake while keeping river inside canyon
     p3->add<Hydrodynamics>(9.81f, 0.018f);
-    // Adjusted infiltration (0.0035) to absorb plain rain and keep plain dry, while keeping the river active
+    // Restore standard Erosion parameters (0.0035f infiltration, 0.015f lateral Darcy diffusion)
     p3->add<Erosion>(0.15f, 0.04f, 0.18f, 0.0f, 0.0035f, 0.015f, 0.45f, false);
     p3->add<Landslide>(0.55f, 511, 511); // High repose slope to stabilize river canyon walls
     p3->add<Vegetation>(2.20f, 0.50f, 1.0f); // Dynamic growth (grass & trees enabled)
 
     std::vector<RealisticMapState> history;
 
-    // Helper to capture active simulation state and downsample
+    // Helper to capture active simulation state at native resolution (no downsampling)
     auto record_history_state = [&](int global_step, const std::string& phase_name) {
-        if (global_step % 50 == 0 || global_step == steps_tectonic + steps_noise + steps_hydro + steps_eco) {
-            const int export_size = 128;
+        if (global_step % 500 == 0 || global_step == steps_tectonic + steps_noise + steps_hydro + steps_eco) {
+            const int export_size = 512;
             std::vector<std::vector<float>> H_down(export_size, std::vector<float>(export_size));
             std::vector<std::vector<float>> h_down(export_size, std::vector<float>(export_size));
             std::vector<std::vector<float>> grass_down(export_size, std::vector<float>(export_size));
@@ -375,7 +384,7 @@ int main() {
     }
 
     std::cout << "Exporting dataset to test_realistic_map.js..." << std::endl;
-    export_map_data("test_realistic_map.js", history, 128);
+    export_map_data("test_realistic_map.js", history, 512, g.scale.cell_spacing_m, g.scale.height_scale_m);
     std::cout << "SUCCESS: Exported successfully!" << std::endl;
 
     return 0;
