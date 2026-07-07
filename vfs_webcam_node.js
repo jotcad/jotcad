@@ -198,6 +198,36 @@ async function getSignatures(dir, files) {
   return signatures;
 }
 
+// Helper to filter transient brightness spikes from frame list
+async function filterFrames(dir, files) {
+  const signatures = await getSignatures(dir, files);
+  const averages = signatures.map(sig => sig.reduce((sum, v) => sum + v, 0) / 64);
+  const cleanFiles = [];
+  
+  for (let i = 0; i < files.length; i++) {
+    if (i > 0 && i < files.length - 1) {
+      const avgPrev = averages[i - 1];
+      const avgCurr = averages[i];
+      const avgNext = averages[i + 1];
+      
+      const diffPrev = avgCurr - avgPrev;
+      const diffNext = avgCurr - avgNext;
+      
+      // Drop frame if it is a transient brightness spike (brighter than both neighbors by > 25 units)
+      if (diffPrev > 25 && diffNext > 25) {
+        console.log(`[Timelapse Filter] Dropping bright spike frame: ${files[i]} (prev diff: ${diffPrev.toFixed(1)}, next diff: ${diffNext.toFixed(1)})`);
+        continue;
+      }
+    }
+    cleanFiles.push(files[i]);
+  }
+
+  if (cleanFiles.length === 0 && files.length > 0) {
+    cleanFiles.push(files[0]);
+  }
+  return cleanFiles;
+}
+
 // Helper to compile a specific hour directory into hour_HH.mp4
 async function compileHourVideo(dateStr, hourStr) {
   const hourDir = path.join(timelapseDir, dateStr, hourStr);
@@ -227,31 +257,7 @@ async function compileHourVideo(dateStr, hourStr) {
   console.log(`[Timelapse] Pre-compiling hourly video for ${dateStr} ${hourStr}:00 (${files.length} frames)...`);
 
   // Analyze frame sequences in batch to detect and filter transient glitches
-  const signatures = await getSignatures(hourDir, files);
-  const averages = signatures.map(sig => sig.reduce((sum, v) => sum + v, 0) / 64);
-  const cleanFiles = [];
-  
-  for (let i = 0; i < files.length; i++) {
-    if (i > 0 && i < files.length - 1) {
-      const avgPrev = averages[i - 1];
-      const avgCurr = averages[i];
-      const avgNext = averages[i + 1];
-      
-      const diffPrev = avgCurr - avgPrev;
-      const diffNext = avgCurr - avgNext;
-      
-      // Drop frame if it is a transient brightness spike (brighter than both neighbors by > 25 units)
-      if (diffPrev > 25 && diffNext > 25) {
-        console.log(`[Timelapse Filter] Dropping bright spike frame: ${files[i]} (prev diff: ${diffPrev.toFixed(1)}, next diff: ${diffNext.toFixed(1)})`);
-        continue;
-      }
-    }
-    cleanFiles.push(files[i]);
-  }
-
-  if (cleanFiles.length === 0 && files.length > 0) {
-    cleanFiles.push(files[0]);
-  }
+  const cleanFiles = await filterFrames(hourDir, files);
 
   const cleanDir = path.join(hourDir, 'clean');
   fs.mkdirSync(cleanDir, { recursive: true });
@@ -695,15 +701,25 @@ async function compileVideo() {
         }
       } catch (e) {}
 
-      const activeJpegs = fs.readdirSync(activeHourDir).filter(f => f.match(/^frame_\d+\.jpg$/));
+      const activeJpegs = fs.readdirSync(activeHourDir).filter(f => f.match(/^frame_\d+\.jpg$/)).sort();
       if (activeJpegs.length > 0) {
         console.log(`[Timelapse Rebuild] Compiling temporary active hour video (${activeJpegs.length} frames)...`);
+        const cleanFiles = await filterFrames(activeHourDir, activeJpegs);
+        const cleanDir = path.join(activeHourDir, 'clean');
+        
+        // Recreate clean folder
+        fs.rmSync(cleanDir, { recursive: true, force: true });
+        fs.mkdirSync(cleanDir, { recursive: true });
+        for (const file of cleanFiles) {
+          fs.symlinkSync(path.join(activeHourDir, file), path.join(cleanDir, file));
+        }
+
         await new Promise((resolve, reject) => {
           const ffmpeg = spawn('ffmpeg', [
             '-y',
             '-framerate', '5',
             '-pattern_type', 'glob',
-            '-i', path.join(activeHourDir, 'frame_*.jpg'),
+            '-i', path.join(cleanDir, 'frame_*.jpg'),
             '-vf', 'split=2[full][masked];[masked]drawbox=x=0:y=0:w=450:h=60:color=black:t=fill,mpdecimate=hi=64*20:lo=64*10:frac=0.4[deduped];[deduped][full]overlay=shortest=1,setpts=N/5/TB,hqdn3d,scale=-2:360',
             '-r', '5',
             '-c:v', 'libx264',
@@ -715,6 +731,8 @@ async function compileVideo() {
             tempActivePath
           ]);
           ffmpeg.on('close', (code) => {
+            // Clean up temporary symlink dir
+            fs.rmSync(cleanDir, { recursive: true, force: true });
             if (code === 0) resolve();
             else reject(new Error(`ffmpeg active hour compile failed with code ${code}`));
           });
