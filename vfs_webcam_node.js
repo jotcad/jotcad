@@ -228,23 +228,21 @@ async function compileHourVideo(dateStr, hourStr) {
 
   // Analyze frame sequences in batch to detect and filter transient glitches
   const signatures = await getSignatures(hourDir, files);
+  const averages = signatures.map(sig => sig.reduce((sum, v) => sum + v, 0) / 64);
   const cleanFiles = [];
   
   for (let i = 0; i < files.length; i++) {
-    if (i >= 2 && i < files.length - 2) {
-      const dist1 = getFrameDistance(signatures[i - 1], signatures[i + 1]);
-      const dist2 = getFrameDistance(signatures[i - 2], signatures[i + 2]);
+    if (i > 0 && i < files.length - 1) {
+      const avgPrev = averages[i - 1];
+      const avgCurr = averages[i];
+      const avgNext = averages[i + 1];
       
-      // If neighbors in the window of 4 are very similar, drop the transient middle frame
-      if (dist1 < 200 && dist2 < 200) {
-        console.log(`[Timelapse Filter] Dropping transient frame (window-4 neighbors similar): ${files[i]} (dist1: ${dist1}, dist2: ${dist2})`);
-        continue;
-      }
-    } else if (i > 0 && i < files.length - 1) {
-      // Fallback for boundary frames (index 1 and files.length - 2)
-      const dist = getFrameDistance(signatures[i - 1], signatures[i + 1]);
-      if (dist < 200) {
-        console.log(`[Timelapse Filter] Dropping boundary transient frame (neighbors similar): ${files[i]} (dist: ${dist})`);
+      const diffPrev = avgCurr - avgPrev;
+      const diffNext = avgCurr - avgNext;
+      
+      // Drop frame if it is a transient brightness spike (brighter than both neighbors by > 25 units)
+      if (diffPrev > 25 && diffNext > 25) {
+        console.log(`[Timelapse Filter] Dropping bright spike frame: ${files[i]} (prev diff: ${diffPrev.toFixed(1)}, next diff: ${diffNext.toFixed(1)})`);
         continue;
       }
     }
