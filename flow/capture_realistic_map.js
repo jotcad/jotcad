@@ -20,6 +20,10 @@ async function run() {
         const page = await browser.newPage();
         await page.setCacheEnabled(false);
         
+        // Log page console output and errors for debugging
+        page.on('console', msg => console.log(`[BROWSER LOG] ${msg.text()}`));
+        page.on('pageerror', err => console.error(`[BROWSER EXCEPTION] ${err.toString()}`));
+        
         // Large viewport to fit panels
         await page.setViewport({ width: 1600, height: 1200 });
 
@@ -32,6 +36,27 @@ async function run() {
         console.log('Waiting 5s for JS engine to parse database...');
         await page.waitForTimeout ? await page.waitForTimeout(5000) : await new Promise(r => setTimeout(r, 5000));
 
+        console.log('Jumping to Boulder Erosion frame...');
+        await page.evaluate(() => {
+            const slider = document.getElementById('timeline-slider');
+            if (slider) {
+                slider.value = 6;
+                slider.dispatchEvent(new Event('input'));
+            }
+        });
+
+        console.log('Waiting 2s for dry rendering to finalize...');
+        await page.waitForTimeout ? await page.waitForTimeout(2000) : await new Promise(r => setTimeout(r, 2000));
+
+        // Capture dry 3D grooves (#iso-svg)
+        console.log('Capturing Dry 3D Boulder Erosion Grooves (#iso-svg)...');
+        const dryIsoSvgElement = await page.$('#iso-svg');
+        if (dryIsoSvgElement) {
+            const outputPathDry3D = path.join(__dirname, 'realistic_map_3d_dry.png');
+            await dryIsoSvgElement.screenshot({ path: outputPathDry3D });
+            console.log(`Saved Dry 3D snapshot to ${outputPathDry3D}`);
+        }
+
         console.log('Jumping to final frame on timeline...');
         await page.evaluate(() => {
             const slider = document.getElementById('timeline-slider');
@@ -41,7 +66,7 @@ async function run() {
             }
         });
 
-        console.log('Waiting 2s for rendering to finalize...');
+        console.log('Waiting 2s for final rendering to finalize...');
         await page.waitForTimeout ? await page.waitForTimeout(2000) : await new Promise(r => setTimeout(r, 2000));
 
         // 1. Capture 2D Overhead Map (#grid-svg)
@@ -66,7 +91,18 @@ async function run() {
             console.error('Could not find #iso-svg element');
         }
 
-        console.log('SUCCESS: Separate 2D and 3D terrain renders captured successfully!');
+        // 3. Capture Dynamic Cross Section (#cs-svg)
+        console.log('Capturing Cross Section Profile (#cs-svg)...');
+        const csSvgElement = await page.$('#cs-svg');
+        if (csSvgElement) {
+            const outputPathCS = path.join(__dirname, 'realistic_map_cs.png');
+            await csSvgElement.screenshot({ path: outputPathCS });
+            console.log(`Saved Cross Section snapshot to ${outputPathCS}`);
+        } else {
+            console.error('Could not find #cs-svg element');
+        }
+
+        console.log('SUCCESS: Separate 2D, 3D, and Cross Section terrain renders captured successfully!');
 
     } catch (e) {
         console.error('ERROR during capture:', e);

@@ -142,8 +142,8 @@ export function traceStreamlines(grid_vx, grid_vy, grid_h, size, options = {}) {
     for (let y = 1; y < size - 1; y += stride) {
         for (let x = 1; x < size - 1; x += stride) {
             const h = grid_h[y][x];
-            const vx = grid_vx[y][x];
-            const vy = grid_vy[y][x];
+            const vx = grid_vx[x][y];
+            const vy = grid_vy[x][y];
             const speed = Math.sqrt(vx * vx + vy * vy);
             if (h > h_threshold && speed > speed_threshold) {
                 seeds.push({ x, y, speed });
@@ -151,27 +151,51 @@ export function traceStreamlines(grid_vx, grid_vy, grid_h, size, options = {}) {
         }
     }
 
-    seeds.sort((a, b) => b.speed - a.speed);
-
+    const selectedSeeds = [];
     const limit = Math.min(seeds.length, max_streamlines);
-    for (let k = 0; k < limit; k++) {
-        const seed = seeds[k];
+    while (selectedSeeds.length < limit && seeds.length > 0) {
+        const rIdx = Math.floor(Math.random() * seeds.length);
+        selectedSeeds.push(seeds.splice(rIdx, 1)[0]);
+    }
+
+    for (let k = 0; k < selectedSeeds.length; k++) {
+        const seed = selectedSeeds[k];
         let px = seed.x + 0.5;
         let py = seed.y + 0.5;
         const path = [{ x: px, y: py }];
         
+        let momentumSteps = 0;
+        let lastDx = 0.0;
+        let lastDy = 0.0;
         for (let step = 0; step < max_steps; step++) {
             const cx = Math.floor(px);
             const cy = Math.floor(py);
             if (cx < 0 || cx >= size || cy < 0 || cy >= size) break;
 
-            const vx = grid_vx[cy][cx];
-            const vy = grid_vy[cy][cx];
+            const vx = grid_vx[cx][cy];
+            const vy = grid_vy[cx][cy];
             const speed = Math.sqrt(vx * vx + vy * vy);
-            if (speed < stop_speed) break;
+            
+            let dx_step = 0.0;
+            let dy_step = 0.0;
 
-            px += (vx / speed) * step_size;
-            py += (vy / speed) * step_size;
+            if (speed < stop_speed) {
+                momentumSteps++;
+                if (momentumSteps > 20) break;
+                // Coast with the last valid direction, decaying speed gradually
+                const decay = 1.0 - (momentumSteps / 20.0);
+                dx_step = lastDx * decay;
+                dy_step = lastDy * decay;
+            } else {
+                momentumSteps = 0;
+                dx_step = vx / speed;
+                dy_step = vy / speed;
+                lastDx = dx_step;
+                lastDy = dy_step;
+            }
+
+            px += dx_step * step_size;
+            py += dy_step * step_size;
             path.push({ x: px, y: py });
         }
 

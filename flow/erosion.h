@@ -123,7 +123,7 @@ public:
                         erodibility *= std::exp(-2.3f * grass_val - 3.9f * tree_val);
                     }
 
-                    if (tau > tau_c) {
+                    if (tau > tau_c && g.H_soil[y][x] > 0.0f) {
                         float E = erodibility * (tau - tau_c) * dt;
                         if (!allow_bedrock_erosion && soil_ptr) {
                             E = std::min(E, (*soil_ptr)[y][x]);

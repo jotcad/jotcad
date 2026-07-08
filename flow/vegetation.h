@@ -85,9 +85,10 @@ public:
                 }
 
                 // Soil requirements for vegetation
-                float grass_soil_factor = std::min(1.0f, soil[y][x] / 0.05f); // Requires 5 cm of soil
-                float tree_soil_factor = (soil[y][x] < 0.08f) ? -0.15f : std::min(1.0f, soil[y][x] / 0.25f); // Trees require 25 cm of soil, decay if < 8 cm
-
+                float soil_thickness_m = soil[y][x] * g.scale.height_scale_m;
+                float grass_soil_factor = std::min(1.0f, soil_thickness_m / 0.05f); // Requires 5 cm (0.05 m) of soil
+                float tree_soil_factor = (soil_thickness_m < 0.08f) ? -0.15f : std::min(1.0f, soil_thickness_m / 0.25f); // Trees require 25 cm (0.25 m) of soil, decay if < 8 cm
+ 
                 // Beach constraint: trees cannot grow in the active wave-washed beach zone (near deep ocean water)
                 bool is_beach = false;
                 if (g.h_surface[y][x] <= 0.02f) {
@@ -142,19 +143,20 @@ public:
                 }
 
                 // - Submersion death: deep standing water kills land grass slowly
-                if (is_flooded && water_depth > 0.50f) {
+                float water_depth_m = water_depth * g.scale.height_scale_m;
+                if (is_flooded && water_depth_m > 0.50f) {
                     grass[y][x] = std::max(0.0f, grass[y][x] - 0.15f * dt);
                     tree[y][x] = std::max(0.0f, tree[y][x] - 0.05f * dt); // Trees survive longer
                 }
 
                 // - Hydraulic erosion shear stress: fast-flowing water rips out vegetation (boundary safe)
                 if (is_flooded) {
-                    float vx_val = (x < sz - 1) ? 0.5f * (g.vx[y][x] + g.vx[y][x+1]) : g.vx[y][x];
-                    float vy_val = (y < sz - 1) ? 0.5f * (g.vy[y][x] + g.vy[y+1][x]) : g.vy[y][x];
+                    float vx_val = (g.vx[x][y] + g.vx[x+1][y]) * 0.5f;
+                    float vy_val = (g.vy[x][y] + g.vy[x][y+1]) * 0.5f;
                     float velocity_mag = std::sqrt(vx_val*vx_val + vy_val*vy_val);
-
-                    if (velocity_mag > 1.2f) {
-                        float shear_damage = 0.30f * (velocity_mag - 1.2f) * dt;
+ 
+                    if (velocity_mag > 4000.0f) {
+                        float shear_damage = 0.00009f * (velocity_mag - 4000.0f) * dt;
                         grass[y][x] = std::max(0.0f, grass[y][x] - shear_damage);
                         tree[y][x] = std::max(0.0f, tree[y][x] - 0.4f * shear_damage);
                     }

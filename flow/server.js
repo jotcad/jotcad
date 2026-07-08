@@ -17,10 +17,18 @@ const options = {
 
 const server = https.createServer(options, (req, res) => {
     const cleanUrl = (req.url === '/' || req.url === '' ? '/index.html' : req.url).split('?')[0];
-    const baseName = path.basename(cleanUrl);
-    const ext = path.extname(baseName);
-    const filePath = path.join(__dirname, baseName);
+    const safeUrl = cleanUrl.startsWith('/') ? cleanUrl.substring(1) : cleanUrl;
+    const filePath = path.resolve(__dirname, safeUrl);
     
+    // Prevent directory traversal attacks
+    if (!filePath.startsWith(__dirname)) {
+        console.error(`[403] Forbidden: ${cleanUrl}`);
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+    }
+    
+    const ext = path.extname(filePath);
     const mimeTypes = {
         '.html': 'text/html',
         '.css': 'text/css',
@@ -33,16 +41,16 @@ const server = https.createServer(options, (req, res) => {
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
-    console.log(`[REQUEST] ${req.method} ${req.url} -> File: ${baseName}`);
+    console.log(`[REQUEST] ${req.method} ${req.url} -> File: ${safeUrl}`);
 
     fs.readFile(filePath, (err, data) => {
         if (err) {
-            console.error(`[404] Not Found: ${baseName}`);
+            console.error(`[404] Not Found: ${safeUrl}`);
             res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('Resource not found');
             return;
         }
-        console.log(`[200] OK: ${baseName} (${data.length} bytes)`);
+        console.log(`[200] OK: ${safeUrl} (${data.length} bytes)`);
         res.writeHead(200, { 
             'Content-Type': contentType,
             'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'

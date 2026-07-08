@@ -9,6 +9,99 @@
 #include "shelf_generator.h"
 #include "noise.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../fs/cpp/vendor/stb_image_write.h"
+
+void save_png(const std::string& filename, Grid& g) {
+    int sz = g.size;
+    std::vector<unsigned char> pixels(sz * sz * 3);
+
+    auto& grass = g.request_field<GrassField>();
+    auto& tree = g.request_field<TreeField>();
+
+    for (int y = 0; y < sz; ++y) {
+        for (int x = 0; x < sz; ++x) {
+            float H_soil = g.H_soil[y][x];
+            float h_surf = g.h_surface[y][x];
+            float grass_val = grass[y][x];
+            float tree_val = tree[y][x];
+
+            float h_L = x > 0 ? g.H_soil[y][x-1] : H_soil;
+            float h_R = x < sz - 1 ? g.H_soil[y][x+1] : H_soil;
+            float h_T = y > 0 ? g.H_soil[y-1][x] : H_soil;
+            float h_B = y < sz - 1 ? g.H_soil[y+1][x] : H_soil;
+
+            float dx = h_R - h_L;
+            float dy = h_B - h_T;
+            float shadow = 1.0f + 0.45f * dx + 0.45f * dy;
+            float shadeFactor = std::max(0.35f, std::min(1.65f, shadow));
+
+            bool isBeach = false;
+            if (h_surf <= 0.02f) {
+                for (int dy_b = -2; dy_b <= 2 && !isBeach; ++dy_b) {
+                    for (int dx_b = -2; dx_b <= 2 && !isBeach; ++dx_b) {
+                        int ny = y + dy_b;
+                        int nx = x + dx_b;
+                        if (ny >= 0 && ny < sz && nx >= 0 && nx < sz && g.h_surface[ny][nx] > 0.45f) {
+                            isBeach = true;
+                        }
+                    }
+                }
+            }
+
+            float r = 100.0f, g_val = 105.0f, b = 115.0f;
+            if (isBeach) {
+                r = 240.0f * shadeFactor;
+                g_val = 218.0f * shadeFactor;
+                b = 165.0f * shadeFactor;
+            } else if (H_soil > -1.0f) {
+                float height_t = std::min(1.0f, (H_soil + 1.0f) / 4.0f);
+                r = ((1.0f - height_t) * 110.0f + height_t * 168.0f) * shadeFactor;
+                g_val = ((1.0f - height_t) * 92.0f + height_t * 162.0f) * shadeFactor;
+                b = ((1.0f - height_t) * 75.0f + height_t * 155.0f) * shadeFactor;
+            } else {
+                r = 45.0f * shadeFactor;
+                g_val = 52.0f * shadeFactor;
+                b = 68.0f * shadeFactor;
+            }
+
+            if (h_surf <= 0.002f) {
+                if (grass_val > 0.05f) {
+                    float t_g = std::min(0.85f, grass_val);
+                    r = (1.0f - t_g) * r + t_g * 34.0f * shadeFactor;
+                    g_val = (1.0f - t_g) * g_val + t_g * 197.0f * shadeFactor;
+                    b = (1.0f - t_g) * b + t_g * 94.0f * shadeFactor;
+                }
+                if (tree_val > 0.05f) {
+                    float t_t = std::min(0.90f, tree_val);
+                    r = (1.0f - t_t) * r + t_t * 21.0f * shadeFactor;
+                    g_val = (1.0f - t_t) * g_val + t_t * 128.0f * shadeFactor;
+                    b = (1.0f - t_t) * b + t_t * 61.0f * shadeFactor;
+                }
+            }
+
+            if (h_surf > 0.020f) {
+                float depth = std::min(1.0f, h_surf / 1.5f);
+                float wr = (1.0f - depth) * 103.0f + depth * 30.0f;
+                float wg = (1.0f - depth) * 232.0f + depth * 58.0f;
+                float wb = (1.0f - depth) * 249.0f + depth * 138.0f;
+                float t_w = H_soil > -1.0f ? 0.85f : std::min(0.75f, 0.22f + h_surf / 4.0f);
+
+                r = (1.0f - t_w) * r + t_w * wr * shadeFactor;
+                g_val = (1.0f - t_w) * g_val + t_w * wg * shadeFactor;
+                b = (1.0f - t_w) * b + t_w * wb * shadeFactor;
+            }
+
+            int idx_pixel = (y * sz + x) * 3;
+            pixels[idx_pixel] = (unsigned char)std::max(0.0f, std::min(255.0f, r));
+            pixels[idx_pixel + 1] = (unsigned char)std::max(0.0f, std::min(255.0f, g_val));
+            pixels[idx_pixel + 2] = (unsigned char)std::max(0.0f, std::min(255.0f, b));
+        }
+    }
+
+    stbi_write_png(filename.c_str(), sz, sz, 3, pixels.data(), sz * 3);
+}
+
 struct RealisticMapState {
     int step;
     std::string phase_name;
@@ -20,7 +113,8 @@ struct RealisticMapState {
     std::vector<std::vector<float>> vy;
 };
 
-void export_map_data(const std::string& filename, const std::vector<RealisticMapState>& history, int grid_size, float cell_spacing_m, float height_scale_m) {
+void export_map_data(const std::string& filename, const std::vector<RealisticMapState>& history, float cell_spacing_m, float height_scale_m) {
+    int grid_size = history.empty() ? 0 : history[0].H_soil.size();
     std::ofstream out(filename);
     out << std::fixed << std::setprecision(3);
     out << "export const realisticMapData = {\n";
@@ -128,42 +222,371 @@ void export_map_data(const std::string& filename, const std::vector<RealisticMap
 
 class RealisticPrecipitation : public Element {
 private:
-    float base_rate;
-    float mountain_rate;
-    float alt_threshold;
+    float base_mm_per_hr;
+    float mountain_mm_per_hr;
 public:
-    RealisticPrecipitation(float base, float mountain, float threshold = 0.32f) 
-        : base_rate(base), mountain_rate(mountain), alt_threshold(threshold) {}
+    RealisticPrecipitation(float base, float mountain, float dummy = 0.0f) 
+        : base_mm_per_hr(base), mountain_mm_per_hr(mountain) {}
     void step(Grid& g, float dt, int step, int total_steps) override {
-        float base_meters = base_rate / 1000.0f;
-        float mountain_meters = mountain_rate / 1000.0f;
-
-        // River path meander parameters to match main
-        float meander_amp = g.size * 0.12f;
-        float meander_freq = 0.06f;
+        // Convert mm/hour to meters/year: mm_to_m (1/1000) * hours_per_year (8760) = 8.76
+        // Then convert meters/year to simulation vertical units/year: divide by height_scale_m
+        float factor = 8.760f / g.scale.height_scale_m;
+        float base_units_per_yr = base_mm_per_hr * factor;
+        float mountain_units_per_yr = mountain_mm_per_hr * factor;
 
         for (int y = 0; y < g.size; ++y) {
             for (int x = 0; x < g.size; ++x) {
                 float H = g.H_soil[y][x];
-                
-                float target_x = (g.size - 1 - y);
-                float meander_x = target_x + meander_amp * std::sin(y * meander_freq);
-                float d_canyon = std::abs((float)(x - meander_x));
-
-                // Restrict heavy rain strictly by altitude AND canyon corridor (unless alt_threshold is negative)
-                bool rain_allowed = (alt_threshold < 0.0f) ? (d_canyon < g.size * 0.12f)
-                                                           : (H > alt_threshold && d_canyon < g.size * 0.12f);
-                if (rain_allowed) {
-                    g.h_surface[y][x] += mountain_meters * dt;
-                } else {
-                    g.h_surface[y][x] += base_meters * dt;
+                if (H > 0.0f) {
+                    // Rain scales linearly with elevation to model smooth orographic rain
+                    float scale = std::min(1.0f, H / 3.0f);
+                    g.h_surface[y][x] += (base_units_per_yr + scale * mountain_units_per_yr) * dt;
                 }
             }
         }
     }
 };
 
+#include <random>
+
+void fill_depressions(Grid& g) {
+    int sz = g.size;
+    std::vector<std::vector<float>> F(sz, std::vector<float>(sz, 99999.0f));
+    
+    // Set boundaries to H_soil
+    for (int x = 0; x < sz; ++x) {
+        F[0][x] = g.H_soil[0][x];
+        F[sz - 1][x] = g.H_soil[sz - 1][x];
+    }
+    for (int y = 0; y < sz; ++y) {
+        F[y][0] = g.H_soil[y][0];
+        F[y][sz - 1] = g.H_soil[y][sz - 1];
+    }
+    
+    // Set ocean/coastal outlets
+    for (int y = 0; y < sz; ++y) {
+        for (int x = 0; x < sz; ++x) {
+            if (g.H_soil[y][x] <= 0.0f) {
+                F[y][x] = g.H_soil[y][x];
+            }
+        }
+    }
+    
+    bool changed = true;
+    int iterations = 0;
+    while (changed && iterations < 1000) {
+        changed = false;
+        
+        // Forward scan
+        for (int y = 1; y < sz - 1; ++y) {
+            for (int x = 1; x < sz - 1; ++x) {
+                if (F[y][x] <= g.H_soil[y][x]) continue;
+                
+                float min_f = 99999.0f;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0) continue;
+                        min_f = std::min(min_f, F[y + dy][x + dx]);
+                    }
+                }
+                
+                float next_f = std::max(g.H_soil[y][x], min_f + 0.0001f);
+                if (next_f < F[y][x]) {
+                    F[y][x] = next_f;
+                    changed = true;
+                }
+            }
+        }
+        
+        // Backward scan
+        for (int y = sz - 2; y >= 1; --y) {
+            for (int x = sz - 2; x >= 1; --x) {
+                if (F[y][x] <= g.H_soil[y][x]) continue;
+                
+                float min_f = 99999.0f;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0) continue;
+                        min_f = std::min(min_f, F[y + dy][x + dx]);
+                    }
+                }
+                
+                float next_f = std::max(g.H_soil[y][x], min_f + 0.0001f);
+                if (next_f < F[y][x]) {
+                    F[y][x] = next_f;
+                    changed = true;
+                }
+            }
+        }
+        iterations++;
+    }
+    
+    // Write back filled topography
+    for (int y = 0; y < sz; ++y) {
+        for (int x = 0; x < sz; ++x) {
+            g.H_soil[y][x] = F[y][x];
+        }
+    }
+    std::cout << "SUCCESS: Filled depressions in " << iterations << " iterations!" << std::endl;
+}
+
+void run_boulder_erosion(Grid& g, int num_boulders, float channel_depth_meters, float boulder_diameter_meters, std::vector<std::vector<bool>>& successful_channels) {
+    float cell_w = g.scale.cell_spacing_m;
+    float height_scale = g.scale.height_scale_m;
+    
+    float radius_m = boulder_diameter_meters / 2.0f;
+    float radius_cells = radius_m / cell_w;
+    float radius_units = radius_m / height_scale;
+    float depth_units = channel_depth_meters / height_scale;
+    
+    int r_bound = std::ceil(radius_cells);
+    
+    // Copy the original uncarved topography to prevent compounding depth loops across different boulders
+    std::vector<std::vector<float>> H_base(g.size, std::vector<float>(g.size));
+    for (int y = 0; y < g.size; ++y) {
+        for (int x = 0; x < g.size; ++x) {
+            H_base[y][x] = g.H_soil[y][x];
+        }
+    }
+    
+    // Stable seed for reproducible boulder drops
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<int> dist(0, g.size - 1);
+    
+    int boulders_dropped = 0;
+    int successful_carves = 0;
+    while (boulders_dropped < num_boulders) {
+        int x = 0;
+        int y = 0;
+        
+        // Roulette-wheel selection weighted by altitude
+        float total_weight = 0.0f;
+        for (int j = 0; j < g.size; ++j) {
+            for (int i = 0; i < g.size; ++i) {
+                if (g.H_soil[j][i] > 0.0f) {
+                    total_weight += g.H_soil[j][i];
+                }
+            }
+        }
+        
+        if (total_weight <= 0.0f) break;
+        
+        std::uniform_real_distribution<float> f_dist(0.0f, total_weight);
+        float target = f_dist(rng);
+        float current_sum = 0.0f;
+        bool found = false;
+        for (int j = 0; j < g.size; ++j) {
+            for (int i = 0; i < g.size; ++i) {
+                if (g.H_soil[j][i] > 0.0f) {
+                    current_sum += g.H_soil[j][i];
+                    if (current_sum >= target) {
+                        x = i;
+                        y = j;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (found) break;
+        }
+        
+        boulders_dropped++;
+        
+        // 1. Trace the downhill path using a physics-based momentum and bridging model
+        std::vector<std::pair<int, int>> path;
+        int cur_x = x;
+        int cur_y = y;
+        bool hit_local_min = false;
+        
+        // Track visited cells to prevent perpetual motion loops/oscillations in pits
+        std::vector<std::vector<bool>> visited(g.size, std::vector<bool>(g.size, false));
+        visited[cur_y][cur_x] = true;
+        
+        // Initial specific kinetic energy (starting velocity = 5 m/s)
+        float e_k = 0.5f * 5.0f * 5.0f; 
+        
+        while (true) {
+            path.push_back({cur_x, cur_y});
+            if (num_boulders <= 10) {
+                std::cout << "[BOULDER DEBUG] Boulder " << boulders_dropped << " Step " << path.size() 
+                          << ": cur=(" << cur_x << "," << cur_y << "), H=" << g.H_soil[cur_y][cur_x] * height_scale 
+                          << "m, e_k=" << e_k << std::endl;
+            }
+            
+            // Find steepest downhill neighbor among 8-neighbors to determine rolling direction
+            int next_x = cur_x;
+            int next_y = cur_y;
+            float min_z = g.H_soil[cur_y][cur_x];
+            
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dy == 0) continue;
+                    int ny = cur_y + dy;
+                    int nx = cur_x + dx;
+                    if (ny >= 0 && ny < g.size && nx >= 0 && nx < g.size) {
+                        float nz = g.H_soil[ny][nx];
+                        if (nz < min_z) {
+                            min_z = nz;
+                            next_x = nx;
+                            next_y = ny;
+                        }
+                    }
+                }
+            }
+            
+            // If the steepest descent neighbor is higher (or equal), search all neighbors for the lowest climb
+            if (next_x == cur_x && next_y == cur_y) {
+                float lowest_climb = 99999.0f;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0) continue;
+                        int ny = cur_y + dy;
+                        int nx = cur_x + dx;
+                        if (ny >= 0 && ny < g.size && nx >= 0 && nx < g.size) {
+                            float nz = g.H_soil[ny][nx];
+                            if (nz < lowest_climb) {
+                                lowest_climb = nz;
+                                next_x = nx;
+                                next_y = ny;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // If still stuck (no neighbors available at all), stop
+            if (next_x == cur_x && next_y == cur_y) {
+                if (num_boulders <= 10) std::cout << "[BOULDER DEBUG] Stopped: No neighbors found." << std::endl;
+                hit_local_min = true;
+                break;
+            }
+            
+            // Prevent backtracking loops
+            if (visited[next_y][next_x]) {
+                if (num_boulders <= 10) std::cout << "[BOULDER DEBUG] Stopped: Visited cell (" << next_x << "," << next_y << ") again." << std::endl;
+                hit_local_min = true;
+                break;
+            }
+            visited[next_y][next_x] = true;
+            
+            // Calculate energy transition to next cell
+            float dz = (g.H_soil[next_y][next_x] - g.H_soil[cur_y][cur_x]) * height_scale;
+            float d_cells = (next_x == cur_x || next_y == cur_y) ? cell_w : cell_w * 1.4142f;
+            
+            float de = 0.0f;
+            float mu = 0.00f; // Rolling friction coefficient
+            
+            if (dz > 0.0f) {
+                // Rolling uphill: calculate bridging clearance
+                float w = d_cells;
+                float R = boulder_diameter_meters / 2.0f;
+                float delta = dz; // default if smaller than the hollow
+                if (R * R > (w / 2.0f) * (w / 2.0f)) {
+                    delta = R - std::sqrt(R * R - (w / 2.0f) * (w / 2.0f));
+                }
+                float h_barrier = std::min(dz, delta);
+                de = -9.81f * h_barrier - mu * 9.81f * d_cells;
+            } else {
+                // Rolling downhill
+                de = -9.81f * dz - mu * 9.81f * d_cells;
+            }
+            
+            // If kinetic energy is depleted, the boulder is trapped
+            if (e_k + de <= 0.0f) {
+                if (num_boulders <= 10) std::cout << "[BOULDER DEBUG] Stopped: Kinetic energy depleted (e_k=" << e_k << ", de=" << de << ")." << std::endl;
+                hit_local_min = true;
+                break;
+            }
+            
+            e_k += de;
+            
+            // Stop if it merges with a successful channel (including ocean/boundaries)
+            if (successful_channels[next_y][next_x]) {
+                path.push_back({next_x, next_y});
+                break;
+            }
+            
+            cur_x = next_x;
+            cur_y = next_y;
+        }
+        
+        // 2. Carve the cylindrical channel along the traced path (except the final local minimum)
+        int carve_limit = hit_local_min ? (int)path.size() - 1 : (int)path.size();
+        if (!hit_local_min) {
+            successful_carves++;
+            // Record path cells as successful channels
+            for (const auto& pt : path) {
+                successful_channels[pt.second][pt.first] = true;
+            }
+        }
+        
+        for (int i = 0; i < carve_limit; ++i) {
+            int px = path[i].first;
+            int py = path[i].second;
+            
+            // Calculate taper scaling factor s (ramp over 5 cells)
+            float s = 1.0f;
+            float ramp_cells = 5.0f;
+            if (carve_limit > 1) {
+                float s_start = (float)(i + 1) / ramp_cells;
+                float s_end = (float)(carve_limit - i) / ramp_cells;
+                s = std::max(0.0f, std::min(1.0f, std::min(s_start, s_end)));
+            }
+            
+            float local_depth_units = depth_units * s;
+            float local_radius_m = radius_m * s;
+            int r_bound_local = std::ceil(local_radius_m / cell_w);
+            
+            if (local_radius_m < 0.1f) continue;
+            
+            float H_center = H_base[py][px]; // Read from static original topography
+            
+            for (int dy = -r_bound_local; dy <= r_bound_local; ++dy) {
+                for (int dx = -r_bound_local; dx <= r_bound_local; ++dx) {
+                    int ny = py + dy;
+                    int nx = px + dx;
+                    if (ny >= 0 && ny < g.size && nx >= 0 && nx < g.size) {
+                        float d_cells = std::sqrt(dx * dx + dy * dy);
+                        float d_meters = d_cells * cell_w;
+                        if (d_meters <= local_radius_m) {
+                            // Cosine funnel profile (bell-curve depression)
+                            float d_factor = d_meters / local_radius_m;
+                            float funnel_depth = local_depth_units * 0.5f * (1.0f + std::cos(3.14159265f * d_factor));
+                            float z_cut = H_center - funnel_depth;
+                            g.H_soil[ny][nx] = std::min(g.H_soil[ny][nx], z_cut);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 3. If caught in a local minimum, deposit the boulder there (add a positive mound)
+        if (hit_local_min && !path.empty()) {
+            int px = path.back().first;
+            int py = path.back().second;
+            
+            for (int dy = -r_bound; dy <= r_bound; ++dy) {
+                for (int dx = -r_bound; dx <= r_bound; ++dx) {
+                    int ny = py + dy;
+                    int nx = px + dx;
+                    if (ny >= 0 && ny < g.size && nx >= 0 && nx < g.size) {
+                        float d_cells = std::sqrt(dx * dx + dy * dy);
+                        float d_meters = d_cells * cell_w;
+                        if (d_meters <= radius_m) {
+                            // Cylindrical dome height profile for deposit:
+                            float z_dome = depth_units * (1.0f - d_meters / radius_m);
+                            g.H_soil[ny][nx] += z_dome;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    std::cout << "SUCCESS: Carved cylindrical paths for " << successful_carves << " / " << num_boulders << " boulders that reached the sea!" << std::endl;
+}
+
 int main() {
+    std::system("mkdir -p flow/realistic_map_frames");
     const int GRID_LOW = 256;
     const int GRID_HIGH = 512;
     Orchestrator orch(GRID_LOW);
@@ -181,7 +604,7 @@ int main() {
     // Define central mountain peak coordinates
     float mount_cx = center_x;
     float mount_cy = center_y;
-    float mountain_w = sz * 0.06f; // Extremely compact mountain core
+    float mountain_w = sz * 0.18f; // Broader mountain base
 
     for (int y = 0; y < sz; ++y) {
         for (int x = 0; x < sz; ++x) {
@@ -198,37 +621,18 @@ int main() {
             if (u < coast_u) {
                 // 2. Very flat plain base: only slopes from 0.08m to 0.02m (no steep doming)
                 float land_t = u / coast_u;
-                float z = 0.02f + 0.06f * std::cos(land_t * 1.5708f);
-
-                // Add rolling hills using low-amplitude noise
-                float hills = 0.08f * perlin.noise(x * 0.05f, y * 0.05f) +
-                              0.02f * perlin.noise(x * 0.18f, y * 0.18f);
-                z += hills;
+                float z = 0.02f + 0.55f * std::cos(land_t * 1.5708f);
 
                 // 3. Central Mountain Peak modeled as a Lorentzian curve (extremely broad, smooth foot)
                 float dist_to_mount = std::sqrt((x - mount_cx) * (x - mount_cx) + (y - mount_cy) * (y - mount_cy));
                 float mountain_z = 2.80f / (1.0f + (dist_to_mount / mountain_w) * (dist_to_mount / mountain_w));
                 
-                // Add rugged mountain details scaled by mountain height (decays to 0 at the broad foot)
-                float rugged_scale = mountain_z / 2.80f;
-                float ruggedness = 0.65f * perlin.noise(x * 0.08f, y * 0.08f) +
-                                   0.20f * perlin.noise(x * 0.25f, y * 0.25f);
-                z += mountain_z + ruggedness * rugged_scale;
-
-                // 4. Winding river valley starting from the central peak down to the southwest coast
-                float target_x = (sz - 1 - y);
-                float meander_amp = sz * 0.12f; // Sinuous amplitude
-                float meander_freq = 0.06f;     // Sinuous frequency
-                float meander_x = target_x + meander_amp * std::sin(y * meander_freq);
+                // Add natural ridged details to the mountain to create ridges and V-shaped valleys
+                float n_ridge = 0.70f * (1.0f - std::abs(perlin.noise(x * 0.025f, y * 0.025f))) +
+                                0.30f * (1.0f - std::abs(perlin.noise(x * 0.07f, y * 0.07f)));
                 
-                float d_canyon = std::abs((float)(x - meander_x)) / 1.414f;
-                float canyon_width = sz * 0.06f;
-                
-                // Gorge is deep near the peak, and transitions to a shallow channel on the plains
-                float canyon_scale = 1.0f + 3.0f * rugged_scale;
-                float base_canyon_depth = 0.18f; // Shallow plains channel
-                float canyon_dep = -base_canyon_depth * canyon_scale * std::exp(-(d_canyon * d_canyon) / (canyon_width * canyon_width));
-                z += canyon_dep;
+                // Seed V-shaped valleys across the entire landmass, scaled by mountain and plain slopes
+                z += mountain_z * (0.25f + 1.15f * n_ridge) + 0.15f * n_ridge * (1.0f - land_t);
 
                 g.H_soil[y][x] = z;
             } else {
@@ -250,6 +654,20 @@ int main() {
         }
     }
 
+    // Configuration structure for history recording intervals (instrumentation stride)
+    struct InstrumentationConfig {
+        int genesis_stride = 1;     // Record every step of Genesis
+        int noise_stride = 1;       // Record noise step
+        int hydro_stride = 10;      // Record every 10 steps of Incision (12 frames total)
+        int eco_stride = 100;       // Record every 100 steps of Eco-Vegetation (20 frames total)
+    };
+
+    InstrumentationConfig inst_config;
+    if (const char* env_gen = std::getenv("GENESIS_STRIDE")) inst_config.genesis_stride = std::stoi(env_gen);
+    if (const char* env_noise = std::getenv("NOISE_STRIDE")) inst_config.noise_stride = std::stoi(env_noise);
+    if (const char* env_hyd = std::getenv("HYDRO_STRIDE")) inst_config.hydro_stride = std::stoi(env_hyd);
+    if (const char* env_eco = std::getenv("ECO_STRIDE")) inst_config.eco_stride = std::stoi(env_eco);
+
     // 1. Phase 1: Landscape Genesis
     const int steps_tectonic = 5;
     float dt_tectonic = 1.0f;
@@ -266,40 +684,39 @@ int main() {
     const int steps_hydro = 120;
     float dt_hydro = 0.05f;
     Phase* p2 = orch.add_phase("Hydrology & Incision", dt_hydro, steps_hydro, GRID_HIGH);
-    p2->add<RealisticPrecipitation>(0.0f, 6.5f, -999.0f); // Enable altitude bypass during incision to carve canyon to coast
-    p2->add<Hydrodynamics>(9.81f, 0.018f);
-    // HACK: Set critical shear stress threshold (second argument) to 0.0f, and boost erodibility (first argument) to 500.0f.
-    // Physically, this corrects the 10,000x normalized-to-physical shear stress scaling mismatch (tau = h * S vs 9810 * h * S)
-    // and models the easily erodible, soft alluvial sand/silt sediments of the lowlands plain (tau_c_physical ~0.1 Pa).
-    p2->add<Erosion>(500.0f, 0.0f, 0.18f, 0.0f, 0.0f, 0.0f, 0.45f, false); // Zero settling, zero infiltration
-
+    p2->add<RealisticPrecipitation>(0.0f, 0.742f, 0.20f); // 0.742 mm/hr (equivalent to 6.5 m/year) orographic rain
+    p2->add<SubSteppedHydrodynamics>(9.81f, 0.018f, 60);
+    // Physically, this models the easily erodible, soft alluvial sand/silt sediments of the lowlands plain (tau_c_physical ~0.1 Pa)
+    // with a realistic critical shear stress threshold (0.02f) and sediment settling deposition (0.18f) to prevent shock base erosion.
+    p2->add<Erosion>(0.45f, 0.02f, 1.62e-8f, 0.18f, 0.0f, 0.0f, 0.45f, false); 
+ 
     // 4. Phase 3: Coupled Eco-Vegetation
-    const int steps_eco = 2000;
+    const int steps_eco = 60;
     float dt_eco = 0.05f;
     Phase* p3 = orch.add_phase("Eco-Vegetation Growth", dt_eco, steps_eco, GRID_HIGH);
-    p3->add<RealisticPrecipitation>(0.80f, 12.50f, 0.32f); // Plain rain at 0.80f (temperate plain) to drain lake while keeping river inside canyon
-    p3->add<Hydrodynamics>(9.81f, 0.018f);
-    // Restore standard Erosion parameters (0.0035f infiltration, 0.015f lateral Darcy diffusion)
-    p3->add<Erosion>(0.15f, 0.04f, 0.18f, 0.0f, 0.0035f, 0.015f, 0.45f, false);
+    p3->add<RealisticPrecipitation>(0.0f, 1.427f, 0.32f); // 1.427 mm/hr (equivalent to 12.5 m/year) orographic rain
+    p3->add<SubSteppedHydrodynamics>(9.81f, 0.018f, 60);
+    // Restore standard Erosion parameters with active sediment settling deposition (0.15f)
+    p3->add<Erosion>(0.15f, 0.04f, 1.62e-8f, 0.15f, 0.0035f, 0.015f, 0.45f, false);
     p3->add<Landslide>(0.55f, 511, 511); // High repose slope to stabilize river canyon walls
-    p3->add<Vegetation>(2.20f, 0.50f, 1.0f); // Dynamic growth (grass & trees enabled)
+    p3->add<Vegetation>(110.0f, 25.0f, 1.0f); // Dynamic growth (grass & trees enabled)
 
     std::vector<RealisticMapState> history;
-
+ 
     // Helper to capture active simulation state at native resolution (no downsampling)
-    auto record_history_state = [&](int global_step, const std::string& phase_name) {
-        if (global_step % 500 == 0 || global_step == steps_tectonic + steps_noise + steps_hydro + steps_eco) {
-            const int export_size = 512;
+    auto record_history_state = [&](int global_step, const std::string& phase_name, bool force_record) {
+        if (force_record) {
+            const int export_size = 128;
             std::vector<std::vector<float>> H_down(export_size, std::vector<float>(export_size));
             std::vector<std::vector<float>> h_down(export_size, std::vector<float>(export_size));
             std::vector<std::vector<float>> grass_down(export_size, std::vector<float>(export_size));
             std::vector<std::vector<float>> tree_down(export_size, std::vector<float>(export_size));
             std::vector<std::vector<float>> vx_down(export_size, std::vector<float>(export_size));
             std::vector<std::vector<float>> vy_down(export_size, std::vector<float>(export_size));
-
+ 
             auto& grass = g.request_field<GrassField>();
             auto& tree = g.request_field<TreeField>();
-
+ 
             int stride = g.size / export_size;
             for (int y = 0; y < export_size; ++y) {
                 for (int x = 0; x < export_size; ++x) {
@@ -311,7 +728,7 @@ int main() {
                     vy_down[y][x] = g.vy[y * stride][x * stride];
                 }
             }
-
+ 
             history.push_back({
                 global_step,
                 phase_name,
@@ -322,69 +739,87 @@ int main() {
                 vx_down,
                 vy_down
             });
+
+            // Save visual frame directly as PNG from C++
+            std::string frame_filename = "flow/realistic_map_frames/frame_" + std::to_string(history.size() - 1) + ".png";
+            save_png(frame_filename, g);
         }
     };
-
-    record_history_state(0, "Landscape Genesis");
+ 
+    record_history_state(0, "Landscape Genesis", true);
 
     // Run Phase 1
     std::cout << "Running Phase 1: Landscape Genesis..." << std::endl;
-    if (p1->target_grid_size > 0 && g.size != p1->target_grid_size) {
-        g.upscale_in_place(p1->target_grid_size);
-    }
-    for (int step = 0; step < steps_tectonic; ++step) {
-        for (auto& element : p1->elements) {
-            element->step(g, dt_tectonic, step, steps_tectonic);
+    orch.run_phase(p1, [&](int step) {
+        bool record = ((step + 1) % inst_config.genesis_stride == 0) || (step == steps_tectonic - 1);
+        record_history_state(step + 1, "Landscape Genesis", record);
+    });
+ 
+    // Run Boulder Erosion before adding micro-terrain noise and rain
+    std::cout << "Running Phase: Depression/Sink Filling..." << std::endl;
+    fill_depressions(g);
+    
+    // Declare and initialize the persistent successful channels map
+    std::vector<std::vector<bool>> successful_channels(g.size, std::vector<bool>(g.size, false));
+    for (int y = 0; y < g.size; ++y) {
+        for (int x = 0; x < g.size; ++x) {
+            if (g.H_soil[y][x] <= 0.0f ||
+                x == 0 || x == g.size - 1 ||
+                y == 0 || y == g.size - 1) {
+                successful_channels[y][x] = true;
+            }
         }
-        record_history_state(step + 1, "Landscape Genesis");
     }
+    
+    // Phase A: Carve major valleys with medium-large boulders
+    std::cout << "Running Boulder Erosion Phase A: Major Valleys..." << std::endl;
+    run_boulder_erosion(g, 100, 80.0f, 160.0f, successful_channels);
+    
+    // Phase B: Carve detailed tributaries with small boulders
+    std::cout << "Running Boulder Erosion Phase B: Tributary Gullies..." << std::endl;
+    run_boulder_erosion(g, 2000, 25.0f, 50.0f, successful_channels);
+    
+    record_history_state(steps_tectonic + 1, "Boulder Erosion", true);
 
     // Run Phase 1.5
     std::cout << "Running Phase: Micro-Terrain Noise..." << std::endl;
-    if (p_noise->target_grid_size > 0 && g.size != p_noise->target_grid_size) {
-        g.upscale_in_place(p_noise->target_grid_size);
-    }
-    for (int step = 0; step < steps_noise; ++step) {
-        for (auto& element : p_noise->elements) {
-            element->step(g, dt_noise, step, steps_noise);
-        }
-        record_history_state(steps_tectonic + step + 1, "Micro-Terrain Noise");
-    }
+    orch.run_phase(p_noise, [&](int step) {
+        bool record = ((step + 1) % inst_config.noise_stride == 0) || (step == steps_noise - 1);
+        record_history_state(steps_tectonic + step + 2, "Micro-Terrain Noise", record);
+    });
 
     // Run Phase 2
     std::cout << "Running Phase 2: Hydrology & River Incision..." << std::endl;
-    for (int step = 0; step < steps_hydro; ++step) {
-        for (auto& element : p2->elements) {
-            element->step(g, dt_hydro, step, steps_hydro);
-        }
-        // Replenish ocean water level (z = 0.0)
+    orch.run_phase(p2, [&](int step) {
+        // Maintain constant ocean level (z = 0.0) as Dirichlet boundary sink
         for (int y = 0; y < g.size; ++y) {
             for (int x = 0; x < g.size; ++x) {
-                float water_needed = std::max(0.0f, 0.0f - g.H_soil[y][x]);
-                g.h_surface[y][x] = std::max(g.h_surface[y][x], water_needed);
+                if (g.H_soil[y][x] < 0.0f) {
+                    g.h_surface[y][x] = 0.0f - g.H_soil[y][x];
+                }
             }
         }
-        record_history_state(steps_tectonic + steps_noise + step + 1, "Hydrology & Incision");
-    }
-
+        bool record = ((step + 1) % inst_config.hydro_stride == 0) || (step == steps_hydro - 1);
+        record_history_state(steps_tectonic + steps_noise + step + 2, "Hydrology & Incision", record);
+    });
+ 
     // Run Phase 3
     std::cout << "Running Phase 3: Coupled Eco-Vegetation..." << std::endl;
-    for (int step = 0; step < steps_eco; ++step) {
-        for (auto& element : p3->elements) {
-            element->step(g, dt_eco, step, steps_eco);
-        }
-        // Replenish ocean water level (z = 0.0)
+    orch.run_phase(p3, [&](int step) {
+        // Maintain constant ocean level (z = 0.0) as Dirichlet boundary sink
         for (int y = 0; y < g.size; ++y) {
             for (int x = 0; x < g.size; ++x) {
-                float water_needed = std::max(0.0f, 0.0f - g.H_soil[y][x]);
-                g.h_surface[y][x] = std::max(g.h_surface[y][x], water_needed);
+                if (g.H_soil[y][x] < 0.0f) {
+                    g.h_surface[y][x] = 0.0f - g.H_soil[y][x];
+                }
             }
         }
-        record_history_state(steps_tectonic + steps_noise + steps_hydro + step + 1, "Eco-Vegetation Growth");
-    }
+        bool record = ((step + 1) % inst_config.eco_stride == 0) || (step == steps_eco - 1);
+        record_history_state(steps_tectonic + steps_noise + steps_hydro + step + 1, "Eco-Vegetation Growth", record);
+    });
 
-    std::cout << "Exporting dataset to test_realistic_map.js..." << std::endl;
-    export_map_data("test_realistic_map.js", history, 512, g.scale.cell_spacing_m, g.scale.height_scale_m);
+    std::cout << "Exporting dataset to flow/test_realistic_map.js..." << std::endl;
+    export_map_data("flow/test_realistic_map.js", history, g.scale.cell_spacing_m, g.scale.height_scale_m);
     std::cout << "SUCCESS: Exported successfully!" << std::endl;
 
     return 0;
