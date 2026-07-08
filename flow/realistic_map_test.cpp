@@ -102,6 +102,250 @@ void save_png(const std::string& filename, Grid& g) {
     stbi_write_png(filename.c_str(), sz, sz, 3, pixels.data(), sz * 3);
 }
 
+struct Vec3_3d {
+    double x, y, z;
+    Vec3_3d operator-(const Vec3_3d& other) const { return {x - other.x, y - other.y, z - other.z}; }
+    Vec3_3d operator+(const Vec3_3d& other) const { return {x + other.x, y + other.y, z + other.z}; }
+    Vec3_3d operator*(double s) const { return {x * s, y * s, z * s}; }
+    double dot(const Vec3_3d& other) const { return x * other.x + y * other.y + z * other.z; }
+    Vec3_3d cross(const Vec3_3d& other) const {
+        return {y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x};
+    }
+    double length() const { return std::sqrt(x * x + y * y + z * z); }
+    Vec3_3d normalized() const {
+        double len = length();
+        return len > 0 ? Vec3_3d{x / len, y / len, z / len} : Vec3_3d{0, 0, 0};
+    }
+};
+
+struct ColorRGBA_3d {
+    unsigned char r, g, b, a;
+};
+
+inline void rasterize_triangle_3d(
+    Vec3_3d p0, Vec3_3d p1, Vec3_3d p2, ColorRGBA_3d col,
+    std::vector<unsigned char>& pixels, std::vector<double>& z_buffer,
+    int width, int height) {
+
+    int minX = (int)std::max(0.0, std::floor(std::min({p0.x, p1.x, p2.x})));
+    int maxX = (int)std::min((double)width - 1, std::ceil(std::max({p0.x, p1.x, p2.x})));
+    int minY = (int)std::max(0.0, std::floor(std::min({p0.y, p1.y, p2.y})));
+    int maxY = (int)std::min((double)height - 1, std::ceil(std::max({p0.y, p1.y, p2.y})));
+
+    auto edge_func = [](double ax, double ay, double bx, double by, double cx, double cy) {
+        return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    };
+
+    double area = edge_func(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y);
+    if (std::abs(area) < 1e-6) return;
+
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            double w0 = edge_func(p1.x, p1.y, p2.x, p2.y, x, y) / area;
+            double w1 = edge_func(p2.x, p2.y, p0.x, p0.y, x, y) / area;
+            double w2 = edge_func(p0.x, p0.y, p1.x, p1.y, x, y) / area;
+
+            if (w0 >= -1e-5 && w1 >= -1e-5 && w2 >= -1e-5) {
+                double depth = w0 * p0.z + w1 * p1.z + w2 * p2.z;
+                int idx = y * width + x;
+                
+                if (depth >= z_buffer[idx]) {
+                    z_buffer[idx] = depth;
+                    int idx_pixel = idx * 4;
+                    if (col.a == 255) {
+                        pixels[idx_pixel] = col.r;
+                        pixels[idx_pixel + 1] = col.g;
+                        pixels[idx_pixel + 2] = col.b;
+                        pixels[idx_pixel + 3] = 255;
+                    } else {
+                        double alpha = col.a / 255.0;
+                        pixels[idx_pixel] = (unsigned char)(col.r * alpha + pixels[idx_pixel] * (1.0 - alpha));
+                        pixels[idx_pixel + 1] = (unsigned char)(col.g * alpha + pixels[idx_pixel + 1] * (1.0 - alpha));
+                        pixels[idx_pixel + 2] = (unsigned char)(col.b * alpha + pixels[idx_pixel + 2] * (1.0 - alpha));
+                    }
+                }
+            }
+        }
+    }
+}
+
+void save_png_3d(const std::string& filename, Grid& g) {
+    int sz = g.size;
+    int width = 1000;
+    int height = 650;
+    
+    // Background is dark gray matching CSS #030508 (r=3, g=5, b=8, a=255)
+    std::vector<unsigned char> pixels(width * height * 4);
+    for (int i = 0; i < width * height; ++i) {
+        pixels[i * 4] = 3;
+        pixels[i * 4 + 1] = 5;
+        pixels[i * 4 + 2] = 8;
+        pixels[i * 4 + 3] = 255;
+    }
+    std::vector<double> z_buffer(width * height, -1e18);
+
+    auto& grass = g.request_field<GrassField>();
+    auto& tree = g.request_field<TreeField>();
+
+    double spacing = 5.2 * (128.0 / sz); // 1.3 for 512x512
+    double heightScale = 38.0;
+
+    // 1. Interpolate vertex heights & coordinates
+    std::vector<std::vector<Vec3_3d>> V_proj(sz + 1, std::vector<Vec3_3d>(sz + 1));
+    std::vector<std::vector<Vec3_3d>> V_proj_w(sz + 1, std::vector<Vec3_3d>(sz + 1));
+    for (int y = 0; y <= sz; ++y) {
+        for (int x = 0; x <= sz; ++x) {
+            double sumSoil = 0.0;
+            double sumWater = 0.0;
+            int count = 0;
+            for (int dy = -1; dy <= 0; ++dy) {
+                for (int dx = -1; dx <= 0; ++dx) {
+                    int cy = y + dy;
+                    int cx = x + dx;
+                    if (cy >= 0 && cy < sz && cx >= 0 && cx < sz) {
+                        sumSoil += g.H_soil[cy][cx];
+                        sumWater += g.h_surface[cy][cx];
+                        count++;
+                    }
+                }
+            }
+            double z_soil = sumSoil / (count ? count : 1);
+            double z_water = sumWater / (count ? count : 1);
+            
+            // Ground vertex
+            double px = 500.0 + (x - y) * 0.866 * spacing;
+            double py = 250.0 + (x + y) * 0.5 * spacing - z_soil * heightScale;
+            // Back-to-front depth:
+            double depth = (x + y) * 0.5 * spacing + z_soil * heightScale;
+            V_proj[y][x] = { px, py, depth };
+
+            // Water vertex
+            double z_w_surf = z_soil + z_water;
+            if (z_soil < 0.0) {
+                z_w_surf = 0.0; // flat sea level surface
+            }
+            double py_w = 250.0 + (x + y) * 0.5 * spacing - z_w_surf * heightScale;
+            V_proj_w[y][x] = { px, py_w, depth + 0.01 };
+        }
+    }
+
+    // Directional light vector
+    Vec3_3d light_dir = { 0.4082, 0.4082, 0.8164 }; // normalized {0.5, 0.5, 1.0}
+
+    // 2. Traversal: Back-to-Front Painter's order
+    for (int sum = 0; sum <= 2 * (sz - 1); ++sum) {
+        for (int x = 0; x <= sum; ++x) {
+            int y = sum - x;
+            if (y >= 0 && y < sz && x < sz) {
+                Vec3_3d pA = V_proj[y][x];
+                Vec3_3d pB = V_proj[y][x + 1];
+                Vec3_3d pC = V_proj[y + 1][x + 1];
+                Vec3_3d pD = V_proj[y + 1][x];
+
+                float H_val = g.H_soil[y][x];
+                float h_w = g.h_surface[y][x];
+                float grass_val = grass[y][x];
+                float tree_val = tree[y][x];
+
+                // Compute base cell color
+                bool isBeach = false;
+                if (h_w <= 0.02f) {
+                    for (int dy_b = -2; dy_b <= 2 && !isBeach; ++dy_b) {
+                        for (int dx_b = -2; dx_b <= 2 && !isBeach; ++dx_b) {
+                            int ny = y + dy_b;
+                            int nx = x + dx_b;
+                            if (ny >= 0 && ny < sz && nx >= 0 && nx < sz && g.h_surface[ny][nx] > 0.45f) {
+                                isBeach = true;
+                            }
+                        }
+                    }
+                }
+
+                float r = 100.0f, g_val = 105.0f, b = 115.0f;
+                if (isBeach) {
+                    r = 240.0f; g_val = 218.0f; b = 165.0f;
+                } else if (H_val > -1.0f) {
+                    float height_t = std::min(1.0f, (H_val + 1.0f) / 4.0f);
+                    r = (1.0f - height_t) * 110.0f + height_t * 168.0f;
+                    g_val = (1.0f - height_t) * 92.0f + height_t * 162.0f;
+                    b = (1.0f - height_t) * 75.0f + height_t * 155.0f;
+                } else {
+                    r = 45.0f; g_val = 52.0f; b = 68.0f;
+                }
+
+                if (h_w <= 0.002f) {
+                    if (grass_val > 0.05f) {
+                        float t_g = std::min(0.85f, grass_val);
+                        r = (1.0f - t_g) * r + t_g * 34.0f;
+                        g_val = (1.0f - t_g) * g_val + t_g * 197.0f;
+                        b = (1.0f - t_g) * b + t_g * 94.0f;
+                    }
+                    if (tree_val > 0.05f) {
+                        float t_t = std::min(0.90f, tree_val);
+                        r = (1.0f - t_t) * r + t_t * 21.0f;
+                        g_val = (1.0f - t_t) * g_val + t_t * 128.0f;
+                        b = (1.0f - t_t) * b + t_t * 61.0f;
+                    }
+                }
+
+                // Shading calculations for the two triangles
+                Vec3_3d normal1 = (pB - pA).cross(pC - pA).normalized();
+                double brightness1 = normal1.dot(light_dir) * 0.4 + 0.8;
+                brightness1 = std::max(0.35, std::min(1.65, brightness1));
+                ColorRGBA_3d col1 = {
+                    (unsigned char)std::min(255.0, r * brightness1),
+                    (unsigned char)std::min(255.0, g_val * brightness1),
+                    (unsigned char)std::min(255.0, b * brightness1),
+                    255
+                };
+
+                Vec3_3d normal2 = (pC - pA).cross(pD - pA).normalized();
+                double brightness2 = normal2.dot(light_dir) * 0.4 + 0.8;
+                brightness2 = std::max(0.35, std::min(1.65, brightness2));
+                ColorRGBA_3d col2 = {
+                    (unsigned char)std::min(255.0, r * brightness2),
+                    (unsigned char)std::min(255.0, g_val * brightness2),
+                    (unsigned char)std::min(255.0, b * brightness2),
+                    255
+                };
+
+                // Draw ground triangles
+                rasterize_triangle_3d(pA, pB, pC, col1, pixels, z_buffer, width, height);
+                rasterize_triangle_3d(pA, pC, pD, col2, pixels, z_buffer, width, height);
+
+                // Water overlay if active
+                if (h_w > 0.020f) {
+                    Vec3_3d pAw = V_proj_w[y][x];
+                    Vec3_3d pBw = V_proj_w[y][x + 1];
+                    Vec3_3d pCw = V_proj_w[y + 1][x + 1];
+                    Vec3_3d pDw = V_proj_w[y + 1][x];
+
+                    float depth = std::min(1.0f, h_w / 1.5f);
+                    float wr = (1.0f - depth) * 103.0f + depth * 30.0f;
+                    float wg = (1.0f - depth) * 232.0f + depth * 58.0f;
+                    float wb = (1.0f - depth) * 249.0f + depth * 138.0f;
+                    unsigned char alpha = (unsigned char)(255.0f * (0.40f + 0.40f * depth));
+                    
+                    if (H_val >= 0.0f) {
+                        // On land (rivers), make it highly visible bright cyan-blue
+                        wr = 0.0f;
+                        wg = 200.0f;
+                        wb = 255.0f;
+                        alpha = 240; // almost fully opaque
+                    }
+                    
+                    ColorRGBA_3d col_w = { (unsigned char)wr, (unsigned char)wg, (unsigned char)wb, alpha };
+
+                    rasterize_triangle_3d(pAw, pBw, pCw, col_w, pixels, z_buffer, width, height);
+                    rasterize_triangle_3d(pAw, pCw, pDw, col_w, pixels, z_buffer, width, height);
+                }
+            }
+        }
+    }
+
+    stbi_write_png(filename.c_str(), width, height, 4, pixels.data(), width * 4);
+}
+
 struct RealisticMapState {
     int step;
     std::string phase_name;
@@ -743,6 +987,8 @@ int main() {
             // Save visual frame directly as PNG from C++
             std::string frame_filename = "flow/realistic_map_frames/frame_" + std::to_string(history.size() - 1) + ".png";
             save_png(frame_filename, g);
+            std::string frame_filename_3d = "flow/realistic_map_frames/frame_3d_" + std::to_string(history.size() - 1) + ".png";
+            save_png_3d(frame_filename_3d, g);
         }
     };
  

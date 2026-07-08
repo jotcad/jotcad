@@ -1007,6 +1007,15 @@
             const projectIsoScaled = (x, y, z) => projectIso(x, y, z, { spacing: 5.2 * (128.0 / GRID_SIZE) });
 
             isoSvg.innerHTML = '';
+
+            const bgImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
+            bgImage.setAttribute("href", `realistic_map_frames/frame_3d_${idx}.png`);
+            bgImage.setAttribute("x", "0");
+            bgImage.setAttribute("y", "0");
+            bgImage.setAttribute("width", "1000");
+            bgImage.setAttribute("height", "650");
+            isoSvg.appendChild(bgImage);
+
             const { V_soil, V_water } = interpolateVertexData(H_soil, h_surf, GRID_SIZE);
 
             for (let sum = 0; sum <= 2 * (GRID_SIZE - ISO_STEP); sum += ISO_STEP) {
@@ -1023,57 +1032,8 @@
                         const pC = projectIsoScaled(x + ISO_STEP, y + ISO_STEP, zC);
                         const pD = projectIsoScaled(x, y + ISO_STEP, zD);
 
-                        const shadow = 1.0 + 0.40 * (zB - zA) + 0.40 * (zD - zA);
-                        const shadeFactor = Math.max(0.40, Math.min(1.60, shadow));
-
-                        let r = 100, g = 105, b = 115;
                         const H_val = H_soil[y][x];
                         const h_w = h_surf[y][x];
-
-                        if (h_w <= 0.02) {
-                             // Simple beach logic
-                             if (H_val > -1.0) {
-                                const height_t = Math.min(1.0, (H_val + 1.0) / 4.0);
-                                r = Math.round(((1 - height_t) * 110 + height_t * 168) * shadeFactor);
-                                g = Math.round(((1 - height_t) * 92 + height_t * 162) * shadeFactor);
-                                b = Math.round(((1 - height_t) * 75 + height_t * 155) * shadeFactor);
-                             }
-                        } else {
-                             r = Math.round(45 * shadeFactor);
-                             g = Math.round(52 * shadeFactor);
-                             b = Math.round(68 * shadeFactor);
-                        }
-
-                        const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-                        poly.setAttribute("points", `${pA.x.toFixed(1)},${pA.y.toFixed(1)} ${pB.x.toFixed(1)},${pB.y.toFixed(1)} ${pC.x.toFixed(1)},${pC.y.toFixed(1)} ${pD.x.toFixed(1)},${pD.y.toFixed(1)}`);
-                        poly.setAttribute("fill", `rgb(${Math.max(0, Math.min(255, r))}, ${Math.max(0, Math.min(255, g))}, ${Math.max(0, Math.min(255, b))})`);
-                        isoSvg.appendChild(poly);
-
-                        if (h_w > 0.020) {
-                            const zAw = zA + V_water[y][x];
-                            const zBw = zB + V_water[y][x+ISO_STEP];
-                            const zCw = zC + V_water[y+ISO_STEP][x+ISO_STEP];
-                            const zDw = zD + V_water[y+ISO_STEP][x];
-
-                            const pAw = projectIsoScaled(x, y, zAw);
-                            const pBw = projectIsoScaled(x + ISO_STEP, y, zBw);
-                            const pCw = projectIsoScaled(x + ISO_STEP, y + ISO_STEP, zCw);
-                            const pDw = projectIsoScaled(x, y + ISO_STEP, zDw);
-
-                            const depth = Math.min(1.0, h_w / 1.5);
-                            // Blend from shallow cyan (103, 232, 249) to deep blue (30, 58, 138)
-                            const wr = Math.round((1 - depth) * 103 + depth * 30);
-                            const wg = Math.round((1 - depth) * 232 + depth * 58);
-                            const wb = Math.round((1 - depth) * 249 + depth * 138);
-                            const waterColor = `rgba(${wr}, ${wg}, ${wb}, ${(0.40 + 0.40 * depth).toFixed(2)})`;
-
-                            const wPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-                            wPoly.setAttribute("points", `${pAw.x.toFixed(1)},${pAw.y.toFixed(1)} ${pBw.x.toFixed(1)},${pBw.y.toFixed(1)} ${pCw.x.toFixed(1)},${pCw.y.toFixed(1)} ${pDw.x.toFixed(1)},${pDw.y.toFixed(1)}`);
-                            wPoly.setAttribute("fill", waterColor);
-                            wPoly.setAttribute("stroke", "rgba(255,255,255,0.08)");
-                            wPoly.setAttribute("stroke-width", "0.4");
-                            isoSvg.appendChild(wPoly);
-                        }
                         if (drawContours) {
                             const contourLevels = [-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0];
                             const quadVerts = [
