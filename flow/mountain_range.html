@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mountain Range Map Simulation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #030712;
+            --card-bg: rgba(17, 24, 39, 0.7);
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
+            --accent-color: #38bdf8;
+            --accent-emerald: #10b981;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --grid-line: rgba(255, 255, 255, 0.02);
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.06) 0%, transparent 45%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.04) 0%, transparent 45%);
+        }
+
+        header {
+            margin-bottom: 2rem;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.75rem;
+            transition: color 0.2s;
+            gap: 0.5rem;
+        }
+
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #ffffff 40%, var(--accent-color) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.05rem;
+            line-height: 1.5;
+            max-width: 900px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 2rem;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .card-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        /* Controls styling */
+        .btn-group {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 0.6rem 0.8rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        button:active {
+            transform: scale(0.97);
+        }
+
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+            transition: transform 0.1s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .toggle-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .toggle-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: var(--text-main);
+        }
+
+        .checkbox-container {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 20px;
+        }
+
+        .checkbox-container input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255,255,255,0.1);
+            transition: .3s;
+            border-radius: 20px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #fff;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: var(--accent-emerald);
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(18px);
+        }
+
+        /* Telemetry grid */
+        .telemetry-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .telemetry-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .telemetry-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .telemetry-value {
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Legend style */
+        .legend {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 0.75rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-water { background: rgb(14, 120, 210); }
+        .legend-shelf { background: rgb(30, 80, 150); }
+        .legend-land { background: rgb(110, 92, 75); }
+        .legend-mountain { background: rgb(168, 162, 155); }
+        .legend-grass { background: rgb(34, 197, 94); }
+        .legend-tree { background: rgb(21, 128, 61); }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            background: rgba(255,255,255,0.02);
+            padding: 0.75rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-row .label { color: var(--text-muted); }
+        .control-row .value { font-weight: 600; }
+
+        /* Visualization Columns */
+        .vis-wrapper {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 1.5rem;
+        }
+
+        .vis-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1280px) {
+            .vis-grid {
+                grid-template-columns: 1fr;
+            }
+            .vis-grid > .card {
+                grid-column: span 1 !important;
+            }
+        }
+
+        .vis-container {
+            background: #030508;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            aspect-ratio: 4/3;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            position: relative;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .streamline-2d {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.90);
+            stroke-width: 3.5px;
+            stroke-dasharray: 6, 12;
+            animation: flowDash 2.5s linear infinite;
+        }
+
+        .flow-streamline-3d {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.8);
+            stroke-width: 1.2px;
+            stroke-dasharray: 4, 12;
+            animation: flowDash 2s linear infinite;
+        }
+
+        @keyframes flowDash {
+            from { stroke-dashoffset: 16; }
+            to { stroke-dashoffset: 0; }
+        }
+        #cs-svg path {
+            transition: d 0.15s ease-in-out;
+        }
+        .flow-streamline-cs {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.75);
+            stroke-width: 1.5px;
+            stroke-dasharray: 6, 12;
+            animation: flowDash 2s linear infinite;
+            transition: d 0.15s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="index.html" class="back-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            <span>Back to Simulation Index</span>
+        </a>
+        <h1 id="main-title">Mountain Range Island Map</h1>
+        <div class="subtitle">
+            An advanced geomorphological simulation generating a realistic island topography with a continuous mountain range ridge, delta river networks, beaches, and coupled eco-vegetation systems.
+        </div>
+    </header>
+
+    <main class="dashboard">
+        <!-- Sidebar Controls -->
+        <div class="card">
+            <div class="card-title">
+                <span>Simulation Controls</span>
+                <span id="tel-phase" style="background: rgba(56, 189, 248, 0.1); color: var(--accent-color); padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; font-family: var(--font-mono);">GENESIS</span>
+            </div>
+
+            <!-- Time controls -->
+            <div class="btn-group">
+                <button id="play-btn">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Play
+                </button>
+                <button id="pause-btn">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    Pause
+                </button>
+                <button id="reset-btn">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    Reset
+                </button>
+            </div>
+
+            <!-- Timeline Slider -->
+            <div class="slider-container">
+                <div class="slider-header">
+                    <span>Frame Timeline</span>
+                    <span id="slider-val">Frame 0</span>
+                </div>
+                <input id="timeline-slider" type="range" min="0" max="0" value="0">
+            </div>
+
+            <!-- Render Toggles -->
+            <div class="toggle-group">
+                <div class="toggle-item">
+                    <span>Show 3D Trees</span>
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="show-trees-chk" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>Show Contour Lines</span>
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="show-contours-chk" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>Show Streamlines</span>
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="show-streamlines-chk" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Telemetry Card -->
+            <div class="telemetry-card">
+                <div class="card-title">Geological Telemetry</div>
+                <div class="telemetry-grid">
+                    <div class="telemetry-item" style="grid-column: span 2;">
+                        <span class="telemetry-label">Simulation Cycle</span>
+                        <span class="telemetry-value" id="tel-step" style="font-size: 1.4rem; color: var(--accent-emerald);">0</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="telemetry-label">Hover Coordinate</span>
+                        <span class="telemetry-value" id="tel-coord">--</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="telemetry-label">Soil Elevation</span>
+                        <span class="telemetry-value" id="tel-elevation" style="color: #fbbf24;">-- m</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="telemetry-label">Water Depth</span>
+                        <span class="telemetry-value" id="tel-water" style="color: #38bdf8;">-- m</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <span class="telemetry-label">Forest Cover</span>
+                        <span class="telemetry-value" id="tel-tree" style="color: #10b981;">-- %</span>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <!-- Geological Stages -->
+            <div class="control-group">
+                <div class="control-row">
+                    <span class="label">Era 1 (Cycle 0-5):</span>
+                    <span class="value" style="color: #fb7185;">Landscape Genesis</span>
+                </div>
+                <div class="control-row">
+                    <span class="label">Era 1.5 (Cycle 6):</span>
+                    <span class="value" style="color: #c084fc;">Micro-Terrain Noise</span>
+                </div>
+                <div class="control-row">
+                    <span class="label">Era 2 (Cycle 7-126):</span>
+                    <span class="value" style="color: #38bdf8;">Hydrology & Incision</span>
+                </div>
+                <div class="control-row">
+                    <span class="label">Era 3 (Cycle 127-5126):</span>
+                    <span class="value" style="color: #34d399;">Coupled Eco-Growth</span>
+                </div>
+            </div>
+
+            <!-- Evaluation Snapshot Links -->
+            <div class="control-group" style="margin-top: 0.25rem; border-color: rgba(56, 189, 248, 0.2); background: rgba(56, 189, 248, 0.03); padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <div style="font-weight: 700; color: var(--accent-color); font-size: 0.85rem; border-bottom: 1px solid rgba(56, 189, 248, 0.1); padding-bottom: 0.25rem; margin-bottom: 0.25rem;">Evaluation Snapshots:</div>
+                <div class="control-row" style="align-items: center; justify-content: space-between;">
+                    <span class="label">2D Overhead:</span>
+                    <a href="/mountain_range_2d.png" target="_blank" class="value" style="color: #fff; text-decoration: underline; font-weight: 600; font-family: var(--font-mono); font-size: 0.8rem;">mountain_range_2d.png</a>
+                </div>
+                <div class="control-row" style="align-items: center; justify-content: space-between;">
+                    <span class="label">3D Isometric:</span>
+                    <a href="/mountain_range_3d.png" target="_blank" class="value" style="color: #fff; text-decoration: underline; font-weight: 600; font-family: var(--font-mono); font-size: 0.8rem;">mountain_range_3d.png</a>
+                </div>
+                <div class="control-row" style="align-items: center; justify-content: space-between;">
+                    <span class="label">Cross Section:</span>
+                    <a href="/mountain_range_cs.png" target="_blank" class="value" style="color: #fff; text-decoration: underline; font-weight: 600; font-family: var(--font-mono); font-size: 0.8rem;">mountain_range_cs.png</a>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color legend-water"></div>
+                    <span>Abyssal Sea</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-shelf"></div>
+                    <span>Shallow Shelf</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-land"></div>
+                    <span>Plains / Valley</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-mountain"></div>
+                    <span>Mountain Peaks</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-grass"></div>
+                    <span>Grasslands</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color legend-tree"></div>
+                    <span>3D Forests</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Visualizers Wrapper -->
+        <div class="vis-wrapper">
+            <div class="vis-grid">
+                <!-- 2D Overhead Map -->
+                <div class="card" style="gap: 0.75rem;">
+                    <div class="card-title">2D Overhead Topographic Map</div>
+                    <div class="vis-container" id="grid-container" style="position: relative; aspect-ratio: 1/1;">
+                        <canvas id="grid-canvas" width="512" height="512" style="display: none;"></canvas>
+                        <img id="grid-img" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none;" />
+                        <svg id="grid-svg" viewBox="0 0 1000 1000" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></svg>
+                    </div>
+                    <!-- Local Timeline Control -->
+                    <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.02); padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                        <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; white-space: nowrap; font-family: var(--font-mono);">Timeline 2D:</span>
+                        <button class="local-step-btn prev" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; cursor: pointer; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono); font-size: 0.75rem; transition: all 0.2s; outline: none; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.background='rgba(56, 189, 248, 0.2)'; this.style.borderColor='rgba(56, 189, 248, 0.4)';" onmouseout="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.12)';" onmousedown="this.style.transform='scale(0.95)';" onmouseup="this.style.transform='scale(1)';">&lt;</button>
+                        <input type="range" class="sync-timeline-slider" min="0" max="0" value="0" style="flex-grow: 1; accent-color: var(--accent-emerald);">
+                        <button class="local-step-btn next" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; cursor: pointer; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono); font-size: 0.75rem; transition: all 0.2s; outline: none; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.background='rgba(56, 189, 248, 0.2)'; this.style.borderColor='rgba(56, 189, 248, 0.4)';" onmouseout="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.12)';" onmousedown="this.style.transform='scale(0.95)';" onmouseup="this.style.transform='scale(1)';">&gt;</button>
+                        <span id="step-badge-2d" class="local-step-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent-color); padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; font-family: var(--font-mono); min-width: 70px; text-align: center; white-space: nowrap;">Step 0</span>
+                    </div>
+                </div>
+
+                <!-- 3D Isometric View -->
+                <div class="card" style="gap: 0.75rem;">
+                    <div class="card-title">3D Isometric Relief Model</div>
+                    <div class="vis-container" id="iso-container">
+                        <svg id="iso-svg" viewBox="0 0 1000 650"></svg>
+                    </div>
+                    <!-- Local Timeline Control -->
+                    <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.02); padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                        <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; white-space: nowrap; font-family: var(--font-mono);">Timeline 3D:</span>
+                        <button class="local-step-btn prev" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; cursor: pointer; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono); font-size: 0.75rem; transition: all 0.2s; outline: none; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.background='rgba(56, 189, 248, 0.2)'; this.style.borderColor='rgba(56, 189, 248, 0.4)';" onmouseout="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.12)';" onmousedown="this.style.transform='scale(0.95)';" onmouseup="this.style.transform='scale(1)';">&lt;</button>
+                        <input type="range" class="sync-timeline-slider" min="0" max="0" value="0" style="flex-grow: 1; accent-color: var(--accent-emerald);">
+                        <button class="local-step-btn next" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; cursor: pointer; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono); font-size: 0.75rem; transition: all 0.2s; outline: none; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.background='rgba(56, 189, 248, 0.2)'; this.style.borderColor='rgba(56, 189, 248, 0.4)';" onmouseout="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.12)';" onmousedown="this.style.transform='scale(0.95)';" onmouseup="this.style.transform='scale(1)';">&gt;</button>
+                        <span id="step-badge-3d" class="local-step-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent-color); padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; font-family: var(--font-mono); min-width: 70px; text-align: center; white-space: nowrap;">Step 0</span>
+                    </div>
+                </div>
+
+                <!-- Cross Section Card (Moved here for high visibility and wide profile view) -->
+                <div class="card" style="grid-column: span 2; gap: 0.75rem;">
+                    <div class="card-title">Dynamic Cross Section Profile</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center;">
+                        <span>Row Y = <span id="cs-row-val">--</span></span>
+                        <span style="color: var(--text-muted); font-size: 0.75rem;">Click 2D Map or drag slider to cut profile</span>
+                    </div>
+                    <div style="width: 100%; height: 180px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--grid-line); border-radius: 8px; position: relative; overflow: hidden;">
+                        <!-- Y-Axis Labels -->
+                        <span id="cs-max-val" style="position: absolute; top: 6px; left: 8px; font-family: monospace; font-size: 0.75rem; color: #e4e4e7; pointer-events: none; z-index: 10;">--m</span>
+                        <span id="cs-min-val" style="position: absolute; bottom: 6px; left: 8px; font-family: monospace; font-size: 0.75rem; color: #e4e4e7; pointer-events: none; z-index: 10;">--m</span>
+                        <!-- Center indicator label -->
+                        <span style="position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); font-family: monospace; font-size: 0.75rem; color: #f43f5e; pointer-events: none; z-index: 10;">Center Cursor</span>
+                        
+                        <svg id="cs-svg" width="100%" height="100%" viewBox="0 0 300 150" preserveAspectRatio="none">
+                            <!-- Drawn dynamically in JS -->
+                        </svg>
+                    </div>
+                    <!-- Row/Slice Position and Local Timeline Controls -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.25rem;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(255,255,255,0.02); padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                            <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; white-space: nowrap; font-family: var(--font-mono);">Slice Row Y:</span>
+                            <input type="range" id="cs-pos-slider" min="0" max="511" value="320" style="flex-grow: 1; accent-color: var(--accent-emerald);">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.02); padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                            <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; white-space: nowrap; font-family: var(--font-mono);">Timeline CS:</span>
+                            <button class="local-step-btn prev" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; cursor: pointer; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono); font-size: 0.75rem; transition: all 0.2s; outline: none; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.background='rgba(56, 189, 248, 0.2)'; this.style.borderColor='rgba(56, 189, 248, 0.4)';" onmouseout="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.12)';" onmousedown="this.style.transform='scale(0.95)';" onmouseup="this.style.transform='scale(1)';">&lt;</button>
+                            <input type="range" class="sync-timeline-slider" min="0" max="0" value="0" style="flex-grow: 1; accent-color: var(--accent-emerald);">
+                            <button class="local-step-btn next" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; cursor: pointer; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-family: var(--font-mono); font-size: 0.75rem; transition: all 0.2s; outline: none; display: flex; align-items: center; justify-content: center; user-select: none;" onmouseover="this.style.background='rgba(56, 189, 248, 0.2)'; this.style.borderColor='rgba(56, 189, 248, 0.4)';" onmouseout="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.12)';" onmousedown="this.style.transform='scale(0.95)';" onmouseup="this.style.transform='scale(1)';">&gt;</button>
+                            <span id="step-badge-cs" class="local-step-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent-color); padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; font-family: var(--font-mono); min-width: 70px; text-align: center; white-space: nowrap;">Step 0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        import { realisticMapData } from './test_mountain_range.js';
+        import { rgbToHex, projectIso, interpolateVertexData, traceStreamlines, VisualizerDashboard } from './visualizer.js';
+
+        const GRID_SIZE = realisticMapData.grid_size || 128;
+        const CELL_SIZE = 1000 / GRID_SIZE;
+
+        let activeStreamlines = [];
+
+        // DOM elements
+        const gridCanvas = document.getElementById('grid-canvas');
+        const gridCtx = gridCanvas.getContext('2d');
+        const gridSvg = document.getElementById('grid-svg');
+        const isoSvg = document.getElementById('iso-svg');
+        const telCoord = document.getElementById('tel-coord');
+        const telElevation = document.getElementById('tel-elevation');
+        const telWater = document.getElementById('tel-water');
+        const telTree = document.getElementById('tel-tree');
+        const telStep = document.getElementById('tel-step');
+        const telPhase = document.getElementById('tel-phase');
+        
+        const csSvg = document.getElementById('cs-svg');
+        const csRowVal = document.getElementById('cs-row-val');
+        const csMaxVal = document.getElementById('cs-max-val');
+        const csMinVal = document.getElementById('cs-min-val');
+        const csPosSlider = document.getElementById('cs-pos-slider');
+
+        let lastHoverX = Math.floor(GRID_SIZE / 2);
+        let lastHoverY = Math.floor(GRID_SIZE / 2);
+
+        // Add checkbox elements first to prevent Temporal Dead Zone ReferenceError in dashboard onRender
+        const showTreesChk = document.getElementById('show-trees-chk');
+        const showContoursChk = document.getElementById('show-contours-chk');
+        const showStreamlinesChk = document.getElementById('show-streamlines-chk');
+
+        // Timeline Slider elements
+        const timelineSlider = document.getElementById('timeline-slider');
+        const sliderVal = document.getElementById('slider-val');
+        const syncSliders = document.querySelectorAll('.sync-timeline-slider, #timeline-slider');
+
+        // Set slider range based on steps count
+        syncSliders.forEach(slider => {
+            slider.max = realisticMapData.steps.length - 1;
+        });
+
+        function updateCrossSection(centerX, centerY, stepIndex) {
+            const stepData = realisticMapData.steps[stepIndex];
+            if (!stepData) return;
+            const heightScale = realisticMapData.height_scale_m || 1000.0;
+            const cellSpacing = realisticMapData.cell_spacing_m || 100.0;
+
+            const halfWidth = 35; // 70 cells total width to cover channel and banks
+            const startX = Math.max(0, centerX - halfWidth);
+            const endX = Math.min(GRID_SIZE - 1, centerX + halfWidth);
+            const size = endX - startX;
+
+            csRowVal.textContent = `${centerY} (${((centerY * cellSpacing) / 1000.0).toFixed(2)} km)`;
+            if (csPosSlider) csPosSlider.value = centerY;
+
+            let bedrockPoints = [];
+            let waterPoints = [];
+            
+            let minY = 99999;
+            let maxY = -99999;
+
+            for (let i = 0; i <= size; i++) {
+                const x = startX + i;
+                const H = stepData.grid_H_soil[centerY][x] * heightScale;
+                const hw = (stepData.grid_H_soil[centerY][x] + stepData.grid_h_surface[centerY][x]) * heightScale;
+                
+                minY = Math.min(minY, H);
+                maxY = Math.max(maxY, hw);
+                
+                bedrockPoints.push({ x: i, H });
+                waterPoints.push({ x: i, hw });
+            }
+
+            // Add margin to min/max
+            const range = maxY - minY;
+            const pad = range > 1.0 ? range * 0.15 : 10.0;
+            minY -= pad;
+            maxY += pad;
+
+            csMaxVal.textContent = `${maxY.toFixed(0)}m`;
+            csMinVal.textContent = `${minY.toFixed(0)}m`;
+
+            // Map functions to 300x150 SVG viewport
+            const mapX = (x_idx) => (x_idx / size) * 300;
+            const mapY = (val) => 140 - ((val - minY) / (maxY - minY)) * 130;
+
+            let bedrockPathPoints = bedrockPoints.map(p => `${mapX(p.x).toFixed(1)},${mapY(p.H).toFixed(1)}`);
+            let waterPathPoints = waterPoints.map(p => `${mapX(p.x).toFixed(1)},${mapY(p.hw).toFixed(1)}`);
+
+            // Construct closed polygons
+            const bedrockPath = `M 0,150 L ${bedrockPathPoints.join(' L ')} L 300,150 Z`;
+            let waterPathPointsReversed = [...bedrockPathPoints].reverse();
+            const waterPath = `M ${waterPathPoints[0]} L ${waterPathPoints.join(' L ')} L ${waterPathPointsReversed.join(' L ')} Z`;
+
+            // Draw paths
+            // Draw flowing streamline along water surface ONLY if there is water
+            const hasWater = waterPoints.some((p, idx_w) => (p.hw - bedrockPoints[idx_w].H) > 2.0); // depth > 2m
+            const flowlinePath = hasWater ? `<path d="M ${waterPathPoints.join(' L ')}" class="flow-streamline-cs" />` : '';
+
+            csSvg.innerHTML = `
+                <!-- Background Grid Lines -->
+                <line x1="0" y1="35" x2="300" y2="35" stroke="var(--grid-line)" stroke-width="0.5" stroke-dasharray="2,2" />
+                <line x1="0" y1="75" x2="300" y2="75" stroke="var(--grid-line)" stroke-width="0.5" stroke-dasharray="2,2" />
+                <line x1="0" y1="115" x2="300" y2="115" stroke="var(--grid-line)" stroke-width="0.5" stroke-dasharray="2,2" />
+                <line x1="150" y1="0" x2="150" y2="150" stroke="var(--grid-line)" stroke-width="0.5" stroke-dasharray="2,2" />
+                
+                <!-- Water Area -->
+                <path d="${waterPath}" fill="rgba(14, 165, 233, 0.70)" stroke="#0ea5e9" stroke-width="1.2" />
+                
+                <!-- Animated Flowline on Water Surface -->
+                ${flowlinePath}
+                
+                <!-- Bedrock Area -->
+                <path d="${bedrockPath}" fill="#27272a" stroke="#71717a" stroke-width="2" />
+                
+                <!-- Central Indicator Line -->
+                <line x1="150" y1="0" x2="150" y2="150" stroke="#f43f5e" stroke-width="1.2" stroke-dasharray="4,2" />
+            `;
+        }
+
+        // Create reusable dashboard instance
+        const dashboard = new VisualizerDashboard({
+            steps: realisticMapData.steps,
+            intervalMs: 180,
+            visContainerId: 'grid-container',
+            onRender: (idx) => {
+                const stepData = realisticMapData.steps[idx];
+                
+                // Update Era phase and step labels
+                telStep.textContent = stepData.step;
+                telPhase.textContent = stepData.phase.toUpperCase();
+
+                // Update timeline slider elements
+                syncSliders.forEach(slider => {
+                    slider.value = idx;
+                });
+                sliderVal.textContent = `Frame ${idx} (Cycle ${stepData.step})`;
+
+                // Update local step badges next to each slider
+                const stepBadge2d = document.getElementById('step-badge-2d');
+                const stepBadge3d = document.getElementById('step-badge-3d');
+                const stepBadgeCs = document.getElementById('step-badge-cs');
+                if (stepBadge2d) stepBadge2d.textContent = `Step ${stepData.step}`;
+                if (stepBadge3d) stepBadge3d.textContent = `Step ${stepData.step}`;
+                if (stepBadgeCs) stepBadgeCs.textContent = `Step ${stepData.step}`;
+
+                activeStreamlines = traceStreamlines(
+                    stepData.grid_vx, 
+                    stepData.grid_vy, 
+                    stepData.grid_h_surface, 
+                    GRID_SIZE,
+                    { stride: 2, h_threshold: 0.002, speed_threshold: 0.001, stop_speed: 0.0005, max_steps: 800, max_streamlines: 80 }
+                );
+                renderGridState(idx);
+                updateCrossSection(lastHoverX, lastHoverY, idx);
+            },
+            onHover: (px, py, w, h) => {
+                const gridX = Math.floor((px / w) * GRID_SIZE);
+                const gridY = Math.floor((py / h) * GRID_SIZE);
+                if (gridX >= 0 && gridX < GRID_SIZE && gridY >= 0 && gridY < GRID_SIZE) {
+                    const stepData = realisticMapData.steps[dashboard.stepIndex];
+                    const H_soil = stepData.grid_H_soil[gridY][gridX];
+                    const h_surf = stepData.grid_h_surface[gridY][gridX];
+                    const tree = stepData.grid_tree[gridY][gridX];
+
+                    const cellSpacing = realisticMapData.cell_spacing_m || 100.0;
+                    const heightScale = realisticMapData.height_scale_m || 1000.0;
+
+                    const kmX = ((gridX * cellSpacing) / 1000.0).toFixed(2);
+                    const kmY = ((gridY * cellSpacing) / 1000.0).toFixed(2);
+
+                    telCoord.textContent = `${gridX}, ${gridY} (${kmX} km, ${kmY} km)`;
+                    telElevation.textContent = H_soil > 0.0 ? `${(H_soil * heightScale).toFixed(0)} m` : `${(H_soil * heightScale).toFixed(0)} m (Subsea)`;
+                    telWater.textContent = h_surf > 0.008 ? `${(h_surf * heightScale).toFixed(1)} m` : `0.0 m (Dry)`;
+                    telTree.textContent = `${(tree * 100).toFixed(0)} %`;
+
+                    lastHoverX = gridX;
+                    lastHoverY = gridY;
+                    updateCrossSection(gridX, gridY, dashboard.stepIndex);
+                }
+            }
+        });
+
+        // Add synchronized timeline slider listeners
+        syncSliders.forEach(slider => {
+            slider.addEventListener('input', (e) => {
+                const stepVal = parseInt(e.target.value);
+                dashboard.updateStep(stepVal);
+            });
+        });
+
+        // Add cross section slice position slider listener
+        csPosSlider.addEventListener('input', (e) => {
+            lastHoverY = parseInt(e.target.value);
+            updateCrossSection(lastHoverX, lastHoverY, dashboard.stepIndex);
+            renderGridState(dashboard.stepIndex);
+        });
+
+        // Add click listener on 2D map to set slice position
+        gridSvg.addEventListener('click', (e) => {
+            const rect = gridSvg.getBoundingClientRect();
+            const clickY = e.clientY - rect.top;
+            const gridY = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor((clickY / rect.height) * GRID_SIZE)));
+            lastHoverY = gridY;
+            updateCrossSection(lastHoverX, gridY, dashboard.stepIndex);
+            renderGridState(dashboard.stepIndex);
+        });
+
+        // Play/Pause/Reset manual bindings
+        document.getElementById('play-btn').addEventListener('click', () => {
+            if (!dashboard.animationInterval) dashboard.togglePlay();
+        });
+        document.getElementById('pause-btn').addEventListener('click', () => {
+            if (dashboard.animationInterval) dashboard.togglePlay();
+        });
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (dashboard.animationInterval) dashboard.togglePlay();
+            dashboard.updateStep(0);
+        });
+
+        // Wire up local slider stepping buttons
+        document.querySelectorAll('.local-step-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (dashboard.animationInterval) dashboard.togglePlay();
+                const isNext = e.currentTarget.classList.contains('next');
+                const delta = isNext ? 1 : -1;
+                const nextStep = Math.max(0, Math.min(realisticMapData.steps.length - 1, dashboard.stepIndex + delta));
+                dashboard.updateStep(nextStep);
+            });
+        });
+
+        [showTreesChk, showContoursChk, showStreamlinesChk].forEach(chk => {
+            chk.addEventListener('change', () => {
+                dashboard.updateStep(dashboard.stepIndex);
+            });
+        });
+
+        function renderGridState(idx) {
+            gridSvg.innerHTML = '';
+            const stepData = realisticMapData.steps[idx];
+            if (!stepData) return;
+            const H_soil = stepData.grid_H_soil;
+            
+            document.getElementById('grid-img').src = `mountain_range_frames/frame_${idx}.png`;
+
+            if (showStreamlinesChk.checked) {
+                activeStreamlines.forEach(path => {
+                    // Place chevrons along the path at regular intervals (every 6 steps) with no solid lines
+                    for (let i = 0; i < path.length - 1; i += 6) {
+                        const p1 = path[i];
+                        const p2 = path[i + 1];
+                        
+                        const px = p1.x * CELL_SIZE;
+                        const py = p1.y * CELL_SIZE;
+                        
+                        const dx = (p2.x - p1.x) * CELL_SIZE;
+                        const dy = (p2.y - p1.y) * CELL_SIZE;
+                        
+                        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                        
+                        const chev = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                        // Chevron shape pointing to the right: >
+                        chev.setAttribute("d", "M -3 -3.5 L 2 0 L -3 3.5");
+                        chev.setAttribute("transform", `translate(${px}, ${py}) rotate(${angle})`);
+                        chev.setAttribute("fill", "none");
+                        chev.setAttribute("stroke", "rgba(255, 255, 255, 0.92)");
+                        chev.setAttribute("stroke-width", "2.8px");
+                        chev.setAttribute("stroke-linecap", "round");
+                        chev.setAttribute("stroke-linejoin", "round");
+                        gridSvg.appendChild(chev);
+                    }
+                });
+            }
+
+            if (showContoursChk.checked) {
+                const contourLevels = [-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0];
+                const STEP = Math.max(1, Math.floor(GRID_SIZE / 256));
+                for (let y = 0; y < GRID_SIZE - STEP; y += STEP) {
+                    for (let x = 0; x < GRID_SIZE - STEP; x += STEP) {
+                        const zA = H_soil[y][x];
+                        const zB = H_soil[y][x + STEP];
+                        const zC = H_soil[y + STEP][x + STEP];
+                        const zD = H_soil[y + STEP][x];
+
+                        const pA = { x: x * CELL_SIZE, y: y * CELL_SIZE };
+                        const pB = { x: (x + STEP) * CELL_SIZE, y: y * CELL_SIZE };
+                        const pC = { x: (x + STEP) * CELL_SIZE, y: (y + STEP) * CELL_SIZE };
+                        const pD = { x: x * CELL_SIZE, y: (y + STEP) * CELL_SIZE };
+
+                        const quadVerts = [
+                            { z: zA, p: pA },
+                            { z: zB, p: pB },
+                            { z: zC, p: pC },
+                            { z: zD, p: pD }
+                        ];
+
+                        for (const zc of contourLevels) {
+                            const crossings = [];
+                            for (let i = 0; i < 4; i++) {
+                                const v0 = quadVerts[i];
+                                const v1 = quadVerts[(i + 1) % 4];
+                                if ((v0.z < zc && v1.z >= zc) || (v1.z < zc && v0.z >= zc)) {
+                                    const t = (zc - v0.z) / (v1.z - v0.z);
+                                    crossings.push({
+                                        x: v0.p.x + t * (v1.p.x - v0.p.x),
+                                        y: v0.p.y + t * (v1.p.y - v0.p.y)
+                                    });
+                                }
+                            }
+                            if (crossings.length >= 2) {
+                                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                                line.setAttribute("x1", crossings[0].x.toFixed(1));
+                                line.setAttribute("y1", crossings[0].y.toFixed(1));
+                                line.setAttribute("x2", crossings[1].x.toFixed(1));
+                                line.setAttribute("y2", crossings[1].y.toFixed(1));
+                                
+                                if (zc === 0.0) {
+                                    line.setAttribute("stroke", "rgba(0, 0, 0, 1.0)");
+                                    line.setAttribute("stroke-width", "2.8");
+                                } else {
+                                    line.setAttribute("stroke", "rgba(0, 0, 0, 0.65)");
+                                    line.setAttribute("stroke-width", "1.2");
+                                }
+                                gridSvg.appendChild(line);
+                            }
+                        }
+                    }
+                }
+            }
+
+            const sliceLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            sliceLine.setAttribute("x1", "0");
+            sliceLine.setAttribute("y1", (lastHoverY * CELL_SIZE).toFixed(1));
+            sliceLine.setAttribute("x2", "1000");
+            sliceLine.setAttribute("y2", (lastHoverY * CELL_SIZE).toFixed(1));
+            sliceLine.setAttribute("stroke", "#f43f5e");
+            sliceLine.setAttribute("stroke-width", "2.2");
+            sliceLine.setAttribute("stroke-dasharray", "5,5");
+            gridSvg.appendChild(sliceLine);
+
+            renderIsoState(idx);
+        }
+
+        function renderIsoState(idx) {
+            const stepData = realisticMapData.steps[idx];
+            const H_soil = stepData.grid_H_soil;
+            const h_surf = stepData.grid_h_surface;
+            const grass_grid = stepData.grid_grass;
+            const tree_grid = stepData.grid_tree;
+
+            const showTrees = showTreesChk.checked;
+            const drawContours = showContoursChk.checked;
+            const drawStreamlines = showStreamlinesChk.checked;
+
+            const ISO_STEP = Math.max(1, Math.floor(GRID_SIZE / 128));
+            const projectIsoScaled = (x, y, z) => projectIso(x, y, z, { spacing: 5.2 * (128.0 / GRID_SIZE) });
+
+            isoSvg.innerHTML = '';
+
+            const bgImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
+            bgImage.setAttribute("href", `mountain_range_frames/frame_3d_${idx}.png`);
+            bgImage.setAttribute("x", "0");
+            bgImage.setAttribute("y", "0");
+            bgImage.setAttribute("width", "1000");
+            bgImage.setAttribute("height", "650");
+            isoSvg.appendChild(bgImage);
+
+            const { V_soil, V_water } = interpolateVertexData(H_soil, h_surf, GRID_SIZE);
+
+            for (let sum = 0; sum <= 2 * (GRID_SIZE - ISO_STEP); sum += ISO_STEP) {
+                for (let x = 0; x < GRID_SIZE; x += ISO_STEP) {
+                    const y = sum - x;
+                    if (y >= 0 && y < GRID_SIZE - ISO_STEP && x < GRID_SIZE - ISO_STEP) {
+                        const zA = V_soil[y][x];
+                        const zB = V_soil[y][x + ISO_STEP];
+                        const zC = V_soil[y + ISO_STEP][x + ISO_STEP];
+                        const zD = V_soil[y + ISO_STEP][x];
+
+                        const pA = projectIsoScaled(x, y, zA);
+                        const pB = projectIsoScaled(x + ISO_STEP, y, zB);
+                        const pC = projectIsoScaled(x + ISO_STEP, y + ISO_STEP, zC);
+                        const pD = projectIsoScaled(x, y + ISO_STEP, zD);
+
+                        const H_val = H_soil[y][x];
+                        const h_w = h_surf[y][x];
+                        if (drawContours) {
+                            const contourLevels = [-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0];
+                            const quadVerts = [
+                                { z: zA, p: pA },
+                                { z: zB, p: pB },
+                                { z: zC, p: pC },
+                                { z: zD, p: pD }
+                            ];
+ 
+                            for (const zc of contourLevels) {
+                                const crossings = [];
+                                for (let i = 0; i < 4; i++) {
+                                    const v0 = quadVerts[i];
+                                    const v1 = quadVerts[(i + 1) % 4];
+                                    if ((v0.z < zc && v1.z >= zc) || (v1.z < zc && v0.z >= zc)) {
+                                        const t = (zc - v0.z) / (v1.z - v0.z);
+                                        crossings.push({
+                                            x: v0.p.x + t * (v1.p.x - v0.p.x),
+                                            y: v0.p.y + t * (v1.p.y - v0.p.y)
+                                        });
+                                    }
+                                }
+                                if (crossings.length >= 2) {
+                                    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                                    line.setAttribute("x1", crossings[0].x.toFixed(1));
+                                    line.setAttribute("y1", crossings[0].y.toFixed(1));
+                                    line.setAttribute("x2", crossings[1].x.toFixed(1));
+                                    line.setAttribute("y2", crossings[1].y.toFixed(1));
+                                    
+                                    if (zc === 0.0) {
+                                        line.setAttribute("stroke", "rgba(0, 0, 0, 0.95)");
+                                        line.setAttribute("stroke-width", "2.0");
+                                    } else {
+                                        line.setAttribute("stroke", "rgba(0, 0, 0, 0.55)");
+                                        line.setAttribute("stroke-width", "0.8");
+                                    }
+                                    isoSvg.appendChild(line);
+                                }
+                            }
+                        }
+
+                        // 3D Trees (rendered downsampled for high performance)
+                        const tree = tree_grid[y][x];
+                        if (showTrees && h_w <= 0.002 && H_val > 0.0 && tree > 0.08) {
+                            const pBase = projectIsoScaled(x + ISO_STEP * 0.5, y + ISO_STEP * 0.5, zA);
+                            const pCrest = projectIsoScaled(x + ISO_STEP * 0.5, y + ISO_STEP * 0.5, zA + 0.40 * tree + 0.12);
+
+                            const trunk = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                            trunk.setAttribute("x1", pBase.x.toFixed(1));
+                            trunk.setAttribute("y1", pBase.y.toFixed(1));
+                            trunk.setAttribute("x2", pCrest.x.toFixed(1));
+                            trunk.setAttribute("y2", pCrest.y.toFixed(1));
+                            trunk.setAttribute("stroke", "#5c2e0b");
+                            trunk.setAttribute("stroke-width", (1.2 * tree + 0.5).toFixed(1));
+                            isoSvg.appendChild(trunk);
+
+                            const canopy = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                            canopy.setAttribute("cx", pCrest.x.toFixed(1));
+                            canopy.setAttribute("cy", pCrest.y.toFixed(1));
+                            canopy.setAttribute("r", (4.0 * tree + 1.2).toFixed(1));
+                            canopy.setAttribute("fill", "#15803d");
+                            canopy.setAttribute("stroke", "#14532d");
+                            canopy.setAttribute("stroke-width", "0.5");
+                            isoSvg.appendChild(canopy);
+                        }
+                    }
+                }
+            }
+
+            // Draw streamlines in 3D
+            if (drawStreamlines) {
+                activeStreamlines.forEach(path => {
+                    const trail3d = path.map(pt => {
+                        const tcx = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.x)));
+                        const tcy = Math.max(0, Math.min(GRID_SIZE - 1, Math.floor(pt.y)));
+                        const tz = H_soil[tcy][tcx] + h_surf[tcy][tcx] + 0.03;
+                        return projectIsoScaled(pt.x, pt.y, tz);
+                    });
+                    
+                    let d = `M ${trail3d[0].x.toFixed(1)} ${trail3d[0].y.toFixed(1)}`;
+                    for (let i = 1; i < trail3d.length; i++) {
+                        d += ` L ${trail3d[i].x.toFixed(1)} ${trail3d[i].y.toFixed(1)}`;
+                    }
+                    const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    poly.setAttribute("d", d);
+                    poly.setAttribute("class", "flow-streamline-3d");
+                    isoSvg.appendChild(poly);
+                });
+            }
+        }
+
+    </script>
+</body>
+</html>
