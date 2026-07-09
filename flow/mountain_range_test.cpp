@@ -966,7 +966,7 @@ int main() {
     // Restore standard Erosion parameters with active sediment settling deposition (0.04f) to prevent channel clogging
     p3->add<Erosion>(0.15f, 0.04f, 1.62e-8f, 0.04f, 0.0035f, 0.015f, 0.45f, false);
     p3->add<Landslide>(0.55f, 511, 511); // High repose slope to stabilize river canyon walls
-    p3->add<Vegetation>(110.0f, 25.0f, 1.0f); // Dynamic growth (grass & trees enabled)
+    p3->add<Vegetation>(0.0f, 0.0f, 0.0f); // Temporarily inhibit vegetation growth (Original: 110.0f, 25.0f, 1.0f)
 
     std::vector<RealisticMapState> history;
  
