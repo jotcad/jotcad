@@ -923,6 +923,61 @@
                 });
             }
 
+            if (showStreamlinesChk.checked) {
+                // Draw shallow stream channels as thin dashed lines
+                const SEED_STEP = 8;
+                for (let y = 4; y < GRID_SIZE - 4; y += SEED_STEP) {
+                    for (let x = 4; x < GRID_SIZE - 4; x += SEED_STEP) {
+                        const h = stepData.grid_h_surface[y][x];
+                        // If water is thin (trickle), trace it downstream
+                        if (h >= 0.0005 && h < 0.008) {
+                            let cx = x;
+                            let cy = y;
+                            let path = [{x: cx, y: cy}];
+                            let visited = new Set();
+                            visited.add(`${cx},${cy}`);
+                            
+                            for (let step = 0; step < 40; ++step) {
+                                const vx = stepData.grid_vx ? stepData.grid_vx[cy][cx] : 0.0;
+                                const vy = stepData.grid_vy ? stepData.grid_vy[cy][cx] : 0.0;
+                                const speed = Math.sqrt(vx*vx + vy*vy);
+                                if (speed < 0.02) break;
+                                
+                                const nx = Math.round(cx + (vx / speed) * 1.5);
+                                const ny = Math.round(cy + (vy / speed) * 1.5);
+                                
+                                if (nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) break;
+                                
+                                const key = `${nx},${ny}`;
+                                if (visited.has(key)) break;
+                                visited.add(key);
+                                
+                                cx = nx;
+                                cy = ny;
+                                path.push({x: cx, y: cy});
+                                
+                                // Stop if we hit deep water (which is already drawn by C++)
+                                if (stepData.grid_h_surface[cy][cx] >= 0.008) {
+                                    break;
+                                }
+                            }
+                            
+                            if (path.length >= 3) {
+                                const svgPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                                const d_attr = "M " + path.map(p => `${p.x * CELL_SIZE} ${p.y * CELL_SIZE}`).join(" L ");
+                                svgPath.setAttribute("d", d_attr);
+                                svgPath.setAttribute("fill", "none");
+                                svgPath.setAttribute("stroke", "rgba(0, 160, 255, 0.72)");
+                                svgPath.setAttribute("stroke-width", "1.4px");
+                                svgPath.setAttribute("stroke-dasharray", "3,3");
+                                svgPath.setAttribute("stroke-linecap", "round");
+                                gridSvg.appendChild(svgPath);
+                            }
+                        }
+                    }
+                }
+            }
+
             if (showContoursChk.checked) {
                 const contourLevels = [-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0];
                 const STEP = Math.max(1, Math.floor(GRID_SIZE / 256));
