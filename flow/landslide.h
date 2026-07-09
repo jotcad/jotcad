@@ -52,8 +52,8 @@ public:
                             if (grass_ptr || tree_ptr) {
                                 float grass_val = grass_ptr ? (*grass_ptr)[y][x] : 0.0f;
                                 float tree_val = tree_ptr ? (*tree_ptr)[y][x] : 0.0f;
-                                // Grass adds +12%, deep tree roots add +42% stable slope threshold
-                                local_max_slope *= (1.0f + 0.12f * grass_val + 0.42f * tree_val);
+                                // Grass adds +35%, deep tree roots add +120% stable slope threshold
+                                local_max_slope *= (1.0f + 0.35f * grass_val + 1.20f * tree_val);
                             }
 
                             if (slope > local_max_slope) {

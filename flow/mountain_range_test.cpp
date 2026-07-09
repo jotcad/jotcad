@@ -958,13 +958,13 @@ int main() {
     p2->add<Erosion>(0.45f, 0.02f, 1.62e-8f, 0.18f, 0.0f, 0.0f, 0.45f, false); 
  
     // 4. Phase 3: Coupled Eco-Vegetation
-    const int steps_eco = 60;
+    const int steps_eco = 120;
     float dt_eco = 0.05f;
     Phase* p3 = orch.add_phase("Eco-Vegetation Growth", dt_eco, steps_eco, GRID_HIGH);
     p3->add<RealisticPrecipitation>(0.0f, 1.427f, 0.32f); // 1.427 mm/hr (equivalent to 12.5 m/year) orographic rain
     p3->add<SubSteppedHydrodynamics>(9.81f, 0.018f, 60);
-    // Restore standard Erosion parameters with active sediment settling deposition (0.15f)
-    p3->add<Erosion>(0.15f, 0.04f, 1.62e-8f, 0.15f, 0.0035f, 0.015f, 0.45f, false);
+    // Restore standard Erosion parameters with active sediment settling deposition (0.04f) to prevent channel clogging
+    p3->add<Erosion>(0.15f, 0.04f, 1.62e-8f, 0.04f, 0.0035f, 0.015f, 0.45f, false);
     p3->add<Landslide>(0.55f, 511, 511); // High repose slope to stabilize river canyon walls
     p3->add<Vegetation>(110.0f, 25.0f, 1.0f); // Dynamic growth (grass & trees enabled)
 

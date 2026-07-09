@@ -22,11 +22,22 @@ public:
     void step(Grid& g, float dt, int step, int total_steps) override {
         int sz = g.size;
 
-        // 1. Infiltration capped by remaining soil water capacity
+        // Cache optional vegetation and soil pointers once per step at the top
+        const std::vector<std::vector<float>>* grass_ptr = g.has_field<GrassField>() ? &g.request_field<GrassField>() : nullptr;
+        const std::vector<std::vector<float>>* tree_ptr = g.has_field<TreeField>() ? &g.request_field<TreeField>() : nullptr;
+        std::vector<std::vector<float>>* soil_ptr = g.has_field<SoilField>() ? &g.request_field<SoilField>() : nullptr;
+
+        // 1. Infiltration capped by remaining soil water capacity and dynamic riverbed sealing (colmation)
         for (int y = 0; y < sz; ++y) {
             for (int x = 0; x < sz; ++x) {
                 float capacity_left = std::max(0.0f, max_soil_capacity - g.h_soil_water[y][x]);
-                float potential_infilt = infiltration_rate * dt;
+                float local_infil = infiltration_rate;
+                if (soil_ptr) {
+                    // Thick deposited sediment (silt/clay) clogs the bed pores, sealing the riverbed
+                    float soil_thickness = (*soil_ptr)[y][x];
+                    local_infil *= std::exp(-25.0f * soil_thickness);
+                }
+                float potential_infilt = local_infil * dt;
                 float actual_infilt = std::min(potential_infilt, g.h_surface[y][x]);
                 actual_infilt = std::min(actual_infilt, capacity_left);
                 
@@ -98,11 +109,6 @@ public:
                 }
             }
         }
-
-        // Cache optional vegetation and soil pointers once per step
-        const std::vector<std::vector<float>>* grass_ptr = g.has_field<GrassField>() ? &g.request_field<GrassField>() : nullptr;
-        const std::vector<std::vector<float>>* tree_ptr = g.has_field<TreeField>() ? &g.request_field<TreeField>() : nullptr;
-        std::vector<std::vector<float>>* soil_ptr = g.has_field<SoilField>() ? &g.request_field<SoilField>() : nullptr;
 
         // Coupled Bed Erosion
         for (int y = 0; y < sz; ++y) {
