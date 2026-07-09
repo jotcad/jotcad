@@ -958,7 +958,7 @@ int main() {
     p2->add<Erosion>(0.45f, 0.02f, 1.62e-8f, 0.18f, 0.0f, 0.0f, 0.45f, false); 
  
     // 4. Phase 3: Coupled Eco-Vegetation
-    const int steps_eco = 120;
+    const int steps_eco = 60;
     float dt_eco = 0.05f;
     Phase* p3 = orch.add_phase("Eco-Vegetation Growth", dt_eco, steps_eco, GRID_HIGH);
     p3->add<RealisticPrecipitation>(0.0f, 1.427f, 0.32f); // 1.427 mm/hr (equivalent to 12.5 m/year) orographic rain
@@ -1056,6 +1056,11 @@ int main() {
         bool record = ((step + 1) % inst_config.noise_stride == 0) || (step == steps_noise - 1);
         record_history_state(steps_tectonic + step + 2, "Micro-Terrain Noise", record);
     });
+
+    // Run second depression filling pass to clear all sinks introduced by Perlin noise
+    std::cout << "Running Post-Noise Depression/Sink Filling..." << std::endl;
+    fill_depressions(g);
+    std::cout << "SUCCESS: Cleared post-noise depressions!" << std::endl;
 
     // Run Phase 2
     std::cout << "Running Phase 2: Hydrology & River Incision..." << std::endl;
