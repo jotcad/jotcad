@@ -80,12 +80,13 @@ void save_png(const std::string& filename, Grid& g) {
                 }
             }
 
-            if (h_surf > 0.020f) {
+            if (h_surf > 0.005f) {
                 float depth = std::min(1.0f, h_surf / 1.5f);
-                float wr = (1.0f - depth) * 103.0f + depth * 30.0f;
-                float wg = (1.0f - depth) * 232.0f + depth * 58.0f;
-                float wb = (1.0f - depth) * 249.0f + depth * 138.0f;
-                float t_w = H_soil > -1.0f ? 0.85f : std::min(0.75f, 0.22f + h_surf / 4.0f);
+                // Interpolate: shallow (depth = 0.0) -> dark purple (70, 20, 95), deep (depth = 1.0) -> dark blue (15, 25, 80)
+                float wr = (1.0f - depth) * 70.0f + depth * 15.0f;
+                float wg = (1.0f - depth) * 20.0f + depth * 25.0f;
+                float wb = (1.0f - depth) * 95.0f + depth * 80.0f;
+                float t_w = H_soil > -1.0f ? 0.95f : std::min(0.75f, 0.22f + h_surf / 4.0f);
 
                 r = (1.0f - t_w) * r + t_w * wr * shadeFactor;
                 g_val = (1.0f - t_w) * g_val + t_w * wg * shadeFactor;
@@ -314,25 +315,20 @@ void save_png_3d(const std::string& filename, Grid& g) {
                 rasterize_triangle_3d(pA, pC, pD, col2, pixels, z_buffer, width, height);
 
                 // Water overlay if active
-                if (h_w > 0.020f) {
+                if (h_w > 0.005f) {
                     Vec3_3d pAw = V_proj_w[y][x];
                     Vec3_3d pBw = V_proj_w[y][x + 1];
                     Vec3_3d pCw = V_proj_w[y + 1][x + 1];
                     Vec3_3d pDw = V_proj_w[y + 1][x];
 
                     float depth = std::min(1.0f, h_w / 1.5f);
-                    float wr = (1.0f - depth) * 103.0f + depth * 30.0f;
-                    float wg = (1.0f - depth) * 232.0f + depth * 58.0f;
-                    float wb = (1.0f - depth) * 249.0f + depth * 138.0f;
-                    unsigned char alpha = (unsigned char)(255.0f * (0.40f + 0.40f * depth));
+                    // Interpolate: shallow (depth = 0.0) -> dark purple (70, 20, 95), deep (depth = 1.0) -> dark blue (15, 25, 80)
+                    float wr = (1.0f - depth) * 70.0f + depth * 15.0f;
+                    float wg = (1.0f - depth) * 20.0f + depth * 25.0f;
+                    float wb = (1.0f - depth) * 95.0f + depth * 80.0f;
                     
-                    if (H_val >= 0.0f) {
-                        // On land (rivers), make it highly visible bright cyan-blue
-                        wr = 0.0f;
-                        wg = 200.0f;
-                        wb = 255.0f;
-                        alpha = 240; // almost fully opaque
-                    }
+                    // Make it highly opaque (0.90 to 0.95 alpha) so we can see the dark colors clearly
+                    unsigned char alpha = (unsigned char)(255.0f * (0.90f + 0.05f * depth));
                     
                     ColorRGBA_3d col_w = { (unsigned char)wr, (unsigned char)wg, (unsigned char)wb, alpha };
 
@@ -483,7 +479,7 @@ public:
                 float H = g.H_soil[y][x];
                 if (H > 0.0f) {
                     // Rain scales linearly with elevation to model smooth orographic rain
-                    float scale = std::min(1.0f, H / 3.0f);
+                    float scale = std::min(1.0f, H / 1.2f);
                     g.h_surface[y][x] += (base_units_per_yr + scale * mountain_units_per_yr) * dt;
                 }
             }
@@ -845,24 +841,23 @@ int main() {
     float center_y = sz / 2.0f;
     float R_max = sz / 2.0f;
 
-    // Define mountain range line segment running across the island from bottom-left to top-right
-    struct Pt2D { float x, y; };
-    Pt2D ptA = { sz * 0.32f, sz * 0.42f };
-    Pt2D ptB = { sz * 0.68f, sz * 0.58f };
-    float ab_x = ptB.x - ptA.x;
-    float ab_y = ptB.y - ptA.y;
-    float ab_len2 = ab_x * ab_x + ab_y * ab_y;
-
-    float ridge_w = sz * 0.15f; // Base width of the mountain range
-    float max_h = 1.10f;        // Smaller max elevation of mountains (Gentler mountain range)
+    // Define mountain range arc parameters (centered in the lower-left, curving across the island)
+    float arc_cx = center_x - sz * 0.25f;
+    float arc_cy = center_y - sz * 0.25f;
+    float R_arc = sz * 0.45f;
+    float angle_min = -0.3f; // Starts near horizontal
+    float angle_max = 1.8f;  // Ends past vertical
+    
+    float ridge_w = sz * 0.08f; // Base width of the mountain range
+    float max_h = 0.95f;        // Smaller max elevation of mountains (Gentler mountain range)
 
     for (int y = 0; y < sz; ++y) {
         for (int x = 0; x < sz; ++x) {
+            // 1. Restore Circular Island Outline (No stretching)
             float dx = (float)x - center_x;
             float dy = (float)y - center_y;
             float r_dist = std::sqrt(dx*dx + dy*dy);
-            
-            // 1. Broad Organic Island Outline (expanded to 1.15f to make land twice as broad)
+
             float coast_u = 1.15f;
             float u_noise = perlin.noise(x * 0.035f, y * 0.035f) * 0.12f +
                             perlin.noise(x * 0.12f, y * 0.12f) * 0.04f;
@@ -873,23 +868,29 @@ int main() {
                 float land_t = u / coast_u;
                 float z = 0.02f + 0.55f * std::cos(land_t * 1.5708f);
 
-                // 3. Mountain Range Profile: distance to the ridge segment ptA-ptB
-                float ap_x = (float)x - ptA.x;
-                float ap_y = (float)y - ptA.y;
-                float t = (ap_x * ab_x + ap_y * ab_y) / (ab_len2 ? ab_len2 : 1.0f);
-                t = std::max(0.0f, std::min(1.0f, t));
+                // 3. Mountain Arc Profile: distance to closest point on arc segment
+                float dx_arc = (float)x - arc_cx;
+                float dy_arc = (float)y - arc_cy;
+                float angle = std::atan2(dy_arc, dx_arc);
                 
-                float proj_x = ptA.x + t * ab_x;
-                float proj_y = ptA.y + t * ab_y;
+                // Clamp angle to the arc segment range
+                float angle_clamped = std::max(angle_min, std::min(angle_max, angle));
+                
+                // Closest point on the arc
+                float proj_x = arc_cx + R_arc * std::cos(angle_clamped);
+                float proj_y = arc_cy + R_arc * std::sin(angle_clamped);
                 
                 float dist_to_ridge = std::sqrt(((float)x - proj_x)*((float)x - proj_x) + ((float)y - proj_y)*((float)y - proj_y));
                 
-                // Modulate peak height along the ridge line to create three individual peaks
-                // Peak 1: t=0.25 (height +0.4), Peak 2: t=0.5 (height +0.65), Peak 3: t=0.75 (height +0.35)
-                float peak_mod = 0.85f + 
-                                 0.40f * std::exp(-((t - 0.25f) / 0.12f) * ((t - 0.25f) / 0.12f)) + 
-                                 0.65f * std::exp(-((t - 0.50f) / 0.15f) * ((t - 0.50f) / 0.15f)) + 
-                                 0.35f * std::exp(-((t - 0.75f) / 0.10f) * ((t - 0.75f) / 0.10f));
+                // Normalized position t along the arc from 0.0 to 1.0
+                float t = (angle_clamped - angle_min) / (angle_max - angle_min);
+                
+                // Modulate peak height along the arc to create four individual peaks along the spine
+                float peak_mod = 0.50f + 
+                                 0.40f * std::exp(-((t - 0.15f) / 0.08f) * ((t - 0.15f) / 0.08f)) + 
+                                 0.55f * std::exp(-((t - 0.38f) / 0.10f) * ((t - 0.38f) / 0.10f)) + 
+                                 0.60f * std::exp(-((t - 0.62f) / 0.12f) * ((t - 0.62f) / 0.12f)) + 
+                                 0.45f * std::exp(-((t - 0.85f) / 0.08f) * ((t - 0.85f) / 0.08f));
                 
                 float mountain_z = (max_h * peak_mod) / (1.0f + (dist_to_ridge / ridge_w) * (dist_to_ridge / ridge_w));
                 
