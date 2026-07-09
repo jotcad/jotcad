@@ -924,27 +924,30 @@
             }
 
             if (showStreamlinesChk.checked) {
-                // Trace shallow streams downhill using D8 flow routing driven by flow volume rate (discharge Q)
-                const SEED_STEP = 5;
+                // Trace shallow streams downhill using D8 flow routing driven by flow volume rate (throughput Q)
                 const drawnSegments = new Set();
                 
-                for (let y = 4; y < GRID_SIZE - 4; y += SEED_STEP) {
-                    for (let x = 4; x < GRID_SIZE - 4; x += SEED_STEP) {
+                // Track visited cells to avoid duplicate traces and maintain O(N) performance
+                const visitedCells = Array.from({ length: GRID_SIZE }, () => new Uint8Array(GRID_SIZE));
+                
+                for (let y = 4; y < GRID_SIZE - 4; ++y) {
+                    for (let x = 4; x < GRID_SIZE - 4; ++x) {
+                        if (visitedCells[y][x]) continue;
+                        
                         const h_start = stepData.grid_h_surface[y][x];
                         const vx_start = stepData.grid_vx ? stepData.grid_vx[y][x] : 0.0;
                         const vy_start = stepData.grid_vy ? stepData.grid_vy[y][x] : 0.0;
                         const speed_start = Math.sqrt(vx_start*vx_start + vy_start*vy_start);
                         const Q_start = speed_start * h_start;
                         
-                        // Seed if there is active flow (discharge Q > 0.002)
+                        // Seed trace if there is active throughput (Q >= 0.002)
                         if (Q_start >= 0.002) {
                             let cx = x;
                             let cy = y;
                             let path = [{x: cx, y: cy, h: h_start, Q: Q_start}];
-                            let visited = new Set();
-                            visited.add(`${cx},${cy}`);
+                            visitedCells[cy][cx] = 1;
                             
-                            for (let step = 0; step < 60; ++step) {
+                            for (let step = 0; step < 80; ++step) {
                                 // D8 neighbor lookup for lowest total head (H_soil + h_surface)
                                 let my_head = H_soil[cy][cx] + stepData.grid_h_surface[cy][cx];
                                 let lowest_nx = -1;
@@ -969,9 +972,8 @@
                                 
                                 if (lowest_nx === -1 || lowest_ny === -1) break;
                                 
-                                const key = `${lowest_nx},${lowest_ny}`;
-                                if (visited.has(key)) break;
-                                visited.add(key);
+                                // Mark neighbor as visited globally
+                                visitedCells[lowest_ny][lowest_nx] = 1;
                                 
                                 cx = lowest_nx;
                                 cy = lowest_ny;
@@ -990,8 +992,7 @@
                                 const p1 = path[i];
                                 const p2 = path[i + 1];
                                 
-                                // Draw if there is active flow (both endpoints have some discharge)
-                                // and at least one endpoint is shallow (h < 0.008) so it's not fully drawn by C++
+                                // Draw if active throughput exists on both ends and at least one is shallow (h < 0.008)
                                 if (p1.Q >= 0.002 && p2.Q >= 0.002 && (p1.h < 0.008 || p2.h < 0.008)) {
                                     const segKey = `${Math.min(p1.x, p2.x)},${Math.min(p1.y, p2.y)}-${Math.max(p1.x, p2.x)},${Math.max(p1.y, p2.y)}`;
                                     if (!drawnSegments.has(segKey)) {
@@ -1004,7 +1005,7 @@
                                         svgLine.setAttribute("y2", (p2.y * CELL_SIZE).toString());
                                         svgLine.setAttribute("stroke", "rgba(0, 160, 255, 0.75)");
                                         
-                                        // Scale line weight based on average discharge Q (Strahler-like weight scaling)
+                                        // Line weight scaled Strahler-style by average throughput Q
                                         const avgQ = (p1.Q + p2.Q) * 0.5;
                                         const width = Math.min(2.5, 1.1 + avgQ * 0.08);
                                         svgLine.setAttribute("stroke-width", `${width}px`);
