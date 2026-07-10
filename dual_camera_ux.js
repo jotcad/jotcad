@@ -1,4 +1,6 @@
 import http from 'http';
+import https from 'https';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { VFS, DiskStorage, MeshLink } from './fs/src/index.js';
@@ -248,7 +250,7 @@ const htmlContent = `
 </html>
 `;
 
-const server = http.createServer((req, res) => {
+const requestHandler = (req, res) => {
   if (req.url === '/' || req.url === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(htmlContent);
@@ -260,8 +262,28 @@ const server = http.createServer((req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
   }
-});
+};
+
+const keyPath = path.resolve('.ssl/localhost-key.pem');
+const certPath = path.resolve('.ssl/localhost-cert.pem');
+
+let server;
+let protocol = 'http';
+
+if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+  console.log('[Dual UX] SSL certificates found. Starting in HTTPS mode...');
+  const options = {
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath)
+  };
+  server = https.createServer(options, requestHandler);
+  protocol = 'https';
+} else {
+  console.log('[Dual UX] SSL disabled or certificates missing. Starting in HTTP mode...');
+  server = http.createServer(requestHandler);
+  protocol = 'http';
+}
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Dual UX] Server running on http://0.0.0.0:${PORT} (all interfaces)`);
+  console.log(`[Dual UX] Server running on ${protocol}://0.0.0.0:${PORT} (all interfaces)`);
 });
