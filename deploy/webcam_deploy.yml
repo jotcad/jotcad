@@ -6,8 +6,6 @@
     - name: Install required OS packages (requires sudo/become)
       apt:
         name:
-          - build-essential
-          - libssl-dev
           - ffmpeg
           - rsync
           - nodejs
@@ -45,10 +43,6 @@
       npm:
         path: "{{ deploy_dir }}"
         state: present
-
-    - name: Build native C++ modules on target
-      make:
-        chdir: "{{ deploy_dir }}"
 
     - name: Deploy systemd service file
       template:
