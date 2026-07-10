@@ -1,0 +1,18 @@
+[Unit]
+Description=JotCAD Webcam Node Service
+After=network.target
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+WorkingDirectory={{ deploy_dir }}
+ExecStart=/usr/bin/env node orchestrator.js webcam
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=8080
+# Optional: add your Gemini API Key if doing focus analysis on timelapse
+# Environment=GEMINI_API_KEY={{ lookup('env', 'GEMINI_API_KEY') | default('', true) }}
+
+[Install]
+WantedBy=multi-user.target

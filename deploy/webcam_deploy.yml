@@ -1,0 +1,72 @@
+---
+- name: Deploy JotCAD Webcam Node to Remote Server
+  hosts: webcam_servers
+  gather_facts: yes
+  tasks:
+    - name: Install required OS packages (requires sudo/become)
+      apt:
+        name:
+          - build-essential
+          - libssl-dev
+          - ffmpeg
+          - rsync
+          - nodejs
+          - npm
+        state: present
+        update_cache: yes
+      become: yes
+
+    - name: Create deployment directory
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      become: yes
+
+    - name: Synchronize workspace codebase to remote server (rsync)
+      synchronize:
+        src: "../"
+        dest: "{{ deploy_dir }}/"
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=timelapse"
+          - "--exclude=*.log"
+          - "--exclude=*.mp4"
+          - "--exclude=*.jpg"
+          - "--exclude=.gemini"
+          - "--exclude=deploy"
+
+    - name: Install Node.js npm packages on target
+      npm:
+        path: "{{ deploy_dir }}"
+        state: present
+
+    - name: Build native C++ modules on target
+      make:
+        chdir: "{{ deploy_dir }}"
+
+    - name: Deploy systemd service file
+      template:
+        src: templates/jotcad-webcam.service.j2
+        dest: /etc/systemd/system/jotcad-webcam.service
+        mode: '0644'
+      become: yes
+      register: service_file
+
+    - name: Reload systemd daemon if service file changed
+      systemd:
+        daemon_reload: yes
+      become: yes
+      when: service_file.changed
+
+    - name: Ensure jotcad-webcam service is enabled and restarted
+      systemd:
+        name: jotcad-webcam
+        state: restarted
+        enabled: yes
+      become: yes
