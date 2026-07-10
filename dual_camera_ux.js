@@ -16,12 +16,25 @@ const vfs = new VFS(new DiskStorage(storageDir));
 const meshLink = new MeshLink(vfs, ['http://127.0.0.1:9000']);
 console.log('[Dual UX] VFS and MeshLink initialized. Connected to Zenoh router at http://127.0.0.1:9000');
 
-// 2. Track latest frames and active HTTP streaming clients
+// 2. Track latest frames, heartbeats, logs and active HTTP streaming clients
 let latestLocalFrame = null;
 let latestRemoteFrame = null;
 
 const localClients = new Set();
 const remoteClients = new Set();
+
+const telemetry = {
+  local: { status: 'offline', lastHeartbeat: 0, logs: [] },
+  remote: { status: 'offline', lastHeartbeat: 0, logs: [] }
+};
+
+function getLiveTelemetry() {
+  const now = Date.now();
+  // Mark offline if no heartbeat within 12 seconds
+  telemetry.local.status = (now - telemetry.local.lastHeartbeat < 12000) ? 'online' : 'offline';
+  telemetry.remote.status = (now - telemetry.remote.lastHeartbeat < 12000) ? 'online' : 'offline';
+  return telemetry;
+}
 
 // Helper to push frame to HTTP MJPEG clients
 function pushFrameToClients(clients, payload) {
@@ -39,7 +52,7 @@ function pushFrameToClients(clients, payload) {
   }
 }
 
-// Subscribe to local and remote camera feeds published on Zenoh Pub/Sub
+// Subscribe to feeds, status heartbeats, and logs from local & remote cameras
 vfs.listen('jot/webcam/feed/live_webcam_webcam', (payload) => {
   latestLocalFrame = payload;
   pushFrameToClients(localClients, payload);
@@ -48,6 +61,26 @@ vfs.listen('jot/webcam/feed/live_webcam_webcam', (payload) => {
 vfs.listen('jot/webcam/feed/webcam-jh', (payload) => {
   latestRemoteFrame = payload;
   pushFrameToClients(remoteClients, payload);
+});
+
+vfs.listen('jot/webcam/status/live_webcam_webcam', (payload) => {
+  telemetry.local.lastHeartbeat = Date.now();
+});
+
+vfs.listen('jot/webcam/status/webcam-jh', (payload) => {
+  telemetry.remote.lastHeartbeat = Date.now();
+});
+
+vfs.listen('jot/webcam/logs/live_webcam_webcam', (payload) => {
+  const logMsg = new TextDecoder().decode(payload);
+  telemetry.local.logs.push(logMsg);
+  if (telemetry.local.logs.length > 20) telemetry.local.logs.shift();
+});
+
+vfs.listen('jot/webcam/logs/webcam-jh', (payload) => {
+  const logMsg = new TextDecoder().decode(payload);
+  telemetry.remote.logs.push(logMsg);
+  if (telemetry.remote.logs.length > 20) telemetry.remote.logs.shift();
 });
 
 // Setup HTTP response for MJPEG stream requests
@@ -197,36 +230,69 @@ const htmlContent = `
       object-fit: cover;
       background: #000;
     }
+    .log-window {
+      margin-top: 20px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 11px;
+    }
+    .log-header {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 6px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: #8892b0;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .log-content {
+      padding: 12px;
+      height: 130px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: #5af78e;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Dual Camera Monitor</h1>
-    <p>Real-time side-by-side VFS webcam feeds (via Zenoh Pub/Sub)</p>
+    <p>Real-time side-by-side VFS webcam feeds & logs (via Zenoh Pub/Sub)</p>
   </div>
 
   <div class="grid-container">
     <div class="camera-card">
       <div class="card-header">
         <h3 class="card-title">Local Camera</h3>
-        <div id="badge-local" class="status-badge">
-          <span class="status-dot"></span>Live
+        <div id="badge-local" class="status-badge offline">
+          <span class="status-dot"></span>Offline
         </div>
       </div>
       <div class="feed-container">
         <img id="feed-local" src="/stream/local" onerror="handleError(this, 'badge-local')" alt="Local Feed" />
+      </div>
+      <div class="log-window">
+        <div class="log-header">console.log logs</div>
+        <div id="log-content-local" class="log-content">Waiting for heartbeat logs...</div>
       </div>
     </div>
 
     <div class="camera-card">
       <div class="card-header">
         <h3 class="card-title">Remote Camera (jh)</h3>
-        <div id="badge-remote" class="status-badge">
-          <span class="status-dot"></span>Live
+        <div id="badge-remote" class="status-badge offline">
+          <span class="status-dot"></span>Offline
         </div>
       </div>
       <div class="feed-container">
         <img id="feed-remote" src="/stream/remote" onerror="handleError(this, 'badge-remote')" alt="Remote Feed" />
+      </div>
+      <div class="log-window">
+        <div class="log-header">console.log logs</div>
+        <div id="log-content-remote" class="log-content">Waiting for heartbeat logs...</div>
       </div>
     </div>
   </div>
@@ -235,16 +301,52 @@ const htmlContent = `
     function handleError(img, badgeId) {
       const badge = document.getElementById(badgeId);
       badge.className = 'status-badge offline';
-      badge.innerHTML = '<span class=\"status-dot\"></span>Offline';
+      badge.innerHTML = '<span class="status-dot"></span>Offline';
       
       // Attempt reconnection every 5 seconds
       setTimeout(() => {
         const path = img.src.split('?')[0];
         img.src = path + '?t=' + Date.now();
-        badge.className = 'status-badge';
-        badge.innerHTML = '<span class=\"status-dot\"></span>Live';
       }, 5000);
     }
+
+    async function updateTelemetry() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        // Update Local Status and Logs
+        const badgeLocal = document.getElementById('badge-local');
+        if (data.local.status === 'online') {
+          badgeLocal.className = 'status-badge';
+          badgeLocal.innerHTML = '<span class="status-dot"></span>Live';
+        } else {
+          badgeLocal.className = 'status-badge offline';
+          badgeLocal.innerHTML = '<span class="status-dot"></span>Offline';
+        }
+        const logsLocal = document.getElementById('log-content-local');
+        logsLocal.innerHTML = data.local.logs.join('\n') || 'Connected. Awaiting logs...';
+        logsLocal.scrollTop = logsLocal.scrollHeight;
+
+        // Update Remote Status and Logs
+        const badgeRemote = document.getElementById('badge-remote');
+        if (data.remote.status === 'online') {
+          badgeRemote.className = 'status-badge';
+          badgeRemote.innerHTML = '<span class="status-dot"></span>Live';
+        } else {
+          badgeRemote.className = 'status-badge offline';
+          badgeRemote.innerHTML = '<span class="status-dot"></span>Offline';
+        }
+        const logsRemote = document.getElementById('log-content-remote');
+        logsRemote.innerHTML = data.remote.logs.join('\n') || 'Connected. Awaiting logs...';
+        logsRemote.scrollTop = logsRemote.scrollHeight;
+      } catch (err) {
+        console.error('Failed to fetch status telemetry:', err);
+      }
+    }
+
+    setInterval(updateTelemetry, 2000);
+    updateTelemetry();
   </script>
 </body>
 </html>
@@ -254,6 +356,9 @@ const requestHandler = (req, res) => {
   if (req.url === '/' || req.url === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(htmlContent);
+  } else if (req.url === '/api/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(getLiveTelemetry()));
   } else if (req.url === '/stream/local') {
     handleStreamRequest(res, localClients, latestLocalFrame);
   } else if (req.url === '/stream/remote') {

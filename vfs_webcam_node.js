@@ -43,10 +43,42 @@ function getLocalDateStr(date = new Date()) {
   return (new Date(date.getTime() - tzOffset)).toISOString().split('T')[0];
 }
 
+// Setup log publishing with recursion guard
+let vfsInstance = null;
+let isPublishingLog = false;
+const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
+
+function publishLog(type, args) {
+  const msg = `[${type}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;
+  originalLog(msg);
+  if (vfsInstance && !vfsInstance.isClosed && !isPublishingLog) {
+    isPublishingLog = true;
+    vfsInstance.write(`jot/webcam/logs/${id}`, msg)
+      .catch(() => {})
+      .finally(() => {
+        isPublishingLog = false;
+      });
+  }
+}
+
+console.log = (...args) => publishLog('INFO', args);
+console.warn = (...args) => publishLog('WARN', args);
+console.error = (...args) => publishLog('ERROR', args);
+
 // 1. Initialize the VFS instance
 const storageDir = path.resolve(`.vfs_storage_${id}`);
 const vfs = new VFS({ id, storage: new DiskStorage(storageDir) });
 await vfs.init();
+vfsInstance = vfs;
+
+// Periodically publish status heartbeat (online status)
+setInterval(() => {
+  if (vfsInstance && !vfsInstance.isClosed) {
+    vfsInstance.write(`jot/webcam/status/${id}`, 'online').catch(() => {});
+  }
+}, 5000);
 
 // Mutex lock to serialize webcam access and prevent simultaneous ffmpeg processes from colliding on /dev/video0
 let activeCapturePromise = null;
