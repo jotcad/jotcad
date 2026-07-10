@@ -83,3 +83,5 @@ pio/include/zenoh_log_decl.h
 geo/cgal/zenoh-c/
 geo/cgal/zenoh/
 
+# Local Ansible host inventory containing private IPs
+deploy/hosts.ini
