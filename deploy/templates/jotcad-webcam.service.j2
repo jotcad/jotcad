@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User={{ ansible_user_id }}
 WorkingDirectory={{ deploy_dir }}
-ExecStart=/usr/bin/env node vfs_webcam_node.js
+ExecStart=/usr/bin/env node --experimental-wasm-modules vfs_webcam_node.js
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
