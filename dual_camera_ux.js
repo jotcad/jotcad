@@ -15,6 +15,7 @@ await vfs.init();
 
 // Connect to local Zenoh router (port 9000 is our live/webcam profile's router)
 const meshLink = new MeshLink(vfs, ['http://127.0.0.1:9000']);
+await meshLink.start();
 console.log('[Dual UX] VFS and MeshLink initialized. Connected to Zenoh router at http://127.0.0.1:9000');
 
 // 2. Track latest frames, heartbeats, logs and active HTTP streaming clients
