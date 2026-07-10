@@ -27,7 +27,7 @@
 
     - name: Synchronize workspace codebase to remote server (rsync)
       synchronize:
-        src: "../"
+        src: "{{ playbook_dir }}/../"
         dest: "{{ deploy_dir }}/"
         delete: yes
         recursive: yes
