@@ -12,6 +12,7 @@ RestartSec=10
 Environment=NODE_ENV=production
 Environment=PORT={{ port | default(8080) }}
 Environment=VFS_ID={{ vfs_id | default('webcam-' + ansible_hostname) }}
+Environment=NEIGHBORS={{ neighbors | default('') }}
 # Optional: add your Gemini API Key if doing focus analysis on timelapse
 # Environment=GEMINI_API_KEY={{ lookup('env', 'GEMINI_API_KEY') | default('', true) }}
 

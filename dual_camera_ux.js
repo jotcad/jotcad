@@ -10,7 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 1. Initialize VFS and MeshLink to join the Zenoh mesh
 const storageDir = path.join(__dirname, '.vfs_storage_dual_ux');
-const vfs = new VFS(new DiskStorage(storageDir));
+const vfs = new VFS({ id: 'dual-ux', storage: new DiskStorage(storageDir) });
+await vfs.init();
 
 // Connect to local Zenoh router (port 9000 is our live/webcam profile's router)
 const meshLink = new MeshLink(vfs, ['http://127.0.0.1:9000']);
