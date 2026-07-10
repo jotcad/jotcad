@@ -4,13 +4,14 @@ After=network.target
 
 [Service]
 Type=simple
-User={{ ansible_user }}
+User={{ ansible_user_id }}
 WorkingDirectory={{ deploy_dir }}
 ExecStart=/usr/bin/env node orchestrator.js webcam
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
-Environment=PORT=8080
+Environment=PORT={{ port | default(8080) }}
+Environment=VFS_ID={{ vfs_id | default('webcam-' + ansible_hostname) }}
 # Optional: add your Gemini API Key if doing focus analysis on timelapse
 # Environment=GEMINI_API_KEY={{ lookup('env', 'GEMINI_API_KEY') | default('', true) }}
 
