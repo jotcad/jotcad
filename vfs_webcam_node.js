@@ -1824,6 +1824,15 @@ server.listen(PORT, '0.0.0.0', async () => {
           const filePath = path.join(targetDir, filename);
           await pipeline(Readable.fromWeb(result.stream), fs.createWriteStream(filePath));
           console.log(`[Timelapse] Saved frame: ${activeDayStr}/${activeHourStr}/${filename}`);
+          
+          // Publish frame to Zenoh Pub/Sub Mesh
+          try {
+            const frameBytes = fs.readFileSync(filePath);
+            await vfs.write(`jot/webcam/feed/${id}`, frameBytes);
+          } catch (pubErr) {
+            console.error('[Timelapse] Failed to publish frame to mesh:', pubErr);
+          }
+
           frameIndex++;
         } else {
           console.warn('[Timelapse] Failed to capture frame: VFS stream was empty');
