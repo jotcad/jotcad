@@ -71,14 +71,26 @@ vfs.listen('jot/webcam/status/webcam-jh', (payload) => {
   telemetry.remote.lastHeartbeat = Date.now();
 });
 
+function decodePayload(payload) {
+  if (typeof payload === 'string') return payload;
+  if (payload instanceof Uint8Array || payload instanceof ArrayBuffer || ArrayBuffer.isView(payload)) {
+    try {
+      return new TextDecoder().decode(payload);
+    } catch (e) {
+      return String(payload);
+    }
+  }
+  return String(payload);
+}
+
 vfs.listen('jot/webcam/logs/live_webcam_webcam', (payload) => {
-  const logMsg = new TextDecoder().decode(payload);
+  const logMsg = decodePayload(payload);
   telemetry.local.logs.push(logMsg);
   if (telemetry.local.logs.length > 20) telemetry.local.logs.shift();
 });
 
 vfs.listen('jot/webcam/logs/webcam-jh', (payload) => {
-  const logMsg = new TextDecoder().decode(payload);
+  const logMsg = decodePayload(payload);
   telemetry.remote.logs.push(logMsg);
   if (telemetry.remote.logs.length > 20) telemetry.remote.logs.shift();
 });
