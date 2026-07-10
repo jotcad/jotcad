@@ -263,5 +263,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Dual UX] Server running on http://localhost:${PORT}`);
+  console.log(`[Dual UX] Server running on http://0.0.0.0:${PORT} (all interfaces)`);
 });
