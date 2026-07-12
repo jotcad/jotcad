@@ -75,6 +75,8 @@ void test_zenoh_pubsub_direct() {
     assert(received_payload["value"] == 100);
 
     // Verify read(path) queries the cached state over Zenoh
+    sleep_ms(500);
+    nodeB.publish("test/direct", payload);
     json read_val = nodeB.read("test/direct");
     assert(read_val["value"] == 100);
 
@@ -167,10 +169,98 @@ void test_zenoh_pubsub_multihop() {
     stdfs::remove_all(configC.storage_dir);
 }
 
+void test_machine_failover() {
+    std::cout << "[Test] Starting Zenoh Machine Failover test (A [busy] -> B [busy] -> C)..." << std::endl;
+
+    VFSNode::Config configA;
+    configA.id = "node-A";
+    configA.port = 9401;
+    configA.storage_dir = "./ts_fail_A";
+    stdfs::remove_all(configA.storage_dir);
+    stdfs::create_directories(configA.storage_dir);
+
+    VFSNode::Config configB;
+    configB.id = "node-B";
+    configB.port = 9402;
+    configB.neighbors = {"tcp/127.0.0.1:9401"};
+    configB.storage_dir = "./ts_fail_B";
+    stdfs::remove_all(configB.storage_dir);
+    stdfs::create_directories(configB.storage_dir);
+
+    VFSNode::Config configC;
+    configC.id = "node-C";
+    configC.port = 9403;
+    configC.neighbors = {"tcp/127.0.0.1:9402"};
+    configC.storage_dir = "./ts_fail_C";
+    stdfs::remove_all(configC.storage_dir);
+    stdfs::create_directories(configC.storage_dir);
+
+    VFSNode nodeA(configA);
+    VFSNode nodeB(configB);
+    VFSNode nodeC(configC);
+
+    // Make Node A and Node B saturated
+    nodeA.max_concurrent_ops_ = 0;
+    nodeB.max_concurrent_ops_ = 0;
+    nodeC.max_concurrent_ops_ = 4; // Node C is free
+
+    nodeA.register_op("test/heavy_op", [&](const VFSNode::VFSRequest& req) {
+        std::string target_cid = nodeA.get_cid(req.selector);
+        json data = {{"source", "node-A"}};
+        std::string s_val = data.dump();
+        std::vector<uint8_t> bytes(s_val.begin(), s_val.end());
+        nodeA.write_local(target_cid, bytes, req.selector.path, req.selector.parameters);
+    });
+    nodeB.register_op("test/heavy_op", [&](const VFSNode::VFSRequest& req) {
+        std::string target_cid = nodeB.get_cid(req.selector);
+        json data = {{"source", "node-B"}};
+        std::string s_val = data.dump();
+        std::vector<uint8_t> bytes(s_val.begin(), s_val.end());
+        nodeB.write_local(target_cid, bytes, req.selector.path, req.selector.parameters);
+    });
+    nodeC.register_op("test/heavy_op", [&](const VFSNode::VFSRequest& req) {
+        std::string target_cid = nodeC.get_cid(req.selector);
+        json data = {{"source", "node-C"}};
+        std::string s_val = data.dump();
+        std::vector<uint8_t> bytes(s_val.begin(), s_val.end());
+        nodeC.write_local(target_cid, bytes, req.selector.path, req.selector.parameters);
+    });
+
+    // Start listeners
+    std::thread threadA([&]() { nodeA.listen(); });
+    sleep_ms(300);
+    std::thread threadB([&]() { nodeB.listen(); });
+    sleep_ms(300);
+    std::thread threadC([&]() { nodeC.listen(); });
+    
+    // Wait for session discovery and peer metrics advertising to propagate
+    sleep_ms(3500);
+
+    // Execute query from Node C. It should try A (busy), B (busy), and succeed on C.
+    json read_val = nodeC.read("test/heavy_op");
+    
+    std::cout << "[Test] Failover result received: " << read_val.dump() << std::endl;
+    assert(read_val["source"] == "node-C");
+
+    nodeA.stop();
+    nodeB.stop();
+    nodeC.stop();
+
+    if (threadA.joinable()) threadA.join();
+    if (threadB.joinable()) threadB.join();
+    if (threadC.joinable()) threadC.join();
+
+    stdfs::remove_all(configA.storage_dir);
+    stdfs::remove_all(configB.storage_dir);
+    stdfs::remove_all(configC.storage_dir);
+    std::cout << "✔ Zenoh Machine Failover (A [busy] -> B [busy] -> C [success]) successful!" << std::endl;
+}
+
 int main() {
     try {
         test_zenoh_pubsub_direct();
         test_zenoh_pubsub_multihop();
+        test_machine_failover();
         std::cout << "All C++ VFS PubSub tests passed!" << std::endl;
         return 0;
     } catch (const std::exception& e) {

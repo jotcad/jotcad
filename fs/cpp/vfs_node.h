@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <atomic>
 
 namespace jotcad {
 namespace geo {
@@ -137,7 +138,39 @@ public:
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
 
+    std::map<std::string, uint64_t> fulfillment_counters_;
+    std::map<std::string, double> total_latency_ms_;
+    std::mutex counters_mutex_;
+    void increment_fulfillment_counter(const std::string& path);
+    void record_execution_metric(const std::string& path, double duration_ms);
+    json get_fulfillment_counters();
+    json get_fulfillment_latencies();
+
+    struct CPUStats {
+        uint64_t user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0;
+    };
+    double get_free_cpu_percent();
+    uint64_t get_free_memory_bytes();
+
+    std::atomic<int> active_ops_count_{0};
+    int max_concurrent_ops_ = 4;
+    int get_active_ops_count() const { return active_ops_count_.load(); }
+    int get_max_concurrent_ops() const { return max_concurrent_ops_; }
+    void increment_active_ops() { active_ops_count_++; }
+    void decrement_active_ops() { active_ops_count_--; }
+    std::string get_machine_prefix() const;
+
+    struct PeerInfo {
+        std::string id;
+        long long last_seen_ms = 0;
+    };
+    std::map<std::string, PeerInfo> peers_;
+    std::mutex peers_mutex_;
+
 private:
+    CPUStats last_cpu_stats_;
+    std::mutex cpu_mutex_;
+
     VFSResult read_cid_impl(const VFSRequest& req);
     VFSResult read_selector_impl(const VFSRequest& req);
 };

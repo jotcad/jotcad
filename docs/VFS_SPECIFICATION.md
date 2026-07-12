@@ -136,6 +136,19 @@ To prevent query deadlocks and ensure correct data resolution in a distributed P
 * **Disabled Consolidation (`ConsolidationMode::NONE`):** To prevent Zenoh routers from merging and discarding replies from multiple matching nodes, CID and catalog queries MUST disable consolidation. This ensures that the client receives all individual node responses, allowing it to find the owner's `200` reply in the presence of `404` responses from non-owners.
 * **Clamped Selector Cache Lookups:** Before evaluating a Selector, clients check if its output is already cached on the mesh by querying its CID. Since this cache lookup results in a miss for new computations, to prevent Zenoh's mesh-wide `ALL` query from blocking for the full timeout (defaulting to `2s`), Selector cache lookups MUST clamp their timeout (e.g., `200ms`). This enables rapid fallback to operator evaluation.
 
+### 3.11 Root-Prefixed Routing Layout (Machine-Centric Addressing)
+To enable physical machine isolation and avoid double-prefixing of key expressions:
+* **Key Expression Structure:** Generative routes and notifications are prefixed with the routing machine's identifier:
+  * Operator Queryables: `<machine-id>/jot/vfs/op/<path>`
+  * Published/Notified Topics: `<machine-id>/jot/vfs/pub/<path>`
+* **Dynamic Prefix Stripping:** Upon receiving a query, C++ and JS VFS servers MUST dynamically extract the logical operator path by finding and stripping `/jot/vfs/op/` (and `/jot/vfs/pub/` for subscribers), ensuring compatibility with wildcard requests (`*/jot/vfs/op/...`).
+
+### 3.12 Concurrency Gate & Alphabetical Spillover Load Balancer
+To prevent overloading active nodes and provide robust failover:
+* **Concurrency Gate:** Every VFS Node tracks concurrent executions using an atomic counter (`active_ops_count_`) capped at a configured limit (`max_concurrent_ops_`). If the limit is reached, query handlers reject queries immediately with a `503 Server Busy` status payload.
+* **Alphabetical Spillover Loop:** Clients discover available nodes in the mesh via system metrics subscriptions (`*/jot/vfs/pub/jot/vfs/metrics/system/**`), sorting active machine IDs alphabetically. Clients query them sequentially. If a target is busy locally or returns a `503` or `429` rejection over Zenoh, the client prints a spillover log and falls back to the next target in the alphabetical list.
+* **Local Memory Cache Bypass:** To avoid routing delays on locally published pub/sub topics, VFS nodes check their memory cache (`local_cache_`/`local_cache_binary_`) at the start of local selector reads, resolving local queries instantly.
+
 ## 4. Core Type System
 
 ### 4.1 Geometry Type (`geometry`)

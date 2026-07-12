@@ -26,6 +26,7 @@ struct ZenohState {
     bool running = false;
     std::mutex mutex;
     std::condition_variable cv;
+    std::unique_ptr<std::thread> advertising_thread;
 };
 #endif
 
@@ -108,8 +109,34 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
     std::string params(z_string_data(z_loan(params_str)), z_string_len(z_loan(params_str)));
     std::cout << "[VFS Server] Raw parameters string received: " << params << std::endl;
 
-    // Strip "jot/vfs/op/" prefix (length 11) to match registered paths
-    std::string op_path = (key.length() > 11) ? key.substr(11) : key;
+    // Strip machine prefix/wildcard and route to get op_path
+    std::string op_path = key;
+    size_t op_pos = key.find("/jot/vfs/op/");
+    if (op_pos != std::string::npos) {
+        op_path = key.substr(op_pos + 12);
+    }
+
+    // Check concurrency limit before spawning thread
+    if (node->get_active_ops_count() >= node->get_max_concurrent_ops()) {
+        std::cout << "[VFS Server " << node->config_.id << "] REJECTING query (Busy, active ops: " << node->get_active_ops_count() << ")" << std::endl;
+        json resp_header = {
+            {"status", 503},
+            {"error", "Server Busy"},
+            {"encoding", "json"}
+        };
+        std::vector<uint8_t> empty;
+        auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, empty));
+        z_owned_bytes_t reply_payload;
+        z_bytes_from_buf(&reply_payload, record_bytes->data(), record_bytes->size(), delete_vector_u8, record_bytes);
+
+        z_query_reply_options_t options;
+        z_query_reply_options_default(&options);
+        z_view_keyexpr_t reply_keyexpr;
+        std::string concrete_key = node->get_machine_prefix() + "/jot/vfs/op/" + op_path;
+        z_view_keyexpr_from_str(&reply_keyexpr, concrete_key.c_str());
+        z_query_reply(query, z_loan(reply_keyexpr), z_move(reply_payload), &options);
+        return;
+    }
 
     // Look up schema to extract argument types
     std::map<std::string, std::string> arg_types;
@@ -127,6 +154,7 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
         }
     }
 
+    node->increment_active_ops();
     z_owned_query_t query_owned;
     z_query_clone(&query_owned, query);
 
@@ -143,7 +171,12 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
             req.localOnly = true; // Queryable handler only services local resources
             
             // Execute the handler
+            auto start = std::chrono::high_resolution_clock::now();
             VFSResult result = node->read<VFSResult>(req);
+            auto end = std::chrono::high_resolution_clock::now();
+            double duration_ms = std::chrono::duration<double, std::milli>(end - start).count();
+            
+            result.metadata["latency_ms"] = duration_ms;
             
             json resp_header = {
                 {"status", 200},
@@ -159,7 +192,8 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
             z_query_reply_options_default(&options);
             
             z_view_keyexpr_t reply_keyexpr;
-            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            std::string concrete_key = node->get_machine_prefix() + "/jot/vfs/op/" + op_path;
+            z_view_keyexpr_from_str(&reply_keyexpr, concrete_key.c_str());
             
             z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
         } catch (const VFSException& e) {
@@ -182,7 +216,8 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
             z_query_reply_options_t options;
             z_query_reply_options_default(&options);
             z_view_keyexpr_t reply_keyexpr;
-            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            std::string concrete_key = node->get_machine_prefix() + "/jot/vfs/op/" + op_path;
+            z_view_keyexpr_from_str(&reply_keyexpr, concrete_key.c_str());
             z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
         } catch (const std::exception& e) {
             std::string err_msg = "[" + node->config_.id + "] " + e.what();
@@ -199,9 +234,11 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
             z_query_reply_options_t options;
             z_query_reply_options_default(&options);
             z_view_keyexpr_t reply_keyexpr;
-            z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+            std::string concrete_key = node->get_machine_prefix() + "/jot/vfs/op/" + op_path;
+            z_view_keyexpr_from_str(&reply_keyexpr, concrete_key.c_str());
             z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
         }
+        node->decrement_active_ops();
         z_drop(z_move(query_owned));
     }).detach();
 }
@@ -388,6 +425,13 @@ void VFSNode::listen() {
         }
     }
 
+    const char* env_disable_ssl = std::getenv("DISABLE_SSL");
+    if (env_disable_ssl && std::string(env_disable_ssl) == "1") {
+        use_tls = false;
+        cert_path = "";
+        key_path = "";
+    }
+
     // Construct configuration JSON dynamically, disabling multicast scouting unless a custom address is provided
     std::string json_str = "{";
     if (const char* env_multicast = std::getenv("ZENOH_MULTICAST_ADDRESS")) {
@@ -443,7 +487,7 @@ void VFSNode::listen() {
 
     // 1. Declare operator fulfillment queryables for all registered handlers
     for (const auto& [op_path, handler] : handlers_) {
-        std::string key = "jot/vfs/op/" + op_path;
+        std::string key = get_machine_prefix() + "/jot/vfs/op/" + op_path;
         state->queryable_keys.push_back(key);
         const std::string& persistent_key = state->queryable_keys.back();
 
@@ -488,7 +532,7 @@ void VFSNode::listen() {
 
     // 4. Declare subscribers for all registered callbacks
     for (const auto& [sub_path, callback] : subscriptions_) {
-        std::string key = "jot/vfs/pub/" + sub_path;
+        std::string key = "*/jot/vfs/pub/" + sub_path;
         state->queryable_keys.push_back(key);
         const std::string& persistent_key = state->queryable_keys.back();
 
@@ -526,12 +570,91 @@ void VFSNode::listen() {
         }
     }
 
+    // Subscribe to system metrics of all peers in the mesh
+    {
+        std::string metrics_key = "*/jot/vfs/pub/jot/vfs/metrics/system/**";
+        z_view_keyexpr_t ke_metrics;
+        z_view_keyexpr_from_str(&ke_metrics, metrics_key.c_str());
+        
+        auto* metrics_cb_ctx = new std::function<void(const json&)>( [this](const json& payload) {
+            try {
+                std::string provider = payload.value("provider", "");
+                if (!provider.empty() && provider != config_.id) {
+                    std::lock_guard<std::mutex> lock(peers_mutex_);
+                    PeerInfo& pi = peers_[provider];
+                    pi.id = provider;
+                    pi.last_seen_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                }
+            } catch (...) {}
+        });
+        
+        z_owned_closure_sample_t cb_metrics_sample;
+        z_closure_sample(&cb_metrics_sample, [](struct z_loaned_sample_t* sample, void* context) {
+            auto* cb = static_cast<std::function<void(const json&)>*>(context);
+            z_owned_string_t payload_str;
+            z_bytes_to_string(z_sample_payload(sample), &payload_str);
+            std::string raw_msg(z_string_data(z_string_loan(&payload_str)), z_string_len(z_string_loan(&payload_str)));
+            z_string_drop(z_string_move(&payload_str));
+            try {
+                json parsed = json::parse(raw_msg);
+                (*cb)(parsed);
+            } catch (...) {}
+        }, [](void* context) {
+            delete static_cast<std::function<void(const json&)>*>(context);
+        }, metrics_cb_ctx);
+        
+        z_owned_subscriber_t metrics_subscriber;
+        z_subscriber_options_t metrics_opts;
+        z_subscriber_options_default(&metrics_opts);
+        
+        if (z_declare_subscriber(z_loan(state->session), &metrics_subscriber, z_loan(ke_metrics), z_move(cb_metrics_sample), &metrics_opts) == Z_OK) {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->subscribers["*/jot/vfs/pub/jot/vfs/metrics/system/**"] = metrics_subscriber;
+        } else {
+            delete metrics_cb_ctx;
+        }
+    }
+
     std::cout << "[VFSNode " << config_.id << "] Zenoh listener successfully started on port " << config_.port << std::endl;
+
+    // Start background system metrics advertising thread
+    state->running = true;
+    state->advertising_thread = std::make_unique<std::thread>([this, state]() {
+        // Initialize CPU stats
+        get_free_cpu_percent();
+        
+        while (true) {
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                if (!state->running) break;
+            }
+            
+            double free_cpu = get_free_cpu_percent();
+            uint64_t free_mem = get_free_memory_bytes();
+            
+            json payload = {
+                {"provider", config_.id},
+                {"free_cpu_percent", free_cpu},
+                {"free_memory_bytes", free_mem},
+                {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()}
+            };
+            
+            this->publish("jot/vfs/metrics/system/" + config_.id, payload);
+            
+            // Sleep 2 seconds, but check running flag every 100ms
+            for (int i = 0; i < 20; ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                {
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    if (!state->running) break;
+                }
+            }
+        }
+    });
 
     // Block the thread until stop() is called
     {
         std::unique_lock<std::mutex> lock(state->mutex);
-        state->running = true;
         state->cv.wait(lock, [state] { return !state->running; });
     }
     
@@ -549,6 +672,10 @@ void VFSNode::stop() {
         }
         
         std::cout << "[VFSNode " << config_.id << "] Shutting down Zenoh Session..." << std::endl;
+        
+        if (state->advertising_thread && state->advertising_thread->joinable()) {
+            state->advertising_thread->join();
+        }
         
         for (auto& pair : state->subscribers) {
             z_undeclare_subscriber(z_move(pair.second));
@@ -573,12 +700,16 @@ void VFSNode::declare_queryable_for_path(const std::string& path) {
     if (!server_ptr_) return;
     ZenohState* state = static_cast<ZenohState*>(server_ptr_);
 
-    std::string key = "jot/vfs/op/" + path;
-    state->queryable_keys.push_back(key);
-    const std::string& persistent_key = state->queryable_keys.back();
+    std::string key = get_machine_prefix() + "/jot/vfs/op/" + path;
+    const char* key_cstr = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->queryable_keys.push_back(key);
+        key_cstr = state->queryable_keys.back().c_str();
+    }
 
     z_view_keyexpr_t ke_op;
-    z_view_keyexpr_from_str(&ke_op, persistent_key.c_str());
+    z_view_keyexpr_from_str(&ke_op, key_cstr);
     
     z_owned_closure_query_t cb_op;
     z_closure(&cb_op, [](z_loaned_query_t* query, void* context) {
@@ -588,63 +719,110 @@ void VFSNode::declare_queryable_for_path(const std::string& path) {
         z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
         std::string key(z_string_data(z_loan(key_string)), z_string_len(z_loan(key_string)));
         
-        // Strip "jot/vfs/op/" (length 11) to get path
-        std::string path = (key.length() > 11) ? key.substr(11) : key;
+        // Strip prefix node-id/jot/vfs/op/ to get path
+        std::string prefix = self->get_machine_prefix() + "/jot/vfs/op/";
+        std::string path = key;
+        if (key.rfind(prefix, 0) == 0) {
+            path = key.substr(prefix.length());
+        }
 
         z_owned_query_t query_owned;
         z_query_clone(&query_owned, query);
 
         std::thread([self, query_owned = std::move(query_owned), path, key]() mutable {
             try {
-                std::vector<uint8_t> payload_bytes;
-                std::string encoding = "json";
-                
-                // 1. Check binary cache first
-                bool is_binary = false;
+                // Find all matching keys in local caches (supporting wildcards like **)
+                std::vector<std::pair<std::string, json>> matched_json;
+                std::vector<std::pair<std::string, std::vector<uint8_t>>> matched_binary;
+
+                bool is_wildcard = (path.size() > 2 && path.substr(path.size() - 2) == "**");
+                std::string prefix = is_wildcard ? path.substr(0, path.size() - 2) : "";
+
                 {
                     std::lock_guard<std::mutex> lock(self->storage_mutex_);
-                    auto it = self->local_cache_binary_.find(path);
-                    if (it != self->local_cache_binary_.end()) {
-                        payload_bytes = it->second.first;
-                        encoding = "bytes";
-                        is_binary = true;
-                    }
-                }
-                
-                // 2. Fall back to JSON cache
-                if (!is_binary) {
-                    json val;
-                    {
-                        std::lock_guard<std::mutex> lock(self->storage_mutex_);
-                        auto it = self->local_cache_.find(path);
-                        if (it != self->local_cache_.end()) {
-                            val = it->second;
+                    // Search binary cache
+                    for (const auto& [cache_key, val] : self->local_cache_binary_) {
+                        bool match = is_wildcard ? (cache_key.rfind(prefix, 0) == 0) : (cache_key == path);
+                        if (match) {
+                            matched_binary.push_back({cache_key, val.first});
                         }
                     }
-                    std::string val_str = val.dump();
-                    payload_bytes = std::vector<uint8_t>(val_str.begin(), val_str.end());
+                    // Search JSON cache
+                    for (const auto& [cache_key, val] : self->local_cache_) {
+                        bool match = is_wildcard ? (cache_key.rfind(prefix, 0) == 0) : (cache_key == path);
+                        if (match) {
+                            bool in_binary = false;
+                            for (const auto& bin_item : matched_binary) {
+                                if (bin_item.first == cache_key) { in_binary = true; break; }
+                            }
+                            if (!in_binary) {
+                                matched_json.push_back({cache_key, val});
+                            }
+                        }
+                    }
                 }
-
-                json resp_header = {
-                    {"status", 200},
-                    {"metadata", {{"state", "AVAILABLE"}, {"encoding", encoding}}},
-                    {"encoding", "json"}
-                };
-                
-                auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, payload_bytes));
-
-                z_owned_bytes_t reply_payload;
-                z_bytes_from_buf(&reply_payload, (uint8_t*)record_bytes->data(), record_bytes->size(), [](void* data, void* arg) {
-                    delete static_cast<std::vector<uint8_t>*>(arg);
-                }, record_bytes);
 
                 z_query_reply_options_t options;
                 z_query_reply_options_default(&options);
 
-                z_view_keyexpr_t reply_keyexpr;
-                z_view_keyexpr_from_str(&reply_keyexpr, key.c_str());
+                // Send replies for all matched items
+                for (const auto& bin_item : matched_binary) {
+                    json resp_header = {
+                        {"status", 200},
+                        {"metadata", {{"state", "AVAILABLE"}, {"encoding", "bytes"}}},
+                        {"encoding", "json"}
+                    };
+                    auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, bin_item.second));
+                    z_owned_bytes_t reply_payload;
+                    z_bytes_from_buf(&reply_payload, (uint8_t*)record_bytes->data(), record_bytes->size(), [](void* data, void* arg) {
+                        delete static_cast<std::vector<uint8_t>*>(arg);
+                    }, record_bytes);
 
-                z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+                    std::string matched_key = self->get_machine_prefix() + "/jot/vfs/op/" + bin_item.first;
+                    z_view_keyexpr_t reply_keyexpr;
+                    z_view_keyexpr_from_str(&reply_keyexpr, matched_key.c_str());
+                    z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+                }
+
+                for (const auto& json_item : matched_json) {
+                    std::string val_str = json_item.second.dump();
+                    std::vector<uint8_t> payload_bytes(val_str.begin(), val_str.end());
+                    json resp_header = {
+                        {"status", 200},
+                        {"metadata", {{"state", "AVAILABLE"}, {"encoding", "json"}}},
+                        {"encoding", "json"}
+                    };
+                    auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, payload_bytes));
+                    z_owned_bytes_t reply_payload;
+                    z_bytes_from_buf(&reply_payload, (uint8_t*)record_bytes->data(), record_bytes->size(), [](void* data, void* arg) {
+                        delete static_cast<std::vector<uint8_t>*>(arg);
+                    }, record_bytes);
+
+                    std::string matched_key = self->get_machine_prefix() + "/jot/vfs/op/" + json_item.first;
+                    z_view_keyexpr_t reply_keyexpr;
+                    z_view_keyexpr_from_str(&reply_keyexpr, matched_key.c_str());
+                    z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+                }
+
+                // Fallback: if nothing matched and not wildcard, return 404
+                if (matched_binary.empty() && matched_json.empty() && !is_wildcard) {
+                    json resp_header = {
+                        {"status", 404},
+                        {"error", "Key not found"},
+                        {"encoding", "json"}
+                    };
+                    std::vector<uint8_t> empty;
+                    auto* record_bytes = new std::vector<uint8_t>(encode_record(resp_header, empty));
+                    z_owned_bytes_t reply_payload;
+                    z_bytes_from_buf(&reply_payload, (uint8_t*)record_bytes->data(), record_bytes->size(), [](void* data, void* arg) {
+                        delete static_cast<std::vector<uint8_t>*>(arg);
+                    }, record_bytes);
+
+                    z_view_keyexpr_t reply_keyexpr;
+                    std::string concrete_key = self->get_machine_prefix() + "/jot/vfs/op/" + path;
+                    z_view_keyexpr_from_str(&reply_keyexpr, concrete_key.c_str());
+                    z_query_reply(z_loan(query_owned), z_loan(reply_keyexpr), z_move(reply_payload), &options);
+                }
             } catch (...) {}
             z_drop(z_move(query_owned));
         }).detach();
@@ -655,6 +833,7 @@ void VFSNode::declare_queryable_for_path(const std::string& path) {
 
     z_owned_queryable_t queryable;
     if (z_declare_queryable(z_loan(state->session), &queryable, z_loan(ke_op), z_move(cb_op), &opts_op) == Z_OK) {
+        std::lock_guard<std::mutex> lock(state->mutex);
         state->queryable_ops.push_back(queryable);
     } else {
         std::cerr << "[VFSNode] Failed to declare queryable for path: " << path << std::endl;

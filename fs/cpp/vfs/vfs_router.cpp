@@ -26,6 +26,7 @@ struct ZenohState {
     bool running = false;
     std::mutex mutex;
     std::condition_variable cv;
+    std::unique_ptr<std::thread> advertising_thread;
 };
 #endif
 
@@ -34,6 +35,23 @@ VFSNode::VFSNode(const Config& config) : config_(config), server_ptr_(nullptr) {
         config_.storage_dir = ".vfs_storage_" + config_.id;
     }
     std::filesystem::create_directories(config_.storage_dir);
+
+    json metrics_schema = {
+        {"arguments", json::array()}
+    };
+    register_op("jot/vfs/metrics", [this](const VFSRequest& req) {
+        json res = json::object();
+        res["metrics"] = {
+            {"fulfillment_counters", get_fulfillment_counters()},
+            {"average_latencies_ms", get_fulfillment_latencies()},
+            {"system", {
+                {"free_cpu_percent", get_free_cpu_percent()},
+                {"free_memory_bytes", get_free_memory_bytes()}
+            }}
+        };
+        res["provider"] = config_.id;
+        this->write(req.selector, res.dump());
+    }, metrics_schema);
 }
 
 VFSNode::~VFSNode() {
@@ -47,6 +65,40 @@ void VFSNode::register_op(const std::string& path, OpHandler handler, const json
     }
     handlers_[path] = handler;
     schemas_[path] = schema;
+}
+
+void VFSNode::increment_fulfillment_counter(const std::string& path) {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    fulfillment_counters_[path]++;
+}
+
+json VFSNode::get_fulfillment_counters() {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    json result = json::object();
+    for (const auto& [path, count] : fulfillment_counters_) {
+        result[path] = count;
+    }
+    return result;
+}
+
+void VFSNode::record_execution_metric(const std::string& path, double duration_ms) {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    fulfillment_counters_[path]++;
+    total_latency_ms_[path] += duration_ms;
+}
+
+json VFSNode::get_fulfillment_latencies() {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    json result = json::object();
+    for (const auto& [path, total_latency] : total_latency_ms_) {
+        uint64_t count = fulfillment_counters_[path];
+        if (count > 0) {
+            result[path] = total_latency / count;
+        } else {
+            result[path] = 0.0;
+        } 
+    }
+    return result;
 }
 
 VFSResult VFSNode::read_cid_impl(const VFSRequest& req) {
@@ -173,16 +225,72 @@ VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
         }
     }
 
-    // Check if operator is registered locally
-    OpHandler handler;
     {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        if (local_cache_.count(req.selector.path)) {
+            VFSResult res;
+            std::string s_val = local_cache_[req.selector.path].dump();
+            res.data = std::vector<uint8_t>(s_val.begin(), s_val.end());
+            res.metadata = {{"state", "AVAILABLE"}, {"encoding", "json"}};
+            return res;
+        }
+        if (local_cache_binary_.count(req.selector.path)) {
+            VFSResult res;
+            res.data = local_cache_binary_[req.selector.path].first;
+            res.metadata = {{"state", "AVAILABLE"}, {"encoding", "bytes"}};
+            return res;
+        }
+    }
+
+    // Check if operator is registered locally (supporting exact and wildcard matches)
+    OpHandler handler;
+    {   
         std::lock_guard<std::mutex> lock(handlers_mutex_);
         if (handlers_.count(req.selector.path)) {
             handler = handlers_[req.selector.path];
+        } else {
+            for (const auto& [reg_path, reg_handler] : handlers_) {
+                if (reg_path.size() > 2 && reg_path.substr(reg_path.size() - 2) == "**") {
+                    std::string prefix = reg_path.substr(0, reg_path.size() - 2);
+                    if (req.selector.path.rfind(prefix, 0) == 0) {
+                        handler = reg_handler;
+                        break;
+                    }
+                }
+            }
         }
     }
     if (handler) {
+        auto start = std::chrono::high_resolution_clock::now();
         handler(req);
+        auto end = std::chrono::high_resolution_clock::now();
+        double duration_ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+        record_execution_metric(req.selector.path, duration_ms);
+        
+        // Publish update to VFS under the path: jot/vfs/metrics/<op_path>
+        // Avoid recursion or publishing updates for the metrics calls themselves!
+        if (req.selector.path.rfind("jot/vfs/metrics", 0) != 0) {
+            std::string metric_path = "jot/vfs/metrics/" + req.selector.path;
+            uint64_t count = 0;
+            double avg_latency = 0.0;
+            {
+                std::lock_guard<std::mutex> lock(counters_mutex_);
+                count = fulfillment_counters_[req.selector.path];
+                double total = total_latency_ms_[req.selector.path];
+                if (count > 0) {
+                    avg_latency = total / count;
+                }
+            }
+            json metric_payload = {
+                {"path", req.selector.path},
+                {"count", count},
+                {"avg_latency_ms", avg_latency},
+                {"provider", config_.id}
+            };
+            this->publish(metric_path, metric_payload);
+        }
+
         if (has_local(target_cid)) return get_local(target_cid);
         throw VFSException("Handler failed to fulfill identity: " + target_cid);
     }
@@ -195,11 +303,38 @@ VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
         throw VFSException("VFS Node Zenoh session is not active", 500);
     }
     ZenohState* state = (ZenohState*)server_ptr_;
-    
-    // Construct Zenoh key: "jot/vfs/op/<path>"
-    std::string key = "jot/vfs/op/" + req.selector.path;
-    
-    // Serialize params: subject=CID_BOX&tool=CID_SPHERE
+
+    // Gather targets to query (alphabetically sorted active machine IDs)
+    std::vector<std::string> targets;
+    {
+        std::lock_guard<std::mutex> lock(peers_mutex_);
+        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        for (const auto& [peer_id, pi] : peers_) {
+            if (now - pi.last_seen_ms < 10000) { // active within 10s
+                targets.push_back(peer_id);
+            }
+        }
+    }
+    // Always include our own machine prefix as a fallback/target if we have the handler registered
+    bool has_local_handler = false;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        if (handlers_.find(req.selector.path) != handlers_.end()) {
+            has_local_handler = true;
+        }
+    }
+    if (has_local_handler) {
+        targets.push_back(get_machine_prefix());
+    }
+
+    std::sort(targets.begin(), targets.end());
+
+    // If no targets discovered, default to wildcard/broadcast
+    if (targets.empty()) {
+        targets.push_back("*");
+    }
+
+    // Serialize parameters (common to all queries)
     std::string query_params = "";
     bool first = true;
     for (auto it = req.selector.parameters.begin(); it != req.selector.parameters.end(); ++it) {
@@ -228,59 +363,92 @@ VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
         query_params += "output=" + req.selector.output;
     }
 
-    z_view_keyexpr_t q_ke;
-    if (z_view_keyexpr_from_str(&q_ke, key.c_str()) < 0) {
-        throw VFSException("Invalid Zenoh key: " + key, 400);
-    }
-
-    z_owned_fifo_handler_reply_t z_handler;
-    z_owned_closure_reply_t closure;
-    z_fifo_channel_reply_new(&closure, &z_handler, 16);
-
-    z_get_options_t get_opts;
-    z_get_options_default(&get_opts);
-    get_opts.timeout_ms = 10000;
-
-    z_get(z_loan(state->session), z_loan(q_ke), query_params.empty() ? nullptr : query_params.c_str(), z_move(closure), &get_opts);
-
-    z_owned_reply_t reply;
     VFSResult result;
     bool success = false;
     std::string err_msg = "Content not found for Selector: " + req.selector.path;
     int err_code = 404;
 
-    while (z_recv(z_loan(z_handler), &reply) == Z_OK) {
-        if (!success && z_reply_is_ok(z_loan(reply))) {
-            const z_loaned_sample_t* sample = z_reply_ok(z_loan(reply));
-            z_loaned_bytes_t const* payload_bytes = z_sample_payload(sample);
-            size_t len = z_bytes_len(payload_bytes);
-            
-            std::vector<uint8_t> record_bytes(len);
-            z_owned_slice_t slice;
-            z_bytes_to_slice(payload_bytes, &slice);
-            std::memcpy(record_bytes.data(), z_slice_data(z_loan(slice)), len);
-            z_drop(z_move(slice));
-
-            json rec_header;
-            std::vector<uint8_t> rec_payload;
-            if (decode_record(record_bytes, rec_header, rec_payload)) {
-                int status = rec_header.value("status", 200);
-                if (status == 200) {
-                    result.data = rec_payload;
-                    result.metadata = rec_header.value("metadata", json::object());
+    for (const std::string& target_id : targets) {
+        // A. If target is local, execute locally (concurrency limit permitting)
+        if (target_id == get_machine_prefix()) {
+            if (get_active_ops_count() < get_max_concurrent_ops()) {
+                increment_active_ops();
+                try {
+                    VFSRequest localReq = req;
+                    localReq.localOnly = true;
+                    result = read_selector_impl(localReq);
                     success = true;
-                    // Write cache locally
-                    write_local(target_cid, result.data, req.selector.path, req.selector.parameters);
-                } else {
-                    err_code = status;
-                    err_msg = rec_header.value("error", "Remote computation error");
+                } catch (const std::exception& e) {
+                    err_code = 500;
+                    err_msg = e.what();
                 }
+                decrement_active_ops();
+                if (success) break;
+            } else {
+                std::cout << "[VFS Router] Local machine is busy, spilling over..." << std::endl;
+                continue; // spill over to next target
             }
         }
-        z_drop(z_move(reply));
-    }
-    z_drop(z_move(z_handler));
 
+        // B. Query targeted machine over Zenoh: "<target_id>/jot/vfs/op/<path>"
+        std::string key = target_id + "/jot/vfs/op/" + req.selector.path;
+        std::cout << "[VFS Router] Hammering target: '" << key << "'" << std::endl;
+
+        z_view_keyexpr_t q_ke;
+        if (z_view_keyexpr_from_str(&q_ke, key.c_str()) < 0) {
+            continue;
+        }
+
+        z_owned_fifo_handler_reply_t z_handler;
+        z_owned_closure_reply_t closure;
+        z_fifo_channel_reply_new(&closure, &z_handler, 16);
+
+        z_get_options_t get_opts;
+        z_get_options_default(&get_opts);
+        get_opts.timeout_ms = 3000; // 3-second timeout per target query
+
+        z_get(z_loan(state->session), z_loan(q_ke), query_params.empty() ? nullptr : query_params.c_str(), z_move(closure), &get_opts);
+
+        z_owned_reply_t reply;
+
+        while (z_recv(z_loan(z_handler), &reply) == Z_OK) {
+            if (!success && z_reply_is_ok(z_loan(reply))) {
+                const z_loaned_sample_t* sample = z_reply_ok(z_loan(reply));
+                z_loaned_bytes_t const* payload_bytes = z_sample_payload(sample);
+                size_t len = z_bytes_len(payload_bytes);
+                
+                std::vector<uint8_t> record_bytes(len);
+                z_owned_slice_t slice;
+                z_bytes_to_slice(payload_bytes, &slice);
+                std::memcpy(record_bytes.data(), z_slice_data(z_loan(slice)), len);
+                z_drop(z_move(slice));
+
+                json rec_header;
+                std::vector<uint8_t> rec_payload;
+                if (decode_record(record_bytes, rec_header, rec_payload)) {
+                    int status = rec_header.value("status", 200);
+                    if (status == 200) {
+                        result.data = rec_payload;
+                        result.metadata = rec_header.value("metadata", json::object());
+                        success = true;
+                        write_local(target_cid, result.data, req.selector.path, req.selector.parameters);
+                    } else if (status == 503 || status == 429) {
+                        std::cout << "[VFS Router] Target '" << target_id << "' rejected (Busy). Trying next target..." << std::endl;
+                    } else {
+                        err_code = status;
+                        err_msg = rec_header.value("error", "Remote computation error");
+                    }
+                }
+            }
+            z_drop(z_move(reply));
+        }
+
+        z_drop(z_move(z_handler));
+
+        if (success) {
+            break; // Query succeeded, exit targets loop
+        }
+    }
     if (success) return result;
     throw VFSException(err_msg, err_code);
 }
@@ -455,7 +623,8 @@ void VFSNode::publish(const std::string& path, const json& payload) {
         declare_queryable_for_path(path);
     }
 
-    std::string key = "jot/vfs/pub/" + path;
+    std::string key = get_machine_prefix() + "/jot/vfs/pub/" + path;
+    std::cout << "[VFSNode " << config_.id << "] publish key: " << key << " payload: " << payload.dump() << std::endl;
     z_view_keyexpr_t ke;
     if (z_view_keyexpr_from_str(&ke, key.c_str()) < 0) return;
     
@@ -497,7 +666,8 @@ void VFSNode::publish_binary(const std::string& path, const uint8_t* data, size_
         declare_queryable_for_path(path);
     }
 
-    std::string key = "jot/vfs/pub/" + path;
+    std::string key = get_machine_prefix() + "/jot/vfs/pub/" + path;
+    std::cout << "[VFSNode " << config_.id << "] publish_binary key: " << key << std::endl;
     z_view_keyexpr_t ke;
     if (z_view_keyexpr_from_str(&ke, key.c_str()) < 0) return;
     
@@ -511,17 +681,24 @@ void VFSNode::publish_binary(const std::string& path, const uint8_t* data, size_
 }
 
 void VFSNode::subscribe(const std::string& path, SubscriptionCallback callback) {
-    std::lock_guard<std::mutex> lock(handlers_mutex_);
-    subscriptions_[path] = callback;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        subscriptions_[path] = callback;
+    }
     
     if (server_ptr_) {
         ZenohState* state = (ZenohState*)server_ptr_;
-        std::string key = "jot/vfs/pub/" + path;
-        state->queryable_keys.push_back(key);
-        const std::string& persistent_key = state->queryable_keys.back();
+        std::string key = "*/jot/vfs/pub/" + path;
+        std::cout << "[VFSNode " << config_.id << "] subscribe key: " << key << std::endl;
+        const char* key_cstr = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->queryable_keys.push_back(key);
+            key_cstr = state->queryable_keys.back().c_str();
+        }
         
         z_view_keyexpr_t ke_sub;
-        z_view_keyexpr_from_str(&ke_sub, persistent_key.c_str());
+        z_view_keyexpr_from_str(&ke_sub, key_cstr);
         
         auto* cb_ctx = new SubscriptionCallback(callback);
         
@@ -547,34 +724,136 @@ void VFSNode::subscribe(const std::string& path, SubscriptionCallback callback) 
         z_subscriber_options_default(&opts);
         
         if (z_declare_subscriber(z_loan(state->session), &subscriber, z_loan(ke_sub), z_move(cb_sample), &opts) == Z_OK) {
-            auto it = state->subscribers.find(path);
-            if (it != state->subscribers.end()) {
-                z_undeclare_subscriber(z_move(it->second));
+            z_owned_subscriber_t old_subscriber;
+            bool has_old = false;
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                auto it = state->subscribers.find(path);
+                if (it != state->subscribers.end()) {
+                    old_subscriber = it->second;
+                    has_old = true;
+                }
+                state->subscribers[path] = subscriber;
             }
-            state->subscribers[path] = subscriber;
+            if (has_old) {
+                z_undeclare_subscriber(z_move(old_subscriber));
+            }
         } else {
-            std::cerr << "[VFSNode " << config_.id << "] Failed declaring subscriber dynamically for: " << persistent_key << std::endl;
+            std::cerr << "[VFSNode " << config_.id << "] Failed declaring subscriber dynamically for: " << key << std::endl;
             delete cb_ctx;
         }
     }
 }
 
 void VFSNode::unlisten(const std::string& path) {
-    std::lock_guard<std::mutex> lock(handlers_mutex_);
-    subscriptions_.erase(path);
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        subscriptions_.erase(path);
+    }
     
     if (server_ptr_) {
         ZenohState* state = (ZenohState*)server_ptr_;
-        auto it = state->subscribers.find(path);
-        if (it != state->subscribers.end()) {
-            z_undeclare_subscriber(z_move(it->second));
-            state->subscribers.erase(it);
+        z_owned_subscriber_t subscriber_to_undeclare;
+        bool has_subscriber = false;
+        {
+            std::lock_guard<std::mutex> lock_state(state->mutex);
+            auto it = state->subscribers.find(path);
+            if (it != state->subscribers.end()) {
+                subscriber_to_undeclare = it->second;
+                state->subscribers.erase(it);
+                has_subscriber = true;
+            }
+        }
+        if (has_subscriber) {
+            z_undeclare_subscriber(z_move(subscriber_to_undeclare));
         }
     }
 }
 
+double VFSNode::get_free_cpu_percent() {
+#ifdef __linux__
+    std::lock_guard<std::mutex> lock(cpu_mutex_);
+    std::ifstream file("/proc/stat");
+    if (!file.is_open()) return 100.0;
+    std::string line;
+    if (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string cpu;
+        if (ss >> cpu && cpu == "cpu") {
+            uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+            if (ss >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal) {
+                uint64_t current_idle = idle + iowait;
+                uint64_t current_non_idle = user + nice + system + irq + softirq + steal;
+                uint64_t current_total = current_idle + current_non_idle;
+                
+                uint64_t prev_idle = last_cpu_stats_.idle + last_cpu_stats_.iowait;
+                uint64_t prev_non_idle = last_cpu_stats_.user + last_cpu_stats_.nice + 
+                                         last_cpu_stats_.system + last_cpu_stats_.irq + 
+                                         last_cpu_stats_.softirq + last_cpu_stats_.steal;
+                uint64_t prev_total = prev_idle + prev_non_idle;
+                
+                last_cpu_stats_ = {user, nice, system, idle, iowait, irq, softirq, steal};
+                
+                uint64_t total_diff = current_total - prev_total;
+                uint64_t idle_diff = current_idle - prev_idle;
+                
+                if (total_diff > 0) {
+                    double cpu_usage = 100.0 * (total_diff - idle_diff) / total_diff;
+                    if (cpu_usage < 0.0) cpu_usage = 0.0;
+                    if (cpu_usage > 100.0) cpu_usage = 100.0;
+                    return 100.0 - cpu_usage;
+                }
+            }
+        }
+    }
+    return 100.0;
+#else
+    return 100.0;
+#endif
+}
+
+uint64_t VFSNode::get_free_memory_bytes() {
+#ifdef __linux__
+    std::ifstream file("/proc/meminfo");
+    if (!file.is_open()) return 0;
+    std::string line;
+    uint64_t mem_free_kb = 0;
+    uint64_t mem_available_kb = 0;
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string key;
+        uint64_t value;
+        std::string unit;
+        if (ss >> key >> value >> unit) {
+            if (key == "MemAvailable:") {
+                mem_available_kb = value;
+            } else if (key == "MemFree:") {
+                mem_free_kb = value;
+            }
+        }
+    }
+    if (mem_available_kb > 0) return mem_available_kb * 1024;
+    if (mem_free_kb > 0) return mem_free_kb * 1024;
+    return 0;
+#else
+    return 0;
+#endif
+}
+
 json VFSNode::read(const std::string& path) {
     return read<json>(Selector(path));
+}
+
+std::string VFSNode::get_machine_prefix() const {
+    if (const char* env_machine = std::getenv("MACHINE_ID")) {
+        std::string m(env_machine);
+        if (!m.empty()) return m;
+    }
+    if (const char* env_host = std::getenv("HOSTNAME")) {
+        std::string h(env_host);
+        if (!h.empty()) return h;
+    }
+    return config_.id;
 }
 
 } // namespace fs

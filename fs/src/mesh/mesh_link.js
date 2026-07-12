@@ -34,8 +34,31 @@ export class ReverseConnection extends Connection {}
 export class VFSRequest {}
 export class VFSResult {}
 
+let isWebSocketWrapped = false;
+function wrapWebSocket() {
+  if (isWebSocketWrapped || !globalThis.WebSocket) return;
+  isWebSocketWrapped = true;
+  const OriginalWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = class WrappedWebSocket extends OriginalWebSocket {
+    constructor(url, protocols) {
+      super(url, protocols);
+      // Prevent unhandled 'error' events from crashing the Node.js process (e.g. on DNS lookup failures)
+      this.addEventListener('error', () => {});
+      const currentMeshLink = MeshLinkBase.activeStartingInstance;
+      if (currentMeshLink) {
+        this.addEventListener('close', (event) => {
+          log(`[MeshLink ${currentMeshLink.vfs.id}] Intercepted WebSocket close event (code ${event.code || 'unknown'}).`);
+          currentMeshLink.handleDisconnect().catch(() => {});
+        });
+      }
+    }
+  };
+}
+
 export class MeshLinkBase {
+  static activeStartingInstance = null;
   constructor(vfs, neighborUrls = [], options = {}) {
+    wrapWebSocket();
     this.vfs = vfs;
     this.vfs.mesh = this;
     this.instanceId = Math.random().toString(36).slice(2, 8);
@@ -49,6 +72,57 @@ export class MeshLinkBase {
     this.catalog = {};
     this.discoveredProviders = new Set();
     this.interests = new Map();
+    this.reconnectInterval = null;
+    this.startLivenessCheck();
+  }
+
+  async handleDisconnect() {
+    log(`[MeshLink ${this.vfs.id}] Session disconnected. Cleaning up...`);
+    if (this.queryableCatalog) {
+      try { await this.queryableCatalog.undeclare(); } catch (e) {}
+      this.queryableCatalog = null;
+    }
+    if (this.queryableCid) {
+      try { await this.queryableCid.undeclare(); } catch (e) {}
+      this.queryableCid = null;
+    }
+    if (this.queryableOps) {
+      for (const queryable of this.queryableOps.values()) {
+        try { await queryable.undeclare(); } catch (e) {}
+      }
+      this.queryableOps.clear();
+    }
+    if (this.subscriberNotify) {
+      try { await this.subscriberNotify.undeclare(); } catch (e) {}
+      this.subscriberNotify = null;
+    }
+    if (this.session) {
+      try { await this.session.close(); } catch (e) {}
+      this.session = null;
+    }
+  }
+
+  startLivenessCheck() {
+    if (this.reconnectInterval) return;
+    this.reconnectInterval = setInterval(async () => {
+      if (this.closed) {
+        clearInterval(this.reconnectInterval);
+        this.reconnectInterval = null;
+        return;
+      }
+      if (this.session) {
+        try {
+          // Send lightweight heartbeat to verify session health
+          await this.session.put(`jot/vfs/ping/${this.vfs.id}`, new Uint8Array([0]));
+        } catch (err) {
+          log(`[MeshLink ${this.vfs.id}] Connection health check failed: ${err.message}. Reconnecting...`);
+          await this.handleDisconnect();
+        }
+      } else {
+        log(`[MeshLink ${this.vfs.id}] Connection is down. Retrying start...`);
+        await this.start().catch(() => {});
+      }
+    }, 5000);
   }
 
   get peers() {
@@ -79,7 +153,9 @@ export class MeshLinkBase {
       try {
         const config = new ZenohConfig(locator);
         config.messageResponseTimeoutMs = 600000;
+        MeshLinkBase.activeStartingInstance = this;
         this.session = await zenohOpen(config);
+        MeshLinkBase.activeStartingInstance = null;
         log(`[MeshLink ${this.vfs.id}] Connected to Zenoh session at ${locator}`);
         connected = true;
         break;
@@ -165,11 +241,12 @@ export class MeshLinkBase {
 
     // 3. Declare notification subscriber: jot/vfs/pub/**
     try {
-      this.subscriberNotify = await this.session.declareSubscriber(`jot/vfs/pub/**`, {
+      this.subscriberNotify = await this.session.declareSubscriber(`*/jot/vfs/pub/**`, {
         handler: (sample) => {
           try {
             const key = sample.keyexpr().toString();
-            const path = key.slice(12); // Strip "jot/vfs/pub/"
+            const pubIdx = key.indexOf('/jot/vfs/pub/');
+            const path = pubIdx !== -1 ? key.slice(pubIdx + 13) : key;
             const payloadBytes = sample.payload().toBytes();
             let payload;
             try {
@@ -246,7 +323,7 @@ export class MeshLinkBase {
     }
 
     const path = selector.path;
-    const key = `jot/vfs/op/${path}`;
+    const key = `*/jot/vfs/op/${path}`;
     
     const params = [];
     if (selector.parameters) {
@@ -281,6 +358,10 @@ export class MeshLinkBase {
           
           const { header, payload } = decoded;
           if (header.status !== 200) {
+            if (header.status === 503 || header.status === 429) {
+              log(`[MeshLink ${this.vfs.id}] Target returned ${header.status} (Busy). Spilling over to next reply...`);
+              continue;
+            }
             throw new Error(header.error || `Remote server returned status ${header.status}`);
           }
           
@@ -435,7 +516,7 @@ export class MeshLinkBase {
       return;
     }
     if (!this.session) return;
-    const key = `jot/vfs/pub/${selector.path}`;
+    const key = `${this.vfs.id}/jot/vfs/pub/${selector.path}`;
     log(`[MeshLink ${this.vfs.id}] notify: publishing to ${key}`);
     let bytes;
     if (payload instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(payload))) {
@@ -465,14 +546,15 @@ export class MeshLinkBase {
     this.queryableOps = this.queryableOps || new Map();
     if (this.queryableOps.has(pattern)) return;
 
-    const key = `jot/vfs/op/${pattern}`;
+    const key = `${this.vfs.id}/jot/vfs/op/${pattern}`;
     log(`[MeshLink ${this.vfs.id}] Declaring specific queryable for operator: ${key}`);
     try {
       const queryable = await this.session.declareQueryable(key, {
         handler: async (query) => {
           try {
             const key = query.keyExpr().toString();
-            const opPath = key.slice(11);
+            const opIdx = key.indexOf('/jot/vfs/op/');
+            const opPath = opIdx !== -1 ? key.slice(opIdx + 12) : key;
             
             const queryParams = new Map();
             for (const [k, v] of query.parameters().iter()) {
@@ -530,6 +612,10 @@ export class MeshLinkBase {
 
   async stop() {
     this.closed = true;
+    if (this.reconnectInterval) {
+      clearInterval(this.reconnectInterval);
+      this.reconnectInterval = null;
+    }
     if (this.queryableCatalog) {
       try { await this.queryableCatalog.undeclare(); } catch (e) {}
       this.queryableCatalog = null;
