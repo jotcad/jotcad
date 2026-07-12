@@ -41,6 +41,9 @@ public:
         std::string cert_path;
         std::string key_path;
         int port = 9090;
+        int max_concurrent_ops = 4;
+
+        static Config load_from_env();
     };
 
     struct VFSRequest {

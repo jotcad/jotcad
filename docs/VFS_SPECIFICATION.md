@@ -145,7 +145,7 @@ To enable physical machine isolation and avoid double-prefixing of key expressio
 
 ### 3.12 Concurrency Gate & Alphabetical Spillover Load Balancer
 To prevent overloading active nodes and provide robust failover:
-* **Concurrency Gate:** Every VFS Node tracks concurrent executions using an atomic counter (`active_ops_count_`) capped at a configured limit (`max_concurrent_ops_`). If the limit is reached, query handlers reject queries immediately with a `503 Server Busy` status payload.
+* **Concurrency Gate:** Every VFS Node tracks concurrent executions using an atomic counter (`active_ops_count_`) capped at a configured limit (`max_concurrent_ops_`). This limit defaults to 4 and can be configured programmatically via `VFSNode::Config::max_concurrent_ops` or via the `JOT_MAX_CONCURRENT_OPS` environment variable. If the limit is reached, query handlers reject queries immediately with a `503 Server Busy` status payload.
 * **Alphabetical Spillover Loop:** Clients discover available nodes in the mesh via system metrics subscriptions (`*/jot/vfs/pub/jot/vfs/metrics/system/**`), sorting active machine IDs alphabetically. Clients query them sequentially. If a target is busy locally or returns a `503` or `429` rejection over Zenoh, the client prints a spillover log and falls back to the next target in the alphabetical list.
 * **Local Memory Cache Bypass:** To avoid routing delays on locally published pub/sub topics, VFS nodes check their memory cache (`local_cache_`/`local_cache_binary_`) at the start of local selector reads, resolving local queries instantly.
 

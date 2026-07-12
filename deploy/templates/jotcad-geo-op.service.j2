@@ -1,0 +1,19 @@
+[Unit]
+Description=JotCAD Geometry Operator Service ({{ item.name }})
+After=network.target
+
+[Service]
+Type=simple
+User={{ ansible_user_id }}
+WorkingDirectory={{ deploy_dir }}
+ExecStart={{ deploy_dir }}/geo/bin/ops_{{ item.name }} {{ item.port }} .vfs_storage_webcam_live_ops_{{ item.name }}
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT={{ item.port }}
+Environment=PEER_ID=geo-{{ item.name }}@{{ ansible_hostname }}
+Environment=NEIGHBORS={{ neighbors | default('http://127.0.0.1:9000') }}
+Environment=JOT_MAX_CONCURRENT_OPS={{ item.max_concurrent_ops | default(4) }}
+
+[Install]
+WantedBy=multi-user.target

@@ -51,31 +51,22 @@ int main(int argc, char** argv) {
         }
     }
 
-    fs::VFSNode::Config config;
-#ifndef DEFAULT_NODE_ID
-#define DEFAULT_NODE_ID "geo-ops-node"
-#endif
-    config.id = DEFAULT_NODE_ID;
-    if (const char* env_peer = std::getenv("PEER_ID")) {
-        config.id = env_peer;
-    } else if (const char* env_vfs = std::getenv("VFS_ID")) {
-        config.id = env_vfs;
+    fs::VFSNode::Config config = fs::VFSNode::Config::load_from_env();
+#ifdef DEFAULT_NODE_ID
+    if (!std::getenv("PEER_ID") && !std::getenv("VFS_ID")) {
+        config.id = DEFAULT_NODE_ID;
     }
-    config.port = port;
-    config.storage_dir = (argc > 2) ? argv[2] : ".vfs_storage_" + config.id;
+#endif
 
-    if (const char* env_neighbors = std::getenv("NEIGHBORS")) {
-        std::stringstream ss(env_neighbors);
-        std::string token;
-        while (std::getline(ss, token, ',')) {
-            if (!token.empty()) {
-                config.neighbors.push_back(token);
-            }
+    if (argc > 1) {
+        try {
+            config.port = std::stoi(argv[1]);
+        } catch (...) {
+            std::cerr << "Invalid port: " << argv[1] << std::endl;
+            return 1;
         }
     }
-
-    if (const char* cert_p = std::getenv("SSL_CERT_PATH")) config.cert_path = cert_p;
-    if (const char* key_p = std::getenv("SSL_KEY_PATH")) config.key_path = key_p;
+    config.storage_dir = (argc > 2) ? argv[2] : ".vfs_storage_" + config.id;
 
     fs::VFSNode node(config);
     global_node = &node;

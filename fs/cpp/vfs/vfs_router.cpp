@@ -30,7 +30,58 @@ struct ZenohState {
 };
 #endif
 
-VFSNode::VFSNode(const Config& config) : config_(config), server_ptr_(nullptr) {
+VFSNode::Config VFSNode::Config::load_from_env() {
+    Config cfg;
+    
+    // 1. Peer ID / Node ID
+    if (const char* env_peer = std::getenv("PEER_ID")) {
+        cfg.id = env_peer;
+    } else if (const char* env_vfs = std::getenv("VFS_ID")) {
+        cfg.id = env_vfs;
+    } else {
+        cfg.id = "geo-ops-node";
+    }
+
+    // 2. Port
+    if (const char* env_port = std::getenv("PORT")) {
+        try {
+            cfg.port = std::stoi(env_port);
+        } catch (...) {}
+    }
+
+    // 3. Neighbors
+    if (const char* env_neighbors = std::getenv("NEIGHBORS")) {
+        std::stringstream ss(env_neighbors);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            if (!token.empty()) {
+                cfg.neighbors.push_back(token);
+            }
+        }
+    }
+
+    // 4. SSL / TLS Paths
+    if (const char* cert_p = std::getenv("SSL_CERT_PATH")) cfg.cert_path = cert_p;
+    if (const char* key_p = std::getenv("SSL_KEY_PATH")) cfg.key_path = key_p;
+
+    // 5. Concurrency Limits
+    if (const char* env_limit = std::getenv("JOT_MAX_CONCURRENT_OPS")) {
+        try {
+            cfg.max_concurrent_ops = std::stoi(env_limit);
+        } catch (...) {}
+    }
+
+    // 6. Storage Directory
+    if (const char* env_storage = std::getenv("JOT_STORAGE_DIR")) {
+        cfg.storage_dir = env_storage;
+    } else {
+        cfg.storage_dir = ".vfs_storage_" + cfg.id;
+    }
+
+    return cfg;
+}
+
+VFSNode::VFSNode(const Config& config) : config_(config), server_ptr_(nullptr), max_concurrent_ops_(config.max_concurrent_ops) {
     if (config_.storage_dir.empty()) {
         config_.storage_dir = ".vfs_storage_" + config_.id;
     }

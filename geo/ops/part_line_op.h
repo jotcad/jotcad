@@ -215,7 +215,20 @@ struct PartLineOp : P {
                 int loop_count = (int)unique_roots.size();
 
                 bool tangle_free = false;
+                // Pruning check: Only run expensive is_tangled check if this direction is a candidate to update the best
+                bool could_update = false;
                 if (loop_count > 0) {
+                    if (!best_is_tangle_free) {
+                        could_update = true;
+                    } else {
+                        if (loop_count < min_loops) {
+                            could_update = true;
+                        } else if (loop_count == min_loops && segment_count < min_segments) {
+                            could_update = true;
+                        }
+                    }
+                }
+                if (could_update) {
                     tangle_free = !is_tangled(parting_segments, world_geo, d);
                 }
 
