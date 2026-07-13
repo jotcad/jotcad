@@ -71,7 +71,6 @@ export class MeshLinkBase {
     this.closed = false;
     this.catalog = {};
     this.discoveredProviders = new Set();
-    this.interests = new Map();
     this.reconnectInterval = null;
     this.startLivenessCheck();
   }
@@ -125,15 +124,6 @@ export class MeshLinkBase {
     }, 5000);
   }
 
-  get peers() {
-    const m = new Map();
-    if (this.discoveredProviders) {
-      for (const p of this.discoveredProviders) {
-        m.set(p, { id: p, pps: 0, reachability: 'DIRECT', protocol: 'zenoh' });
-      }
-    }
-    return m;
-  }
 
   get connected() {
     return !!this.session;
@@ -490,10 +480,6 @@ export class MeshLinkBase {
 
   async subscribe(selector, expiresAt = Date.now() + 60000, stack = []) {
     log(`[MeshLink ${this.vfs.id}] subscribe interest registered: ${selector.path}`);
-    this.interests.set(selector.path, {
-      selector,
-      localExpiresAt: expiresAt
-    });
     if (selector.path === 'sys/schema') {
       if (this.catalog && Object.keys(this.catalog).length > 0) {
         const primaryProvider = [...this.discoveredProviders][0] || 'mesh-union';
@@ -537,9 +523,6 @@ export class MeshLinkBase {
   async registerPeer(peerId, peerUrl) {
     return { id: this.vfs.id, reachability: 'DIRECT', transports: ['ws'] };
   }
-
-  registerReversePeer(peerId, res, replyTo, stream, info) {}
-  upgradePeerToWS(peerId, activeConn) {}
 
   async registerOp(pattern) {
     if (!this.session) return;
