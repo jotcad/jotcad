@@ -1,12 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VFS, MeshLink } from '../fs/src/index.js';
-import { JotCompiler } from '../jot/src/compiler.js';
-import { JotParser } from '../jot/src/parser.js';
-import { launchSystem } from '../orchestrator.js';
+import { runIntegrationTest } from './harness.js';
 import { registerFileProvider } from '../ux/src/lib/vfs/FileProvider.js';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -14,56 +10,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function consumeBinary(stream) {
-    const reader = stream.getReader();
-    const chunks = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    const len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    return bytes;
-}
-
-test('glTF/GLB Binary File Export Integration', async (t) => {
-    console.log("[Test] Launching cluster for glTF integration test...");
-    const sys = await launchSystem('test/standard');
-
-    // Wait for Export Node (port 9202) to be fully ready
-    console.log("[Test] Waiting for Export Node to start...");
-    let exportReady = false;
-    for (let i = 0; i < 50; i++) {
-        try {
-            const resp = await fetch('https://localhost:9202', {
-                dispatcher: new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } })
-            });
-            if (resp.ok || resp.status === 404 || resp.status === 400) {
-                exportReady = true;
-                break;
-            }
-        } catch (e) {}
-        await new Promise(r => setTimeout(r, 200));
-    }
-    if (!exportReady) {
-        console.warn("[Test] Export Node port 9202 not responding after 10s. Continuing anyway...");
-    } else {
-        console.log("[Test] Export Node is ready.");
-    }
-
-    const vfs = new VFS({ id: 'test-gltf-client' });
-    const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
-    
-    await vfs.init();
-    await mesh.start();
-
+runIntegrationTest('glTF/GLB Binary File Export Integration', async ({ vfs, mesh, compiler, parser, evaluate, readOutput }) => {
     registerFileProvider(vfs, mesh);
-
-    const compiler = new JotCompiler(vfs);
-    const parser = new JotParser();
 
     // Register operators
     compiler.registerOperator('File', {
@@ -109,23 +57,15 @@ test('glTF/GLB Binary File Export Integration', async (t) => {
 
     try {
         // 1. Evaluate: $shape = Svg(File("integration/test_input.svg"))
-        const importCode = `Svg(File("integration/test_input.svg")) -> $out`;
-        const importAst = parser.parse(importCode);
-        
         console.log("[Test] Evaluating SVG Import...");
-        const importTerminals = await compiler.evaluate(importAst, {}, {
-            outputs: { "$out": { type: "jot:shape" } }
-        });
+        const importTerminals = await evaluate(`Svg(File("integration/test_input.svg")) -> $out`);
         
-        const importBundle = importTerminals.find(t => t.selector.output === '$out');
+        const importBundle = importTerminals.find(t => t.port === '$out');
         assert.ok(importBundle, "Should find terminal output bundle");
 
         // 2. Evaluate glTF/GLB Export: $shape.gltf(path="export.glb").file -> file
-        const exportCode = `$in.gltf(path="export.glb").file -> file`;
-        const exportAst = parser.parse(exportCode);
-        
         console.log("[Test] Evaluating glTF/GLB Export...");
-        const exportTerminals = await compiler.evaluate(exportAst, {
+        const exportTerminals = await compiler.evaluate(parser.parse(`$in.gltf(path="export.glb").file -> file`), {
             '$in': importBundle.selector
         }, {
             outputs: {
@@ -133,13 +73,7 @@ test('glTF/GLB Binary File Export Integration', async (t) => {
             }
         });
 
-        const fileBundle = exportTerminals.find(t => t.selector.output === 'file');
-        assert.ok(fileBundle, "Should find file output terminal");
-
-        const glbRes = await vfs.readSelector(fileBundle.selector);
-        assert.ok(glbRes && glbRes.stream, "VFS should find glb output");
-        
-        const glbBytes = await consumeBinary(glbRes.stream);
+        const glbBytes = await readOutput(exportTerminals, 'file');
         console.log(`[Test] Exported GLB size: ${glbBytes.length} bytes`);
 
         // 3. Verify GLB Binary Format Headers
@@ -174,10 +108,10 @@ test('glTF/GLB Binary File Export Integration', async (t) => {
         assert.ok(Array.isArray(gltf.buffers) && gltf.buffers.length > 0, "Should have buffers");
 
         // Verify primitives contain position and indices
-        const mesh = gltf.meshes[0];
-        assert.ok(mesh.primitives && mesh.primitives.length > 0, "Mesh should have primitives");
+        const meshObj = gltf.meshes[0];
+        assert.ok(meshObj.primitives && meshObj.primitives.length > 0, "Mesh should have primitives");
         
-        const prim = mesh.primitives[0];
+        const prim = meshObj.primitives[0];
         assert.ok(prim.attributes && prim.attributes.POSITION !== undefined, "Primitive must have POSITION attribute");
         assert.ok(prim.indices !== undefined, "Primitive must have indices accessor");
         
@@ -194,7 +128,5 @@ test('glTF/GLB Binary File Export Integration', async (t) => {
         if (fs.existsSync(testSvgPath)) {
             fs.unlinkSync(testSvgPath);
         }
-        await mesh.stop();
-        await sys.stop();
     }
 });

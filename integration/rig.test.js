@@ -1,27 +1,7 @@
-import test from 'node:test';
 import assert from 'node:assert';
-import { VFS, MeshLink, getCID, Selector } from '../fs/src/index.js';
-import { launchSystem } from '../orchestrator.js';
-import { captureAndVerifyPNG } from './png_helper.js';
+import { getCID, Selector } from '../fs/src/index.js';
+import { runIntegrationTest } from './harness.js';
 import { waitForMeshNodes } from './vfs_test_helpers.js';
-
-async function consumeBytes(stream) {
-    const reader = stream.getReader();
-    const chunks = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    const len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) {
-        bytes.set(chunk, offset);
-        offset += chunk.length;
-    }
-    return bytes;
-}
 
 function generateCylinderGeoText(radius, height, slices, segments) {
     const vertices = [];
@@ -78,113 +58,87 @@ function generateCylinderGeoText(radius, height, slices, segments) {
     return out;
 }
 
-test('jot/rig - C++ VFS Operator & PBD Skinning Integration', { timeout: 120000 }, async (t) => {
-    let sys;
-    let vfs;
-    let mesh;
+runIntegrationTest('jot/rig - C++ VFS Operator & PBD Skinning Integration', async ({ vfs, readData, capturePNG }) => {
+    // Wait for the C++ ops node to join the Zenoh mesh
+    console.log("[Test] Waiting for mesh nodes...");
+    await waitForMeshNodes(vfs, ['geo-mapping-node']);
 
-    try {
-        console.log("[Test] Launching cluster for rigging integration test...");
-        sys = await launchSystem('test/standard');
+    // 1. Generate cylinder geometry
+    console.log("[Test] Generating Cylinder geometry...");
+    const cylinderGeoText = generateCylinderGeoText(1.0, 10.0, 20, 16);
+    const geoCID = await getCID(cylinderGeoText);
+    await vfs.write(geoCID, cylinderGeoText, { encoding: 'string', filename: 'cylinder.geo' });
 
-        vfs = new VFS({ id: 'test-rigging-client' });
-        mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
-        
-        await vfs.init();
-        await mesh.start();
-
-        // Wait for the C++ ops node to join the Zenoh mesh
-        console.log("[Test] Waiting for mesh nodes...");
-        await waitForMeshNodes(vfs, ['geo-mapping-node']);
-
-        // 1. Generate cylinder geometry
-        console.log("[Test] Generating Cylinder geometry...");
-        const cylinderGeoText = generateCylinderGeoText(1.0, 10.0, 20, 16);
-        const geoCID = await getCID(cylinderGeoText);
-        await vfs.write(geoCID, cylinderGeoText, { encoding: 'string', filename: 'cylinder.geo' });
-
-        // 2. Assemble the Rig Shape JSON
-        const rigShape = {
-            tags: { type: "rig" },
-            components: [
-                {
-                    geometry: geoCID,
-                    tags: { type: "solid" }
+    // 2. Assemble the Rig Shape JSON
+    const rigShape = {
+        tags: { type: "rig" },
+        components: [
+            {
+                geometry: geoCID,
+                tags: { type: "solid" }
+            },
+            {
+                tf: "1 0 0 0 0 1 0 0 0 0 1 0",
+                tags: {
+                    type: "joint",
+                    role: "ghost",
+                    joint_id: 0,
+                    name: "Base",
+                    bind_tf: "1 0 0 0 0 1 0 0 0 0 1 0"
                 },
-                {
-                    tf: "1 0 0 0 0 1 0 0 0 0 1 0",
-                    tags: {
-                        type: "joint",
-                        role: "ghost",
-                        joint_id: 0,
-                        name: "Base",
-                        bind_tf: "1 0 0 0 0 1 0 0 0 0 1 0"
-                    },
-                    components: [
-                        {
-                            // Translate(0, 0, 5) * RotateX(90 degrees)
-                            tf: "1 0 0 0 0 0 -1 0 0 1 0 5",
-                            tags: {
-                                type: "joint",
-                                role: "ghost",
-                                joint_id: 1,
-                                name: "Elbow",
-                                bind_tf: "1 0 0 0 0 1 0 0 0 0 1 5"
-                            },
-                            components: []
-                        }
-                    ]
-                }
-            ]
-        };
-
-        const rigShapeText = JSON.stringify(rigShape);
-        const rigShapeCID = await getCID(rigShapeText);
-        await vfs.write(rigShapeCID, rigShapeText, { encoding: 'json', filename: 'cylinder_rig.json' });
-
-        // 3. Query the jot/rig VFS operator
-        console.log("[Test] Querying jot/rig VFS operator with PBD relaxation...");
-        const rigSel = new Selector('jot/rig', {
-            $in: rigShapeCID,
-            pbd_iterations: 40
-        }).withOutput('$out');
-
-        const response = await vfs.read(rigSel);
-        assert.ok(response, 'Should return a valid response');
-
-        const result = JSON.parse(new TextDecoder().decode(await consumeBytes(response.stream)));
-        console.log("TEST RESULT SHAPE:", JSON.stringify(result, null, 2));
-        assert.strictEqual(result.tags.type, 'rig', 'Output container should be typed as rig');
-
-        let deformedSolid = null;
-        for (const comp of result.components) {
-            if (comp.tags && comp.tags.type === 'solid') {
-                deformedSolid = comp;
-                break;
+                components: [
+                    {
+                        // Translate(0, 0, 5) * RotateX(90 degrees)
+                        tf: "1 0 0 0 0 0 -1 0 0 1 0 5",
+                        tags: {
+                            type: "joint",
+                            role: "ghost",
+                            joint_id: 1,
+                            name: "Elbow",
+                            bind_tf: "1 0 0 0 0 1 0 0 0 0 1 5"
+                        },
+                        components: []
+                    }
+                ]
             }
+        ]
+    };
+
+    const rigShapeText = JSON.stringify(rigShape);
+    const rigShapeCID = await getCID(rigShapeText);
+    await vfs.write(rigShapeCID, rigShapeText, { encoding: 'json', filename: 'cylinder_rig.json' });
+
+    // 3. Query the jot/rig VFS operator
+    console.log("[Test] Querying jot/rig VFS operator with PBD relaxation...");
+    const rigSel = new Selector('jot/rig', {
+        $in: rigShapeCID,
+        pbd_iterations: 40
+    }).withOutput('$out');
+
+    const result = await readData(rigSel);
+    assert.ok(result, 'Should return a valid response');
+    console.log("TEST RESULT SHAPE:", JSON.stringify(result, null, 2));
+    assert.strictEqual(result.tags.type, 'rig', 'Output container should be typed as rig');
+
+    let deformedSolid = null;
+    for (const comp of result.components) {
+        if (comp.tags && comp.tags.type === 'solid') {
+            deformedSolid = comp;
+            break;
         }
-        assert.ok(deformedSolid, 'Should find the deformed solid component in rig components');
-        assert.ok(deformedSolid.geometry, 'The output solid mesh should have a valid geometry CID');
-
-        // 4. Capture a PNG image of the deformed cylinder
-        console.log("[Test] Rendering deformed rig snapshot via jot/png...");
-        const pngBytes = await captureAndVerifyPNG(vfs, rigSel, 'rig_deformed.png', null, {
-            width: 512,
-            height: 512,
-            ax: 45,
-            ay: 45
-        });
-
-        assert.ok(pngBytes.length > 0, "Rendered PNG should not be empty");
-        console.log("[Test] Rigging Integration Test Passed Successfully!");
-    } catch (err) {
-        console.error("FATAL TEST EXCEPTION:");
-        console.error(err.stack || err);
-        throw err;
-    } finally {
-        console.log("[Test] Running cleanup...");
-        if (mesh) await mesh.stop();
-        if (vfs) await vfs.close();
-        if (sys) await sys.stop();
     }
+    assert.ok(deformedSolid, 'Should find the deformed solid component in rig components');
+    assert.ok(deformedSolid.geometry, 'The output solid mesh should have a valid geometry CID');
+
+    // 4. Capture a PNG image of the deformed cylinder
+    console.log("[Test] Rendering deformed rig snapshot via jot/png...");
+    const pngBytes = await capturePNG(rigSel, 'rig_deformed.png', {
+        width: 512,
+        height: 512,
+        ax: 45,
+        ay: 45
+    });
+
+    assert.ok(pngBytes.length > 0, "Rendered PNG should not be empty");
+    console.log("[Test] Rigging Integration Test Passed Successfully!");
 });

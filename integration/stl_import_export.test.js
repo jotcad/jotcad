@@ -1,83 +1,18 @@
-import test from 'node:test';
+import { runIntegrationTest } from './harness.js';
 import assert from 'node:assert';
 import fs from 'node:fs';
-import { VFS, MeshLink } from '../fs/src/index.js';
-import { JotCompiler } from '../jot/src/compiler.js';
-import { JotParser } from '../jot/src/parser.js';
-import { launchSystem } from '../orchestrator.js';
 import { registerFileProvider } from '../ux/src/lib/vfs/FileProvider.js';
 
-async function consumeBinary(stream) {
-    const reader = stream.getReader();
-    const chunks = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    const len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    return bytes;
-}
-
-test('STL Import and Export End-to-End Integration', async (t) => {
-    console.log("Starting STL Import/Export Round-Trip Test...");
-    
-    // 1. Launch system
-    const sys = await launchSystem('test/standard');
-    const vfs = new VFS({ id: 'test-stl-client' });
-    const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
-    
-    await vfs.init();
-    await mesh.start();
-
+runIntegrationTest('STL Import and Export End-to-End Integration', async ({ vfs, mesh, compiler, parser, readData }) => {
     // Register File provider
     registerFileProvider(vfs, mesh);
 
-    // 2. Setup Jot Compiler
-    const compiler = new JotCompiler(vfs);
-    const parser = new JotParser();
-    
-    compiler.registerOperator('Box', {
-        path: 'jot/Box',
-        schema: {
-            arguments: [{ name: 'width', type: 'jot:interval' }],
-            outputs: { "$out": { type: 'jot:shape' } }
-        }
-    });
-
+    // Register our File constructor since it is a client-side provider
     compiler.registerOperator('File', {
         path: 'jot/File',
         schema: {
             arguments: [{ name: 'path', type: 'jot:string' }],
             outputs: { "$out": { type: 'jot:file' } }
-        }
-    });
-
-    compiler.registerOperator('stl', {
-        path: 'jot/stl',
-        schema: {
-            inputs: { '$in': { type: 'jot:shape' } },
-            arguments: [
-                { name: 'path', type: 'jot:string', default: 'export.stl' }
-            ],
-            outputs: {
-                "$out": { type: 'file' }
-            }
-        }
-    });
-
-    compiler.registerOperator('Stl', {
-        path: 'jot/Stl',
-        schema: {
-            arguments: [
-                { name: 'file', type: 'jot:file' }
-            ],
-            outputs: {
-                "$out": { type: 'jot:shape' }
-            }
         }
     });
 
@@ -95,9 +30,7 @@ test('STL Import and Export End-to-End Integration', async (t) => {
         const stlBundle = exportTerminals.find(t => t.selector.output === '$out');
         assert.ok(stlBundle, "Should find export terminal");
 
-        const result = await vfs.read(stlBundle.selector);
-        assert.ok(result, "Should read STL file from VFS");
-        const stlBytes = await consumeBinary(result.stream);
+        const stlBytes = await readData(stlBundle.selector);
         console.log(`[Test] Exported STL file size: ${stlBytes.byteLength} bytes.`);
         assert.ok(stlBytes.byteLength > 84, "Exported STL should have a valid header + count");
 
@@ -116,10 +49,10 @@ test('STL Import and Export End-to-End Integration', async (t) => {
         const shapeBundle = importTerminals.find(t => t.selector.output === '$out');
         assert.ok(shapeBundle, "Should find import shape terminal");
 
-        const shapeResult = await vfs.read(shapeBundle.selector);
-        assert.ok(shapeResult, "Should read imported shape from VFS");
-        
-        const shapeObj = JSON.parse(new TextDecoder().decode(await consumeBinary(shapeResult.stream)));
+        const shapeData = await readData(shapeBundle.selector);
+        const shapeObj = (typeof shapeData === 'object' && !(shapeData instanceof Uint8Array))
+            ? shapeData
+            : JSON.parse(typeof shapeData === 'string' ? shapeData : new TextDecoder().decode(shapeData));
         console.log("Imported Shape JSON:", JSON.stringify(shapeObj, null, 2));
 
         assert.strictEqual(shapeObj.tags.type, 'closed', 'Imported shape should be marked as closed');
@@ -132,9 +65,5 @@ test('STL Import and Export End-to-End Integration', async (t) => {
         if (fs.existsSync(testFile)) {
             fs.unlinkSync(testFile);
         }
-        await mesh.stop();
-        await vfs.close();
-        await sys.stop();
-        setTimeout(() => process.exit(0), 500);
     }
 });

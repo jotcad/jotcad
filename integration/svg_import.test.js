@@ -1,12 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VFS, MeshLink } from '../fs/src/index.js';
-import { JotCompiler } from '../jot/src/compiler.js';
-import { JotParser } from '../jot/src/parser.js';
-import { launchSystem } from '../orchestrator.js';
+import { runIntegrationTest } from './harness.js';
 import { registerFileProvider } from '../ux/src/lib/vfs/FileProvider.js';
 
 // Disable TLS verification for self-signed certificates in local tests
@@ -15,66 +11,9 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function consumeBinary(stream) {
-    const reader = stream.getReader();
-    const chunks = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    const len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    return bytes;
-}
-
-async function consumeJSON(stream) {
-    const bytes = await consumeBinary(stream);
-    return JSON.parse(new TextDecoder().decode(bytes));
-}
-
-test('SVG File Import Integration', async (t) => {
-    console.log("[Test] Launching cluster for SVG integration test...");
-    
-    // 1. Launch the TEST system profile
-    const sys = await launchSystem('test/standard');
-
-    // Wait for Export Node (port 9202) to be fully ready
-    console.log("[Test] Waiting for Export Node to start...");
-    let exportReady = false;
-    for (let i = 0; i < 50; i++) {
-        try {
-            const resp = await fetch('https://localhost:9202', {
-                dispatcher: new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } })
-            });
-            if (resp.ok || resp.status === 404 || resp.status === 400) {
-                exportReady = true;
-                break;
-            }
-        } catch (e) {}
-        await new Promise(r => setTimeout(r, 200));
-    }
-    if (!exportReady) {
-        console.warn("[Test] Export Node port 9202 not responding after 10s. Continuing anyway...");
-    } else {
-        console.log("[Test] Export Node is ready.");
-    }
-
-    // 2. Setup client VFS and MeshLink connected to the router
-    const vfs = new VFS({ id: 'test-svg-client' });
-    const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
-    
-    await vfs.init();
-    await mesh.start();
-
+runIntegrationTest('SVG File Import Integration', async ({ vfs, mesh, compiler, parser, evaluate, readData }) => {
     // Register File provider on client VFS
     registerFileProvider(vfs, mesh);
-
-    // 3. Setup Jot Compiler & Parser
-    const compiler = new JotCompiler(vfs);
-    const parser = new JotParser();
 
     // Register our File constructor
     compiler.registerOperator('File', {
@@ -116,21 +55,14 @@ test('SVG File Import Integration', async (t) => {
 
     try {
         // Evaluate: Svg(File("integration/test_donut.svg")) -> $out
-        const code = `Svg(File("integration/test_donut.svg")) -> $out`;
-        const ast = parser.parse(code);
-        
         console.log("[Test] Evaluating SVG Import expression...");
-        const terminals = await compiler.evaluate(ast, {}, {
-            outputs: { "$out": { type: "jot:shape" } }
-        });
+        const terminals = await evaluate(`Svg(File("integration/test_donut.svg")) -> $out`);
         
-        const result = terminals.find(t => t.selector.output === '$out');
+        const result = terminals.find(t => t.port === '$out');
         assert.ok(result, "Evaluation result should contain $out");
 
         // Resolve shape structure
-        const shapeResult = await vfs.readSelector(result.selector);
-        assert.ok(shapeResult && shapeResult.stream, "Should find shape in VFS");
-        const shapeObj = await consumeJSON(shapeResult.stream);
+        const shapeObj = await readData(result.selector);
         console.log("[Test] Evaluated Shape Structure:", JSON.stringify(shapeObj, null, 2));
 
         // Assertions
@@ -150,8 +82,7 @@ test('SVG File Import Integration', async (t) => {
         assert.ok(pathComp.geometry, "Second component should reference a geometry CID");
 
         // Read the actual geometry representation of the path with a hole from VFS
-        const geoRes = await vfs.readCID(pathComp.geometry);
-        const geoText = await consumeText(geoRes.stream);
+        const geoText = await readData(pathComp.geometry);
         console.log("[Test] Triangulated Geometry Text for donut:", geoText);
 
         // Verify triangles and vertices exist in the triangulated output
@@ -166,13 +97,5 @@ test('SVG File Import Integration', async (t) => {
         if (fs.existsSync(testSvgPath)) {
             fs.unlinkSync(testSvgPath);
         }
-        // Shutdown mesh and system
-        await mesh.stop();
-        await sys.stop();
     }
 });
-
-async function consumeText(stream) {
-    const bytes = await consumeBinary(stream);
-    return new TextDecoder().decode(bytes);
-}

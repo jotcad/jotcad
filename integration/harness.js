@@ -19,28 +19,38 @@ import { captureAndVerifyPNG } from './png_helper.js';
  * @param {Function|Object} optionsOrFn 
  */
 export async function runIntegrationTest(testName, optionsOrFn) {
-    test(testName, { timeout: 120000 }, async (t) => {
-        let sys = null;
-        const activeNodes = [];
+    const getPortOffset = (name) => {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+            hash = (hash << 5) - hash + name.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash % 200) * 30;
+    };
 
-        // Factory helper to spawn additional nodes that will be automatically cleaned up
-        const createNode = async (id, vfsConfig = {}) => {
-            const nodeVfs = new VFS({ id, ...vfsConfig });
-            const nodeMesh = new MeshLink(nodeVfs, [`http://localhost:${sys.ports.zenoh_router}`]);
-            await nodeVfs.init();
-            await nodeMesh.start();
-            activeNodes.push({ vfs: nodeVfs, mesh: nodeMesh });
+    return test(testName, { timeout: 120000 }, async (t) => {
+            let sys = null;
+            const activeNodes = [];
+            const basePort = 12000 + getPortOffset(testName);
 
-            const compiler = new JotCompiler(nodeVfs);
-            const parser = new JotParser();
-            
-            return { vfs: nodeVfs, mesh: nodeMesh, compiler, parser };
-        };
+            // Factory helper to spawn additional nodes that will be automatically cleaned up
+            const createNode = async (id, vfsConfig = {}) => {
+                const nodeVfs = new VFS({ id, ...vfsConfig });
+                const nodeMesh = new MeshLink(nodeVfs, [`http://localhost:${sys.ports.zenoh_router}`]);
+                await nodeVfs.init();
+                await nodeMesh.start();
+                activeNodes.push({ vfs: nodeVfs, mesh: nodeMesh });
 
-        try {
-            // 1. Launch standard system
-            console.log(`[Harness] Launching test cluster for '${testName}'...`);
-            sys = await launchSystem('test/standard');
+                const compiler = new JotCompiler(nodeVfs);
+                const parser = new JotParser();
+                
+                return { vfs: nodeVfs, mesh: nodeMesh, compiler, parser };
+            };
+
+            try {
+                // 1. Launch standard system
+                console.log(`[Harness] Launching test cluster for '${testName}' on basePort ${basePort}...`);
+                sys = await launchSystem('test/standard', 'INFO', { basePort });
 
             if (typeof optionsOrFn === 'function') {
                 // Procedural callback test
@@ -72,11 +82,27 @@ export async function runIntegrationTest(testName, optionsOrFn) {
                 }
 
                 const readData = async (selector) => {
-                    const result = await vfs.readSelector(selector);
+                    const result = (selector instanceof Selector)
+                        ? await vfs.readSelector(selector)
+                        : await vfs.readCID(selector);
                     return vfs._drainStream(result);
                 };
                 const capturePNG = async (selector, filename, opts = {}) => {
                     return captureAndVerifyPNG(vfs, selector, filename, null, opts);
+                };
+                const evaluate = async (script) => {
+                    const ast = parser.parse(script.trim());
+                    return compiler.evaluate(ast, {}, { outputs: { $out: { type: 'jot:shape' } } });
+                };
+                const readOutput = async (results, portName = '$out') => {
+                    const found = results.find(t => t.port === portName);
+                    if (!found) throw new Error(`Port ${portName} not found in results`);
+                    return readData(found.selector);
+                };
+                const captureOutputPNG = async (results, filename, opts = {}, portName = '$out') => {
+                    const found = results.find(t => t.port === portName);
+                    if (!found) throw new Error(`Port ${portName} not found in results`);
+                    return capturePNG(found.selector, filename, opts);
                 };
 
                 await optionsOrFn({
@@ -88,7 +114,11 @@ export async function runIntegrationTest(testName, optionsOrFn) {
                     parser,
                     readData,
                     capturePNG,
-                    createNode
+                    evaluate,
+                    readOutput,
+                    captureOutputPNG,
+                    createNode,
+                    catalog: catalogReceived
                 });
 
             } else {

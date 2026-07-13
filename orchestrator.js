@@ -3,7 +3,23 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
+import net from 'node:net';
 import { info, warn, error } from './fs/src/log.js';
+
+function isPortInUse(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') resolve(true);
+      else resolve(false);
+    });
+    server.once('listening', () => {
+      server.close();
+      resolve(false);
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -105,10 +121,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9000 },
-      ...getSplitOpsComponents(9000, 9091),
-      export: { type: 'export', protocol: 'https', port: 9102, env: { NEIGHBORS: 'http://127.0.0.1:9000' } },
-      webcam: { type: 'webcam', protocol: 'https', port: 8080, env: { NEIGHBORS: 'http://127.0.0.1:9000', TIMELAPSE: 'true' } },
-      ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live' }
+      webcam: { type: 'webcam', protocol: 'https', port: 8080, env: { NEIGHBORS: 'http://127.0.0.1:9000', TIMELAPSE: 'true' } }
     }
   },
   'test/webcam': {
@@ -116,10 +129,7 @@ export const PROFILES = {
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200 },
-      ...getSplitOpsComponents(9200, 9191),
-      export: { type: 'export', protocol: 'https', port: 9202, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
-      webcam: { type: 'webcam', protocol: 'https', port: 8180, env: { NEIGHBORS: 'http://127.0.0.1:9200', TIMELAPSE: 'true' } },
-      ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test' }
+      webcam: { type: 'webcam', protocol: 'https', port: 8180, env: { NEIGHBORS: 'http://127.0.0.1:9200', TIMELAPSE: 'true' } }
     }
   }
 };
@@ -137,9 +147,23 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   if (!profileKey) {
     throw new Error('CRITICAL: No profileKey provided to launchSystem. You must explicitly choose a profile (e.g., "test/standard").');
   }
-  const config = PROFILES[profileKey];
+  let config = PROFILES[profileKey];
   if (!config) {
     throw new Error(`Unknown profile: ${profileKey}. Available: ${Object.keys(PROFILES).join(', ')}`);
+  }
+
+  if (options.basePort && profileKey === 'test/standard') {
+    const basePort = options.basePort;
+    config = {
+      storagePrefix: `.vfs_storage_test_${basePort}_`,
+      gateway: 'zenoh_router',
+      components: {
+        zenoh_router: { type: 'zenoh_router', port: basePort },
+        ...getSplitOpsComponents(basePort, basePort - 9),
+        export: { type: 'export', protocol: 'https', port: basePort + 2, env: { NEIGHBORS: `http://127.0.0.1:${basePort}` } },
+        ux:     { type: 'ux',     protocol: 'https', port: basePort - 6069, dist: 'ux/dist/test' }
+      }
+    };
   }
 
   // Config validation: Check for port conflicts before starting any components
@@ -169,11 +193,27 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     ports.zenoh_bridge = ports.zenoh_router + 1000;
   }
 
+  const usedPorts = new Set();
+  const launchedPortsSet = new Set();
+
+  for (const port of Object.values(ports).filter(Boolean)) {
+    if (await isPortInUse(port)) {
+      usedPorts.add(port);
+    }
+  }
+
   try {
-    const portList = Object.values(ports).filter(Boolean).map(p => `${p}/tcp`).join(' ');
-    info(`[Orchestrator] Cleaning up ports: ${portList}`);
-    execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
-    execSync(`rm -rf ${storagePrefix}* || true`);
+    const portsToClean = Object.values(ports).filter(Boolean).filter(p => !usedPorts.has(p));
+    if (portsToClean.length > 0) {
+      const portList = portsToClean.map(p => `${p}/tcp`).join(' ');
+      info(`[Orchestrator] Cleaning up ports: ${portList}`);
+      execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
+    }
+    for (const [id, cfg] of Object.entries(componentMap)) {
+      if (!cfg.port || !usedPorts.has(cfg.port)) {
+        execSync(`rm -rf ${storagePrefix}${id} || true`);
+      }
+    }
     execSync('sleep 1');
   } catch (e) {}
 
@@ -392,10 +432,25 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     }
   };
 
-  const components = Object.entries(componentMap).flatMap(([id, cfg]) => {
+  const components = [];
+  for (const [id, cfg] of Object.entries(componentMap)) {
     const res = componentConfigs[cfg.type](cfg, id);
-    return Array.isArray(res) ? res : [res];
-  });
+    const subConfigs = Array.isArray(res) ? res : [res];
+    for (const proc of subConfigs) {
+      let procPort = cfg.port;
+      if (proc.name.startsWith('Zenoh Bridge')) {
+        procPort = cfg.port + 1000;
+      }
+      if (procPort && usedPorts.has(procPort)) {
+        info(`[Orchestrator] Process "${proc.name}" is already running on port ${procPort}. Skipping launch.`);
+        continue;
+      }
+      if (procPort) {
+        launchedPortsSet.add(procPort);
+      }
+      components.push(proc);
+    }
+  }
 
   const processes = new Map();
   let shuttingDown = false;
@@ -421,8 +476,10 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       }
     }
     try {
-        const portList = Object.values(ports).map(p => `${p}/tcp`).join(' ');
-        execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
+        const portsToKill = Array.from(launchedPortsSet).map(p => `${p}/tcp`).join(' ');
+        if (portsToKill.trim()) {
+            execSync(`fuser -k ${portsToKill} || true`, { stdio: 'ignore' });
+        }
     } catch (e) {}
   };
 
@@ -465,7 +522,34 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     processes.set(component.name, child);
   };
 
-  components.forEach(launch);
+  const routerComponents = components.filter(c => c.name.startsWith('Zenoh Router') || c.name.startsWith('Zenoh Bridge'));
+  const otherComponents = components.filter(c => !c.name.startsWith('Zenoh Router') && !c.name.startsWith('Zenoh Bridge'));
+
+  // 1. Launch router components first
+  routerComponents.forEach(launch);
+
+  // 2. Ensure Zenoh Router is up (either pre-existing or just launched)
+  if (ports.zenoh_router) {
+    info(`[Orchestrator] Ensuring Zenoh Router is up and listening on port ${ports.zenoh_router}...`);
+    let routerReady = false;
+    for (let i = 0; i < 50; i++) {
+      if (await isPortInUse(ports.zenoh_router)) {
+        routerReady = true;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    if (!routerReady) {
+      const errorMsg = `CRITICAL: Zenoh Router on port ${ports.zenoh_router} failed to start or respond.`;
+      error(errorMsg);
+      await shutdown();
+      throw new Error(errorMsg);
+    }
+    info(`[Orchestrator] Zenoh Router is up and listening.`);
+  }
+
+  // 3. Launch remaining components
+  otherComponents.forEach(launch);
 
   // Verify that all launched processes stay up
   await new Promise(r => setTimeout(r, 1000));

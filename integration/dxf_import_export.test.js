@@ -1,12 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VFS, MeshLink } from '../fs/src/index.js';
-import { JotCompiler } from '../jot/src/compiler.js';
-import { JotParser } from '../jot/src/parser.js';
-import { launchSystem } from '../orchestrator.js';
+import { runIntegrationTest } from './harness.js';
 import { registerFileProvider } from '../ux/src/lib/vfs/FileProvider.js';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -14,66 +10,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function consumeBinary(stream) {
-    const reader = stream.getReader();
-    const chunks = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    const len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    return bytes;
-}
-
-async function consumeJSON(stream) {
-    const bytes = await consumeBinary(stream);
-    return JSON.parse(new TextDecoder().decode(bytes));
-}
-
-async function consumeText(stream) {
-    const bytes = await consumeBinary(stream);
-    return new TextDecoder().decode(bytes);
-}
-
-test('DXF File Import, Parsing, and Export Roundtrip', async (t) => {
-    console.log("[Test] Launching cluster for DXF integration test...");
-    const sys = await launchSystem('test/standard');
-
-    // Wait for Export Node (port 9202) to be fully ready
-    console.log("[Test] Waiting for Export Node to start...");
-    let exportReady = false;
-    for (let i = 0; i < 50; i++) {
-        try {
-            const resp = await fetch('https://localhost:9202', {
-                dispatcher: new (await import('undici')).Agent({ connect: { rejectUnauthorized: false } })
-            });
-            if (resp.ok || resp.status === 404 || resp.status === 400) {
-                exportReady = true;
-                break;
-            }
-        } catch (e) {}
-        await new Promise(r => setTimeout(r, 200));
-    }
-    if (!exportReady) {
-        console.warn("[Test] Export Node port 9202 not responding after 10s. Continuing anyway...");
-    } else {
-        console.log("[Test] Export Node is ready.");
-    }
-
-    const vfs = new VFS({ id: 'test-dxf-client' });
-    const mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
-    
-    await vfs.init();
-    await mesh.start();
-
+runIntegrationTest('DXF File Import, Parsing, and Export Roundtrip', async ({ vfs, mesh, compiler, parser, evaluate, readData, readOutput }) => {
     registerFileProvider(vfs, mesh);
-
-    const compiler = new JotCompiler(vfs);
-    const parser = new JotParser();
 
     compiler.registerOperator('File', {
         path: 'jot/File',
@@ -187,29 +125,21 @@ EOF
 
     try {
         // --- Test 1: DXF Import ---
-        const importCode = `Dxf(File("integration/test_input.dxf")) -> $out`;
-        const importAst = parser.parse(importCode);
-        
         console.log("[Test] Evaluating DXF Import...");
-        const importTerminals = await compiler.evaluate(importAst, {}, {
-            outputs: { "$out": { type: "jot:shape" } }
-        });
+        const importTerminals = await evaluate(`Dxf(File("integration/test_input.dxf")) -> $out`);
         
-        const importBundle = importTerminals.find(t => t.selector.output === '$out');
+        const importBundle = importTerminals.find(t => t.port === '$out');
         assert.ok(importBundle, "Should find terminal output bundle");
 
-        const shapeResult = await vfs.readSelector(importBundle.selector);
-        assert.ok(shapeResult && shapeResult.stream, "Should find shape in VFS");
-        
-        const shapeObj = await consumeJSON(shapeResult.stream);
+        const shapeObj = await readData(importBundle.selector);
+        assert.ok(shapeObj, "Should find shape in VFS");
         console.log("[Test] Imported Shape Object:", JSON.stringify(shapeObj, null, 2));
 
         assert.strictEqual(shapeObj.tags.type, "wire", "Imported shape should be of type wire");
         assert.ok(shapeObj.geometry, "Imported shape must reference a geometry CID");
 
         // Read the geometry text to verify discretization
-        const geoRes = await vfs.readCID(shapeObj.geometry);
-        const geoText = await consumeText(geoRes.stream);
+        const geoText = await readData(shapeObj.geometry);
         console.log("[Test] Imported Geometry text snippet:\n", geoText.substring(0, 300));
 
         // Parse header lines
@@ -230,11 +160,8 @@ EOF
         assert.ok(sCount > 70, "Should have more than 70 segments due to curve discretization");
 
         // --- Test 2: DXF Export Roundtrip ---
-        const exportCode = `$in.dxf(path="export_roundtrip.dxf").file -> file`;
-        const exportAst = parser.parse(exportCode);
-        
         console.log("[Test] Evaluating DXF Export...");
-        const exportTerminals = await compiler.evaluate(exportAst, {
+        const exportTerminals = await compiler.evaluate(parser.parse(`$in.dxf(path="export_roundtrip.dxf").file -> file`), {
             '$in': importBundle.selector
         }, {
             outputs: {
@@ -242,13 +169,8 @@ EOF
             }
         });
 
-        const fileBundle = exportTerminals.find(t => t.selector.output === 'file');
-        assert.ok(fileBundle, "Should find file output bundle");
-
-        const dxfExportRes = await vfs.readSelector(fileBundle.selector);
-        assert.ok(dxfExportRes && dxfExportRes.stream, "Should find exported DXF in VFS");
-        
-        const exportedText = await consumeText(dxfExportRes.stream);
+        const dxfExportBytes = await readOutput(exportTerminals, 'file');
+        const exportedText = new TextDecoder().decode(dxfExportBytes);
         console.log("[Test] Exported DXF Snippet:\n", exportedText.substring(0, 400));
 
         // Assert that the output contains standard DXF components
@@ -263,7 +185,5 @@ EOF
         if (fs.existsSync(testDxfPath)) {
             fs.unlinkSync(testDxfPath);
         }
-        await mesh.stop();
-        await sys.stop();
     }
 });

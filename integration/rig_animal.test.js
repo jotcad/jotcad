@@ -1,29 +1,9 @@
-import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
-import { VFS, MeshLink, getCID, Selector } from '../fs/src/index.js';
-import { launchSystem } from '../orchestrator.js';
-import { captureAndVerifyPNG } from './png_helper.js';
+import { getCID, Selector } from '../fs/src/index.js';
+import { runIntegrationTest } from './harness.js';
 import { waitForMeshNodes } from './vfs_test_helpers.js';
-
-async function consumeBytes(stream) {
-    const reader = stream.getReader();
-    const chunks = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    const len = chunks.reduce((acc, c) => acc + c.length, 0);
-    const bytes = new Uint8Array(len);
-    let offset = 0;
-    for (const chunk of chunks) {
-        bytes.set(chunk, offset);
-        offset += chunk.length;
-    }
-    return bytes;
-}
 
 // Converts standard Wavefront OBJ format to JotCAD .geo text format
 function convertObjToGeo(objText) {
@@ -91,187 +71,158 @@ function matrixToString(M) {
     return M.map(x => x.toFixed(6)).join(' ');
 }
 
-test('jot/rig - spot.obj (Keenan Crane) Cow Skeleton Rigging & PBD Skinning Integration', { timeout: 120000 }, async (t) => {
-    let sys;
-    let vfs;
-    let mesh;
+runIntegrationTest('jot/rig - spot.obj (Keenan Crane) Cow Skeleton Rigging & PBD Skinning Integration', async ({ vfs, readData, capturePNG }) => {
+    console.log("[Test] Waiting for mesh nodes...");
+    await waitForMeshNodes(vfs, ['geo-mapping-node']);
 
-    try {
-        console.log("[Test] Launching cluster for spot rigging integration test...");
-        sys = await launchSystem('test/standard');
+    // 1. Load and convert spot.obj
+    console.log("[Test] Loading and converting spot.obj...");
+    const objPath = path.join(import.meta.dirname, 'spot.obj');
+    const objText = fs.readFileSync(objPath, 'utf8');
+    const spotGeoText = convertObjToGeo(objText);
+    
+    const geoCID = await getCID(spotGeoText);
+    await vfs.write(geoCID, spotGeoText, { encoding: 'string', filename: 'spot.geo' });
 
-        vfs = new VFS({ id: 'test-rigging-spot-client' });
-        mesh = new MeshLink(vfs, [`http://localhost:${sys.ports.zenoh_router}`]);
-        
-        await vfs.init();
-        await mesh.start();
+    // 2. Set up Skeleton (Spine & Neck chain along X axis)
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+    const translateMatrix = (dx, dy, dz) => [1, 0, 0, dx, 0, 1, 0, dy, 0, 0, 1, dz];
+    const rotateZMatrix = (deg) => {
+        const rad = deg * Math.PI / 180.0;
+        const c = Math.cos(rad);
+        const s = Math.sin(rad);
+        return [c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0];
+    };
 
-        console.log("[Test] Waiting for mesh nodes...");
-        await waitForMeshNodes(vfs, ['geo-mapping-node']);
+    const worldTfs = [];
+    const bindTfs = [];
 
-        // 1. Load and convert spot.obj
-        console.log("[Test] Loading and converting spot.obj...");
-        const objPath = path.join(import.meta.dirname, 'spot.obj');
-        const objText = fs.readFileSync(objPath, 'utf8');
-        const spotGeoText = convertObjToGeo(objText);
-        
-        const geoCID = await getCID(spotGeoText);
-        await vfs.write(geoCID, spotGeoText, { encoding: 'string', filename: 'spot.geo' });
+    // Hips (Root)
+    bindTfs.push(translateMatrix(-0.5, 0.1, 0.0));
+    worldTfs.push(multiplyAffine(translateMatrix(-0.5, 0.1, 0.0), rotateZMatrix(10)));
 
-        // 2. Set up Skeleton (Spine & Neck chain along X axis)
-        const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
-        const translateMatrix = (dx, dy, dz) => [1, 0, 0, dx, 0, 1, 0, dy, 0, 0, 1, dz];
-        const rotateZMatrix = (deg) => {
-            const rad = deg * Math.PI / 180.0;
-            const c = Math.cos(rad);
-            const s = Math.sin(rad);
-            return [c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0];
-        };
+    // Mid-Back
+    bindTfs.push(multiplyAffine(bindTfs[0], translateMatrix(0.3, 0.1, 0.0)));
+    worldTfs.push(multiplyAffine(worldTfs[0], multiplyAffine(translateMatrix(0.3, 0.1, 0.0), rotateZMatrix(10))));
 
-        const worldTfs = [];
-        const bindTfs = [];
+    // Chest
+    bindTfs.push(multiplyAffine(bindTfs[1], translateMatrix(0.3, 0.0, 0.0)));
+    worldTfs.push(multiplyAffine(worldTfs[1], multiplyAffine(translateMatrix(0.3, 0.0, 0.0), rotateZMatrix(10))));
 
-        // Hips (Root)
-        bindTfs.push(translateMatrix(-0.5, 0.1, 0.0));
-        worldTfs.push(multiplyAffine(translateMatrix(-0.5, 0.1, 0.0), rotateZMatrix(10)));
+    // Neck
+    bindTfs.push(multiplyAffine(bindTfs[2], translateMatrix(0.2, 0.1, 0.0)));
+    worldTfs.push(multiplyAffine(worldTfs[2], multiplyAffine(translateMatrix(0.2, 0.1, 0.0), rotateZMatrix(20))));
 
-        // Mid-Back
-        bindTfs.push(multiplyAffine(bindTfs[0], translateMatrix(0.3, 0.1, 0.0)));
-        worldTfs.push(multiplyAffine(worldTfs[0], multiplyAffine(translateMatrix(0.3, 0.1, 0.0), rotateZMatrix(10))));
+    // Head
+    bindTfs.push(multiplyAffine(bindTfs[3], translateMatrix(0.2, 0.2, 0.0)));
+    worldTfs.push(multiplyAffine(worldTfs[3], multiplyAffine(translateMatrix(0.2, 0.2, 0.0), rotateZMatrix(20))));
 
-        // Chest
-        bindTfs.push(multiplyAffine(bindTfs[1], translateMatrix(0.3, 0.0, 0.0)));
-        worldTfs.push(multiplyAffine(worldTfs[1], multiplyAffine(translateMatrix(0.3, 0.0, 0.0), rotateZMatrix(10))));
+    // Assemble Joint components hierarchy
+    const joint4 = {
+        tf: matrixToString(worldTfs[4]),
+        tags: {
+            type: "joint",
+            role: "ghost",
+            joint_id: 4,
+            name: "Head",
+            bind_tf: matrixToString(bindTfs[4])
+        },
+        components: []
+    };
 
-        // Neck
-        bindTfs.push(multiplyAffine(bindTfs[2], translateMatrix(0.2, 0.1, 0.0)));
-        worldTfs.push(multiplyAffine(worldTfs[2], multiplyAffine(translateMatrix(0.2, 0.1, 0.0), rotateZMatrix(20))));
+    const joint3 = {
+        tf: matrixToString(worldTfs[3]),
+        tags: {
+            type: "joint",
+            role: "ghost",
+            joint_id: 3,
+            name: "Neck",
+            bind_tf: matrixToString(bindTfs[3])
+        },
+        components: [joint4]
+    };
 
-        // Head
-        bindTfs.push(multiplyAffine(bindTfs[3], translateMatrix(0.2, 0.2, 0.0)));
-        worldTfs.push(multiplyAffine(worldTfs[3], multiplyAffine(translateMatrix(0.2, 0.2, 0.0), rotateZMatrix(20))));
+    const joint2 = {
+        tf: matrixToString(worldTfs[2]),
+        tags: {
+            type: "joint",
+            role: "ghost",
+            joint_id: 2,
+            name: "Chest",
+            bind_tf: matrixToString(bindTfs[2])
+        },
+        components: [joint3]
+    };
 
-        // Assemble Joint components hierarchy
-        const joint4 = {
-            tf: matrixToString(worldTfs[4]),
-            tags: {
-                type: "joint",
-                role: "ghost",
-                joint_id: 4,
-                name: "Head",
-                bind_tf: matrixToString(bindTfs[4])
+    const joint1 = {
+        tf: matrixToString(worldTfs[1]),
+        tags: {
+            type: "joint",
+            role: "ghost",
+            joint_id: 1,
+            name: "MidBack",
+            bind_tf: matrixToString(bindTfs[1])
+        },
+        components: [joint2]
+    };
+
+    const joint0 = {
+        tf: matrixToString(worldTfs[0]),
+        tags: {
+            type: "joint",
+            role: "ghost",
+            joint_id: 0,
+            name: "Hips",
+            bind_tf: matrixToString(bindTfs[0])
+        },
+        components: [joint1]
+    };
+
+    const rigShape = {
+        tags: { type: "rig" },
+        components: [
+            {
+                geometry: geoCID,
+                tags: { type: "solid" }
             },
-            components: []
-        };
+            joint0
+        ]
+    };
 
-        const joint3 = {
-            tf: matrixToString(worldTfs[3]),
-            tags: {
-                type: "joint",
-                role: "ghost",
-                joint_id: 3,
-                name: "Neck",
-                bind_tf: matrixToString(bindTfs[3])
-            },
-            components: [joint4]
-        };
+    const rigShapeText = JSON.stringify(rigShape);
+    const rigShapeCID = await getCID(rigShapeText);
+    await vfs.write(rigShapeCID, rigShapeText, { encoding: 'json', filename: 'spot_rig.json' });
 
-        const joint2 = {
-            tf: matrixToString(worldTfs[2]),
-            tags: {
-                type: "joint",
-                role: "ghost",
-                joint_id: 2,
-                name: "Chest",
-                bind_tf: matrixToString(bindTfs[2])
-            },
-            components: [joint3]
-        };
+    // 3. Query the VFS operator
+    console.log("[Test] Querying jot/rig VFS operator with PBD skinning on spot...");
+    const rigSel = new Selector('jot/rig', {
+        $in: rigShapeCID,
+        pbd_iterations: 40
+    }).withOutput('$out');
 
-        const joint1 = {
-            tf: matrixToString(worldTfs[1]),
-            tags: {
-                type: "joint",
-                role: "ghost",
-                joint_id: 1,
-                name: "MidBack",
-                bind_tf: matrixToString(bindTfs[1])
-            },
-            components: [joint2]
-        };
+    const result = await readData(rigSel);
+    console.log("SPOT COW TEST RESULT SHAPE:", JSON.stringify(result, null, 2));
+    assert.strictEqual(result.tags.type, 'rig', 'Output container should be rig');
 
-        const joint0 = {
-            tf: matrixToString(worldTfs[0]),
-            tags: {
-                type: "joint",
-                role: "ghost",
-                joint_id: 0,
-                name: "Hips",
-                bind_tf: matrixToString(bindTfs[0])
-            },
-            components: [joint1]
-        };
-
-        const rigShape = {
-            tags: { type: "rig" },
-            components: [
-                {
-                    geometry: geoCID,
-                    tags: { type: "solid" }
-                },
-                joint0
-            ]
-        };
-
-        const rigShapeText = JSON.stringify(rigShape);
-        const rigShapeCID = await getCID(rigShapeText);
-        await vfs.write(rigShapeCID, rigShapeText, { encoding: 'json', filename: 'spot_rig.json' });
-
-        // 3. Query the VFS operator
-        console.log("[Test] Querying jot/rig VFS operator with PBD skinning on spot...");
-        const rigSel = new Selector('jot/rig', {
-            $in: rigShapeCID,
-            pbd_iterations: 40
-        }).withOutput('$out');
-
-        const response = await vfs.read(rigSel);
-        assert.ok(response, 'Should return a valid response');
-
-        const result = JSON.parse(new TextDecoder().decode(await consumeBytes(response.stream)));
-        console.log("SPOT COW TEST RESULT SHAPE:", JSON.stringify(result, null, 2));
-        assert.strictEqual(result.tags.type, 'rig', 'Output container should be rig');
-
-        let deformedSolid = null;
-        for (const comp of result.components) {
-            if (comp.tags && comp.tags.type === 'solid') {
-                deformedSolid = comp;
-                break;
-            }
+    let deformedSolid = null;
+    for (const comp of result.components) {
+        if (comp.tags && comp.tags.type === 'solid') {
+            deformedSolid = comp;
+            break;
         }
-        assert.ok(deformedSolid, 'Should find deformed solid');
-        assert.ok(deformedSolid.geometry, 'Should find geometry CID');
-
-        // 4. Capture render snapshot
-        console.log("[Test] Rendering spot snapshot via jot/png...");
-        const pngBytes = await captureAndVerifyPNG(vfs, rigSel, 'rig_spot.png', null, {
-            width: 512,
-            height: 512,
-            ax: 30,
-            ay: 135 // Side-back angle to see the arching cow clearly
-        });
-
-        assert.ok(pngBytes.length > 0, "Rendered PNG should not be empty");
-        console.log("[Test] Spot Rigging Integration Test Passed successfully!");
-
-    } catch (err) {
-        console.error("FATAL SPOT TEST EXCEPTION:");
-        console.error(err.stack || err);
-        throw err;
-    } finally {
-        console.log("[Test] Running cleanup...");
-        if (mesh) await mesh.stop();
-        if (vfs) await vfs.close();
-        if (sys) await sys.stop();
-        setTimeout(() => process.exit(0), 500);
     }
+    assert.ok(deformedSolid, 'Should find deformed solid');
+    assert.ok(deformedSolid.geometry, 'Should find geometry CID');
+
+    // 4. Capture render snapshot
+    console.log("[Test] Rendering spot snapshot via jot/png...");
+    const pngBytes = await capturePNG(rigSel, 'rig_spot.png', {
+        width: 512,
+        height: 512,
+        ax: 30,
+        ay: 135 // Side-back angle to see the arching cow clearly
+    });
+
+    assert.ok(pngBytes.length > 0, "Rendered PNG should not be empty");
+    console.log("[Test] Spot Rigging Integration Test Passed successfully!");
 });
