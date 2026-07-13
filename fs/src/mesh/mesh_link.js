@@ -255,19 +255,19 @@ export class MeshLinkBase {
             } catch (err) {
               payload = payloadBytes;
             }
-            log(`[MeshLink ${this.vfs.id}] Subscriber Notify: received notification for ${path}`);
+            console.log(`[MeshLink ${this.vfs.id}] Subscriber Notify: received notification for ${path}`);
             if (path === 'sys/schema') {
               this.updateCatalog(payload);
             } else {
               this.notify(new Selector(path), payload, ['incoming']);
             }
           } catch (err) {
-            log(`[MeshLink ${this.vfs.id}] Error in notification subscriber: ${err.message}`);
+            console.error(`[MeshLink ${this.vfs.id}] Error in notification subscriber: ${err.stack || err.message}`);
           }
         }
       });
     } catch (err) {
-      log(`[MeshLink ${this.vfs.id}] Error declaring subscriber: ${err.message}`);
+      console.error(`[MeshLink ${this.vfs.id}] Error declaring subscriber: ${err.stack || err.message}`);
     }
     
     // Initial catalog query

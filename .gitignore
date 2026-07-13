@@ -85,3 +85,10 @@ geo/cgal/zenoh/
 
 # Local Ansible host inventory containing private IPs
 deploy/hosts.ini
+
+# Temporary test scripts
+test_dual_ux.js
+test_zenoh_direct.js
+test_telemetry.js
+retrieved_videos/
+test_output.txt

@@ -3,7 +3,7 @@ import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { VFS, DiskStorage, MeshLink } from './fs/src/index.js';
+import { VFS, DiskStorage, MeshLink, Selector } from './fs/src/index.js';
 
 const PORT = 3031;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -96,6 +96,76 @@ vfs.listen('jot/webcam/logs/webcam-jh', (payload) => {
   telemetry.remote.logs.push(logMsg);
   if (telemetry.remote.logs.length > 20) telemetry.remote.logs.shift();
 });
+
+// Periodic syncing of videos from both camera nodes
+async function syncVideos(nodeId) {
+  try {
+    const selector = new Selector('jot/webcam/videos/' + nodeId);
+    console.log(`[Dual UX] Querying camera node ${nodeId} for available videos...`);
+    const result = await vfs.readSelector(selector);
+    
+    if (!result || !result.stream) {
+      console.log(`[Dual UX] No video catalog response from ${nodeId}.`);
+      return;
+    }
+
+    const reader = result.stream.getReader();
+    const chunks = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const jsonStr = new TextDecoder().decode(Buffer.concat(chunks));
+    const videos = JSON.parse(jsonStr);
+    console.log(`[Dual UX] Node ${nodeId} has ${videos.length} videos available.`);
+
+    for (const video of videos) {
+      const { date, filename } = video;
+      const destDir = path.join(__dirname, 'retrieved_videos', nodeId, date);
+      const destPath = path.join(destDir, filename);
+
+      if (!fs.existsSync(destPath)) {
+        console.log(`[Dual UX] Syncing missing video ${filename} from ${nodeId}...`);
+        const videoSelector = new Selector('jot/webcam/video/' + nodeId, {
+          date: date,
+          filename: filename
+        });
+        const videoResult = await vfs.readSelector(videoSelector);
+        
+        if (videoResult && videoResult.stream) {
+          const vidReader = videoResult.stream.getReader();
+          const vidChunks = [];
+          while (true) {
+            const { done, value } = await vidReader.read();
+            if (done) break;
+            vidChunks.push(value);
+          }
+          const vidBuffer = Buffer.concat(vidChunks);
+          fs.mkdirSync(destDir, { recursive: true });
+          fs.writeFileSync(destPath, vidBuffer);
+          console.log(`[Dual UX] Successfully synced video ${filename} (${vidBuffer.length} bytes) from ${nodeId}`);
+        } else {
+          console.warn(`[Dual UX] Failed to stream video ${filename} from ${nodeId}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[Dual UX] Failed to sync videos for ${nodeId}:`, err.message);
+  }
+}
+
+// Initial sync on startup
+setTimeout(() => {
+  syncVideos('live_webcam_webcam');
+  syncVideos('webcam-jh');
+}, 5000);
+
+// Sync periodically every 2 minutes
+setInterval(() => {
+  syncVideos('live_webcam_webcam');
+  syncVideos('webcam-jh');
+}, 120000);
 
 // Setup HTTP response for MJPEG stream requests
 function handleStreamRequest(res, clients, currentFrame) {
@@ -286,7 +356,7 @@ const htmlContent = `
         </div>
       </div>
       <div class="feed-container">
-        <img id="feed-local" src="/stream/local" onerror="handleError(this, 'badge-local')" alt="Local Feed" />
+        <img id="feed-local" src="/stream/local" onerror="handleError(this)" alt="Local Feed" />
       </div>
       <div class="log-window">
         <div class="log-header">console.log logs</div>
@@ -302,7 +372,7 @@ const htmlContent = `
         </div>
       </div>
       <div class="feed-container">
-        <img id="feed-remote" src="/stream/remote" onerror="handleError(this, 'badge-remote')" alt="Remote Feed" />
+        <img id="feed-remote" src="/stream/remote" onerror="handleError(this)" alt="Remote Feed" />
       </div>
       <div class="log-window">
         <div class="log-header">console.log logs</div>
@@ -312,11 +382,7 @@ const htmlContent = `
   </div>
 
   <script>
-    function handleError(img, badgeId) {
-      const badge = document.getElementById(badgeId);
-      badge.className = 'status-badge offline';
-      badge.innerHTML = '<span class="status-dot"></span>Offline';
-      
+    function handleError(img) {
       // Attempt reconnection every 5 seconds
       setTimeout(() => {
         const path = img.src.split('?')[0];
@@ -339,7 +405,7 @@ const htmlContent = `
           badgeLocal.innerHTML = '<span class="status-dot"></span>Offline';
         }
         const logsLocal = document.getElementById('log-content-local');
-        logsLocal.innerHTML = data.local.logs.join('\n') || 'Connected. Awaiting logs...';
+        logsLocal.innerHTML = data.local.logs.join('\\n') || 'Connected. Awaiting logs...';
         logsLocal.scrollTop = logsLocal.scrollHeight;
 
         // Update Remote Status and Logs
@@ -352,7 +418,7 @@ const htmlContent = `
           badgeRemote.innerHTML = '<span class="status-dot"></span>Offline';
         }
         const logsRemote = document.getElementById('log-content-remote');
-        logsRemote.innerHTML = data.remote.logs.join('\n') || 'Connected. Awaiting logs...';
+        logsRemote.innerHTML = data.remote.logs.join('\\n') || 'Connected. Awaiting logs...';
         logsRemote.scrollTop = logsRemote.scrollHeight;
       } catch (err) {
         console.error('Failed to fetch status telemetry:', err);

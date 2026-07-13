@@ -1,0 +1,107 @@
+---
+- name: Deploy JotCAD Local Services (via SSH)
+  hosts: local_services
+  gather_facts: yes
+  tasks:
+    - name: Ensure user is in video group for local webcam access
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: video
+        append: yes
+      become: yes
+
+    - name: Create deployment directory
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: '0755'
+      become: yes
+
+    - name: Synchronize workspace codebase to local deployment directory (rsync)
+      synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ deploy_dir }}/"
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=timelapse"
+          - "--exclude=*.log"
+          - "--exclude=*.mp4"
+          - "--exclude=*.jpg"
+          - "--exclude=.gemini"
+          - "--exclude=deploy"
+
+    - name: Install Node.js npm packages on local deployment
+      npm:
+        path: "{{ deploy_dir }}"
+        state: present
+
+    - name: Deploy Zenoh Router systemd service file
+      template:
+        src: templates/jotcad-router.service.j2
+        dest: /etc/systemd/system/jotcad-router.service
+        mode: '0644'
+      become: yes
+      register: router_service
+
+    - name: Deploy Zenoh Bridge systemd service file
+      template:
+        src: templates/jotcad-bridge.service.j2
+        dest: /etc/systemd/system/jotcad-bridge.service
+        mode: '0644'
+      become: yes
+      register: bridge_service
+
+    - name: Deploy Webcam Node systemd service file
+      template:
+        src: templates/jotcad-webcam.service.j2
+        dest: /etc/systemd/system/jotcad-webcam.service
+        mode: '0644'
+      become: yes
+      register: webcam_service
+
+    - name: Deploy UX systemd service file
+      template:
+        src: templates/jotcad-ux.service.j2
+        dest: /etc/systemd/system/jotcad-ux.service
+        mode: '0644'
+      become: yes
+      register: ux_service
+
+    - name: Reload systemd daemon if any service file changed
+      systemd:
+        daemon_reload: yes
+      become: yes
+      when: router_service.changed or bridge_service.changed or webcam_service.changed or ux_service.changed
+
+    - name: Ensure Zenoh Router service is enabled and restarted
+      systemd:
+        name: jotcad-router
+        state: restarted
+        enabled: yes
+      become: yes
+
+    - name: Ensure Zenoh Bridge service is enabled and restarted
+      systemd:
+        name: jotcad-bridge
+        state: restarted
+        enabled: yes
+      become: yes
+
+    - name: Ensure Webcam service is enabled and restarted
+      systemd:
+        name: jotcad-webcam
+        state: restarted
+        enabled: yes
+      become: yes
+
+    - name: Ensure UX service is enabled and restarted
+      systemd:
+        name: jotcad-ux
+        state: restarted
+        enabled: yes
+      become: yes

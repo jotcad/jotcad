@@ -14,6 +14,13 @@
         update_cache: yes
       become: yes
 
+    - name: Ensure user is in video group for webcam access (requires sudo/become)
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: video
+        append: yes
+      become: yes
+
     - name: Create deployment directory
       file:
         path: "{{ deploy_dir }}"

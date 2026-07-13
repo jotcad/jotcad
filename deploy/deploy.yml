@@ -1,0 +1,293 @@
+---
+# Play 0: Deploy Zenoh Router to all hosts
+- name: Deploy JotCAD Zenoh Routers
+  hosts: webcam_servers:local_services
+  gather_facts: yes
+  tasks:
+    - name: Create deployment directory
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: '0755'
+      become: yes
+
+    - name: Ensure unzip is installed
+      apt:
+        name: unzip
+        state: present
+      become: yes
+
+    - name: Check if zenohd is installed
+      stat:
+        path: /usr/local/bin/zenohd
+      register: zenohd_bin
+
+    - name: Install zenohd if missing
+      become: yes
+      block:
+        - name: Download Zenoh release archive
+          get_url:
+            url: "https://download.eclipse.org/zenoh/zenoh/1.9.0/zenoh-1.9.0-x86_64-unknown-linux-gnu-standalone.zip"
+            dest: "/tmp/zenoh-1.9.0.zip"
+            mode: '0644'
+
+        - name: Create temporary extraction directory
+          file:
+            path: "/tmp/zenoh-extract"
+            state: directory
+            mode: '0755'
+
+        - name: Unarchive Zenoh release
+          unarchive:
+            src: "/tmp/zenoh-1.9.0.zip"
+            dest: "/tmp/zenoh-extract"
+            remote_src: yes
+
+        - name: Copy zenohd binary to /usr/local/bin
+          copy:
+            src: "/tmp/zenoh-extract/zenohd"
+            dest: "/usr/local/bin/zenohd"
+            mode: '0755'
+            remote_src: yes
+
+        - name: Clean up temporary install files
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "/tmp/zenoh-1.9.0.zip"
+            - "/tmp/zenoh-extract"
+      when: not zenohd_bin.stat.exists
+
+    - name: Deploy Zenoh Router systemd service file
+      template:
+        src: templates/jotcad-router.service.j2
+        dest: /etc/systemd/system/jotcad-router.service
+        mode: '0644'
+      become: yes
+      register: router_service
+
+    - name: Reload systemd daemon if router service changed
+      systemd:
+        daemon_reload: yes
+      become: yes
+      when: router_service.changed
+
+    - name: Ensure Zenoh Router service is enabled and restarted
+      systemd:
+        name: jotcad-router
+        state: restarted
+        enabled: yes
+      become: yes
+
+# Play 1: Deploy Mesh Infrastructure (Bridge, UX) to gateway/infrastructure hosts
+- name: Deploy JotCAD Mesh Infrastructure
+  hosts: webcam_servers:local_services
+  gather_facts: yes
+  tasks:
+    - name: Create deployment directory
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: '0755'
+      become: yes
+
+    - name: Ensure cargo bin directory exists
+      file:
+        path: "{{ ansible_user_dir }}/.cargo/bin"
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: '0755'
+
+    - name: Copy Zenoh Bridge binary from localhost to target
+      copy:
+        src: /home/brian/.cargo/bin/zenoh-bridge-remote-api
+        dest: "{{ ansible_user_dir }}/.cargo/bin/zenoh-bridge-remote-api"
+        mode: '0755'
+
+    - name: Synchronize workspace codebase (rsync)
+      synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ deploy_dir }}/"
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=timelapse"
+          - "--exclude=*.log"
+          - "--exclude=*.mp4"
+          - "--exclude=*.jpg"
+          - "--exclude=.gemini"
+          - "--exclude=deploy"
+          - "--exclude=/geo/bin"
+          - "--exclude=/geo/obj"
+
+    - name: Install Node.js npm packages
+      npm:
+        path: "{{ deploy_dir }}"
+        state: present
+
+    - name: Deploy Zenoh Bridge systemd service file
+      template:
+        src: templates/jotcad-bridge.service.j2
+        dest: /etc/systemd/system/jotcad-bridge.service
+        mode: '0644'
+      become: yes
+      register: bridge_service
+
+    - name: Deploy UX systemd service file
+      template:
+        src: templates/jotcad-ux.service.j2
+        dest: /etc/systemd/system/jotcad-ux.service
+        mode: '0644'
+      become: yes
+      register: ux_service
+      when: "'local_services' in group_names"
+
+    - name: Reload systemd daemon if service files changed
+      systemd:
+        daemon_reload: yes
+      become: yes
+      when: (bridge_service.changed | default(false)) or (ux_service.changed | default(false))
+
+    - name: Ensure Zenoh Bridge service is enabled and restarted
+      systemd:
+        name: jotcad-bridge
+        state: restarted
+        enabled: yes
+      become: yes
+
+    - name: Ensure UX service is enabled and restarted
+      systemd:
+        name: jotcad-ux
+        state: restarted
+        enabled: yes
+      become: yes
+      when: "'local_services' in group_names"
+
+# Play 2: Deploy Webcam Nodes to all webcam servers
+- name: Deploy JotCAD Webcam Nodes
+  hosts: webcam_servers:local_services
+  gather_facts: yes
+  tasks:
+    - name: Ensure user is in video group for webcam access
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: video
+        append: yes
+      become: yes
+
+    - name: Create deployment directory
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: '0755'
+      become: yes
+
+    - name: Synchronize workspace codebase (rsync)
+      synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ deploy_dir }}/"
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=timelapse"
+          - "--exclude=*.log"
+          - "--exclude=*.mp4"
+          - "--exclude=*.jpg"
+          - "--exclude=.gemini"
+          - "--exclude=deploy"
+          - "--exclude=/geo/bin"
+          - "--exclude=/geo/obj"
+
+    - name: Install Node.js npm packages
+      npm:
+        path: "{{ deploy_dir }}"
+        state: present
+
+    - name: Deploy Webcam Node systemd service file
+      template:
+        src: templates/jotcad-webcam.service.j2
+        dest: /etc/systemd/system/jotcad-webcam.service
+        mode: '0644'
+      become: yes
+      register: webcam_service
+
+    - name: Reload systemd daemon if service file changed
+      systemd:
+        daemon_reload: yes
+      become: yes
+      when: webcam_service.changed
+
+    - name: Ensure jotcad-webcam service is enabled and restarted
+      systemd:
+        name: jotcad-webcam
+        state: restarted
+        enabled: yes
+      become: yes
+
+# Play 3: Deploy Geometry Operators to all nodes
+- name: Deploy JotCAD Geometry Operators
+  hosts: webcam_servers:local_services
+  gather_facts: yes
+  tasks:
+    - name: Clean C++ build directory on target
+      command: make clean
+      args:
+        chdir: "{{ deploy_dir }}/geo"
+
+    - name: Compile C++ geometry operators on target
+      command: ./compile.sh
+      args:
+        chdir: "{{ deploy_dir }}/geo"
+
+    - name: Deploy Geometry Operator systemd service files
+      template:
+        src: templates/jotcad-geo-op.service.j2
+        dest: "/etc/systemd/system/jotcad-geo-{{ item.name }}.service"
+        mode: '0644'
+      become: yes
+      loop:
+        - { name: 'primitives', port: 9091 }
+        - { name: 'booleans', port: 9092 }
+        - { name: 'transforms', port: 9093 }
+        - { name: 'features', port: 9094 }
+        - { name: 'mapping', port: 9095 }
+        - { name: 'sweep', port: 9096 }
+        - { name: 'unfold', port: 9097 }
+        - { name: 'tooling', port: 9098 }
+        - { name: 'io', port: 9099 }
+      register: geo_services
+
+    - name: Reload systemd daemon if service files changed
+      systemd:
+        daemon_reload: yes
+      become: yes
+      when: geo_services.changed
+
+    - name: Ensure Geometry Operator services are enabled and restarted
+      systemd:
+        name: "jotcad-geo-{{ item.name }}"
+        state: restarted
+        enabled: yes
+      become: yes
+      loop:
+        - { name: 'primitives' }
+        - { name: 'booleans' }
+        - { name: 'transforms' }
+        - { name: 'features' }
+        - { name: 'mapping' }
+        - { name: 'sweep' }
+        - { name: 'unfold' }
+        - { name: 'tooling' }
+        - { name: 'io' }

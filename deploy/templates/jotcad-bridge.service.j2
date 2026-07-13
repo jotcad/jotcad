@@ -1,0 +1,15 @@
+[Unit]
+Description=JotCAD Zenoh Remote API WebSocket Bridge Service
+After=network.target jotcad-router.service
+Requires=jotcad-router.service
+
+[Service]
+Type=simple
+User={{ ansible_user_id }}
+WorkingDirectory={{ deploy_dir }}
+ExecStart={{ ansible_user_dir }}/.cargo/bin/zenoh-bridge-remote-api -e tcp/127.0.0.1:9000 --ws-port 10000 --no-multicast-scouting
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=JotCAD Zenoh Router Service
+After=network.target
+
+[Service]
+Type=simple
+User={{ ansible_user_id }}
+WorkingDirectory={{ deploy_dir }}
+ExecStart=/usr/local/bin/zenohd -l tcp/0.0.0.0:9000 {% if zenoh_connect is defined and zenoh_connect %}-e {{ zenoh_connect }}{% endif %} --cfg scouting/multicast/enabled:false
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

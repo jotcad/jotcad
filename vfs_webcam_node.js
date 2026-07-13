@@ -8,6 +8,10 @@ import { promisify } from 'util';
 import path from 'path';
 const execAsync = promisify(exec);
 import { VFS, DiskStorage, Selector, MeshLink, registerVFSRoutes } from './fs/src/index.js';
+import WebSocket from 'ws';
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = WebSocket;
+}
 
 process.env.TZ = 'Asia/Seoul';
 
@@ -46,13 +50,26 @@ function getLocalDateStr(date = new Date()) {
 // Setup log publishing with recursion guard
 let vfsInstance = null;
 let isPublishingLog = false;
+let isMeshConnected = false;
+const startupLogBuffer = [];
 const originalLog = console.log;
 const originalWarn = console.warn;
 const originalError = console.error;
 
 function publishLog(type, args) {
-  const msg = `[${type}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;
+  const msg = `[${type}] ${args.map(a => {
+    if (a instanceof Error) return a.stack || a.message;
+    return typeof a === 'object' ? JSON.stringify(a) : String(a);
+  }).join(' ')}`;
   originalLog(msg);
+  
+  if (!isMeshConnected) {
+    startupLogBuffer.push(msg);
+    if (startupLogBuffer.length > 100) {
+      startupLogBuffer.shift();
+    }
+  }
+
   if (vfsInstance && !vfsInstance.isClosed && !isPublishingLog) {
     isPublishingLog = true;
     vfsInstance.write(`jot/webcam/logs/${id}`, msg)
@@ -101,8 +118,12 @@ function captureFrameDirect() {
     }, 5000);
 
     const chunks = [];
+    const stderrChunks = [];
     ffmpeg.stdout.on('data', (chunk) => {
       chunks.push(chunk);
+    });
+    ffmpeg.stderr.on('data', (chunk) => {
+      stderrChunks.push(chunk);
     });
 
     ffmpeg.on('close', (code) => {
@@ -110,7 +131,8 @@ function captureFrameDirect() {
       if (code === 0) {
         resolve(Buffer.concat(chunks));
       } else {
-        reject(new Error(`ffmpeg exited with code ${code}`));
+        const stderrStr = Buffer.concat(stderrChunks).toString('utf8');
+        reject(new Error(`ffmpeg exited with code ${code}. Stderr: ${stderrStr.trim()}`));
       }
     });
 
@@ -157,6 +179,91 @@ vfs.registerProvider('jot/webcam/capture', async (vfsInstance, selector, context
     };
   } catch (err) {
     console.error('[Webcam Provider] Failed to capture frame:', err);
+    throw err;
+  }
+});
+
+// Register VFS provider to serve completed MP4 videos
+vfs.registerProvider('jot/webcam/video/' + id, async (vfsInstance, selector, context) => {
+  try {
+    const date = selector.parameters.date;
+    const filename = selector.parameters.filename;
+
+    const safeFilename = path.basename(filename);
+    const safeDate = (date || '').replace(/[^0-9-]/g, '');
+    
+    // Determine video path: hourly is in dates subfolder, daily is in the root timelapse directory
+    let videoPath;
+    if (safeFilename.startsWith('hour_')) {
+      videoPath = path.join(timelapseDir, safeDate, safeFilename);
+    } else {
+      videoPath = path.join(timelapseDir, safeFilename);
+    }
+
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`Video file not found: ${videoPath}`);
+    }
+
+    const buffer = fs.readFileSync(videoPath);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(buffer));
+        controller.close();
+      }
+    });
+
+    return {
+      stream,
+      metadata: {
+        encoding: 'bytes',
+        filename: safeFilename
+      }
+    };
+  } catch (err) {
+    console.error('[Webcam Video Provider] Error reading video:', err);
+    throw err;
+  }
+});
+
+// Register VFS provider to list all compiled video files currently on disk
+vfs.registerProvider('jot/webcam/videos/' + id, async (vfsInstance, selector, context) => {
+  try {
+    const videos = [];
+    if (fs.existsSync(timelapseDir)) {
+      const items = fs.readdirSync(timelapseDir);
+      for (const item of items) {
+        const itemPath = path.join(timelapseDir, item);
+        const stat = fs.statSync(itemPath);
+
+        if (stat.isDirectory()) {
+          // Check for hourly videos in YYYY-MM-DD subfolders
+          const subFiles = fs.readdirSync(itemPath).filter(f => f.endsWith('.mp4'));
+          for (const subFile of subFiles) {
+            videos.push({ date: item, filename: subFile });
+          }
+        } else if (item.endsWith('.mp4')) {
+          // Daily videos in the root timelapse directory
+          videos.push({ date: '', filename: item });
+        }
+      }
+    }
+
+    const payload = JSON.stringify(videos);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(payload));
+        controller.close();
+      }
+    });
+
+    return {
+      stream,
+      metadata: {
+        encoding: 'json'
+      }
+    };
+  } catch (err) {
+    console.error('[Webcam Videos Provider] Error listing videos:', err);
     throw err;
   }
 });
@@ -335,6 +442,19 @@ async function compileHourVideo(dateStr, hourStr) {
   // Delete source JPEGs and directory to save space
   fs.rmSync(hourDir, { recursive: true, force: true });
   console.log(`[Timelapse] Cleaned up source JPEG folder: ${dateStr}/${hourStr}/ (Output: ${trueCount}/${files.length} frames)`);
+
+  try {
+    const buffer = fs.readFileSync(hourVideoPath);
+    const selector = new Selector('jot/webcam/video', {
+      id: id,
+      date: dateStr,
+      filename: `hour_${hourStr}.mp4`
+    });
+    console.log(`[Timelapse] Publishing compiled hourly video to VFS...`);
+    await vfs.write(selector, buffer);
+  } catch (err) {
+    console.error(`[Timelapse] Failed to publish hourly video to VFS:`, err);
+  }
 }
 
 // Helper to perform focus analysis on a compiled daily video via Gemini API
@@ -665,6 +785,19 @@ async function compileDailyVideo(dateStr) {
   // Delete source directory and files to save space
   fs.rmSync(datePath, { recursive: true, force: true });
   console.log(`[Timelapse] Successfully compiled daily video: ${dateStr}.mp4 and cleaned up folder.`);
+
+  try {
+    const buffer = fs.readFileSync(dailyVideoPath);
+    const selector = new Selector('jot/webcam/video', {
+      id: id,
+      date: dateStr,
+      filename: `${dateStr}.mp4`
+    });
+    console.log(`[Timelapse] Publishing compiled daily video to VFS...`);
+    await vfs.write(selector, buffer);
+  } catch (err) {
+    console.error(`[Timelapse] Failed to publish daily video to VFS:`, err);
+  }
 
   // Trigger focus analysis in background
   analyzeVideo(dateStr).catch(err => {
@@ -1679,6 +1812,12 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`HTTP VFS Routes exposed under: ${protocol}://0.0.0.0:${PORT}/vfs`);
   if (meshLink) {
     await meshLink.start();
+    isMeshConnected = true;
+    console.log(`[Webcam Node ${id}] Mesh connection established. Publishing ${startupLogBuffer.length} cached logs...`);
+    for (const cachedMsg of startupLogBuffer) {
+      vfsInstance.write(`jot/webcam/logs/${id}`, cachedMsg).catch(() => {});
+    }
+    startupLogBuffer.length = 0;
   }
 
   // 8. Optional Timelapse Collector Loop
