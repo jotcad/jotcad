@@ -10,6 +10,7 @@
 ## Geometry Kernels
 - [x] **Standardize Plural Producers**: Audit C++ operators and ensure metadata correctly declares `jot:numbers` or `jot:strings` in their output schema. (Hardened via `Processor::decode` automatic pluralization).
 - [x] **Verify `Simplify` Operator**: Resolved stalling issue (dihedral unit mismatch) and integrated `geo/test/simplify_test.cpp` to verify topological integrity and volume stability.
+- [ ] **Upgrade CGAL Library to 6.2+**: Update the `pentacular/cgal` git clone to pull the latest 2026 commits. This will vendor the new `approximate_convex_decomposition` package (`<CGAL/approximate_convex_decomposition.h>`) into `geo/cgal/` to enable fast approximate 3D convex decomposition.
 
 ## Rendering & Visuals
 - [x] **Visual Regression for Translucency**: Implemented `integration/puppeteer/translucency.test.js` and fixed `GeometryDecoder.js` to correctly honor the `ghost` role and `opacity` tags. Verified translucent overlap in standard cluster.

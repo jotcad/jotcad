@@ -10,6 +10,7 @@
 #include "grow_op.h"
 #include "rule_op.h"
 #include "fill_op.h"
+#include "dilate_op.h"
 
 namespace jotcad {
 namespace geo {
@@ -22,6 +23,7 @@ void register_sweep_ops(fs::VFSNode* vfs) {
     grow_init(vfs);
     rule_init(vfs);
     fill_init(vfs);
+    dilate_init(vfs);
 }
 }
 }

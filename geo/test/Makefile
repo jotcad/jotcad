@@ -66,6 +66,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                decal_concave_test.cpp \
                convex_test.cpp \
                convex_visual_test.cpp \
+               dilate_test.cpp \
                rainbow_test.cpp \
                rainbow_visual_test.cpp \
                undercut_test.cpp \
