@@ -32,4 +32,4 @@
 - [ ] **Flash Storage (DEFERRED)**: Implement persistent artifact storage using SPIFFS or LittleFS.
 
 ## VFS & Mesh (Zenoh Migration)
-- [ ] **Clean Up Rubbish / Legacy Compatibility Stubs**: Refactor `VFSManager.js` and visualizer components (like `MeshGraphApp.jsx`) to remove dependencies on legacy WebSocket tunnel maps (`mesh.peers` and `mesh.interests`), aligning them fully with Zenoh's native pub-sub topology and metadata queries. Clean up the placeholder dummy maps in `MeshLinkBase`.
+- [x] **Clean Up Rubbish / Legacy Compatibility Stubs**: Refactor `VFSManager.js` and visualizer components (like `MeshGraphApp.jsx`) to remove dependencies on legacy WebSocket tunnel maps (`mesh.peers` and `mesh.interests`), aligning them fully with Zenoh's native pub-sub topology and metadata queries. Clean up the placeholder dummy maps in `MeshLinkBase`.
