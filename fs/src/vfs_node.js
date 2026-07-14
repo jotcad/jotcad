@@ -85,7 +85,7 @@ export class DiskStorage {
 
     if (streamOrBytes !== null && expectedSize !== undefined && bytesWritten !== expectedSize) {
         await fsPromises.unlink(dataFile).catch(() => {});
-        throw new Error(`DiskStorage.set: Size mismatch. Expected 100 bytes (got ${bytesWritten})`);
+        throw new Error(`DiskStorage.set: Size mismatch. Expected ${expectedSize} bytes (got ${bytesWritten})`);
     }
 
     await fsPromises.writeFile(metaFile, JSON.stringify(info));
