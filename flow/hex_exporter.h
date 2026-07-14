@@ -227,6 +227,37 @@ inline void export_hex_to_binary(const std::string& filename, const std::vector<
     out.close();
 }
 
+// Calculates the dynamic crop arability index [0.0, 1.0] for a cell based on soil, slope, and vegetation proxy
+inline float calculate_cell_arability(const HexGrid& g, const std::vector<std::vector<float>>& h_lake, int q, int r) {
+    float H = g.H_soil[r][q];
+    float soil_thickness = H - g.H_bedrock[r][q];
+    float water_depth = g.h_surface[r][q] + h_lake[r][q];
+
+    if (water_depth > 0.30f) {
+        return 0.0f; // Flooded land is not arable
+    }
+
+    // 1. Soil factor: deep soil is required
+    float f_soil = 1.0f - std::exp(-soil_thickness / 0.40f);
+
+    // 2. Slope factor: flat land is required
+    float max_diff = 0.0f;
+    for (int dir = 0; dir < 6; ++dir) {
+        int nq, nr;
+        if (g.get_neighbor(q, r, dir, nq, nr)) {
+            float diff = std::abs(H - g.H_soil[nr][nq]);
+            if (diff > max_diff) max_diff = diff;
+        }
+    }
+    float slope = max_diff / 8660.0f;
+    float f_slope = std::exp(-std::pow(slope / 0.08f, 2));
+
+    // 3. Vegetation cover serves as the perfect proxy for moisture and temperature suitability
+    float f_veg = g.vegetation[r][q];
+
+    return f_soil * f_slope * f_veg;
+}
+
 // Bakes the HexGrid layout to a fully-shaded 2D PNG image directly in C++ using STB
 inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_px) {
     auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
@@ -326,6 +357,12 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                     sg = ((1.0f - veg) * substrate_g + veg * target_g) * shade;
                     sb = ((1.0f - veg) * substrate_b + veg * target_b) * shade;
                 }
+
+                float arability = calculate_cell_arability(g, h_lake, q, r);
+                // Blend in bright red tint for potential arability: RGB (235, 45, 45)
+                sr = (1.0f - arability) * sr + arability * 235.0f;
+                sg = (1.0f - arability) * sg + arability * 45.0f;
+                sb = (1.0f - arability) * sb + arability * 45.0f;
 
                 pr = (unsigned char)std::max(0.0f, std::min(255.0f, sr));
                 pg = (unsigned char)std::max(0.0f, std::min(255.0f, sg));
@@ -500,6 +537,12 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     sg = ((1.0f - veg) * substrate_g + veg * target_g) * shade;
                     sb = ((1.0f - veg) * substrate_b + veg * target_b) * shade;
                 }
+
+                float arability = calculate_cell_arability(g, h_lake, q, r);
+                // Blend in bright red tint for potential arability: RGB (235, 45, 45)
+                sr = (1.0f - arability) * sr + arability * 235.0f;
+                sg = (1.0f - arability) * sg + arability * 45.0f;
+                sb = (1.0f - arability) * sb + arability * 45.0f;
 
                 // 3. Render water depth overlay (Physical relief scaling)
                 if (water > 0.50f) {
