@@ -40,13 +40,7 @@ public:
             for (int q = 0; q < sq; ++q) {
                 float H = g.H_soil[r][q];
 
-                // 1. Saltwater marine death (below sea level)
-                if (H <= 0.0f) {
-                    g.vegetation[r][q] = 0.0f;
-                    continue;
-                }
-
-                // 2. Compute moisture availability
+                // 1. Compute moisture availability
                 // High river discharge or surface water increases local moisture
                 // Convert annual flow volume to water depth equivalent
                 float moisture = 0.20f; // Background moisture
@@ -62,12 +56,44 @@ public:
                     moisture = std::max(moisture, 0.8f); // Riparian moisture enhancement
                 }
 
-                // 3. Logistic growth
+                // 2. Compute dynamic carrying capacity under physical limits
+                float soil_thickness = H - g.H_bedrock[r][q];
+                auto& h_lake = g.request_field<HexLakeDepth>();
+                float water_depth = g.h_surface[r][q] + h_lake[r][q];
+                float effective_cap = carrying_capacity;
+
+                if (water_depth > 0.50f) {
+                    // Drowning Limit (standing water depth > 50 cm)
+                    effective_cap = 0.0f;
+                } else if (soil_thickness < 0.05f) {
+                    // Bare Bedrock Limit (0 to 5 cm soil)
+                    effective_cap = 0.0f;
+                } else if (soil_thickness < 0.40f) {
+                    // Grass/Shrub Limit (5 to 40 cm soil)
+                    effective_cap = 0.40f * ((soil_thickness - 0.05f) / 0.35f);
+                } else if (soil_thickness < 1.00f) {
+                    // Forest Establishment Limit (40 cm to 1.0 m soil)
+                    effective_cap = 0.40f + 0.60f * ((soil_thickness - 0.40f) / 0.60f);
+                }
+
+                // 3. Logistic growth (Stable analytical integration)
                 float V = g.vegetation[r][q];
-                if (V < 0.01f) V += 0.01f * dt; // Seeding growth
-                
-                float growth = growth_rate * V * (carrying_capacity - V) * moisture * dt;
-                V = std::max(0.0f, std::min(carrying_capacity, V + growth));
+                if (effective_cap > 0.0f) {
+                    float V_0 = std::max(0.01f, V); // Seed start density
+                    float r = growth_rate * moisture;
+                    float r_dt = r * dt;
+
+                    if (r_dt > 20.0f) {
+                        // Safe limit to prevent exponential overflow, immediately reaches capacity
+                        V = effective_cap;
+                    } else {
+                        float exp_rt = std::exp(r_dt);
+                        V = (effective_cap * V_0 * exp_rt) / (effective_cap + V_0 * (exp_rt - 1.0f));
+                    }
+                } else {
+                    // Rapid decay to 0 under drowning/bedrock stress
+                    V = std::max(0.0f, V - 0.5f * dt);
+                }
 
                 // 4. Hydraulic channel clearing
                 // High river flows sweep away vegetation inside the main channels
@@ -77,6 +103,22 @@ public:
                 }
 
                 g.vegetation[r][q] = V;
+
+                // 5. Dual-Directional Soil Production (Pedogenesis & Carbon Capture)
+                if (V > 0.0f) {
+                    float current_soil_thickness = g.H_soil[r][q] - g.H_bedrock[r][q];
+                    
+                    // A. Bedrock Weathering (Bottom-Up): converts rock to mineral soil, lowering bedrock boundary
+                    float P_0 = 0.00005f; // Potential weathering rate: 0.05 mm/yr
+                    float k = 2.0f;       // Thickness decay constant: 2.0 m^-1
+                    float weathering = P_0 * (0.1f + 0.9f * V) * std::exp(-k * current_soil_thickness) * dt;
+                    g.H_bedrock[r][q] -= weathering;
+
+                    // B. Organic Accumulation (Top-Down): leaf litter and humus build-up, raising surface elevation
+                    float R_org = 0.00002f; // Potential organic accumulation rate: 0.02 mm/yr
+                    float organic_accumulation = R_org * V * dt;
+                    g.H_soil[r][q] += organic_accumulation;
+                }
             }
         }
     }

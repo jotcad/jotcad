@@ -13,7 +13,7 @@ async function run() {
         ]
     });
     const page = await browser.newPage();
-    await page.setViewport({ width: 1400, height: 1600 }); // Taller viewport for vertically stacked cards
+    await page.setViewport({ width: 1400, height: 1600 });
     
     console.log("Navigating to https://localhost:8085/hex_visualizer.html...");
     await page.goto('https://localhost:8085/hex_visualizer.html', { 
@@ -24,16 +24,16 @@ async function run() {
     console.log("Waiting for loading screen overlay to fade...");
     await new Promise(resolve => setTimeout(resolve, 3500));
     
-    console.log("Simulating dragging 2D and 3D sliders to year 100...");
+    console.log("Simulating dragging 2D and 3D sliders to year 1000...");
     await page.evaluate(() => {
         const slider2d = document.getElementById('step-slider-2d');
         const slider3d = document.getElementById('step-slider-3d');
         if (slider2d) {
-            slider2d.value = 100;
+            slider2d.value = 1000;
             slider2d.dispatchEvent(new Event('input'));
         }
         if (slider3d) {
-            slider3d.value = 100;
+            slider3d.value = 1000;
             slider3d.dispatchEvent(new Event('input'));
         }
     });
@@ -41,7 +41,7 @@ async function run() {
     console.log("Waiting for images and overlays to update...");
     await new Promise(resolve => setTimeout(resolve, 1500));
     
-    console.log("Taking screenshot of the vertically stacked layout...");
+    console.log("Taking screenshot of the vertically stacked layout at year 1000...");
     const screenshotPath = '/home/brian/github/jotcad/flow/hex_screenshot.png';
     await page.screenshot({ path: screenshotPath });
     

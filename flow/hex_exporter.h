@@ -21,6 +21,7 @@ struct HexGridState {
     std::vector<std::vector<float>> sediment;
     std::vector<std::vector<float>> vegetation;
     std::vector<std::vector<int>> downstream_dir;
+    std::vector<std::vector<float>> h_lake;
 };
 
 // 3D vector helper for isometric projection & triangle rasterization
@@ -91,16 +92,68 @@ inline void rasterize_triangle_3d(
     }
 }
 
-// Projects coordinates (X, Y, Z) to isometric 2D screen coordinate (px, py, depth)
+// Helper to calculate identical, seam-free corner coordinates by averaging the centers of the 3 sharing cells
+inline void get_vertex_coords(const HexGrid& g, int q, int r, int vertex_index, float cx, float cy, float R_px, float& vx, float& vy) {
+    float sum_x = cx;
+    float sum_y = cy;
+    int count = 1;
+    
+    int dir1 = vertex_index;
+    int dir2 = (vertex_index + 1) % 6;
+    
+    int nq1, nr1;
+    if (g.get_neighbor(q, r, dir1, nq1, nr1)) {
+        float nx1 = R_px * 1.7320508f * (nq1 + nr1 * 0.5f);
+        float ny1 = R_px * 1.5f * nr1;
+        sum_x += nx1;
+        sum_y += ny1;
+        count++;
+    }
+    int nq2, nr2;
+    if (g.get_neighbor(q, r, dir2, nq2, nr2)) {
+        float nx2 = R_px * 1.7320508f * (nq2 + nr2 * 0.5f);
+        float ny2 = R_px * 1.5f * nr2;
+        sum_x += nx2;
+        sum_y += ny2;
+        count++;
+    }
+    vx = sum_x / count;
+    vy = sum_y / count;
+}
+
+// Helper to calculate smooth interpolated vertex height between a cell and its two adjacent neighbors
+inline float get_vertex_height(const HexGrid& g, const std::vector<std::vector<float>>& h_lake, int q, int r, int vertex_index) {
+    float H = g.H_soil[r][q] + g.h_surface[r][q] + h_lake[r][q];
+    float sum_h = H;
+    int count = 1;
+    
+    // Hex neighbors corresponding to adjacent directions for the vertex
+    int dir1 = vertex_index;
+    int dir2 = (vertex_index + 1) % 6;
+    
+    int nq1, nr1;
+    if (g.get_neighbor(q, r, dir1, nq1, nr1)) {
+        sum_h += g.H_soil[nr1][nq1] + g.h_surface[nr1][nq1] + h_lake[nr1][nq1];
+        count++;
+    }
+    int nq2, nr2;
+    if (g.get_neighbor(q, r, dir2, nq2, nr2)) {
+        sum_h += g.H_soil[nr2][nq2] + g.h_surface[nr2][nq2] + h_lake[nr2][nq2];
+        count++;
+    }
+    return sum_h / count;
+}
+
+// Projects coordinates (X, Y, Z) to isometric 2D screen coordinate (px, py, depth) using a South-facing 0-degree rotation
 inline Vec3_3d project_iso(float X, float Y, float Z, float x_mid, float y_mid, float scale_xy, float scale_z) {
-    double px = 500.0 + (X - x_mid - (Y - y_mid)) * 0.8660254 * scale_xy;
-    double py = 310.0 + (X - x_mid + (Y - y_mid)) * 0.5000000 * scale_xy - Z * scale_z;
-    double depth = (X + Y) * 0.5000000 * scale_xy + Z * scale_z;
+    double px = 500.0 + (X - x_mid) * scale_xy;
+    double py = 320.0 + (Y - y_mid) * 0.5000000 * scale_xy - Z * scale_z;
+    double depth = (Y - y_mid) * scale_xy + Z * scale_z;
     return { px, py, depth };
 }
 
 // Exports the collected simulation history to a high-performance binary file
-inline void export_hex_to_binary(const std::string& filename, const std::vector<HexGridState>& history, int size_q, int size_r, float hex_radius) {
+inline void export_hex_to_binary(const std::string& filename, const std::vector<HexGridState>& history, int size_q, int size_r, float hex_radius, float dt) {
     std::ofstream out(filename, std::ios::out | std::ios::binary);
     if (!out.is_open()) {
         std::cerr << "Failed to open export file: " << filename << std::endl;
@@ -114,11 +167,13 @@ inline void export_hex_to_binary(const std::string& filename, const std::vector<
     int32_t r_size = size_r;
     int32_t steps_count = history.size();
     float radius = hex_radius;
+    float step_dt = dt;
 
     out.write(reinterpret_cast<const char*>(&q_size), sizeof(q_size));
     out.write(reinterpret_cast<const char*>(&r_size), sizeof(r_size));
     out.write(reinterpret_cast<const char*>(&steps_count), sizeof(steps_count));
     out.write(reinterpret_cast<const char*>(&radius), sizeof(radius));
+    out.write(reinterpret_cast<const char*>(&step_dt), sizeof(step_dt));
 
     int cell_count = q_size * r_size;
     std::vector<float> float_buffer(cell_count);
@@ -162,6 +217,11 @@ inline void export_hex_to_binary(const std::string& filename, const std::vector<
             std::copy(state.downstream_dir[r].begin(), state.downstream_dir[r].end(), int_buffer.begin() + r * q_size);
         }
         out.write(reinterpret_cast<const char*>(int_buffer.data()), cell_count * sizeof(int32_t));
+
+        for (int r = 0; r < r_size; ++r) {
+            std::copy(state.h_lake[r].begin(), state.h_lake[r].end(), float_buffer.begin() + r * q_size);
+        }
+        out.write(reinterpret_cast<const char*>(float_buffer.data()), cell_count * sizeof(float));
     }
 
     out.close();
@@ -169,6 +229,7 @@ inline void export_hex_to_binary(const std::string& filename, const std::vector<
 
 // Bakes the HexGrid layout to a fully-shaded 2D PNG image directly in C++ using STB
 inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_px) {
+    auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
     float max_x = R_px * 1.7320508f * ((g.size_q - 1) + (g.size_r - 1) * 0.5f);
     float max_y = R_px * 1.5f * (g.size_r - 1);
 
@@ -215,7 +276,7 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
 
             if (g.is_valid(q, r)) {
                 float H = g.H_soil[r][q];
-                float water = g.h_surface[r][q];
+                float water = g.h_surface[r][q] + h_lake[r][q];
                 float veg = g.vegetation[r][q];
 
                 // 1. Shading Calculation (ambient occlusion/hillshading)
@@ -226,25 +287,14 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
 
                 float dx_grad = h_E - h_W;
                 float dy_grad = h_S - h_N;
-                float shadow = 1.0f - 0.002f * dx_grad - 0.002f * dy_grad;
-                float shade = std::max(0.55f, std::min(1.45f, shadow));
+                float shade = 1.0f; // Disabled hillshading for flat, vibrant coloring
 
-                // 2. Continuous Biome Coloring (No sea-level clamping)
+                // 2. Eco-Hydrological Biome Coloring (Water-driven instead of altitude bands)
                 float sr = 0.0f, sg = 0.0f, sb = 0.0f;
 
-                if (H < 150.0f) {
-                    // Lowlands / Grass plains / Sandy base
-                    sr = (176.0f * (1.0f - veg) + veg * 46.0f) * shade;
-                    sg = (158.0f * (1.0f - veg) + veg * 139.0f) * shade;
-                    sb = (112.0f * (1.0f - veg) + veg * 52.0f) * shade;
-                } else if (H < 600.0f) {
-                    // Highland forest / rocky hills
-                    sr = (130.0f * (1.0f - veg) + veg * 30.0f) * shade;
-                    sg = (115.0f * (1.0f - veg) + veg * 95.0f) * shade;
-                    sb = (85.0f * (1.0f - veg) + veg * 40.0f) * shade;
-                } else {
+                if (H > 700.0f) {
                     // Mountain Peak (grey base, turning white/snow at the very top)
-                    float snow_t = std::min(1.0f, (H - 600.0f) / 400.0f);
+                    float snow_t = std::min(1.0f, (H - 700.0f) / 300.0f);
                     float rock_r = 110.0f * shade;
                     float rock_g = 105.0f * shade;
                     float rock_b = 100.0f * shade;
@@ -253,6 +303,28 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                     sr = (1.0f - snow_t) * rock_r + snow_t * snow_val;
                     sg = (1.0f - snow_t) * rock_g + snow_t * snow_val;
                     sb = (1.0f - snow_t) * rock_b + snow_t * snow_val;
+                } else {
+                    // Moisture factor: increases near river flows (Q) and standing water depth (water)
+                    float Q_m3s = g.Q[r][q] / 31557600.0f;
+                    float moisture_factor = std::min(1.0f, (Q_m3s / 30.0f) + (water / 0.5f));
+
+                    // Grass: Bright yellowish-green [185, 230, 85]
+                    // Forest: Bright forest green [20, 120, 45]
+                    float target_r = (1.0f - moisture_factor) * 185.0f + moisture_factor * 20.0f;
+                    float target_g = (1.0f - moisture_factor) * 230.0f + moisture_factor * 120.0f;
+                    float target_b = (1.0f - moisture_factor) * 85.0f + moisture_factor * 45.0f;
+
+                    // Blend sand [195, 178, 130] or rock [135, 135, 135] based on soil thickness
+                    float soil_t_m = H - g.H_bedrock[r][q];
+                    float bedrock_blend = std::max(0.0f, std::min(1.0f, (0.50f - soil_t_m) / 0.50f));
+                    
+                    float substrate_r = (1.0f - bedrock_blend) * 195.0f + bedrock_blend * 135.0f;
+                    float substrate_g = (1.0f - bedrock_blend) * 178.0f + bedrock_blend * 135.0f;
+                    float substrate_b = (1.0f - bedrock_blend) * 130.0f + bedrock_blend * 135.0f;
+
+                    sr = ((1.0f - veg) * substrate_r + veg * target_r) * shade;
+                    sg = ((1.0f - veg) * substrate_g + veg * target_g) * shade;
+                    sb = ((1.0f - veg) * substrate_b + veg * target_b) * shade;
                 }
 
                 pr = (unsigned char)std::max(0.0f, std::min(255.0f, sr));
@@ -260,8 +332,8 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                 pb = (unsigned char)std::max(0.0f, std::min(255.0f, sb));
 
                 // 3. Render water depth overlay directly on hex cells (Physical relief scaling)
-                if (water > 0.05f) {
-                    float w_norm = std::min(1.0f, water / 1.50f);
+                if (water > 0.50f) {
+                    float w_norm = std::min(1.0f, (water - 0.50f) / 1.00f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
                     float wb = 224.0f + (150.0f - 224.0f) * w_norm;
@@ -344,6 +416,7 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
 
 // Bakes the HexGrid layout to a 3D isometric projected PNG frame directly in C++
 inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float R_px) {
+    auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
     int width = 1000;
     int height = 650;
 
@@ -363,7 +436,7 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
 
     // Zoom/scale parameters to fit the 3D model on screen (scales dynamically with grid size)
     float scale_xy = 0.82f * (90.0f / g.size_q);
-    float heightScale = 0.11f; // 1200m peak -> 132px vertical offset
+    float heightScale = 0.01f; // 1200m peak -> 12px vertical offset (30x vertical exaggeration)
 
     // Traversal: Back-to-Front Painter's Order
     for (int sum = 0; sum <= (g.size_q + g.size_r - 2); ++sum) {
@@ -371,7 +444,7 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
             int q = sum - r;
             if (q >= 0 && q < g.size_q && r >= 0 && r < g.size_r) {
                 float H = g.H_soil[r][q];
-                float water = g.h_surface[r][q];
+                float water = g.h_surface[r][q] + h_lake[r][q];
                 float veg = g.vegetation[r][q];
 
                 float z_top = H + water;
@@ -388,22 +461,14 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
 
                 float dx_grad = h_E - h_W;
                 float dy_grad = h_S - h_N;
-                float shadow = 1.0f - 0.002f * dx_grad - 0.002f * dy_grad;
-                float shade = std::max(0.55f, std::min(1.45f, shadow));
+                float shade = 1.0f; // Disabled hillshading for flat, vibrant coloring
 
-                // 2. Continuous Biome Coloring (No sea-level clamping)
+                // 2. Eco-Hydrological Biome Coloring (Water-driven instead of altitude bands)
                 float sr = 0.0f, sg = 0.0f, sb = 0.0f;
 
-                if (H < 150.0f) {
-                    sr = (176.0f * (1.0f - veg) + veg * 46.0f) * shade;
-                    sg = (158.0f * (1.0f - veg) + veg * 139.0f) * shade;
-                    sb = (112.0f * (1.0f - veg) + veg * 52.0f) * shade;
-                } else if (H < 600.0f) {
-                    sr = (130.0f * (1.0f - veg) + veg * 30.0f) * shade;
-                    sg = (115.0f * (1.0f - veg) + veg * 95.0f) * shade;
-                    sb = (85.0f * (1.0f - veg) + veg * 40.0f) * shade;
-                } else {
-                    float snow_t = std::min(1.0f, (H - 600.0f) / 400.0f);
+                if (H > 700.0f) {
+                    // Mountain Peak (grey base, turning white/snow at the very top)
+                    float snow_t = std::min(1.0f, (H - 700.0f) / 300.0f);
                     float rock_r = 110.0f * shade;
                     float rock_g = 105.0f * shade;
                     float rock_b = 100.0f * shade;
@@ -412,11 +477,33 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     sr = (1.0f - snow_t) * rock_r + snow_t * snow_val;
                     sg = (1.0f - snow_t) * rock_g + snow_t * snow_val;
                     sb = (1.0f - snow_t) * rock_b + snow_t * snow_val;
+                } else {
+                    // Moisture factor: increases near river flows (Q) and standing water depth (water)
+                    float Q_m3s = g.Q[r][q] / 31557600.0f;
+                    float moisture_factor = std::min(1.0f, (Q_m3s / 30.0f) + (water / 0.5f));
+
+                    // Grass: Bright yellowish-green [185, 230, 85]
+                    // Forest: Bright forest green [20, 120, 45]
+                    float target_r = (1.0f - moisture_factor) * 185.0f + moisture_factor * 20.0f;
+                    float target_g = (1.0f - moisture_factor) * 230.0f + moisture_factor * 120.0f;
+                    float target_b = (1.0f - moisture_factor) * 85.0f + moisture_factor * 45.0f;
+
+                    // Blend sand [195, 178, 130] or rock [135, 135, 135] based on soil thickness
+                    float soil_t_m = H - g.H_bedrock[r][q];
+                    float bedrock_blend = std::max(0.0f, std::min(1.0f, (0.50f - soil_t_m) / 0.50f));
+                    
+                    float substrate_r = (1.0f - bedrock_blend) * 195.0f + bedrock_blend * 135.0f;
+                    float substrate_g = (1.0f - bedrock_blend) * 178.0f + bedrock_blend * 135.0f;
+                    float substrate_b = (1.0f - bedrock_blend) * 130.0f + bedrock_blend * 135.0f;
+
+                    sr = ((1.0f - veg) * substrate_r + veg * target_r) * shade;
+                    sg = ((1.0f - veg) * substrate_g + veg * target_g) * shade;
+                    sb = ((1.0f - veg) * substrate_b + veg * target_b) * shade;
                 }
 
                 // 3. Render water depth overlay (Physical relief scaling)
-                if (water > 0.05f) {
-                    float w_norm = std::min(1.0f, water / 1.50f);
+                if (water > 0.50f) {
+                    float w_norm = std::min(1.0f, (water - 0.50f) / 1.00f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
                     float wb = 224.0f + (150.0f - 224.0f) * w_norm;
@@ -439,11 +526,13 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                 Vec3_3d bot_verts[6];
 
                 for (int i = 0; i < 6; ++i) {
-                    float angle_rad = (60.0f * i - 30.0f) * 3.14159265f / 180.0f;
-                    float vx = cx + R_px * std::cos(angle_rad);
-                    float vy = cy + R_px * std::sin(angle_rad);
+                    float vx, vy;
+                    get_vertex_coords(g, q, r, i, cx, cy, R_px, vx, vy);
 
-                    top_verts[i] = project_iso(vx, vy, z_top, X_mid, Y_mid, scale_xy, heightScale);
+                    // Smooth height interpolation at corners
+                    float z_v = get_vertex_height(g, h_lake, q, r, i);
+
+                    top_verts[i] = project_iso(vx, vy, z_v, X_mid, Y_mid, scale_xy, heightScale);
                     // Floating base thickness at Z = -100m to cover deep valleys
                     bot_verts[i] = project_iso(vx, vy, -100.0f, X_mid, Y_mid, scale_xy, heightScale);
                 }
@@ -455,9 +544,19 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     rasterize_triangle_3d(top_center, top_verts[i], top_verts[(i + 1) % 6], col_top, pixels, z_buffer, width, height);
                 }
 
-                // B. Rasterize Front-Facing Side Walls (South-East, South-West, West)
-                for (int i = 1; i <= 3; ++i) {
+                // B. Rasterize Front-Facing Side Walls (Only on the outer border of the grid)
+                for (int i = 0; i <= 3; ++i) {
+                    int nq, nr;
+                    // Map wall index to the correct neighbor direction
+                    int neighbor_dir = (i == 1) ? 5 : ((i == 2) ? 4 : i);
+
+                    // Check if there is a neighbor in this direction
+                    if (g.get_neighbor(q, r, neighbor_dir, nq, nr)) {
+                        continue; // Do not draw walls between adjacent cells inside the grid!
+                    }
+
                     float wall_shade = 1.0f;
+                    if (i == 0) wall_shade = 0.90f; // East (semi-shaded)
                     if (i == 1) wall_shade = 0.82f; // South-East (shaded)
                     if (i == 2) wall_shade = 0.96f; // South-West (brightest front)
                     if (i == 3) wall_shade = 0.68f; // West (shadowed)

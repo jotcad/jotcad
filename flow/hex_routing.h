@@ -20,6 +20,30 @@ public:
     void fill_depressions(HexGrid& g) {
         int sq = g.size_q;
         int sr = g.size_r;
+        float dx = g.scale.hex_radius_m * 1.7320508f;
+        float outward_slope = 0.015f; // 1.5% slope
+        float drop = outward_slope * dx;
+
+        // Enforce constant outward slope on H_soil for all border cells
+        for (int r = 0; r < sr; ++r) {
+            for (int q = 0; q < sq; ++q) {
+                if (r == 0 || r == sr - 1 || q == 0 || q == sq - 1) {
+                    float min_interior_h = 99999.0f;
+                    for (int dir = 0; dir < 6; ++dir) {
+                        int nq, nr;
+                        if (g.get_neighbor(q, r, dir, nq, nr)) {
+                            if (nr > 0 && nr < sr - 1 && nq > 0 && nq < sq - 1) {
+                                min_interior_h = std::min(min_interior_h, g.H_soil[nr][nq]);
+                            }
+                        }
+                    }
+                    if (min_interior_h < 99999.0f) {
+                        g.H_soil[r][q] = min_interior_h - drop;
+                    }
+                }
+            }
+        }
+
         std::vector<std::vector<float>> F(sr, std::vector<float>(sq, 99999.0f));
 
         // 1. Initialize boundaries to H_soil
@@ -32,16 +56,7 @@ public:
             F[r][sq - 1] = g.H_soil[r][sq - 1];
         }
 
-        // 2. Initialize ocean outlets to H_soil (sea level is 0.0)
-        for (int r = 0; r < sr; ++r) {
-            for (int q = 0; q < sq; ++q) {
-                if (g.H_soil[r][q] <= 0.0f) {
-                    F[r][q] = g.H_soil[r][q];
-                }
-            }
-        }
-
-        // 3. Iterative forward-backward relaxation pass
+        // 2. Iterative forward-backward relaxation pass
         bool changed = true;
         int iterations = 0;
         while (changed && iterations < 1000) {
@@ -91,10 +106,11 @@ public:
             iterations++;
         }
 
-        // 4. Write back filled elevations
+        // 4. Calculate lake depth (filled level - soil level) instead of overwriting H_soil
+        auto& h_lake = g.request_field<HexLakeDepth>();
         for (int r = 0; r < sr; ++r) {
             for (int q = 0; q < sq; ++q) {
-                g.H_soil[r][q] = F[r][q];
+                h_lake[r][q] = std::max(0.0f, F[r][q] - g.H_soil[r][q]);
             }
         }
     }
@@ -107,6 +123,8 @@ public:
         if (run_sink_fill) {
             fill_depressions(g);
         }
+
+        auto& h_lake = g.request_field<HexLakeDepth>();
 
         // 2. Compute cell areas and water volume contributions
         // Area of pointy-topped hexagon = (3 * sqrt(3) / 2) * R^2
@@ -130,30 +148,30 @@ public:
             }
         }
 
-        // 4. Create cell coordinate list and sort descending by elevation
+        // 4. Create cell coordinate list and sort descending by water surface elevation (soil + lake depth)
         struct Cell {
             int q, r;
-            float height;
+            float water_surface_height;
         };
         std::vector<Cell> cells;
         cells.reserve(sq * sr);
         for (int r = 0; r < sr; ++r) {
             for (int q = 0; q < sq; ++q) {
-                cells.push_back({q, r, g.H_soil[r][q]});
+                cells.push_back({q, r, g.H_soil[r][q] + h_lake[r][q]});
             }
         }
 
         std::sort(cells.begin(), cells.end(), [](const Cell& a, const Cell& b) {
-            return a.height > b.height;
+            return a.water_surface_height > b.water_surface_height;
         });
 
-        // 5. Propagate flow downhill (topological sweep)
+        // 5. Propagate flow downhill along the water surface (topological sweep)
         for (const auto& cell : cells) {
             int q = cell.q;
             int r = cell.r;
-            float H_curr = g.H_soil[r][q];
+            float F_curr = cell.water_surface_height;
 
-            // Find steepest downhill neighbor
+            // Find steepest downhill neighbor on the water surface F
             int steepest_dir = -1;
             float max_slope = 0.0f;
             int steepest_nq = -1;
@@ -162,8 +180,8 @@ public:
             for (int dir = 0; dir < 6; ++dir) {
                 int nq, nr;
                 if (g.get_neighbor(q, r, dir, nq, nr)) {
-                    float H_neigh = g.H_soil[nr][nq];
-                    float drop = H_curr - H_neigh;
+                    float F_neigh = g.H_soil[nr][nq] + h_lake[nr][nq];
+                    float drop = F_curr - F_neigh;
                     if (drop > max_slope) {
                         max_slope = drop;
                         steepest_dir = dir;
@@ -186,10 +204,11 @@ public:
 
         for (int r = 0; r < sr; ++r) {
             for (int q = 0; q < sq; ++q) {
-                g.Q[r][q] = Q_accum[r][q];
+                // Normalize accumulated volume over step dt (Q_accum) to annual rate (g.Q in m^3/year)
+                g.Q[r][q] = Q_accum[r][q] / dt;
 
                 // Convert to m^3/s for hydraulic geometry calculations
-                float Q_m3s = Q_accum[r][q] / SECONDS_PER_YEAR;
+                float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
 
                 if (Q_m3s > 0.0f) {
                     // h_surface (depth) calibrated to Q^exponent

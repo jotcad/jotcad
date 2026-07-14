@@ -20,13 +20,17 @@ struct HexScaleConfig {
 const int HEX_DQ[6] = {1, 1, 0, -1, -1, 0};
 const int HEX_DR[6] = {0, -1, -1, 0, 1, 1};
 
+// Dynamic sparse field tag for standing lake depths
+struct HexLakeDepth {};
+
 struct HexGrid {
     int size_q;
     int size_r;
     HexScaleConfig scale;
 
     // Core cell-centered state variables
-    std::vector<std::vector<float>> H_soil;      // Bedrock / soil elevation (m)
+    std::vector<std::vector<float>> H_soil;      // Total ground elevation (bedrock + soil) (m)
+    std::vector<std::vector<float>> H_bedrock;   // Bedrock floor elevation (m)
     std::vector<std::vector<float>> h_surface;   // Surface water depth (m)
     std::vector<std::vector<float>> Q;           // Accumulated annual flow discharge (m^3/yr)
     std::vector<std::vector<float>> sediment;    // Suspended sediment capacity/load
@@ -40,6 +44,7 @@ struct HexGrid {
 
     HexGrid(int sq, int sr) : size_q(sq), size_r(sr),
         H_soil(sr, std::vector<float>(sq, 0.0f)),
+        H_bedrock(sr, std::vector<float>(sq, 0.0f)),
         h_surface(sr, std::vector<float>(sq, 0.0f)),
         Q(sr, std::vector<float>(sq, 0.0f)),
         sediment(sr, std::vector<float>(sq, 0.0f)),

@@ -39,18 +39,24 @@ public:
                             float slope = (h_center - h_neighbor) / dx;
 
                             // Root cohesion increases local stable repose slope threshold
-                            float local_max_slope = max_slope;
-                            float veg_val = g.vegetation[r][q];
-                            local_max_slope *= (1.0f + veg_cohesion * veg_val);
+                            float soil_avail = g.H_soil[r][q] - g.H_bedrock[r][q];
+                            float base_max_slope = (soil_avail > 0.01f) ? max_slope : 0.50f;
+                            float local_max_slope = base_max_slope * (1.0f + veg_cohesion * g.vegetation[r][q]);
 
                             if (slope > local_max_slope) {
                                 // Relax slope: move mass from center to neighbor
                                 float excess = (slope - local_max_slope) * 0.15f;
                                 float mass = excess * (dx * 0.5f); // mass-conserving slope relaxation
 
-                                g.H_soil[r][q] -= mass;
-                                g.H_soil[nr][nq] += mass;
-                                h_center -= mass;
+                                // Can only slide available soil
+                                mass = std::min(mass, std::max(0.0f, soil_avail));
+
+                                if (mass > 0.0f) {
+                                    g.H_soil[r][q] -= mass;
+                                    g.H_soil[nr][nq] += mass;
+                                    h_center -= mass;
+                                    soil_avail -= mass;
+                                }
                             }
                         }
                     }

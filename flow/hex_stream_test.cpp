@@ -40,8 +40,11 @@ void initialize_hex_soil_perlin(HexGrid& g) {
             // Base elevation in meters
             float height_m = (0.15f + pn * 0.4f + ridge_factor * 1.8f) * 650.0f;
             
-            // Fade elevations to coastal sea level (0.0) near boundaries
             g.H_soil[r][q] = height_m * coastal_fade;
+
+            // Soil is thick in valleys (20m) and thin on mountain peaks (2m)
+            float initial_soil_thickness = 2.0f + 18.0f * (1.0f - ridge_factor);
+            g.H_bedrock[r][q] = g.H_soil[r][q] - initial_soil_thickness * coastal_fade;
         }
     }
 }
@@ -54,8 +57,8 @@ int main(int argc, char* argv[]) {
     const int SIZE_Q = 180;
     const int SIZE_R = 150;
     const float HEX_RADIUS = 5000.0f; // 5 km
-    const float DT = 1.0f;            // 1.0 year steps
-    const int TOTAL_STEPS = 100;
+    const float DT = 1000.0f;         // 1000 year steps
+    const int TOTAL_STEPS = 1000;
     const int EXPORT_STRIDE = 5;
 
     // Create directories for exporting frames
@@ -79,11 +82,17 @@ int main(int argc, char* argv[]) {
     HexPhase* p1 = orchestrator.add_phase("Hydrology & Landscape Evolution", DT, TOTAL_STEPS);
     p1->add<HexPrecipitation>(1.4f);                 // 1.4 m rainfall per year
     p1->add<HexRouting>(0.15f, 0.40f, true);         // D6 routing with sink filling
-    p1->add<HexErosion>(2.5e-5f, 0.04f, 0.15f, 2.0f); // Stream power + sediment transport
-    p1->add<HexLandslide>(0.14f, 0.50f);             // Stable slopes (14%) + veg cohesion
+    p1->add<HexErosion>(1.0e-2f, 0.04f, 0.15f, 2.0f); // Soil erodibility 1.0e-2 (bedrock 2.5e-4)
+    p1->add<HexLandslide>(0.14f, 0.50f);             // Stable slopes (14% soil, 50% bedrock) + veg cohesion
     p1->add<HexVegetation>(0.16f, 1.0f, 0.8f);       // Vegetation growth
 
     std::vector<HexGridState> history;
+
+    // Run depression filling once to calculate initial lake depths at Year 0
+    {
+        HexRouting temp_routing;
+        temp_routing.fill_depressions(g);
+    }
 
     // Save step 0
     HexGridState init_state;
@@ -91,6 +100,7 @@ int main(int argc, char* argv[]) {
     init_state.phase_name = "Genesis";
     init_state.H_soil = g.H_soil;
     init_state.h_surface = g.h_surface;
+    init_state.h_lake = g.request_field<HexLakeDepth>();
     init_state.Q = g.Q;
     init_state.sediment = g.sediment;
     init_state.vegetation = g.vegetation;
@@ -100,7 +110,7 @@ int main(int argc, char* argv[]) {
     save_hex_png_3d("flow/hex_frames/frame_3d_0.png", g, 4.0f); // 3D isometric view
 
     // 3. Run Simulation
-    std::cout << "Running 100 Annual Time-Steps (dt = 1.0 year)..." << std::endl;
+    std::cout << "Running " << TOTAL_STEPS << " Annual Time-Steps (dt = " << DT << " year)..." << std::endl;
     orchestrator.run_phase(p1, [&](int step) {
         int current_step = step + 1;
 
@@ -122,6 +132,7 @@ int main(int argc, char* argv[]) {
             state.phase_name = p1->name;
             state.H_soil = g.H_soil;
             state.h_surface = g.h_surface;
+            state.h_lake = g.request_field<HexLakeDepth>();
             state.Q = g.Q;
             state.sediment = g.sediment;
             state.vegetation = g.vegetation;
@@ -165,7 +176,7 @@ int main(int argc, char* argv[]) {
 
     // 5. Binary Export
     std::cout << "Saving binary simulation history to 'flow/test_hex_stream.bin'..." << std::endl;
-    export_hex_to_binary("flow/test_hex_stream.bin", history, SIZE_Q, SIZE_R, HEX_RADIUS);
+    export_hex_to_binary("flow/test_hex_stream.bin", history, SIZE_Q, SIZE_R, HEX_RADIUS, DT);
     std::cout << "SUCCESS: Binary export completed!" << std::endl;
     std::cout << "Check 'flow/hex_frames/' for shaded 2D hexagon visualizations." << std::endl;
 
