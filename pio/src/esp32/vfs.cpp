@@ -109,7 +109,7 @@ void VFS::begin() {
 
     // 3. Declare operator queryables for all registered handlers
     for (const auto& [op_path, handler] : handlers_) {
-        std::string key = "jot/vfs/op/" + op_path;
+        std::string key = config_.id + "/jot/vfs/op/" + op_path;
         Serial.printf("[VFS] Declaring operator queryable on: %s\n", key.c_str());
 
         z_owned_closure_query_t callback;
@@ -152,7 +152,7 @@ void VFS::register_op(const std::string& path, Handler handler, const json& sche
 void VFS::on_notification(const std::string& path, NotificationHandler handler) {
     if (!connected_) return;
 
-    std::string key = "jot/vfs/pub/" + path;
+    std::string key = "*/jot/vfs/pub/" + path;
     Serial.printf("[VFS] Subscribing to notification topic: %s\n", key.c_str());
 
     auto* ctx_handler = new NotificationHandler(handler);
@@ -164,8 +164,8 @@ void VFS::on_notification(const std::string& path, NotificationHandler handler) 
         z_view_string_t keystr;
         z_keyexpr_as_view_string(z_sample_keyexpr(sample), &keystr);
         std::string full_key(z_string_data(z_view_string_loan(&keystr)), z_string_len(z_view_string_loan(&keystr)));
-        
-        std::string topic_path = (full_key.length() > 12) ? full_key.substr(12) : full_key;
+        size_t pub_pos = full_key.find("/jot/vfs/pub/");
+        std::string topic_path = (pub_pos != std::string::npos) ? full_key.substr(pub_pos + 13) : full_key;
         
         z_owned_string_t payload_str;
         z_bytes_to_string(z_sample_payload(sample), &payload_str);
@@ -210,7 +210,7 @@ void VFS::unlisten(const std::string& path) {
 
 
 json VFS::read_selector(const Selector& sel) {
-    std::string key = "jot/vfs/op/" + sel.path;
+    std::string key = "*/jot/vfs/op/" + sel.path;
     
     std::string query_params = "";
     bool first = true;
@@ -277,7 +277,8 @@ void VFS::handle_query(z_loaned_query_t* query) {
     z_keyexpr_as_view_string(z_query_keyexpr(query), &key_string);
     std::string key(z_string_data(z_view_string_loan(&key_string)), z_string_len(z_view_string_loan(&key_string)));
 
-    std::string op_path = (key.length() > 11) ? key.substr(11) : key;
+    size_t op_pos = key.find("/jot/vfs/op/");
+    std::string op_path = (op_pos != std::string::npos) ? key.substr(op_pos + 12) : key;
 
     z_view_string_t params_str;
     z_query_parameters(query, &params_str);
@@ -378,7 +379,7 @@ void VFS::publish(const std::string& path, const json& payload) {
         declare_queryable_for_path(path);
     }
 
-    std::string key = "jot/vfs/pub/" + path;
+    std::string key = config_.id + "/jot/vfs/pub/" + path;
     z_view_keyexpr_t ke;
     z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
 
@@ -402,7 +403,7 @@ void VFS::publish_binary(const std::string& path, const uint8_t* data, size_t le
         declare_queryable_for_path(path);
     }
 
-    std::string key = "jot/vfs/pub/" + path;
+    std::string key = config_.id + "/jot/vfs/pub/" + path;
     z_view_keyexpr_t ke;
     z_view_keyexpr_from_str_unchecked(&ke, key.c_str());
 
@@ -416,7 +417,7 @@ void VFS::publish_binary(const std::string& path, const uint8_t* data, size_t le
 }
 
 void VFS::declare_queryable_for_path(const std::string& path) {
-    std::string key = "jot/vfs/op/" + path;
+    std::string key = config_.id + "/jot/vfs/op/" + path;
     queryable_keys_.push_back(key);
     const std::string& persistent_key = queryable_keys_.back();
 
