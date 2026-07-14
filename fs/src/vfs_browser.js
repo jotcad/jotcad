@@ -1,20 +1,6 @@
-import { VFS as CoreVFS, normalizeSelector, Selector } from './vfs_core.js';
+import { VFS as CoreVFS, Selector, getCID } from './vfs_core.js';
 
-export { Selector };
-
-export const getCID = async (selector) => {
-  const s = normalizeSelector(selector.path, selector.parameters);
-  if (!s.path) throw new Error('Selector must have a path');
-
-  // Standardize the JSON representation for hashing
-  const msgUint8 = new TextEncoder().encode(JSON.stringify(s));
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return hashHex;
-};
+export { Selector, getCID };
 
 export class IndexedDBStorage {
   constructor(dbName = 'jotcad-vfs', storeName = 'results') {
@@ -191,7 +177,7 @@ export class IndexedDBStorage {
 
 export class VFS extends CoreVFS {
   constructor(options = {}) {
-    super({ getCID, ...options });
+    super(options);
     this.initialized = false;
   }
 

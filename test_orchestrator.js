@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import process from 'node:process';
 
 const suites = {
@@ -6,46 +6,64 @@ const suites = {
     name: 'JOT Unit Tests',
     command: './geo/compile.sh && node --test --test-concurrency=1 jot/test/*.js',
     args: [],
-    env: {}
+    env: {},
+    timeout: 120000
   },
   geo: {
     name: 'GEO C++ Unit Tests',
     command: './run_unit_tests.sh',
     args: [],
     cwd: 'geo/test',
-    env: {}
+    env: {},
+    timeout: 300000
   },
   fs: {
     name: 'FS Unit Tests',
     command: 'node',
     args: ['--test', '--test-concurrency=1', 'fs/test/*.js'],
-    env: { TEST_UX_PORT: '3039', TEST_OPS_PORT: '9099' }
+    env: { TEST_UX_PORT: '3039', TEST_OPS_PORT: '9099' },
+    timeout: 120000
   },
   integration: {
     name: 'Integration Tests',
-    command: './geo/compile.sh && node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/*.test.js',
+    command: './geo/compile.sh && node --test --test-concurrency=1 --test-timeout=60000 --test-force-exit integration/*.test.js',
     args: [],
-    env: {}
+    env: { LOG_LEVEL: 'debug' },
+    timeout: 300000
   },
   puppeteer: {
     name: 'Puppeteer Integration Tests',
     command: './geo/compile.sh && npm run build:ux && node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/puppeteer/*.test.js',
     args: [],
-    env: {}
+    env: {},
+    timeout: 360000
   }};
 
 async function runSuite(id, suite) {
   console.log(`\n[RUNNING] ${suite.name} (${id})...`);
+  const suiteTimeout = suite.timeout || 120000;
   return new Promise((resolve) => {
     const child = spawn(suite.command, suite.args, {
       cwd: suite.cwd || process.cwd(),
       env: { ...process.env, ...suite.env },
-      shell: true
+      shell: true,
+      detached: true
     });
 
     let output = '';
     const failures = [];
     const stats = { tests: 0, pass: 0, fail: 0 };
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      console.error(`\n[TIMEOUT] ${suite.name} timed out after ${suiteTimeout}ms! Killing process group...`);
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch (err) {
+        child.kill('SIGKILL');
+      }
+    }, suiteTimeout);
 
     child.stdout.on('data', (data) => {
       const str = data.toString();
@@ -59,6 +77,7 @@ async function runSuite(id, suite) {
     });
 
     child.on('close', (code) => {
+      clearTimeout(timer);
       const lines = output.split('\n');
       for (const line of lines) {
           const trimmed = line.trim();
@@ -79,7 +98,12 @@ async function runSuite(id, suite) {
           }
       }
 
-      if (code !== 0) {
+      if (timedOut) {
+        if (stats.fail === 0) stats.fail = 1;
+        if (stats.tests === 0) stats.tests = 1;
+        failures.push(`Suite timed out after ${suiteTimeout}ms`);
+        resolve({ passed: false, failures, stats });
+      } else if (code !== 0) {
         console.error(`\n[FAILED] ${suite.name} (Exit Code: ${code})`);
         if (stats.fail === 0) stats.fail = 1; // Ensure failure is reflected in stats
         if (stats.tests === 0) stats.tests = 1;
@@ -93,6 +117,11 @@ async function runSuite(id, suite) {
 }
 
 async function main() {
+  try {
+    // Clean up test VFS directories, leaving production/live directories intact
+    execSync('find . -maxdepth 1 -name ".vfs_storage_*" ! -name "*live*" -exec rm -rf {} + || true');
+    execSync('rm -rf .test_vfs_* || true');
+  } catch (e) {}
   const args = process.argv.slice(2);
   let selectedIds = args.length > 0 ? args.filter(id => suites[id] || id === 'all') : Object.keys(suites);
 

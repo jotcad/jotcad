@@ -112,12 +112,14 @@ To prevent "zombie" requests from clogging the mesh:
 
 ## 4. Node Types & Registry
 
-The system utilizes two primary node implementations:
+The system utilizes three primary node implementations:
 
 - **C++ Native Node (`bin/ops`):** High-performance geometry provisioning using
   CGAL and `httplib`.
 - **Node.js Native Node:** Orchestration and Export services using `VFS` and
   `MeshLink` classes.
+- **Embedded IoT Nodes (ESP32 / ESP8266):** PlatformIO C++ VFS clients running
+  `zenoh-pico` for low-overhead pub/sub/queries over TCP.
 
 ## 5. Deployment Topology
 
@@ -165,18 +167,23 @@ implements a **Hop-by-Hop Pub-Sub** system.
 | **Formal Links**         | [DONE] | Recursive alias resolution for semantic standardization.|
 | **Reverse Tunneling**    | [DONE] | Encapsulated poll-loop in ReverseConnection.          |
 | **Identity Sovereignty** | [DONE] | Unique session IDs with 409 zombie detection.         |
+| **IoT Client Nodes**     | [DONE] | PlatformIO Zenoh-pico integration for ESP32/ESP8266.   |
 
 ## 8. Aspirational Goals
 
-### 8.1. Resource-Constrained Nodes (ESP/Microcontrollers)
+### 8.1. Resource-Constrained Nodes (ESP/Microcontrollers) [DONE]
 
-A primary long-term goal is to extend the JotCAD mesh to **Microcontroller-based
-nodes** (e.g., ESP32).
+The JotCAD mesh has been successfully extended to microcontroller-based nodes (ESP32 and ESP8266) using Eclipse Zenoh (`zenoh-pico`).
 
-- **Footprint:** The VFS and MeshLink logic must be optimized for extremely low
-  memory (RAM) and limited flash storage.
-- **Protocol Efficiency:** Implementation of a "Tiny Mesh" subset of the
-  protocol, potentially utilizing binary serialization or stripped-down HTTP to
-  minimize overhead.
-- **Hardware Integration:** Allowing hardware-level devices (CNC controllers,
-  sensors) to act as leaf providers or observers within the geometric mesh.
+- **Footprint:** The VFS and network logic compile under 10KB RAM (using custom memory-safe structures and bypasses for C++ limitations of `_Generic` macros).
+- **Protocol Efficiency:** Utilizes Zenoh sessions, queries, queryables, and subscription propagation to minimize network overhead and avoid HTTP/WebSocket polling.
+- **Hardware Integration:** Devices can register operator handlers (`register_op`), publish notifications (`notify`), and run cooperative scheduler spins (`zp_spin_once` on ESP8266).
+
+### 8.2. Single-Threaded Client Protocol Invariants [DONE]
+
+For resource-constrained client environments without multi-threading capabilities (`Z_FEATURE_MULTI_THREAD == 0`), the following constraints must be met to preserve link session integrity:
+1. **Clock Scaling**: The Zenoh-Pico system clock getter (`__z_clock_gettime`) must correctly scale Arduino's millisecond ticks (`millis()`) to standard UNIX seconds and nanoseconds, preventing clock slowdowns.
+2. **Socket Non-Blocking Invariant**: Driver-level read calls (like `_z_tcp_opencr_read`) must differentiate between empty socket streams (returning `SIZE_MAX` for `EWOULDBLOCK` / `EAGAIN` to yield CPU) and closed connections (returning `0` to signal EOF).
+3. **Manual Keep-Alive & Flushes**: Background executors do not run automatically. The application tick loop must manually call `zp_send_keep_alive()` and trigger `zp_batch_flush()` to force socket transmission.
+4. **NoDelay & Socket Level Flushing**: Disabling Nagle's algorithm (`setNoDelay(true)`) and calling `flush()` at the driver level ensures keep-alive packets are not queued locally and reach the router instantly.
+5. **Subscription Order**: A subscription callback registration requires `connected_ == true`. Therefore, subscriptions must always be registered *after* `node->begin()` establishes the connection.

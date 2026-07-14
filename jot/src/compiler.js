@@ -551,6 +551,9 @@ export class JotCompiler {
     if (val instanceof Selector || (val !== null && typeof val === 'object' && val.path)) {
         return this._getSelectorOutputType(val);
     }
+    if (typeof val === 'string' && val.length === 64 && /^[0-9a-fA-F]+$/.test(val)) {
+        return 'jot:shape';
+    }
     if (typeof val === 'number') return 'jot:number';
     if (typeof val === 'string') return 'jot:string';
     if (typeof val === 'boolean') return 'jot:boolean';
@@ -687,6 +690,7 @@ export class JotCompiler {
   _promoteVecToPoint(v) {
     if (v instanceof Selector) return v;
     if (typeof v === 'object' && v !== null && v.path) return v;
+    if (typeof v === 'string' && v.length === 64 && /^[0-9a-fA-F]+$/.test(v)) return v;
     if (Array.isArray(v) && (v.length === 2 || v.length === 3) && v.every(item => typeof item === 'number')) {
         const x = v[0];
         const y = v[1];

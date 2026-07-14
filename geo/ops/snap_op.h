@@ -19,7 +19,15 @@ struct SnapOp : P {
                path == "jot/lowest" || path == "jot/facing";
     }
 
-    static void bind_innermost_input(nlohmann::json& param, const nlohmann::json& target_val) {
+    static void bind_innermost_input(fs::VFSNode* vfs, nlohmann::json& param, const nlohmann::json& target_val) {
+        if (param.is_string() && param.get<std::string>().size() == 64) {
+            try {
+                auto result = vfs->read<fs::VFSResult>(fs::CID::from_json(param));
+                if (result.metadata.contains("selector")) {
+                    param = result.metadata["selector"];
+                }
+            } catch (...) {}
+        }
         if (param.is_object() && param.contains("path")) {
             std::string path = param["path"].get<std::string>();
             if (!is_recipe_op(path)) {
@@ -30,7 +38,7 @@ struct SnapOp : P {
                 param["parameters"] = nlohmann::json::object();
             }
             if (param["parameters"].contains("$in") && !param["parameters"]["$in"].is_null()) {
-                bind_innermost_input(param["parameters"]["$in"], target_val);
+                bind_innermost_input(vfs, param["parameters"]["$in"], target_val);
             } else {
                 param["parameters"]["$in"] = target_val;
             }
@@ -45,7 +53,7 @@ struct SnapOp : P {
         
         // 1. Evaluate the target anchor recipe on the target shape.
         nlohmann::json recipe_json = target_anchor_recipe.to_json();
-        bind_innermost_input(recipe_json, vfs->materialize(target_shape).value);
+        bind_innermost_input(vfs, recipe_json, vfs->materialize(target_shape).value);
         fs::Selector anchor_call = fs::Selector::from_json(recipe_json);
         Shape target_anchor = vfs->read<Shape>(anchor_call.with_output("$out"));
 

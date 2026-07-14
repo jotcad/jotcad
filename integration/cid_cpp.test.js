@@ -1,10 +1,9 @@
-import test from 'node:test';
+import { runIntegrationTest } from './harness.js';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import fs from 'node:fs';
 
-test('C++ CID Consistency (Native)', (t) => {
+runIntegrationTest('C++ CID Consistency (Native)', async ({ t }) => {
   const __dirname = path.dirname(new URL(import.meta.url).pathname);
   const cppBin = path.resolve(__dirname, '../geo/test/bin/cid_consistency_test');
 

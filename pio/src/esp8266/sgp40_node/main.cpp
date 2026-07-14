@@ -125,9 +125,7 @@ void setup() {
     node = new fs::VFS(config);
 
     // Register sensor endpoint
-    node->register_op("sensor/voc", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        response->send(200, "application/json", fs::json({{"value", current_voc}, {"node", vfs_node_id}}).dump().c_str());
-    }, {{"output", "number"}});
+    
 
     // Handle incoming Temp/Humidity notifications for compensation
     node->on_notification("sensor/temperature", [](const fs::Selector& sel, const fs::json& payload) {
@@ -186,7 +184,7 @@ void loop() {
             last_sent_voc = current_voc;
             last_broadcast = millis();
             fs::json params = {{"node", vfs_node_id}};
-            int sent_count = node->notify(fs::Selector("sensor/voc", params), {{"value", current_voc}});
+            int sent_count = node->publish("sensor/voc", {{"value", current_voc}});
             Serial.printf("[SGP40] Published VOC (Sent to %d peers): %d\n", sent_count, current_voc);
         }
     }

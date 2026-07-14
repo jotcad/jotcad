@@ -1,0 +1,9 @@
+{
+  "geometry": "8cc47cf1dc1c070b689de23a18707a01a6c1de5a31b0382b081eeb5bb8c41b99",
+  "tf": "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+  "tags": {
+    "type": "closed",
+    "name": "wemos-mini-d1.stp"
+  },
+  "components": []
+}

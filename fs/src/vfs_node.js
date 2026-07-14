@@ -37,6 +37,9 @@ export class DiskStorage {
   }
 
   async set(cid, streamOrBytes, info = {}) {
+    if (!fs.existsSync(this.root)) {
+      fs.mkdirSync(this.root, { recursive: true });
+    }
     const dataFile = path.join(this.root, `${cid}.data`);
     const metaFile = path.join(this.root, `${cid}.meta`);
     const expectedSize = info.size;
@@ -82,7 +85,7 @@ export class DiskStorage {
 
     if (streamOrBytes !== null && expectedSize !== undefined && bytesWritten !== expectedSize) {
         await fsPromises.unlink(dataFile).catch(() => {});
-        throw new Error(`DiskStorage.set: Size mismatch. Expected 100 bytes (got ${bytesWritten})`);
+        throw new Error(`DiskStorage.set: Size mismatch. Expected ${expectedSize} bytes (got ${bytesWritten})`);
     }
 
     await fsPromises.writeFile(metaFile, JSON.stringify(info));

@@ -64,10 +64,7 @@ static_assert(sizeof(DEVICE_NODE_ID) > 2, "DEVICE_NODE_ID cannot be empty! Pleas
 
     node = new fs::VFS(config);
 
-    // 2. Register a handler to read the current count
-    node->register_op("sensor/counter", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        response->send(200, "application/json", fs::json({{"value", shared_count}}).dump().c_str());
-    }, {{"output", "number"}});
+
 
     node->begin();
     Serial.println("VFS_READY");
@@ -85,11 +82,9 @@ void loop() {
         // Update display: only one digit lit, cycling 0 to 9
         display.showNumberDec(shared_count, false);
 
-        // Broadcast count change
-        fs::Selector selector("sensor/counter");
         fs::json payload = {{"value", shared_count}};
-        int interested = node->notify(selector, payload);
+        node->publish("sensor/counter", payload);
         
-        Serial.printf("[ESP8266] Counter: %d (Interested: %d)\n", shared_count, interested);
+        Serial.printf("[ESP8266] Counter: %d\n", shared_count);
     }
 }

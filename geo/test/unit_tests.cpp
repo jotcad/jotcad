@@ -54,6 +54,7 @@
 #include "scale_op.h"
 #include "spin_op.h"
 #include "simplify_op.h"
+#include "approximate_op.h"
 #include "hull_op.h"
 #include "sweep_op.h"
 #include "section_op.h"

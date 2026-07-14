@@ -1,9 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert';
 import http from 'node:http';
-import { Readable } from 'node:stream';
+import { runIntegrationTest } from './harness.js';
 
-test('Theory: ReadableStream body triggers Chunked Encoding on HTTP/1.1', async (t) => {
+runIntegrationTest('Theory: ReadableStream body triggers Chunked Encoding on HTTP/1.1', async ({ t }) => {
     let receivedEncoding = '';
     let receivedContentLength = '';
     

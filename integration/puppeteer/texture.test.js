@@ -20,27 +20,30 @@ test('Puppeteer Texture Rendering Test', { timeout: 120000 }, async (t) => {
     const page = await browser.newPage();
     await page.setViewport({ width: 1024, height: 768 });
 
-    log(`[Test Browser] Loading UX...`);
+    console.log(`[Test Browser] Loading UX...`);
     
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Handshake timeout')), 45000);
       page.on('console', (msg) => {
-        log(`[Browser Console] ${msg.text()}`);
-        if (msg.text().includes('Received Catalog from geo-ops-node')) {
+        console.log(`[Browser Console: ${msg.type()}] ${msg.text()}`);
+        if (msg.text().includes('Received Catalog from')) {
           clearTimeout(timeout);
           resolve();
         }
       });
+      page.on('pageerror', (err) => {
+        console.error(`[Browser PageError] ${err.stack || err}`);
+      });
       page.goto(cluster.gatewayUrl, { waitUntil: 'domcontentloaded' }).catch(reject);
     });
 
-    log('[Test Browser] Catalog handshake SUCCESS.');
+    console.log('[Test Browser] Catalog handshake SUCCESS.');
     await new Promise(r => setTimeout(r, 2000));
 
     // Script: Box with a wood material
     const code = 'Box(30, 30, 0).material("wood") -> $out';
-    log(`[Test Browser] Injecting code: ${code}`);
-
+    console.log(`[Test Browser] Injecting code: ${code}`);
+    
     await page.evaluate(async (expr) => {
       const bb = window.blackboard;
       const schema = { arguments: [], outputs: { "$out": { type: "jot:shape" } } };
@@ -76,12 +79,12 @@ test('Puppeteer Texture Rendering Test', { timeout: 120000 }, async (t) => {
     // Wait for the viewport to render
     await new Promise(r => setTimeout(r, 8000));
 
-    log('[Test Browser] Capturing screenshot...');
+    console.log('[Test Browser] Capturing screenshot...');
     const targetDir = path.resolve(__dirname, '../actual');
     await fs.mkdir(targetDir, { recursive: true });
     const screenshotPath = path.join(targetDir, 'puppeteer_texture_test.png');
     await page.screenshot({ path: screenshotPath });
-    log(`[Test Browser] Screenshot saved to ${screenshotPath}`);
+    console.log(`[Test Browser] Screenshot saved to ${screenshotPath}`);
 
     const stat = await fs.stat(screenshotPath);
     if (stat.size < 1000) throw new Error("Screenshot looks too small/empty");

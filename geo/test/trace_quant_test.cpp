@@ -12,11 +12,13 @@ using namespace fs;
 std::vector<uint8_t> read_file_bytes(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        if (path.rfind("geo/test/", 0) != 0) {
-            file.open("geo/test/" + path, std::ios::binary);
-        } else {
-            file.open(path.substr(9), std::ios::binary);
-        }
+        file.open("test/Heightmap_of_Trencrom_Hill.png", std::ios::binary);
+    }
+    if (!file) {
+        file.open("Heightmap_of_Trencrom_Hill.png", std::ios::binary);
+    }
+    if (!file) {
+        file.open("geo/test/Heightmap_of_Trencrom_Hill.png", std::ios::binary);
     }
     if (!file) {
         throw std::runtime_error("Test helper: Failed to read local file: " + path);

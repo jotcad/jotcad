@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
+import wasm from 'vite-plugin-wasm';
+import topLevelAwait from 'vite-plugin-top-level-await';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -13,7 +15,7 @@ const https = (process.env.VITE_HTTPS !== 'false') && fs.existsSync(keyPath) && 
 } : false;
 
 export default defineConfig({
-  plugins: [solidPlugin()],
+  plugins: [solidPlugin(), wasm(), topLevelAwait()],
   optimizeDeps: {
     include: ['node-diff3', 'trimerge', 'lucide-solid'],
   },

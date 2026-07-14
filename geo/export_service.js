@@ -5,20 +5,326 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { Worker } from 'node:worker_threads';
+import { JSDOM } from 'jsdom';
 import { VFS, DiskStorage, MeshLink, registerVFSRoutes, getCID, Selector } from '../fs/src/index.js';
+
+function runTriangulationInWorker(fileBytes, deflection) {
+    return new Promise((resolve, reject) => {
+        const workerPath = path.resolve(__dirname, 'occt_worker.js');
+        const worker = new Worker(workerPath);
+        worker.postMessage({ fileBytes, deflection });
+        worker.on('message', (msg) => {
+            if (msg.success) {
+                resolve({ geometryText: msg.geometryText, typeTag: msg.typeTag });
+            } else {
+                reject(new Error(msg.error));
+            }
+            worker.terminate();
+        });
+        worker.on('error', (err) => {
+            reject(err);
+            worker.terminate();
+        });
+        worker.on('exit', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Worker stopped with exit code ${code}`));
+            }
+        });
+    });
+}
+
+function runSvgTriangulationInWorker(faces, deflection) {
+    return new Promise((resolve, reject) => {
+        const workerPath = path.resolve(__dirname, 'occt_worker.js');
+        const worker = new Worker(workerPath);
+        worker.postMessage({ type: 'svg', faces, deflection });
+        worker.on('message', (msg) => {
+            if (msg.success) {
+                resolve({ results: msg.results });
+            } else {
+                reject(new Error(msg.error));
+            }
+            worker.terminate();
+        });
+        worker.on('error', (err) => {
+            reject(err);
+            worker.terminate();
+        });
+        worker.on('exit', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Worker stopped with exit code ${code}`));
+            }
+        });
+    });
+}
+
+function parseSvgToFaces(svgString) {
+    const dom = new JSDOM(svgString);
+    const doc = dom.window.document;
+    
+    const loops = [];
+    
+    // 1. Paths
+    const paths = doc.querySelectorAll('path');
+    for (const p of paths) {
+        const d = p.getAttribute('d');
+        if (d) {
+            const pathLoops = parseSvgPath(d);
+            loops.push(...pathLoops);
+        }
+    }
+    
+    // 2. Rectangles
+    const rects = doc.querySelectorAll('rect');
+    for (const r of rects) {
+        const x = parseFloat(r.getAttribute('x') || '0');
+        const y = parseFloat(r.getAttribute('y') || '0');
+        const w = parseFloat(r.getAttribute('width') || '0');
+        const h = parseFloat(r.getAttribute('height') || '0');
+        if (w > 0 && h > 0) {
+            const rectLoop = [
+                [x, y],
+                [x + w, y],
+                [x + w, y + h],
+                [x, y + h],
+                [x, y]
+            ];
+            loops.push(rectLoop);
+        }
+    }
+    
+    // 3. Circles
+    const circles = doc.querySelectorAll('circle');
+    for (const c of circles) {
+        const cx = parseFloat(c.getAttribute('cx') || '0');
+        const cy = parseFloat(c.getAttribute('cy') || '0');
+        const r = parseFloat(c.getAttribute('r') || '0');
+        if (r > 0) {
+            const circleLoop = [];
+            const steps = 32;
+            for (let s = 0; s <= steps; s++) {
+                const angle = (s / steps) * 2 * Math.PI;
+                circleLoop.push([cx + r * Math.cos(angle), cy + r * Math.sin(angle)]);
+            }
+            loops.push(circleLoop);
+        }
+    }
+    
+    // 4. Polygons
+    const polygons = doc.querySelectorAll('polygon');
+    for (const poly of polygons) {
+        const pointsStr = poly.getAttribute('points');
+        if (pointsStr) {
+            const pts = parsePointsString(pointsStr);
+            if (pts.length > 2) {
+                const first = pts[0];
+                const last = pts[pts.length - 1];
+                if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1e-5) {
+                    pts.push([first[0], first[1]]);
+                }
+                loops.push(pts);
+            }
+        }
+    }
+    
+    // 5. Polylines
+    const polylines = doc.querySelectorAll('polyline');
+    for (const poly of polylines) {
+        const pointsStr = poly.getAttribute('points');
+        if (pointsStr) {
+            const pts = parsePointsString(pointsStr);
+            if (pts.length > 1) {
+                loops.push(pts);
+            }
+        }
+    }
+    
+    // 6. Lines
+    const lines = doc.querySelectorAll('line');
+    for (const l of lines) {
+        const x1 = parseFloat(l.getAttribute('x1') || '0');
+        const y1 = parseFloat(l.getAttribute('y1') || '0');
+        const x2 = parseFloat(l.getAttribute('x2') || '0');
+        const y2 = parseFloat(l.getAttribute('y2') || '0');
+        loops.push([[x1, y1], [x2, y2]]);
+    }
+    
+    return classifyLoops(loops);
+}
+
+function parsePointsString(str) {
+    const coords = str.trim().split(/[\s,]+/);
+    const pts = [];
+    for (let i = 0; i < coords.length; i += 2) {
+        if (coords[i] && coords[i+1]) {
+            pts.push([parseFloat(coords[i]), parseFloat(coords[i+1])]);
+        }
+    }
+    return pts;
+}
+
+function parseSvgPath(d) {
+    const loops = [];
+    let currentLoop = [];
+    let cx = 0, cy = 0;
+    let startX = 0, startY = 0;
+    
+    const tokens = d.match(/[a-df-z]|[+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?/gi) || [];
+    let i = 0;
+    while (i < tokens.length) {
+        const cmd = tokens[i++];
+        if (cmd === 'M' || cmd === 'm') {
+            if (currentLoop.length > 0) {
+                loops.push(currentLoop);
+            }
+            const relative = (cmd === 'm');
+            const tx = parseFloat(tokens[i++]);
+            const ty = parseFloat(tokens[i++]);
+            cx = relative ? cx + tx : tx;
+            cy = relative ? cy + ty : ty;
+            startX = cx;
+            startY = cy;
+            currentLoop = [[cx, cy]];
+        } else if (cmd === 'L' || cmd === 'l') {
+            const relative = (cmd === 'l');
+            const tx = parseFloat(tokens[i++]);
+            const ty = parseFloat(tokens[i++]);
+            cx = relative ? cx + tx : tx;
+            cy = relative ? cy + ty : ty;
+            currentLoop.push([cx, cy]);
+        } else if (cmd === 'H' || cmd === 'h') {
+            const relative = (cmd === 'h');
+            const tx = parseFloat(tokens[i++]);
+            cx = relative ? cx + tx : tx;
+            currentLoop.push([cx, cy]);
+        } else if (cmd === 'V' || cmd === 'v') {
+            const relative = (cmd === 'v');
+            const ty = parseFloat(tokens[i++]);
+            cy = relative ? cy + ty : ty;
+            currentLoop.push([cx, cy]);
+        } else if (cmd === 'C' || cmd === 'c') {
+            const relative = (cmd === 'c');
+            const x1 = parseFloat(tokens[i++]);
+            const y1 = parseFloat(tokens[i++]);
+            const x2 = parseFloat(tokens[i++]);
+            const y2 = parseFloat(tokens[i++]);
+            const x = parseFloat(tokens[i++]);
+            const y = parseFloat(tokens[i++]);
+            
+            const px1 = relative ? cx + x1 : x1;
+            const py1 = relative ? cy + y1 : y1;
+            const px2 = relative ? cx + x2 : x2;
+            const py2 = relative ? cy + y2 : y2;
+            const targetX = relative ? cx + x : x;
+            const targetY = relative ? cy + y : y;
+            
+            for (let t = 1; t <= 8; t++) {
+                const nt = t / 8;
+                const omt = 1 - nt;
+                const bx = omt*omt*omt*cx + 3*omt*omt*nt*px1 + 3*omt*nt*nt*px2 + nt*nt*nt*targetX;
+                const by = omt*omt*omt*cy + 3*omt*omt*nt*py1 + 3*omt*nt*nt*py2 + nt*nt*nt*targetY;
+                currentLoop.push([bx, by]);
+            }
+            cx = targetX;
+            cy = targetY;
+        } else if (cmd === 'Q' || cmd === 'q') {
+            const relative = (cmd === 'q');
+            const x1 = parseFloat(tokens[i++]);
+            const y1 = parseFloat(tokens[i++]);
+            const x = parseFloat(tokens[i++]);
+            const y = parseFloat(tokens[i++]);
+            
+            const px1 = relative ? cx + x1 : x1;
+            const py1 = relative ? cy + y1 : y1;
+            const targetX = relative ? cx + x : x;
+            const targetY = relative ? cy + y : y;
+            
+            for (let t = 1; t <= 8; t++) {
+                const nt = t / 8;
+                const omt = 1 - nt;
+                const bx = omt*omt*cx + 2*omt*nt*px1 + nt*nt*targetX;
+                const by = omt*omt*cy + 2*omt*nt*py1 + nt*nt*targetY;
+                currentLoop.push([bx, by]);
+            }
+            cx = targetX;
+            cy = targetY;
+        } else if (cmd === 'Z' || cmd === 'z') {
+            cx = startX;
+            cy = startY;
+            if (currentLoop.length > 1) {
+                const first = currentLoop[0];
+                const last = currentLoop[currentLoop.length - 1];
+                if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1e-5) {
+                    currentLoop.push([first[0], first[1]]);
+                }
+            }
+            loops.push(currentLoop);
+            currentLoop = [];
+        }
+    }
+    if (currentLoop.length > 1) {
+        loops.push(currentLoop);
+    }
+    return loops;
+}
+
+function classifyLoops(loops) {
+    const polygonLoops = loops.map(loop => {
+        let area = 0;
+        for (let j = 0; j < loop.length; j++) {
+            const p1 = loop[j];
+            const p2 = loop[(j + 1) % loop.length];
+            area += p1[0] * p2[1] - p2[0] * p1[1];
+        }
+        return { points: loop, absArea: Math.abs(area) };
+    }).filter(l => l.absArea > 1e-5);
+
+    polygonLoops.sort((a, b) => b.absArea - a.absArea);
+
+    const faces = [];
+    for (const loop of polygonLoops) {
+        let isHole = false;
+        const testPoint = loop.points[0];
+        for (const face of faces) {
+            if (isPointInPolygon(testPoint, face.outer)) {
+                face.holes.push(loop.points);
+                isHole = true;
+                break;
+            }
+        }
+        if (!isHole) {
+            faces.push({ outer: loop.points, holes: [] });
+        }
+    }
+    return faces;
+}
+
+function isPointInPolygon(pt, poly) {
+    let inside = false;
+    const x = pt[0], y = pt[1];
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1];
+        const xj = poly[j][0], yj = poly[j][1];
+        const intersect = ((yi > y) !== (yj > y))
+            && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Explicit VFS Access Helper with boundary hydration for Selectors
-async function readExplicitData(v, target) {
+async function readExplicitData(v, target, context = {}) {
     if (typeof target === 'string' || Object.prototype.toString.call(target) === '[object String]') {
-        const res = await v.readCID(target);
+        const res = await v.readCID(target, context);
         if (!res || !res.stream) return null;
         return consumeStream(res.stream, res.metadata?.encoding || 'bytes');
     }
     const s = target instanceof Selector ? target : Selector.fromObject(target);
-    const res = await v.readSelector(s);
+    const res = await v.readSelector(s, context);
     if (!res || !res.stream) return null;
     return consumeStream(res.stream, res.metadata?.encoding || 'bytes');
 }
@@ -188,8 +494,121 @@ console.log(`[Export Node ${id}] Starting Native Mesh Node with neighbors: [${ne
 const meshLink = new MeshLink(vfs, neighbors, { localUrl: `${protocol}://localhost:${port}` });
 
 
+// Register the Svg (Import) Op as a VFS Provider
+vfs.registerProvider('jot/Svg', async (v, selector, context) => {
+    try {
+        const { file, deflection = 0.1 } = selector.parameters;
+
+        if (!file) throw new Error('Missing input parameter: file');
+
+        console.log(`[Export Node] Svg import requested for file: ${typeof file === 'object' ? JSON.stringify(file) : file}`);
+
+        let fileBytes = null;
+        let filename = "imported_svg";
+
+        if (typeof file === 'string') {
+            filename = file;
+            if (fs.existsSync(file)) {
+                fileBytes = fs.readFileSync(file);
+            } else if (/^[0-9a-fA-F]{64}$/.test(file)) {
+                try {
+                    const res = await v.readCID(file, context);
+                    if (res) {
+                        fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                        if (res.metadata?.filename) {
+                            filename = res.metadata.filename;
+                        }
+                    }
+                } catch (e) {}
+            }
+        } else if (file && (file.path || file.cid || file instanceof Selector)) {
+            try {
+                const s = file instanceof Selector ? file : Selector.fromObject(file);
+                const res = await v.readSelector(s, context);
+                if (res) {
+                    fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                    if (res.metadata?.filename) {
+                        filename = res.metadata.filename;
+                    } else if (file.parameters && file.parameters.path) {
+                        filename = file.parameters.path;
+                    } else if (file.path) {
+                        filename = file.path;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (!fileBytes || fileBytes.length === 0) {
+            throw new Error(`File not found or empty: ${filename}`);
+        }
+
+        const svgString = new TextDecoder().decode(fileBytes);
+        const faces = parseSvgToFaces(svgString);
+
+        if (faces.length === 0) {
+            throw new Error(`No valid shapes or paths parsed from SVG: ${filename}`);
+        }
+
+        const triangulateResult = await runSvgTriangulationInWorker(faces, deflection);
+        const results = triangulateResult.results;
+
+        const components = [];
+        const baseName = path.basename(filename);
+
+        for (let i = 0; i < results.length; i++) {
+            const geoText = results[i].geometryText;
+            const geoCID = await getCID(geoText);
+            await v.write(geoCID, geoText, { encoding: 'string' });
+
+            components.push({
+                geometry: geoCID,
+                tf: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+                tags: { type: "surface", name: `${baseName}_shape_${i}` },
+                components: []
+            });
+        }
+
+        const outShape = {
+            geometry: null,
+            tf: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+            tags: { type: "group", name: baseName },
+            components: components
+        };
+
+        const bytes = new TextEncoder().encode(JSON.stringify(outShape));
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+            }
+        });
+
+        return {
+            stream,
+            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+        };
+
+    } catch (err) {
+        console.error(`[Export Node Svg Error]`, err);
+        return null;
+    }
+}, {
+    schema: {
+        path: 'jot/Svg',
+        description: 'Imports an SVG file as a hierarchy of disjoint 2D surfaces.',
+        arguments: [
+            { name: 'file', type: 'jot:file' },
+            { name: 'deflection', type: 'jot:number', default: 0.1 }
+        ],
+        outputs: { 
+            '$out': { type: 'jot:shape' }
+        }
+    }
+});
+
+
 // Register the Step (Import) Op as a VFS Provider
-vfs.registerProvider('jot/Step', async (v, selector) => {
+vfs.registerProvider('jot/Step', async (v, selector, context) => {
     try {
         const { file, deflection = 0.1 } = selector.parameters;
 
@@ -206,18 +625,30 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
                 fileBytes = fs.readFileSync(file);
             } else if (/^[0-9a-fA-F]{64}$/.test(file)) {
                 try {
-                    fileBytes = await readExplicitData(v, file);
+                    const res = await v.readCID(file, context);
+                    if (res) {
+                        fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                        if (res.metadata?.filename) {
+                            filename = res.metadata.filename;
+                        }
+                    }
                 } catch (e) {
                     // Ignore and handle fallback
                 }
             }
         } else if (file && (file.path || file.cid || file instanceof Selector)) {
             try {
-                fileBytes = await readExplicitData(v, file);
-                if (file.parameters && file.parameters.path) {
-                    filename = file.parameters.path;
-                } else if (file.path) {
-                    filename = file.path;
+                const s = file instanceof Selector ? file : Selector.fromObject(file);
+                const res = await v.readSelector(s, context);
+                if (res) {
+                    fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                    if (res.metadata?.filename) {
+                        filename = res.metadata.filename;
+                    } else if (file.parameters && file.parameters.path) {
+                        filename = file.parameters.path;
+                    } else if (file.path) {
+                        filename = file.path;
+                    }
                 }
             } catch (e) {
                 // Ignore and handle fallback
@@ -247,107 +678,10 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
         } else if (!fileBytes || fileBytes.length === 0) {
             throw new Error(`File not found or empty: ${filename}`);
         } else {
-            // Real STEP file parsing and triangulation
-            geometryText = await runInOCCT(async (oc) => {
-                oc.FS.writeFile("import.stp", fileBytes);
-                const reader = new oc.STEPControl_Reader_1();
-                const status = reader.ReadFile("import.stp");
-                if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) {
-                    oc.FS.unlink("import.stp");
-                    reader.delete();
-                    throw new Error(`Failed to read STEP file, status: ${status}`);
-                }
-                reader.TransferRoots();
-                const shape = reader.OneShape();
-                oc.FS.unlink("import.stp");
-
-                // Shape topology classification
-                const st = shape.ShapeType();
-                if (st === oc.TopAbs_ShapeEnum.TopAbs_FACE) {
-                    typeTag = "surface";
-                } else if (st === oc.TopAbs_ShapeEnum.TopAbs_SHELL) {
-                    typeTag = "open";
-                } else if (st === oc.TopAbs_ShapeEnum.TopAbs_SOLID) {
-                    typeTag = "closed";
-                }
-
-                // Meshing
-                const mesh = new oc.BRepMesh_IncrementalMesh_2(shape, deflection, false, 0.5, false);
-                const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-                
-                const vertexMap = new Map();
-                const globalVertices = [];
-                const globalTriangles = [];
-
-                function getOrCreateVertex(x, y, z) {
-                    const key = `${x.toFixed(10)},${y.toFixed(10)},${z.toFixed(10)}`;
-                    if (vertexMap.has(key)) {
-                        return vertexMap.get(key);
-                    }
-                    const idx = globalVertices.length;
-                    globalVertices.push([x, y, z]);
-                    vertexMap.set(key, idx);
-                    return idx;
-                }
-
-                while (explorer.More()) {
-                    const face = oc.TopoDS.Face_1(explorer.Current());
-                    const loc = new oc.TopLoc_Location_1();
-                    const triangulation = oc.BRep_Tool.Triangulation(face, loc);
-                    
-                    if (!triangulation.IsNull()) {
-                        const triObj = triangulation.get();
-                        const nNodes = triObj.NbNodes();
-                        const nTris = triObj.NbTriangles();
-                        const trsf = loc.Transformation();
-                        
-                        const localToGlobal = {};
-                        for (let i = 1; i <= nNodes; i++) {
-                            const pnt = triObj.Node(i);
-                            const transPnt = pnt.Transformed(trsf);
-                            const gIdx = getOrCreateVertex(transPnt.X(), transPnt.Y(), transPnt.Z());
-                            localToGlobal[i] = gIdx;
-
-                            pnt.delete();
-                            transPnt.delete();
-                        }
-                        
-                        for (let j = 1; j <= nTris; j++) {
-                            const triangle = triObj.Triangle(j);
-                            const idx1 = triangle.Value(1);
-                            const idx2 = triangle.Value(2);
-                            const idx3 = triangle.Value(3);
-                            
-                            globalTriangles.push([localToGlobal[idx1], localToGlobal[idx2], localToGlobal[idx3]]);
-                            triangle.delete();
-                        }
-                        trsf.delete();
-                        triObj.delete();
-                    }
-                    loc.delete();
-                    face.delete();
-                    explorer.Next();
-                }
-
-                mesh.delete();
-                explorer.delete();
-                reader.delete();
-                shape.delete();
-
-                // Format text Geometry representation (V F P S T)
-                let geoStr = `V ${globalVertices.length}\n`;
-                for (const v of globalVertices) {
-                    geoStr += `${v[0]} ${v[1]} ${v[2]}\n`;
-                }
-                geoStr += `F 0\n`;
-                geoStr += `P 0\n`;
-                geoStr += `S 0\n`;
-                geoStr += `T ${globalTriangles.length}\n`;
-                for (const t of globalTriangles) {
-                    geoStr += `${t[0]} ${t[1]} ${t[2]}\n`;
-                }
-                return geoStr;
-            });
+            // Real STEP file parsing and triangulation (run in background Worker thread)
+            const triangulateResult = await runTriangulationInWorker(fileBytes, deflection);
+            geometryText = triangulateResult.geometryText;
+            typeTag = triangulateResult.typeTag;
         }
 
         // Hash and write geometry to VFS to get a CID
@@ -376,7 +710,7 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
         };
 
     } catch (err) {
-        console.error(`[Export Node Step Error] ${err.message}`);
+        console.error(`[Export Node Step Error]`, err);
         return null;
     }
 }, {
@@ -393,8 +727,7 @@ vfs.registerProvider('jot/Step', async (v, selector) => {
     }
 });
 
-// Register the step (Export) Op as a VFS Provider
-vfs.registerProvider('jot/step', async (v, selector) => {
+vfs.registerProvider('jot/step', async (v, selector, context) => {
     try {
         const { $in, path: stepPath = 'export.stp' } = selector.parameters;
         const output = selector.output || '$out';
@@ -403,7 +736,7 @@ vfs.registerProvider('jot/step', async (v, selector) => {
 
         console.log(`[Export Node] step export requested for path: ${stepPath}`);
 
-        const inShape = await readExplicitData(v, $in);
+        const inShape = await readExplicitData(v, $in, context);
         if (!inShape) throw new Error('Could not read input shape');
 
         // Traverse shape components to collect geometries
@@ -412,7 +745,7 @@ vfs.registerProvider('jot/step', async (v, selector) => {
             if (!shapeNode) return;
             
             if (shapeNode.geometry) {
-                const geoText = await readExplicitData(v, shapeNode.geometry);
+                const geoText = await readExplicitData(v, shapeNode.geometry, context);
                 if (geoText) {
                     const parsed = parseGeometryText(geoText);
                     const tf = shapeNode.tf || "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";
@@ -576,6 +909,631 @@ vfs.registerProvider('jot/step', async (v, selector) => {
         }
     }
 });
+
+// Register the DXF (Import) Op as a VFS Provider
+vfs.registerProvider('jot/Dxf', async (v, selector, context) => {
+    try {
+        const { file } = selector.parameters;
+        if (!file) throw new Error('Missing input parameter: file');
+
+        let fileBytes = null;
+        let filename = "imported_dxf";
+
+        if (typeof file === 'string') {
+            filename = file;
+            if (fs.existsSync(file)) {
+                fileBytes = fs.readFileSync(file);
+            } else if (/^[0-9a-fA-F]{64}$/.test(file)) {
+                const res = await v.readCID(file, context);
+                if (res) {
+                    fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                    if (res.metadata?.filename) filename = res.metadata.filename;
+                }
+            }
+        } else if (file && (file.path || file.cid || file instanceof Selector)) {
+            const s = file instanceof Selector ? file : Selector.fromObject(file);
+            const res = await v.readSelector(s, context);
+            if (res) {
+                fileBytes = await consumeStream(res.stream, res.metadata?.encoding || 'bytes');
+                if (res.metadata?.filename) {
+                    filename = res.metadata.filename;
+                } else if (file.path) {
+                    filename = file.path;
+                }
+            }
+        }
+
+        if (!fileBytes || fileBytes.length === 0) {
+            throw new Error(`File not found or empty: ${filename}`);
+        }
+
+        const dxfString = new TextDecoder().decode(fileBytes);
+        const entities = parseDxf(dxfString);
+        const { vertices, segments } = dxfEntitiesToSegments(entities);
+
+        if (vertices.length === 0) {
+            throw new Error(`No valid entities parsed from DXF: ${filename}`);
+        }
+
+        let geometryText = `V ${vertices.length}\n`;
+        for (const pt of vertices) {
+            geometryText += `${pt[0]} ${pt[1]} ${pt[2]}\n`;
+        }
+        geometryText += `F 0\n`;
+        geometryText += `P 0\n`;
+        geometryText += `S ${segments.length}\n`;
+        for (const s of segments) {
+            geometryText += `${s[0]} ${s[1]}\n`;
+        }
+        geometryText += `T 0\n`;
+
+        const geoCID = await getCID(geometryText);
+        await v.write(geoCID, geometryText, { encoding: 'string' });
+
+        const baseName = path.basename(filename);
+        const outShape = {
+            geometry: geoCID,
+            tf: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+            tags: { type: "wire", name: baseName },
+            components: []
+        };
+
+        const bytes = new TextEncoder().encode(JSON.stringify(outShape));
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+            }
+        });
+
+        return {
+            stream,
+            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+        };
+
+    } catch (err) {
+        console.error(`[Export Node Dxf Import Error]`, err);
+        return null;
+    }
+}, {
+    schema: {
+        path: 'jot/Dxf',
+        description: 'Imports a DXF file as a 1D wire/segments shape.',
+        arguments: [
+            { name: 'file', type: 'jot:file' }
+        ],
+        outputs: { 
+            '$out': { type: 'jot:shape' }
+        }
+    }
+});
+
+// Register the DXF (Export) Op as a VFS Provider
+vfs.registerProvider('jot/dxf', async (v, selector, context) => {
+    try {
+        const { $in, path: dxfPath = 'export.dxf' } = selector.parameters;
+        const output = selector.output || '$out';
+
+        if (!$in) throw new Error('Missing input $in');
+
+        const inShape = await readExplicitData(v, $in, context);
+        if (!inShape) throw new Error('Could not read input shape');
+
+        const collectedSegments = [];
+
+        async function walkShape(shapeNode) {
+            if (!shapeNode) return;
+            
+            if (shapeNode.geometry) {
+                const geoText = await readExplicitData(v, shapeNode.geometry, context);
+                if (geoText) {
+                    const parsed = parseGeometryText(geoText);
+                    const tf = shapeNode.tf || "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";
+                    const matrixArray = tf.trim().split(/\s+/).map(Number);
+                    
+                    const transformedVertices = parsed.vertices.map(vtx => {
+                        let w = 1.0;
+                        if (matrixArray.length === 16) {
+                            w = matrixArray[15];
+                        }
+                        const tx = (matrixArray[0]*vtx[0] + matrixArray[1]*vtx[1] + matrixArray[2]*vtx[2] + matrixArray[3]) / w;
+                        const ty = (matrixArray[4]*vtx[0] + matrixArray[5]*vtx[1] + matrixArray[6]*vtx[2] + matrixArray[7]) / w;
+                        const tz = (matrixArray[8]*vtx[0] + matrixArray[9]*vtx[1] + matrixArray[10]*vtx[2] + matrixArray[11]) / w;
+                        return [tx, ty, tz];
+                    });
+                    
+                    for (const s of parsed.segments) {
+                        const v1 = transformedVertices[s[0]];
+                        const v2 = transformedVertices[s[1]];
+                        if (v1 && v2) {
+                            collectedSegments.push({ p1: v1, p2: v2 });
+                        }
+                    }
+                }
+            }
+            
+            if (Array.isArray(shapeNode.components)) {
+                for (const comp of shapeNode.components) {
+                    await walkShape(comp);
+                }
+            }
+        }
+
+        await walkShape(inShape);
+
+        let dxfContent = `  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n`;
+
+        for (const seg of collectedSegments) {
+            dxfContent += `  0\nLINE\n  8\n0\n`;
+            dxfContent += ` 10\n${seg.p1[0]}\n 20\n${seg.p1[1]}\n 30\n${seg.p1[2]}\n`;
+            dxfContent += ` 11\n${seg.p2[0]}\n 21\n${seg.p2[1]}\n 31\n${seg.p2[2]}\n`;
+        }
+
+        dxfContent += `  0\nENDSEC\n  0\nEOF\n`;
+        const dxfBytes = new TextEncoder().encode(dxfContent);
+
+        if (output === 'file') {
+            const stream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(dxfBytes);
+                    controller.close();
+                }
+            });
+            return {
+                stream,
+                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
+            };
+        }
+
+        const bytes = new TextEncoder().encode(JSON.stringify(inShape));
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+            }
+        });
+        return {
+            stream,
+            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+        };
+
+    } catch (err) {
+        console.error(`[Export Node Dxf Export Error]`, err);
+        return null;
+    }
+}, {
+    schema: {
+        path: 'jot/dxf',
+        description: 'Exports a shape to a DXF file.',
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [
+            { name: 'path', type: 'jot:string', default: 'export.dxf' }
+        ],
+        outputs: { 
+            '$out': { type: 'jot:shape' },
+            'file': { type: 'file', mimeType: 'image/vnd.dxf' }
+        }
+    }
+});
+
+function parseDxf(dxfString) {
+    const lines = dxfString.split(/\r?\n/);
+    const entities = [];
+    let currentEntity = null;
+
+    for (let i = 0; i < lines.length - 1; i += 2) {
+        const code = parseInt(lines[i].trim(), 10);
+        const val = lines[i+1].trim();
+
+        if (isNaN(code)) continue;
+
+        if (code === 0) {
+            if (currentEntity) {
+                entities.push(currentEntity);
+            }
+            if (val === 'EOF' || val === 'ENDSEC') {
+                currentEntity = null;
+            } else if (['LINE', 'CIRCLE', 'ARC', 'LWPOLYLINE'].includes(val)) {
+                currentEntity = { type: val, vertices: [] };
+            } else {
+                currentEntity = { type: val };
+            }
+        } else if (currentEntity) {
+            const numVal = parseFloat(val);
+            if (currentEntity.type === 'LINE') {
+                if (code === 10) currentEntity.x1 = numVal;
+                if (code === 20) currentEntity.y1 = numVal;
+                if (code === 30) currentEntity.z1 = numVal;
+                if (code === 11) currentEntity.x2 = numVal;
+                if (code === 21) currentEntity.y2 = numVal;
+                if (code === 31) currentEntity.z2 = numVal;
+            } else if (currentEntity.type === 'CIRCLE') {
+                if (code === 10) currentEntity.cx = numVal;
+                if (code === 20) currentEntity.cy = numVal;
+                if (code === 30) currentEntity.cz = numVal;
+                if (code === 40) currentEntity.r = numVal;
+            } else if (currentEntity.type === 'ARC') {
+                if (code === 10) currentEntity.cx = numVal;
+                if (code === 20) currentEntity.cy = numVal;
+                if (code === 30) currentEntity.cz = numVal;
+                if (code === 40) currentEntity.r = numVal;
+                if (code === 50) currentEntity.startAngle = numVal;
+                if (code === 51) currentEntity.endAngle = numVal;
+            } else if (currentEntity.type === 'LWPOLYLINE') {
+                if (code === 70) currentEntity.closed = (parseInt(val, 10) & 1) !== 0;
+                if (code === 10) {
+                    currentEntity.vertices.push({ x: numVal });
+                }
+                if (code === 20) {
+                    const lastVertex = currentEntity.vertices[currentEntity.vertices.length - 1];
+                    if (lastVertex && lastVertex.y === undefined) {
+                        lastVertex.y = numVal;
+                    }
+                }
+            }
+        }
+    }
+    if (currentEntity) {
+        entities.push(currentEntity);
+    }
+    return entities;
+}
+
+function dxfEntitiesToSegments(entities) {
+    const vertices = [];
+    const segments = [];
+    const vertexMap = new Map();
+
+    function getOrCreateVertex(x, y, z = 0) {
+        const key = `${x.toFixed(10)},${y.toFixed(10)},${z.toFixed(10)}`;
+        if (vertexMap.has(key)) {
+            return vertexMap.get(key);
+        }
+        const idx = vertices.length;
+        vertices.push([x, y, z]);
+        vertexMap.set(key, idx);
+        return idx;
+    }
+
+    for (const ent of entities) {
+        if (ent.type === 'LINE') {
+            const x1 = ent.x1 || 0;
+            const y1 = ent.y1 || 0;
+            const z1 = ent.z1 || 0;
+            const x2 = ent.x2 || 0;
+            const y2 = ent.y2 || 0;
+            const z2 = ent.z2 || 0;
+            const idx1 = getOrCreateVertex(x1, y1, z1);
+            const idx2 = getOrCreateVertex(x2, y2, z2);
+            segments.push([idx1, idx2]);
+        } else if (ent.type === 'LWPOLYLINE') {
+            const polyVertices = ent.vertices.filter(v => v.x !== undefined && v.y !== undefined);
+            if (polyVertices.length < 2) continue;
+            
+            const indices = polyVertices.map(v => getOrCreateVertex(v.x, v.y, 0));
+            for (let i = 0; i < indices.length - 1; i++) {
+                segments.push([indices[i], indices[i+1]]);
+            }
+            if (ent.closed) {
+                segments.push([indices[indices.length - 1], indices[0]]);
+            }
+        } else if (ent.type === 'CIRCLE') {
+            const cx = ent.cx || 0;
+            const cy = ent.cy || 0;
+            const cz = ent.cz || 0;
+            const r = ent.r || 0;
+            if (r <= 0) continue;
+
+            const steps = 64;
+            const circleIndices = [];
+            for (let i = 0; i < steps; i++) {
+                const angle = (i / steps) * 2 * Math.PI;
+                const px = cx + r * Math.cos(angle);
+                const py = cy + r * Math.sin(angle);
+                circleIndices.push(getOrCreateVertex(px, py, cz));
+            }
+            for (let i = 0; i < steps; i++) {
+                segments.push([circleIndices[i], circleIndices[(i + 1) % steps]]);
+            }
+        } else if (ent.type === 'ARC') {
+            const cx = ent.cx || 0;
+            const cy = ent.cy || 0;
+            const cz = ent.cz || 0;
+            const r = ent.r || 0;
+            let start = ent.startAngle || 0;
+            let end = ent.endAngle || 0;
+            if (r <= 0) continue;
+
+            if (end < start) {
+                end += 360;
+            }
+            const angleDiff = end - start;
+            const steps = Math.max(8, Math.ceil(angleDiff / 5));
+            const arcIndices = [];
+            for (let i = 0; i <= steps; i++) {
+                const angleDeg = start + (i / steps) * angleDiff;
+                const angleRad = (angleDeg * Math.PI) / 180;
+                const px = cx + r * Math.cos(angleRad);
+                const py = cy + r * Math.sin(angleRad);
+                arcIndices.push(getOrCreateVertex(px, py, cz));
+            }
+            for (let i = 0; i < steps; i++) {
+                segments.push([arcIndices[i], arcIndices[i + 1]]);
+            }
+        }
+    }
+
+    return { vertices, segments };
+}
+
+// Register the glTF/GLB (Export) Op as a VFS Provider
+vfs.registerProvider('jot/gltf', async (v, selector, context) => {
+    try {
+        const { $in, path: gltfPath = 'export.glb' } = selector.parameters;
+        const output = selector.output || '$out';
+
+        if (!$in) throw new Error('Missing input $in');
+
+        console.log(`[Export Node] glTF/GLB export requested for path: ${gltfPath}`);
+
+        const inShape = await readExplicitData(v, $in, context);
+        if (!inShape) throw new Error('Could not read input shape');
+
+        const glbBytes = await exportToGlb(v, inShape, context);
+
+        if (output === 'file') {
+            const stream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(glbBytes);
+                    controller.close();
+                }
+            });
+            return {
+                stream,
+                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
+            };
+        }
+
+        const bytes = new TextEncoder().encode(JSON.stringify(inShape));
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+            }
+        });
+        return {
+            stream,
+            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+        };
+
+    } catch (err) {
+        console.error(`[Export Node glTF Export Error]`, err);
+        return null;
+    }
+}, {
+    schema: {
+        path: 'jot/gltf',
+        description: 'Exports a shape to a GLB file (Binary glTF 2.0).',
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [
+            { name: 'path', type: 'jot:string', default: 'export.glb' }
+        ],
+        outputs: { 
+            '$out': { type: 'jot:shape' },
+            'file': { type: 'file', mimeType: 'model/gltf-binary' }
+        }
+    }
+});
+
+async function exportToGlb(v, inShape, context) {
+    const nodes = [];
+    const meshes = [];
+    const accessors = [];
+    const bufferViews = [];
+    const binaryDataChunks = [];
+    let currentByteOffset = 0;
+
+    function addBinaryData(typedArray, target) {
+        const bytes = new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
+        const padding = (4 - (bytes.byteLength % 4)) % 4;
+        const lengthWithPadding = bytes.byteLength + padding;
+        
+        const paddedBytes = new Uint8Array(lengthWithPadding);
+        paddedBytes.set(bytes);
+        
+        binaryDataChunks.push(paddedBytes);
+        
+        const byteOffset = currentByteOffset;
+        currentByteOffset += lengthWithPadding;
+        
+        const bufferViewIdx = bufferViews.length;
+        bufferViews.push({
+            buffer: 0,
+            byteOffset: byteOffset,
+            byteLength: bytes.byteLength,
+            target: target
+        });
+        
+        return bufferViewIdx;
+    }
+
+    async function processShape(shapeNode) {
+        const nodeIdx = nodes.length;
+        const node = {
+            name: shapeNode.tags?.name || `node_${nodeIdx}`,
+            children: []
+        };
+        nodes.push(node);
+
+        // Transpose row-major matrix to column-major for glTF
+        const tf = shapeNode.tf || "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";
+        const m = tf.trim().split(/\s+/).map(Number);
+        if (m.length === 16) {
+            node.matrix = [
+                m[0], m[4], m[8], m[12],
+                m[1], m[5], m[9], m[13],
+                m[2], m[6], m[10], m[14],
+                m[3], m[7], m[11], m[15]
+            ];
+        }
+
+        if (shapeNode.geometry) {
+            const geoText = await readExplicitData(v, shapeNode.geometry, context);
+            if (geoText) {
+                const parsed = parseGeometryText(geoText);
+                const primitives = [];
+
+                // 1. Export Triangles (mode 4)
+                if (parsed.triangles && parsed.triangles.length > 0) {
+                    const flatPositions = new Float32Array(parsed.vertices.flat());
+                    const posMin = [Infinity, Infinity, Infinity];
+                    const posMax = [-Infinity, -Infinity, -Infinity];
+                    for (const vtx of parsed.vertices) {
+                        for (let d = 0; d < 3; d++) {
+                            if (vtx[d] < posMin[d]) posMin[d] = vtx[d];
+                            if (vtx[d] > posMax[d]) posMax[d] = vtx[d];
+                        }
+                    }
+                    const posViewIdx = addBinaryData(flatPositions, 34962);
+                    const posAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: posViewIdx,
+                        byteOffset: 0,
+                        componentType: 5126,
+                        count: parsed.vertices.length,
+                        type: "VEC3",
+                        min: posMin,
+                        max: posMax
+                    });
+
+                    const flatIndices = new Uint32Array(parsed.triangles.flat());
+                    const indViewIdx = addBinaryData(flatIndices, 34963);
+                    const indAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: indViewIdx,
+                        byteOffset: 0,
+                        componentType: 5125,
+                        count: flatIndices.length,
+                        type: "SCALAR"
+                    });
+
+                    primitives.push({
+                        attributes: { POSITION: posAccessorIdx },
+                        indices: indAccessorIdx,
+                        mode: 4
+                    });
+                }
+
+                // 2. Export Segments/Lines (mode 1)
+                if (parsed.segments && parsed.segments.length > 0) {
+                    const flatPositions = new Float32Array(parsed.vertices.flat());
+                    const posMin = [Infinity, Infinity, Infinity];
+                    const posMax = [-Infinity, -Infinity, -Infinity];
+                    for (const vtx of parsed.vertices) {
+                        for (let d = 0; d < 3; d++) {
+                            if (vtx[d] < posMin[d]) posMin[d] = vtx[d];
+                            if (vtx[d] > posMax[d]) posMax[d] = vtx[d];
+                        }
+                    }
+                    const posViewIdx = addBinaryData(flatPositions, 34962);
+                    const posAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: posViewIdx,
+                        byteOffset: 0,
+                        componentType: 5126,
+                        count: parsed.vertices.length,
+                        type: "VEC3",
+                        min: posMin,
+                        max: posMax
+                    });
+
+                    const flatIndices = new Uint32Array(parsed.segments.flat());
+                    const indViewIdx = addBinaryData(flatIndices, 34963);
+                    const indAccessorIdx = accessors.length;
+                    accessors.push({
+                        bufferView: indViewIdx,
+                        byteOffset: 0,
+                        componentType: 5125,
+                        count: flatIndices.length,
+                        type: "SCALAR"
+                    });
+
+                    primitives.push({
+                        attributes: { POSITION: posAccessorIdx },
+                        indices: indAccessorIdx,
+                        mode: 1
+                    });
+                }
+
+                if (primitives.length > 0) {
+                    const meshIdx = meshes.length;
+                    meshes.push({ primitives });
+                    node.mesh = meshIdx;
+                }
+            }
+        }
+
+        if (Array.isArray(shapeNode.components)) {
+            for (const comp of shapeNode.components) {
+                const childIdx = await processShape(comp);
+                node.children.push(childIdx);
+            }
+        }
+
+        return nodeIdx;
+    }
+
+    await processShape(inShape);
+
+    const gltfJson = {
+        asset: { version: "2.0" },
+        scenes: [{ nodes: [0] }],
+        scene: 0,
+        nodes: nodes,
+        meshes: meshes,
+        accessors: accessors,
+        bufferViews: bufferViews,
+        buffers: [{ byteLength: currentByteOffset }]
+    };
+
+    const jsonString = JSON.stringify(gltfJson);
+    const jsonBytes = new TextEncoder().encode(jsonString);
+    const jsonPadding = (4 - (jsonBytes.byteLength % 4)) % 4;
+    const jsonLengthWithPadding = jsonBytes.byteLength + jsonPadding;
+
+    const finalJsonBytes = new Uint8Array(jsonLengthWithPadding);
+    finalJsonBytes.set(jsonBytes);
+    for (let i = 0; i < jsonPadding; i++) {
+        finalJsonBytes[jsonBytes.byteLength + i] = 0x20;
+    }
+
+    const totalBinLength = binaryDataChunks.reduce((acc, c) => acc + c.byteLength, 0);
+    const finalBinBytes = new Uint8Array(totalBinLength);
+    let binOffset = 0;
+    for (const chunk of binaryDataChunks) {
+        finalBinBytes.set(chunk, binOffset);
+        binOffset += chunk.byteLength;
+    }
+
+    const glbLength = 12 + 8 + finalJsonBytes.byteLength + 8 + finalBinBytes.byteLength;
+    const glbBuffer = new Uint8Array(glbLength);
+    const view = new DataView(glbBuffer.buffer);
+
+    view.setUint32(0, 0x46546C67, true);
+    view.setUint32(4, 2, true);
+    view.setUint32(8, glbLength, true);
+
+    view.setUint32(12, finalJsonBytes.byteLength, true);
+    view.setUint32(16, 0x4E4F534A, true);
+    glbBuffer.set(finalJsonBytes, 20);
+
+    const binHeaderOffset = 20 + finalJsonBytes.byteLength;
+    view.setUint32(binHeaderOffset, finalBinBytes.byteLength, true);
+    view.setUint32(binHeaderOffset + 4, 0x004E4942, true);
+    glbBuffer.set(finalBinBytes, binHeaderOffset + 8);
+
+    return glbBuffer;
+}
 
 registerVFSRoutes(vfs, server, '', meshLink);
 

@@ -4,6 +4,7 @@
 #include "../../fs/cpp/vendor/stb_image.h"
 #include "../render/contour_utils.h"
 #include "../render/triangulation.h"
+#include <CGAL/mark_domain_in_triangulation.h>
 #include <vector>
 #include <array>
 #include <string>

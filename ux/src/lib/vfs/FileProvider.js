@@ -55,7 +55,8 @@ export const registerFileProvider = (vfs, mesh) => {
       metadata: {
         state: 'AVAILABLE',
         encoding: 'bytes',
-        selector: s.toJSON()
+        selector: s.toJSON(),
+        filename: baseName
       }
     };
   }, { schema });

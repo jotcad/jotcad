@@ -45,27 +45,60 @@ export class TestVFSNode {
     this.vfs = new VFS({ id, storage: new MemoryStorage() });
     this.server = http.createServer();
     this.meshLink = null;
+    this.sockets = new Set();
+
+    this.server.on('connection', (socket) => {
+      this.sockets.add(socket);
+      socket.on('close', () => {
+        this.sockets.delete(socket);
+      });
+    });
   }
 
   async start() {
     await this.vfs.init();
-    this.meshLink = new MeshLink(this.vfs, this.neighbors, {
-      localUrl: `http://localhost:${this.port}`
-    });
-    this.cleanupRoutes = registerVFSRoutes(this.vfs, this.server, '', this.meshLink);
     
-    return new Promise((resolve) => {
-      this.server.listen(this.port, 'localhost', async () => {
-        await this.meshLink.start();
-        resolve();
-      });
+    return new Promise((resolve, reject) => {
+      const onError = (err) => {
+        this.server.off('listening', onListening);
+        reject(err);
+      };
+      const onListening = async () => {
+        this.server.off('error', onError);
+        this.port = this.server.address().port;
+        this.meshLink = new MeshLink(this.vfs, this.neighbors, {
+          localUrl: `http://localhost:${this.port}`
+        });
+        this.cleanupRoutes = registerVFSRoutes(this.vfs, this.server, '', this.meshLink);
+        try {
+          await this.meshLink.start();
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      this.server.once('error', onError);
+      this.server.once('listening', onListening);
+      this.server.listen(this.port || 0, 'localhost');
     });
   }
 
   async stop() {
     if (this.cleanupRoutes) this.cleanupRoutes();
-    await this.meshLink?.stop();
-    await new Promise((resolve) => this.server.close(resolve));
+    
+    const serverClosePromise = new Promise((resolve) => this.server.close(resolve));
+    for (const socket of this.sockets) {
+      try { socket.destroy(); } catch (e) {}
+    }
+    this.sockets.clear();
+    await serverClosePromise;
+
+    if (this.meshLink) {
+      await Promise.race([
+        this.meshLink.stop(),
+        new Promise((resolve) => setTimeout(resolve, 1000))
+      ]);
+    }
   }
 
   registerProvider(path, handler, schema) {

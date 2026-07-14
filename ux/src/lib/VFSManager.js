@@ -99,7 +99,7 @@ export const vfsActions = {
       setDiscoveryStatus('success');
 
       // If we have no peers yet, the sub was likely dropped. Retry in 1s, then 2s, then 4s...
-      if (mesh.peers.size === 0 && retryCount < 5) {
+      if ((!mesh.discoveredProviders || mesh.discoveredProviders.size === 0) && retryCount < 5) {
           console.log('[MeshVFS] No peers yet, scheduling discovery retry...');
           setTimeout(() => this.discoverSchemas(retryCount + 1), Math.pow(2, retryCount) * 1000);
       }
@@ -241,16 +241,41 @@ export const vfsActions = {
     setInterval(() => {
       const nodes = new Map();
       const localInterests = [];
-      try {
-          for (const entry of mesh.interests.values()) {
-            if (entry.localExpiresAt > Date.now() && entry.selector && entry.selector.path) {
-                localInterests.push({ path: entry.selector.path, local: true });
-            }
-          }
-      } catch (e) { console.error('[MeshVFS] Interest extraction error:', e); }
+      if (vfs._listeners) {
+        for (const path of vfs._listeners.keys()) {
+          localInterests.push({ path, local: true });
+        }
+      }
 
+      // 1. Initialize browser node
       nodes.set(vfs.id, { id: vfs.id, type: 'BROWSER', pps: 0, neighbors: [], interests: localInterests });
       
+      // 2. Add peers from Zenoh discovered providers
+      if (mesh.discoveredProviders) {
+        for (const pId of mesh.discoveredProviders) {
+          if (!nodes.has(pId)) {
+            nodes.set(pId, {
+              id: pId,
+              type: 'PEER',
+              pps: 0,
+              reachability: 'DIRECT',
+              protocol: 'zenoh',
+              neighbors: [{ id: vfs.id, reachability: 'DIRECT', protocol: 'zenoh' }],
+              interests: []
+            });
+          }
+          const browserNode = nodes.get(vfs.id);
+          if (browserNode && !browserNode.neighbors.some(n => n.id === pId)) {
+            browserNode.neighbors.push({
+              id: pId,
+              reachability: 'DIRECT',
+              protocol: 'zenoh'
+            });
+          }
+        }
+      }
+
+      // 3. Keep compatibility for meshMap (e.g. if any node is broadcasting sys/topo)
       for (const [peerId, data] of meshMap.entries()) {
         const { neighbors, interests } = data;
         if (!nodes.has(peerId)) {
@@ -262,7 +287,7 @@ export const vfsActions = {
         }
       }
 
-      // Add missing neighbor nodes to the topology list so they render as leaf nodes!
+      // 4. Add missing neighbor nodes to the topology list so they render as leaf nodes!
       for (const data of meshMap.values()) {
         const { neighbors } = data;
         for (const neighbor of neighbors) {
@@ -272,14 +297,6 @@ export const vfsActions = {
         }
       }
 
-      for (const p of mesh.peers.values()) {
-        if (nodes.has(p.id)) {
-          const n = nodes.get(p.id);
-          n.pps = p.pps;
-          n.reachability = p.reachability;
-          n.protocol = p.protocol;
-        }
-      }
       setMeshTopology('peers', reconcile([...nodes.values()]));
     }, 1000);
 
@@ -376,8 +393,24 @@ export const vfsActions = {
     return vfs.readCID(cid, context);
   },
 
-  async write(selector, data) {
-    return vfs.write(selector, data);
+  async read(target, context = {}) {
+    return vfs.read(target, context);
+  },
+
+  async fulfill(target, context = {}) {
+    return vfs.fulfill(target, context);
+  },
+
+  async write(target, data, context = {}) {
+    return vfs.write(target, data, context);
+  },
+
+  async listen(path, callback) {
+    return vfs.listen(path, callback);
+  },
+
+  async unlisten(path) {
+    return vfs.unlisten(path);
   },
 
   async clearStorage() {

@@ -7,9 +7,11 @@ INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../rend
            -I../cgal -I../cgal/boost \
            -I../cgal/cgal/include -I../cgal/cgal/include/CGAL/include \
            -I../cgal/freetype/include \
+           -I../cgal/zenoh/include \
            -I../pack
 DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
 LIBS = ../cgal/freetype/build/libfreetype.a \
+       ../cgal/zenoh/lib/libzenohc.a \
        -lpthread -lssl -lcrypto -lz -ldl
 
 BIN_DIR = bin
@@ -54,6 +56,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                ghost_test.cpp \
                material_test.cpp \
                simplify_test.cpp \
+               approximate_test.cpp \
                relief_test.cpp \
                emboss_test.cpp \
                trace_quant_test.cpp \
@@ -63,6 +66,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                decal_concave_test.cpp \
                convex_test.cpp \
                convex_visual_test.cpp \
+               dilate_test.cpp \
                rainbow_test.cpp \
                rainbow_visual_test.cpp \
                undercut_test.cpp \
@@ -71,23 +75,50 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                part_line_visual_test.cpp \
                part_line_search_test.cpp \
                mold_split_test.cpp \
-               extrusion_overlap_test.cpp
+               extrusion_overlap_test.cpp \
+               rig_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
 
 # Targets
-all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test
+all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)/test_zenoh_link $(BIN_DIR)/test_zenoh_queryable $(BIN_DIR)/test_zenoh_caching
 
 # Ensure the library is built first
 .PHONY: $(LIB_GEO)
 $(LIB_GEO):
-	$(MAKE) -C ..
+	$(MAKE) -C .. all ops
+
+# Rule for building the standalone test_zenoh_caching binary
+$(BIN_DIR)/test_zenoh_caching: $(OBJ_DIR)/test_zenoh_caching.o
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
+
+# Rule for building the standalone test_zenoh_queryable binary
+$(BIN_DIR)/test_zenoh_queryable: $(OBJ_DIR)/test_zenoh_queryable.o
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
+
+# Rule for building the standalone test_zenoh_link binary
+$(BIN_DIR)/test_zenoh_link: $(OBJ_DIR)/test_zenoh_link.o
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
+
+REG_OBJS = ../obj/ops_library.o \
+           ../obj/ops_primitives_reg.o \
+           ../obj/ops_booleans_reg.o \
+           ../obj/ops_transforms_reg.o \
+           ../obj/ops_features_reg.o \
+           ../obj/ops_mapping_reg.o \
+           ../obj/ops_sweep_reg.o \
+           ../obj/ops_unfold_reg.o \
+           ../obj/ops_tooling_reg.o \
+           ../obj/ops_io_reg.o
 
 # Rule for building the combined unit_tests binary from a single translation unit
-$(BIN_DIR)/unit_tests: $(OBJ_DIR)/unit_tests.o $(LIB_GEO)
+$(BIN_DIR)/unit_tests: $(OBJ_DIR)/unit_tests.o $(REG_OBJS) $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)/unit_tests.o $(REG_OBJS) -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
 # Rule for building the standalone cid_consistency_test binary
 $(BIN_DIR)/cid_consistency_test: $(OBJ_DIR)/cid_consistency_test.o $(LIB_GEO)
@@ -113,6 +144,22 @@ $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h
 $(OBJ_DIR)/cid_consistency_test.o: cid_consistency_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile test_zenoh_link.o
+$(OBJ_DIR)/test_zenoh_link.o: test_zenoh_link.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile test_zenoh_queryable.o
+$(OBJ_DIR)/test_zenoh_queryable.o: test_zenoh_queryable.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Compile test_zenoh_caching.o
+$(OBJ_DIR)/test_zenoh_caching.o: test_zenoh_caching.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
 
 # Compile decal_test.o
 $(OBJ_DIR)/decal_test.o: decal_test.cpp

@@ -71,105 +71,83 @@ Input artifacts are strictly read-only. Transformative operators (e.g., `cut`, `
 There are NO "Partitioned Output Ports" or `ports` maps in `.meta` files.
 Every distinct output port (e.g., `$out`, `file`, `thumb`) is just a field in the Selector. Because the `output` field is hashed along with the path and parameters, every artifact gets its own unique, deterministic CID and its own discrete `.data` file.
 
-## 3. Peer-to-Peer Protocol (Routing)
+### 3. Network & Routing Protocol (Eclipse Zenoh)
 
-### 3.1 Identity Introduction (`POST /register`)
+The VFS peer-to-peer network is built natively on **Eclipse Zenoh**, replacing custom WebSocket and HTTP routing layers with Zenoh's decentralized sessions, queryables, and pub-sub engine.
 
-The VFS decouples transport connections from peer identities. On connection establishment, a node MUST send a `POST /register` to its neighbor.
-- **Format:** Supports both JSON body (`{"id": "peer-id", "url": "http://..."}`) and URL query parameters (`?peerId=...&url=...`).
-- **Response:** `{ "id": "local-id", "reachability": "DIRECT|REVERSE" }`. 
-  - **REVERSE Signal:** If a node returns `REVERSE`, the requester MUST initiate a polling loop via `POST /listen` to receive incoming mesh commands.
+### 3.1 Peer Sessions & Discovery
+* **Peer Sovereignty:** Every mesh participant maintains a unique Peer ID. Zenoh sessions establish direct or routed peer-to-peer connections automatically.
+* **Ephemeral Lifecycles:** When a node (such as a browser tab) disconnects, Zenoh's session keepalive detects the loss, automatically tearing down all queryables, subscriptions, and associated peer entries without manual timeout loops.
 
-### 3.2 Peer Connection Abstraction
+### 3.2 Key Expression Mapping
+VFS addresses are translated directly into Zenoh key expressions using a strict path layout to preserve the **Identity Duality** between computational recipes (Selectors) and content:
 
-All peer interactions are managed through a unified **Connection** abstraction.
-- **ForwardConnection:** Used for `DIRECT` reachability. Delivers publications and requests immediately via outbound HTTP `POST` calls.
-- **ReverseConnection:** Used for `REVERSE` reachability (e.g., Browsers).
-  - **Encapsulated Responsibility:** The `ReverseConnection` class manages BOTH the server-side listener pool and the client-side active polling loop.
-  - **409 Conflict Protection:** Servers MUST reject a `POST /listen` with a **409 Conflict** if a poll is already active for that peer ID. Clients MUST treat a 409 as a critical failure (zombie process detection).
-- **Stale Peer Pruning (10s Activity Timeout):**
-  - To prevent memory exhaustion from abandoned browser tabs or crashed nodes, servers MUST track the last activity time for every peer. 
-  - If a peer fails to interact (e.g., a new `/listen` poll or an incoming `/register`) for more than **10 seconds**, the server MUST prune that peer from its routing table. 
-  - Upon pruning, all pending notification queues for that peer MUST be cleared.
+1. **Generative (Selector) Path:** `jot/vfs/op/<OperatorName>`
+   * Used for computational execution requests.
+   * Parameter representation: Appended as standard URL-encoded query parameters: `jot/vfs/op/Cut?subject=CID_BOX&tool=CID_SPHERE`
+2. **Non-Generative (Content) Path:** `jot/vfs/cid/<CID>`
+   * Used for direct retrieval of static content-addressed buffers (geometry or shape JSONs).
+   * Parameter representation: None.
 
-### 3.3 Discovery & Lifecycle (`sys/`)
+### 3.3 Actor Fulfillment (Queryables)
+* **On-Demand Processing:** Operator nodes register a Zenoh queryable on `jot/vfs/op/**`.
+* **Fulfillment on Cache Miss:** When a queryable receives a `z_get` request, it checks the local cache. If a cache miss occurs, the operator runs the geometry kernel, writes the result to local storage, and replies via `z_query_reply`.
+* **Non-Generative CID Fetching:** Queries on `jot/vfs/cid/**` are strictly non-generative. A cache miss on a content path is resolved by searching the mesh or waiting; it must *never* trigger compilation or operator execution.
 
-The VFS uses specialized system paths for mesh management.
+### 3.4 Request Deduplication (activeWait Task-Joining)
+To prevent redundant execution and CPU/Network bloat when duplicate queries for the same `Selector` arrive concurrently before the cache commits:
+* The VFS maintains a local `activeWait` registry mapping in-progress Selector hashes to active computation promises.
+* Subsequent concurrent queries for the same Selector will join the existing promise instead of spawning a new compiler/CGAL process.
+* Once the initial computation finishes and commits to local disk, the promise resolves and replies to all waiting queries concurrently.
 
-- **Topology Updates (`sys/topo`):** Nodes notify neighbors of topology changes.
-  - Content: `{ id: "sender-id", neighbors: [ { "id": "peer-id", "reachability": "DIRECT|REVERSE", "protocol": "http|https|ws|wss" } ], interests: [...] }`
-  - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion, WebSocket upgrade, or when a new `SUB` for `sys/topo` is received (Reactive Discovery).
-- **Schema Discovery (`sys/schema`):** Providers announce their available operators.
-  - Content: `{ provider: "id", catalog: { "path": schema } }`
-  - Trigger: Nodes MUST send this notification immediately upon `POST /register` completion or dynamic operator creation.
+### 3.5 Failure Propagation & Zombie Prevention
+To prevent client queries and mesh threads from blocking indefinitely on failed compilations or operator exceptions:
+* **Active Error Replies:** The queryable handler wraps execution in a `try/catch` block. On exception, it dispatches an immediate error payload (status `500` JSON containing the error description) via `z_query_reply`.
+* **Registry Cleanup:** The provider must instantly remove the Selector CID from the local `activeWait` map and reject the master promise, waking up and rejecting all joined client queries.
+* **Native Timeouts:** Requesters configure a strict query timeout on `z_get` calls (default `10 seconds`). If a provider crashes silently, the requester's Zenoh engine automatically triggers a timeout rejection.
 
-#### 3.4 Interest Forwarding (`POST /subscribe`)
+### 3.6 Formal Links (Unambiguous Redirection)
+The VFS supports metadata-driven redirection:
+* **Link Definition:** An entry with `encoding: "link"` in its metadata. The data payload contains the serialized target `Selector`.
+* **Resolution Behavior:** When `_readResult` encounters `encoding: "link"`, it recursively resolves the target Selector.
+* **Cycle Protection:** A `resolutionStack` of CIDs is maintained during resolution. Encountering a duplicate CID rejects the request with a "Circular Link Detected" error.
 
-To support reactive workflows (e.g., interactive boolean previews), nodes propagate "Interests" across the mesh.
+### 3.7 TypeScript Client & Remote-API Bridging
+Because JavaScript/TypeScript client environments (like web browsers or Node.js running `@eclipse-zenoh/zenoh-ts`) cannot run the native Rust/C++ routing engine directly and rely on WebSockets:
+* **Protocol Bridging Requirement:** JS clients MUST connect exclusively to a Zenoh Router running the `remote_api` plugin (e.g., `zenoh-bridge-remote-api`). Direct WebSocket connection attempts from `zenoh-ts` to raw native C++ Zenoh-C node listeners fail due to protocol mismatches (e.g., triggering `unexpected message type 3`).
+* **Router Port Structure:** The Zenoh Router listens for native TCP peers/routers on port `N` (e.g. `9200`) and hosts the WebSocket remote-api plugin/bridge on port `N + 1000` (e.g. `10200`).
+* **MeshLink Locator Translation:** The JavaScript VFS `MeshLink` automatically maps client HTTP/HTTPS neighbor URLs (e.g., `http://localhost:9200`) to the corresponding WebSocket Remote-API bridge locator (e.g., `ws://localhost:10200`) during initialization.
+* **Unified Mesh Topology:** Native C++ nodes connect to the Zenoh Router via TCP (`tcp/127.0.0.1:9200`), routing queries and content lookups transparently between C++ and JS over the shared session.
 
-- **Subscription Request:** `POST /subscribe`
-  - **Payload Structure**: Sent as a binary `VfsRecord` where the JSON header includes `selector`, `expiresAt`, and `stack` fields.
-- **Mesh Painting:** When a node receives a subscription, it MUST:
-  1.  Record the interest locally.
-  2.  Forward the subscription to all OTHER connected peers (omitting any peer in the `stack` to prevent cycles).
-  3.  Immediately `NOTIFY` the subscriber if the data already exists locally.
-- **Clean Cleanup:** Subscriptions expire automatically after `expiresAt`.
+### 3.8 Catalog Discovery & Notification Propagation
+To maintain unified decentralized routing lists and enable UX interceptors to accurately track newly registered user operations:
+* **All-Target Querying (target: 1):** Discovery query actions on `jot/vfs/catalog` MUST explicitly pass `target: 1` (`QueryTarget.ALL`) to the Zenoh `session.get` call. Using the default target (`QueryTarget.BEST_MATCHING`) causes Zenoh to only route the query to a single "best-matching" node (typically the closest native C++ peer), ignoring all other nodes' catalogs.
+* **UX Interceptor Integration:** The client UX layer (via SolidJS) overrides and intercepts `mesh.notify(selector, payload, stack)` to monitor schemas and update frontend states. Incoming Zenoh sub/pub notification updates MUST be routed through `this.notify(selector, payload, ['incoming'])` rather than using direct event emitter calls, allowing the UX state machine to populate operations without entering infinite network loops.
 
-### 3.5 Browser Compatibility & CORS
+### 3.9 Multicast Domain & Mesh Isolation (Broadcast Separation)
+To prevent discovery cross-talk and data leaks between concurrent meshes running on the same local network or subnet:
+* **Custom Multicast Port Configuration:** By default, Zenoh nodes scout on UDP multicast group `224.0.0.224:7446`. To run distinct meshes (e.g. `test/standard` vs `live/webcam`), each profile MUST use a unique multicast group address/port.
+* **Environment Overrides:** The orchestrator and the C++ nodes dynamically support the `ZENOH_MULTICAST_ADDRESS` environment variable (e.g., `224.0.0.224:7447`).
+* **Secure by Default:** If `ZENOH_MULTICAST_ADDRESS` is not defined in the environment, the VFS node MUST default to disabling multicast scouting entirely (`"scouting": {"multicast": {"enabled": false}}`), relying strictly on explicit TCP connection endpoints (unicast) for its network sessions.
 
-Native VFS nodes intended for browser use MUST support Cross-Origin Resource Sharing (CORS).
-- **Required Headers:** `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`.
-- **Allowed Headers:** MUST include `Content-Type`, `X-VFS-Peer-Id`, `X-VFS-Reply-To`, and `X-VFS-Id`.
-- **Preflight:** Nodes MUST handle `OPTIONS` requests for all mesh routes.
+### 3.10 Query Target & Consolidation
+To prevent query deadlocks and ensure correct data resolution in a distributed P2P mesh:
+* **Mesh-Wide Query Targeting (`QueryTarget::ALL`):** Content CID queries (`jot/vfs/cid/<CID>`) and shared catalog queries (`jot/vfs/catalog`) MUST be queried with `ALL` targeting. This guarantees that queries are routed to all matching queryables on the mesh instead of terminating early on the first responder (which may return a `404`).
+* **Disabled Consolidation (`ConsolidationMode::NONE`):** To prevent Zenoh routers from merging and discarding replies from multiple matching nodes, CID and catalog queries MUST disable consolidation. This ensures that the client receives all individual node responses, allowing it to find the owner's `200` reply in the presence of `404` responses from non-owners.
+* **Clamped Selector Cache Lookups:** Before evaluating a Selector, clients check if its output is already cached on the mesh by querying its CID. Since this cache lookup results in a miss for new computations, to prevent Zenoh's mesh-wide `ALL` query from blocking for the full timeout (defaulting to `2s`), Selector cache lookups MUST clamp their timeout (e.g., `200ms`). This enables rapid fallback to operator evaluation.
 
-### 3.6 Recursive Bread-crumb READ (`POST /read_selector` | `POST /read_cid`)
+### 3.11 Root-Prefixed Routing Layout (Machine-Centric Addressing)
+To enable physical machine isolation and avoid double-prefixing of key expressions:
+* **Key Expression Structure:** Generative routes and notifications are prefixed with the routing machine's identifier:
+  * Operator Queryables: `<machine-id>/jot/vfs/op/<path>`
+  * Published/Notified Topics: `<machine-id>/jot/vfs/pub/<path>`
+* **Dynamic Prefix Stripping:** Upon receiving a query, C++ and JS VFS servers MUST dynamically extract the logical operator path by finding and stripping `/jot/vfs/op/` (and `/jot/vfs/pub/` for subscribers), ensuring compatibility with wildcard requests (`*/jot/vfs/op/...`).
 
-The `read` operation is the primary mechanism for demand-driven data retrieval.
-
-- **Endpoints:**
-  - `POST /read_selector`: Retrieves data by its computational address (path + parameters).
-  - `POST /read_cid`: Retrieves data by its specific content hash.
-- **Atomic Wire Format:** Requests and responses MUST be wrapped and sent as a binary `VfsRecord`.
-  - For `POST /read_selector`, the request `VfsRecord` JSON header MUST contain the `selector` object, `expiresAt`, and the forwarding `stack` array.
-  - For `POST /read_cid`, the request `VfsRecord` JSON header MUST contain the `cid` string, `resolutionStack` array, `expiresAt`, and `stack`.
-- **TTL Enforcement:** Nodes MUST verify `expiresAt` (milliseconds epoch). If the current time exceeds `expiresAt`, the request MUST be rejected with a `404` or `410` status. The default TTL for requests without an explicit `expiresAt` is **30 seconds**.
-
-### 3.7 Reverse Link Polling (`POST /listen`)
-
-Peers without a stable incoming URL (e.g., Browsers) receive mesh events by polling the `/listen` endpoint of their neighbors.
-
-- **Endpoint:** `POST /listen`
-- **Headers:** `x-vfs-peer-id: <local-id>`
-- **Response Operations (`X-VFS-Op`):**
-  - **`PUB` / `SUB` / `READ_SELECTOR` / `READ_CID`**: Returns a single standard mesh command object.
-  - **`BATCH`**: To eliminate per-message HTTP overhead, servers MAY return multiple pending JSON commands as a single array. Clients MUST iterate over this array and process each command.
-  - **`204 No Content`**: No events pending (returned ONLY after a long-poll timeout).
-- **Long-Polling Contract:** Servers MUST NOT return `204` immediately if the queue is empty. They MUST wait for a publication or a timeout (e.g., 30s) to keep the connection active for immediate delivery.
-- **Binary Constraint**: The `BATCH` operation is reserved for JSON frames. Raw binary notifications (`encoding: bytes`) MUST be delivered as individual standard `200 OK` responses to maintain framing integrity and efficiency.
-
-### 3.8 Binary Wire Format (VfsRecord)
-
-To unify request routing and data delivery, the mesh utilizes a standardized binary layout called **VfsRecord** for all message bodies (including requests to `/read_selector`, `/read_cid`, `/subscribe`, `/notify`, `/spy`, `/listen`, and their responses).
-
-A **VfsRecord** payload is laid out sequentially as follows:
-1. **Header Length prefix (4 bytes):** 32-bit unsigned integer in Big Endian (`UInt32BE`) specifying the byte-length of the header JSON string.
-2. **JSON Header String (variable length):** UTF-8 encoded JSON string containing transport headers and metadata (e.g. `selector`, `stack`, `expiresAt`, `encoding`, `cid`, `info` etc.).
-3. **Raw Binary Payload (variable length):** The remaining bytes in the stream represent the raw payload data (e.g. geometry file, shape JSON bytes, error trace lines etc.).
-
-This format guarantees strict stream framing without relying on special HTTP headers, and enables direct piping of multi-gigabyte data payloads through proxy nodes without intermediate decoding overhead.
-
-### 3.9 Formal Links (Unambiguous Redirection)
-
-The VFS supports **Formal Links**, a mechanism for redirecting one Selector to another. 
-
-- **Link Definition:** A Link is an artifact whose content is another address (a Selector). 
-- **Storage:**
-  - **Metadata (`.meta`)**: MUST contain `state: "AVAILABLE"` and `encoding: "link"`.
-  - **Data (`.data`)**: MUST contain the **Target Selector** serialized as JSON (or JCB).
-- **Redundancy Removal:** The legacy `vfs:/` URI prefix is prohibited. The `encoding: "link"` metadata flag is the unambiguous signal that the data payload should be interpreted as a target identity for re-resolution.
-- **Resolution Behavior:** When the VFS internal resolution (`_readResult`) encounters `encoding: "link"`, it MUST read the data payload, hydrate it into a formal `Selector`, and recursively resolve that Selector.
-- **Cycle Protection:** Nodes MUST maintain a `resolutionStack` of CIDs encountered during a single resolution chain. If a CID is encountered that is already in the stack, the resolution MUST fail with a "Circular Link Detected" error.
-- **Owner Sovereignty:** A Link is an independent entry owned by its source Selector. If the source Selector entry is deleted, the link is destroyed, but the target artifact remains unaffected.
+### 3.12 Concurrency Gate & Alphabetical Spillover Load Balancer
+To prevent overloading active nodes and provide robust failover:
+* **Concurrency Gate:** Every VFS Node tracks concurrent executions using an atomic counter (`active_ops_count_`) capped at a configured limit (`max_concurrent_ops_`). This limit defaults to 4 and can be configured programmatically via `VFSNode::Config::max_concurrent_ops` or via the `JOT_MAX_CONCURRENT_OPS` environment variable. If the limit is reached, query handlers reject queries immediately with a `503 Server Busy` status payload.
+* **Alphabetical Spillover Loop:** Clients discover available nodes in the mesh via system metrics subscriptions (`*/jot/vfs/pub/jot/vfs/metrics/system/**`), sorting active machine IDs alphabetically. Clients query them sequentially. If a target is busy locally or returns a `503` or `429` rejection over Zenoh, the client prints a spillover log and falls back to the next target in the alphabetical list.
+* **Local Memory Cache Bypass:** To avoid routing delays on locally published pub/sub topics, VFS nodes check their memory cache (`local_cache_`/`local_cache_binary_`) at the start of local selector reads, resolving local queries instantly.
 
 ## 4. Core Type System
 

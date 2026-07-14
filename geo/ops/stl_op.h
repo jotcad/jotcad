@@ -55,8 +55,51 @@ struct StlOp : P {
     }
 };
 
+template <typename P = JotVfsProtocol>
+struct StlImportOp : P {
+    static constexpr const char* path = "jot/Stl";
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const fs::Selector& file) {
+        fs::VFSResult file_res = vfs->read<fs::VFSResult>(file);
+        
+        Geometry geo;
+        bool success = false;
+        if (file_res.data.size() >= 84) {
+            success = STLReader::read_binary(file_res.data, geo);
+        }
+        if (!success) {
+            std::string stl_text(file_res.data.begin(), file_res.data.end());
+            success = STLReader::read_ascii(stl_text, geo);
+        }
+
+        if (!success) {
+            throw std::runtime_error("Failed to parse STL file");
+        }
+
+        Shape out = P::make_shape(vfs, geo, {{"type", "closed"}});
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+
+    static std::vector<std::string> argument_keys() { return {"file"}; }
+
+    static typename P::json schema() {
+        return {
+            {"path", "jot/Stl"},
+            {"description", "Imports an STL file from the VFS and returns its Shape representation."},
+            {"inputs", nlohmann::json::object()},
+            {"arguments", json::array({
+                {{"name", "file"}, {"type", "jot:file"}}
+            })},
+            {"outputs", {
+                {"$out", {{"type", "jot:shape"}, {"description", "The imported shape."}}}
+            }}
+        };
+    }
+};
+
 static void stl_init(fs::VFSNode* vfs) {
     Processor::register_op<StlOp<>, Shape, std::string>(vfs, "jot/stl");
+    Processor::register_op<StlImportOp<>, fs::Selector>(vfs, "jot/Stl");
 }
 
 } // namespace geo

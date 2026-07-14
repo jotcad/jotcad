@@ -45,9 +45,7 @@ void setup() {
     node = new fs::VFS(config);
 
     // 2. Register handler for on-demand counter reads
-    node->register_op("sensor/counter", [](const fs::json& params, fs::VFSResponseWriter *response) {
-        response->send(200, "application/json", fs::json({{"value", shared_count}}).dump().c_str());
-    }, {{"output", "number"}});
+    
 
     node->begin();
     Serial.println("VFS_READY");
@@ -70,9 +68,9 @@ void loop() {
         }
 
         // Broadcast count change
-        fs::Selector selector("sensor/counter");
+        
         fs::json payload = {{"value", shared_count}};
-        int sent = node->notify(selector, payload);
+        int sent = node->publish("sensor/counter", payload);
         
         Serial.printf("[ESP8266] Counter: %d (Sent to: %d)\n", shared_count, sent);
     }

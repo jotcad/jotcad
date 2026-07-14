@@ -8,19 +8,9 @@
 #include <vector>
 #include <functional>
 #include <map>
-#include <set>
 #include <memory>
 #include <mutex>
-#include <condition_variable>
-#include <future>
-
-namespace httplib {
-    class Response;
-    namespace ws {
-        class WebSocket;
-        class WebSocketClient;
-    }
-}
+#include <atomic>
 
 namespace jotcad {
 namespace geo {
@@ -51,31 +41,24 @@ public:
         std::string cert_path;
         std::string key_path;
         int port = 9090;
+        int max_concurrent_ops = 4;
+
+        static Config load_from_env();
     };
 
     struct VFSRequest {
-        std::string op; // PUB, SUB, READ_SELECTOR, READ_CID, PUBLISH
+        std::string op;
         std::string cid;
         Selector selector;
-        std::string data; // Used for JSON payloads
-        std::vector<uint8_t> binary_data; // Used for raw binary payloads
+        std::string data;
+        std::vector<uint8_t> binary_data;
         std::vector<std::string> stack;
         std::vector<std::string> resolutionStack;
         long long expiresAt = 0;
         bool followLinks = true;
+        bool localOnly = false;
 
         bool is_cid() const { return !cid.empty(); }
-    };
-
-    static constexpr long long PEER_POLL_TIMEOUT_MS = 10000;
-
-    struct Connection {
-        std::string neighbor_id;
-        virtual ~Connection() = default;
-        virtual VFSResult sendRequest(const VFSRequest& req) = 0;
-        virtual bool is_reverse() const = 0;
-        virtual std::string get_url() const { return ""; }
-        virtual std::string get_protocol() const = 0;
     };
 
     using OpHandler = std::function<void(const VFSRequest& req)>;
@@ -84,11 +67,9 @@ public:
     ~VFSNode();
 
     void register_op(const std::string& path, OpHandler handler, const json& schema = json::object());
-    void notify_schema();
+    void notify_schema() {}
     void listen();
     void stop();
-
-    void prune_stale_connections();
 
     // Identity Duality Overloads (Explicit Typed Dispatch)
     template<typename T = std::vector<uint8_t>>
@@ -109,6 +90,7 @@ public:
 
     std::string get_cid(const Selector& sel);
     VFSResult get_local(const std::string& cid);
+    bool has_local(const std::string& cid);
 
     Selector write(const Selector& sel, const json& data);
     Selector write(const Selector& sel, const std::vector<uint8_t>& data);
@@ -123,126 +105,80 @@ public:
 
     void link(const Selector& src, const Selector& tgt);
 
-    bool validate_selector(const VFSRequest& req, std::string& error_out);
-
-    void subscribe(const Selector& selector, long long expiresAt, const std::vector<std::string>& stack);
+    void subscribe(const Selector& selector, long long expiresAt, const std::vector<std::string>& stack) {}
     void notify(const Selector& selector, const json& payload, const std::vector<std::string>& stack = {});
 
-    void add_peer(const std::string& url);
-    void add_connection(std::shared_ptr<Connection> conn);
-    void upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Connection> ws_conn);
-    void register_reverse_peer(const std::string& peer_id, httplib::Response& res);
+    void publish(const std::string& path, const json& payload);
+    void publish_binary(const std::string& path, const uint8_t* data, size_t len);
+
+    using SubscriptionCallback = std::function<void(const json& value)>;
+    void subscribe(const std::string& path, SubscriptionCallback callback);
+
+    // Path-oriented API
+    void write(const std::string& path, const json& value) { publish(path, value); }
+    void write_binary(const std::string& path, const uint8_t* data, size_t len) { publish_binary(path, data, len); }
+    void listen(const std::string& path, SubscriptionCallback callback) { subscribe(path, callback); }
+    void unlisten(const std::string& path);
+    json read(const std::string& path);
+
+    void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
+    void write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 
     json get_catalog();
-    json get_neighbors();
-    json get_topology_payload();
-
-    void handle_ws_frame(const std::string& neighbor_id, const json& frame);
-    void handle_binary_frame(const std::string& neighbor_id, const json& header, const std::vector<uint8_t>& data);
-
-    void resolve_transaction(const std::string& tx_id, const VFSResult& result);
-    void reject_transaction(const std::string& tx_id, int status, const std::string& error);
-
-private:
-    struct ForwardConnection : public Connection {
-        std::string url;
-        ForwardConnection(std::string id, std::string u) { neighbor_id = std::move(id); url = std::move(u); }
-        VFSResult sendRequest(const VFSRequest& req) override;
-        VFSResult _do_read(const std::map<std::string, std::string>& headers, const std::string& body, const std::string& path);
-        bool is_reverse() const override { return false; }
-        std::string get_url() const override { return url; }
-        std::string get_protocol() const override { return (url.rfind("https", 0) == 0) ? "https" : "http"; }
-        };
-
-        struct ReverseConnection : public Connection {
-        std::mutex mutex;
-        std::condition_variable cv;
-        std::vector<json> queue;
-        bool is_polling = false;
-        long long current_poll_id = 0;
-        long long last_poll_at = 0;
-
-        ReverseConnection(std::string id) { 
-            neighbor_id = std::move(id); 
-            last_poll_at = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        }
-        VFSResult sendRequest(const VFSRequest& req) override;
-        bool is_reverse() const override { return true; }
-        std::string get_protocol() const override { return "http"; }
-        };
-
-    struct WSConnection : public Connection {
-        VFSNode* node = nullptr;
-        std::mutex ws_mutex;
-        virtual void send_frame(const json& frame) = 0;
-        virtual void send_binary_frame(const json& header, const std::vector<uint8_t>& data) = 0;
-        VFSResult sendRequest(const VFSRequest& req) override;
-        VFSResult _do_ws_read(const json& frame);
-        bool is_reverse() const override { return false; }
-        std::string get_protocol() const override { return "ws"; }
-    };
-
-    struct WSForwardConnection : public WSConnection {
-        std::string url;
-        std::shared_ptr<httplib::ws::WebSocketClient> ws_client;
-        std::thread read_thread;
-        std::atomic<bool> is_closed{false};
-
-        WSForwardConnection(std::string id, std::string u);
-        ~WSForwardConnection() override;
-        void send_frame(const json& frame) override;
-        void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
-        std::string get_url() const override { return url; }
-        std::string get_protocol() const override { return (url.rfind("https", 0) == 0 || url.rfind("wss", 0) == 0) ? "wss" : "ws"; }
-        void start_client();
-        void read_loop();
-    };
-
-    struct WSReverseConnection : public WSConnection {
-        httplib::ws::WebSocket* ws;
-        WSReverseConnection(std::string id, httplib::ws::WebSocket* socket) : ws(socket) { neighbor_id = std::move(id); }
-        void send_frame(const json& frame) override;
-        void send_binary_frame(const json& header, const std::vector<uint8_t>& data) override;
-        bool is_reverse() const override { return true; }
-        std::string get_protocol() const override { 
-            // In our TestServer, reverse WS connections over SSL will have a non-empty cert path in the node config
-            if (node && !node->config_.cert_path.empty()) return "wss";
-            return "ws";
-        }
-    };
+    json get_neighbors() { return json::array(); }
+    json get_topology_payload() { return json::object(); }
 
     Config config_;
     std::map<std::string, OpHandler> handlers_;
     std::map<std::string, json> schemas_;
+    std::map<std::string, SubscriptionCallback> subscriptions_;
+    std::map<std::string, json> local_cache_;
+    std::map<std::string, std::pair<std::vector<uint8_t>, std::string>> local_cache_binary_;
+    std::map<std::string, bool> queryables_;
+    void declare_queryable_for_path(const std::string& path);
     void* server_ptr_; 
-    
-    std::map<std::string, std::shared_ptr<Connection>> peers_; 
-    std::set<std::string> connecting_;
-    std::mutex peer_mutex_;
-
-    std::map<std::string, std::shared_ptr<std::promise<VFSResult>>> transactions_;
-    std::mutex transaction_mutex_;
-
-    struct SubscriptionEntry {
-        Selector selector;
-        std::map<std::string, long long> subs; // neighbor_id -> expiresAt
-        long long localExpiresAt = 0;
-    };
-
-    std::vector<SubscriptionEntry> interests_;
-    std::mutex interest_mutex_;
 
     std::mutex handlers_mutex_;
     std::mutex storage_mutex_;
 
+    std::map<std::string, uint64_t> fulfillment_counters_;
+    std::map<std::string, double> total_latency_ms_;
+    std::mutex counters_mutex_;
+    void increment_fulfillment_counter(const std::string& path);
+    void record_execution_metric(const std::string& path, double duration_ms);
+    json get_fulfillment_counters();
+    json get_fulfillment_latencies();
+
+    struct CPUStats {
+        uint64_t user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0;
+    };
+    double get_free_cpu_percent();
+    uint64_t get_free_memory_bytes();
+
+    std::atomic<int> active_ops_count_{0};
+    int max_concurrent_ops_ = 4;
+    int get_active_ops_count() const { return active_ops_count_.load(); }
+    int get_max_concurrent_ops() const { return max_concurrent_ops_; }
+    void increment_active_ops() { active_ops_count_++; }
+    void decrement_active_ops() { active_ops_count_--; }
+    std::string get_machine_prefix() const;
+
+    struct PeerInfo {
+        std::string id;
+        long long last_seen_ms = 0;
+    };
+    std::map<std::string, PeerInfo> peers_;
+    std::mutex peers_mutex_;
+
+private:
+    CPUStats last_cpu_stats_;
+    std::mutex cpu_mutex_;
+
     VFSResult read_cid_impl(const VFSRequest& req);
     VFSResult read_selector_impl(const VFSRequest& req);
-
-    bool has_local(const std::string& cid);
-    void write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params);
-    void write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params);
 };
 
+// VfsRecord inline utility functions
 inline std::vector<uint8_t> encode_record(const json& header, const std::vector<uint8_t>& payload = {}) {
     std::string header_str = header.dump();
     uint32_t header_len = header_str.size();
@@ -280,7 +216,6 @@ inline bool decode_record(const std::vector<uint8_t>& record, json& header_out, 
 }
 
 // --- EXPLICIT SPECIALIZATION DECLARATIONS ---
-
 template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel);
 template<> json VFSNode::read<json>(const Selector& sel);
 template<> double VFSNode::read<double>(const Selector& sel);

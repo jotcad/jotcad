@@ -4,68 +4,31 @@
 #include <filesystem>
 #include <vector>
 #include <chrono>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 namespace stdfs = std::filesystem;
 using namespace fs;
 
-inline long long GetTimeMS() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+inline void sleep_ms(int ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
-// A Bridge that connects two VFSNodes in-memory
-struct MemoryBridge : public VFSNode::Connection {
-    VFSNode& target_node;
-    MemoryBridge(std::string id, VFSNode& target) : target_node(target) {
-        neighbor_id = id;
-    }
+void test_zenoh_pubsub_direct() {
+    std::cout << "[Test] Starting direct Zenoh PubSub test (A <-> B)..." << std::endl;
 
-    VFSResult sendRequest(const VFSNode::VFSRequest& req) override {
-        if (req.op == "PUB") {
-            target_node.notify(req.selector.to_json(), req.data.empty() ? json::object() : json::parse(req.data), req.stack);
-        } else if (req.op == "SUB") {
-            target_node.subscribe(req.selector, req.expiresAt, req.stack);
-        }
-        return {};
-    }
-
-    bool is_reverse() const override { return false; }
-    std::string get_protocol() const override { return "memory"; }
-};
-
-// A simple observer that records notifications
-struct TestNotification {
-    json selector;
-    json payload;
-};
-
-struct TestObserver : public VFSNode::Connection {
-    std::vector<json> received_payloads;
-    std::vector<TestNotification> received_notifications;
-    TestObserver(std::string id) { neighbor_id = id; }
-
-    VFSResult sendRequest(const VFSNode::VFSRequest& req) override {
-        if (req.op == "PUB") {
-            json payload = req.data.empty() ? json::object() : json::parse(req.data);
-            received_payloads.push_back(payload);
-            received_notifications.push_back({req.selector.to_json(), payload});
-        }
-        return {};
-    }
-
-    bool is_reverse() const override { return false; }
-    std::string get_protocol() const override { return "memory"; }
-};
-
-void test_pubsub_propagation() {
     VFSNode::Config configA;
     configA.id = "node-A";
+    configA.port = 9201;
     configA.storage_dir = "./test_storage_ps_A";
     stdfs::remove_all(configA.storage_dir);
     stdfs::create_directories(configA.storage_dir);
     
     VFSNode::Config configB;
     configB.id = "node-B";
+    configB.port = 9202;
+    configB.neighbors = {"tcp/127.0.0.1:9201"};
     configB.storage_dir = "./test_storage_ps_B";
     stdfs::remove_all(configB.storage_dir);
     stdfs::create_directories(configB.storage_dir);
@@ -73,138 +36,231 @@ void test_pubsub_propagation() {
     VFSNode nodeA(configA);
     VFSNode nodeB(configB);
 
-    // Peering: A <-> B
-    nodeA.add_connection(std::make_shared<MemoryBridge>("node-B", nodeB));
-    nodeB.add_connection(std::make_shared<MemoryBridge>("node-A", nodeA));
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool received = false;
+    json received_payload;
 
-    // 1. Node A subscribes to a topic
-    // We inject an observer into A to represent the "local" interest
-    auto observer = std::make_shared<TestObserver>("local-app");
-    nodeA.add_connection(observer);
+    // Node A listens to test/direct
+    nodeA.listen("test/direct", [&](const json& val) {
+        std::lock_guard<std::mutex> lock(mtx);
+        received = true;
+        received_payload = val;
+        cv.notify_all();
+    });
 
-    Selector topic;
-    topic.path = "test/topic";
-    
-    // Local app expresses interest via Node A
-    nodeA.subscribe(topic.to_json(), GetTimeMS() + 10000, {"local-app"});
+    // Start Node A listener
+    std::thread threadA([&]() {
+        nodeA.listen();
+    });
+    sleep_ms(500); // Allow server to bind
 
-    // 2. Node B publishes to the topic
-    json payload = {{"status", "OK"}, {"value", 42}};
-    nodeB.notify(topic.to_json(), payload);
+    // Start Node B listener
+    std::thread threadB([&]() {
+        nodeB.listen();
+    });
+    sleep_ms(1000); // Allow session handshakes to complete
 
-    // 3. Verify Node A's observer got it
-    assert(observer->received_payloads.size() == 1);
-    assert(observer->received_payloads[0]["value"] == 42);
+    // Node B writes to path
+    json payload = {{"status", "OK"}, {"value", 100}};
+    nodeB.write("test/direct", payload);
 
-    std::cout << "✔ C++ PubSub: Notification propagated B -> A -> Observer" << std::endl;
+    // Wait for propagation
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait_for(lock, std::chrono::seconds(3), [&] { return received; });
+    }
+
+    assert(received);
+    assert(received_payload["value"] == 100);
+
+    // Verify read(path) queries the cached state over Zenoh
+    sleep_ms(500);
+    nodeB.publish("test/direct", payload);
+    json read_val = nodeB.read("test/direct");
+    assert(read_val["value"] == 100);
+
+    std::cout << "✔ Direct Zenoh PubSub (A <- B) & Read successful!" << std::endl;
+
+    nodeA.stop();
+    nodeB.stop();
+
+    if (threadA.joinable()) threadA.join();
+    if (threadB.joinable()) threadB.join();
 
     stdfs::remove_all(configA.storage_dir);
     stdfs::remove_all(configB.storage_dir);
 }
 
-void test_multi_hop_routing() {
-    VFSNode::Config configA; configA.id = "node-A"; configA.storage_dir = "./ts_multi_A";
-    VFSNode::Config configB; configB.id = "node-B"; configB.storage_dir = "./ts_multi_B";
-    VFSNode::Config configC; configC.id = "node-C"; configC.storage_dir = "./ts_multi_C";
-    stdfs::remove_all(configA.storage_dir); stdfs::create_directories(configA.storage_dir);
-    stdfs::remove_all(configB.storage_dir); stdfs::create_directories(configB.storage_dir);
-    stdfs::remove_all(configC.storage_dir); stdfs::create_directories(configC.storage_dir);
+void test_zenoh_pubsub_multihop() {
+    std::cout << "[Test] Starting multi-hop Zenoh PubSub test (A <-> B <-> C)..." << std::endl;
 
-    VFSNode nodeA(configA); VFSNode nodeB(configB); VFSNode nodeC(configC);
+    VFSNode::Config configA;
+    configA.id = "node-A";
+    configA.port = 9301;
+    configA.storage_dir = "./ts_multi_A";
+    stdfs::remove_all(configA.storage_dir);
+    stdfs::create_directories(configA.storage_dir);
 
-    // Chain: A <-> B <-> C
-    nodeA.add_connection(std::make_shared<MemoryBridge>("node-B", nodeB));
-    nodeB.add_connection(std::make_shared<MemoryBridge>("node-A", nodeA));
-    nodeB.add_connection(std::make_shared<MemoryBridge>("node-C", nodeC));
-    nodeC.add_connection(std::make_shared<MemoryBridge>("node-B", nodeB));
+    VFSNode::Config configB;
+    configB.id = "node-B";
+    configB.port = 9302;
+    configB.neighbors = {"tcp/127.0.0.1:9301"};
+    configB.storage_dir = "./ts_multi_B";
+    stdfs::remove_all(configB.storage_dir);
+    stdfs::create_directories(configB.storage_dir);
 
-    auto observer = std::make_shared<TestObserver>("local-app");
-    nodeA.add_connection(observer);
+    VFSNode::Config configC;
+    configC.id = "node-C";
+    configC.port = 9303;
+    configC.neighbors = {"tcp/127.0.0.1:9302"};
+    configC.storage_dir = "./ts_multi_C";
+    stdfs::remove_all(configC.storage_dir);
+    stdfs::create_directories(configC.storage_dir);
 
-    Selector topic; topic.path = "multi/hop";
-    
-    // 1. A subscribes (Propagates A -> B -> C)
-    nodeA.subscribe(topic.to_json(), GetTimeMS() + 10000, {"local-app"});
+    VFSNode nodeA(configA);
+    VFSNode nodeB(configB);
+    VFSNode nodeC(configC);
 
-    // 2. C notifies (Routes C -> B -> A -> Observer)
-    nodeC.notify(topic.to_json(), {{"hop", "from-C"}});
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool received = false;
+    json received_payload;
 
-    assert(observer->received_payloads.size() == 1);
-    assert(observer->received_payloads[0]["hop"] == "from-C");
+    // Node A listens
+    nodeA.listen("test/multi", [&](const json& val) {
+        std::lock_guard<std::mutex> lock(mtx);
+        received = true;
+        received_payload = val;
+        cv.notify_all();
+    });
 
-    std::cout << "✔ C++ PubSub: Multi-hop routing (3 nodes) successful" << std::endl;
+    // Start listeners sequentially
+    std::thread threadA([&]() { nodeA.listen(); });
+    sleep_ms(300);
+    std::thread threadB([&]() { nodeB.listen(); });
+    sleep_ms(500);
+    std::thread threadC([&]() { nodeC.listen(); });
+    sleep_ms(1000);
+
+    // Node C writes
+    nodeC.write("test/multi", {{"hop", "from-C"}});
+
+    // Wait for propagation
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait_for(lock, std::chrono::seconds(4), [&] { return received; });
+    }
+
+    assert(received);
+    assert(received_payload["hop"] == "from-C");
+    std::cout << "✔ Multi-hop Zenoh PubSub (A <- B <- C) successful!" << std::endl;
+
+    nodeA.stop();
+    nodeB.stop();
+    nodeC.stop();
+
+    if (threadA.joinable()) threadA.join();
+    if (threadB.joinable()) threadB.join();
+    if (threadC.joinable()) threadC.join();
 
     stdfs::remove_all(configA.storage_dir);
     stdfs::remove_all(configB.storage_dir);
     stdfs::remove_all(configC.storage_dir);
 }
 
-void test_interest_reply_catalog() {
-    VFSNode::Config configA; configA.id = "node-A"; configA.storage_dir = "./ts_reply_A";
-    VFSNode::Config configB; configB.id = "node-B"; configB.storage_dir = "./ts_reply_B";
-    stdfs::remove_all(configA.storage_dir); stdfs::create_directories(configA.storage_dir);
-    stdfs::remove_all(configB.storage_dir); stdfs::create_directories(configB.storage_dir);
+void test_machine_failover() {
+    std::cout << "[Test] Starting Zenoh Machine Failover test (A [busy] -> B [busy] -> C)..." << std::endl;
 
-    VFSNode nodeA(configA); VFSNode nodeB(configB);
-    nodeB.register_op("test/op", [](const VFSNode::VFSRequest&){});
+    VFSNode::Config configA;
+    configA.id = "node-A";
+    configA.port = 9401;
+    configA.storage_dir = "./ts_fail_A";
+    stdfs::remove_all(configA.storage_dir);
+    stdfs::create_directories(configA.storage_dir);
 
-    nodeA.add_connection(std::make_shared<MemoryBridge>("node-B", nodeB));
-    nodeB.add_connection(std::make_shared<MemoryBridge>("node-A", nodeA));
+    VFSNode::Config configB;
+    configB.id = "node-B";
+    configB.port = 9402;
+    configB.neighbors = {"tcp/127.0.0.1:9401"};
+    configB.storage_dir = "./ts_fail_B";
+    stdfs::remove_all(configB.storage_dir);
+    stdfs::create_directories(configB.storage_dir);
 
-    auto observer = std::make_shared<TestObserver>("local-app");
-    nodeA.add_connection(observer);
+    VFSNode::Config configC;
+    configC.id = "node-C";
+    configC.port = 9403;
+    configC.neighbors = {"tcp/127.0.0.1:9402"};
+    configC.storage_dir = "./ts_fail_C";
+    stdfs::remove_all(configC.storage_dir);
+    stdfs::create_directories(configC.storage_dir);
 
-    // 1. A subscribes to sys/schema
-    Selector schemaTopic; schemaTopic.path = "sys/schema";
-    nodeA.subscribe(schemaTopic.to_json(), GetTimeMS() + 10000, {"local-app"});
+    VFSNode nodeA(configA);
+    VFSNode nodeB(configB);
+    VFSNode nodeC(configC);
 
-    // 2. Node B should have immediately replied with a CATALOG_ANNOUNCEMENT notification
-    bool foundCatalog = false;
-    for (const auto& notification : observer->received_notifications) {
-        if (notification.selector.value("path", "") == "sys/schema") {
-            const auto& payload = notification.payload;
-            if (payload.contains("catalog") && payload["catalog"].contains("test/op")) {
-                foundCatalog = true;
-                break;
-            }
-        }
-    }
+    // Make Node A and Node B saturated
+    nodeA.max_concurrent_ops_ = 0;
+    nodeB.max_concurrent_ops_ = 0;
+    nodeC.max_concurrent_ops_ = 4; // Node C is free
 
-    assert(foundCatalog);
-    std::cout << "✔ C++ PubSub: Immediate Catalog reply on sys/schema interest" << std::endl;
+    nodeA.register_op("test/heavy_op", [&](const VFSNode::VFSRequest& req) {
+        std::string target_cid = nodeA.get_cid(req.selector);
+        json data = {{"source", "node-A"}};
+        std::string s_val = data.dump();
+        std::vector<uint8_t> bytes(s_val.begin(), s_val.end());
+        nodeA.write_local(target_cid, bytes, req.selector.path, req.selector.parameters);
+    });
+    nodeB.register_op("test/heavy_op", [&](const VFSNode::VFSRequest& req) {
+        std::string target_cid = nodeB.get_cid(req.selector);
+        json data = {{"source", "node-B"}};
+        std::string s_val = data.dump();
+        std::vector<uint8_t> bytes(s_val.begin(), s_val.end());
+        nodeB.write_local(target_cid, bytes, req.selector.path, req.selector.parameters);
+    });
+    nodeC.register_op("test/heavy_op", [&](const VFSNode::VFSRequest& req) {
+        std::string target_cid = nodeC.get_cid(req.selector);
+        json data = {{"source", "node-C"}};
+        std::string s_val = data.dump();
+        std::vector<uint8_t> bytes(s_val.begin(), s_val.end());
+        nodeC.write_local(target_cid, bytes, req.selector.path, req.selector.parameters);
+    });
+
+    // Start listeners
+    std::thread threadA([&]() { nodeA.listen(); });
+    sleep_ms(300);
+    std::thread threadB([&]() { nodeB.listen(); });
+    sleep_ms(300);
+    std::thread threadC([&]() { nodeC.listen(); });
+    
+    // Wait for session discovery and peer metrics advertising to propagate
+    sleep_ms(3500);
+
+    // Execute query from Node C. It should try A (busy), B (busy), and succeed on C.
+    json read_val = nodeC.read("test/heavy_op");
+    
+    std::cout << "[Test] Failover result received: " << read_val.dump() << std::endl;
+    assert(read_val["source"] == "node-C");
+
+    nodeA.stop();
+    nodeB.stop();
+    nodeC.stop();
+
+    if (threadA.joinable()) threadA.join();
+    if (threadB.joinable()) threadB.join();
+    if (threadC.joinable()) threadC.join();
 
     stdfs::remove_all(configA.storage_dir);
     stdfs::remove_all(configB.storage_dir);
-}
-
-void test_backflow_prevention() {
-    VFSNode::Config configA; configA.id = "node-A"; configA.storage_dir = "./ts_loop_A";
-    stdfs::remove_all(configA.storage_dir); stdfs::create_directories(configA.storage_dir);
-    VFSNode::Config configB; configB.id = "node-B"; configB.storage_dir = "./ts_loop_B";
-    stdfs::remove_all(configB.storage_dir); stdfs::create_directories(configB.storage_dir);
-
-    VFSNode nodeA(configA); VFSNode nodeB(configB);
-
-    nodeA.add_connection(std::make_shared<MemoryBridge>("node-B", nodeB));
-    nodeB.add_connection(std::make_shared<MemoryBridge>("node-A", nodeA));
-
-    Selector topic; topic.path = "loop/topic";
-    nodeA.subscribe(topic.to_json(), GetTimeMS() + 10000, {"node-A"});
-
-    // Should not infinite loop
-    nodeA.notify(topic.to_json(), {{"data", 1}});
-
-    std::cout << "✔ C++ PubSub: Loop prevention handled" << std::endl;
-    stdfs::remove_all(configA.storage_dir);
-    stdfs::remove_all(configB.storage_dir);
+    stdfs::remove_all(configC.storage_dir);
+    std::cout << "✔ Zenoh Machine Failover (A [busy] -> B [busy] -> C [success]) successful!" << std::endl;
 }
 
 int main() {
     try {
-        test_pubsub_propagation();
-        test_multi_hop_routing();
-        test_interest_reply_catalog();
-        test_backflow_prevention();
+        test_zenoh_pubsub_direct();
+        test_zenoh_pubsub_multihop();
+        test_machine_failover();
         std::cout << "All C++ VFS PubSub tests passed!" << std::endl;
         return 0;
     } catch (const std::exception& e) {

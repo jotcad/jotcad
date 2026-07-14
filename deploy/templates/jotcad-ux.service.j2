@@ -1,0 +1,16 @@
+[Unit]
+Description=JotCAD Dual Camera UX Service
+After=network.target jotcad-bridge.service
+Requires=jotcad-bridge.service
+
+[Service]
+Type=simple
+User={{ ansible_user_id }}
+WorkingDirectory={{ deploy_dir }}
+ExecStart=/usr/bin/env node dual_camera_ux.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

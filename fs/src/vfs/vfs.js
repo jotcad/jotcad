@@ -39,6 +39,9 @@ export class VFS {
     }
     this.providers.set(pattern, handler);
     if (options.schema) this.schemas.set(pattern, options.schema);
+    if (this.mesh && typeof this.mesh.registerOp === 'function') {
+      this.mesh.registerOp(pattern);
+    }
   }
 
   addSchema(path, schema) { this.schemas.set(path, schema); }
@@ -64,15 +67,80 @@ export class VFS {
     return info || null;
   }
 
+  async unnestSelector(selector, context = {}, tasks = []) {
+    if (!isSelector(selector)) return { selector, tasks };
+
+    const newParams = {};
+    for (const [key, val] of Object.entries(selector.parameters)) {
+      if (isSelector(val)) {
+        const { selector: childSel } = await this.unnestSelector(val, context, tasks);
+        const childCID = await getSelectorKey(childSel);
+        newParams[key] = childCID;
+        tasks.push({
+          cid: childCID,
+          selector: childSel,
+          fn: () => this.readSelector(childSel, { ...context, unnested: true })
+        });
+      } else if (Array.isArray(val)) {
+        const newVal = [];
+        for (const item of val) {
+          if (isSelector(item)) {
+            const { selector: childSel } = await this.unnestSelector(item, context, tasks);
+            const childCID = await getSelectorKey(childSel);
+            newVal.push(childCID);
+            tasks.push({
+              cid: childCID,
+              selector: childSel,
+              fn: () => this.readSelector(childSel, { ...context, unnested: true })
+            });
+          } else {
+            newVal.push(item);
+          }
+        }
+        newParams[key] = newVal;
+      } else if (val && typeof val === 'object' && val.constructor === Object) {
+        const newObj = {};
+        for (const [k, v] of Object.entries(val)) {
+          if (isSelector(v)) {
+            const { selector: childSel } = await this.unnestSelector(v, context, tasks);
+            const childCID = await getSelectorKey(childSel);
+            newObj[k] = childCID;
+            tasks.push({
+              cid: childCID,
+              selector: childSel,
+              fn: () => this.readSelector(childSel, { ...context, unnested: true })
+            });
+          } else {
+            newObj[k] = v;
+          }
+        }
+        newParams[key] = newObj;
+      } else {
+        newParams[key] = val;
+      }
+    }
+
+    const resultSelector = new Selector(selector.path, newParams);
+    if (selector.output) resultSelector.output = selector.output;
+    return { selector: resultSelector, tasks };
+  }
+
   async readSelector(selector, context = {}) {
     this._checkClosed();
-    const s = normalizeSelector(selector);
+    let s = normalizeSelector(selector);
+    if (!context.unnested && (!context.stack || context.stack.length === 0)) {
+      const { selector: unnestedSelector, tasks } = await this.unnestSelector(s, context);
+      s = unnestedSelector;
+      for (const t of tasks) {
+        await t.fn();
+      }
+    }
     const packetContext = { 
         ...context, 
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
-        // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
-        expiresAt: context.expiresAt || (Date.now() + 30000) 
+        // Default 10-minute timeout for generative Selector calculations
+        expiresAt: context.expiresAt || (Date.now() + 600000) 
     };
     if (Date.now() > packetContext.expiresAt) return null;
 
@@ -96,8 +164,8 @@ export class VFS {
         ...context, 
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || [],
-        // TODO: Investigate why multi-hop recursive mesh reads take > 10s during initialization.
-        expiresAt: context.expiresAt || (Date.now() + 30000) 
+        // Enforce a maximum 2-second timeout for non-generative content-addressed fetches
+        expiresAt: Math.min(context.expiresAt || Infinity, Date.now() + 2000)
     };
     if (Date.now() > packetContext.expiresAt) return null;
 
@@ -113,17 +181,93 @@ export class VFS {
     return { stream, metadata: result.metadata };
   }
 
+  async _drainStream(result) {
+    if (!result) return null;
+    const { stream, metadata } = result;
+    if (!stream) return null;
+    const reader = stream.getReader();
+    const chunks = [];
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+    const bytes = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    const encoding = metadata?.encoding;
+    if (encoding === 'json') {
+      try {
+        return JSON.parse(new TextDecoder().decode(bytes));
+      } catch (e) {
+        return new TextDecoder().decode(bytes);
+      }
+    } else if (encoding === 'string') {
+      return new TextDecoder().decode(bytes);
+    } else if (encoding === 'null') {
+      return null;
+    }
+    return bytes;
+  }
+
   /**
-   * Legacy method for backward compatibility. 
-   * @deprecated Use readSelector() or readCID() instead.
+   * Reads from VFS. Handles both Selector, CID, and path string.
    */
   async read(target, context = {}) {
-    if (isString(target)) return this.readCID(target, context);
-    return this.readSelector(target, context);
+    if (isSelector(target)) {
+      return this.readSelector(target, context);
+    }
+    if (isString(target)) {
+      if (target.match(/^[0-9a-f]{64}$/i)) {
+        return this.readCID(target, context);
+      }
+      // It's a path string!
+      const s = new Selector(target);
+      const result = await this.readSelector(s, context);
+      return this._drainStream(result);
+    }
+    throw new Error('VFS.read: invalid target');
+  }
+
+  /**
+   * Triggers resolution/fulfillment of target without returning payload bytes.
+   * Returns the metadata (status, encoding, state, etc.) of the fulfillment.
+   */
+  async fulfill(target, context = {}) {
+    this._checkClosed();
+    let result;
+    if (isSelector(target)) {
+      result = await this.readSelector(target, context);
+    } else if (isString(target)) {
+      if (target.match(/^[0-9a-f]{64}$/i)) {
+        result = await this.readCID(target, context);
+      } else {
+        // It's a path string!
+        const s = new Selector(target);
+        result = await this.readSelector(s, context);
+      }
+    } else {
+      throw new Error('VFS.fulfill: invalid target');
+    }
+    return result ? result.metadata : null;
   }
 
   async write(target, streamOrBytes, context = {}) {
     this._checkClosed();
+    if (isString(target) && !target.match(/^[0-9a-f]{64}$/i)) {
+      const s = new Selector(target);
+      const res = await this.write(s, streamOrBytes, context);
+      await this.notify(s, streamOrBytes);
+      return res;
+    }
     log(`[VFS ${this.id}] write(${target.path || target})`);
     
     let s = null, cid = null;
@@ -171,7 +315,12 @@ export class VFS {
         throw new Error(`VFS.write: Size mismatch. Expected ${context.size} bytes, got ${bytes.length}`);
     }
 
-    const info = { state: 'AVAILABLE', encoding, ...(s ? { selector: s.toJSON() } : {}) };
+    const info = {
+      state: 'AVAILABLE',
+      encoding,
+      ...(s ? { selector: s.toJSON() } : {}),
+      ...(context.filename ? { filename: context.filename } : {})
+    };
     await this.storage.set(cid, bytes, info);
     if (s) this.events.emit('state', { selector: s, cid, state: 'AVAILABLE' });
     return { cid };
@@ -266,6 +415,33 @@ export class VFS {
     return unsubscribe;
   }
 
+  async listen(path, callback) {
+    this._checkClosed();
+    if (!this._listeners) {
+      this._listeners = new Map();
+    }
+    const selector = new Selector(path);
+    const wrappedCallback = (notifiedSelector, payload) => {
+      callback(payload);
+    };
+    const unsubscribe = await this.subscribe(selector, Date.now() + 1000 * 60 * 60 * 24, [], wrappedCallback);
+    if (!this._listeners.has(path)) {
+      this._listeners.set(path, []);
+    }
+    this._listeners.get(path).push(unsubscribe);
+  }
+
+  async unlisten(path) {
+    this._checkClosed();
+    if (this._listeners && this._listeners.has(path)) {
+      const unsubscribes = this._listeners.get(path);
+      for (const unsub of unsubscribes) {
+        try { unsub(); } catch (e) {}
+      }
+      this._listeners.delete(path);
+    }
+  }
+
   async notify(selector, payload, stack = []) {
     this._checkClosed();
     const s = normalizeSelector(selector);
@@ -279,6 +455,9 @@ export class VFS {
 
   async close() {
     this.closed = true;
+    if (this.mesh && typeof this.mesh.stop === 'function') {
+      await this.mesh.stop();
+    }
     await this.storage.close();
   }
 }

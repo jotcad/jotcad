@@ -18,7 +18,12 @@ int main() {
     {
         std::ifstream check(bear_path);
         if (!check.good()) {
-            bear_path = "../../scratch/bear.stl";
+            check.open("../scratch/bear.stl");
+            if (check.good()) {
+                bear_path = "../scratch/bear.stl";
+            } else {
+                bear_path = "../../scratch/bear.stl";
+            }
         }
     }
     std::cout << "  - Loading " << bear_path << "..." << std::endl;

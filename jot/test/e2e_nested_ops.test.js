@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchOpsNode } from '../../fs/test/ops_helper.js';
+import { launchSystem } from '../../orchestrator.js';
 import { TestVFSNode } from '../../fs/test/vfs_test_helpers.js';
 import { JotParser } from '../src/parser.js';
 import { JotCompiler } from '../src/compiler.js';
@@ -10,26 +10,17 @@ import { log } from '../../fs/src/log.js';
 import { encodeRecord, decodeRecordStream } from '../../fs/src/mesh/forward_connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPS_PATH = path.resolve(__dirname, '../../geo/bin/ops');
 
 test('E2E Nested Expansion: Op A calls Op B', async (t) => {
-    const OPS_PORT = 9195;
-    const TEST_NODE_PORT = 9196;
-    const STORAGE_DIR = path.resolve(__dirname, '../../.vfs_storage_e2e_nested');
-
-    const ops = await launchOpsNode(OPS_PATH, OPS_PORT, STORAGE_DIR);
-    const testNode = new TestVFSNode('test-node', TEST_NODE_PORT);
-    await testNode.start();
-
+    let sys;
+    let testNode;
     try {
-        await fetch(`http://localhost:${OPS_PORT}/register`, {
-            method: 'POST',
-            body: JSON.stringify({ id: 'test-node', url: `http://localhost:${TEST_NODE_PORT}` })
-        });
-        await fetch(`http://localhost:${TEST_NODE_PORT}/register`, {
-            method: 'POST',
-            body: JSON.stringify({ id: 'geo-ops-node', url: `http://localhost:${OPS_PORT}` })
-        });
+        sys = await launchSystem('test/standard');
+        const routerPort = sys.ports.zenoh_router;
+        const TEST_NODE_PORT = 0;
+
+        testNode = new TestVFSNode('test-node', TEST_NODE_PORT, [`http://localhost:${routerPort}`]);
+        await testNode.start();
 
         const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
         const colorSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'color', type: 'jot:string' }], outputs: { $out: 'jot:shape' } };
@@ -53,39 +44,26 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
         }, opASchema);
 
         // Execute Box().OpA()
-        const compiler = new JotCompiler();
+        const compiler = new JotCompiler(testNode.vfs);
         compiler.registerOperator('Box', { path: 'jot/Box', schema: boxSchema });
         compiler.registerOperator('user/OpA', { path: 'user/OpA', schema: opASchema });
         const terminals = await compiler.evaluate((new JotParser()).parse('Box(10).OpA() -> $out'), {}, { outputs: { $out: 'jot:shape' } });
 
-        const body = encodeRecord({
-            op: 'READ_SELECTOR',
-            selector: terminals[0].selector.toJSON()
-        });
+        const resultObj = await testNode.vfs.readSelector(terminals[0].selector);
 
-        const response = await fetch(`http://localhost:${OPS_PORT}/read_selector`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: body
-        });
-
-        if (!response.ok) {
-            const err = await response.text();
-            throw new Error(`Execution failed: ${err}`);
-        }
-
-        const { header, payloadStream } = await decodeRecordStream(response.body);
         const chunks = [];
-        for await (const chunk of payloadStream) {
-            chunks.push(chunk);
+        const reader = resultObj.stream.getReader();
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
         }
-        const payloadBytes = Buffer.concat(chunks);
-        const result = JSON.parse(payloadBytes.toString());
+        const result = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
         assert.strictEqual(result.tags?.color, 'blue', 'Nested expansion should result in blue color');
         log('--- NESTED EXPANSION SUCCESS ---');
 
     } finally {
-        await testNode.stop();
-        await ops.stop();
+        if (testNode) await testNode.stop();
+        if (sys) await sys.stop();
     }
 });

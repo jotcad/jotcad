@@ -99,3 +99,30 @@ The operator automatically adapts to the dimensionality of the result:
 ### 6.3 Mixed-Dimensionality Support
 - **Solid Subject + Flat Tool**: Correctly produces a 3D solid (e.g., a $12 \times 12 \times 10$ box from a $10 \times 10 \times 10$ cube grown by a $2 \times 2$ square).
 - **Flat Subject + Solid Tool**: Correctly promotes the result to a 3D solid.
+
+## 7. File Format Integration (STL and Wavefront OBJ)
+
+JotCAD supports importing and exporting common 3D mesh formats through standard native operators registered in the VFS.
+
+### 7.1 STL Operators
+- **Export (`jot/stl`)**: Exposes the `stl` exporter (lowercase). It traverses the spatial representation of a Shape, triangulates complex non-convex face loops via Constrained Delaunay Triangulation (CDT), and writes a standardized binary STL stream to the `$out` port.
+- **Import (`jot/Stl`)**: Exposes the `Stl` constructor (capitalized). It accepts a `jot:file` Selector, reads the raw bytes, auto-detects binary vs. ASCII formatting, parses the facets, and returns a formal CAD Shape of `type: "closed"`.
+
+### 7.2 Wavefront OBJ Operators
+- **Export (`jot/obj`)**: Exposes the `obj` exporter (lowercase). It serializes shapes to Wavefront OBJ format, preserving vertex coordinates and face loops.
+- **Import (`jot/Obj`)**: Exposes the `Obj` constructor (capitalized). It accepts a `jot:file` Selector, reads the OBJ text stream, parses the 1-based or relative index face patterns, triangulates polygon loops as triangle fans, and materializes the result as a formal CAD Shape of `type: "closed"`.
+
+## 8. Native Operation: Dilate (Convex Solid Offset)
+
+The `jot/dilate` operator implements a fast 3D mitered offset exclusively for strongly convex closed solids by shifting face planes and splitting vertices.
+
+### 8.1 Algorithm
+1. **Convex Validation**: Traverses the shape hierarchy, validating that each geometry is strongly convex (via `CGAL::is_strongly_convex_3`) and is a well-formed solid.
+2. **Halfspace Plane Shift**: Shifts the plane of each face outward by distance $d = \text{diameter}/2$ along its outward-facing normal.
+3. **Halfspace Intersection**: Computes the dual intersection boundary of the shifted planes using `CGAL::halfspace_intersection_3` centered around the centroid of the original shape as the guaranteed interior point.
+4. **Face Triangulation**: Triangulates the resulting polygon facets using `CGAL::Polygon_mesh_processing::triangulate_faces` to satisfy VFS triangle mesh requirements.
+
+### 8.2 Schema & Parameters
+- **Inputs**: `$in` (The strongly convex solid to offset).
+- **Arguments**: `diameter` (The total volumetric expansion width).
+- **Outputs**: `$out` (The newly anonymous dilated shape).

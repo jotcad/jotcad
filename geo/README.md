@@ -20,3 +20,5 @@ This directory is responsible for the JotCAD geometry engine, including its VFS 
 - **New Operators**: Added `dup` (efficient duplication) and `gap` (padding) operators.
 - **Robust Triangulation**: Implemented Newell's Method for polygon normal calculation in the triangulation engine. This ensures consistent lighting and correct domain identification for non-convex islands and split remainder geometries.
 - **Sheet Packing**: Enhanced the `pack` operator with support for arbitrary sheet shapes (Exterior Subtraction IFP) and multiple orientations (rotations).
+- **Parallelized Split-Module Registry**: Split the monolithic `ops_library.cc` registry into 9 domain-specific files (`ops_primitives_reg.cc`, etc.). The monolithic `ops_library.cc` is now a 0.1-second forwarding delegator, allowing standard builds via `./geo/compile.sh` to run in under 10 seconds.
+- **Unified Test Binary**: Combined separate test runners into a single monolithic `unit_tests` runner, saving redundant CGAL template parsing and reducing overall test suite compilation times.

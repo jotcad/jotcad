@@ -1,0 +1,9 @@
+{
+  "geometry": "3ed06eee96920341f7f31d94068c8e17599153d3981c46ffcc9619754a86d0c7",
+  "tf": "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+  "tags": {
+    "type": "closed",
+    "name": "ULN2003_Stepper_Motor_Driver_Board.step"
+  },
+  "components": []
+}

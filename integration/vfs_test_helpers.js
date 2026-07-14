@@ -27,8 +27,73 @@ export class MockConnection extends Connection {
  * as direct peers or as reported neighbors in topology updates.
  */
 export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
-  const targetSet = new Set(targetIds);
+  const targets = targetIds.map(id => id === 'geo-ops-node' ? 'geo-' : id);
+
+  const matchProvider = (provider, target) => {
+    if (target === 'geo-') {
+      return provider.startsWith('geo-');
+    }
+    return provider === target;
+  };
+
+  if (vfs.mesh && vfs.mesh.session) {
+    const startTime = Date.now();
+    const { decodeRecord } = await import('../fs/src/mesh/mesh_link.js');
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        const receiver = await vfs.mesh.session.get('jot/vfs/catalog', { 
+          timeout: Math.min(2000, timeout - (Date.now() - startTime)),
+          target: 1,
+          consolidation: 1
+        });
+        if (receiver) {
+          for await (const reply of receiver) {
+            const result = reply.result();
+            if (result instanceof Error || result?.constructor?.name === 'ReplyError') {
+              continue;
+            }
+            
+            const sample = result;
+            const recordBytes = sample.payload().toBytes();
+            const decoded = decodeRecord(recordBytes);
+            if (!decoded) {
+              continue;
+            }
+            
+            const { header, payload } = decoded;
+            if (header.status === 200) {
+              const catalogPayload = JSON.parse(new TextDecoder().decode(payload));
+              const provider = catalogPayload.provider;
+              if (vfs.mesh && provider !== vfs.id) {
+                vfs.mesh.updateCatalog(catalogPayload);
+              }
+              for (let i = 0; i < targets.length; i++) {
+                if (matchProvider(provider, targets[i])) {
+                  targets.splice(i, 1);
+                  i--;
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[waitForMeshNodes ${vfs.id}] query error:`, err);
+      }
+      if (targets.length === 0) {
+        return; // All target nodes found!
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    throw new Error(`waitForMeshNodes: Target nodes [${targetIds.join(', ')}] not found within ${timeout}ms`);
+  }
+
   const seen = new Set([vfs.id]);
+  const hasAllTargets = () => {
+    return targets.every(target => {
+      return [...seen].some(provider => matchProvider(provider, target));
+    });
+  };
 
   return new Promise(async (resolve, reject) => {
     let unsubscribe = () => {};
@@ -57,7 +122,7 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
             }
 
             // Check if we have everything
-            if ([...targetSet].every(id => seen.has(id))) {
+            if (hasAllTargets()) {
                 cleanup();
                 resolve();
             }
@@ -71,7 +136,10 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
 
     const timer = setTimeout(() => {
         cleanup();
-        const missing = [...targetSet].filter(id => !seen.has(id));
+        const missing = targetIds.filter((id, idx) => {
+            const target = targets[idx];
+            return ![...seen].some(provider => matchProvider(provider, target));
+        });
         reject(new Error(`waitForMeshNodes timeout after ${timeout}ms. \n  Missing: [${missing.join(', ')}]\n  Discovered: [${[...seen].join(', ')}]`));
     }, timeout);
 
@@ -88,7 +156,7 @@ export async function waitForMeshNodes(vfs, targetIds, timeout = 15000) {
     if (vfs.mesh) {
         for (const peerId of vfs.mesh.peers.keys()) seen.add(peerId);
     }
-    if ([...targetSet].every(id => seen.has(id))) {
+    if (hasAllTargets()) {
         cleanup();
         resolve();
     }

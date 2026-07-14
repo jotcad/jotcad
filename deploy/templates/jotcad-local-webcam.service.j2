@@ -1,0 +1,23 @@
+[Unit]
+Description=JotCAD Local Webcam Node Service
+After=network.target jotcad-bridge.service
+Requires=jotcad-bridge.service
+
+[Service]
+Type=simple
+User={{ ansible_user_id }}
+SupplementaryGroups=video
+WorkingDirectory={{ deploy_dir }}
+ExecStart=/usr/bin/env node --experimental-wasm-modules vfs_webcam_node.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=VFS_ID=live_webcam_webcam
+Environment=NEIGHBORS={{ neighbors | default('http://127.0.0.1:9000') }}
+Environment=DEBUG=true
+Environment=TIMELAPSE=true
+Environment=WEBCAM_DEVICE=/dev/video0
+
+[Install]
+WantedBy=multi-user.target

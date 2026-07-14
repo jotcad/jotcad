@@ -11,7 +11,7 @@ export async function _readResult(vfs, target, context = {}) {
     const { 
         stack = [], 
         resolutionStack = [],
-        expiresAt = Date.now() + 10000, 
+        expiresAt = Date.now() + 600000, 
         followLinks = true, 
         depth = 0 
     } = context;
@@ -32,6 +32,10 @@ export async function _readResult(vfs, target, context = {}) {
 
     if (resolutionStack.includes(targetCID)) {
          throw new Error(`Circular link detected for ${targetCID}`);
+    }
+    
+    if (context.localOnly && !(await vfs.storage.has(targetCID))) {
+      return { success: true, cid: null };
     }
     
     if (vfs.activeWait.has(targetCID)) return await vfs.activeWait.get(targetCID);
@@ -92,18 +96,35 @@ export async function _readResult(vfs, target, context = {}) {
             }
         }
 
-        if (resultData === null && vfs.mesh && !isBackflow) {
-          const meshResult = s 
-            ? await vfs.mesh.readSelector(s, { ...context, stack: nextStack, resolutionStack })
-            : await vfs.mesh.readCID(targetCID, { ...context, stack: nextStack, resolutionStack });
-            
-          if (meshResult) {
-              // Protocol Strictness: MeshLink.read MUST return { stream, metadata }
-              if (!meshResult.stream || !meshResult.metadata) {
-                  throw new Error(`VFS Protocol Violation: MeshLink.read must return { stream, metadata }.`);
-              }
+        if (resultData === null && vfs.mesh && !isBackflow && !context.localOnly) {
+          // 1. Check if the Selector/CID fulfillment result already exists on the mesh (Content Path lookup)
+          try {
+            const cacheTimeout = s ? Math.min(expiresAt, Date.now() + 200) : expiresAt;
+            const meshCIDResult = await vfs.mesh.readCID(targetCID, { 
+              ...context, 
+              expiresAt: cacheTimeout,
+              stack: nextStack, 
+              resolutionStack 
+            });
+            if (meshCIDResult) {
+              resultData = meshCIDResult.stream;
+              meshInfo = meshCIDResult.metadata;
+            }
+          } catch (err) {
+            // If it is a hard error (e.g. expired request), propagate it immediately.
+            // 404 not found and Timeout are ignored so we can try operator computation next.
+            if (err.message && !err.message.includes('404') && !err.message.includes('Timeout')) {
+              throw err;
+            }
+          }
+
+          // 2. If not found and it is a Selector request, trigger generative operator calculation
+          if (resultData === null && s) {
+            const meshResult = await vfs.mesh.readSelector(s, { ...context, stack: nextStack, resolutionStack });
+            if (meshResult) {
               resultData = meshResult.stream;
               meshInfo = meshResult.metadata;
+            }
           }
         }
         

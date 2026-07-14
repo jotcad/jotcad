@@ -1,13 +1,14 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -O1 -I. -I./vendor
-LDFLAGS = -lcrypto -lssl -lpthread
+CXXFLAGS = -std=c++17 -O1 -MMD -MP -I. -I./vendor -I../../geo/cgal/zenoh/include
+LDFLAGS = ../../geo/cgal/zenoh/lib/libzenohc.a -lcrypto -lssl -lpthread -ldl
 
 SRCS = vfs_core.cpp cid.cpp vfs_primitives.cpp
 OBJS = $(SRCS:.cpp=.o)
+DEPS = $(SRCS:.cpp=.d)
 
 TESTS = test_pubsub test_links
 
-all: test_server $(TESTS)
+all: test_server
 
 test_server: test_server.cpp $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
@@ -26,4 +27,6 @@ test_node: $(TESTS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o vfs_node test_server $(TESTS)
+	rm -f *.o *.d vfs_node test_server $(TESTS)
+
+-include $(DEPS)

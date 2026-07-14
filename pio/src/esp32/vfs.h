@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <sstream>
 
 #ifdef ESP32
 #include <WiFi.h>
@@ -13,7 +14,7 @@
 #include <ESP8266WiFi.h>
 #endif
 
-#include <WebSocketsClient.h>
+#include <zenoh-pico.h>
 
 namespace fs {
 
@@ -37,88 +38,6 @@ public:
     virtual void send_binary(int code, const char* contentType, const uint8_t* data, size_t len) = 0;
 };
 
-struct VFSRequest {
-    std::string op; // "PUB", "SUB", "READ_SELECTOR", "READ_CID"
-    std::string txId;
-    Selector selector;
-    std::string cid;
-    json payload;
-    const uint8_t* binary_payload = nullptr;
-    size_t binary_len = 0;
-    std::vector<std::string> stack;
-    std::vector<std::string> resolutionStack;
-    long long expiresAt = 0;
-};
-
-/**
- * Peer: Abstract mesh neighbor.
- */
-class Peer {
-public:
-    virtual ~Peer() = default;
-    virtual const std::string& id() const = 0;
-    virtual void send(const VFSRequest& req) = 0;
-    virtual void tick() {} // No-op for forward-only peers
-    virtual std::string protocol() const = 0;
-    virtual std::string reachability() const = 0;
-};
-
-class VFS;
-
-/**
- * ReverseConnection: Implements the JotCAD /listen polling pattern.
- */
-class ReverseConnection : public Peer {
-public:
-    ReverseConnection(VFS* node, const std::string& neighbor_id, const std::string& url);
-    const std::string& id() const override { return id_; }
-    void send(const VFSRequest& req) override;
-    
-    void tick() override; 
-    std::string protocol() const override { return "REVERSE-HTTP"; }
-    std::string reachability() const override { return "REVERSE"; }
-private:
-    VFS* node_;
-    std::string id_;
-    std::string url_;
-    
-    // Reply buffer for the NEXT /listen call
-    std::string reply_to_;
-    std::vector<uint8_t> reply_body_;
-    std::string reply_content_type_;
-    std::string reply_encoding_;
-    std::string reply_selector_b64_;
-    bool has_reply_ = false;
-    
-    unsigned long last_poll_ = 0;
-};
-
-/**
- * WSConnection: Implements the JotCAD persistent WebSocket transport.
- */
-class WSConnection : public Peer {
-public:
-    WSConnection(VFS* node, const std::string& neighbor_id, const std::string& url);
-    ~WSConnection() override;
-    
-    const std::string& id() const override { return id_; }
-    void send(const VFSRequest& req) override;
-    void tick() override;
-    std::string protocol() const override { return "WS"; }
-    std::string reachability() const override { return "DIRECT"; }
-
-private:
-    void on_event(WStype_t type, uint8_t * payload, size_t length);
-
-    VFS* node_;
-    std::string id_;
-    std::string url_;
-    WebSocketsClient client_;
-    
-    bool connected_ = false;
-    json expecting_binary_header_;
-};
-
 class VFS {
 public:
     struct Config {
@@ -138,53 +57,78 @@ public:
 
     const std::string& id() const { return config_.id; }
     bool has_feature(VFSFeature feature) const { return (config_.enabled_features & feature) != 0; }
+    bool is_connected() const { return connected_; }
 
-    void register_with_neighbors();
-    void add_peer(std::shared_ptr<Peer> peer);
-    void upgrade_peer_to_ws(const std::string& peer_id, std::shared_ptr<Peer> ws_conn);
-    void clear_peers();
+    // Obsolete APIs retained for compatibility
+    void register_with_neighbors() {}
+    void clear_peers() {}
 
     using Handler = std::function<void(const json& params, VFSResponseWriter* response)>;
     void register_op(const std::string& path, Handler handler, const json& schema = json::object());
 
-    using NotifyHandler = std::function<void(const Selector& sel, const json& payload)>;
-    void register_notify_handler(NotifyHandler handler);
+    using NotificationHandler = std::function<void(const Selector& sel, const json& payload)>;
+    void on_notification(const std::string& path, NotificationHandler handler);
+    void register_notify_handler(NotificationHandler handler) {
+        on_notification("instrument/config", handler);
+    }
+
+    void publish(const std::string& path, const json& payload);
+    void publish_binary(const std::string& path, const uint8_t* data, size_t len);
 
     json read_selector(const Selector& sel);
-
-    int notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack = {});
-    int notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {});
-    void subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack = {});
-
-    // Status Logging
-    json get_topology_payload();
-    void log_status();
+    int notify(const Selector& sel, const json& payload, const std::vector<std::string>& stack = {}) {
+        publish(sel.path, payload);
+        return 1;
+    }
+    int notify_binary(const Selector& sel, const uint8_t* data, size_t len, const std::vector<std::string>& stack = {}) {
+        publish_binary(sel.path, data, len);
+        return 1;
+    }
+    void subscribe(const Selector& sel, long long expiresAt, const std::vector<std::string>& stack = {}) {}
     
-    // Internal API for Peer loop interaction
-    void handle_command(const json& cmd, std::function<void(int, const char*, const uint8_t*, size_t)> respond);
-    void handle_ws_frame(const json& frame, WSConnection* conn);
-    void handle_binary_command(const std::string& op, const Selector& sel, const uint8_t* data, size_t len, const std::string& replyTo, std::function<void(int, const char*, const uint8_t*, size_t)> respond);
+    using SubscriptionCallback = std::function<void(const json& value)>;
+    void subscribe(const std::string& path, SubscriptionCallback callback) {
+        on_notification(path, [callback](const Selector&, const json& payload) {
+            callback(payload);
+        });
+    }
+
+    // Path-oriented API
+    void write(const std::string& path, const json& value) { publish(path, value); }
+    void write_binary(const std::string& path, const uint8_t* data, size_t len) { publish_binary(path, data, len); }
+    void listen(const std::string& path, SubscriptionCallback callback) { subscribe(path, callback); }
+    void unlisten(const std::string& path);
+    json read(const std::string& path) {
+        auto it = local_cache_.find(path);
+        if (it != local_cache_.end()) return it->second;
+        return json();
+    }
+
+    // Internal callback for Zenoh queries
+    void handle_query(z_loaned_query_t* query);
 
 private:
     Config config_;
     std::map<std::string, Handler> handlers_;
     std::map<std::string, json> schemas_;
-    std::vector<NotifyHandler> notify_handlers_;
 
-    // Peer Management
-    std::vector<std::shared_ptr<Peer>> peers_;
-#ifdef ESP32
-    std::recursive_mutex mesh_mutex_;
-#else
-    Mutex mesh_mutex_;
-#endif
-
-    // Interest Tracking
-    std::map<std::string, std::map<std::string, long long>> interests_;
-    std::map<std::string, json> interest_selectors_;
+    // Zenoh session and resources
+    z_owned_session_t z_session_;
+    std::vector<z_owned_queryable_t> z_queryables_;
+    std::map<std::string, z_owned_subscriber_t> z_subscribers_;
+    bool connected_ = false;
 
     // Activity LED State
     bool led_state_ = true;
+
+    // Dynamic state caching and query routing
+    void declare_queryable_for_path(const std::string& path);
+    void handle_cached_query(z_loaned_query_t* query, const std::string& path);
+
+    std::map<std::string, json> local_cache_;
+    std::map<std::string, std::pair<std::vector<uint8_t>, std::string>> local_cache_binary_;
+    std::map<std::string, bool> queryables_;
+    std::vector<std::string> queryable_keys_;
 };
 
 } // namespace fs

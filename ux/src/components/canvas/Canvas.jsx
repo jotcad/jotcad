@@ -16,6 +16,10 @@ import { DesktopIcon } from '../system/desktop/DesktopIcon';
 import { CounterWidget } from '../system/desktop/CounterWidget';
 import { CameraWidget } from '../system/desktop/CameraWidget';
 import { DigitsWidget } from '../system/desktop/DigitsWidget';
+import { RgbLedWidget } from '../system/desktop/RgbLedWidget';
+import { ClimateWidget } from '../system/desktop/ClimateWidget';
+import { PresenceWidget } from '../system/desktop/PresenceWidget';
+import { SynthWidget } from '../system/desktop/SynthWidget';
 import { WindowManager } from '../system/desktop/WindowManager';
 
 export const Canvas = () => {
@@ -143,6 +147,10 @@ export const Canvas = () => {
             <CounterWidget x={40} y={340} />
             <CameraWidget x={40} y={440} />
             <DigitsWidget x={40} y={540} />
+            <RgbLedWidget x={40} y={640} />
+            <ClimateWidget x={40} y={740} />
+            <PresenceWidget x={40} y={840} />
+            <SynthWidget x={40} y={940} />
             
             <WindowManager />
         </div>

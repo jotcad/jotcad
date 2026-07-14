@@ -1,7 +1,6 @@
 #include "../vfs_node.h"
 #include "../cid.h"
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-#include "../vendor/httplib.h"
+#include <zenoh.h>
 #include <fstream>
 #include <iostream>
 #include <filesystem>
@@ -11,13 +10,99 @@
 #include <sstream>
 #include <random>
 
+#include <list>
+
 namespace fs {
 
-VFSNode::VFSNode(const Config& config) : config_(config), server_ptr_(nullptr) {
+#ifndef ZENOH_STATE_DEFINED
+#define ZENOH_STATE_DEFINED
+struct ZenohState {
+    z_owned_session_t session;
+    std::vector<z_owned_queryable_t> queryable_ops;
+    z_owned_queryable_t queryable_cid;
+    z_owned_queryable_t queryable_catalog;
+    std::map<std::string, z_owned_subscriber_t> subscribers;
+    std::list<std::string> queryable_keys;
+    bool running = false;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::unique_ptr<std::thread> advertising_thread;
+};
+#endif
+
+VFSNode::Config VFSNode::Config::load_from_env() {
+    Config cfg;
+    
+    // 1. Peer ID / Node ID
+    if (const char* env_peer = std::getenv("PEER_ID")) {
+        cfg.id = env_peer;
+    } else if (const char* env_vfs = std::getenv("VFS_ID")) {
+        cfg.id = env_vfs;
+    } else {
+        cfg.id = "geo-ops-node";
+    }
+
+    // 2. Port
+    if (const char* env_port = std::getenv("PORT")) {
+        try {
+            cfg.port = std::stoi(env_port);
+        } catch (...) {}
+    }
+
+    // 3. Neighbors
+    if (const char* env_neighbors = std::getenv("NEIGHBORS")) {
+        std::stringstream ss(env_neighbors);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            if (!token.empty()) {
+                cfg.neighbors.push_back(token);
+            }
+        }
+    }
+
+    // 4. SSL / TLS Paths
+    if (const char* cert_p = std::getenv("SSL_CERT_PATH")) cfg.cert_path = cert_p;
+    if (const char* key_p = std::getenv("SSL_KEY_PATH")) cfg.key_path = key_p;
+
+    // 5. Concurrency Limits
+    if (const char* env_limit = std::getenv("JOT_MAX_CONCURRENT_OPS")) {
+        try {
+            cfg.max_concurrent_ops = std::stoi(env_limit);
+        } catch (...) {}
+    }
+
+    // 6. Storage Directory
+    if (const char* env_storage = std::getenv("JOT_STORAGE_DIR")) {
+        cfg.storage_dir = env_storage;
+    } else {
+        cfg.storage_dir = ".vfs_storage_" + cfg.id;
+    }
+
+    return cfg;
+}
+
+VFSNode::VFSNode(const Config& config) : config_(config), server_ptr_(nullptr), max_concurrent_ops_(config.max_concurrent_ops) {
     if (config_.storage_dir.empty()) {
         config_.storage_dir = ".vfs_storage_" + config_.id;
     }
     std::filesystem::create_directories(config_.storage_dir);
+
+    json metrics_schema = {
+        {"arguments", json::array()}
+    };
+    register_op("jot/vfs/metrics", [this](const VFSRequest& req) {
+        json res = json::object();
+        res["metrics"] = {
+            {"fulfillment_counters", get_fulfillment_counters()},
+            {"average_latencies_ms", get_fulfillment_latencies()},
+            {"system", {
+                {"free_cpu_percent", get_free_cpu_percent()},
+                {"free_memory_bytes", get_free_memory_bytes()}
+            }}
+        };
+        res["provider"] = config_.id;
+        this->write(req.selector, res.dump());
+    }, metrics_schema);
 }
 
 VFSNode::~VFSNode() {
@@ -33,71 +118,145 @@ void VFSNode::register_op(const std::string& path, OpHandler handler, const json
     schemas_[path] = schema;
 }
 
-void VFSNode::notify_schema() {
+void VFSNode::increment_fulfillment_counter(const std::string& path) {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    fulfillment_counters_[path]++;
+}
+
+json VFSNode::get_fulfillment_counters() {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    json result = json::object();
+    for (const auto& [path, count] : fulfillment_counters_) {
+        result[path] = count;
+    }
+    return result;
+}
+
+void VFSNode::record_execution_metric(const std::string& path, double duration_ms) {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    fulfillment_counters_[path]++;
+    total_latency_ms_[path] += duration_ms;
+}
+
+json VFSNode::get_fulfillment_latencies() {
+    std::lock_guard<std::mutex> lock(counters_mutex_);
+    json result = json::object();
+    for (const auto& [path, total_latency] : total_latency_ms_) {
+        uint64_t count = fulfillment_counters_[path];
+        if (count > 0) {
+            result[path] = total_latency / count;
+        } else {
+            result[path] = 0.0;
+        } 
+    }
+    return result;
 }
 
 VFSResult VFSNode::read_cid_impl(const VFSRequest& req) {
     if (req.expiresAt > 0) {
         auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        if (now > req.expiresAt) throw VFSException("Request expired", 404);
+        if (now > req.expiresAt) throw VFSException("Request expired", 408);
     }
 
-    std::cout << "[VFSNode " << config_.id << "] Resolving CID: " << req.cid << " (stack: ";
-    for(size_t i=0; i<req.stack.size(); ++i) std::cout << (i==0?"":",") << req.stack[i];
-    std::cout << ")" << std::endl;
 
-    bool is_backflow = std::find(req.stack.begin(), req.stack.end(), config_.id) != req.stack.end();
 
     if (has_local(req.cid)) {
         auto res = get_local(req.cid);
         if (!res.data.empty() || res.metadata.value("state", "") == "AVAILABLE") return res;
     }
-
-    if (is_backflow) throw VFSException("Backflow detected", 403);
-
-    // --- Mesh Discovery ---
-    std::vector<std::shared_ptr<Connection>> targets;
-    {
-        std::lock_guard<std::mutex> lock(peer_mutex_);
-        for (auto const& [id, conn] : peers_) targets.push_back(conn);
+    if (req.localOnly) {
+        throw VFSException("Content not found locally", 404);
     }
 
-    std::string last_404_msg = "";
-    for (const auto& conn : targets) {
-        VFSRequest forwardReq = req;
-        forwardReq.stack.push_back(config_.id);
-        forwardReq.op = "READ_CID";
-        try {
-            return conn->sendRequest(forwardReq);
-        } catch (const VFSException& e) {
-            if (e.code == 404 || e.code == 403) {
-                if (last_404_msg.empty() || e.code == 404) last_404_msg = e.what();
-                continue;
+    // --- Zenoh Mesh Fetch ---
+    if (!server_ptr_) {
+        throw VFSException("VFS Node Zenoh session is not active", 500);
+    }
+    ZenohState* state = (ZenohState*)server_ptr_;
+    
+    std::string key = "jot/vfs/cid/" + req.cid;
+    z_view_keyexpr_t q_ke;
+    if (z_view_keyexpr_from_str(&q_ke, key.c_str()) < 0) {
+        throw VFSException("Invalid Zenoh key: " + key, 400);
+    }
+
+    z_owned_fifo_handler_reply_t z_handler;
+    z_owned_closure_reply_t closure;
+    z_fifo_channel_reply_new(&closure, &z_handler, 16);
+
+    z_get_options_t get_opts;
+    z_get_options_default(&get_opts);
+    get_opts.timeout_ms = 2000; // 2s default
+    get_opts.target = Z_QUERY_TARGET_ALL;
+    get_opts.consolidation.mode = Z_CONSOLIDATION_MODE_NONE;
+
+    z_get(z_loan(state->session), z_loan(q_ke), nullptr, z_move(closure), &get_opts);
+
+    z_owned_reply_t reply;
+    VFSResult result;
+    bool success = false;
+    std::string err_msg = "Content not found for CID: " + req.cid;
+    int err_code = 404;
+
+    while (z_recv(z_loan(z_handler), &reply) == Z_OK) {
+        if (z_reply_is_ok(z_loan(reply))) {
+            const z_loaned_sample_t* sample = z_reply_ok(z_loan(reply));
+            z_loaned_bytes_t const* payload_bytes = z_sample_payload(sample);
+            size_t len = z_bytes_len(payload_bytes);
+            
+            std::vector<uint8_t> record_bytes(len);
+            z_owned_slice_t slice;
+            z_bytes_to_slice(payload_bytes, &slice);
+            std::memcpy(record_bytes.data(), z_slice_data(z_loan(slice)), len);
+            z_drop(z_move(slice));
+
+            json rec_header;
+            std::vector<uint8_t> rec_payload;
+            if (decode_record(record_bytes, rec_header, rec_payload)) {
+                int status = rec_header.value("status", 200);
+                if (status == 200) {
+                    result.data = rec_payload;
+                    result.metadata = rec_header.value("metadata", json::object());
+                    success = true;
+                    // Write cache locally
+                    write_local(req.cid, result.data, "", json::object());
+                    break;
+                } else if (status != 404) {
+                    err_code = status;
+                    err_msg = rec_header.value("error", "Remote fetch error");
+                }
             }
-            json ctx = {{"vfsId", config_.id}, {"target", conn->neighbor_id}, {"cid", req.cid}};
-            throw VFSException(ctx.dump() + "\n" + e.what(), e.code);
-        } catch (...) { std::cerr << "Peer Exception" << std::endl; }
+        } else {
+            const z_loaned_reply_err_t* err = z_reply_err(z_loan(reply));
+            if (err != nullptr) {
+                const z_loaned_bytes_t* payload = z_reply_err_payload(err);
+                size_t len = z_bytes_len(payload);
+                z_owned_slice_t slice;
+                z_bytes_to_slice(payload, &slice);
+                err_msg = std::string((const char*)z_slice_data(z_loan(slice)), len);
+                z_drop(z_move(slice));
+            }
+        }
+        z_drop(z_move(reply));
     }
-    throw VFSException(last_404_msg.empty() ? ("Content not found for CID: " + req.cid) : last_404_msg, 404);
+    z_drop(z_move(z_handler));
+
+    if (success) return result;
+    throw VFSException(err_msg, err_code);
 }
 
 VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
     if (req.expiresAt > 0) {
         auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        if (now > req.expiresAt) throw VFSException("Request expired", 404);
+        if (now > req.expiresAt) throw VFSException("Request expired", 408);
     }
 
     std::string target_cid = get_cid(req.selector);
 
-    std::cout << "[VFSNode " << config_.id << "] Resolving Selector: " << req.selector.to_json().dump() << " (stack: ";
-    for(size_t i=0; i<req.stack.size(); ++i) std::cout << (i==0?"":",") << req.stack[i];
-    std::cout << ")" << std::endl;
 
-    bool is_backflow = std::find(req.stack.begin(), req.stack.end(), config_.id) != req.stack.end();
 
     if (has_local(target_cid)) {
         auto res = get_local(target_cid);
-        
         if (req.followLinks && res.metadata.value("encoding", "") == "link") {
             if (std::find(req.resolutionStack.begin(), req.resolutionStack.end(), target_cid) != req.resolutionStack.end()) {
                 throw VFSException("Infinite Link Cycle detected for CID: " + target_cid, 500);
@@ -112,51 +271,237 @@ VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
                 return read_selector_impl(linkReq);
             } catch (...) {}
         }
-
         if (!res.data.empty() || res.metadata.value("state", "") == "AVAILABLE") {
             return res;
         }
     }
 
-    OpHandler handler;
     {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        if (local_cache_.count(req.selector.path)) {
+            VFSResult res;
+            std::string s_val = local_cache_[req.selector.path].dump();
+            res.data = std::vector<uint8_t>(s_val.begin(), s_val.end());
+            res.metadata = {{"state", "AVAILABLE"}, {"encoding", "json"}};
+            return res;
+        }
+        if (local_cache_binary_.count(req.selector.path)) {
+            VFSResult res;
+            res.data = local_cache_binary_[req.selector.path].first;
+            res.metadata = {{"state", "AVAILABLE"}, {"encoding", "bytes"}};
+            return res;
+        }
+    }
+
+    // Check if operator is registered locally (supporting exact and wildcard matches)
+    OpHandler handler;
+    {   
         std::lock_guard<std::mutex> lock(handlers_mutex_);
-        if (handlers_.count(req.selector.path)) handler = handlers_[req.selector.path];
+        if (handlers_.count(req.selector.path)) {
+            handler = handlers_[req.selector.path];
+        } else {
+            for (const auto& [reg_path, reg_handler] : handlers_) {
+                if (reg_path.size() > 2 && reg_path.substr(reg_path.size() - 2) == "**") {
+                    std::string prefix = reg_path.substr(0, reg_path.size() - 2);
+                    if (req.selector.path.rfind(prefix, 0) == 0) {
+                        handler = reg_handler;
+                        break;
+                    }
+                }
+            }
+        }
     }
     if (handler) {
+        auto start = std::chrono::high_resolution_clock::now();
         handler(req);
-        std::string fulfilled_cid = get_cid(req.selector);
-        if (has_local(fulfilled_cid)) return get_local(fulfilled_cid);
-        throw VFSException("Handler failed to fulfill identity: " + fulfilled_cid);
-    }
+        auto end = std::chrono::high_resolution_clock::now();
+        double duration_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-    if (is_backflow) throw VFSException("Backflow detected", 403);
-
-    // --- Mesh Discovery ---
-    std::vector<std::shared_ptr<Connection>> targets;
-    {
-        std::lock_guard<std::mutex> lock(peer_mutex_);
-        for (auto const& [id, conn] : peers_) targets.push_back(conn);
-    }
-
-    std::string last_404_msg = "";
-    for (const auto& conn : targets) {
-        VFSRequest forwardReq = req;
-        forwardReq.stack.push_back(config_.id);
-        forwardReq.op = "READ_SELECTOR";
-        try {
-            return conn->sendRequest(forwardReq);
-        } catch (const VFSException& e) {
-            if (e.code == 404 || e.code == 403) {
-                if (last_404_msg.empty() || e.code == 404) last_404_msg = e.what();
-                continue;
+        record_execution_metric(req.selector.path, duration_ms);
+        
+        // Publish update to VFS under the path: jot/vfs/metrics/<op_path>
+        // Avoid recursion or publishing updates for the metrics calls themselves!
+        if (req.selector.path.rfind("jot/vfs/metrics", 0) != 0) {
+            std::string metric_path = "jot/vfs/metrics/" + req.selector.path;
+            uint64_t count = 0;
+            double avg_latency = 0.0;
+            {
+                std::lock_guard<std::mutex> lock(counters_mutex_);
+                count = fulfillment_counters_[req.selector.path];
+                double total = total_latency_ms_[req.selector.path];
+                if (count > 0) {
+                    avg_latency = total / count;
+                }
             }
-            json ctx = {{"vfsId", config_.id}, {"target", conn->neighbor_id}, {"path", req.selector.path}};
-            throw VFSException(ctx.dump() + "\n" + e.what(), e.code);
-        } catch (...) { std::cerr << "Peer Exception" << std::endl; }
+            json metric_payload = {
+                {"path", req.selector.path},
+                {"count", count},
+                {"avg_latency_ms", avg_latency},
+                {"provider", config_.id}
+            };
+            this->publish(metric_path, metric_payload);
+        }
+
+        if (has_local(target_cid)) return get_local(target_cid);
+        throw VFSException("Handler failed to fulfill identity: " + target_cid);
     }
-    
-    throw VFSException(last_404_msg.empty() ? ("Content not found for Selector: " + req.selector.path) : last_404_msg, 404);
+    if (req.localOnly) {
+        throw VFSException("Content not found locally", 404);
+    }
+
+    // --- Zenoh Mesh Fetch ---
+    if (!server_ptr_) {
+        throw VFSException("VFS Node Zenoh session is not active", 500);
+    }
+    ZenohState* state = (ZenohState*)server_ptr_;
+
+    // Gather targets to query (alphabetically sorted active machine IDs)
+    std::vector<std::string> targets;
+    {
+        std::lock_guard<std::mutex> lock(peers_mutex_);
+        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        for (const auto& [peer_id, pi] : peers_) {
+            if (now - pi.last_seen_ms < 10000) { // active within 10s
+                targets.push_back(peer_id);
+            }
+        }
+    }
+    // Always include our own machine prefix as a fallback/target if we have the handler registered
+    bool has_local_handler = false;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        if (handlers_.find(req.selector.path) != handlers_.end()) {
+            has_local_handler = true;
+        }
+    }
+    if (has_local_handler) {
+        targets.push_back(get_machine_prefix());
+    }
+
+    std::sort(targets.begin(), targets.end());
+
+    // If no targets discovered, default to wildcard/broadcast
+    if (targets.empty()) {
+        targets.push_back("*");
+    }
+
+    // Serialize parameters (common to all queries)
+    std::string query_params = "";
+    bool first = true;
+    for (auto it = req.selector.parameters.begin(); it != req.selector.parameters.end(); ++it) {
+        if (!first) query_params += ";";
+        first = false;
+        query_params += it.key() + "=";
+        std::string val;
+        if (it.value().is_string()) val = it.value().get<std::string>();
+        else val = it.value().dump();
+        
+        // URL encoder
+        std::string encoded = "";
+        for (char c : val) {
+            if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                encoded += c;
+            } else {
+                char hex[4];
+                std::snprintf(hex, sizeof(hex), "%%%02X", (unsigned char)c);
+                encoded += hex;
+            }
+        }
+        query_params += encoded;
+    }
+    if (!req.selector.output.empty()) {
+        if (!first) query_params += ";";
+        query_params += "output=" + req.selector.output;
+    }
+
+    VFSResult result;
+    bool success = false;
+    std::string err_msg = "Content not found for Selector: " + req.selector.path;
+    int err_code = 404;
+
+    for (const std::string& target_id : targets) {
+        // A. If target is local, execute locally (concurrency limit permitting)
+        if (target_id == get_machine_prefix()) {
+            if (get_active_ops_count() < get_max_concurrent_ops()) {
+                increment_active_ops();
+                try {
+                    VFSRequest localReq = req;
+                    localReq.localOnly = true;
+                    result = read_selector_impl(localReq);
+                    success = true;
+                } catch (const std::exception& e) {
+                    err_code = 500;
+                    err_msg = e.what();
+                }
+                decrement_active_ops();
+                if (success) break;
+            } else {
+                std::cout << "[VFS Router] Local machine is busy, spilling over..." << std::endl;
+                continue; // spill over to next target
+            }
+        }
+
+        // B. Query targeted machine over Zenoh: "<target_id>/jot/vfs/op/<path>"
+        std::string key = target_id + "/jot/vfs/op/" + req.selector.path;
+        std::cout << "[VFS Router] Hammering target: '" << key << "'" << std::endl;
+
+        z_view_keyexpr_t q_ke;
+        if (z_view_keyexpr_from_str(&q_ke, key.c_str()) < 0) {
+            continue;
+        }
+
+        z_owned_fifo_handler_reply_t z_handler;
+        z_owned_closure_reply_t closure;
+        z_fifo_channel_reply_new(&closure, &z_handler, 16);
+
+        z_get_options_t get_opts;
+        z_get_options_default(&get_opts);
+        get_opts.timeout_ms = 3000; // 3-second timeout per target query
+
+        z_get(z_loan(state->session), z_loan(q_ke), query_params.empty() ? nullptr : query_params.c_str(), z_move(closure), &get_opts);
+
+        z_owned_reply_t reply;
+
+        while (z_recv(z_loan(z_handler), &reply) == Z_OK) {
+            if (!success && z_reply_is_ok(z_loan(reply))) {
+                const z_loaned_sample_t* sample = z_reply_ok(z_loan(reply));
+                z_loaned_bytes_t const* payload_bytes = z_sample_payload(sample);
+                size_t len = z_bytes_len(payload_bytes);
+                
+                std::vector<uint8_t> record_bytes(len);
+                z_owned_slice_t slice;
+                z_bytes_to_slice(payload_bytes, &slice);
+                std::memcpy(record_bytes.data(), z_slice_data(z_loan(slice)), len);
+                z_drop(z_move(slice));
+
+                json rec_header;
+                std::vector<uint8_t> rec_payload;
+                if (decode_record(record_bytes, rec_header, rec_payload)) {
+                    int status = rec_header.value("status", 200);
+                    if (status == 200) {
+                        result.data = rec_payload;
+                        result.metadata = rec_header.value("metadata", json::object());
+                        success = true;
+                        write_local(target_cid, result.data, req.selector.path, req.selector.parameters);
+                    } else if (status == 503 || status == 429) {
+                        std::cout << "[VFS Router] Target '" << target_id << "' rejected (Busy). Trying next target..." << std::endl;
+                    } else {
+                        err_code = status;
+                        err_msg = rec_header.value("error", "Remote computation error");
+                    }
+                }
+            }
+            z_drop(z_move(reply));
+        }
+
+        z_drop(z_move(z_handler));
+
+        if (success) {
+            break; // Query succeeded, exit targets loop
+        }
+    }
+    if (success) return result;
+    throw VFSException(err_msg, err_code);
 }
 
 std::string VFSNode::get_cid(const Selector& sel) {
@@ -205,443 +550,16 @@ Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& d
 
         json meta = {
             {"state", "AVAILABLE"},
-            {"encoding", "bytes"}, // Raw bytes via Selector
+            {"encoding", "bytes"},
             {"selector", sel.to_json()}
         };
         std::ofstream mos(mp);
         mos << meta.dump();
     }
-
-    notify(sel.to_json(), {{"state", "AVAILABLE"}});
     return sel;
 }
 
-template<> CID VFSNode::materialize<std::vector<uint8_t>>(const std::vector<uint8_t>& data) {
-    // For terminal mathematical artifacts (raw bytes), always use direct binary hash.
-    // This ensures consistency with the Processor and global identity rules.
-    std::string cid_str = vfs_hash256(data);
-    std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid_str + ".data");
-    std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid_str + ".meta");
-    
-    {
-        std::lock_guard<std::mutex> lock(storage_mutex_);
-        std::ofstream os(p, std::ios::binary);
-        if (!data.empty()) os.write((const char*)data.data(), data.size());
-        else os << ""; // Ensure file exists for empty data
-        
-        json meta = {{"state", "AVAILABLE"}, {"encoding", "bytes"}};
-        std::ofstream mos(mp);
-        mos << meta.dump();
-    }
-    
-    return CID{cid_str};
-}
-
-void VFSNode::notify(const Selector& selector, const json& payload, const std::vector<std::string>& stack) {
-    // 1. Stack Protection: Break loops early
-    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
-
-    prune_stale_connections();
-
-    std::cout << "[VFSNode " << config_.id << "] PUB: " << selector.to_json().dump() 
-              << " payload: " << payload.dump() 
-              << " stack: [";
-    for(size_t i=0; i<stack.size(); ++i) std::cout << (i==0?"":",") << stack[i];
-    std::cout << "]" << std::endl;
-
-    std::vector<std::shared_ptr<Connection>> targets;
-    {
-        std::lock_guard<std::mutex> lock(interest_mutex_);
-        long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        
-        for (auto& entry : interests_) {
-            bool path_match = (entry.selector.path == selector.path);
-            bool full_match = (entry.selector == selector);
-
-            if (path_match) {
-                std::cout << "[VFSNode " << config_.id << "]   Checking Interest Path: " << entry.selector.path 
-                          << " (Full Match: " << (full_match ? "YES" : "NO") << ")" << std::endl;
-                
-                // If it's a path match but not a full match, and the interest has NO parameters, 
-                // we should consider it a match for sensor updates.
-                bool is_lenient_match = full_match || (entry.selector.parameters.empty() || entry.selector.parameters == json::object());
-
-                if (is_lenient_match) {
-                    std::lock_guard<std::mutex> plock(peer_mutex_);
-                    for (auto it_sub = entry.subs.begin(); it_sub != entry.subs.end(); ) {
-                        std::string peer_id = it_sub->first;
-                        long long expiresAt = it_sub->second;
-
-                        bool expired = (expiresAt > 0 && expiresAt < now);
-                        bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
-                        bool peer_exists = peers_.count(peer_id);
-
-                        if (peer_exists) {
-                            auto rev = std::dynamic_pointer_cast<ReverseConnection>(peers_[peer_id]);
-                            if (rev) {
-                                std::lock_guard<std::mutex> rlock(rev->mutex);
-                                if (now - rev->last_poll_at > PEER_POLL_TIMEOUT_MS) {
-                                    std::cout << "[VFSNode " << config_.id << "] Pruning stale peer " << peer_id << std::endl;
-                                    peers_.erase(peer_id);
-                                    peer_exists = false;
-                                }
-                            }
-                        }
-
-                        if (expired || !peer_exists) {
-                            it_sub = entry.subs.erase(it_sub);
-                            continue;
-                        }
-
-                        if (!in_stack) {
-                            std::cout << "[VFSNode " << config_.id << "]     MATCH! Routing to " << peer_id << std::endl;
-                            targets.push_back(peers_[peer_id]);
-                        }
-                        ++it_sub;
-                    }
-                }
-            }
-        }
-    }
-
-    if (targets.empty()) {
-        std::cout << "[VFSNode " << config_.id << "] notify drop: No valid interested targets found for " << selector.path << std::endl;
-        return;
-    }
-
-    std::vector<std::string> next_stack = stack;
-    next_stack.push_back(config_.id);
-    for (auto& conn : targets) {
-        std::cout << "[VFSNode " << config_.id << "] -> Forwarding notification for " << selector.path << " to " << conn->neighbor_id << std::endl;
-        VFSRequest req;
-        req.op = "PUB";
-        req.selector = selector;
-        if (payload.is_binary()) {
-            req.binary_data = payload.get_binary();
-        } else {
-            req.data = payload.dump();
-        }
-        req.stack = next_stack;
-        conn->sendRequest(req);
-    }
-}
-
-void VFSNode::subscribe(const Selector& selector, long long expiresAt, const std::vector<std::string>& stack) {
-    if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) {
-        std::cout << "[VFSNode " << config_.id << "] DROP subscribe: Loop detected (stack contains " << config_.id << ")" << std::endl;
-        return;
-    }
-
-    std::string peer_id = stack.empty() ? "local" : stack.back();
-
-    std::cout << "[VFSNode " << config_.id << "] SUB: " << selector.to_json().dump() 
-              << " from " << peer_id 
-              << " expiresAt: " << expiresAt << std::endl;
-    
-    bool isNewInterest = false;
-    {
-        std::lock_guard<std::mutex> lock(interest_mutex_);
-        auto it = std::find_if(interests_.begin(), interests_.end(), [&](const SubscriptionEntry& e) {
-            return e.selector == selector;
-        });
-
-        if (it == interests_.end()) {
-            interests_.push_back({selector, {{peer_id, expiresAt}}, 0});
-            isNewInterest = true;
-        } else {
-            if (it->subs.count(peer_id) == 0 || expiresAt > it->subs[peer_id]) {
-                isNewInterest = true;
-            }
-            it->subs[peer_id] = expiresAt;
-        }
-    }
-
-    if (isNewInterest) {
-        if (selector.path == "sys/topo") {
-            std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/topo sub from " << peer_id << " with local topology" << std::endl;
-            VFSRequest req;
-            req.op = "PUB";
-            req.selector = selector;
-            req.data = get_topology_payload().dump();
-            req.stack = {config_.id};
-            
-            std::lock_guard<std::mutex> plock(peer_mutex_);
-            if (peers_.count(peer_id)) {
-                peers_[peer_id]->sendRequest(req);
-            }
-        } else {
-            notify(Selector("sys/topo"), get_topology_payload(), {});
-        }
-    }
-
-    if (selector.path == "sys/schema") {
-        std::shared_ptr<Connection> target;
-        {
-            std::lock_guard<std::mutex> lock(peer_mutex_);
-            if (peers_.count(peer_id)) target = peers_[peer_id];
-        }
-
-        if (target) {
-            json catalog = get_catalog();
-            json payload = {{"catalog", catalog["catalog"]}, {"provider", config_.id}};
-            std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/schema sub from " << peer_id << " with local catalog (" << catalog["catalog"].size() << " ops)" << std::endl;
-            VFSRequest req;
-            req.op = "PUB";
-            req.selector = selector;
-            req.data = payload.dump();
-            req.stack = {config_.id};
-            target->sendRequest(req);
-        }
-    }
-
-    if (selector.path == "sys/topo") {
-        std::shared_ptr<Connection> target;
-        {
-            std::lock_guard<std::mutex> lock(peer_mutex_);
-            if (peers_.count(peer_id)) target = peers_[peer_id];
-        }
-
-        if (target) {
-            std::cout << "[VFSNode " << config_.id << "] -> Replying to sys/topo sub from " << peer_id << " with local topology" << std::endl;
-            VFSRequest req;
-            req.op = "PUB";
-            req.selector = selector;
-            req.data = get_topology_payload().dump();
-            req.stack = {config_.id};
-            target->sendRequest(req);
-        }
-    }
-
-    // PROPAGATION: Forward interest to all OTHER peers
-    if (isNewInterest) {
-        std::vector<std::shared_ptr<Connection>> others;
-        {
-            std::lock_guard<std::mutex> lock(peer_mutex_);
-            for (auto const& [id, conn] : peers_) {
-                // Don't send back to any node already in the stack
-                bool in_stack = false;
-                for (const auto& s : stack) if (s == id) { in_stack = true; break; }
-                if (in_stack) continue;
-
-                others.push_back(conn);
-            }
-        }
-
-        std::vector<std::string> next_stack = stack;
-        next_stack.push_back(config_.id);
-        for (auto& conn : others) {
-            std::cout << "[VFSNode " << config_.id << "] -> Propagating interest in " << selector.path << " from " << peer_id << " to " << conn->neighbor_id << std::endl;
-            VFSRequest req;
-            req.op = "SUB";
-            req.selector = selector;
-            req.expiresAt = expiresAt;
-            req.stack = next_stack;
-            conn->sendRequest(req);
-        }
-    }
-}
-
-json VFSNode::get_catalog() {
-    std::lock_guard<std::mutex> lock(handlers_mutex_);
-    json catalog = json::object();
-    for (auto const& [path, schema] : schemas_) {
-        catalog[path] = schema;
-    }
-    return {{"catalog", catalog}, {"provider", config_.id}};
-}
-
-json VFSNode::get_neighbors() {
-    std::lock_guard<std::mutex> lock(peer_mutex_);
-    json neighbors = json::array();
-    for (auto const& [id, conn] : peers_) {
-        neighbors.push_back({{"id", id}, {"url", conn->get_url()}, {"reachability", conn->is_reverse() ? "REVERSE" : "DIRECT"}});
-    }
-    return neighbors;
-}
-
-void VFSNode::handle_ws_frame(const std::string& neighbor_id, const json& frame) {
-    std::string type = frame.value("type", "");
-    if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
-        std::string tx_id = frame.value("txId", "");
-        int status = frame.value("status", 200);
-        if (status == 200) {
-            VFSResult result;
-            if (frame.contains("payload")) {
-                json payload = frame["payload"];
-                if (payload.is_string()) {
-                    result.data = fs::base64_decode(payload.get<std::string>());
-                } else if (payload.contains("data") && payload["data"].is_string()) {
-                    result.data = fs::base64_decode(payload["data"].get<std::string>());
-                }
-                if (payload.contains("metadata")) result.metadata = payload["metadata"];
-            }
-            if (frame.contains("metadata")) result.metadata = frame["metadata"];
-            resolve_transaction(tx_id, result);
-        } else {
-            std::string error = frame.contains("payload") && frame["payload"].contains("error") 
-                ? frame["payload"]["error"].get<std::string>() 
-                : "Error";
-            reject_transaction(tx_id, status, error);
-        }
-    } else if (type == "READ_SELECTOR" || type == "READ_CID") {
-        std::string tx_id = frame.value("txId", "");
-        VFSRequest req;
-        req.op = type;
-        req.expiresAt = frame.value("expiresAt", 0LL);
-        if (frame.contains("stack")) {
-            for (auto const& s : frame["stack"]) req.stack.push_back(s.get<std::string>());
-        }
-        if (type == "READ_SELECTOR") {
-            req.selector = Selector::from_json(frame["selector"]);
-        } else {
-            req.cid = frame.value("cid", "");
-            if (frame.contains("resolutionStack")) {
-                for (auto const& s : frame["resolutionStack"]) req.resolutionStack.push_back(s.get<std::string>());
-            }
-        }
-        
-        std::thread([this, tx_id, req]() {
-            try {
-                VFSResult result = read<VFSResult>(req);
-                std::lock_guard<std::mutex> plock(peer_mutex_);
-                std::string requester_id = req.stack.empty() ? "" : req.stack.back();
-                if (peers_.count(requester_id)) {
-                    auto ws_conn = std::dynamic_pointer_cast<WSConnection>(peers_[requester_id]);
-                    if (ws_conn) {
-                        ws_conn->send_binary_frame({
-                            {"type", "READ_RESPONSE"},
-                            {"txId", tx_id},
-                            {"status", 200},
-                            {"metadata", result.metadata},
-                            {"hasBinary", true}
-                        }, result.data);
-                    }
-                }
-            } catch (const std::exception& e) {
-                std::lock_guard<std::mutex> plock(peer_mutex_);
-                std::string requester_id = req.stack.empty() ? "" : req.stack.back();
-                if (peers_.count(requester_id)) {
-                    auto ws_conn = std::dynamic_pointer_cast<WSConnection>(peers_[requester_id]);
-                    if (ws_conn) {
-                        ws_conn->send_frame({
-                            {"type", "READ_RESPONSE"},
-                            {"txId", tx_id},
-                            {"status", 500},
-                            {"payload", {{"error", e.what()}}}
-                        });
-                    }
-                }
-            }
-        }).detach();
-    } else if (type == "PUB") {
-        Selector sel = Selector::from_json(frame["selector"]);
-        json payload = frame.value("payload", json::object());
-        std::vector<std::string> stack;
-        if (frame.contains("stack")) {
-            for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
-        }
-        
-        // Add sender to stack if not already present
-        if (!neighbor_id.empty() && std::find(stack.begin(), stack.end(), neighbor_id) == stack.end()) {
-            stack.push_back(neighbor_id);
-        }
-        
-        notify(sel, payload, stack);
-    } else if (type == "SUB") {
-        Selector sel = Selector::from_json(frame["selector"]);
-        long long exp = frame.value("expiresAt", 0LL);
-        std::vector<std::string> stack;
-        if (frame.contains("stack")) {
-            for (auto const& s : frame["stack"]) stack.push_back(s.get<std::string>());
-        }
-
-        // Add sender to stack if not already present
-        if (!neighbor_id.empty() && std::find(stack.begin(), stack.end(), neighbor_id) == stack.end()) {
-            stack.push_back(neighbor_id);
-        }
-
-        subscribe(sel, exp, stack);
-    }
-}
-
-void VFSNode::handle_binary_frame(const std::string& neighbor_id, const json& header, const std::vector<uint8_t>& data) {
-    std::string type = header.value("type", "");
-    if (type == "READ_RESPONSE" || type == "SPY_RESPONSE") {
-        std::string tx_id = header.value("txId", "");
-        VFSResult result;
-        result.data = data;
-        if (header.contains("metadata")) result.metadata = header["metadata"];
-        resolve_transaction(tx_id, result);
-    } else if (type == "PUB") {
-        Selector sel = Selector::from_json(header["selector"]);
-        std::vector<std::string> stack;
-        if (header.contains("stack")) {
-            for (auto const& s : header["stack"]) stack.push_back(s.get<std::string>());
-        }
-
-        // Add sender to stack if not already present
-        if (!neighbor_id.empty() && std::find(stack.begin(), stack.end(), neighbor_id) == stack.end()) {
-            stack.push_back(neighbor_id);
-        }
-
-        // Stack Protection: Break loops early
-        if (std::find(stack.begin(), stack.end(), config_.id) != stack.end()) return;
-
-        std::cout << "[VFSNode " << config_.id << "] binary notify: " << sel.path << " from stack {";
-        for(size_t i=0; i<stack.size(); ++i) std::cout << (i==0?"":",") << stack[i];
-        std::cout << "}" << std::endl;
-
-        std::vector<std::shared_ptr<Connection>> targets;
-        {
-            std::lock_guard<std::mutex> lock(interest_mutex_);
-            long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-            
-            for (auto const& entry : interests_) {
-                // Protocol Rule: Strict bit-exact matching. Normalization MUST happen at the boundary.
-                if (entry.selector == sel) {
-                    std::lock_guard<std::mutex> plock(peer_mutex_);
-                    for (auto const& [peer_id, expiresAt] : entry.subs) {
-                        bool expired = (expiresAt > 0 && expiresAt < now);
-                        
-                        if (expired) {
-                            std::cout << "[VFSNode " << config_.id << "]   Match REJECTED: Interest in " << entry.selector.path 
-                                      << " from " << peer_id << " EXPIRED (" << (now - expiresAt) << "ms ago)" << std::endl;
-                        }
-
-                        bool in_stack = (std::find(stack.begin(), stack.end(), peer_id) != stack.end());
-                        bool peer_exists = peers_.count(peer_id);
-
-                        if (!expired && !in_stack && peer_exists) {
-                            targets.push_back(peers_[peer_id]);
-                        }
-                    }
-                }
-            }
-        }
-
-        if (targets.empty()) {
-            std::cout << "[VFSNode " << config_.id << "] binary notify drop: No valid interested targets found for " << sel.path << std::endl;
-            return;
-        }
-
-        std::vector<std::string> next_stack = stack;
-        next_stack.push_back(config_.id);
-        for (auto& conn : targets) {
-            std::cout << "[VFSNode " << config_.id << "] -> Forwarding binary notification for " << sel.path << " to " << conn->neighbor_id << std::endl;
-            VFSRequest req;
-            req.op = "PUB";
-            req.selector = sel;
-            req.binary_data = data;
-            req.stack = next_stack;
-            conn->sendRequest(req);
-        }
-    }
-}
-
 void VFSNode::link(const Selector& src, const Selector& tgt) {
-    // Protocol Rule: A Link is an artifact whose content is another address (a Selector).
-    // Metadata (.meta): MUST contain state: "AVAILABLE" and encoding: "link".
-    // Data (.data): MUST contain the Target Selector serialized as JSON.
     std::string srcKey = get_cid(src);
     
     std::lock_guard<std::mutex> lock(storage_mutex_);
@@ -660,6 +578,333 @@ void VFSNode::link(const Selector& src, const Selector& tgt) {
     };
     std::ofstream os(mp);
     os << meta.dump();
+}
+
+void VFSNode::notify(const Selector& selector, const json& payload, const std::vector<std::string>& stack) {
+    if (!server_ptr_) return;
+    ZenohState* state = (ZenohState*)server_ptr_;
+    
+    std::string key = "jot/vfs/pub/" + selector.path;
+    z_view_keyexpr_t ke;
+    if (z_view_keyexpr_from_str(&ke, key.c_str()) < 0) return;
+    
+    std::string payload_str;
+    if (payload.is_binary()) {
+        auto bin = payload.get_binary();
+        payload_str = std::string(bin.begin(), bin.end());
+    } else {
+        payload_str = payload.dump();
+    }
+    
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, (const uint8_t*)payload_str.data(), payload_str.size());
+    
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+    
+    z_put(z_loan(state->session), z_loan(ke), z_move(bytes), &opts);
+}
+
+void VFSNode::write_local(const std::string& cid, const std::vector<uint8_t>& data, const std::string& path, const json& params) {
+    std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid + ".data");
+    std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid + ".meta");
+    
+    std::lock_guard<std::mutex> lock(storage_mutex_);
+    if (!data.empty()) {
+        std::ofstream os(p, std::ios::binary);
+        os.write((const char*)data.data(), data.size());
+    }
+    
+    json meta = {
+        {"state", "AVAILABLE"},
+        {"encoding", "json"},
+        {"selector", {{"path", path}, {"parameters", params}}}
+    };
+    std::ofstream mos(mp);
+    mos << meta.dump();
+}
+
+void VFSNode::write_local_link(const std::string& src_cid, const std::string& src_path, const json& src_params, const std::string& tgt_path, const json& tgt_params) {
+    std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (src_cid + ".data");
+    std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (src_cid + ".meta");
+    
+    std::lock_guard<std::mutex> lock(storage_mutex_);
+    
+    json tgt_sel = {{"path", tgt_path}, {"parameters", tgt_params}};
+    std::string tgt_str = tgt_sel.dump();
+    std::ofstream os(p, std::ios::binary);
+    os.write(tgt_str.data(), tgt_str.size());
+    
+    json meta = {
+        {"state", "AVAILABLE"},
+        {"encoding", "link"},
+        {"selector", {{"path", src_path}, {"parameters", src_params}}}
+    };
+    std::ofstream mos(mp);
+    mos << meta.dump();
+}
+
+json VFSNode::get_catalog() {
+    std::lock_guard<std::mutex> lock(handlers_mutex_);
+    json catalog = json::object();
+    for (auto const& [path, schema] : schemas_) {
+        catalog[path] = schema;
+    }
+    return {{"catalog", catalog}, {"provider", config_.id}};
+}
+
+void VFSNode::publish(const std::string& path, const json& payload) {
+    if (!server_ptr_) return;
+    ZenohState* state = (ZenohState*)server_ptr_;
+    
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        local_cache_[path] = payload;
+    }
+
+    bool declare_now = false;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        if (queryables_.find(path) == queryables_.end()) {
+            queryables_[path] = true;
+            declare_now = true;
+        }
+    }
+    if (declare_now) {
+        declare_queryable_for_path(path);
+    }
+
+    std::string key = get_machine_prefix() + "/jot/vfs/pub/" + path;
+    std::cout << "[VFSNode " << config_.id << "] publish key: " << key << " payload: " << payload.dump() << std::endl;
+    z_view_keyexpr_t ke;
+    if (z_view_keyexpr_from_str(&ke, key.c_str()) < 0) return;
+    
+    std::string payload_str;
+    if (payload.is_binary()) {
+        auto bin = payload.get_binary();
+        payload_str = std::string(bin.begin(), bin.end());
+    } else {
+        payload_str = payload.dump();
+    }
+    
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, (const uint8_t*)payload_str.data(), payload_str.size());
+    
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+    
+    z_put(z_loan(state->session), z_loan(ke), z_move(bytes), &opts);
+}
+
+void VFSNode::publish_binary(const std::string& path, const uint8_t* data, size_t len) {
+    if (!server_ptr_) return;
+    ZenohState* state = (ZenohState*)server_ptr_;
+    
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        local_cache_binary_[path] = std::make_pair(std::vector<uint8_t>(data, data + len), "application/octet-stream");
+    }
+
+    bool declare_now = false;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        if (queryables_.find(path) == queryables_.end()) {
+            queryables_[path] = true;
+            declare_now = true;
+        }
+    }
+    if (declare_now) {
+        declare_queryable_for_path(path);
+    }
+
+    std::string key = get_machine_prefix() + "/jot/vfs/pub/" + path;
+    std::cout << "[VFSNode " << config_.id << "] publish_binary key: " << key << std::endl;
+    z_view_keyexpr_t ke;
+    if (z_view_keyexpr_from_str(&ke, key.c_str()) < 0) return;
+    
+    z_owned_bytes_t bytes;
+    z_bytes_copy_from_buf(&bytes, data, len);
+    
+    z_put_options_t opts;
+    z_put_options_default(&opts);
+    
+    z_put(z_loan(state->session), z_loan(ke), z_move(bytes), &opts);
+}
+
+void VFSNode::subscribe(const std::string& path, SubscriptionCallback callback) {
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        subscriptions_[path] = callback;
+    }
+    
+    if (server_ptr_) {
+        ZenohState* state = (ZenohState*)server_ptr_;
+        std::string key = "*/jot/vfs/pub/" + path;
+        std::cout << "[VFSNode " << config_.id << "] subscribe key: " << key << std::endl;
+        const char* key_cstr = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->queryable_keys.push_back(key);
+            key_cstr = state->queryable_keys.back().c_str();
+        }
+        
+        z_view_keyexpr_t ke_sub;
+        z_view_keyexpr_from_str(&ke_sub, key_cstr);
+        
+        auto* cb_ctx = new SubscriptionCallback(callback);
+        
+        z_owned_closure_sample_t cb_sample;
+        z_closure_sample(&cb_sample, [](struct z_loaned_sample_t* sample, void* context) {
+            auto* cb = static_cast<SubscriptionCallback*>(context);
+            z_owned_string_t payload_str;
+            z_bytes_to_string(z_sample_payload(sample), &payload_str);
+            std::string raw_msg(z_string_data(z_string_loan(&payload_str)), z_string_len(z_string_loan(&payload_str)));
+            z_string_drop(z_string_move(&payload_str));
+            try {
+                json parsed = json::parse(raw_msg);
+                (*cb)(parsed);
+            } catch (...) {
+                (*cb)(json(raw_msg));
+            }
+        }, [](void* context) {
+            delete static_cast<SubscriptionCallback*>(context);
+        }, cb_ctx);
+        
+        z_owned_subscriber_t subscriber;
+        z_subscriber_options_t opts;
+        z_subscriber_options_default(&opts);
+        
+        if (z_declare_subscriber(z_loan(state->session), &subscriber, z_loan(ke_sub), z_move(cb_sample), &opts) == Z_OK) {
+            z_owned_subscriber_t old_subscriber;
+            bool has_old = false;
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                auto it = state->subscribers.find(path);
+                if (it != state->subscribers.end()) {
+                    old_subscriber = it->second;
+                    has_old = true;
+                }
+                state->subscribers[path] = subscriber;
+            }
+            if (has_old) {
+                z_undeclare_subscriber(z_move(old_subscriber));
+            }
+        } else {
+            std::cerr << "[VFSNode " << config_.id << "] Failed declaring subscriber dynamically for: " << key << std::endl;
+            delete cb_ctx;
+        }
+    }
+}
+
+void VFSNode::unlisten(const std::string& path) {
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        subscriptions_.erase(path);
+    }
+    
+    if (server_ptr_) {
+        ZenohState* state = (ZenohState*)server_ptr_;
+        z_owned_subscriber_t subscriber_to_undeclare;
+        bool has_subscriber = false;
+        {
+            std::lock_guard<std::mutex> lock_state(state->mutex);
+            auto it = state->subscribers.find(path);
+            if (it != state->subscribers.end()) {
+                subscriber_to_undeclare = it->second;
+                state->subscribers.erase(it);
+                has_subscriber = true;
+            }
+        }
+        if (has_subscriber) {
+            z_undeclare_subscriber(z_move(subscriber_to_undeclare));
+        }
+    }
+}
+
+double VFSNode::get_free_cpu_percent() {
+#ifdef __linux__
+    std::lock_guard<std::mutex> lock(cpu_mutex_);
+    std::ifstream file("/proc/stat");
+    if (!file.is_open()) return 100.0;
+    std::string line;
+    if (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string cpu;
+        if (ss >> cpu && cpu == "cpu") {
+            uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+            if (ss >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal) {
+                uint64_t current_idle = idle + iowait;
+                uint64_t current_non_idle = user + nice + system + irq + softirq + steal;
+                uint64_t current_total = current_idle + current_non_idle;
+                
+                uint64_t prev_idle = last_cpu_stats_.idle + last_cpu_stats_.iowait;
+                uint64_t prev_non_idle = last_cpu_stats_.user + last_cpu_stats_.nice + 
+                                         last_cpu_stats_.system + last_cpu_stats_.irq + 
+                                         last_cpu_stats_.softirq + last_cpu_stats_.steal;
+                uint64_t prev_total = prev_idle + prev_non_idle;
+                
+                last_cpu_stats_ = {user, nice, system, idle, iowait, irq, softirq, steal};
+                
+                uint64_t total_diff = current_total - prev_total;
+                uint64_t idle_diff = current_idle - prev_idle;
+                
+                if (total_diff > 0) {
+                    double cpu_usage = 100.0 * (total_diff - idle_diff) / total_diff;
+                    if (cpu_usage < 0.0) cpu_usage = 0.0;
+                    if (cpu_usage > 100.0) cpu_usage = 100.0;
+                    return 100.0 - cpu_usage;
+                }
+            }
+        }
+    }
+    return 100.0;
+#else
+    return 100.0;
+#endif
+}
+
+uint64_t VFSNode::get_free_memory_bytes() {
+#ifdef __linux__
+    std::ifstream file("/proc/meminfo");
+    if (!file.is_open()) return 0;
+    std::string line;
+    uint64_t mem_free_kb = 0;
+    uint64_t mem_available_kb = 0;
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string key;
+        uint64_t value;
+        std::string unit;
+        if (ss >> key >> value >> unit) {
+            if (key == "MemAvailable:") {
+                mem_available_kb = value;
+            } else if (key == "MemFree:") {
+                mem_free_kb = value;
+            }
+        }
+    }
+    if (mem_available_kb > 0) return mem_available_kb * 1024;
+    if (mem_free_kb > 0) return mem_free_kb * 1024;
+    return 0;
+#else
+    return 0;
+#endif
+}
+
+json VFSNode::read(const std::string& path) {
+    return read<json>(Selector(path));
+}
+
+std::string VFSNode::get_machine_prefix() const {
+    if (const char* env_machine = std::getenv("MACHINE_ID")) {
+        std::string m(env_machine);
+        if (!m.empty()) return m;
+    }
+    if (const char* env_host = std::getenv("HOSTNAME")) {
+        std::string h(env_host);
+        if (!h.empty()) return h;
+    }
+    return config_.id;
 }
 
 } // namespace fs

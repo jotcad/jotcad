@@ -29,24 +29,7 @@ struct SimplifyOp : P {
         typedef CGAL::Surface_mesh<IK::Point_3> InexactMesh;
         typedef boost::graph_traits<InexactMesh>::edge_descriptor edge_descriptor;
         typedef boost::graph_traits<InexactMesh>::vertex_descriptor vertex_descriptor;
-        InexactMesh imesh;
-        
-        // 1. Convert to Inexact Mesh
-        std::vector<InexactMesh::Vertex_index> v_indices;
-        for(const auto& v : geo.vertices) {
-            v_indices.push_back(imesh.add_vertex(IK::Point_3(CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z))));
-        }
-        for(const auto& f : geo.faces) {
-            if(f.loops.empty()) continue;
-            std::vector<InexactMesh::Vertex_index> face_vs;
-            for(int idx : f.loops[0]) {
-                if (idx >= 0 && (size_t)idx < v_indices.size())
-                    face_vs.push_back(v_indices[idx]);
-            }
-            if (face_vs.size() >= 3)
-                imesh.add_face(face_vs);
-        }
-        CGAL::Polygon_mesh_processing::triangulate_faces(imesh);
+        InexactMesh imesh = boolean::Engine::geometry_to_mesh_ik(geo);
 
         // 2. Mark Sharp Edges as Constrained
         InexactMesh::Property_map<edge_descriptor, bool> is_constrained = 

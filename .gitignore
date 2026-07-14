@@ -70,3 +70,25 @@ ux/dist/
 # Ignore build-generated test run header
 geo/test/unit_tests_run.h
 .vfs_test_storage*/
+fs/cpp/test_server
+fs/cpp/test_links
+fs/cpp/test_pubsub
+
+# Local timelapse & scratch directories
+timelapse/
+scratch/
+zenoh_config_*.json
+geo/rule_test_spun_surface.actual.png
+pio/include/zenoh_log_decl.h
+geo/cgal/zenoh-c/
+geo/cgal/zenoh/
+
+# Local Ansible host inventory containing private IPs
+deploy/hosts.ini
+
+# Temporary test scripts
+test_dual_ux.js
+test_zenoh_direct.js
+test_telemetry.js
+retrieved_videos/
+test_output.txt

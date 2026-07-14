@@ -1,0 +1,9 @@
+{
+  "geometry": "1d574c2218f368a2c6a7e382de7c826d4d8cbeee2eba94617be662f232b7cbba",
+  "tf": "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+  "tags": {
+    "type": "closed",
+    "name": "esp32-wemos-d1-mini.step"
+  },
+  "components": []
+}

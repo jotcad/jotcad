@@ -182,6 +182,12 @@ struct Processor {
                     if (val.is_object() && val.contains("path")) {
                         return val.get<fs::Selector>();
                     }
+                    if (val.is_string() && val.get<std::string>().size() == 64) {
+                        auto result = vfs->read<fs::VFSResult>(fs::CID::from_json(val));
+                        if (result.metadata.contains("selector")) {
+                            return result.metadata["selector"].get<fs::Selector>();
+                        }
+                    }
                     throw std::runtime_error("Type must be a Selector");
                 } else if constexpr (std::is_same_v<T, Interval>) {
                     return Interval::from_json(val);
