@@ -173,7 +173,18 @@ int main(int argc, char* argv[]) {
                     total_veg_density += g.vegetation[r][q];
                     land_cells++;
                 }
-                if (h_lake[r][q] > 0.25f) {
+                bool is_wet = (h_lake[r][q] > profile.lake_threshold);
+                if (profile.check_wetland_groundwater && g.has_field<HexGroundwater>()) {
+                    auto& h_g = g.request_field<HexGroundwater>();
+                    float soil_thick = g.H_soil[r][q] - g.H_bedrock[r][q];
+                    if (soil_thick > 0.05f) {
+                        float depth_below = soil_thick - h_g[r][q];
+                        if (depth_below < 0.10f) {
+                            is_wet = true;
+                        }
+                    }
+                }
+                if (is_wet) {
                     lake_cells++;
                 }
             }
@@ -195,7 +206,7 @@ int main(int argc, char* argv[]) {
         // Generate Top View pixels (using scale R_px = 4.0f)
         std::vector<unsigned char> pixels;
         int w, h;
-        generate_top_view_pixels(g, 4.0f, pixels, w, h);
+        generate_top_view_pixels(g, 4.0f, pixels, w, h, profile.lake_threshold, profile.check_wetland_groundwater);
         std::cout << "Top view generated: " << w << "x" << h << " (" << pixels.size() << " bytes)" << std::endl;
 
         ProfileTestResult result = {};

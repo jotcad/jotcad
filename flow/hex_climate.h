@@ -18,6 +18,8 @@ struct ClimateProfile {
     float gw_initial_sat;          // Initial groundwater saturation fraction (0.0 to 1.0)
     float gw_infiltration_rate;    // Groundwater annual infiltration rate (1/yr)
     float gw_conductivity;         // Darcy hydraulic conductivity K_sat (m/yr)
+    float lake_threshold;          // Water depth threshold for rendering/statistics (m)
+    bool check_wetland_groundwater; // True if saturated shallow water table represents wetlands
 };
 
 // Registry housing available climate profiles
@@ -37,7 +39,9 @@ public:
                 0.0024f, // 0.0024 evaporation coefficient
                 0.15f,   // 0.15 initial saturation (15%)
                 0.25f,   // 0.25 infiltration rate (25%)
-                60.0f    // 60.0 m/yr conductivity (clayey loam)
+                60.0f,   // 60.0 m/yr conductivity (clayey loam)
+                0.10f,   // 0.10m lake threshold
+                true     // check_wetland_groundwater
             },
             {
                 "Arid Desert",
@@ -51,7 +55,9 @@ public:
                 0.0060f, // 0.0060 evaporation coefficient (hot/arid, dry desert)
                 0.0f,    // 0.0 initial saturation (0% - completely dry aquifer)
                 0.04f,   // 0.04 infiltration rate (4% - crust repelled)
-                250.0f   // 250.0 m/yr conductivity (coarse sand)
+                250.0f,  // 250.0 m/yr conductivity (coarse sand)
+                0.25f,   // 0.25m lake threshold
+                false    // check_wetland_groundwater
             },
             {
                 "Boreal Forest",
@@ -64,8 +70,10 @@ public:
                 0.4f,    // 0.4m rain threshold (efficient cold usage)
                 0.0012f, // 0.0012 evaporation coefficient (very low evap due to cold)
                 0.30f,   // 0.30 initial saturation (30% - boggy starting conditions)
-                0.10f,   // 0.10 infiltration rate (10%)
-                15.0f    // 15.0 m/yr conductivity (slow draining peat/clay)
+                0.40f,   // 0.40 infiltration rate (40% - saturated peat)
+                2.0f,    // 2.0 m/yr conductivity (extremely slow-draining peat)
+                0.05f,   // 0.05m lake threshold (show shallow wetlands)
+                true     // check_wetland_groundwater
             }
         };
     }

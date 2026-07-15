@@ -344,7 +344,7 @@ inline void draw_line(std::vector<unsigned char>& pixels, int w, int h, float x1
 }
 
 // Generates the 2D Top View pixel buffer (used by both regression testing and PNG bakes)
-inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<unsigned char>& pixels, int& w, int& h) {
+inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<unsigned char>& pixels, int& w, int& h, float lake_threshold = 0.25f, bool check_wetland_groundwater = false) {
     auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
     float max_x = R_px * 1.7320508f * ((g.size_q - 1) + (g.size_r - 1) * 0.5f);
     float max_y = R_px * 1.5f * (g.size_r - 1);
@@ -432,8 +432,23 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                 pg = (unsigned char)std::max(0.0f, std::min(255.0f, sg));
                 pb = (unsigned char)std::max(0.0f, std::min(255.0f, sb));
 
-                if (h_lake[r][q] > 0.25f) {
-                    float w_norm = std::min(1.0f, (h_lake[r][q] - 0.25f) / 1.00f);
+                // Render saturated wetland soils with a marshy teal-blue tint
+                if (check_wetland_groundwater && g.has_field<HexGroundwater>()) {
+                    auto& h_g = const_cast<HexGrid&>(g).request_field<HexGroundwater>();
+                    float soil_thick = H - g.H_bedrock[r][q];
+                    if (soil_thick > 0.05f) {
+                        float depth_below = soil_thick - h_g[r][q];
+                        if (depth_below < 0.10f) {
+                            // Blend 20% wetland teal-blue color (RGB: 30, 120, 160)
+                            pr = (unsigned char)(0.80f * pr + 0.20f * 30.0f);
+                            pg = (unsigned char)(0.80f * pg + 0.20f * 120.0f);
+                            pb = (unsigned char)(0.80f * pb + 0.20f * 160.0f);
+                        }
+                    }
+                }
+
+                if (h_lake[r][q] > lake_threshold) {
+                    float w_norm = std::min(1.0f, (h_lake[r][q] - lake_threshold) / 1.00f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
                     float wb = 224.0f + (150.0f - 224.0f) * w_norm;
