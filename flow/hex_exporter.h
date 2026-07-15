@@ -439,10 +439,10 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                     if (soil_thick > 0.05f) {
                         float depth_below = soil_thick - h_g[r][q];
                         if (depth_below < 0.10f) {
-                            // Blend 20% wetland teal-blue color (RGB: 30, 120, 160)
-                            pr = (unsigned char)(0.80f * pr + 0.20f * 30.0f);
-                            pg = (unsigned char)(0.80f * pg + 0.20f * 120.0f);
-                            pb = (unsigned char)(0.80f * pb + 0.20f * 160.0f);
+                            // Blend 45% wetland teal-blue color (RGB: 20, 110, 150)
+                            pr = (unsigned char)(0.55f * pr + 0.45f * 20.0f);
+                            pg = (unsigned char)(0.55f * pg + 0.45f * 110.0f);
+                            pb = (unsigned char)(0.55f * pb + 0.45f * 150.0f);
                         }
                     }
                 }
