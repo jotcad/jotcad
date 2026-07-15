@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
 
     p1->add<HexPrecipitation>(profile);
     p1->add<HexEvaporation>(profile, profile.evap_coefficient);
-    p1->add<HexSubsurface>();
+    p1->add<HexSubsurface>(profile);
     p1->add<HexRouting>(profile, HexRoutingParams{
         .depth_coefficient = 0.15f,
         .depth_exponent = 0.40f,

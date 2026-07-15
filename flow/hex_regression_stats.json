@@ -7,19 +7,19 @@
       "mismatch_percentage": 0,
       "baseline": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.71031e+06,
-        "net_mass_change": 93518.2,
-        "avg_vegetation_cover": 57.6364,
-        "max_river_discharge": 232.596,
-        "active_river_cells": 3411
+        "final_soil_volume": 9.69865e+06,
+        "net_mass_change": 81859.2,
+        "avg_vegetation_cover": 57.8155,
+        "max_river_discharge": 233.816,
+        "active_river_cells": 3435
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.71031e+06,
-        "net_mass_change": 93518.2,
-        "avg_vegetation_cover": 57.6364,
-        "max_river_discharge": 232.596,
-        "active_river_cells": 3411
+        "final_soil_volume": 9.69865e+06,
+        "net_mass_change": 81859.2,
+        "avg_vegetation_cover": 57.8155,
+        "max_river_discharge": 233.816,
+        "active_river_cells": 3435
       }
     },
     "Arid Desert": {
@@ -28,19 +28,19 @@
       "mismatch_percentage": 0,
       "baseline": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.80369e+06,
-        "net_mass_change": 186903,
-        "avg_vegetation_cover": 32.3568,
-        "max_river_discharge": 1.33154,
-        "active_river_cells": 12
+        "final_soil_volume": 9.77583e+06,
+        "net_mass_change": 159043,
+        "avg_vegetation_cover": 27.1157,
+        "max_river_discharge": 1.60764,
+        "active_river_cells": 63
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.80369e+06,
-        "net_mass_change": 186903,
-        "avg_vegetation_cover": 32.3568,
-        "max_river_discharge": 1.33154,
-        "active_river_cells": 12
+        "final_soil_volume": 9.77583e+06,
+        "net_mass_change": 159043,
+        "avg_vegetation_cover": 27.1157,
+        "max_river_discharge": 1.60764,
+        "active_river_cells": 63
       }
     }
   }

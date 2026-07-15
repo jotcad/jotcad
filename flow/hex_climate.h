@@ -15,6 +15,9 @@ struct ClimateProfile {
     float growth_rate;             // Base growth rate of vegetation (e.g. 0.16f)
     float rain_threshold;          // Minimum rain in meters for full growth (e.g. 0.8f)
     float evap_coefficient;        // Evaporation rate K in m/yr/C (e.g. 0.0024f)
+    float gw_initial_sat;          // Initial groundwater saturation fraction (0.0 to 1.0)
+    float gw_infiltration_rate;    // Groundwater annual infiltration rate (1/yr)
+    float gw_conductivity;         // Darcy hydraulic conductivity K_sat (m/yr)
 };
 
 // Registry housing available climate profiles
@@ -31,7 +34,10 @@ public:
                 8.0f,    // 8C temperature range for scaling
                 0.16f,   // 0.16 vegetation growth rate
                 0.8f,    // 0.8m annual rain threshold
-                0.0024f  // 0.0024 evaporation coefficient
+                0.0024f, // 0.0024 evaporation coefficient
+                0.15f,   // 0.15 initial saturation (15%)
+                0.25f,   // 0.25 infiltration rate (25%)
+                60.0f    // 60.0 m/yr conductivity (clayey loam)
             },
             {
                 "Arid Desert",
@@ -42,7 +48,10 @@ public:
                 12.0f,   // 12C range for scaling
                 0.03f,   // 0.03 vegetation growth rate
                 0.8f,    // 0.8m annual rain threshold
-                0.0040f  // 0.0040 evaporation coefficient (hot/arid)
+                0.0040f, // 0.0040 evaporation coefficient (hot/arid)
+                0.01f,   // 0.01 initial saturation (1% - highly depleted)
+                0.04f,   // 0.04 infiltration rate (4% - crust repelled)
+                250.0f   // 250.0 m/yr conductivity (coarse sand)
             }
         };
     }

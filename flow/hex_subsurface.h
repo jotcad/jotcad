@@ -7,18 +7,19 @@
 #include <vector>
 #include <cmath>
 
-struct HexSubsurfaceParams {
-    float infiltration_rate = 0.25f; // Annual fraction of surface water that infiltrates (1/yr)
-    float conductivity = 120.0f;     // Saturated hydraulic conductivity K_sat (m/yr)
-    int sub_steps = 15;              // Darcy sub-stepping iterations for numerical stability
-};
-
 class HexSubsurface : public HexElement {
 private:
-    HexSubsurfaceParams params;
+    float infiltration_rate;
+    float conductivity;
+    float initial_sat;
+    int sub_steps;
 
 public:
-    HexSubsurface(const HexSubsurfaceParams& p = HexSubsurfaceParams()) : params(p) {}
+    HexSubsurface(const ClimateProfile& profile, int steps = 15)
+        : infiltration_rate(profile.gw_infiltration_rate),
+          conductivity(profile.gw_conductivity),
+          initial_sat(profile.gw_initial_sat),
+          sub_steps(steps) {}
 
     std::vector<std::type_index> get_required_fields() const override {
         return { std::type_index(typeid(HexGroundwater)) };
@@ -35,7 +36,7 @@ public:
             for (int r = 0; r < sr; ++r) {
                 for (int q = 0; q < sq; ++q) {
                     float soil_thick = g.H_soil[r][q] - g.H_bedrock[r][q];
-                    h_g[r][q] = 0.20f * std::max(0.0f, soil_thick);
+                    h_g[r][q] = initial_sat * std::max(0.0f, soil_thick);
                 }
             }
         }
@@ -47,7 +48,7 @@ public:
                 if (h_surf > 0.0f) {
                     float max_g = g.H_soil[r][q] - g.H_bedrock[r][q];
                     float space = std::max(0.0f, max_g - h_g[r][q]);
-                    float infil = std::min({h_surf, params.infiltration_rate * h_surf * dt, space});
+                    float infil = std::min({h_surf, infiltration_rate * h_surf * dt, space});
                     g.h_surface[r][q] -= infil;
                     h_g[r][q] += infil;
                 }
@@ -55,12 +56,12 @@ public:
         }
 
         // 3. Darcy Flow Sub-stepping: Lateral groundwater flow
-        float sub_dt = dt / params.sub_steps;
+        float sub_dt = dt / sub_steps;
         std::vector<std::vector<float>> H_wt(sr, std::vector<float>(sq, 0.0f));
         std::vector<std::vector<float>> next_h_g = h_g;
         std::vector<std::vector<float>> seepage_acc(sr, std::vector<float>(sq, 0.0f));
 
-        for (int iter = 0; iter < params.sub_steps; ++iter) {
+        for (int iter = 0; iter < sub_steps; ++iter) {
             // Update absolute water table heights (hydraulic head)
             for (int r = 0; r < sr; ++r) {
                 for (int q = 0; q < sq; ++q) {
@@ -93,7 +94,7 @@ public:
                             float d_flow = 0.5f * (h_g_curr + h_g_neigh);
 
                             // Darcy flow transfer (m^3/yr)
-                            float q_flow = (params.conductivity / 1.7320508f) * grad * d_flow;
+                            float q_flow = (conductivity / 1.7320508f) * grad * d_flow;
                             flow_sum += q_flow;
                         }
                     }
