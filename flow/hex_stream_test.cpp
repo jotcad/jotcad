@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
 
     const int SIZE_Q = 180;
     const int SIZE_R = 150;
-    const float HEX_RADIUS = 5000.0f; // 5 km
+    const float HEX_RADIUS = 600.0f;  // 600 m (aligned with 3D height scale)
     const float DT = 1000.0f;         // 1000 year steps
     const int TOTAL_STEPS = 1000;
     const int EXPORT_STRIDE = 5;

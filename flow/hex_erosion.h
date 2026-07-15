@@ -85,6 +85,7 @@ public:
 
             // 2. Convert cumulative discharge to m^3/s for physical law scaling
             float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
+            float rain_wash = 3.5f * std::pow(slope / 0.15f, 2.0f); // Diffuse rain wash/splash erosion factor
 
             // 3. Compute sediment transport capacity (kg over step dt): Cap = K_c * Q * S * dt
             // (Units: m^3/s * slope * density * scale * dt_years)
@@ -121,7 +122,7 @@ public:
                 float eroded_height = 0.0f;
 
                 if (soil_available > 0.0f) {
-                    float shear_stress_soil = k_eff_soil * std::sqrt(std::max(0.0f, Q_m3s)) * slope;
+                    float shear_stress_soil = k_eff_soil * (std::sqrt(std::max(0.0f, Q_m3s)) + rain_wash) * slope;
                     float rate_soil = shear_stress_soil; // m/yr
                     
                     if (rate_soil > 0.0f) {
@@ -134,7 +135,7 @@ public:
                             g.H_soil[r][q] = g.H_bedrock[r][q];
                             
                             float dt_rem = dt - t_soil;
-                            float shear_stress_bed = k_eff_bedrock * std::sqrt(std::max(0.0f, Q_m3s)) * slope;
+                            float shear_stress_bed = k_eff_bedrock * (std::sqrt(std::max(0.0f, Q_m3s)) + rain_wash) * slope;
                             float eroded_bed = shear_stress_bed * dt_rem;
                             
                             g.H_soil[r][q] -= eroded_bed;
@@ -143,7 +144,7 @@ public:
                         }
                     }
                 } else {
-                    float shear_stress_bed = k_eff_bedrock * std::sqrt(std::max(0.0f, Q_m3s)) * slope;
+                    float shear_stress_bed = k_eff_bedrock * (std::sqrt(std::max(0.0f, Q_m3s)) + rain_wash) * slope;
                     eroded_height = shear_stress_bed * dt;
                     g.H_soil[r][q] -= eroded_height;
                     g.H_bedrock[r][q] -= eroded_height;

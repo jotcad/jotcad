@@ -387,7 +387,7 @@
 
     <header>
         <h1>Hexagonal Landscape Evolution <span style="font-size: 0.8rem; vertical-align: middle; padding: 2px 6px; background: rgba(96, 165, 250, 0.2); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.4); border-radius: 4px; margin-left: 8px;">v4.6.0-arable</span></h1>
-        <p>5 km Physical Hex Grid | High-Performance Shaded Image Baking</p>
+        <p>600 m Physical Hex Grid | High-Performance Shaded Image Baking</p>
     </header>
 
     <div class="dashboard">
@@ -719,8 +719,8 @@
                                 // Rivers differentiated by width (creeks/streams < 20 m3/s) share the same glowing cyan color
                                 let strokeColor = "#38bdf8"; 
                                 if (Q_m3s >= 20.0) {
-                                    // Shaded dynamically using a square root scale up to the max river mouth discharge (18,000 m3/s)
-                                    const t = Math.min(1.0, Math.sqrt(Q_m3s - 20.0) / Math.sqrt(18000.0));
+                                    // Shaded dynamically using a square root scale up to the max river mouth discharge (255 m3/s)
+                                    const t = Math.min(1.0, Math.sqrt(Q_m3s - 20.0) / Math.sqrt(255.0));
                                     const lightness = Math.round(50 - 25 * t); // 50% down to 25% (deep dark navy/indigo)
                                     const hue = Math.round(220 + 20 * t); // 220 (royal blue) to 240 (dark indigo)
                                     strokeColor = `hsl(${hue}, 90%, ${lightness}%)`;

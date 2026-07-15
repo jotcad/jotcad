@@ -323,6 +323,9 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                 // 2. Eco-Hydrological Biome Coloring (Water-driven instead of altitude bands)
                 float sr = 0.0f, sg = 0.0f, sb = 0.0f;
 
+                float arability = calculate_cell_arability(g, h_lake, q, r);
+                float alpha_arab = arability * 0.35f;
+
                 if (H > 700.0f) {
                     // Mountain Peak (grey base, turning white/snow at the very top)
                     float snow_t = std::min(1.0f, (H - 700.0f) / 300.0f);
@@ -334,6 +337,11 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                     sr = (1.0f - snow_t) * rock_r + snow_t * snow_val;
                     sg = (1.0f - snow_t) * rock_g + snow_t * snow_val;
                     sb = (1.0f - snow_t) * rock_b + snow_t * snow_val;
+
+                    // Apply soft arability overlay (does nothing on peaks where arability = 0)
+                    sr = (1.0f - alpha_arab) * sr + alpha_arab * 235.0f;
+                    sg = (1.0f - alpha_arab) * sg + alpha_arab * 45.0f;
+                    sb = (1.0f - alpha_arab) * sb + alpha_arab * 45.0f;
                 } else {
                     // Moisture factor: increases near river flows (Q) and standing water depth (water)
                     float Q_m3s = g.Q[r][q] / 31557600.0f;
@@ -341,9 +349,16 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
 
                     // Grass: Bright yellowish-green [185, 230, 85]
                     // Forest: Bright forest green [20, 120, 45]
-                    float target_r = (1.0f - moisture_factor) * 185.0f + moisture_factor * 20.0f;
-                    float target_g = (1.0f - moisture_factor) * 230.0f + moisture_factor * 120.0f;
-                    float target_b = (1.0f - moisture_factor) * 85.0f + moisture_factor * 45.0f;
+                    float target_r, target_g, target_b;
+                    if (moisture_factor >= 0.35f) {
+                        target_r = 20.0f;
+                        target_g = 120.0f;
+                        target_b = 45.0f;
+                    } else {
+                        target_r = 185.0f;
+                        target_g = 230.0f;
+                        target_b = 85.0f;
+                    }
 
                     // Blend sand [195, 178, 130] or rock [135, 135, 135] based on soil thickness
                     float soil_t_m = H - g.H_bedrock[r][q];
@@ -353,16 +368,16 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                     float substrate_g = (1.0f - bedrock_blend) * 178.0f + bedrock_blend * 135.0f;
                     float substrate_b = (1.0f - bedrock_blend) * 130.0f + bedrock_blend * 135.0f;
 
-                    sr = ((1.0f - veg) * substrate_r + veg * target_r) * shade;
-                    sg = ((1.0f - veg) * substrate_g + veg * target_g) * shade;
-                    sb = ((1.0f - veg) * substrate_b + veg * target_b) * shade;
-                }
+                    // Apply soft arability overlay directly to the base substrate
+                    float sub_r = (1.0f - alpha_arab) * substrate_r + alpha_arab * 235.0f;
+                    float sub_g = (1.0f - alpha_arab) * substrate_g + alpha_arab * 45.0f;
+                    float sub_b = (1.0f - alpha_arab) * substrate_b + alpha_arab * 45.0f;
 
-                float arability = calculate_cell_arability(g, h_lake, q, r);
-                // Blend in bright red tint for potential arability: RGB (235, 45, 45)
-                sr = (1.0f - arability) * sr + arability * 235.0f;
-                sg = (1.0f - arability) * sg + arability * 45.0f;
-                sb = (1.0f - arability) * sb + arability * 45.0f;
+                    // Blend vegetation on top of the arable substrate to preserve forest green vibrancy
+                    sr = ((1.0f - veg) * sub_r + veg * target_r) * shade;
+                    sg = ((1.0f - veg) * sub_g + veg * target_g) * shade;
+                    sb = ((1.0f - veg) * sub_b + veg * target_b) * shade;
+                }
 
                 pr = (unsigned char)std::max(0.0f, std::min(255.0f, sr));
                 pg = (unsigned char)std::max(0.0f, std::min(255.0f, sg));
@@ -503,6 +518,9 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                 // 2. Eco-Hydrological Biome Coloring (Water-driven instead of altitude bands)
                 float sr = 0.0f, sg = 0.0f, sb = 0.0f;
 
+                float arability = calculate_cell_arability(g, h_lake, q, r);
+                float alpha_arab = arability * 0.35f;
+
                 if (H > 700.0f) {
                     // Mountain Peak (grey base, turning white/snow at the very top)
                     float snow_t = std::min(1.0f, (H - 700.0f) / 300.0f);
@@ -514,6 +532,11 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     sr = (1.0f - snow_t) * rock_r + snow_t * snow_val;
                     sg = (1.0f - snow_t) * rock_g + snow_t * snow_val;
                     sb = (1.0f - snow_t) * rock_b + snow_t * snow_val;
+
+                    // Apply soft arability overlay (does nothing on peaks where arability = 0)
+                    sr = (1.0f - alpha_arab) * sr + alpha_arab * 235.0f;
+                    sg = (1.0f - alpha_arab) * sg + alpha_arab * 45.0f;
+                    sb = (1.0f - alpha_arab) * sb + alpha_arab * 45.0f;
                 } else {
                     // Moisture factor: increases near river flows (Q) and standing water depth (water)
                     float Q_m3s = g.Q[r][q] / 31557600.0f;
@@ -521,9 +544,16 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
 
                     // Grass: Bright yellowish-green [185, 230, 85]
                     // Forest: Bright forest green [20, 120, 45]
-                    float target_r = (1.0f - moisture_factor) * 185.0f + moisture_factor * 20.0f;
-                    float target_g = (1.0f - moisture_factor) * 230.0f + moisture_factor * 120.0f;
-                    float target_b = (1.0f - moisture_factor) * 85.0f + moisture_factor * 45.0f;
+                    float target_r, target_g, target_b;
+                    if (moisture_factor >= 0.35f) {
+                        target_r = 20.0f;
+                        target_g = 120.0f;
+                        target_b = 45.0f;
+                    } else {
+                        target_r = 185.0f;
+                        target_g = 230.0f;
+                        target_b = 85.0f;
+                    }
 
                     // Blend sand [195, 178, 130] or rock [135, 135, 135] based on soil thickness
                     float soil_t_m = H - g.H_bedrock[r][q];
@@ -533,16 +563,16 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     float substrate_g = (1.0f - bedrock_blend) * 178.0f + bedrock_blend * 135.0f;
                     float substrate_b = (1.0f - bedrock_blend) * 130.0f + bedrock_blend * 135.0f;
 
-                    sr = ((1.0f - veg) * substrate_r + veg * target_r) * shade;
-                    sg = ((1.0f - veg) * substrate_g + veg * target_g) * shade;
-                    sb = ((1.0f - veg) * substrate_b + veg * target_b) * shade;
-                }
+                    // Apply soft arability overlay directly to the base substrate
+                    float sub_r = (1.0f - alpha_arab) * substrate_r + alpha_arab * 235.0f;
+                    float sub_g = (1.0f - alpha_arab) * substrate_g + alpha_arab * 45.0f;
+                    float sub_b = (1.0f - alpha_arab) * substrate_b + alpha_arab * 45.0f;
 
-                float arability = calculate_cell_arability(g, h_lake, q, r);
-                // Blend in bright red tint for potential arability: RGB (235, 45, 45)
-                sr = (1.0f - arability) * sr + arability * 235.0f;
-                sg = (1.0f - arability) * sg + arability * 45.0f;
-                sb = (1.0f - arability) * sb + arability * 45.0f;
+                    // Blend vegetation on top of the arable substrate to preserve forest green vibrancy
+                    sr = ((1.0f - veg) * sub_r + veg * target_r) * shade;
+                    sg = ((1.0f - veg) * sub_g + veg * target_g) * shade;
+                    sb = ((1.0f - veg) * sub_b + veg * target_b) * shade;
+                }
 
                 // 3. Render water depth overlay (Physical relief scaling)
                 if (water > 0.50f) {

@@ -76,6 +76,11 @@ public:
                     effective_cap = 0.40f + 0.60f * ((soil_thickness - 0.40f) / 0.60f);
                 }
 
+                // Altitude-temperature cooling growth constraint (treeline / alpine zone limit)
+                float temp = 25.0f - (H / 85.0f);
+                float temp_factor = std::max(0.0f, std::min(1.0f, (temp - 10.0f) / 8.0f));
+                effective_cap *= temp_factor;
+
                 // 3. Logistic growth (Stable analytical integration)
                 float V = g.vegetation[r][q];
                 if (effective_cap > 0.0f) {
