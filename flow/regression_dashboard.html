@@ -424,11 +424,11 @@
                 const tr2 = document.createElement('tr');
                 const tr3 = document.createElement('tr');
 
-                // Row 1: Status, Profile Name, Parameters
+                // Row 1: Profile Name, Status, Parameters
                 const statusBadgeHTML = `<span class="status-badge ${data.status.toLowerCase()}"><span class="status-indicator"></span>${data.status}</span>`;
                 tr1.innerHTML = `
-                    <td style="width: 33.3%;">${makeCellHTML('Status', statusBadgeHTML)}</td>
                     <td style="width: 33.3%;">${makeCellHTML('Profile Name', '<span style="color: #ffffff; font-weight: 600;">Subtropical Highland</span>')}</td>
+                    <td style="width: 33.3%;">${makeCellHTML('Status', statusBadgeHTML)}</td>
                     <td style="width: 33.3%;">${makeCellHTML('Parameters', '<span style="color: var(--text-muted); font-size: 0.85rem;">Rain: 1.4m | Temp: 25°C / 85m</span>')}</td>
                 `;
 
