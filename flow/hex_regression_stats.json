@@ -7,21 +7,21 @@
       "mismatch_percentage": 0,
       "baseline": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.69865e+06,
-        "net_mass_change": 81859.2,
-        "avg_vegetation_cover": 57.8155,
-        "max_river_discharge": 233.816,
-        "active_river_cells": 3435,
-        "water_coverage": 2.92963
+        "final_soil_volume": 9.70501e+06,
+        "net_mass_change": 88224.2,
+        "avg_vegetation_cover": 57.6122,
+        "max_river_discharge": 249.606,
+        "active_river_cells": 3397,
+        "water_coverage": 3.33704
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.69865e+06,
-        "net_mass_change": 81859.2,
-        "avg_vegetation_cover": 57.8155,
-        "max_river_discharge": 233.816,
-        "active_river_cells": 3435,
-        "water_coverage": 2.92963
+        "final_soil_volume": 9.70501e+06,
+        "net_mass_change": 88224.2,
+        "avg_vegetation_cover": 57.6122,
+        "max_river_discharge": 249.606,
+        "active_river_cells": 3397,
+        "water_coverage": 3.33704
       }
     },
     "Arid Desert": {
@@ -30,21 +30,21 @@
       "mismatch_percentage": 0,
       "baseline": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.71885e+06,
-        "net_mass_change": 102062,
-        "avg_vegetation_cover": 15.1449,
-        "max_river_discharge": 0.965381,
+        "final_soil_volume": 9.71881e+06,
+        "net_mass_change": 102025,
+        "avg_vegetation_cover": 15.1584,
+        "max_river_discharge": 0.851115,
         "active_river_cells": 0,
-        "water_coverage": 7.39259
+        "water_coverage": 7.14815
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.71885e+06,
-        "net_mass_change": 102062,
-        "avg_vegetation_cover": 15.1449,
-        "max_river_discharge": 0.965381,
+        "final_soil_volume": 9.71881e+06,
+        "net_mass_change": 102025,
+        "avg_vegetation_cover": 15.1584,
+        "max_river_discharge": 0.851115,
         "active_river_cells": 0,
-        "water_coverage": 7.39259
+        "water_coverage": 7.14815
       }
     }
   }

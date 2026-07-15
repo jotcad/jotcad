@@ -46,11 +46,22 @@ public:
             for (int q = 0; q < sq; ++q) {
                 float h_surf = g.h_surface[r][q];
                 if (h_surf > 0.0f) {
-                    float max_g = g.H_soil[r][q] - g.H_bedrock[r][q];
-                    float space = std::max(0.0f, max_g - h_g[r][q]);
-                    float infil = std::min({h_surf, infiltration_rate * h_surf * dt, space});
-                    g.h_surface[r][q] -= infil;
-                    h_g[r][q] += infil;
+                    float soil_thick = g.H_soil[r][q] - g.H_bedrock[r][q];
+                    if (soil_thick <= 0.05f) continue;
+
+                    float saturation = h_g[r][q] / soil_thick;
+                    float space = std::max(0.0f, soil_thick - h_g[r][q]);
+
+                    // Infiltration is allowed under two conditions:
+                    // 1. Focused recharge: standing water (lakes/rivers) > 25cm bypasses threshold
+                    // 2. Diffuse recharge: rain infiltrates only if soil saturation is >= 15% (capillary limit)
+                    bool allow_infil = (h_surf > 0.25f) || (saturation >= 0.15f);
+
+                    if (allow_infil) {
+                        float infil = std::min({h_surf, infiltration_rate * h_surf * dt, space});
+                        g.h_surface[r][q] -= infil;
+                        h_g[r][q] += infil;
+                    }
                 }
             }
         }
