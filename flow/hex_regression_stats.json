@@ -1,0 +1,21 @@
+{
+  "status": "PASSED",
+  "mismatch_count": 0,
+  "mismatch_percentage": 0,
+  "baseline": {
+    "initial_soil_volume": 9.61679e+06,
+    "final_soil_volume": 9.69578e+06,
+    "net_mass_change": 78992.5,
+    "avg_vegetation_cover": 56.9667,
+    "max_river_discharge": 255.039,
+    "active_river_cells": 3474
+  },
+  "current": {
+    "initial_soil_volume": 9.61679e+06,
+    "final_soil_volume": 9.69578e+06,
+    "net_mass_change": 78992.5,
+    "avg_vegetation_cover": 56.9667,
+    "max_river_discharge": 255.039,
+    "active_river_cells": 3474
+  }
+}
