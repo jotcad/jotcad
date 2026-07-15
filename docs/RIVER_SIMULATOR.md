@@ -114,8 +114,12 @@ JotCAD also supports a data-driven **Hexagonal Grid Landscape Evolution** engine
     $$\text{temp} = \text{base\_temp} - \frac{H_{\text{soil}}}{\text{lapse\_rate\_divisor}}$$
     $$\text{PET} = K_{\text{evap}} \times \max(0.0, \text{temp})$$
     Actual evaporation reduces the surface water depth locally before routing.
+*   **`HexSubsurface`**: Simulates unsaturated soil infiltration and lateral Darcy groundwater flow:
+    *   **Threshold-Based Diffuse Recharge**: Rainfall only infiltrates down to the deep water table (`h_g`) if the local soil saturation ratio is $\ge 15\%$ (capillary storage limit). Below this threshold, rainwater remains entirely on the surface as runoff.
+    *   **Focused Lake/River Recharge**: Any standing surface water greater than $25\text{ cm}$ (e.g. in lakes or major stream channels) bypasses the saturation limit and recharges the soil aquifer beneath it directly.
+    *   **Darcy Flow**: Groundwater moves laterally down the hydraulic head gradient ($H_{\text{head}} = H_{\text{bedrock}} + h_{\text{groundwater}}$) according to the profile's lateral conductivity. If the water table rises above the surface, it exfiltrates as spring seepage.
 *   **`HexRouting`**: Implements a **Two-Pass Component-Based Basin Water Balance** model to handle endorheic sinks and overflowing lakes cleanly on the hexagonal layout.
-
+ 
 ### 9.2 Two-Pass Basin Water Balance
 Closed depressions (lake basins) are identified as labeled connected components of cells using Breadth-First Search (BFS) starting from the sinks up to the basin brims:
 1.  **Pass 1 (Global Inflow Gathering)**: Routes water downhill to accumulate total inflows globally at each basin's lowest cell (outlet). This captures all runoff from surrounding hillsides.
@@ -125,15 +129,23 @@ Closed depressions (lake basins) are identified as labeled connected components 
         $$Q_{\text{in}} = \sum_{\text{flooded cells}} (\text{PET} \times \text{cell\_area})$$
         All cells within the basin have their downstream directions redirected towards the lake floor.
 3.  **Pass 2 (Discharge Consolidation)**: Re-runs the flow routing using the corrected downstream directions and spillway discharges to calculate stable flow rates ($g.Q$) and surface water depths.
-
+ 
 ### 9.3 Visual Downhill Rendering Constraint
 To prevent visual rendering anomalies where river channels appear to climb uphill over ridges (due to flat water elevations inside lakes), both the C++ pixel exporter (`hex_exporter.h`) and the HTML dashboard (`hex_visualizer.html`) enforce a visual downhill slope check:
 *   A river segment between a cell and its downstream neighbor is **only drawn** if the neighbor's soil elevation is downhill or level:
     $$H_{\text{soil}}[\text{downstream}] \le H_{\text{soil}}[\text{current}] + 0.05\text{m}$$
 *   This automatically hides the internal routing vectors inside lake bodies (since the path towards the outlet climbs the lake bed uphill to the spillway). Rivers stop cleanly at the lake shoreline, and outflow rivers start exactly at the spillway cell and flow downhill.
-
+ 
 ### 9.4 Climate-Specific Calibration
-Evaporation coefficients are defined dynamically per profile in `ClimateProfile`:
-*   **Subtropical Highland**: $K_{\text{evap}} = 0.0024f$ (retains lush, active, overflowing river networks).
-*   **Arid Desert**: $K_{\text{evap}} = 0.0040f$ (exceeds local rainfall, drying out minor streams and leaving only small, realistic terminal salt lakes in the lowest basins).
+Climate parameters are defined dynamically per profile in `ClimateProfile` to govern long-term landscape evolution:
+*   **Subtropical Highland**: 
+    *   Rainfall: $1.4\text{ m/yr}$ | Base Temp: $25^\circ\text{C}$
+    *   Evaporation Coefficient: $K_{\text{evap}} = 0.0024f$
+    *   Subsurface: $15\%$ starting saturation, $25\%$ annual infiltration rate, $60\text{ m/yr}$ lateral conductivity.
+    *   Result: Sustains lush vegetation ($57.6\%$) and active, overflowing river networks draining out to margins.
+*   **Arid Desert**: 
+    *   Rainfall: $0.15\text{ m/yr}$ | Base Temp: $35^\circ\text{C}$
+    *   Evaporation Coefficient: $K_{\text{evap}} = 0.0060f$ (strong evaporative deficit of $0.21\text{ m/yr}$ in low valleys)
+    *   Subsurface: $0\%$ starting saturation (depleted aquifer), $4\%$ annual infiltration rate, $250\text{ m/yr}$ lateral conductivity (coarse sand).
+    *   Result: All river channels run dry ($0$ active river cells). Widespread diffuse recharge is blocked, restricting oases and lakes strictly to low depressions that pool focused runoff ($1.96\%$ total water coverage, representing highly realistic desert oasis ponds).
 
