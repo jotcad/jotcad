@@ -71,8 +71,21 @@ public:
                     moisture = std::max(moisture, 0.8f); // Riparian moisture enhancement
                 }
 
-                // 2. Compute dynamic carrying capacity under physical limits
+                // Groundwater-fed capillary moisture enhancement (oasis effect)
                 float soil_thickness = H - g.H_bedrock[r][q];
+                if (g.has_field<HexGroundwater>()) {
+                    auto& h_g = g.request_field<HexGroundwater>();
+                    float gw_height = h_g[r][q];
+                    if (soil_thickness > 0.05f) {
+                        float gw_ratio = gw_height / soil_thickness;
+                        float depth_below_surface = soil_thickness - gw_height;
+                        if (depth_below_surface < 2.0f || gw_ratio > 0.80f) {
+                            moisture = std::max(moisture, 0.90f);
+                        }
+                    }
+                }
+
+                // 2. Compute dynamic carrying capacity under physical limits
                 auto& h_lake = g.request_field<HexLakeDepth>();
                 float water_depth = g.h_surface[r][q] + h_lake[r][q];
                 float effective_cap = carrying_capacity;

@@ -14,6 +14,7 @@
 #include "hex_erosion.h"
 #include "hex_landslide.h"
 #include "hex_vegetation.h"
+#include "hex_subsurface.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "hex_exporter.h"
 #include "perlin_noise.h"
@@ -133,6 +134,7 @@ int main(int argc, char* argv[]) {
         HexPhase* p1 = orchestrator.add_phase("Hydrology & Landscape Evolution", DT, TOTAL_STEPS);
         p1->add<HexPrecipitation>(profile);
         p1->add<HexEvaporation>(profile, profile.evap_coefficient);
+        p1->add<HexSubsurface>();
         p1->add<HexRouting>(profile, HexRoutingParams{
             .depth_coefficient = 0.15f,
             .depth_exponent = 0.40f,

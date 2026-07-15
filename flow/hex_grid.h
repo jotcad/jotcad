@@ -23,6 +23,9 @@ const int HEX_DR[6] = {0, -1, -1, 0, 1, 1};
 // Dynamic sparse field tag for standing lake depths
 struct HexLakeDepth {};
 
+// Dynamic sparse field tag for groundwater depths (height above bedrock)
+struct HexGroundwater {};
+
 struct HexGrid {
     int size_q;
     int size_r;
