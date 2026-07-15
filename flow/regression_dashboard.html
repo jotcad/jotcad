@@ -95,6 +95,7 @@
         main {
             width: 100%;
             max-width: 1200px;
+            min-width: 900px; /* Force minimum width to prevent table squishing */
             display: flex;
             flex-direction: column;
             gap: 2rem;
@@ -102,7 +103,7 @@
 
         .profile-row {
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: 450px 1fr;
             gap: 2rem;
             background: var(--panel-bg);
             border: 1px solid var(--border);
@@ -110,14 +111,7 @@
             padding: 2rem;
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
             backdrop-filter: blur(12px);
-            align-items: center;
-        }
-
-        @media (min-width: 640px) {
-            .profile-row {
-                grid-template-columns: 450px 1fr;
-                align-items: stretch;
-            }
+            align-items: stretch;
         }
 
         .profile-info {
