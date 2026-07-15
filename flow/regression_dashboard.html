@@ -113,7 +113,7 @@
             align-items: center;
         }
 
-        @media (min-width: 992px) {
+        @media (min-width: 640px) {
             .profile-row {
                 grid-template-columns: 450px 1fr;
                 align-items: stretch;
@@ -123,38 +123,57 @@
         .profile-info {
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
-            gap: 1rem;
+            justify-content: center;
         }
 
-        .profile-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            padding-bottom: 0.75rem;
+        /* Compact Table Styling */
+        .table-wrapper {
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            width: 100%;
         }
 
-        .profile-name {
-            font-size: 1.5rem;
-            font-weight: 700;
-            letter-spacing: -0.02em;
+        .compact-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        .compact-table td {
+            padding: 0.45rem 1rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .compact-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .compact-table td strong {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .status-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.3rem 0.85rem;
+            gap: 0.4rem;
+            padding: 0.2rem 0.75rem;
             border-radius: 9999px;
             font-weight: 600;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             border: 1px solid var(--border);
         }
 
         .status-indicator {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
         }
 
@@ -165,7 +184,7 @@
         }
         .status-badge.passed .status-indicator {
             background-color: var(--success);
-            box-shadow: 0 0 6px var(--success);
+            box-shadow: 0 0 4px var(--success);
         }
 
         .status-badge.failed {
@@ -175,64 +194,13 @@
         }
         .status-badge.failed .status-indicator {
             background-color: var(--fail);
-            box-shadow: 0 0 6px var(--fail);
+            box-shadow: 0 0 4px var(--fail);
         }
 
-        .profile-params {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--border);
-            padding: 0.6rem 1rem;
-            border-radius: 8px;
-            display: flex;
-            gap: 1.5rem;
-        }
-
-        .profile-params strong {
-            color: var(--text);
-        }
-
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 0.5rem;
-        }
-
-        @media (min-width: 576px) {
-            .metrics-grid {
-                grid-template-columns: repeat(3, 1fr);
-            }
-        }
-
-        .metric-item {
-            background: rgba(255, 255, 255, 0.01);
-            border: 1px solid var(--border);
-            padding: 0.6rem 0.9rem;
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-            justify-content: center;
-        }
-
-        .metric-label {
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .metric-value-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-        }
-
-        .metric-val {
-            font-size: 1rem;
-            font-weight: 700;
+        .mono {
             font-family: var(--mono);
+            color: var(--text);
+            font-weight: 500;
         }
 
         .delta-badge {
@@ -241,6 +209,7 @@
             padding: 0.1rem 0.35rem;
             border-radius: 4px;
             font-family: var(--mono);
+            display: inline-block;
         }
 
         .delta-badge.match {
@@ -310,31 +279,20 @@
     </header>
 
     <main id="profiles-container">
-        <!-- Profile rows will be injected dynamically here -->
         <div class="profile-row" id="row-subtropical-highland">
             <!-- Final Top View Column (Placed Left) -->
             <a href="./hex_frames/frame_1000.png" target="_blank" class="image-column">
                 <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
             </a>
 
-            <!-- Info Column (Placed Right) -->
+            <!-- Info Column (Placed Right as Compact Table) -->
             <div class="profile-info">
-                <div class="profile-header">
-                    <div class="profile-name">Subtropical Highland</div>
-                    <div id="status-badge" class="status-badge">
-                        <span class="status-indicator"></span>
-                        <span class="status-text">Loading...</span>
-                    </div>
-                </div>
-
-                <div class="profile-params">
-                    <span>Rainfall: <strong>1.4 m/yr</strong></span>
-                    <span>Base Temp: <strong>25°C</strong></span>
-                    <span>Lapse Divisor: <strong>85 m/°C</strong></span>
-                </div>
-
-                <div class="metrics-grid" id="metrics-grid">
-                    <!-- Populated by JavaScript -->
+                <div class="table-wrapper">
+                    <table class="compact-table">
+                        <tbody id="metrics-body">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -351,16 +309,31 @@
                 if (!response.ok) throw new Error("JSON file load failed");
                 const data = await response.json();
 
-                // 1. Update Status Badge
-                const statusBadge = document.getElementById('status-badge');
-                const statusText = statusBadge.querySelector('.status-text');
-                statusBadge.className = 'status-badge ' + data.status.toLowerCase();
-                statusText.textContent = 'REGRESSION: ' + data.status;
+                const tbody = document.getElementById('metrics-body');
+                tbody.innerHTML = '';
 
-                // 2. Populate metrics grid
-                const metricsGrid = document.getElementById('metrics-grid');
-                metricsGrid.innerHTML = '';
+                // Helper to create a table row
+                const addRow = (label, valHTML, badgeHTML = '') => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="width: 35%;"><strong>${label}</strong></td>
+                        <td class="mono">${valHTML}</td>
+                        <td style="text-align: right; width: 20%;">${badgeHTML}</td>
+                    `;
+                    tbody.appendChild(tr);
+                };
 
+                // 1. Verification Status Row
+                const statusBadgeHTML = `<span class="status-badge ${data.status.toLowerCase()}"><span class="status-indicator"></span>${data.status}</span>`;
+                addRow('Status', statusBadgeHTML);
+
+                // 2. Profile Name Row
+                addRow('Profile Name', '<span style="font-weight: 600; color: #ffffff;">Subtropical Highland</span>');
+
+                // 3. Parameters Row
+                addRow('Parameters', 'Rain: 1.4 m/yr | Temp: 25°C / 85m');
+
+                // 4. Metrics Setup
                 const fields = [
                     { key: 'final_soil_volume', label: 'Final Soil Mass', format: 'e', tol: 0.001 },
                     { key: 'net_mass_change', label: 'Net Soil Drift', format: 'f', suffix: ' m', tol: 0.001 },
@@ -386,7 +359,7 @@
                     let relDiff = baseVal !== 0.0 ? diffVal / Math.abs(baseVal) : diffVal;
                     
                     if (field.format === 'e') {
-                        currStr = currVal.toExponential(2); // Slightly shorter exponential format to save horizontal space
+                        currStr = currVal.toExponential(2);
                     } else if (field.format === 'pct' || field.format === 'dev') {
                         currStr = currVal.toFixed(2) + (field.suffix || '');
                     } else if (field.format === 'int') {
@@ -433,24 +406,14 @@
                         }
                     }
 
-                    const item = document.createElement('div');
-                    item.className = 'metric-item';
-                    item.innerHTML = `
-                        <span class="metric-label">${field.label}</span>
-                        <div class="metric-value-row">
-                            <div class="metric-val">${currStr}</div>
-                            <span class="delta-badge ${deltaClass}">${deltaText}</span>
-                        </div>
-                    `;
-                    metricsGrid.appendChild(item);
+                    const badgeHTML = `<span class="delta-badge ${deltaClass}">${deltaText}</span>`;
+                    addRow(field.label, currStr, badgeHTML);
                 });
 
             } catch (err) {
                 console.error("Failed to load statistics:", err);
-                const statusBadge = document.getElementById('status-badge');
-                const statusText = statusBadge.querySelector('.status-text');
-                statusBadge.className = 'status-badge failed';
-                statusText.textContent = 'STATS DISCONNECTED';
+                const tbody = document.getElementById('metrics-body');
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--fail);">❌ Failed to load simulation metrics</td></tr>';
             }
         }
 
