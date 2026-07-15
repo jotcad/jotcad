@@ -45,6 +45,56 @@ struct ColorRGBA_3d {
     unsigned char r, g, b, a;
 };
 
+// Z-buffered Bresenham's line algorithm for drawing thin 1px vector lines on 3D models
+inline void draw_line_z_buffered(
+    Vec3_3d p0, Vec3_3d p1, ColorRGBA_3d col,
+    std::vector<unsigned char>& pixels, std::vector<double>& z_buffer,
+    int width, int height) {
+    
+    int x0 = (int)std::round(p0.x);
+    int y0 = (int)std::round(p0.y);
+    int x1 = (int)std::round(p1.x);
+    int y1 = (int)std::round(p1.y);
+    
+    int dx = std::abs(x1 - x0);
+    int dy = std::abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+    
+    double len = std::max(1.0, std::sqrt((double)(x1 - x0) * (x1 - x0) + (double)(y1 - y0) * (y1 - y0)));
+    double step = 0.0;
+    
+    while (true) {
+        if (x0 >= 0 && x0 < width && y0 >= 0 && y0 < height) {
+            double t = step / len;
+            if (t > 1.0) t = 1.0;
+            double depth = (1.0 - t) * p0.z + t * p1.z;
+            
+            int idx = y0 * width + x0;
+            // Add a safety epsilon (+0.5) to prevent Z-fighting with the underlying triangles
+            if (depth + 0.5 >= z_buffer[idx]) {
+                int idx_pixel = idx * 3;
+                pixels[idx_pixel]     = col.r;
+                pixels[idx_pixel + 1] = col.g;
+                pixels[idx_pixel + 2] = col.b;
+            }
+        }
+        
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x0 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y0 += sy;
+        }
+        step += 1.0;
+    }
+}
+
 // Standard barycentric z-buffered triangle rasterizer
 inline void rasterize_triangle_3d(
     Vec3_3d p0, Vec3_3d p1, Vec3_3d p2, ColorRGBA_3d col,
@@ -148,7 +198,7 @@ inline float get_vertex_height(const HexGrid& g, const std::vector<std::vector<f
 inline Vec3_3d project_iso(float X, float Y, float Z, float x_mid, float y_mid, float scale_xy, float scale_z) {
     double px = 500.0 + (X - x_mid) * scale_xy;
     double py = 320.0 + (Y - y_mid) * 0.5000000 * scale_xy - Z * scale_z;
-    double depth = (Y - y_mid) * scale_xy + Z * scale_z;
+    double depth = -(Y - y_mid) * scale_xy + Z * scale_z;
     return { px, py, depth };
 }
 
@@ -597,6 +647,7 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                 // Compute projected vertices (top and bottom base)
                 Vec3_3d top_verts[6];
                 Vec3_3d bot_verts[6];
+                float phys_z_v[6];
 
                 for (int i = 0; i < 6; ++i) {
                     float vx, vy;
@@ -604,6 +655,7 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
 
                     // Smooth height interpolation at corners
                     float z_v = get_vertex_height(g, h_lake, q, r, i);
+                    phys_z_v[i] = z_v;
 
                     top_verts[i] = project_iso(vx, vy, z_v, X_mid, Y_mid, scale_xy, heightScale);
                     // Floating base thickness at Z = -100m to cover deep valleys
@@ -615,6 +667,42 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                 // A. Rasterize Top Hexagonal Face (6 triangles)
                 for (int i = 0; i < 6; ++i) {
                     rasterize_triangle_3d(top_center, top_verts[i], top_verts[(i + 1) % 6], col_top, pixels, z_buffer, width, height);
+                }
+
+                // A2. Draw Topographic Contour Lines (Exactly 1px wide vector lines at 100m intervals)
+                ColorRGBA_3d col_line = { 50, 50, 50, 255 }; // Clean dark gray vector contour
+                for (int i = 0; i < 6; ++i) {
+                    float z0 = z_top;
+                    float z1 = phys_z_v[i];
+                    float z2 = phys_z_v[(i + 1) % 6];
+                    
+                    Vec3_3d p0 = top_center;
+                    Vec3_3d p1 = top_verts[i];
+                    Vec3_3d p2 = top_verts[(i + 1) % 6];
+
+                    for (float z_c = 100.0f; z_c <= 2000.0f; z_c += 100.0f) {
+                        bool inter01 = (z_c >= std::min(z0, z1) && z_c <= std::max(z0, z1) && z0 != z1);
+                        bool inter12 = (z_c >= std::min(z1, z2) && z_c <= std::max(z1, z2) && z1 != z2);
+                        bool inter20 = (z_c >= std::min(z2, z0) && z_c <= std::max(z2, z0) && z2 != z0);
+
+                        std::vector<Vec3_3d> pts;
+                        if (inter01) {
+                            float t = (z_c - z0) / (z1 - z0);
+                            pts.push_back({ p0.x + t * (p1.x - p0.x), p0.y + t * (p1.y - p0.y), p0.z + t * (p1.z - p0.z) });
+                        }
+                        if (inter12) {
+                            float t = (z_c - z1) / (z2 - z1);
+                            pts.push_back({ p1.x + t * (p2.x - p1.x), p1.y + t * (p2.y - p1.y), p1.z + t * (p2.z - p1.z) });
+                        }
+                        if (inter20) {
+                            float t = (z_c - z2) / (z0 - z2);
+                            pts.push_back({ p2.x + t * (p0.x - p2.x), p2.y + t * (p0.y - p2.y), p2.z + t * (p0.z - p2.z) });
+                        }
+
+                        if (pts.size() >= 2) {
+                            draw_line_z_buffered(pts[0], pts[1], col_line, pixels, z_buffer, width, height);
+                        }
+                    }
                 }
 
                 // B. Rasterize Front-Facing Side Walls (Only on the outer border of the grid)

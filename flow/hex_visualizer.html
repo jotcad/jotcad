@@ -745,8 +745,9 @@
             if (!data) return;
             elements.lbl2d.textContent = (data.step * sim_dt).toLocaleString();
             
-            // Update map image sources to pre-baked PNG frames
-            elements.img.src = `hex_frames/frame_${data.step}.png`;
+            // Update map image sources to pre-baked PNG frames (snapped to 0 or 1000)
+            const imgStep = (data.step === 0) ? 0 : 1000;
+            elements.img.src = `hex_frames/frame_${imgStep}.png`;
 
             // Draw dynamic river lines
             drawRiverLines();
@@ -771,8 +772,9 @@
             if (!data) return;
             elements.lbl3d.textContent = (data.step * sim_dt).toLocaleString();
             
-            // Update map image sources to pre-baked PNG frames
-            elements.img3d.src = `hex_frames/frame_3d_${data.step}.png`;
+            // Update map image sources to pre-baked PNG frames (snapped to 0 or 1000)
+            const imgStep = (data.step === 0) ? 0 : 1000;
+            elements.img3d.src = `hex_frames/frame_3d_${imgStep}.png`;
         }
 
         // Round pixel coordinates to nearest hex axial coordinate

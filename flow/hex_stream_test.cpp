@@ -139,11 +139,14 @@ int main(int argc, char* argv[]) {
             state.downstream_dir = g.downstream_dir;
             history.push_back(state);
 
-            std::string frame_filename = "flow/hex_frames/frame_" + std::to_string(current_step) + ".png";
-            save_hex_png(frame_filename, g, 4.0f);
+            // Only export visual PNG files for the final step to speed up simulation
+            if (current_step == TOTAL_STEPS) {
+                std::string frame_filename = "flow/hex_frames/frame_" + std::to_string(current_step) + ".png";
+                save_hex_png(frame_filename, g, 4.0f);
 
-            std::string frame_filename_3d = "flow/hex_frames/frame_3d_" + std::to_string(current_step) + ".png";
-            save_hex_png_3d(frame_filename_3d, g, 4.0f);
+                std::string frame_filename_3d = "flow/hex_frames/frame_3d_" + std::to_string(current_step) + ".png";
+                save_hex_png_3d(frame_filename_3d, g, 4.0f);
+            }
         }
     });
 

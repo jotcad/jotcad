@@ -68,8 +68,12 @@ We have implemented a high-performance **Hexagonal Landscape Evolution Simulator
    * Restricts bare bedrock strictly to the highest summits ($>950\text{ m}$), keeping lower flanks forested.
 6. **Discrete Biome Classification (Forest XOR Grass)**:
    * Replaced continuous biome gradients with a step threshold. Lowland cells are strictly classified as Forest (`RGB 20, 120, 45`) if $\text{moisture\_factor} \ge 0.35$, otherwise Grassland (`RGB 185, 230, 85`), ensuring sharp, legible vegetation boundaries.
-7. **Cartography & 3D Mating**:
+7. **Cartography, 3D Mating & Contour Rendering**:
    * Corner coordinates of the software rasterizer are evaluated by averaging adjacent cell centers ($vx = \sum cx_k / 3.0$), ensuring bit-identical screen coordinate mating with zero gaps or overlaps.
    * Vertical outer walls close the boundary down to $Z = -100\text{ m}$ on all visible edges (directions 0 to 3).
+   * **Corrected Y-Depth Sorting**: Fixed the projection depth equation:
+     $$\text{depth} = -(Y - y_{\text{mid}}) \cdot \text{scale\_xy} + Z \cdot \text{scale\_z}$$
+     This assigns closer objects a larger depth value, resolving foreground/background occlusion inversion under $Z$-buffering.
+   * **Thin 1px Vector Contour Lines**: Extracted contour lines at $100\text{ m}$ intervals using triangle-edge intersections (isoline marching), and rasterized them as thin, solid, exactly 1-pixel-wide lines using a $Z$-buffered Bresenham line algorithm with a $+0.5$ bias to prevent Z-fighting self-occlusion.
    * **Vibrant Forest Blending**: Reordered the rendering pipeline to apply the $35\%$ opaque arability tint directly to the base substrate (sand/rock) *first*, and overlay vegetation *second*. This keeps forests a pure, vibrant dark green and prevents muddy color mixing.
 
