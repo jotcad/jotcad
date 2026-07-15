@@ -30,7 +30,27 @@ Run the verification test suite directly using the runner script:
 ```bash
 ./run_tests.sh
 ```
-All code compiles cleanly and passes all mass conservation and velocity stability checks.
+This runs the high-speed **Hexagonal Grid Landscape Evolution Test** (in under 4 seconds), verifying:
+1. **Soil & Hydrological Budgets**: Asserts that Net Mass Change, Average Vegetation, Max Discharge, and Active River Cells match the reference baseline.
+2. **Visual Layout Verification**: Generates the 2D Top View in-memory and compares it pixel-by-pixel against the baseline reference.
+
+### Baseline Generation
+To record or update the visual and budget reference baseline, run the regression test binary with the `--generate` flag:
+```bash
+g++ -O3 -std=c++17 flow/hex_regression_test.cpp -o flow/hex_regression_test -lcrypto
+./flow/hex_regression_test --generate
+```
+
+### Visual Regression Dashboard
+A local HTTPS web server serves an interactive visual regression dashboard. 
+1. Start the server (if not already running):
+   ```bash
+   node flow/server.js
+   ```
+2. Open the dashboard in your browser:
+   [https://localhost:8085/regression_dashboard.html](https://localhost:8085/regression_dashboard.html)
+
+The dashboard renders the final top-view simulation image on the left and a compact, 3-column table on the right displaying all parameters, verification status, and delta metrics.
 
 ---
 
