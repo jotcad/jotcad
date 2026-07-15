@@ -13,6 +13,7 @@ private:
     float growth_rate;        // Base growth rate of vegetation (r)
     float carrying_capacity; // Maximum vegetation density (default 1.0f)
     float rain_threshold;    // Minimum annual rainfall in meters for full growth
+    float rain_rate;         // Climate profile annual rain rate (m/yr)
     
     // Altitudinal climate cooling parameters
     float base_temp;
@@ -22,12 +23,14 @@ private:
 
 public:
     HexVegetation(float rate = 0.15f, float cap = 1.0f, float rain_thresh = 0.8f,
-                  float base_t = 25.0f, float lapse_div = 85.0f, float min_t = 10.0f, float t_range = 8.0f)
-        : growth_rate(rate), carrying_capacity(cap), rain_threshold(rain_thresh),
+                  float base_t = 25.0f, float lapse_div = 85.0f, float min_t = 10.0f, float t_range = 8.0f,
+                  float rain_val = 1.4f)
+        : growth_rate(rate), carrying_capacity(cap), rain_threshold(rain_thresh), rain_rate(rain_val),
           base_temp(base_t), lapse_rate_divisor(lapse_div), min_temp_limit(min_t), growth_temp_range(t_range) {}
 
     HexVegetation(const ClimateProfile& profile, float cap = 1.0f)
         : growth_rate(profile.growth_rate), carrying_capacity(cap), rain_threshold(profile.rain_threshold),
+          rain_rate(profile.rain_rate),
           base_temp(profile.base_temp), lapse_rate_divisor(profile.lapse_rate_divisor),
           min_temp_limit(profile.min_temp_limit), growth_temp_range(profile.growth_temp_range) {}
 
@@ -54,11 +57,9 @@ public:
             for (int q = 0; q < sq; ++q) {
                 float H = g.H_soil[r][q];
 
-                // 1. Compute moisture availability
-                // High river discharge or surface water increases local moisture
-                // Convert annual flow volume to water depth equivalent
+                // 1. Compute moisture availability using constant climate rain rate directly
                 float moisture = 0.20f; // Background moisture
-                float annual_rain = g.h_surface[r][q]; // precip is written here initially by HexPrecipitation
+                float annual_rain = rain_rate;
 
                 if (annual_rain > 0.01f) {
                     moisture = std::min(1.0f, annual_rain / rain_threshold);
@@ -94,6 +95,9 @@ public:
                 float temp = base_temp - (H / lapse_rate_divisor);
                 float temp_factor = std::max(0.0f, std::min(1.0f, (temp - min_temp_limit) / growth_temp_range));
                 effective_cap *= temp_factor;
+
+                // Moisture carrying capacity limit (restricts carrying capacity in dry zones)
+                effective_cap *= moisture;
 
                 // 3. Logistic growth (Stable analytical integration)
                 float V = g.vegetation[r][q];

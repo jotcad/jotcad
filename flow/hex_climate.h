@@ -14,6 +14,7 @@ struct ClimateProfile {
     float growth_temp_range;       // Celsius range above limit for full growth (e.g. 8.0f)
     float growth_rate;             // Base growth rate of vegetation (e.g. 0.16f)
     float rain_threshold;          // Minimum rain in meters for full growth (e.g. 0.8f)
+    float evap_coefficient;        // Evaporation rate K in m/yr/C (e.g. 0.0024f)
 };
 
 // Registry housing available climate profiles
@@ -29,7 +30,19 @@ public:
                 10.0f,   // 10C limit
                 8.0f,    // 8C temperature range for scaling
                 0.16f,   // 0.16 vegetation growth rate
-                0.8f     // 0.8m annual rain threshold
+                0.8f,    // 0.8m annual rain threshold
+                0.0024f  // 0.0024 evaporation coefficient
+            },
+            {
+                "Arid Desert",
+                0.15f,   // 0.15 m/yr rain (extremely dry)
+                35.0f,   // 35C base temperature (hot desert)
+                90.0f,   // 90m altitude cooling divisor
+                8.0f,    // 8C temperature limit
+                12.0f,   // 12C range for scaling
+                0.03f,   // 0.03 vegetation growth rate
+                0.8f,    // 0.8m annual rain threshold
+                0.0040f  // 0.0040 evaporation coefficient (hot/arid)
             }
         };
     }

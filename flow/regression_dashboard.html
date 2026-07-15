@@ -289,27 +289,8 @@
     <main>
         <div class="dashboard-container">
             <table class="dashboard-table">
-                <tbody>
-                    <tr id="row-subtropical-highland">
-                        <!-- Left: Image Column (Fixed 450px) -->
-                        <td style="width: 450px; padding-left: 0; padding-top: 0; padding-bottom: 0;">
-                            <a href="./hex_frames/frame_1000.png" target="_blank" class="image-column" style="display: block; width: 450px;">
-                                <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
-                            </a>
-                        </td>
-                        <!-- Right: Info Column with Wrapped Columns (3x3 grid) -->
-                        <td style="padding-right: 0; padding-top: 0; padding-bottom: 0; vertical-align: middle;">
-                            <div class="profile-info">
-                                <div class="table-wrapper">
-                                    <table class="compact-table">
-                                        <tbody id="metrics-body">
-                                            <!-- Populated dynamically by JavaScript -->
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
+                <tbody id="dashboard-rows">
+                    <!-- Dynamic profile rows will be injected here -->
                 </tbody>
             </table>
         </div>
@@ -326,8 +307,8 @@
                 if (!response.ok) throw new Error("JSON file load failed");
                 const data = await response.json();
 
-                const tbody = document.getElementById('metrics-body');
-                tbody.innerHTML = '';
+                const dashboardRows = document.getElementById('dashboard-rows');
+                dashboardRows.innerHTML = '';
 
                 // Helper to render a cell containing a stacked label, value, and badge
                 const makeCellHTML = (label, valHTML, badgeHTML = '') => {
@@ -340,120 +321,162 @@
                     `;
                 };
 
-                // Generate strings and badges for each field
-                const fields = [
-                    { key: 'final_soil_volume', label: 'Final Soil Mass', format: 'e', tol: 0.001 },
-                    { key: 'net_mass_change', label: 'Net Soil Drift', format: 'f', suffix: ' m', tol: 0.001 },
-                    { key: 'avg_vegetation_cover', label: 'Avg Vegetation', format: 'pct', suffix: '%', tol: 0.005 },
-                    { key: 'max_river_discharge', label: 'Max River Flow', format: 'f', suffix: ' m³/s', tol: 0.005 },
-                    { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 },
-                    { key: 'pixel_deviation', label: 'Pixel Mismatch', format: 'dev', suffix: '%', tol: 0.1 }
-                ];
+                // Loop over each profile from the JSON
+                for (const [profileName, profileData] of Object.entries(data.profiles)) {
+                    const safeName = profileName.toLowerCase().replace(/ /g, '_');
+                    const innerTbodyId = `metrics-body-${safeName}`;
 
-                const renderedMetrics = {};
+                    // Create row
+                    const tr = document.createElement('tr');
+                    tr.id = `row-${safeName}`;
+                    tr.innerHTML = `
+                        <!-- Left: Image Column (Fixed 450px) -->
+                        <td style="width: 450px; padding-left: 0; padding-top: 1.5rem; padding-bottom: 1.5rem;">
+                            <a href="./hex_frames/frame_1000_${safeName}.png" target="_blank" class="image-column" style="display: block; width: 450px;">
+                                <img src="./hex_frames/frame_1000_${safeName}.png" alt="${profileName} Top View" class="top-view-img">
+                            </a>
+                        </td>
+                        <!-- Right: Info Column with Wrapped Columns (3x3 grid) -->
+                        <td style="padding-right: 0; padding-top: 1.5rem; padding-bottom: 1.5rem; vertical-align: middle;">
+                            <div class="profile-info">
+                                <div class="table-wrapper">
+                                    <table class="compact-table">
+                                        <tbody id="${innerTbodyId}">
+                                            <!-- Inner grid rows populated dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    dashboardRows.appendChild(tr);
 
-                fields.forEach(field => {
-                    let baseVal = 0, currVal = 0;
-                    if (field.key === 'pixel_deviation') {
-                        baseVal = 0;
-                        currVal = data.mismatch_percentage;
-                    } else {
-                        baseVal = data.baseline[field.key];
-                        currVal = data.current[field.key];
+                    const innerTbody = document.getElementById(innerTbodyId);
+
+                    // 1. Status row
+                    const statusBadgeHTML = `<span class="status-badge ${profileData.status.toLowerCase()}"><span class="status-indicator"></span>${profileData.status}</span>`;
+
+                    // Generate parameter text depending on profile
+                    let paramsText = 'Rain: 1.4m | Temp: 25°C / 85m';
+                    if (profileName === 'Arid Desert') {
+                        paramsText = 'Rain: 0.15m | Temp: 35°C / 90m';
                     }
 
-                    let currStr = '';
-                    let diffVal = currVal - baseVal;
-                    let relDiff = baseVal !== 0.0 ? diffVal / Math.abs(baseVal) : diffVal;
+                    // Row 1: Profile Name, Status, Parameters
+                    const cell1 = makeCellHTML('Profile Name', `<span style="color: #ffffff; font-weight: 600;">${profileName}</span>`);
+                    const cell2 = makeCellHTML('Status', statusBadgeHTML);
+                    const cell3 = makeCellHTML('Parameters', `<span style="color: var(--text-muted); font-size: 0.85rem;">${paramsText}</span>`);
 
-                    if (field.format === 'e') {
-                        currStr = currVal.toExponential(2);
-                    } else if (field.format === 'pct' || field.format === 'dev') {
-                        currStr = currVal.toFixed(2) + (field.suffix || '');
-                    } else if (field.format === 'int') {
-                        currStr = Math.round(currVal).toLocaleString();
-                    } else {
-                        currStr = currVal.toFixed(1) + (field.suffix || '');
-                    }
+                    const innerTr1 = document.createElement('tr');
+                    innerTr1.innerHTML = `
+                        <td style="width: 33.3%;">${cell1}</td>
+                        <td style="width: 33.3%;">${cell2}</td>
+                        <td style="width: 33.3%;">${cell3}</td>
+                    `;
+                    innerTbody.appendChild(innerTr1);
 
-                    let deltaClass = 'match';
-                    let deltaText = '0.00%';
+                    // 2. Metrics Setup
+                    const fields = [
+                        { key: 'final_soil_volume', label: 'Final Soil Mass', format: 'e', tol: 0.001 },
+                        { key: 'net_mass_change', label: 'Net Soil Drift', format: 'f', suffix: ' m', tol: 0.001 },
+                        { key: 'avg_vegetation_cover', label: 'Avg Vegetation', format: 'pct', suffix: '%', tol: 0.005 },
+                        { key: 'max_river_discharge', label: 'Max River Flow', format: 'f', suffix: ' m³/s', tol: 0.005 },
+                        { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 },
+                        { key: 'pixel_deviation', label: 'Pixel Mismatch', format: 'dev', suffix: '%', tol: 0.1 }
+                    ];
 
-                    if (field.key === 'pixel_deviation') {
-                        if (currVal > field.tol) {
-                            deltaClass = 'error';
-                            deltaText = currVal.toFixed(2) + '%';
-                        } else if (currVal > 0) {
-                            deltaClass = 'success';
-                            deltaText = currVal.toFixed(2) + '%';
+                    const renderedMetrics = {};
+
+                    fields.forEach(field => {
+                        let baseVal = 0, currVal = 0;
+                        if (field.key === 'pixel_deviation') {
+                            baseVal = 0;
+                            currVal = profileData.mismatch_percentage;
                         } else {
-                            deltaText = 'Match';
+                            baseVal = profileData.baseline[field.key];
+                            currVal = profileData.current[field.key];
                         }
-                    } else if (field.format === 'int') {
-                        const cellDiff = Math.abs(currVal - baseVal);
-                        if (cellDiff > field.tol) {
-                            deltaClass = 'error';
-                            deltaText = (diffVal > 0 ? '+' : '') + Math.round(diffVal);
-                        } else if (cellDiff > 0) {
-                            deltaClass = 'success';
-                            deltaText = (diffVal > 0 ? '+' : '') + Math.round(diffVal);
+
+                        let currStr = '';
+                        let diffVal = currVal - baseVal;
+                        let relDiff = baseVal !== 0.0 ? diffVal / Math.abs(baseVal) : diffVal;
+
+                        if (field.format === 'e') {
+                            currStr = currVal.toExponential(2);
+                        } else if (field.format === 'pct' || field.format === 'dev') {
+                            currStr = currVal.toFixed(2) + (field.suffix || '');
+                        } else if (field.format === 'int') {
+                            currStr = Math.round(currVal).toLocaleString();
                         } else {
-                            deltaText = 'Match';
+                            currStr = currVal.toFixed(1) + (field.suffix || '');
                         }
-                    } else {
-                        const absRelDiff = Math.abs(relDiff);
-                        if (absRelDiff > field.tol) {
-                            deltaClass = 'error';
-                            deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
-                        } else if (absRelDiff > 0) {
-                            deltaClass = 'success';
-                            deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
+
+                        let deltaClass = 'match';
+                        let deltaText = '0.00%';
+
+                        if (field.key === 'pixel_deviation') {
+                            if (currVal > field.tol) {
+                                deltaClass = 'error';
+                                deltaText = currVal.toFixed(2) + '%';
+                            } else if (currVal > 0) {
+                                deltaClass = 'success';
+                                deltaText = currVal.toFixed(2) + '%';
+                            } else {
+                                deltaText = 'Match';
+                            }
+                        } else if (field.format === 'int') {
+                            const cellDiff = Math.abs(currVal - baseVal);
+                            if (cellDiff > field.tol) {
+                                deltaClass = 'error';
+                                deltaText = (diffVal > 0 ? '+' : '') + Math.round(diffVal);
+                            } else if (cellDiff > 0) {
+                                deltaClass = 'success';
+                                deltaText = (diffVal > 0 ? '+' : '') + Math.round(diffVal);
+                            } else {
+                                deltaText = 'Match';
+                            }
                         } else {
-                            deltaText = 'Match';
+                            const absRelDiff = Math.abs(relDiff);
+                            if (absRelDiff > field.tol) {
+                                deltaClass = 'error';
+                                deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
+                            } else if (absRelDiff > 0) {
+                                deltaClass = 'success';
+                                deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
+                            } else {
+                                deltaText = 'Match';
+                            }
                         }
-                    }
 
-                    renderedMetrics[field.key] = {
-                        valHTML: currStr,
-                        badgeHTML: `<span class="delta-badge ${deltaClass}">${deltaText}</span>`
-                    };
-                });
+                        renderedMetrics[field.key] = {
+                            valHTML: currStr,
+                            badgeHTML: `<span class="delta-badge ${deltaClass}">${deltaText}</span>`
+                        };
+                    });
 
-                // Create 3 grid rows (tr)
-                const tr1 = document.createElement('tr');
-                const tr2 = document.createElement('tr');
-                const tr3 = document.createElement('tr');
+                    // Row 2: Final Soil Mass, Net Soil Drift, Avg Vegetation
+                    const innerTr2 = document.createElement('tr');
+                    innerTr2.innerHTML = `
+                        <td>${makeCellHTML('Final Soil Mass', renderedMetrics['final_soil_volume'].valHTML, renderedMetrics['final_soil_volume'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Net Soil Drift', renderedMetrics['net_mass_change'].valHTML, renderedMetrics['net_mass_change'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Avg Vegetation', renderedMetrics['avg_vegetation_cover'].valHTML, renderedMetrics['avg_vegetation_cover'].badgeHTML)}</td>
+                    `;
+                    innerTbody.appendChild(innerTr2);
 
-                // Row 1: Profile Name, Status, Parameters
-                const statusBadgeHTML = `<span class="status-badge ${data.status.toLowerCase()}"><span class="status-indicator"></span>${data.status}</span>`;
-                tr1.innerHTML = `
-                    <td style="width: 33.3%;">${makeCellHTML('Profile Name', '<span style="color: #ffffff; font-weight: 600;">Subtropical Highland</span>')}</td>
-                    <td style="width: 33.3%;">${makeCellHTML('Status', statusBadgeHTML)}</td>
-                    <td style="width: 33.3%;">${makeCellHTML('Parameters', '<span style="color: var(--text-muted); font-size: 0.85rem;">Rain: 1.4m | Temp: 25°C / 85m</span>')}</td>
-                `;
-
-                // Row 2: Final Soil Mass, Net Soil Drift, Avg Vegetation
-                tr2.innerHTML = `
-                    <td>${makeCellHTML('Final Soil Mass', renderedMetrics['final_soil_volume'].valHTML, renderedMetrics['final_soil_volume'].badgeHTML)}</td>
-                    <td>${makeCellHTML('Net Soil Drift', renderedMetrics['net_mass_change'].valHTML, renderedMetrics['net_mass_change'].badgeHTML)}</td>
-                    <td>${makeCellHTML('Avg Vegetation', renderedMetrics['avg_vegetation_cover'].valHTML, renderedMetrics['avg_vegetation_cover'].badgeHTML)}</td>
-                `;
-
-                // Row 3: Max River Flow, Active River Cells, Pixel Mismatch
-                tr3.innerHTML = `
-                    <td>${makeCellHTML('Max River Flow', renderedMetrics['max_river_discharge'].valHTML, renderedMetrics['max_river_discharge'].badgeHTML)}</td>
-                    <td>${makeCellHTML('Active River Cells', renderedMetrics['active_river_cells'].valHTML, renderedMetrics['active_river_cells'].badgeHTML)}</td>
-                    <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
-                `;
-
-                tbody.appendChild(tr1);
-                tbody.appendChild(tr2);
-                tbody.appendChild(tr3);
+                    // Row 3: Max River Flow, Active River Cells, Pixel Mismatch
+                    const innerTr3 = document.createElement('tr');
+                    innerTr3.innerHTML = `
+                        <td>${makeCellHTML('Max River Flow', renderedMetrics['max_river_discharge'].valHTML, renderedMetrics['max_river_discharge'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Active River Cells', renderedMetrics['active_river_cells'].valHTML, renderedMetrics['active_river_cells'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
+                    `;
+                    innerTbody.appendChild(innerTr3);
+                }
 
             } catch (err) {
                 console.error("Failed to load statistics:", err);
-                const tbody = document.getElementById('metrics-body');
-                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--fail); padding: 2rem;">❌ Failed to load simulation metrics</td></tr>';
+                const dashboardRows = document.getElementById('dashboard-rows');
+                dashboardRows.innerHTML = '<tr><td colspan="2" style="text-align: center; color: var(--fail); padding: 3rem;">❌ Failed to load simulation metrics</td></tr>';
             }
         }
 

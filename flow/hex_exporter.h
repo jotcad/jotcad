@@ -308,8 +308,43 @@ inline float calculate_cell_arability(const HexGrid& g, const std::vector<std::v
     return f_soil * f_slope * f_veg;
 }
 
-// Bakes the HexGrid layout to a fully-shaded 2D PNG image directly in C++ using STB
-inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_px) {
+// Helper to draw anti-aliased line segments in C++ pixel buffer
+inline void draw_line(std::vector<unsigned char>& pixels, int w, int h, float x1, float y1, float x2, float y2, float thickness, float opacity, unsigned char r, unsigned char g, unsigned char b) {
+    int min_x = std::max(0, (int)std::floor(std::min(x1, x2) - thickness));
+    int max_x = std::min(w - 1, (int)std::ceil(std::max(x1, x2) + thickness));
+    int min_y = std::max(0, (int)std::floor(std::min(y1, y2) - thickness));
+    int max_y = std::min(h - 1, (int)std::ceil(std::max(y1, y2) + thickness));
+
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    float len_sq = dx * dx + dy * dy;
+    if (len_sq < 1e-4f) return;
+
+    for (int y = min_y; y <= max_y; ++y) {
+        for (int x = min_x; x <= max_x; ++x) {
+            float px = x - x1;
+            float py = y - y1;
+            float t = std::max(0.0f, std::min(1.0f, (px * dx + py * dy) / len_sq));
+            float proj_x = x1 + t * dx;
+            float proj_y = y1 + t * dy;
+            float dist_sq = (x - proj_x) * (x - proj_x) + (y - proj_y) * (y - proj_y);
+
+            if (dist_sq <= thickness * thickness) {
+                int idx = (y * w + x) * 3;
+                float dist = std::sqrt(dist_sq);
+                float falloff = 1.0f - (dist / thickness);
+                falloff = std::max(0.0f, std::min(1.0f, falloff));
+                float alpha = falloff * opacity;
+                pixels[idx] = (unsigned char)((1.0f - alpha) * pixels[idx] + alpha * r);
+                pixels[idx + 1] = (unsigned char)((1.0f - alpha) * pixels[idx + 1] + alpha * g);
+                pixels[idx + 2] = (unsigned char)((1.0f - alpha) * pixels[idx + 2] + alpha * b);
+            }
+        }
+    }
+}
+
+// Generates the 2D Top View pixel buffer (used by both regression testing and PNG bakes)
+inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<unsigned char>& pixels, int& w, int& h) {
     auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
     float max_x = R_px * 1.7320508f * ((g.size_q - 1) + (g.size_r - 1) * 0.5f);
     float max_y = R_px * 1.5f * (g.size_r - 1);
@@ -317,10 +352,10 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
     float margin_x = R_px * 1.7320508f * 1.5f;
     float margin_y = R_px * 1.5f * 1.5f;
 
-    int w = std::ceil(max_x + 2.0f * margin_x);
-    int h = std::ceil(max_y + 2.0f * margin_y);
+    w = std::ceil(max_x + 2.0f * margin_x);
+    h = std::ceil(max_y + 2.0f * margin_y);
 
-    std::vector<unsigned char> pixels(w * h * 3, 0);
+    pixels.assign(w * h * 3, 0);
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
@@ -334,9 +369,9 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
             float z_f = r_f;
             float y_f = -x_f - z_f;
 
-            int rx = std::round(x_f);
-            int ry = std::round(y_f);
-            int rz = std::round(z_f);
+            float rx = std::round(x_f);
+            float ry = std::round(y_f);
+            float rz = std::round(z_f);
 
             float x_diff = std::abs(rx - x_f);
             float y_diff = std::abs(ry - y_f);
@@ -350,80 +385,44 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                 rz = -rx - ry;
             }
 
-            int q = rx;
-            int r = rz;
+            int q = (int)rx;
+            int r = (int)rz;
 
             unsigned char pr = 15, pg = 23, pb = 42; // Deep space background
 
             if (g.is_valid(q, r)) {
                 float H = g.H_soil[r][q];
-                float water = g.h_surface[r][q] + h_lake[r][q];
                 float veg = g.vegetation[r][q];
 
-                // 1. Shading Calculation (ambient occlusion/hillshading)
-                float h_E = g.is_valid(q + 1, r) ? g.H_soil[r][q + 1] : H;
-                float h_W = g.is_valid(q - 1, r) ? g.H_soil[r][q - 1] : H;
-                float h_N = g.is_valid(q, r - 1) ? g.H_soil[r - 1][q] : H;
-                float h_S = g.is_valid(q, r + 1) ? g.H_soil[r + 1][q] : H;
-
-                float dx_grad = h_E - h_W;
-                float dy_grad = h_S - h_N;
                 float shade = 1.0f; // Disabled hillshading for flat, vibrant coloring
 
-                // 2. Eco-Hydrological Biome Coloring (Water-driven instead of altitude bands)
                 float sr = 0.0f, sg = 0.0f, sb = 0.0f;
 
                 float arability = calculate_cell_arability(g, h_lake, q, r);
                 float alpha_arab = arability * 0.35f;
 
                 if (H > 700.0f) {
-                    // Mountain Peak (grey base, turning white/snow at the very top)
-                    float snow_t = std::min(1.0f, (H - 700.0f) / 300.0f);
-                    float rock_r = 110.0f * shade;
-                    float rock_g = 105.0f * shade;
-                    float rock_b = 100.0f * shade;
-                    float snow_val = 245.0f * shade;
+                    float snow_t = std::max(0.0f, std::min(1.0f, (H - 700.0f) / 180.0f));
+                    float base_r = 110.0f * (1.0f - snow_t) + 245.0f * snow_t;
+                    float base_g = 110.0f * (1.0f - snow_t) + 245.0f * snow_t;
+                    float base_b = 115.0f * (1.0f - snow_t) + 250.0f * snow_t;
 
-                    sr = (1.0f - snow_t) * rock_r + snow_t * snow_val;
-                    sg = (1.0f - snow_t) * rock_g + snow_t * snow_val;
-                    sb = (1.0f - snow_t) * rock_b + snow_t * snow_val;
-
-                    // Apply soft arability overlay (does nothing on peaks where arability = 0)
-                    sr = (1.0f - alpha_arab) * sr + alpha_arab * 235.0f;
-                    sg = (1.0f - alpha_arab) * sg + alpha_arab * 45.0f;
-                    sb = (1.0f - alpha_arab) * sb + alpha_arab * 45.0f;
+                    sr = base_r * shade;
+                    sg = base_g * shade;
+                    sb = base_b * shade;
                 } else {
-                    // Moisture factor: increases near river flows (Q) and standing water depth (water)
-                    float Q_m3s = g.Q[r][q] / 31557600.0f;
-                    float moisture_factor = std::min(1.0f, (Q_m3s / 30.0f) + (water / 0.5f));
+                    float substrate_r = 215.0f;
+                    float substrate_g = 185.0f;
+                    float substrate_b = 125.0f;
 
-                    // Grass: Bright yellowish-green [185, 230, 85]
-                    // Forest: Bright forest green [20, 120, 45]
-                    float target_r, target_g, target_b;
-                    if (moisture_factor >= 0.35f) {
-                        target_r = 20.0f;
-                        target_g = 120.0f;
-                        target_b = 45.0f;
-                    } else {
-                        target_r = 185.0f;
-                        target_g = 230.0f;
-                        target_b = 85.0f;
-                    }
-
-                    // Blend sand [195, 178, 130] or rock [135, 135, 135] based on soil thickness
-                    float soil_t_m = H - g.H_bedrock[r][q];
-                    float bedrock_blend = std::max(0.0f, std::min(1.0f, (0.50f - soil_t_m) / 0.50f));
-                    
-                    float substrate_r = (1.0f - bedrock_blend) * 195.0f + bedrock_blend * 135.0f;
-                    float substrate_g = (1.0f - bedrock_blend) * 178.0f + bedrock_blend * 135.0f;
-                    float substrate_b = (1.0f - bedrock_blend) * 130.0f + bedrock_blend * 135.0f;
-
-                    // Apply soft arability overlay directly to the base substrate
                     float sub_r = (1.0f - alpha_arab) * substrate_r + alpha_arab * 235.0f;
                     float sub_g = (1.0f - alpha_arab) * substrate_g + alpha_arab * 45.0f;
                     float sub_b = (1.0f - alpha_arab) * substrate_b + alpha_arab * 45.0f;
 
-                    // Blend vegetation on top of the arable substrate to preserve forest green vibrancy
+                    float target_r = 34.0f;
+                    float target_g = 130.0f;
+                    float target_b = 54.0f;
+
                     sr = ((1.0f - veg) * sub_r + veg * target_r) * shade;
                     sg = ((1.0f - veg) * sub_g + veg * target_g) * shade;
                     sb = ((1.0f - veg) * sub_b + veg * target_b) * shade;
@@ -433,14 +432,13 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
                 pg = (unsigned char)std::max(0.0f, std::min(255.0f, sg));
                 pb = (unsigned char)std::max(0.0f, std::min(255.0f, sb));
 
-                // 3. Render water depth overlay directly on hex cells (Physical relief scaling)
-                if (water > 0.50f) {
-                    float w_norm = std::min(1.0f, (water - 0.50f) / 1.00f);
+                if (h_lake[r][q] > 0.10f) {
+                    float w_norm = std::min(1.0f, (h_lake[r][q] - 0.10f) / 1.00f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
                     float wb = 224.0f + (150.0f - 224.0f) * w_norm;
 
-                    float opacity = w_norm * 0.92f;
+                    float opacity = 0.40f + w_norm * 0.52f;
                     pr = (unsigned char)((1.0f - opacity) * pr + opacity * wr);
                     pg = (unsigned char)((1.0f - opacity) * pg + opacity * wg);
                     pb = (unsigned char)((1.0f - opacity) * pb + opacity * wb);
@@ -513,6 +511,50 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
         }
     }
 
+    const float SECONDS_PER_YEAR = 31557600.0f;
+    const int HEX_DQ[6] = {1, 1, 0, -1, -1, 0};
+    const int HEX_DR[6] = {0, -1, -1, 0, 1, 1};
+
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
+            float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
+            if (Q_m3s > 0.10f && h_lake[r][q] <= 0.50f) {
+                int dir = g.downstream_dir[r][q];
+                if (dir >= 0 && dir < 6) {
+                    int nq = q + HEX_DQ[dir];
+                    int nr = r + HEX_DR[dir];
+                    if (g.is_valid(nq, nr) && g.H_soil[nr][nq] <= g.H_soil[r][q] + 0.05f) {
+                        float cx1 = R_px * 1.7320508f * (q + r * 0.5f) + margin_x;
+                        float cy1 = h - 1.0f - (R_px * 1.5f * r + margin_y);
+
+                        float cx2 = R_px * 1.7320508f * (nq + nr * 0.5f) + margin_x;
+                        float cy2 = h - 1.0f - (R_px * 1.5f * nr + margin_y);
+
+                        // Visual scaling: Minimum 1.5px thickness and 0.70 opacity for clear line visibility
+                        float thickness = std::min(6.0f, 1.5f + std::sqrt(Q_m3s) * 0.5f);
+                        float opacity = std::min(0.95f, 0.70f + std::sqrt(Q_m3s) * 0.15f);
+
+                        unsigned char lr = 56, lg = 189, lb = 248;
+                        if (Q_m3s >= 20.0f) {
+                            float t = std::min(1.0f, std::sqrt(Q_m3s - 20.0f) / std::sqrt(255.0f));
+                            lr = (unsigned char)(56.0f * (1.0f - t) + 12.0f * t);
+                            lg = (unsigned char)(189.0f * (1.0f - t) + 40.0f * t);
+                            lb = (unsigned char)(248.0f * (1.0f - t) + 140.0f * t);
+                        }
+
+                        draw_line(pixels, w, h, cx1, cy1, cx2, cy2, thickness, opacity, lr, lg, lb);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Bakes the HexGrid layout to a fully-shaded 2D PNG image directly in C++ using STB
+inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_px) {
+    std::vector<unsigned char> pixels;
+    int w, h;
+    generate_top_view_pixels(g, R_px, pixels, w, h);
     stbi_write_png(filename.c_str(), w, h, 3, pixels.data(), w * 3);
 }
 
@@ -625,13 +667,13 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                 }
 
                 // 3. Render water depth overlay (Physical relief scaling)
-                if (water > 0.50f) {
-                    float w_norm = std::min(1.0f, (water - 0.50f) / 1.00f);
+                if (water > 0.10f) {
+                    float w_norm = std::min(1.0f, (water - 0.10f) / 1.00f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
                     float wb = 224.0f + (150.0f - 224.0f) * w_norm;
 
-                    float opacity = w_norm * 0.92f;
+                    float opacity = 0.40f + w_norm * 0.52f; // Minimum 40% opacity for shallow stream visibility
                     sr = (1.0f - opacity) * sr + opacity * wr;
                     sg = (1.0f - opacity) * sg + opacity * wg;
                     sb = (1.0f - opacity) * sb + opacity * wb;

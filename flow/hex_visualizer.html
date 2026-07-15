@@ -701,8 +701,10 @@
                             const rn = r + HEX_DR[dir];
 
                             if (qn >= 0 && qn < size_q && rn >= 0 && rn < size_r) {
-                                const cx1 = R_px * 1.7320508 * (q + r * 0.5) + margin_x;
-                                const cy1 = img_h - (R_px * 1.5 * r + margin_y);
+                                const nidx = rn * size_q + qn;
+                                if (data.H_soil[nidx] <= data.H_soil[idx] + 0.05) {
+                                    const cx1 = R_px * 1.7320508 * (q + r * 0.5) + margin_x;
+                                    const cy1 = img_h - (R_px * 1.5 * r + margin_y);
 
                                 const cx2 = R_px * 1.7320508 * (qn + rn * 0.5) + margin_x;
                                 const cy2 = img_h - (R_px * 1.5 * rn + margin_y);
@@ -733,6 +735,7 @@
                                 line.setAttribute("opacity", opacity.toFixed(2));
 
                                 elements.riverOverlay.appendChild(line);
+                                }
                             }
                         }
                     }

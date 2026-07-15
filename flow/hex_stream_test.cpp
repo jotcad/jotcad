@@ -7,6 +7,7 @@
 #include "hex_orchestrator.h"
 #include "hex_climate.h"
 #include "hex_precipitation.h"
+#include "hex_evaporation.h"
 #include "hex_routing.h"
 #include "hex_erosion.h"
 #include "hex_landslide.h"
@@ -86,7 +87,13 @@ int main(int argc, char* argv[]) {
     ClimateProfile profile = ClimateRegistry::get_profile("Subtropical Highland");
 
     p1->add<HexPrecipitation>(profile);
-    p1->add<HexRouting>(0.15f, 0.40f, true);         // D6 routing with sink filling
+    p1->add<HexEvaporation>(profile, 0.0024f);
+    p1->add<HexRouting>(profile, HexRoutingParams{
+        .depth_coefficient = 0.15f,
+        .depth_exponent = 0.40f,
+        .run_sink_fill = true,
+        .evap_coefficient = 0.0024f
+    });         // D6 routing with sink filling and evaporation
     p1->add<HexErosion>(1.0e-2f, 0.04f, 0.15f, 2.0f); // Soil erodibility 1.0e-2 (bedrock 2.5e-4)
     p1->add<HexLandslide>(0.14f, 0.50f);             // Stable slopes (14% soil, 50% bedrock) + veg cohesion
     p1->add<HexVegetation>(profile, 1.0f);           // Vegetation growth using profile

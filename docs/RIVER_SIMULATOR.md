@@ -99,5 +99,41 @@ The JotCAD River Simulator bridges physical principles from two main procedurall
 *   **Refinement**: We split McDonald's single-layer soil erosion into two distinct material classes (clay and gravel) to model bank stability and bed armoring under bedrock constraints.
 
 ### B. Zoltan Sylvester (`zsylvester/meanderpy`)
-*   **Concept Borrowed**: Upstream flow curvature lag. In nature, meanders translate downstream because helical secondary flow takes some distance to grow and strike the bank.
-*   **Refinement**: While `meanderpy` uses a 1D centerline spline convolution model, we represent this physical lag in our 2D model by setting a high velocity `inertia` ($0.85\text{f}$ to $0.90\text{f}$). This causes droplet momentum to lag behind the local terrain gradients, shifting bank erosion downstream of bend apexes and forcing realistic downstream meander translation.
+* **Concept Borrowed**: Upstream flow curvature lag. In nature, meanders translate downstream because helical secondary flow takes some distance to grow and strike the bank.
+* **Refinement**: While `meanderpy` uses a 1D centerline spline convolution model, we represent this physical lag in our 2D model by setting a high velocity `inertia` ($0.85\text{f}$ to $0.90\text{f}$). This causes droplet momentum to lag behind the local terrain gradients, shifting bank erosion downstream of bend apexes and forcing realistic downstream meander translation.
+
+---
+
+## 9. Hexagonal Grid Landscape Evolution
+
+JotCAD also supports a data-driven **Hexagonal Grid Landscape Evolution** engine (implemented in C++ in the `flow/` directory) for generating large-scale procedural continent maps.
+
+### 9.1 Hydrological Elements
+*   **`HexPrecipitation`**: Spawns uniform annual rainfall based on the climate profile's `rain_rate` (e.g. $1.4\text{ m/yr}$ for highlands, $0.15\text{ m/yr}$ for desert).
+*   **`HexEvaporation`**: Computes local cell evaporation using elevation-dependent temperature cooling:
+    $$\text{temp} = \text{base\_temp} - \frac{H_{\text{soil}}}{\text{lapse\_rate\_divisor}}$$
+    $$\text{PET} = K_{\text{evap}} \times \max(0.0, \text{temp})$$
+    Actual evaporation reduces the surface water depth locally before routing.
+*   **`HexRouting`**: Implements a **Two-Pass Component-Based Basin Water Balance** model to handle endorheic sinks and overflowing lakes cleanly on the hexagonal layout.
+
+### 9.2 Two-Pass Basin Water Balance
+Closed depressions (lake basins) are identified as labeled connected components of cells using Breadth-First Search (BFS) starting from the sinks up to the basin brims:
+1.  **Pass 1 (Global Inflow Gathering)**: Routes water downhill to accumulate total inflows globally at each basin's lowest cell (outlet). This captures all runoff from surrounding hillsides.
+2.  **Basin Mass Balance**: The total inflow volume $Q_{\text{in}}$ (in $\text{m}^3/\text{yr}$) reaching the basin is compared against the basin's total potential evaporation volume $Q_{\text{evap}}$ (the sum of cell PETs over the basin area).
+    *   **Overflowing Basin ($Q_{\text{in}} \ge Q_{\text{evap}}$)**: The basin fills completely to its brim elevation. The surplus water volume ($Q_{\text{in}} - Q_{\text{evap}}$) is discharged from the spillway cell and routed downhill during Pass 2.
+    *   **Non-Overflowing Basin ($Q_{\text{in}} < Q_{\text{evap}}$)**: The lake does not overflow. A single flat water level $H_{\text{water}}$ is calculated bottom-up by volume-filling such that:
+        $$Q_{\text{in}} = \sum_{\text{flooded cells}} (\text{PET} \times \text{cell\_area})$$
+        All cells within the basin have their downstream directions redirected towards the lake floor.
+3.  **Pass 2 (Discharge Consolidation)**: Re-runs the flow routing using the corrected downstream directions and spillway discharges to calculate stable flow rates ($g.Q$) and surface water depths.
+
+### 9.3 Visual Downhill Rendering Constraint
+To prevent visual rendering anomalies where river channels appear to climb uphill over ridges (due to flat water elevations inside lakes), both the C++ pixel exporter (`hex_exporter.h`) and the HTML dashboard (`hex_visualizer.html`) enforce a visual downhill slope check:
+*   A river segment between a cell and its downstream neighbor is **only drawn** if the neighbor's soil elevation is downhill or level:
+    $$H_{\text{soil}}[\text{downstream}] \le H_{\text{soil}}[\text{current}] + 0.05\text{m}$$
+*   This automatically hides the internal routing vectors inside lake bodies (since the path towards the outlet climbs the lake bed uphill to the spillway). Rivers stop cleanly at the lake shoreline, and outflow rivers start exactly at the spillway cell and flow downhill.
+
+### 9.4 Climate-Specific Calibration
+Evaporation coefficients are defined dynamically per profile in `ClimateProfile`:
+*   **Subtropical Highland**: $K_{\text{evap}} = 0.0024f$ (retains lush, active, overflowing river networks).
+*   **Arid Desert**: $K_{\text{evap}} = 0.0040f$ (exceeds local rainfall, drying out minor streams and leaving only small, realistic terminal salt lakes in the lowest basins).
+
