@@ -46,6 +46,29 @@
         "active_river_cells": 0,
         "water_coverage": 1.95926
       }
+    },
+    "Boreal Forest": {
+      "status": "PASSED",
+      "mismatch_count": 0,
+      "mismatch_percentage": 0,
+      "baseline": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.54654e+06,
+        "net_mass_change": -70246,
+        "avg_vegetation_cover": 27.1686,
+        "max_river_discharge": 132.871,
+        "active_river_cells": 2583,
+        "water_coverage": 2.88889
+      },
+      "current": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.54654e+06,
+        "net_mass_change": -70246,
+        "avg_vegetation_cover": 27.1686,
+        "max_river_discharge": 132.871,
+        "active_river_cells": 2583,
+        "water_coverage": 2.88889
+      }
     }
   }
 }

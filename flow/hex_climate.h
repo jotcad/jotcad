@@ -52,6 +52,20 @@ public:
                 0.0f,    // 0.0 initial saturation (0% - completely dry aquifer)
                 0.04f,   // 0.04 infiltration rate (4% - crust repelled)
                 250.0f   // 250.0 m/yr conductivity (coarse sand)
+            },
+            {
+                "Boreal Forest",
+                0.75f,   // 0.75 m/yr rain (moderate rain/snowmelt)
+                8.0f,    // 8C base temperature (cold subpolar)
+                70.0f,   // 70m lapse rate divisor (coniferous alpine treeline)
+                0.0f,    // 0C min temp limit for conifer growth
+                10.0f,   // 10C temperature range for scaling
+                0.08f,   // 0.08 slow vegetation growth rate
+                0.4f,    // 0.4m rain threshold (efficient cold usage)
+                0.0012f, // 0.0012 evaporation coefficient (very low evap due to cold)
+                0.30f,   // 0.30 initial saturation (30% - boggy starting conditions)
+                0.10f,   // 0.10 infiltration rate (10%)
+                15.0f    // 15.0 m/yr conductivity (slow draining peat/clay)
             }
         };
     }
