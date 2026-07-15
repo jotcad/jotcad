@@ -432,13 +432,13 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                 pg = (unsigned char)std::max(0.0f, std::min(255.0f, sg));
                 pb = (unsigned char)std::max(0.0f, std::min(255.0f, sb));
 
-                if (h_lake[r][q] > 0.10f) {
-                    float w_norm = std::min(1.0f, (h_lake[r][q] - 0.10f) / 1.00f);
+                if (h_lake[r][q] > 0.25f) {
+                    float w_norm = std::min(1.0f, (h_lake[r][q] - 0.25f) / 1.00f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
                     float wb = 224.0f + (150.0f - 224.0f) * w_norm;
 
-                    float opacity = 0.40f + w_norm * 0.52f;
+                    float opacity = 0.30f + w_norm * 0.62f;
                     pr = (unsigned char)((1.0f - opacity) * pr + opacity * wr);
                     pg = (unsigned char)((1.0f - opacity) * pg + opacity * wg);
                     pb = (unsigned char)((1.0f - opacity) * pb + opacity * wb);
@@ -518,7 +518,7 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
     for (int r = 0; r < g.size_r; ++r) {
         for (int q = 0; q < g.size_q; ++q) {
             float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
-            if (Q_m3s > 0.10f && h_lake[r][q] <= 0.50f) {
+            if (Q_m3s > 1.0f && h_lake[r][q] <= 0.50f) {
                 int dir = g.downstream_dir[r][q];
                 if (dir >= 0 && dir < 6) {
                     int nq = q + HEX_DQ[dir];
@@ -530,9 +530,9 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                         float cx2 = R_px * 1.7320508f * (nq + nr * 0.5f) + margin_x;
                         float cy2 = h - 1.0f - (R_px * 1.5f * nr + margin_y);
 
-                        // Visual scaling: Minimum 1.5px thickness and 0.70 opacity for clear line visibility
-                        float thickness = std::min(6.0f, 1.5f + std::sqrt(Q_m3s) * 0.5f);
-                        float opacity = std::min(0.95f, 0.70f + std::sqrt(Q_m3s) * 0.15f);
+                        // Visual scaling aligned with web visualizer
+                        float thickness = std::min(4.0f, 0.3f + std::sqrt(Q_m3s) * 0.22f);
+                        float opacity = std::min(0.85f, 0.15f + std::sqrt(Q_m3s) * 0.12f);
 
                         unsigned char lr = 56, lg = 189, lb = 248;
                         if (Q_m3s >= 20.0f) {

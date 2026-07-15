@@ -28,19 +28,19 @@
       "mismatch_percentage": 0,
       "baseline": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.77583e+06,
-        "net_mass_change": 159043,
-        "avg_vegetation_cover": 27.1157,
-        "max_river_discharge": 1.60764,
-        "active_river_cells": 63
+        "final_soil_volume": 9.71679e+06,
+        "net_mass_change": 100003,
+        "avg_vegetation_cover": 15.7085,
+        "max_river_discharge": 1.68122,
+        "active_river_cells": 69
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
-        "final_soil_volume": 9.77583e+06,
-        "net_mass_change": 159043,
-        "avg_vegetation_cover": 27.1157,
-        "max_river_discharge": 1.60764,
-        "active_river_cells": 63
+        "final_soil_volume": 9.71679e+06,
+        "net_mass_change": 100003,
+        "avg_vegetation_cover": 15.7085,
+        "max_river_discharge": 1.68122,
+        "active_river_cells": 69
       }
     }
   }

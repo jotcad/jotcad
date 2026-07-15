@@ -62,7 +62,8 @@ public:
                 float annual_rain = rain_rate;
 
                 if (annual_rain > 0.01f) {
-                    moisture = std::min(1.0f, annual_rain / rain_threshold);
+                    float ratio = std::min(1.0f, annual_rain / rain_threshold);
+                    moisture = std::pow(ratio, 2.0f); // Non-linear ecological threshold scaling
                 }
 
                 // River channels get extra moisture but also high discharge scouring
