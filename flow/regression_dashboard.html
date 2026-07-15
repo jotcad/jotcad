@@ -107,7 +107,7 @@
             background: var(--panel-bg);
             border: 1px solid var(--border);
             border-radius: 20px;
-            padding: 2.5rem;
+            padding: 2rem;
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
             backdrop-filter: blur(12px);
             align-items: center;
@@ -115,14 +115,16 @@
 
         @media (min-width: 992px) {
             .profile-row {
-                grid-template-columns: 1.25fr 1fr;
+                grid-template-columns: 450px 1fr;
+                align-items: stretch;
             }
         }
 
         .profile-info {
             display: flex;
             flex-direction: column;
-            gap: 1.25rem;
+            justify-content: space-between;
+            gap: 1rem;
         }
 
         .profile-header {
@@ -130,11 +132,11 @@
             align-items: center;
             justify-content: space-between;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            padding-bottom: 1rem;
+            padding-bottom: 0.75rem;
         }
 
         .profile-name {
-            font-size: 1.75rem;
+            font-size: 1.5rem;
             font-weight: 700;
             letter-spacing: -0.02em;
         }
@@ -143,10 +145,10 @@
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.35rem 1rem;
+            padding: 0.3rem 0.85rem;
             border-radius: 9999px;
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             border: 1px solid var(--border);
         }
 
@@ -177,11 +179,11 @@
         }
 
         .profile-params {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: var(--text-muted);
             background: rgba(255, 255, 255, 0.02);
             border: 1px solid var(--border);
-            padding: 0.75rem 1.25rem;
+            padding: 0.6rem 1rem;
             border-radius: 8px;
             display: flex;
             gap: 1.5rem;
@@ -194,21 +196,28 @@
         .metrics-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 0.75rem;
+            gap: 0.5rem;
+        }
+
+        @media (min-width: 576px) {
+            .metrics-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
         }
 
         .metric-item {
             background: rgba(255, 255, 255, 0.01);
             border: 1px solid var(--border);
-            padding: 0.9rem 1.2rem;
-            border-radius: 10px;
+            padding: 0.6rem 0.9rem;
+            border-radius: 8px;
             display: flex;
             flex-direction: column;
-            gap: 0.25rem;
+            gap: 0.2rem;
+            justify-content: center;
         }
 
         .metric-label {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -221,15 +230,15 @@
         }
 
         .metric-val {
-            font-size: 1.15rem;
+            font-size: 1rem;
             font-weight: 700;
             font-family: var(--mono);
         }
 
         .delta-badge {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             font-weight: 600;
-            padding: 0.15rem 0.4rem;
+            padding: 0.1rem 0.35rem;
             border-radius: 4px;
             font-family: var(--mono);
         }
@@ -277,13 +286,13 @@
 
         .image-overlay-label {
             position: absolute;
-            bottom: 12px;
-            right: 12px;
+            bottom: 10px;
+            right: 10px;
             background: rgba(0, 0, 0, 0.7);
             border: 1px solid rgba(255, 255, 255, 0.15);
-            padding: 0.35rem 0.75rem;
-            border-radius: 6px;
-            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
             font-weight: 600;
             letter-spacing: 0.05em;
             pointer-events: none;
@@ -317,6 +326,13 @@
     <main id="profiles-container">
         <!-- Profile rows will be injected dynamically here -->
         <div class="profile-row" id="row-subtropical-highland">
+            <!-- Final Top View Column (Placed Left) -->
+            <a href="./hex_frames/frame_1000.png" target="_blank" class="image-column">
+                <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
+                <div class="image-overlay-label">FINAL TOP VIEW (1000K YR)</div>
+            </a>
+
+            <!-- Info Column (Placed Right) -->
             <div class="profile-info">
                 <div class="profile-header">
                     <div class="profile-name">Subtropical Highland</div>
@@ -336,12 +352,6 @@
                     <!-- Populated by JavaScript -->
                 </div>
             </div>
-
-            <!-- Final Top View Column -->
-            <a href="./hex_frames/frame_1000.png" target="_blank" class="image-column">
-                <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
-                <div class="image-overlay-label">FINAL TOP VIEW (1000K YR)</div>
-            </a>
         </div>
     </main>
 
@@ -391,13 +401,13 @@
                     let relDiff = baseVal !== 0.0 ? diffVal / Math.abs(baseVal) : diffVal;
                     
                     if (field.format === 'e') {
-                        currStr = currVal.toExponential(3);
+                        currStr = currVal.toExponential(2); // Slightly shorter exponential format to save horizontal space
                     } else if (field.format === 'pct' || field.format === 'dev') {
-                        currStr = currVal.toFixed(3) + (field.suffix || '');
+                        currStr = currVal.toFixed(2) + (field.suffix || '');
                     } else if (field.format === 'int') {
                         currStr = Math.round(currVal).toLocaleString();
                     } else {
-                        currStr = currVal.toFixed(2) + (field.suffix || '');
+                        currStr = currVal.toFixed(1) + (field.suffix || '');
                     }
 
                     // Delta badge styling
@@ -407,10 +417,10 @@
                     if (field.key === 'pixel_deviation') {
                         if (currVal > field.tol) {
                             deltaClass = 'error';
-                            deltaText = currVal.toFixed(3) + '%';
+                            deltaText = currVal.toFixed(2) + '%';
                         } else if (currVal > 0) {
                             deltaClass = 'success';
-                            deltaText = currVal.toFixed(3) + '%';
+                            deltaText = currVal.toFixed(2) + '%';
                         } else {
                             deltaText = 'Match';
                         }
@@ -429,10 +439,10 @@
                         const absRelDiff = Math.abs(relDiff);
                         if (absRelDiff > field.tol) {
                             deltaClass = 'error';
-                            deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(3) + '%';
+                            deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
                         } else if (absRelDiff > 0) {
                             deltaClass = 'success';
-                            deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(3) + '%';
+                            deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
                         } else {
                             deltaText = 'Match';
                         }
