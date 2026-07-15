@@ -43,16 +43,17 @@
             padding: 3rem 2rem;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            overflow-x: auto; /* Enable page-level horizontal scroll if viewport < 900px */
         }
 
         header {
             width: 100%;
             max-width: 1200px;
+            min-width: 900px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 3rem;
+            margin: 0 auto 3rem auto;
             border-bottom: 1px solid var(--border);
             padding-bottom: 1.5rem;
         }
@@ -95,26 +96,41 @@
         main {
             width: 100%;
             max-width: 1200px;
-            min-width: 900px; /* Force minimum width to prevent table squishing */
+            min-width: 900px;
+            margin: 0 auto;
             display: flex;
             flex-direction: column;
             gap: 2rem;
         }
 
-        .profile-row {
-            display: grid;
-            grid-template-columns: 450px 1fr;
-            gap: 2rem;
+        /* Bulletproof Table-Based Layout Container */
+        .dashboard-container {
             background: var(--panel-bg);
             border: 1px solid var(--border);
             border-radius: 20px;
             padding: 2rem;
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
             backdrop-filter: blur(12px);
-            align-items: stretch;
+            width: 100%;
+        }
+
+        .dashboard-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .dashboard-table td {
+            padding: 1.5rem;
+            vertical-align: top;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dashboard-table tr:last-child td {
+            border-bottom: none;
         }
 
         .profile-info {
+            width: 100%;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -248,7 +264,7 @@
         }
 
         footer {
-            margin-top: 5rem;
+            margin: 5rem auto 0 auto;
             color: var(--text-muted);
             font-size: 0.85rem;
             font-family: 'JetBrains Mono', monospace;
@@ -256,6 +272,7 @@
             padding-top: 2rem;
             width: 100%;
             max-width: 1200px;
+            min-width: 900px;
             text-align: center;
         }
     </style>
@@ -272,23 +289,32 @@
         </button>
     </header>
 
-    <main id="profiles-container">
-        <div class="profile-row" id="row-subtropical-highland">
-            <!-- Final Top View Column (Placed Left) -->
-            <a href="./hex_frames/frame_1000.png" target="_blank" class="image-column">
-                <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
-            </a>
-
-            <!-- Info Column (Placed Right as Compact Table) -->
-            <div class="profile-info">
-                <div class="table-wrapper">
-                    <table class="compact-table">
-                        <tbody id="metrics-body">
-                            <!-- Populated by JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+    <main>
+        <div class="dashboard-container">
+            <table class="dashboard-table">
+                <tbody>
+                    <tr id="row-subtropical-highland">
+                        <!-- Left: Image Column (Fixed 450px) -->
+                        <td style="width: 450px; padding-left: 0; padding-top: 0; padding-bottom: 0;">
+                            <a href="./hex_frames/frame_1000.png" target="_blank" class="image-column" style="display: block; width: 450px;">
+                                <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
+                            </a>
+                        </td>
+                        <!-- Right: Info Column -->
+                        <td style="padding-right: 0; padding-top: 0; padding-bottom: 0;">
+                            <div class="profile-info">
+                                <div class="table-wrapper">
+                                    <table class="compact-table">
+                                        <tbody id="metrics-body">
+                                            <!-- Populated by JavaScript -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </main>
 
