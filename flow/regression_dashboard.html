@@ -136,7 +136,7 @@
             justify-content: center;
         }
 
-        /* Compact Table Styling */
+        /* Compact Table Grid Styling */
         .table-wrapper {
             background: rgba(255, 255, 255, 0.01);
             border: 1px solid var(--border);
@@ -153,31 +153,28 @@
         }
 
         .compact-table td {
-            padding: 0.45rem 1rem;
+            padding: 0.65rem 1.25rem;
             border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
             vertical-align: middle;
+        }
+
+        .compact-table td:last-child {
+            border-right: none;
         }
 
         .compact-table tr:last-child td {
             border-bottom: none;
         }
 
-        .compact-table td strong {
-            color: var(--text-muted);
-            font-weight: 600;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
         .status-badge {
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
-            padding: 0.2rem 0.75rem;
+            padding: 0.2rem 0.65rem;
             border-radius: 9999px;
             font-weight: 600;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             border: 1px solid var(--border);
         }
 
@@ -214,9 +211,9 @@
         }
 
         .delta-badge {
-            font-size: 0.7rem;
+            font-size: 0.68rem;
             font-weight: 600;
-            padding: 0.1rem 0.35rem;
+            padding: 0.08rem 0.3rem;
             border-radius: 4px;
             font-family: var(--mono);
             display: inline-block;
@@ -300,13 +297,13 @@
                                 <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
                             </a>
                         </td>
-                        <!-- Right: Info Column -->
-                        <td style="padding-right: 0; padding-top: 0; padding-bottom: 0;">
+                        <!-- Right: Info Column with Wrapped Columns (3x3 grid) -->
+                        <td style="padding-right: 0; padding-top: 0; padding-bottom: 0; vertical-align: middle;">
                             <div class="profile-info">
                                 <div class="table-wrapper">
                                     <table class="compact-table">
                                         <tbody id="metrics-body">
-                                            <!-- Populated by JavaScript -->
+                                            <!-- Populated dynamically by JavaScript -->
                                         </tbody>
                                     </table>
                                 </div>
@@ -332,28 +329,18 @@
                 const tbody = document.getElementById('metrics-body');
                 tbody.innerHTML = '';
 
-                // Helper to create a table row
-                const addRow = (label, valHTML, badgeHTML = '') => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td style="width: 35%;"><strong>${label}</strong></td>
-                        <td class="mono">${valHTML}</td>
-                        <td style="text-align: right; width: 20%;">${badgeHTML}</td>
+                // Helper to render a cell containing a stacked label, value, and badge
+                const makeCellHTML = (label, valHTML, badgeHTML = '') => {
+                    return `
+                        <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; font-weight: 600;">${label}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                            <div class="mono" style="font-size: 0.95rem; font-weight: 700; color: #ffffff;">${valHTML}</div>
+                            ${badgeHTML}
+                        </div>
                     `;
-                    tbody.appendChild(tr);
                 };
 
-                // 1. Verification Status Row
-                const statusBadgeHTML = `<span class="status-badge ${data.status.toLowerCase()}"><span class="status-indicator"></span>${data.status}</span>`;
-                addRow('Status', statusBadgeHTML);
-
-                // 2. Profile Name Row
-                addRow('Profile Name', '<span style="font-weight: 600; color: #ffffff;">Subtropical Highland</span>');
-
-                // 3. Parameters Row
-                addRow('Parameters', 'Rain: 1.4 m/yr | Temp: 25°C / 85m');
-
-                // 4. Metrics Setup
+                // Generate strings and badges for each field
                 const fields = [
                     { key: 'final_soil_volume', label: 'Final Soil Mass', format: 'e', tol: 0.001 },
                     { key: 'net_mass_change', label: 'Net Soil Drift', format: 'f', suffix: ' m', tol: 0.001 },
@@ -363,9 +350,10 @@
                     { key: 'pixel_deviation', label: 'Pixel Mismatch', format: 'dev', suffix: '%', tol: 0.1 }
                 ];
 
+                const renderedMetrics = {};
+
                 fields.forEach(field => {
                     let baseVal = 0, currVal = 0;
-                    
                     if (field.key === 'pixel_deviation') {
                         baseVal = 0;
                         currVal = data.mismatch_percentage;
@@ -373,11 +361,11 @@
                         baseVal = data.baseline[field.key];
                         currVal = data.current[field.key];
                     }
-                    
+
                     let currStr = '';
                     let diffVal = currVal - baseVal;
                     let relDiff = baseVal !== 0.0 ? diffVal / Math.abs(baseVal) : diffVal;
-                    
+
                     if (field.format === 'e') {
                         currStr = currVal.toExponential(2);
                     } else if (field.format === 'pct' || field.format === 'dev') {
@@ -388,10 +376,9 @@
                         currStr = currVal.toFixed(1) + (field.suffix || '');
                     }
 
-                    // Delta badge styling
                     let deltaClass = 'match';
                     let deltaText = '0.00%';
-                    
+
                     if (field.key === 'pixel_deviation') {
                         if (currVal > field.tol) {
                             deltaClass = 'error';
@@ -426,14 +413,47 @@
                         }
                     }
 
-                    const badgeHTML = `<span class="delta-badge ${deltaClass}">${deltaText}</span>`;
-                    addRow(field.label, currStr, badgeHTML);
+                    renderedMetrics[field.key] = {
+                        valHTML: currStr,
+                        badgeHTML: `<span class="delta-badge ${deltaClass}">${deltaText}</span>`
+                    };
                 });
+
+                // Create 3 grid rows (tr)
+                const tr1 = document.createElement('tr');
+                const tr2 = document.createElement('tr');
+                const tr3 = document.createElement('tr');
+
+                // Row 1: Status, Profile Name, Parameters
+                const statusBadgeHTML = `<span class="status-badge ${data.status.toLowerCase()}"><span class="status-indicator"></span>${data.status}</span>`;
+                tr1.innerHTML = `
+                    <td style="width: 33.3%;">${makeCellHTML('Status', statusBadgeHTML)}</td>
+                    <td style="width: 33.3%;">${makeCellHTML('Profile Name', '<span style="color: #ffffff; font-weight: 600;">Subtropical Highland</span>')}</td>
+                    <td style="width: 33.3%;">${makeCellHTML('Parameters', '<span style="color: var(--text-muted); font-size: 0.85rem;">Rain: 1.4m | Temp: 25°C / 85m</span>')}</td>
+                `;
+
+                // Row 2: Final Soil Mass, Net Soil Drift, Avg Vegetation
+                tr2.innerHTML = `
+                    <td>${makeCellHTML('Final Soil Mass', renderedMetrics['final_soil_volume'].valHTML, renderedMetrics['final_soil_volume'].badgeHTML)}</td>
+                    <td>${makeCellHTML('Net Soil Drift', renderedMetrics['net_mass_change'].valHTML, renderedMetrics['net_mass_change'].badgeHTML)}</td>
+                    <td>${makeCellHTML('Avg Vegetation', renderedMetrics['avg_vegetation_cover'].valHTML, renderedMetrics['avg_vegetation_cover'].badgeHTML)}</td>
+                `;
+
+                // Row 3: Max River Flow, Active River Cells, Pixel Mismatch
+                tr3.innerHTML = `
+                    <td>${makeCellHTML('Max River Flow', renderedMetrics['max_river_discharge'].valHTML, renderedMetrics['max_river_discharge'].badgeHTML)}</td>
+                    <td>${makeCellHTML('Active River Cells', renderedMetrics['active_river_cells'].valHTML, renderedMetrics['active_river_cells'].badgeHTML)}</td>
+                    <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
+                `;
+
+                tbody.appendChild(tr1);
+                tbody.appendChild(tr2);
+                tbody.appendChild(tr3);
 
             } catch (err) {
                 console.error("Failed to load statistics:", err);
                 const tbody = document.getElementById('metrics-body');
-                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--fail);">❌ Failed to load simulation metrics</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--fail); padding: 2rem;">❌ Failed to load simulation metrics</td></tr>';
             }
         }
 
