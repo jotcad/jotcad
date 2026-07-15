@@ -49,7 +49,7 @@ public:
                 0.03f,   // 0.03 vegetation growth rate
                 0.8f,    // 0.8m annual rain threshold
                 0.004286f, // 0.004286 evaporation coefficient (hot/arid, net-zero valley balance)
-                0.01f,   // 0.01 initial saturation (1% - highly depleted)
+                0.0f,    // 0.0 initial saturation (0% - completely dry aquifer)
                 0.04f,   // 0.04 infiltration rate (4% - crust repelled)
                 250.0f   // 250.0 m/yr conductivity (coarse sand)
             }
