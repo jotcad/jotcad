@@ -157,4 +157,13 @@ Climate parameters are defined dynamically per profile in `ClimateProfile` to go
     *   Wetland / Water Coverage: **`23.81%`** (incorporates surface water lakes $> 5\text{ cm}$ and saturated soils where the water table is $< 10\text{ cm}$ below the surface).
     *   Visual Shading: Saturated peatlands are shaded with a $45\%$ crimson-red blend, rendering the lowlands as a rich, organic peat-brown wetland/muskeg mosaic.
     *   Result: Sustains slow-growing conifers ($26.3\%$), an alpine treeline on mountains, and extensive valley wetlands.
+*   **Tropical Rainforest**: 
+    *   Rainfall: $3.2\text{ m/yr}$ (torrential monsoon precipitation) | Base Temp: $28^\circ\text{C}$ (hot equatorial)
+    *   Evaporation Coefficient: $K_{\text{evap}} = 0.0040f$
+    *   Subsurface: $60\%$ starting saturation (highly saturated aquifers), $35\%$ annual infiltration rate, $45.0\text{ m/yr}$ lateral conductivity (silty-clay tropical soil).
+    *   Wetland / Water Coverage: **`16.11%`** (incorporates surface water lakes $> 15\text{ cm}$ and saturated soils where the water table is $< 10\text{ cm}$ below the surface).
+    *   Visual Shading: Forests are rendered in a rich emerald green (`RGB: 10, 95, 40`), and saturated soils are shaded with a $35\%$ blend of a tropical lagoon teal-blue (`RGB: 10, 165, 135`) undergrowth.
+    *   Result: Sustains a highly dense canopy forest ($49.6\%$) that stabilizes the landscape against erosion, active river networks covering large parts of the map ($4934$ cells), and high-discharge monsoonal rivers ($546.2\text{ m}^3\text{/s}$).
+    *   *Realism Validation*: The simulated $16.11\%$ wetland/water coverage aligns closely with empirical satellite mappings of the Amazon Basin, which report a total wetland area of **$14\%$ to $30\%$** (including permanent swamps, rivers, lakes, and seasonally flooded forests). The elevated treeline (caused by the weak $100\text{m}$ lapse divisor) reflects tropical montane forests where trees grow up to $3,500\text{–}4,000\text{ meters}$.
+
 
