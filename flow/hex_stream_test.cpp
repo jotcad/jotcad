@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <sys/stat.h>
 #include "hex_orchestrator.h"
+#include "hex_climate.h"
 #include "hex_precipitation.h"
 #include "hex_routing.h"
 #include "hex_erosion.h"
@@ -80,11 +81,15 @@ int main(int argc, char* argv[]) {
 
     // 2. Setup Multi-Phase Simulation
     HexPhase* p1 = orchestrator.add_phase("Hydrology & Landscape Evolution", DT, TOTAL_STEPS);
-    p1->add<HexPrecipitation>(1.4f);                 // 1.4 m rainfall per year
+    
+    // Load Subtropical Highland profile from registry
+    ClimateProfile profile = ClimateRegistry::get_profile("Subtropical Highland");
+
+    p1->add<HexPrecipitation>(profile);
     p1->add<HexRouting>(0.15f, 0.40f, true);         // D6 routing with sink filling
     p1->add<HexErosion>(1.0e-2f, 0.04f, 0.15f, 2.0f); // Soil erodibility 1.0e-2 (bedrock 2.5e-4)
     p1->add<HexLandslide>(0.14f, 0.50f);             // Stable slopes (14% soil, 50% bedrock) + veg cohesion
-    p1->add<HexVegetation>(0.16f, 1.0f, 0.8f);       // Vegetation growth
+    p1->add<HexVegetation>(profile, 1.0f);           // Vegetation growth using profile
 
     std::vector<HexGridState> history;
 

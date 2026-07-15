@@ -2,6 +2,7 @@
 #define HEX_PRECIPITATION_H
 
 #include "hex_element.h"
+#include "hex_climate.h"
 
 // Precipitation Element for the hexagonal grid
 class HexPrecipitation : public HexElement {
@@ -9,6 +10,7 @@ private:
     float rain_rate; // Rainfall rate in meters per year (m/yr)
 public:
     HexPrecipitation(float rate) : rain_rate(rate) {}
+    HexPrecipitation(const ClimateProfile& profile) : rain_rate(profile.rain_rate) {}
 
     void step(HexGrid& g, float dt, int step, int total_steps) override {
         // rain_rate * dt gives the rainfall depth in meters added during this time-step
