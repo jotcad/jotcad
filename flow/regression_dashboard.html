@@ -21,7 +21,6 @@
             --fail: #f43f5e;
             --fail-glow: rgba(244, 63, 94, 0.18);
             --gold: #f59e0b;
-            --gold-glow: rgba(245, 158, 11, 0.18);
             
             --font: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             --mono: 'JetBrains Mono', monospace;
@@ -37,11 +36,11 @@
             background-color: var(--bg);
             background-image: 
                 radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.03) 0px, transparent 50%),
-                radial-gradient(at 100% 0%, rgba(244, 63, 94, 0.03) 0px, transparent 50%);
+                radial-gradient(at 100% 0%, rgba(56, 189, 248, 0.03) 0px, transparent 50%);
             color: var(--text);
             font-family: var(--font);
             min-height: 100vh;
-            padding: 2rem;
+            padding: 3rem 2rem;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -53,7 +52,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2rem;
+            margin-bottom: 3rem;
             border-bottom: 1px solid var(--border);
             padding-bottom: 1.5rem;
         }
@@ -73,343 +72,6 @@
             margin-top: 0.25rem;
         }
 
-        .status-badge {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            background: var(--panel-bg);
-            border: 1px solid var(--border);
-            padding: 0.5rem 1.25rem;
-            border-radius: 9999px;
-            font-weight: 600;
-            font-size: 0.95rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-
-        .status-badge.passed {
-            border-color: var(--success);
-            color: var(--success);
-            box-shadow: 0 0 15px var(--success-glow);
-        }
-        .status-badge.passed .status-indicator {
-            background-color: var(--success);
-            box-shadow: 0 0 8px var(--success);
-            animation: pulse-green 2s infinite;
-        }
-
-        .status-badge.failed {
-            border-color: var(--fail);
-            color: var(--fail);
-            box-shadow: 0 0 15px var(--fail-glow);
-        }
-        .status-badge.failed .status-indicator {
-            background-color: var(--fail);
-            box-shadow: 0 0 8px var(--fail);
-            animation: pulse-red 2s infinite;
-        }
-
-        @keyframes pulse-green {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-        }
-        @keyframes pulse-red {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(244, 63, 94, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
-        }
-
-        main {
-            width: 100%;
-            max-width: 1200px;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 2rem;
-        }
-
-        @media (min-width: 1024px) {
-            main {
-                grid-template-columns: 2fr 1fr;
-            }
-        }
-
-        .card {
-            background: var(--panel-bg);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            backdrop-filter: blur(12px);
-            display: flex;
-            flex-direction: column;
-            gap: 1.25rem;
-        }
-
-        .card h2 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .card-header-actions {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .btn-tab {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-            padding: 0.35rem 0.85rem;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-tab:hover {
-            color: var(--text);
-            border-color: var(--border-hover);
-        }
-
-        .btn-tab.active {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text);
-            border-color: rgba(255, 255, 255, 0.2);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-        }
-
-        /* Interactive Image Slider */
-        .viewport-wrapper {
-            position: relative;
-            width: 100%;
-            aspect-ratio: 1778 / 912;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid var(--border);
-            background: #020408;
-            user-select: none;
-        }
-
-        .view-pane {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: none;
-        }
-
-        .view-pane.active {
-            display: block;
-        }
-
-        .slider-view-container {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            cursor: ew-resize;
-        }
-
-        .baseline-img, .current-img, .diff-img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-
-        .current-img-wrapper {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 50%;
-            height: 100%;
-            overflow: hidden;
-            border-right: 1px solid rgba(255, 255, 255, 0.3);
-            z-index: 10;
-        }
-
-        .current-img-wrapper .current-img {
-            width: 100vw;
-            max-width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .slider-bar {
-            position: absolute;
-            top: 0;
-            left: 50%;
-            width: 2px;
-            height: 100%;
-            background: #ffffff;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), 0 0 4px #ffffff;
-            z-index: 20;
-            pointer-events: none;
-            transform: translateX(-50%);
-        }
-
-        .slider-handle {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 36px;
-            height: 36px;
-            background: #ffffff;
-            border: 4px solid var(--bg);
-            border-radius: 50%;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: var(--bg);
-            font-size: 0.9rem;
-            font-weight: bold;
-            pointer-events: none;
-            z-index: 30;
-        }
-
-        .side-by-side-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.5rem;
-            width: 100%;
-            height: 100%;
-            padding: 0.5rem;
-            background: #040810;
-        }
-
-        .side-by-side-pane {
-            position: relative;
-            border-radius: 6px;
-            overflow: hidden;
-            border: 1px solid var(--border);
-        }
-
-        .side-label {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.65);
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            z-index: 10;
-            letter-spacing: 0.05em;
-        }
-
-        /* Metrics Table */
-        .table-wrapper {
-            overflow-x: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-            text-align: left;
-        }
-
-        th, td {
-            padding: 0.9rem 1.2rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        th {
-            font-weight: 600;
-            color: var(--text-muted);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        .mono {
-            font-family: var(--mono);
-            font-size: 0.85rem;
-        }
-
-        .delta-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.25rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-            font-weight: 500;
-            font-size: 0.8rem;
-        }
-
-        .delta-badge.match {
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--text-muted);
-        }
-
-        .delta-badge.success {
-            background: var(--success-glow);
-            color: var(--success);
-        }
-
-        .delta-badge.error {
-            background: var(--fail-glow);
-            color: var(--fail);
-        }
-
-        .summary-stats {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin-top: 0.5rem;
-        }
-
-        .stat-box {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--border);
-            padding: 1rem;
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-
-        .stat-box span {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .stat-box div {
-            font-size: 1.5rem;
-            font-weight: 700;
-            font-family: var(--mono);
-        }
-
-        .stat-box.highlight {
-            border-color: var(--success);
-            box-shadow: 0 0 10px rgba(16, 185, 129, 0.05);
-        }
-
-        .stat-box.highlight.fail {
-            border-color: var(--fail);
-            box-shadow: 0 0 10px rgba(244, 63, 94, 0.05);
-        }
-
-        /* Refresh button animation */
         .btn-refresh {
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid var(--border);
@@ -430,8 +92,213 @@
             border-color: var(--border-hover);
         }
 
-        .btn-refresh:active {
-            transform: scale(0.97);
+        main {
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .profile-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(12px);
+            align-items: center;
+        }
+
+        @media (min-width: 992px) {
+            .profile-row {
+                grid-template-columns: 1.25fr 1fr;
+            }
+        }
+
+        .profile-info {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .profile-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 1rem;
+        }
+
+        .profile-name {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 1rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            border: 1px solid var(--border);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-badge.passed {
+            border-color: var(--success);
+            color: var(--success);
+            background: var(--success-glow);
+        }
+        .status-badge.passed .status-indicator {
+            background-color: var(--success);
+            box-shadow: 0 0 6px var(--success);
+        }
+
+        .status-badge.failed {
+            border-color: var(--fail);
+            color: var(--fail);
+            background: var(--fail-glow);
+        }
+        .status-badge.failed .status-indicator {
+            background-color: var(--fail);
+            box-shadow: 0 0 6px var(--fail);
+        }
+
+        .profile-params {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .profile-params strong {
+            color: var(--text);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .metric-item {
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--border);
+            padding: 0.9rem 1.2rem;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .metric-value-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+
+        .metric-val {
+            font-size: 1.15rem;
+            font-weight: 700;
+            font-family: var(--mono);
+        }
+
+        .delta-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: var(--mono);
+        }
+
+        .delta-badge.match {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+        }
+
+        .delta-badge.success {
+            background: var(--success-glow);
+            color: var(--success);
+        }
+
+        .delta-badge.error {
+            background: var(--fail-glow);
+            color: var(--fail);
+        }
+
+        /* Image Display Column */
+        .image-column {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            aspect-ratio: 1778 / 912;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #020408;
+            cursor: pointer;
+        }
+
+        .image-column:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .top-view-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .image-overlay-label {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            pointer-events: none;
+        }
+
+        footer {
+            margin-top: 5rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 2rem;
+            width: 100%;
+            max-width: 1200px;
+            text-align: center;
         }
     </style>
 </head>
@@ -441,240 +308,113 @@
             <h1>JotCAD Regression Visualizer</h1>
             <p>Verification & physical parameter drift analysis (v4.6.0-arable)</p>
         </div>
-        <div id="overall-status" class="status-badge">
-            <span class="status-indicator"></span>
-            <span class="status-text">Loading...</span>
-        </div>
+        <button class="btn-refresh" onclick="loadStats()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            Refresh
+        </button>
     </header>
 
-    <main>
-        <!-- Left Side: Interactive Visualizer -->
-        <div class="card">
-            <h2>
-                Visual Output Comparison
-                <div class="card-header-actions">
-                    <button class="btn-tab active" onclick="switchView('slider')">Interactive Slider</button>
-                    <button class="btn-tab" onclick="switchView('side')">Side by Side</button>
-                    <button class="btn-tab" onclick="switchView('diff')">Visual Diff</button>
-                </div>
-            </h2>
-
-            <div class="viewport-wrapper">
-                <!-- Interactive Slider -->
-                <div id="pane-slider" class="view-pane active">
-                    <div class="slider-view-container" id="slider-container">
-                        <!-- Baseline is on bottom -->
-                        <img src="./hex_regression_ref.png" alt="Baseline Reference" class="baseline-img">
-                        <!-- Current is on top with width clip -->
-                        <div class="current-img-wrapper" id="current-wrapper">
-                            <img src="./hex_frames/frame_1000.png" alt="Current Run" class="current-img" id="current-img">
-                        </div>
-                        <div class="slider-bar" id="slider-bar"></div>
-                        <div class="slider-handle" id="slider-handle">↔</div>
+    <main id="profiles-container">
+        <!-- Profile rows will be injected dynamically here -->
+        <div class="profile-row" id="row-subtropical-highland">
+            <div class="profile-info">
+                <div class="profile-header">
+                    <div class="profile-name">Subtropical Highland</div>
+                    <div id="status-badge" class="status-badge">
+                        <span class="status-indicator"></span>
+                        <span class="status-text">Loading...</span>
                     </div>
                 </div>
 
-                <!-- Side by Side -->
-                <div id="pane-side" class="view-pane">
-                    <div class="side-by-side-container">
-                        <div class="side-by-side-pane">
-                            <span class="side-label">BASELINE REFERENCE</span>
-                            <img src="./hex_regression_ref.png" alt="Baseline" class="baseline-img">
-                        </div>
-                        <div class="side-by-side-pane">
-                            <span class="side-label">CURRENT SIMULATION RUN</span>
-                            <img src="./hex_frames/frame_1000.png" alt="Current" class="current-img">
-                        </div>
-                    </div>
+                <div class="profile-params">
+                    <span>Rainfall: <strong>1.4 m/yr</strong></span>
+                    <span>Base Temp: <strong>25°C</strong></span>
+                    <span>Lapse Divisor: <strong>85 m/°C</strong></span>
                 </div>
 
-                <!-- Visual Diff -->
-                <div id="pane-diff" class="view-pane">
-                    <span class="side-label" style="position: absolute; top: 10px; left: 10px; z-index: 10;">
-                        PIXEL MISMATCH MAP (NEON PINK = DIFFERENCE)
-                    </span>
-                    <img src="./hex_regression_diff.png" alt="Visual Pixel Diff" class="diff-img">
-                </div>
-            </div>
-        </div>
-
-        <!-- Right Side: Metrics and Telemetry -->
-        <div class="card">
-            <h2>
-                Metrics & Budgets
-                <button class="btn-refresh" onclick="loadStats()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                    Refresh
-                </button>
-            </h2>
-
-            <div class="summary-stats">
-                <div class="stat-box highlight" id="mismatch-box">
-                    <span>Mismatched Pixels</span>
-                    <div id="mismatch-val">0</div>
-                </div>
-                <div class="stat-box highlight" id="mismatch-pct-box">
-                    <span>Pixel Deviation</span>
-                    <div id="mismatch-pct">0.00%</div>
+                <div class="metrics-grid" id="metrics-grid">
+                    <!-- Populated by JavaScript -->
                 </div>
             </div>
 
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Parameter</th>
-                            <th>Baseline</th>
-                            <th>Current</th>
-                            <th>Delta</th>
-                        </tr>
-                    </thead>
-                    <tbody id="metrics-body">
-                        <!-- Populated by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
+            <!-- Final Top View Column -->
+            <a href="./hex_frames/frame_1000.png" target="_blank" class="image-column">
+                <img src="./hex_frames/frame_1000.png" alt="Subtropical Highland Top View" class="top-view-img">
+                <div class="image-overlay-label">FINAL TOP VIEW (1000K YR)</div>
+            </a>
         </div>
     </main>
 
+    <footer>
+        <p>JotCAD Web VFS System &bull; Ports: 8085 (HTTPS) &bull; Core: C++ Simulation Engine</p>
+    </footer>
+
     <script>
-        // Interactive slider logic
-        const container = document.getElementById('slider-container');
-        const sliderBar = document.getElementById('slider-bar');
-        const sliderHandle = document.getElementById('slider-handle');
-        const currentWrapper = document.getElementById('current-wrapper');
-        const currentImg = document.getElementById('current-img');
-
-        let isDragging = false;
-
-        function setSliderPosition(clientX) {
-            const rect = container.getBoundingClientRect();
-            let x = clientX - rect.left;
-            let percentage = (x / rect.width) * 100;
-            percentage = Math.max(0, Math.min(100, percentage));
-
-            sliderBar.style.left = percentage + '%';
-            sliderHandle.style.left = percentage + '%';
-            currentWrapper.style.width = percentage + '%';
-        }
-
-        // Align image scale inside the clipped wrapper
-        function updateImgWidth() {
-            const rect = container.getBoundingClientRect();
-            currentImg.style.width = rect.width + 'px';
-        }
-
-        window.addEventListener('resize', updateImgWidth);
-        updateImgWidth();
-
-        container.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            setSliderPosition(e.clientX);
-        });
-
-        window.addEventListener('mouseup', () => { isDragging = false; });
-        window.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            setSliderPosition(e.clientX);
-        });
-
-        container.addEventListener('touchstart', (e) => {
-            isDragging = true;
-            setSliderPosition(e.touches[0].clientX);
-        });
-        window.addEventListener('touchend', () => { isDragging = false; });
-        window.addEventListener('touchmove', (e) => {
-            if (!isDragging) return;
-            setSliderPosition(e.touches[0].clientX);
-        });
-
-        // Tab Switching
-        function switchView(viewName) {
-            // Update tab buttons
-            const buttons = document.querySelectorAll('.btn-tab');
-            buttons.forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-
-            // Switch panes
-            const panes = document.querySelectorAll('.view-pane');
-            panes.forEach(pane => pane.classList.remove('active'));
-            document.getElementById('pane-' + viewName).classList.add('active');
-
-            if (viewName === 'slider') {
-                updateImgWidth();
-            }
-        }
-
-        // Load stats from JSON
         async function loadStats() {
             try {
                 const response = await fetch('./hex_regression_stats.json?' + new Date().getTime());
                 if (!response.ok) throw new Error("JSON file load failed");
                 const data = await response.json();
 
-                // 1. Overall Status Badge
-                const statusBadge = document.getElementById('overall-status');
+                // 1. Update Status Badge
+                const statusBadge = document.getElementById('status-badge');
                 const statusText = statusBadge.querySelector('.status-text');
                 statusBadge.className = 'status-badge ' + data.status.toLowerCase();
                 statusText.textContent = 'REGRESSION: ' + data.status;
 
-                // 2. Summary stats
-                const misVal = document.getElementById('mismatch-val');
-                const misPct = document.getElementById('mismatch-pct');
-                const misBox = document.getElementById('mismatch-box');
-                const misPctBox = document.getElementById('mismatch-pct-box');
-
-                misVal.textContent = data.mismatch_count.toLocaleString();
-                misPct.textContent = data.mismatch_percentage.toFixed(4) + '%';
-
-                if (data.mismatch_count > 0) {
-                    misBox.className = 'stat-box highlight fail';
-                    misPctBox.className = 'stat-box highlight fail';
-                } else {
-                    misBox.className = 'stat-box highlight';
-                    misPctBox.className = 'stat-box highlight';
-                }
-
-                // 3. Metrics Table
-                const tbody = document.getElementById('metrics-body');
-                tbody.innerHTML = '';
+                // 2. Populate metrics grid
+                const metricsGrid = document.getElementById('metrics-grid');
+                metricsGrid.innerHTML = '';
 
                 const fields = [
-                    { key: 'initial_soil_volume', label: 'Initial Soil Mass', format: 'e', tol: 0.001 },
                     { key: 'final_soil_volume', label: 'Final Soil Mass', format: 'e', tol: 0.001 },
-                    { key: 'net_mass_change', label: 'Net Soil Mass Drift', format: 'f', suffix: ' m', tol: 0.001 },
-                    { key: 'avg_vegetation_cover', label: 'Avg Vegetation Cover', format: 'pct', suffix: '%', tol: 0.005 },
+                    { key: 'net_mass_change', label: 'Net Soil Drift', format: 'f', suffix: ' m', tol: 0.001 },
+                    { key: 'avg_vegetation_cover', label: 'Avg Vegetation', format: 'pct', suffix: '%', tol: 0.005 },
                     { key: 'max_river_discharge', label: 'Max River Flow', format: 'f', suffix: ' m³/s', tol: 0.005 },
-                    { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 }
+                    { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 },
+                    { key: 'pixel_deviation', label: 'Pixel Mismatch', format: 'dev', suffix: '%', tol: 0.1 }
                 ];
 
                 fields.forEach(field => {
-                    const baseVal = data.baseline[field.key];
-                    const currVal = data.current[field.key];
+                    let baseVal = 0, currVal = 0;
                     
-                    let baseStr = '', currStr = '';
+                    if (field.key === 'pixel_deviation') {
+                        baseVal = 0;
+                        currVal = data.mismatch_percentage;
+                    } else {
+                        baseVal = data.baseline[field.key];
+                        currVal = data.current[field.key];
+                    }
+                    
+                    let currStr = '';
                     let diffVal = currVal - baseVal;
                     let relDiff = baseVal !== 0.0 ? diffVal / Math.abs(baseVal) : diffVal;
                     
                     if (field.format === 'e') {
-                        baseStr = baseVal.toExponential(4);
-                        currStr = currVal.toExponential(4);
-                    } else if (field.format === 'pct') {
-                        baseStr = baseVal.toFixed(4) + (field.suffix || '');
-                        currStr = currVal.toFixed(4) + (field.suffix || '');
+                        currStr = currVal.toExponential(3);
+                    } else if (field.format === 'pct' || field.format === 'dev') {
+                        currStr = currVal.toFixed(3) + (field.suffix || '');
                     } else if (field.format === 'int') {
-                        baseStr = Math.round(baseVal).toLocaleString();
                         currStr = Math.round(currVal).toLocaleString();
                     } else {
-                        baseStr = baseVal.toFixed(3) + (field.suffix || '');
-                        currStr = currVal.toFixed(3) + (field.suffix || '');
+                        currStr = currVal.toFixed(2) + (field.suffix || '');
                     }
 
                     // Delta badge styling
                     let deltaClass = 'match';
                     let deltaText = '0.00%';
                     
-                    if (field.format === 'int') {
+                    if (field.key === 'pixel_deviation') {
+                        if (currVal > field.tol) {
+                            deltaClass = 'error';
+                            deltaText = currVal.toFixed(3) + '%';
+                        } else if (currVal > 0) {
+                            deltaClass = 'success';
+                            deltaText = currVal.toFixed(3) + '%';
+                        } else {
+                            deltaText = 'Match';
+                        }
+                    } else if (field.format === 'int') {
                         const cellDiff = Math.abs(currVal - baseVal);
                         if (cellDiff > field.tol) {
                             deltaClass = 'error';
@@ -698,22 +438,24 @@
                         }
                     }
 
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td><strong>${field.label}</strong></td>
-                        <td class="mono">${baseStr}</td>
-                        <td class="mono">${currStr}</td>
-                        <td><span class="delta-badge ${deltaClass}">${deltaText}</span></td>
+                    const item = document.createElement('div');
+                    item.className = 'metric-item';
+                    item.innerHTML = `
+                        <span class="metric-label">${field.label}</span>
+                        <div class="metric-value-row">
+                            <div class="metric-val">${currStr}</div>
+                            <span class="delta-badge ${deltaClass}">${deltaText}</span>
+                        </div>
                     `;
-                    tbody.appendChild(tr);
+                    metricsGrid.appendChild(item);
                 });
 
             } catch (err) {
                 console.error("Failed to load statistics:", err);
-                const statusBadge = document.getElementById('overall-status');
+                const statusBadge = document.getElementById('status-badge');
                 const statusText = statusBadge.querySelector('.status-text');
                 statusBadge.className = 'status-badge failed';
-                statusText.textContent = 'JSON STATS DISCONNECTED';
+                statusText.textContent = 'STATS DISCONNECTED';
             }
         }
 
