@@ -11,7 +11,8 @@
         "net_mass_change": 81859.2,
         "avg_vegetation_cover": 57.8155,
         "max_river_discharge": 233.816,
-        "active_river_cells": 3435
+        "active_river_cells": 3435,
+        "water_coverage": 2.92963
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
@@ -19,7 +20,8 @@
         "net_mass_change": 81859.2,
         "avg_vegetation_cover": 57.8155,
         "max_river_discharge": 233.816,
-        "active_river_cells": 3435
+        "active_river_cells": 3435,
+        "water_coverage": 2.92963
       }
     },
     "Arid Desert": {
@@ -32,7 +34,8 @@
         "net_mass_change": 102016,
         "avg_vegetation_cover": 15.1788,
         "max_river_discharge": 0.963959,
-        "active_river_cells": 0
+        "active_river_cells": 0,
+        "water_coverage": 7.41481
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
@@ -40,7 +43,8 @@
         "net_mass_change": 102016,
         "avg_vegetation_cover": 15.1788,
         "max_river_discharge": 0.963959,
-        "active_river_cells": 0
+        "active_river_cells": 0,
+        "water_coverage": 7.41481
       }
     }
   }

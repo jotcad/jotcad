@@ -89,9 +89,9 @@ struct ProfileTestResult {
     bool failed;
     int mismatch_count;
     double mismatch_percentage;
-    double ref_initial_soil, ref_final_soil, ref_net_mass, ref_veg, ref_max_q;
+    double ref_initial_soil, ref_final_soil, ref_net_mass, ref_veg, ref_max_q, ref_water_coverage;
     int ref_river;
-    double initial_soil_volume, final_soil_volume, net_mass_change, avg_veg_cover, max_discharge;
+    double initial_soil_volume, final_soil_volume, net_mass_change, avg_veg_cover, max_discharge, water_coverage;
     int river_cells;
 };
 
@@ -159,7 +159,9 @@ int main(int argc, char* argv[]) {
         double max_discharge = 0.0;
         int river_cells = 0;
         int land_cells = 0;
+        int lake_cells = 0;
         const float SECONDS_PER_YEAR = 31557600.0f;
+        auto& h_lake = g.request_field<HexLakeDepth>();
 
         for (int r = 0; r < SIZE_R; ++r) {
             for (int q = 0; q < SIZE_Q; ++q) {
@@ -171,11 +173,15 @@ int main(int argc, char* argv[]) {
                     total_veg_density += g.vegetation[r][q];
                     land_cells++;
                 }
+                if (h_lake[r][q] > 0.25f) {
+                    lake_cells++;
+                }
             }
         }
 
         double net_mass_change = final_soil_volume - initial_soil_volume;
         double avg_veg_cover = land_cells > 0 ? (total_veg_density / land_cells) * 100.0 : 0.0;
+        double water_coverage = (double)lake_cells / (SIZE_Q * SIZE_R) * 100.0;
 
         std::cout << "Budgets & Coverages:" << std::endl;
         std::cout << "  Initial Soil Volume:     " << initial_soil_volume << std::endl;
@@ -184,6 +190,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  Average Vegetation:      " << avg_veg_cover << "%" << std::endl;
         std::cout << "  Max River Discharge:     " << max_discharge << " m^3/s" << std::endl;
         std::cout << "  Active River Cells:      " << river_cells << std::endl;
+        std::cout << "  Water Coverage:          " << water_coverage << "%" << std::endl;
 
         // Generate Top View pixels (using scale R_px = 4.0f)
         std::vector<unsigned char> pixels;
@@ -198,6 +205,7 @@ int main(int argc, char* argv[]) {
         result.avg_veg_cover = avg_veg_cover;
         result.max_discharge = max_discharge;
         result.river_cells = river_cells;
+        result.water_coverage = water_coverage;
 
         if (generate_mode) {
             std::string ref_bin_save = get_write_path("hex_regression_ref_" + safe + ".bin");
@@ -216,6 +224,7 @@ int main(int argc, char* argv[]) {
             out_ref.write(reinterpret_cast<const char*>(&avg_veg_cover), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(&max_discharge), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(&river_cells), sizeof(int));
+            out_ref.write(reinterpret_cast<const char*>(&water_coverage), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(pixels.data()), pixels.size());
             out_ref.close();
 
@@ -253,6 +262,7 @@ int main(int argc, char* argv[]) {
         in_ref.read(reinterpret_cast<char*>(&result.ref_veg), sizeof(double));
         in_ref.read(reinterpret_cast<char*>(&result.ref_max_q), sizeof(double));
         in_ref.read(reinterpret_cast<char*>(&result.ref_river), sizeof(int));
+        in_ref.read(reinterpret_cast<char*>(&result.ref_water_coverage), sizeof(double));
 
         std::vector<unsigned char> ref_pixels(pixels.size());
         in_ref.read(reinterpret_cast<char*>(ref_pixels.data()), ref_pixels.size());
@@ -278,6 +288,7 @@ int main(int argc, char* argv[]) {
         assert_double("Net Mass Change", net_mass_change, result.ref_net_mass, 0.001);
         assert_double("Average Vegetation", avg_veg_cover, result.ref_veg, 0.005);
         assert_double("Max River Discharge", max_discharge, result.ref_max_q, 0.005);
+        assert_double("Water Coverage", water_coverage, result.ref_water_coverage, 0.01);
 
         if (std::abs(river_cells - result.ref_river) > 10) {
             std::cerr << "  ❌ Regression failure: Active River Cells differs (Value: " << river_cells 
@@ -358,7 +369,8 @@ int main(int argc, char* argv[]) {
                      << "        \"net_mass_change\": " << res.ref_net_mass << ",\n"
                      << "        \"avg_vegetation_cover\": " << res.ref_veg << ",\n"
                      << "        \"max_river_discharge\": " << res.ref_max_q << ",\n"
-                     << "        \"active_river_cells\": " << res.ref_river << "\n"
+                     << "        \"active_river_cells\": " << res.ref_river << ",\n"
+                     << "        \"water_coverage\": " << res.ref_water_coverage << "\n"
                      << "      },\n"
                      << "      \"current\": {\n"
                      << "        \"initial_soil_volume\": " << res.initial_soil_volume << ",\n"
@@ -366,7 +378,8 @@ int main(int argc, char* argv[]) {
                      << "        \"net_mass_change\": " << res.net_mass_change << ",\n"
                      << "        \"avg_vegetation_cover\": " << res.avg_veg_cover << ",\n"
                      << "        \"max_river_discharge\": " << res.max_discharge << ",\n"
-                     << "        \"active_river_cells\": " << res.river_cells << "\n"
+                     << "        \"active_river_cells\": " << res.river_cells << ",\n"
+                     << "        \"water_coverage\": " << res.water_coverage << "\n"
                      << "      }\n"
                      << "    }" << (p + 1 < profiles.size() ? "," : "") << "\n";
         }
