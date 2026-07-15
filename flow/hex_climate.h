@@ -20,6 +20,13 @@ struct ClimateProfile {
     float gw_conductivity;         // Darcy hydraulic conductivity K_sat (m/yr)
     float lake_threshold;          // Water depth threshold for rendering/statistics (m)
     bool check_wetland_groundwater; // True if saturated shallow water table represents wetlands
+    float target_veg_r;            // Target vegetation R component (0.0 to 255.0)
+    float target_veg_g;            // Target vegetation G component (0.0 to 255.0)
+    float target_veg_b;            // Target vegetation B component (0.0 to 255.0)
+    float wet_blend_weight;        // Weight of the wetland blend (0.0f to 1.0f)
+    float wet_blend_r;             // Wet blend R component (0.0 to 255.0)
+    float wet_blend_g;             // Wet blend G component (0.0 to 255.0)
+    float wet_blend_b;             // Wet blend B component (0.0 to 255.0)
 };
 
 // Registry housing available climate profiles
@@ -41,7 +48,10 @@ public:
                 0.25f,   // 0.25 infiltration rate (25%)
                 60.0f,   // 60.0 m/yr conductivity (clayey loam)
                 0.10f,   // 0.10m lake threshold
-                true     // check_wetland_groundwater
+                true,    // check_wetland_groundwater
+                34.0f, 130.0f, 54.0f, // target_veg (meadow pine green)
+                0.20f,   // wet_blend_weight (20%)
+                30.0f, 120.0f, 160.0f // wet_blend_color (teal-blue)
             },
             {
                 "Arid Desert",
@@ -57,7 +67,10 @@ public:
                 0.04f,   // 0.04 infiltration rate (4% - crust repelled)
                 250.0f,  // 250.0 m/yr conductivity (coarse sand)
                 0.25f,   // 0.25m lake threshold
-                false    // check_wetland_groundwater
+                false,   // check_wetland_groundwater
+                60.0f, 135.0f, 75.0f, // target_veg (sparse desert green)
+                0.0f,    // wet_blend_weight (0%)
+                0.0f, 0.0f, 0.0f      // wet_blend_color (unused)
             },
             {
                 "Boreal Forest",
@@ -73,7 +86,29 @@ public:
                 0.40f,   // 0.40 infiltration rate (40% - saturated peat)
                 2.0f,    // 2.0 m/yr conductivity (extremely slow-draining peat)
                 0.05f,   // 0.05m lake threshold (show shallow wetlands)
-                true     // check_wetland_groundwater
+                true,    // check_wetland_groundwater
+                34.0f, 130.0f, 54.0f, // target_veg (coniferous green)
+                0.45f,   // wet_blend_weight (45%)
+                195.0f, 30.0f, 40.0f  // wet_blend_color (crimson-red bogs, blends to brown)
+            },
+            {
+                "Tropical Rainforest",
+                3.2f,    // 3.2 m/yr rain (torrential monsoon precipitation)
+                28.0f,   // 28C base temperature (hot equatorial lowlands)
+                100.0f,  // 100m cooling divisor (extended tropical limit)
+                15.0f,   // 15C limit (tropical species cannot grow in the cold)
+                8.0f,    // 8C range for scaling
+                0.35f,   // 0.35 extremely fast vegetation growth rate
+                1.2f,    // 1.2m rain threshold (requires high water for max canopy)
+                0.0040f, // 0.0040 evaporation coefficient
+                0.60f,   // 0.60 initial saturation (highly saturated aquifer)
+                0.35f,   // 0.35 infiltration rate (high soil infiltration)
+                45.0f,   // 45.0 m/yr conductivity (silty-clay tropical soil)
+                0.15f,   // 0.15m lake threshold
+                true,    // check_wetland_groundwater
+                10.0f, 95.0f, 40.0f,  // target_veg (rich emerald green jungle canopy)
+                0.35f,   // wet_blend_weight (35%)
+                10.0f, 165.0f, 135.0f // wet_blend_color (lagoon teal-blue undergrowth)
             }
         };
     }

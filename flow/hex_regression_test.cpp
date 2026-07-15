@@ -206,7 +206,10 @@ int main(int argc, char* argv[]) {
         // Generate Top View pixels (using scale R_px = 4.0f)
         std::vector<unsigned char> pixels;
         int w, h;
-        generate_top_view_pixels(g, 4.0f, pixels, w, h, profile.lake_threshold, profile.check_wetland_groundwater);
+        generate_top_view_pixels(g, 4.0f, pixels, w, h, 
+                                 profile.lake_threshold, profile.check_wetland_groundwater,
+                                 profile.target_veg_r, profile.target_veg_g, profile.target_veg_b,
+                                 profile.wet_blend_weight, profile.wet_blend_r, profile.wet_blend_g, profile.wet_blend_b);
         std::cout << "Top view generated: " << w << "x" << h << " (" << pixels.size() << " bytes)" << std::endl;
 
         ProfileTestResult result = {};

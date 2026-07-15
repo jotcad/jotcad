@@ -69,6 +69,29 @@
         "active_river_cells": 2615,
         "water_coverage": 23.8148
       }
+    },
+    "Tropical Rainforest": {
+      "status": "PASSED",
+      "mismatch_count": 0,
+      "mismatch_percentage": 0,
+      "baseline": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.61426e+06,
+        "net_mass_change": -2524.18,
+        "avg_vegetation_cover": 49.6045,
+        "max_river_discharge": 546.246,
+        "active_river_cells": 4934,
+        "water_coverage": 16.1148
+      },
+      "current": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.61426e+06,
+        "net_mass_change": -2524.18,
+        "avg_vegetation_cover": 49.6045,
+        "max_river_discharge": 546.246,
+        "active_river_cells": 4934,
+        "water_coverage": 16.1148
+      }
     }
   }
 }

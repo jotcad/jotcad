@@ -344,7 +344,9 @@ inline void draw_line(std::vector<unsigned char>& pixels, int w, int h, float x1
 }
 
 // Generates the 2D Top View pixel buffer (used by both regression testing and PNG bakes)
-inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<unsigned char>& pixels, int& w, int& h, float lake_threshold = 0.25f, bool check_wetland_groundwater = false) {
+inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<unsigned char>& pixels, int& w, int& h, float lake_threshold = 0.25f, bool check_wetland_groundwater = false,
+                                     float target_veg_r = 34.0f, float target_veg_g = 130.0f, float target_veg_b = 54.0f,
+                                     float wet_blend_weight = 0.0f, float wet_blend_r = 0.0f, float wet_blend_g = 0.0f, float wet_blend_b = 0.0f) {
     auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
     float max_x = R_px * 1.7320508f * ((g.size_q - 1) + (g.size_r - 1) * 0.5f);
     float max_y = R_px * 1.5f * (g.size_r - 1);
@@ -419,9 +421,9 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                     float sub_g = (1.0f - alpha_arab) * substrate_g + alpha_arab * 45.0f;
                     float sub_b = (1.0f - alpha_arab) * substrate_b + alpha_arab * 45.0f;
 
-                    float target_r = 34.0f;
-                    float target_g = 130.0f;
-                    float target_b = 54.0f;
+                    float target_r = target_veg_r;
+                    float target_g = target_veg_g;
+                    float target_b = target_veg_b;
 
                     sr = ((1.0f - veg) * sub_r + veg * target_r) * shade;
                     sg = ((1.0f - veg) * sub_g + veg * target_g) * shade;
@@ -438,11 +440,10 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                     float soil_thick = H - g.H_bedrock[r][q];
                     if (soil_thick > 0.05f) {
                         float depth_below = soil_thick - h_g[r][q];
-                        if (depth_below < 0.10f) {
-                            // Blend 45% wetland red color (RGB: 195, 30, 40)
-                            pr = (unsigned char)(0.55f * pr + 0.45f * 195.0f);
-                            pg = (unsigned char)(0.55f * pg + 0.45f * 30.0f);
-                            pb = (unsigned char)(0.55f * pb + 0.45f * 40.0f);
+                        if (depth_below < 0.10f && wet_blend_weight > 0.0f) {
+                            pr = (unsigned char)((1.0f - wet_blend_weight) * pr + wet_blend_weight * wet_blend_r);
+                            pg = (unsigned char)((1.0f - wet_blend_weight) * pg + wet_blend_weight * wet_blend_g);
+                            pb = (unsigned char)((1.0f - wet_blend_weight) * pb + wet_blend_weight * wet_blend_b);
                         }
                     }
                 }
