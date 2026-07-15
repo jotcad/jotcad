@@ -142,10 +142,19 @@ Climate parameters are defined dynamically per profile in `ClimateProfile` to go
     *   Rainfall: $1.4\text{ m/yr}$ | Base Temp: $25^\circ\text{C}$
     *   Evaporation Coefficient: $K_{\text{evap}} = 0.0024f$
     *   Subsurface: $15\%$ starting saturation, $25\%$ annual infiltration rate, $60\text{ m/yr}$ lateral conductivity.
+    *   Wetland / Water Coverage: **`15.02%`** (incorporates surface water lakes $> 10\text{ cm}$ and saturated soils where the water table is $< 10\text{ cm}$ below the surface).
     *   Result: Sustains lush vegetation ($57.6\%$) and active, overflowing river networks draining out to margins.
 *   **Arid Desert**: 
     *   Rainfall: $0.15\text{ m/yr}$ | Base Temp: $35^\circ\text{C}$
     *   Evaporation Coefficient: $K_{\text{evap}} = 0.0060f$ (strong evaporative deficit of $0.21\text{ m/yr}$ in low valleys)
     *   Subsurface: $0\%$ starting saturation (depleted aquifer), $4\%$ annual infiltration rate, $250\text{ m/yr}$ lateral conductivity (coarse sand).
-    *   Result: All river channels run dry ($0$ active river cells). Widespread diffuse recharge is blocked, restricting oases and lakes strictly to low depressions that pool focused runoff ($1.96\%$ total water coverage, representing highly realistic desert oasis ponds).
+    *   Water Coverage: **`1.96%`** (surface lakes $> 25\text{ cm}$ only; saturated sands are excluded from wetland checks).
+    *   Result: All river channels run dry ($0$ active river cells). Widespread diffuse recharge is blocked, restricting oases and lakes strictly to low depressions that pool focused runoff.
+*   **Boreal Forest**: 
+    *   Rainfall: $0.75\text{ m/yr}$ | Base Temp: $8^\circ\text{C}$
+    *   Evaporation Coefficient: $K_{\text{evap}} = 0.0012f$ (very low evap due to cold)
+    *   Subsurface: $30\%$ starting saturation (wet starting conditions), $40\%$ annual infiltration rate, $2.0\text{ m/yr}$ lateral conductivity (extremely slow-draining organic peat).
+    *   Wetland / Water Coverage: **`23.81%`** (incorporates surface water lakes $> 5\text{ cm}$ and saturated soils where the water table is $< 10\text{ cm}$ below the surface).
+    *   Visual Shading: Saturated peatlands are shaded with a $45\%$ crimson-red blend, rendering the lowlands as a rich, organic peat-brown wetland/muskeg mosaic.
+    *   Result: Sustains slow-growing conifers ($26.3\%$), an alpine treeline on mountains, and extensive valley wetlands.
 
