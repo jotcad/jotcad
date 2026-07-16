@@ -113,6 +113,15 @@ public:
                 // Moisture carrying capacity limit (restricts carrying capacity in dry zones)
                 effective_cap *= moisture;
 
+                // Salinity carrying capacity limit (restricts carrying capacity in saline zones)
+                if (g.has_field<HexSalinity>()) {
+                    auto& salinity = g.request_field<HexSalinity>();
+                    float sal = salinity[r][q];
+                    // Salinity factor: 1.0 at sal = 0.0, dropping to 0.02 at sal = 1.0 (to suppress forest and show sand beaches)
+                    float salinity_factor = 1.0f - 0.98f * sal;
+                    effective_cap *= salinity_factor;
+                }
+
                 // 3. Logistic growth (Stable analytical integration)
                 float V = g.vegetation[r][q];
                 if (effective_cap > 0.0f) {

@@ -29,6 +29,9 @@ struct HexGroundwater {};
 // Dynamic sparse field tag for sea border cells
 struct HexSeaBorder {};
 
+// Dynamic sparse field tag for soil salinity
+struct HexSalinity {};
+
 struct HexGrid {
     int size_q;
     int size_r;

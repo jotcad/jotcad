@@ -489,6 +489,53 @@ public:
                 }
             }
         }
+
+        // 5. Update soil salinity: Diffuse from sea borders and dilute by river discharge
+        auto& salinity = g.request_field<HexSalinity>();
+        for (int r = 0; r < sr; ++r) {
+            for (int q = 0; q < sq; ++q) {
+                if ((is_sea_border && (*is_sea_border)[r][q] > 0.0f) || g.H_soil[r][q] < 0.0f) {
+                    salinity[r][q] = 1.0f;
+                } else {
+                    if (step == 0) {
+                        salinity[r][q] = 0.0f;
+                    }
+                }
+            }
+        }
+
+        // 3 Jacobi iterations of diffusion and dilution
+        for (int iter = 0; iter < 3; ++iter) {
+            std::vector<std::vector<float>> next_sal(sr, std::vector<float>(sq, 0.0f));
+            for (int r = 0; r < sr; ++r) {
+                for (int q = 0; q < sq; ++q) {
+                    if ((is_sea_border && (*is_sea_border)[r][q] > 0.0f) || g.H_soil[r][q] < 0.0f) {
+                        next_sal[r][q] = 1.0f;
+                        continue;
+                    }
+
+                    float sum = 0.0f;
+                    int count = 0;
+                    for (int d = 0; d < 6; ++d) {
+                        int nq, nr;
+                        if (g.get_neighbor(q, r, d, nq, nr)) {
+                            sum += salinity[nr][nq];
+                            count++;
+                        }
+                    }
+
+                    float avg_sal = count > 0 ? sum / count : 0.0f;
+                    float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
+                    float dilution = std::min(1.0f, Q_m3s * 0.5f); // 2 m3/s completely flushes salinity
+                    next_sal[r][q] = avg_sal * (1.0f - dilution);
+                }
+            }
+            for (int r = 0; r < sr; ++r) {
+                for (int q = 0; q < sq; ++q) {
+                    salinity[r][q] = next_sal[r][q];
+                }
+            }
+        }
     }
 };
 
