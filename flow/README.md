@@ -97,5 +97,14 @@ We have implemented a high-performance **Hexagonal Landscape Evolution Simulator
      $$\text{depth} = -(Y - y_{\text{mid}}) \cdot \text{scale\_xy} + Z \cdot \text{scale\_z}$$
      This assigns closer objects a larger depth value, resolving foreground/background occlusion inversion under $Z$-buffering.
    * **Thin 1px Vector Contour Lines**: Extracted contour lines at $100\text{ m}$ intervals using triangle-edge intersections (isoline marching), and rasterized them as thin, solid, exactly 1-pixel-wide lines using a $Z$-buffered Bresenham line algorithm with a $+0.5$ bias to prevent Z-fighting self-occlusion.
-   * **Vibrant Forest Blending**: Reordered the rendering pipeline to apply the $35\%$ opaque arability tint directly to the base substrate (sand/rock) *first*, and overlay vegetation *second*. This keeps forests a pure, vibrant dark green and prevents muddy color mixing.
+    * **Vibrant Forest Blending**: Reordered the rendering pipeline to apply the $35\%$ opaque arability tint directly to the base substrate (sand/rock) *first*, and overlay vegetation *second*. This keeps forests a pure, vibrant dark green and prevents muddy color mixing.
 
+### Land Cover & Ecosystem Metrics
+The regression suite and dashboard monitor the following percentage coverages:
+1. **Open Water**: Standing surface water bodies (lakes and rivers) where depth exceeds `lake_threshold`.
+2. **Wetland Coverage**: Saturated peat bogs, muskeg, or swamp undergrowth where groundwater table is within $10\text{ cm}$ of the surface (but not flooded as an open lake).
+3. **Arable Coverage**: High-suitability agricultural land where the product of soil depth, flatness, and vegetation density exceeds a $10\%$ threshold.
+4. **Forest Coverage**: Densely vegetated areas (vegetation $\ge 50\%$) with soil thickness $\ge 5\text{ cm}$.
+5. **Grass Coverage**: Moderately vegetated areas (vegetation between $5\%$ and $50\%$) with soil thickness $\ge 5\text{ cm}$.
+6. **Bare Soil Coverage**: Bare ground (vegetation $\le 5\%$) with soil thickness $\ge 5\text{ cm}$.
+7. **Bedrock Coverage**: Exposed bedrock exposures where soil thickness is under $5\text{ cm}$.
