@@ -45,42 +45,121 @@ std::string get_write_path(const std::string& filename) {
     return filename;
 }
 
-// Helper to initialize hex soil heights with a central mountain range (exactly matching hex_stream_test.cpp)
-void initialize_hex_soil_perlin(HexGrid& g) {
+void apply_perlin_noise(HexGrid& g, float scale, float amplitude, float offset, bool fade_right = false) {
     PerlinNoise2D perlin;
     for (int r = 0; r < g.size_r; ++r) {
         for (int q = 0; q < g.size_q; ++q) {
-            // Baseline fractal noise
-            float pn = perlin.noise(q * 0.08f, r * 0.08f) + 0.35f * perlin.noise(q * 0.22f, r * 0.22f);
-            
-            // Build a diagonal mountain range ridge
-            float center_q = g.size_q * 0.5f;
-            float center_r = g.size_r * 0.5f;
-            
-            // Distance to a diagonal line running from top-left to bottom-right
-            float dist_to_ridge = std::abs((q - center_q) + (r - center_r)) / 1.4142f;
-            // Locks mountain span to original 90x75 configuration (~31.5 units wide)
-            float ridge_factor = std::max(0.0f, 1.0f - dist_to_ridge / 31.5f);
+            float pn = perlin.noise(q * scale, r * scale) + 0.35f * perlin.noise(q * 2.75f * scale, r * 2.75f * scale);
+            float current_amp = amplitude;
+            if (fade_right) {
+                float right_dist_factor = (float)q / (float)(g.size_q - 1);
+                float noise_fade = 1.0f - std::pow(right_dist_factor, 4.0f);
+                current_amp *= noise_fade;
+            }
+            g.H_soil[r][q] += offset + pn * current_amp;
+        }
+    }
+}
 
-            // Coastal gradient (lowest heights near grid boundaries)
+void apply_mountain_ridge(HexGrid& g, float span_width, float max_height) {
+    float center_q = g.size_q * 0.5f;
+    float center_r = g.size_r * 0.5f;
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
+            float dist_to_ridge = std::abs((q - center_q) + (r - center_r)) / 1.4142f;
+            float ridge_factor = std::max(0.0f, 1.0f - dist_to_ridge / span_width);
+            g.H_soil[r][q] += ridge_factor * max_height;
+        }
+    }
+}
+
+void apply_coastal_fade(HexGrid& g, float fade_width) {
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
             float edge_dist_q = std::min(q, g.size_q - 1 - q);
             float edge_dist_r = std::min(r, g.size_r - 1 - r);
             float min_edge_dist = std::min(edge_dist_q, edge_dist_r);
-            float coastal_fade = std::min(1.0f, min_edge_dist / 6.0f);
+            float fade = std::min(1.0f, min_edge_dist / fade_width);
+            g.H_soil[r][q] *= fade;
+        }
+    }
+}
 
-            // Base elevation in meters
-            float height_m = (0.15f + pn * 0.4f + ridge_factor * 1.8f) * 650.0f;
-            
-            g.H_soil[r][q] = height_m * coastal_fade;
+void apply_coastal_ramp(HexGrid& g, float start_height, float end_height) {
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
+            float slant_factor = 1.0f - (float)q / (float)(g.size_q - 1);
+            g.H_soil[r][q] += end_height + (start_height - end_height) * slant_factor;
+        }
+    }
+}
 
-            // Soil is thick in valleys (20m) and thin on mountain peaks (2m)
-            float initial_soil_thickness = 2.0f + 18.0f * (1.0f - ridge_factor);
-            g.H_bedrock[r][q] = g.H_soil[r][q] - initial_soil_thickness * coastal_fade;
+void apply_sea_borders(HexGrid& g) {
+    auto& is_sea_border = g.request_field<HexSeaBorder>();
+    int sr = g.size_r;
+    int sq = g.size_q;
+    for (int r = 0; r < sr; ++r) {
+        for (int q = 0; q < sq; ++q) {
+            bool is_border = (r == 0 || r == sr - 1 || q == 0 || q == sq - 1);
+            if (is_border && g.H_soil[r][q] < 0.0f) {
+                is_sea_border[r][q] = 1.0f;
+            } else {
+                is_sea_border[r][q] = 0.0f;
+            }
+        }
+    }
+}
+
+void finalize_soil_and_bedrock(HexGrid& g, float min_thickness, float max_thickness, bool scale_with_mountain = false) {
+    float center_q = g.size_q * 0.5f;
+    float center_r = g.size_r * 0.5f;
+    auto& is_sea_border = g.request_field<HexSeaBorder>();
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
+            float thickness = min_thickness;
+            if (scale_with_mountain) {
+                float dist_to_ridge = std::abs((q - center_q) + (r - center_r)) / 1.4142f;
+                float ridge_factor = std::max(0.0f, 1.0f - dist_to_ridge / 31.5f);
+                thickness = min_thickness + (max_thickness - min_thickness) * (1.0f - ridge_factor);
+            } else {
+                float slant_factor = 1.0f - (float)q / (float)(g.size_q - 1);
+                thickness = min_thickness + (max_thickness - min_thickness) * slant_factor;
+            }
+            g.H_bedrock[r][q] = g.H_soil[r][q] - thickness;
             g.h_surface[r][q] = 0.0f;
             g.Q[r][q] = 0.0f;
             g.sediment[r][q] = 0.0f;
             g.vegetation[r][q] = 0.0f;
+            
+            // Ensure is_sea_border has a default value of 0.0f if not set by builders
+            if (!g.has_field<HexSeaBorder>() || is_sea_border[r][q] != 1.0f) {
+                is_sea_border[r][q] = 0.0f;
+            }
         }
+    }
+}
+
+// Composition function
+void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
+    // Reset elevations to zero first
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
+            g.H_soil[r][q] = 0.0f;
+        }
+    }
+
+    if (profile.builder_type == TerrainBuilderType::CoastalRamp) {
+        // Compose Littoral Coastline
+        apply_coastal_ramp(g, 450.0f, -150.0f);
+        apply_perlin_noise(g, 0.08f, 120.0f, 0.0f, /*fade_right=*/true);
+        apply_sea_borders(g);
+        finalize_soil_and_bedrock(g, 2.0f, 20.0f, /*scale_with_mountain=*/false);
+    } else {
+        // Compose standard mountain range
+        apply_perlin_noise(g, 0.08f, 260.0f, 97.5f); // (0.15 + pn*0.4)*650.0f
+        apply_mountain_ridge(g, 31.5f, 1170.0f); // ridge_factor * 1.8 * 650.0f
+        apply_coastal_fade(g, 6.0f);
+        finalize_soil_and_bedrock(g, 2.0f, 20.0f, /*scale_with_mountain=*/true);
     }
 }
 
@@ -123,7 +202,7 @@ int main(int argc, char* argv[]) {
         HexOrchestrator orchestrator(SIZE_Q, SIZE_R);
         HexGrid& g = orchestrator.get_grid();
         g.scale.hex_radius_m = HEX_RADIUS;
-        initialize_hex_soil_perlin(g);
+        initialize_hex_soil_perlin(g, profile);
 
         double initial_soil_volume = 0.0;
         for (int r = 0; r < SIZE_R; ++r) {

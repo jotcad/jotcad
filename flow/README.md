@@ -66,9 +66,11 @@ We have implemented a high-performance **Hexagonal Landscape Evolution Simulator
 *   [hex_vegetation.h](file:///home/brian/github/jotcad/flow/hex_vegetation.h): Dual-directional soil production (weathering + organic litter), and altitude-temperature treeline cooling.
 *   [hex_exporter.h](file:///home/brian/github/jotcad/flow/hex_exporter.h): 3D isometric software rasterizer rendering seam-free, closed block terrain models with arability overlays.
 *   [hex_visualizer.html](file:///home/brian/github/jotcad/flow/hex_visualizer.html): Interactive 2D/3D web simulation dashboard with calibrated river color hierarchies.
-*   [hex_climate.h](file:///home/brian/github/jotcad/flow/hex_climate.h): Registry holding climate profiles (Subtropical Highland, Arid Desert, Boreal Forest, Tropical Rainforest, Mediterranean Scrub, Tundra, and Temperate Deciduous Forest).
+*   [hex_climate.h](file:///home/brian/github/jotcad/flow/hex_climate.h): Registry holding climate profiles (Subtropical Highland, Arid Desert, Boreal Forest, Tropical Rainforest, Mediterranean Scrub, Tundra, Temperate Deciduous Forest, and Littoral Coastline).
 *   [hex_stream_test.cpp](file:///home/brian/github/jotcad/flow/hex_stream_test.cpp): Scenario runner executing 1,000 steps ($dt = 1,000\text{ years}$, $R_{\text{hex}} = 600\text{ m}$).
 *   [hex_regression_test.cpp](file:///home/brian/github/jotcad/flow/hex_regression_test.cpp): Regression test suite validating budgets, vegetation coverage, and top-view visual pixels.
+    *   **Decomposed Geomorphic Operators**: Refactored topography building into isolated, recomposable operators: `apply_coastal_ramp`, `apply_perlin_noise` (with optional right-edge fade), `apply_mountain_ridge`, `apply_coastal_fade`, `apply_sea_borders`, and `finalize_soil_and_bedrock`.
+    *   **Dynamic Sea Borders (`HexSeaBorder`)**: Introduces a type-safe sparse property tagging boundary cells below sea level. `HexRouting` queries this field to set fixed-head `0.0m` water boundaries in Planchon-Darboux depression filling, preventing ocean basins from evaporating.
 
 ### Physical Formulation
 1. **Fluvial Routing**: Discharges are routed along downslope neighbor gradients using multi-flow direction weights. Depressions and craters are filled dynamically using a priority-queue lake filler.

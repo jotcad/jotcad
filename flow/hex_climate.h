@@ -4,6 +4,11 @@
 #include <string>
 #include <vector>
 
+enum class TerrainBuilderType {
+    MountainRange = 0,
+    CoastalRamp = 1
+};
+
 // Unified struct representing a simulation climate profile
 struct ClimateProfile {
     std::string name;
@@ -30,6 +35,7 @@ struct ClimateProfile {
     float target_sub_r;            // Target substrate R component (0.0 to 255.0)
     float target_sub_g;            // Target substrate G component (0.0 to 255.0)
     float target_sub_b;            // Target substrate B component (0.0 to 255.0)
+    TerrainBuilderType builder_type; // Initial terrain builder type
 };
 
 // Registry housing available climate profiles
@@ -55,7 +61,8 @@ public:
                 34.0f, 130.0f, 54.0f, // target_veg (meadow pine green)
                 0.20f,   // wet_blend_weight (20%)
                 30.0f, 120.0f, 160.0f, // wet_blend_color (teal-blue)
-                215.0f, 185.0f, 125.0f // target_sub (sandy clay)
+                215.0f, 185.0f, 125.0f, // target_sub (sandy clay)
+                TerrainBuilderType::MountainRange
             },
             {
                 "Arid Desert",
@@ -75,7 +82,8 @@ public:
                 60.0f, 135.0f, 75.0f, // target_veg (sparse desert green)
                 0.0f,    // wet_blend_weight (0%)
                 0.0f, 0.0f, 0.0f,     // wet_blend_color (unused)
-                230.0f, 200.0f, 140.0f // target_sub (bright desert sand)
+                230.0f, 200.0f, 140.0f, // target_sub (bright desert sand)
+                TerrainBuilderType::MountainRange
             },
             {
                 "Boreal Forest",
@@ -95,7 +103,8 @@ public:
                 34.0f, 130.0f, 54.0f, // target_veg (coniferous green)
                 0.45f,   // wet_blend_weight (45%)
                 195.0f, 30.0f, 40.0f, // wet_blend_color (crimson-red bogs, blends to brown)
-                185.0f, 155.0f, 115.0f // target_sub (greyish-brown soil)
+                185.0f, 155.0f, 115.0f, // target_sub (greyish-brown soil)
+                TerrainBuilderType::MountainRange
             },
             {
                 "Tropical Rainforest",
@@ -115,7 +124,8 @@ public:
                 10.0f, 95.0f, 40.0f,  // target_veg (rich emerald green jungle canopy)
                 0.35f,   // wet_blend_weight (35%)
                 10.0f, 165.0f, 135.0f, // wet_blend_color (lagoon teal-blue undergrowth)
-                135.0f, 95.0f, 75.0f  // target_sub (dark organic forest soil)
+                135.0f, 95.0f, 75.0f,  // target_sub (dark organic forest soil)
+                TerrainBuilderType::MountainRange
             },
             {
                 "Mediterranean Scrub",
@@ -135,7 +145,8 @@ public:
                 85.0f, 115.0f, 65.0f, // target_veg (dusty sage/olive green)
                 0.0f,    // wet_blend_weight (0%)
                 0.0f, 0.0f, 0.0f,     // wet_blend_color (unused)
-                195.0f, 115.0f, 85.0f // target_sub (warm terracotta/red clay soil)
+                195.0f, 115.0f, 85.0f, // target_sub (warm terracotta/red clay soil)
+                TerrainBuilderType::MountainRange
             },
             {
                 "Tundra",
@@ -155,7 +166,8 @@ public:
                 135.0f, 145.0f, 95.0f, // target_veg (mossy greyish-green tundra)
                 0.55f,   // wet_blend_weight (55%)
                 215.0f, 130.0f, 45.0f, // wet_blend_color (russet/orange-brown peat bogs)
-                105.0f, 90.0f, 80.0f  // target_sub (dark organic gley soil)
+                105.0f, 90.0f, 80.0f,  // target_sub (dark organic gley soil)
+                TerrainBuilderType::MountainRange
             },
             {
                 "Temperate Deciduous Forest",
@@ -175,7 +187,29 @@ public:
                 45.0f, 125.0f, 45.0f,  // target_veg (vibrant deciduous forest green)
                 0.0f,    // wet_blend_weight (0% - well-drained forest slopes)
                 0.0f, 0.0f, 0.0f,      // wet_blend_color (unused)
-                110.0f, 85.0f, 65.0f   // target_sub (rich, dark brown forest loam humus)
+                110.0f, 85.0f, 65.0f,  // target_sub (rich, dark brown forest loam humus)
+                TerrainBuilderType::MountainRange
+            },
+            {
+                "Littoral Coastline",
+                1.40f,   // 1.40 m/yr rain (rainy coastal environment)
+                15.0f,   // 15C base temperature (temperate marine)
+                85.0f,   // 85m altitude cooling divisor
+                3.0f,    // 3C growth limit
+                12.0f,   // 12C range for scaling
+                0.18f,   // 0.18 vegetation growth rate (marine salt-tolerant scrub)
+                0.8f,    // 0.8m rain threshold
+                0.0015f, // 0.0015 evaporation coefficient (moderate marine evaporation)
+                0.40f,   // 0.40 initial saturation (humid coastal soils)
+                0.30f,   // 0.30 infiltration rate (sandy shores)
+                35.0f,   // 35.0 m/yr conductivity (sandy loam / sand mixtures)
+                0.15f,   // 0.15m lake threshold
+                true,    // check_wetland_groundwater (salt marshes and estuaries)
+                65.0f, 135.0f, 80.0f,  // target_veg (coastal salt marsh green)
+                0.40f,   // wet_blend_weight (40%)
+                185.0f, 145.0f, 95.0f, // wet_blend_color (muddy estuary/silt)
+                235.0f, 215.0f, 175.0f, // target_sub (bright beach sand substrate)
+                TerrainBuilderType::CoastalRamp
             }
         };
     }

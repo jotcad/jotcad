@@ -26,6 +26,9 @@ struct HexLakeDepth {};
 // Dynamic sparse field tag for groundwater depths (height above bedrock)
 struct HexGroundwater {};
 
+// Dynamic sparse field tag for sea border cells
+struct HexSeaBorder {};
+
 struct HexGrid {
     int size_q;
     int size_r;

@@ -67,14 +67,19 @@ public:
 
         std::vector<std::vector<float>> F(sr, std::vector<float>(sq, 99999.0f));
 
-        // 1. Initialize boundaries to H_soil
+        // 1. Initialize boundaries to H_soil, but lock sea borders to at least sea level (0.0m)
+        std::vector<std::vector<float>>* is_sea_border = nullptr;
+        if (g.has_field<HexSeaBorder>()) {
+            is_sea_border = &g.request_field<HexSeaBorder>();
+        }
+
         for (int q = 0; q < sq; ++q) {
-            F[0][q] = g.H_soil[0][q];
-            F[sr - 1][q] = g.H_soil[sr - 1][q];
+            F[0][q] = (is_sea_border && (*is_sea_border)[0][q] > 0.0f) ? std::max(0.0f, g.H_soil[0][q]) : g.H_soil[0][q];
+            F[sr - 1][q] = (is_sea_border && (*is_sea_border)[sr - 1][q] > 0.0f) ? std::max(0.0f, g.H_soil[sr - 1][q]) : g.H_soil[sr - 1][q];
         }
         for (int r = 0; r < sr; ++r) {
-            F[r][0] = g.H_soil[r][0];
-            F[r][sq - 1] = g.H_soil[r][sq - 1];
+            F[r][0] = (is_sea_border && (*is_sea_border)[r][0] > 0.0f) ? std::max(0.0f, g.H_soil[r][0]) : g.H_soil[r][0];
+            F[r][sq - 1] = (is_sea_border && (*is_sea_border)[r][sq - 1] > 0.0f) ? std::max(0.0f, g.H_soil[r][sq - 1]) : g.H_soil[r][sq - 1];
         }
 
         // 2. Iterative forward-backward relaxation pass
@@ -145,8 +150,13 @@ public:
             fill_depressions(g);
         }
 
-        auto& h_lake = g.request_field<HexLakeDepth>();
+                auto& h_lake = g.request_field<HexLakeDepth>();
         float hex_area = 2.598076f * g.scale.hex_radius_m * g.scale.hex_radius_m;
+
+        std::vector<std::vector<float>>* is_sea_border = nullptr;
+        if (g.has_field<HexSeaBorder>()) {
+            is_sea_border = &g.request_field<HexSeaBorder>();
+        }
 
         // Keep a copy of brim capacities
         std::vector<std::vector<float>> h_lake_brim(sr, std::vector<float>(sq, 0.0f));
@@ -328,14 +338,29 @@ public:
                 total_pet_vol += PET * hex_area * dt;
             }
 
-            if (has_spillway && total_inflow_vol >= total_pet_vol) {
-                // Basin overflows! Keep brim capacities and outlet direction
+            // Check if this basin contains any sea border cells
+            bool is_ocean_basin = false;
+            if (is_sea_border) {
+                for (auto cell : basins[i]) {
+                    if ((*is_sea_border)[cell.second][cell.first] > 0.0f) {
+                        is_ocean_basin = true;
+                        break;
+                    }
+                }
+            }
+
+            if ((has_spillway && total_inflow_vol >= total_pet_vol) || is_ocean_basin) {
+                // Basin overflows or is the ocean! Keep brim capacities and outlet direction
                 for (auto cell : basins[i]) {
                     int q = cell.first;
                     int r = cell.second;
                     h_lake[r][q] = h_lake_brim[r][q];
                 }
-                overflows[i] = {spill_nq, spill_nr, total_inflow_vol - total_pet_vol, outlet_q, outlet_r};
+                if (is_ocean_basin) {
+                    overflows[i] = {-1, -1, 0.0f, -1, -1};
+                } else {
+                    overflows[i] = {spill_nq, spill_nr, total_inflow_vol - total_pet_vol, outlet_q, outlet_r};
+                }
             } else {
                 // Basin does not overflow (or is closed). Find flat water level H_water.
                 float H_water = g.H_soil[basins[i][0].second][basins[i][0].first];
