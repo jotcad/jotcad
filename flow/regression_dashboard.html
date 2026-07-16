@@ -388,7 +388,8 @@
                         { key: 'avg_vegetation_cover', label: 'Avg Vegetation', format: 'pct', suffix: '%', tol: 0.005 },
                         { key: 'max_river_discharge', label: 'Max River Flow', format: 'f', suffix: ' m³/s', tol: 0.005 },
                         { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 },
-                        { key: 'water_coverage', label: 'Water Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'water_coverage', label: 'Open Water', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'wetland_coverage', label: 'Wetland Coverage', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'forest_coverage', label: 'Forest Coverage', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'grass_coverage', label: 'Grass Coverage', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'bare_soil_coverage', label: 'Bare Soil Coverage', format: 'pct', suffix: '%', tol: 0.01 },
@@ -474,12 +475,12 @@
                     `;
                     innerTbody.appendChild(innerTr2);
 
-                    // Row 3: Max River Flow, Active River Cells, Water Coverage
+                    // Row 3: Max River Flow, Active River Cells, Open Water
                     const innerTr3 = document.createElement('tr');
                     innerTr3.innerHTML = `
                         <td>${makeCellHTML('Max River Flow', renderedMetrics['max_river_discharge'].valHTML, renderedMetrics['max_river_discharge'].badgeHTML)}</td>
                         <td>${makeCellHTML('Active River Cells', renderedMetrics['active_river_cells'].valHTML, renderedMetrics['active_river_cells'].badgeHTML)}</td>
-                        <td>${makeCellHTML('Water Coverage', renderedMetrics['water_coverage'].valHTML, renderedMetrics['water_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Open Water', renderedMetrics['water_coverage'].valHTML, renderedMetrics['water_coverage'].badgeHTML)}</td>
                     `;
                     innerTbody.appendChild(innerTr3);
 
@@ -492,15 +493,14 @@
                     `;
                     innerTbody.appendChild(innerTr4);
 
-                    // Row 5: Bedrock Coverage, Pixel Mismatch, and blank cell
+                    // Row 5: Bedrock Coverage, Wetland Coverage, Pixel Mismatch
                     const innerTr5 = document.createElement('tr');
                     innerTr5.innerHTML = `
                         <td>${makeCellHTML('Bedrock Coverage', renderedMetrics['bedrock_coverage'].valHTML, renderedMetrics['bedrock_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Wetland Coverage', renderedMetrics['wetland_coverage'].valHTML, renderedMetrics['wetland_coverage'].badgeHTML)}</td>
                         <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
-                        <td></td>
                     `;
                     innerTbody.appendChild(innerTr5);
-                }
 
             } catch (err) {
                 console.error("Failed to load statistics:", err);
