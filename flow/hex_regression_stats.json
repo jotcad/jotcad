@@ -175,6 +175,41 @@
         "bare_soil_coverage": 3.7037,
         "bedrock_coverage": 40.7889
       }
+    },
+    "Tundra": {
+      "status": "PASSED",
+      "mismatch_count": 0,
+      "mismatch_percentage": 0,
+      "baseline": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.59264e+06,
+        "net_mass_change": -24143.8,
+        "avg_vegetation_cover": 30.766,
+        "max_river_discharge": 63.7074,
+        "active_river_cells": 1802,
+        "water_coverage": 3.32963,
+        "wetland_coverage": 22.0296,
+        "arable_coverage": 43.2444,
+        "forest_coverage": 41.9815,
+        "grass_coverage": 2.31481,
+        "bare_soil_coverage": 4.56296,
+        "bedrock_coverage": 51.1407
+      },
+      "current": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.59264e+06,
+        "net_mass_change": -24143.8,
+        "avg_vegetation_cover": 30.766,
+        "max_river_discharge": 63.7074,
+        "active_river_cells": 1802,
+        "water_coverage": 3.32963,
+        "wetland_coverage": 22.0296,
+        "arable_coverage": 43.2444,
+        "forest_coverage": 41.9815,
+        "grass_coverage": 2.31481,
+        "bare_soil_coverage": 4.56296,
+        "bedrock_coverage": 51.1407
+      }
     }
   }
 }

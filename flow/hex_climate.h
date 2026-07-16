@@ -136,6 +136,26 @@ public:
                 0.0f,    // wet_blend_weight (0%)
                 0.0f, 0.0f, 0.0f,     // wet_blend_color (unused)
                 195.0f, 115.0f, 85.0f // target_sub (warm terracotta/red clay soil)
+            },
+            {
+                "Tundra",
+                0.35f,   // 0.35 m/yr rain (cold dry tundra climate)
+                1.0f,    // 1C base temperature (extremely cold arctic average)
+                70.0f,   // 70m altitude cooling divisor
+                -5.0f,   // -5C growth limit (extremely frost-tolerant species)
+                6.0f,    // 6C range for scaling
+                0.06f,   // 0.06 vegetation growth rate (very slow due to short summers)
+                0.5f,    // 0.5m rain threshold
+                0.0005f, // 0.0005 evaporation coefficient (low evaporation in cold climate)
+                0.45f,   // 0.45 initial saturation (highly water-logged surface soils over permafrost)
+                0.15f,   // 0.15 infiltration rate (15% - partially frozen ground)
+                1.5f,    // 1.5 m/yr conductivity (extremely slow drainage over permafrost table)
+                0.08f,   // 0.08m lake threshold
+                true,    // check_wetland_groundwater
+                135.0f, 145.0f, 95.0f, // target_veg (mossy greyish-green tundra)
+                0.55f,   // wet_blend_weight (55%)
+                215.0f, 130.0f, 45.0f, // wet_blend_color (russet/orange-brown peat bogs)
+                105.0f, 90.0f, 80.0f  // target_sub (dark organic gley soil)
             }
         };
     }
