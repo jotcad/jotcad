@@ -66,7 +66,7 @@ We have implemented a high-performance **Hexagonal Landscape Evolution Simulator
 *   [hex_vegetation.h](file:///home/brian/github/jotcad/flow/hex_vegetation.h): Dual-directional soil production (weathering + organic litter), and altitude-temperature treeline cooling.
 *   [hex_exporter.h](file:///home/brian/github/jotcad/flow/hex_exporter.h): 3D isometric software rasterizer rendering seam-free, closed block terrain models with arability overlays.
 *   [hex_visualizer.html](file:///home/brian/github/jotcad/flow/hex_visualizer.html): Interactive 2D/3D web simulation dashboard with calibrated river color hierarchies.
-*   [hex_climate.h](file:///home/brian/github/jotcad/flow/hex_climate.h): Registry holding climate profiles (e.g., Subtropical Highland).
+*   [hex_climate.h](file:///home/brian/github/jotcad/flow/hex_climate.h): Registry holding climate profiles (Subtropical Highland, Arid Desert, Boreal Forest, Tropical Rainforest, Mediterranean Scrub, Tundra, and Temperate Deciduous Forest).
 *   [hex_stream_test.cpp](file:///home/brian/github/jotcad/flow/hex_stream_test.cpp): Scenario runner executing 1,000 steps ($dt = 1,000\text{ years}$, $R_{\text{hex}} = 600\text{ m}$).
 *   [hex_regression_test.cpp](file:///home/brian/github/jotcad/flow/hex_regression_test.cpp): Regression test suite validating budgets, vegetation coverage, and top-view visual pixels.
 
