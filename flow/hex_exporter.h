@@ -346,7 +346,8 @@ inline void draw_line(std::vector<unsigned char>& pixels, int w, int h, float x1
 // Generates the 2D Top View pixel buffer (used by both regression testing and PNG bakes)
 inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<unsigned char>& pixels, int& w, int& h, float lake_threshold = 0.25f, bool check_wetland_groundwater = false,
                                      float target_veg_r = 34.0f, float target_veg_g = 130.0f, float target_veg_b = 54.0f,
-                                     float wet_blend_weight = 0.0f, float wet_blend_r = 0.0f, float wet_blend_g = 0.0f, float wet_blend_b = 0.0f) {
+                                     float wet_blend_weight = 0.0f, float wet_blend_r = 0.0f, float wet_blend_g = 0.0f, float wet_blend_b = 0.0f,
+                                     float target_sub_r = 215.0f, float target_sub_g = 185.0f, float target_sub_b = 125.0f) {
     auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
     float max_x = R_px * 1.7320508f * ((g.size_q - 1) + (g.size_r - 1) * 0.5f);
     float max_y = R_px * 1.5f * (g.size_r - 1);
@@ -413,9 +414,9 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                     sg = base_g * shade;
                     sb = base_b * shade;
                 } else {
-                    float substrate_r = 215.0f;
-                    float substrate_g = 185.0f;
-                    float substrate_b = 125.0f;
+                    float substrate_r = target_sub_r;
+                    float substrate_g = target_sub_g;
+                    float substrate_b = target_sub_b;
 
                     float sub_r = (1.0f - alpha_arab) * substrate_r + alpha_arab * 235.0f;
                     float sub_g = (1.0f - alpha_arab) * substrate_g + alpha_arab * 45.0f;

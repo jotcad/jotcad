@@ -27,6 +27,9 @@ struct ClimateProfile {
     float wet_blend_r;             // Wet blend R component (0.0 to 255.0)
     float wet_blend_g;             // Wet blend G component (0.0 to 255.0)
     float wet_blend_b;             // Wet blend B component (0.0 to 255.0)
+    float target_sub_r;            // Target substrate R component (0.0 to 255.0)
+    float target_sub_g;            // Target substrate G component (0.0 to 255.0)
+    float target_sub_b;            // Target substrate B component (0.0 to 255.0)
 };
 
 // Registry housing available climate profiles
@@ -51,7 +54,8 @@ public:
                 true,    // check_wetland_groundwater
                 34.0f, 130.0f, 54.0f, // target_veg (meadow pine green)
                 0.20f,   // wet_blend_weight (20%)
-                30.0f, 120.0f, 160.0f // wet_blend_color (teal-blue)
+                30.0f, 120.0f, 160.0f, // wet_blend_color (teal-blue)
+                215.0f, 185.0f, 125.0f // target_sub (sandy clay)
             },
             {
                 "Arid Desert",
@@ -70,7 +74,8 @@ public:
                 false,   // check_wetland_groundwater
                 60.0f, 135.0f, 75.0f, // target_veg (sparse desert green)
                 0.0f,    // wet_blend_weight (0%)
-                0.0f, 0.0f, 0.0f      // wet_blend_color (unused)
+                0.0f, 0.0f, 0.0f,     // wet_blend_color (unused)
+                230.0f, 200.0f, 140.0f // target_sub (bright desert sand)
             },
             {
                 "Boreal Forest",
@@ -89,7 +94,8 @@ public:
                 true,    // check_wetland_groundwater
                 34.0f, 130.0f, 54.0f, // target_veg (coniferous green)
                 0.45f,   // wet_blend_weight (45%)
-                195.0f, 30.0f, 40.0f  // wet_blend_color (crimson-red bogs, blends to brown)
+                195.0f, 30.0f, 40.0f, // wet_blend_color (crimson-red bogs, blends to brown)
+                185.0f, 155.0f, 115.0f // target_sub (greyish-brown soil)
             },
             {
                 "Tropical Rainforest",
@@ -108,7 +114,28 @@ public:
                 true,    // check_wetland_groundwater
                 10.0f, 95.0f, 40.0f,  // target_veg (rich emerald green jungle canopy)
                 0.35f,   // wet_blend_weight (35%)
-                10.0f, 165.0f, 135.0f // wet_blend_color (lagoon teal-blue undergrowth)
+                10.0f, 165.0f, 135.0f, // wet_blend_color (lagoon teal-blue undergrowth)
+                135.0f, 95.0f, 75.0f  // target_sub (dark organic forest soil)
+            },
+            {
+                "Mediterranean Scrub",
+                0.65f,   // 0.65 m/yr rain (seasonally dry)
+                20.0f,   // 20C base temperature (warm temperate)
+                85.0f,   // 85m altitude cooling divisor
+                5.0f,    // 5C growth limit
+                12.0f,   // 12C range for scaling
+                0.10f,   // 0.10 vegetation growth rate (slower chaparral scrub)
+                0.7f,    // 0.7m rain threshold
+                0.0035f, // 0.0035 evaporation coefficient (hot dry summer)
+                0.08f,   // 0.08 initial saturation (seasonally depleted aquifer)
+                0.08f,   // 0.08 infiltration rate (8% - baked clay crust)
+                25.0f,   // 25.0 m/yr conductivity (silty clay loam)
+                0.20f,   // 0.20m lake threshold
+                false,   // check_wetland_groundwater
+                85.0f, 115.0f, 65.0f, // target_veg (dusty sage/olive green)
+                0.0f,    // wet_blend_weight (0%)
+                0.0f, 0.0f, 0.0f,     // wet_blend_color (unused)
+                195.0f, 115.0f, 85.0f // target_sub (warm terracotta/red clay soil)
             }
         };
     }

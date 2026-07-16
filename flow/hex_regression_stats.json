@@ -92,6 +92,29 @@
         "active_river_cells": 4934,
         "water_coverage": 16.1148
       }
+    },
+    "Mediterranean Scrub": {
+      "status": "PASSED",
+      "mismatch_count": 0,
+      "mismatch_percentage": 0,
+      "baseline": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.68372e+06,
+        "net_mass_change": 66935,
+        "avg_vegetation_cover": 48.6763,
+        "max_river_discharge": 106.175,
+        "active_river_cells": 2124,
+        "water_coverage": 3.12222
+      },
+      "current": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.68372e+06,
+        "net_mass_change": 66935,
+        "avg_vegetation_cover": 48.6763,
+        "max_river_discharge": 106.175,
+        "active_river_cells": 2124,
+        "water_coverage": 3.12222
+      }
     }
   }
 }
