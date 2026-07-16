@@ -90,9 +90,9 @@ struct ProfileTestResult {
     int mismatch_count;
     double mismatch_percentage;
     double ref_initial_soil, ref_final_soil, ref_net_mass, ref_veg, ref_max_q, ref_water_coverage;
-    double ref_forest_coverage, ref_grass_coverage, ref_bare_soil_coverage, ref_bedrock_coverage, ref_wetland_coverage;
+    double ref_forest_coverage, ref_grass_coverage, ref_bare_soil_coverage, ref_bedrock_coverage, ref_wetland_coverage, ref_arable_coverage;
     int ref_river;
-    double initial_soil_volume, final_soil_volume, net_mass_change, avg_veg_cover, max_discharge, water_coverage, wetland_coverage;
+    double initial_soil_volume, final_soil_volume, net_mass_change, avg_veg_cover, max_discharge, water_coverage, wetland_coverage, arable_coverage;
     double forest_coverage, grass_coverage, bare_soil_coverage, bedrock_coverage;
     int river_cells;
 };
@@ -163,6 +163,7 @@ int main(int argc, char* argv[]) {
         int land_cells = 0;
         int lake_cells = 0;
         int wetland_cells = 0;
+        int arable_cells = 0;
         int forest_cells = 0;
         int grass_cells = 0;
         int bare_soil_cells = 0;
@@ -199,6 +200,12 @@ int main(int argc, char* argv[]) {
                     wetland_cells++;
                 }
 
+                // Arable land tracking
+                float arability = calculate_cell_arability(g, h_lake, q, r);
+                if (arability >= 0.10f) {
+                    arable_cells++;
+                }
+
                 // Dynamic cover classification
                 float soil_thick = g.H_soil[r][q] - g.H_bedrock[r][q];
                 if (soil_thick < 0.05f) {
@@ -220,6 +227,7 @@ int main(int argc, char* argv[]) {
         double avg_veg_cover = land_cells > 0 ? (total_veg_density / land_cells) * 100.0 : 0.0;
         double water_coverage = (double)lake_cells / (SIZE_Q * SIZE_R) * 100.0;
         double wetland_coverage = (double)wetland_cells / (SIZE_Q * SIZE_R) * 100.0;
+        double arable_coverage = (double)arable_cells / (SIZE_Q * SIZE_R) * 100.0;
         double forest_coverage = (double)forest_cells / (SIZE_Q * SIZE_R) * 100.0;
         double grass_coverage = (double)grass_cells / (SIZE_Q * SIZE_R) * 100.0;
         double bare_soil_coverage = (double)bare_soil_cells / (SIZE_Q * SIZE_R) * 100.0;
@@ -234,6 +242,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  Active River Cells:      " << river_cells << std::endl;
         std::cout << "  Water Coverage:          " << water_coverage << "%" << std::endl;
         std::cout << "  Wetland Coverage:        " << wetland_coverage << "%" << std::endl;
+        std::cout << "  Arable Coverage:         " << arable_coverage << "%" << std::endl;
         std::cout << "  Forest Coverage:         " << forest_coverage << "%" << std::endl;
         std::cout << "  Grass Coverage:          " << grass_coverage << "%" << std::endl;
         std::cout << "  Bare Soil Coverage:      " << bare_soil_coverage << "%" << std::endl;
@@ -258,6 +267,7 @@ int main(int argc, char* argv[]) {
         result.river_cells = river_cells;
         result.water_coverage = water_coverage;
         result.wetland_coverage = wetland_coverage;
+        result.arable_coverage = arable_coverage;
         result.forest_coverage = forest_coverage;
         result.grass_coverage = grass_coverage;
         result.bare_soil_coverage = bare_soil_coverage;
@@ -282,6 +292,7 @@ int main(int argc, char* argv[]) {
             out_ref.write(reinterpret_cast<const char*>(&river_cells), sizeof(int));
             out_ref.write(reinterpret_cast<const char*>(&water_coverage), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(&wetland_coverage), sizeof(double));
+            out_ref.write(reinterpret_cast<const char*>(&arable_coverage), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(&forest_coverage), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(&grass_coverage), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(&bare_soil_coverage), sizeof(double));
@@ -325,6 +336,7 @@ int main(int argc, char* argv[]) {
         in_ref.read(reinterpret_cast<char*>(&result.ref_river), sizeof(int));
         in_ref.read(reinterpret_cast<char*>(&result.ref_water_coverage), sizeof(double));
         in_ref.read(reinterpret_cast<char*>(&result.ref_wetland_coverage), sizeof(double));
+        in_ref.read(reinterpret_cast<char*>(&result.ref_arable_coverage), sizeof(double));
         in_ref.read(reinterpret_cast<char*>(&result.ref_forest_coverage), sizeof(double));
         in_ref.read(reinterpret_cast<char*>(&result.ref_grass_coverage), sizeof(double));
         in_ref.read(reinterpret_cast<char*>(&result.ref_bare_soil_coverage), sizeof(double));
@@ -356,6 +368,7 @@ int main(int argc, char* argv[]) {
         assert_double("Max River Discharge", max_discharge, result.ref_max_q, 0.005);
         assert_double("Water Coverage", water_coverage, result.ref_water_coverage, 0.01);
         assert_double("Wetland Coverage", wetland_coverage, result.ref_wetland_coverage, 0.01);
+        assert_double("Arable Coverage", arable_coverage, result.ref_arable_coverage, 0.01);
         assert_double("Forest Coverage", forest_coverage, result.ref_forest_coverage, 0.01);
         assert_double("Grass Coverage", grass_coverage, result.ref_grass_coverage, 0.01);
         assert_double("Bare Soil Coverage", bare_soil_coverage, result.ref_bare_soil_coverage, 0.01);
@@ -443,6 +456,7 @@ int main(int argc, char* argv[]) {
                       << "        \"active_river_cells\": " << res.ref_river << ",\n"
                       << "        \"water_coverage\": " << res.ref_water_coverage << ",\n"
                       << "        \"wetland_coverage\": " << res.ref_wetland_coverage << ",\n"
+                      << "        \"arable_coverage\": " << res.ref_arable_coverage << ",\n"
                       << "        \"forest_coverage\": " << res.ref_forest_coverage << ",\n"
                       << "        \"grass_coverage\": " << res.ref_grass_coverage << ",\n"
                       << "        \"bare_soil_coverage\": " << res.ref_bare_soil_coverage << ",\n"
@@ -457,6 +471,7 @@ int main(int argc, char* argv[]) {
                       << "        \"active_river_cells\": " << res.river_cells << ",\n"
                       << "        \"water_coverage\": " << res.water_coverage << ",\n"
                       << "        \"wetland_coverage\": " << res.wetland_coverage << ",\n"
+                      << "        \"arable_coverage\": " << res.arable_coverage << ",\n"
                       << "        \"forest_coverage\": " << res.forest_coverage << ",\n"
                       << "        \"grass_coverage\": " << res.grass_coverage << ",\n"
                       << "        \"bare_soil_coverage\": " << res.bare_soil_coverage << ",\n"

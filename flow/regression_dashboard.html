@@ -390,6 +390,7 @@
                         { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 },
                         { key: 'water_coverage', label: 'Open Water', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'wetland_coverage', label: 'Wetland Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'arable_coverage', label: 'Arable Coverage', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'forest_coverage', label: 'Forest Coverage', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'grass_coverage', label: 'Grass Coverage', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'bare_soil_coverage', label: 'Bare Soil Coverage', format: 'pct', suffix: '%', tol: 0.01 },
@@ -493,14 +494,23 @@
                     `;
                     innerTbody.appendChild(innerTr4);
 
-                    // Row 5: Bedrock Coverage, Wetland Coverage, Pixel Mismatch
+                    // Row 5: Bedrock Coverage, Wetland Coverage, Arable Coverage
                     const innerTr5 = document.createElement('tr');
                     innerTr5.innerHTML = `
                         <td>${makeCellHTML('Bedrock Coverage', renderedMetrics['bedrock_coverage'].valHTML, renderedMetrics['bedrock_coverage'].badgeHTML)}</td>
                         <td>${makeCellHTML('Wetland Coverage', renderedMetrics['wetland_coverage'].valHTML, renderedMetrics['wetland_coverage'].badgeHTML)}</td>
-                        <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Arable Coverage', renderedMetrics['arable_coverage'].valHTML, renderedMetrics['arable_coverage'].badgeHTML)}</td>
                     `;
                     innerTbody.appendChild(innerTr5);
+
+                    // Row 6: Pixel Mismatch
+                    const innerTr6 = document.createElement('tr');
+                    innerTr6.innerHTML = `
+                        <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
+                        <td></td>
+                        <td></td>
+                    `;
+                    innerTbody.appendChild(innerTr6);
                 }
 
             } catch (err) {
