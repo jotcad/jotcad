@@ -64,6 +64,7 @@ We have implemented a high-performance **Hexagonal Landscape Evolution Simulator
 *   [hex_erosion.h](file:///home/brian/github/jotcad/flow/hex_erosion.h): Fluvial shear-stress-driven bed erosion and slope-dependent diffuse rain wash.
 *   [hex_landslide.h](file:///home/brian/github/jotcad/flow/hex_landslide.h): Soil slope stability wasting enforcing a dynamic repose angle.
 *   [hex_vegetation.h](file:///home/brian/github/jotcad/flow/hex_vegetation.h): Dual-directional soil production (weathering + organic litter), and altitude-temperature treeline cooling.
+*   [hex_wave_erosion.h](file:///home/brian/github/jotcad/flow/hex_wave_erosion.h): Coastline cellular wave erosion modeling exposed cliff retreat and deposition in sheltered bays.
 *   [hex_exporter.h](file:///home/brian/github/jotcad/flow/hex_exporter.h): 3D isometric software rasterizer rendering seam-free, closed block terrain models with arability overlays.
 *   [hex_visualizer.html](file:///home/brian/github/jotcad/flow/hex_visualizer.html): Interactive 2D/3D web simulation dashboard with calibrated river color hierarchies.
 *   [hex_climate.h](file:///home/brian/github/jotcad/flow/hex_climate.h): Registry holding climate profiles (Subtropical Highland, Arid Desert, Boreal Forest, Tropical Rainforest, Mediterranean Scrub, Tundra, Temperate Deciduous Forest, and Littoral Coastline).
@@ -92,7 +93,11 @@ We have implemented a high-performance **Hexagonal Landscape Evolution Simulator
    * Restricts bare bedrock strictly to the highest summits ($>950\text{ m}$), keeping lower flanks forested.
 6. **Discrete Biome Classification (Forest XOR Grass)**:
    * Replaced continuous biome gradients with a step threshold. Lowland cells are strictly classified as Forest (`RGB 20, 120, 45`) if $\text{moisture\_factor} \ge 0.35$, otherwise Grassland (`RGB 185, 230, 85`), ensuring sharp, legible vegetation boundaries.
-7. **Cartography, 3D Mating & Contour Rendering**:
+7. **Coastline Wave Erosion**:
+   * Exposed headlands (land cells with $\ge 3$ ocean neighbors) undergo wave-driven cliff retreat:
+     $$\Delta H_{\text{soil}} = -K_{\text{wave\_erosion}} \cdot \text{num\_ocean\_neighbors} \cdot dt$$
+   * Eroded sediment is redistributed evenly to adjacent sheltered bay/inlet cells (with $\le 2$ ocean neighbors), naturally smoothing the shoreline over geological time.
+8. **Cartography, 3D Mating & Contour Rendering**:
    * Corner coordinates of the software rasterizer are evaluated by averaging adjacent cell centers ($vx = \sum cx_k / 3.0$), ensuring bit-identical screen coordinate mating with zero gaps or overlaps.
    * Vertical outer walls close the boundary down to $Z = -100\text{ m}$ on all visible edges (directions 0 to 3).
    * **Corrected Y-Depth Sorting**: Fixed the projection depth equation:

@@ -15,6 +15,7 @@
 #include "hex_landslide.h"
 #include "hex_vegetation.h"
 #include "hex_subsurface.h"
+#include "hex_wave_erosion.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "hex_exporter.h"
 #include "perlin_noise.h"
@@ -224,6 +225,7 @@ int main(int argc, char* argv[]) {
         });
         p1->add<HexErosion>(1.0e-2f, 0.04f, 0.15f, 2.0f);
         p1->add<HexLandslide>(0.14f, 0.50f);
+        p1->add<HexWaveErosion>(0.000005f); // Wave erosion on exposed headlands
         p1->add<HexVegetation>(profile, 1.0f);
 
         {

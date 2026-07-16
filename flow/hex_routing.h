@@ -504,8 +504,8 @@ public:
             }
         }
 
-        // 3 Jacobi iterations of diffusion and dilution
-        for (int iter = 0; iter < 3; ++iter) {
+        // 1 Jacobi iteration of diffusion and dilution
+        for (int iter = 0; iter < 1; ++iter) {
             std::vector<std::vector<float>> next_sal(sr, std::vector<float>(sq, 0.0f));
             for (int r = 0; r < sr; ++r) {
                 for (int q = 0; q < sq; ++q) {
