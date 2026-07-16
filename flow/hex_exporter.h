@@ -508,14 +508,26 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                         float H_C = H;
                         float H_N = g.H_soil[closest_rn][closest_qn];
 
-                        const float CONTOUR_INTERVAL = 150.0f;
-                        int band_C = std::floor(H_C / CONTOUR_INTERVAL);
-                        int band_N = std::floor(H_N / CONTOUR_INTERVAL);
+                        float water_C = h_lake[r][q];
+                        float water_N = h_lake[closest_rn][closest_qn];
 
-                        if (band_C != band_N) {
-                            pr = 220;
-                            pg = 150;
-                            pb = 60;
+                        bool curr_ocean = (water_C > 0.10f && std::abs(H_C + water_C) < 5.0f);
+                        bool neigh_ocean = (water_N > 0.10f && std::abs(H_N + water_N) < 5.0f);
+
+                        if (curr_ocean != neigh_ocean) {
+                            pr = 0;
+                            pg = 0;
+                            pb = 0;
+                        } else {
+                            const float CONTOUR_INTERVAL = 150.0f;
+                            int band_C = std::floor(H_C / CONTOUR_INTERVAL);
+                            int band_N = std::floor(H_N / CONTOUR_INTERVAL);
+
+                            if (band_C != band_N) {
+                                pr = 220;
+                                pg = 150;
+                                pb = 60;
+                            }
                         }
                     }
                 }

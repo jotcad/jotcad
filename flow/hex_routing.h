@@ -490,49 +490,31 @@ public:
             }
         }
 
-        // 5. Update soil salinity: Diffuse from sea borders and dilute by river discharge
+        // 5. Update soil salinity: Set to 1.0f for ocean and shoreline cells, 0.0f inland
         auto& salinity = g.request_field<HexSalinity>();
         for (int r = 0; r < sr; ++r) {
             for (int q = 0; q < sq; ++q) {
-                if ((is_sea_border && (*is_sea_border)[r][q] > 0.0f) || g.H_soil[r][q] < 0.0f) {
+                bool is_ocean = (g.H_soil[r][q] < 0.0f) || (is_sea_border && (*is_sea_border)[r][q] > 0.0f);
+                if (is_ocean) {
                     salinity[r][q] = 1.0f;
                 } else {
-                    if (step == 0) {
-                        salinity[r][q] = 0.0f;
-                    }
-                }
-            }
-        }
-
-        // 1 Jacobi iteration of diffusion and dilution
-        for (int iter = 0; iter < 1; ++iter) {
-            std::vector<std::vector<float>> next_sal(sr, std::vector<float>(sq, 0.0f));
-            for (int r = 0; r < sr; ++r) {
-                for (int q = 0; q < sq; ++q) {
-                    if ((is_sea_border && (*is_sea_border)[r][q] > 0.0f) || g.H_soil[r][q] < 0.0f) {
-                        next_sal[r][q] = 1.0f;
-                        continue;
-                    }
-
-                    float sum = 0.0f;
-                    int count = 0;
+                    int ocean_neighbors = 0;
                     for (int d = 0; d < 6; ++d) {
                         int nq, nr;
                         if (g.get_neighbor(q, r, d, nq, nr)) {
-                            sum += salinity[nr][nq];
-                            count++;
+                            if (g.H_soil[nr][nq] < 0.0f || (is_sea_border && (*is_sea_border)[nr][nq] > 0.0f)) {
+                                ocean_neighbors++;
+                            }
                         }
                     }
-
-                    float avg_sal = count > 0 ? sum / count : 0.0f;
-                    float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
-                    float dilution = std::min(1.0f, Q_m3s * 0.5f); // 2 m3/s completely flushes salinity
-                    next_sal[r][q] = avg_sal * (1.0f - dilution);
-                }
-            }
-            for (int r = 0; r < sr; ++r) {
-                for (int q = 0; q < sq; ++q) {
-                    salinity[r][q] = next_sal[r][q];
+                    if (ocean_neighbors > 0) {
+                        // Bordering the ocean = beach zone! Dilute with river discharge for estuaries.
+                        float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
+                        float dilution = std::min(1.0f, Q_m3s * 0.5f);
+                        salinity[r][q] = 1.0f - dilution;
+                    } else {
+                        salinity[r][q] = 0.0f;
+                    }
                 }
             }
         }
