@@ -90,8 +90,10 @@ struct ProfileTestResult {
     int mismatch_count;
     double mismatch_percentage;
     double ref_initial_soil, ref_final_soil, ref_net_mass, ref_veg, ref_max_q, ref_water_coverage;
+    double ref_forest_coverage, ref_grass_coverage, ref_bare_soil_coverage, ref_bedrock_coverage;
     int ref_river;
     double initial_soil_volume, final_soil_volume, net_mass_change, avg_veg_cover, max_discharge, water_coverage;
+    double forest_coverage, grass_coverage, bare_soil_coverage, bedrock_coverage;
     int river_cells;
 };
 
@@ -160,6 +162,10 @@ int main(int argc, char* argv[]) {
         int river_cells = 0;
         int land_cells = 0;
         int lake_cells = 0;
+        int forest_cells = 0;
+        int grass_cells = 0;
+        int bare_soil_cells = 0;
+        int bedrock_cells = 0;
         const float SECONDS_PER_YEAR = 31557600.0f;
         auto& h_lake = g.request_field<HexLakeDepth>();
 
@@ -187,12 +193,31 @@ int main(int argc, char* argv[]) {
                 if (is_wet) {
                     lake_cells++;
                 }
+
+                // Dynamic cover classification
+                float soil_thick = g.H_soil[r][q] - g.H_bedrock[r][q];
+                if (soil_thick < 0.05f) {
+                    bedrock_cells++;
+                } else {
+                    float veg = g.vegetation[r][q];
+                    if (veg >= 0.50f) {
+                        forest_cells++;
+                    } else if (veg > 0.05f) {
+                        grass_cells++;
+                    } else {
+                        bare_soil_cells++;
+                    }
+                }
             }
         }
 
         double net_mass_change = final_soil_volume - initial_soil_volume;
         double avg_veg_cover = land_cells > 0 ? (total_veg_density / land_cells) * 100.0 : 0.0;
         double water_coverage = (double)lake_cells / (SIZE_Q * SIZE_R) * 100.0;
+        double forest_coverage = (double)forest_cells / (SIZE_Q * SIZE_R) * 100.0;
+        double grass_coverage = (double)grass_cells / (SIZE_Q * SIZE_R) * 100.0;
+        double bare_soil_coverage = (double)bare_soil_cells / (SIZE_Q * SIZE_R) * 100.0;
+        double bedrock_coverage = (double)bedrock_cells / (SIZE_Q * SIZE_R) * 100.0;
 
         std::cout << "Budgets & Coverages:" << std::endl;
         std::cout << "  Initial Soil Volume:     " << initial_soil_volume << std::endl;
@@ -202,6 +227,10 @@ int main(int argc, char* argv[]) {
         std::cout << "  Max River Discharge:     " << max_discharge << " m^3/s" << std::endl;
         std::cout << "  Active River Cells:      " << river_cells << std::endl;
         std::cout << "  Water Coverage:          " << water_coverage << "%" << std::endl;
+        std::cout << "  Forest Coverage:         " << forest_coverage << "%" << std::endl;
+        std::cout << "  Grass Coverage:          " << grass_coverage << "%" << std::endl;
+        std::cout << "  Bare Soil Coverage:      " << bare_soil_coverage << "%" << std::endl;
+        std::cout << "  Bedrock Coverage:        " << bedrock_coverage << "%" << std::endl;
 
         // Generate Top View pixels (using scale R_px = 4.0f)
         std::vector<unsigned char> pixels;
@@ -221,6 +250,10 @@ int main(int argc, char* argv[]) {
         result.max_discharge = max_discharge;
         result.river_cells = river_cells;
         result.water_coverage = water_coverage;
+        result.forest_coverage = forest_coverage;
+        result.grass_coverage = grass_coverage;
+        result.bare_soil_coverage = bare_soil_coverage;
+        result.bedrock_coverage = bedrock_coverage;
 
         if (generate_mode) {
             std::string ref_bin_save = get_write_path("hex_regression_ref_" + safe + ".bin");
@@ -240,6 +273,10 @@ int main(int argc, char* argv[]) {
             out_ref.write(reinterpret_cast<const char*>(&max_discharge), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(&river_cells), sizeof(int));
             out_ref.write(reinterpret_cast<const char*>(&water_coverage), sizeof(double));
+            out_ref.write(reinterpret_cast<const char*>(&forest_coverage), sizeof(double));
+            out_ref.write(reinterpret_cast<const char*>(&grass_coverage), sizeof(double));
+            out_ref.write(reinterpret_cast<const char*>(&bare_soil_coverage), sizeof(double));
+            out_ref.write(reinterpret_cast<const char*>(&bedrock_coverage), sizeof(double));
             out_ref.write(reinterpret_cast<const char*>(pixels.data()), pixels.size());
             out_ref.close();
 
@@ -278,6 +315,10 @@ int main(int argc, char* argv[]) {
         in_ref.read(reinterpret_cast<char*>(&result.ref_max_q), sizeof(double));
         in_ref.read(reinterpret_cast<char*>(&result.ref_river), sizeof(int));
         in_ref.read(reinterpret_cast<char*>(&result.ref_water_coverage), sizeof(double));
+        in_ref.read(reinterpret_cast<char*>(&result.ref_forest_coverage), sizeof(double));
+        in_ref.read(reinterpret_cast<char*>(&result.ref_grass_coverage), sizeof(double));
+        in_ref.read(reinterpret_cast<char*>(&result.ref_bare_soil_coverage), sizeof(double));
+        in_ref.read(reinterpret_cast<char*>(&result.ref_bedrock_coverage), sizeof(double));
 
         std::vector<unsigned char> ref_pixels(pixels.size());
         in_ref.read(reinterpret_cast<char*>(ref_pixels.data()), ref_pixels.size());
@@ -304,6 +345,10 @@ int main(int argc, char* argv[]) {
         assert_double("Average Vegetation", avg_veg_cover, result.ref_veg, 0.005);
         assert_double("Max River Discharge", max_discharge, result.ref_max_q, 0.005);
         assert_double("Water Coverage", water_coverage, result.ref_water_coverage, 0.01);
+        assert_double("Forest Coverage", forest_coverage, result.ref_forest_coverage, 0.01);
+        assert_double("Grass Coverage", grass_coverage, result.ref_grass_coverage, 0.01);
+        assert_double("Bare Soil Coverage", bare_soil_coverage, result.ref_bare_soil_coverage, 0.01);
+        assert_double("Bedrock Coverage", bedrock_coverage, result.ref_bedrock_coverage, 0.01);
 
         if (std::abs(river_cells - result.ref_river) > 10) {
             std::cerr << "  ❌ Regression failure: Active River Cells differs (Value: " << river_cells 
@@ -385,7 +430,11 @@ int main(int argc, char* argv[]) {
                      << "        \"avg_vegetation_cover\": " << res.ref_veg << ",\n"
                      << "        \"max_river_discharge\": " << res.ref_max_q << ",\n"
                      << "        \"active_river_cells\": " << res.ref_river << ",\n"
-                     << "        \"water_coverage\": " << res.ref_water_coverage << "\n"
+                     << "        \"water_coverage\": " << res.ref_water_coverage << ",\n"
+                     << "        \"forest_coverage\": " << res.ref_forest_coverage << ",\n"
+                     << "        \"grass_coverage\": " << res.ref_grass_coverage << ",\n"
+                     << "        \"bare_soil_coverage\": " << res.ref_bare_soil_coverage << ",\n"
+                     << "        \"bedrock_coverage\": " << res.ref_bedrock_coverage << "\n"
                      << "      },\n"
                      << "      \"current\": {\n"
                      << "        \"initial_soil_volume\": " << res.initial_soil_volume << ",\n"
@@ -394,7 +443,11 @@ int main(int argc, char* argv[]) {
                      << "        \"avg_vegetation_cover\": " << res.avg_veg_cover << ",\n"
                      << "        \"max_river_discharge\": " << res.max_discharge << ",\n"
                      << "        \"active_river_cells\": " << res.river_cells << ",\n"
-                     << "        \"water_coverage\": " << res.water_coverage << "\n"
+                     << "        \"water_coverage\": " << res.water_coverage << ",\n"
+                     << "        \"forest_coverage\": " << res.forest_coverage << ",\n"
+                     << "        \"grass_coverage\": " << res.grass_coverage << ",\n"
+                     << "        \"bare_soil_coverage\": " << res.bare_soil_coverage << ",\n"
+                     << "        \"bedrock_coverage\": " << res.bedrock_coverage << "\n"
                      << "      }\n"
                      << "    }" << (p + 1 < profiles.size() ? "," : "") << "\n";
         }

@@ -389,6 +389,10 @@
                         { key: 'max_river_discharge', label: 'Max River Flow', format: 'f', suffix: ' m³/s', tol: 0.005 },
                         { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 },
                         { key: 'water_coverage', label: 'Water Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'forest_coverage', label: 'Forest Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'grass_coverage', label: 'Grass Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'bare_soil_coverage', label: 'Bare Soil Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'bedrock_coverage', label: 'Bedrock Coverage', format: 'pct', suffix: '%', tol: 0.01 },
                         { key: 'pixel_deviation', label: 'Pixel Mismatch', format: 'dev', suffix: '%', tol: 0.1 }
                     ];
 
@@ -479,14 +483,23 @@
                     `;
                     innerTbody.appendChild(innerTr3);
 
-                    // Row 4: Pixel Mismatch, and two blank cells
+                    // Row 4: Forest Coverage, Grass Coverage, Bare Soil Coverage
                     const innerTr4 = document.createElement('tr');
                     innerTr4.innerHTML = `
-                        <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
-                        <td></td>
-                        <td></td>
+                        <td>${makeCellHTML('Forest Coverage', renderedMetrics['forest_coverage'].valHTML, renderedMetrics['forest_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Grass Coverage', renderedMetrics['grass_coverage'].valHTML, renderedMetrics['grass_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Bare Soil Coverage', renderedMetrics['bare_soil_coverage'].valHTML, renderedMetrics['bare_soil_coverage'].badgeHTML)}</td>
                     `;
                     innerTbody.appendChild(innerTr4);
+
+                    // Row 5: Bedrock Coverage, Pixel Mismatch, and blank cell
+                    const innerTr5 = document.createElement('tr');
+                    innerTr5.innerHTML = `
+                        <td>${makeCellHTML('Bedrock Coverage', renderedMetrics['bedrock_coverage'].valHTML, renderedMetrics['bedrock_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
+                        <td></td>
+                    `;
+                    innerTbody.appendChild(innerTr5);
                 }
 
             } catch (err) {

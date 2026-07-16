@@ -12,7 +12,11 @@
         "avg_vegetation_cover": 57.6122,
         "max_river_discharge": 249.606,
         "active_river_cells": 3397,
-        "water_coverage": 15.0222
+        "water_coverage": 15.0222,
+        "forest_coverage": 57.1259,
+        "grass_coverage": 0.240741,
+        "bare_soil_coverage": 4.9037,
+        "bedrock_coverage": 37.7296
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
@@ -21,7 +25,11 @@
         "avg_vegetation_cover": 57.6122,
         "max_river_discharge": 249.606,
         "active_river_cells": 3397,
-        "water_coverage": 15.0222
+        "water_coverage": 15.0222,
+        "forest_coverage": 57.1259,
+        "grass_coverage": 0.240741,
+        "bare_soil_coverage": 4.9037,
+        "bedrock_coverage": 37.7296
       }
     },
     "Arid Desert": {
@@ -35,7 +43,11 @@
         "avg_vegetation_cover": 11.9944,
         "max_river_discharge": 0.159522,
         "active_river_cells": 0,
-        "water_coverage": 1.95926
+        "water_coverage": 1.95926,
+        "forest_coverage": 9.4037,
+        "grass_coverage": 2.21111,
+        "bare_soil_coverage": 86.5519,
+        "bedrock_coverage": 1.83333
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
@@ -44,7 +56,11 @@
         "avg_vegetation_cover": 11.9944,
         "max_river_discharge": 0.159522,
         "active_river_cells": 0,
-        "water_coverage": 1.95926
+        "water_coverage": 1.95926,
+        "forest_coverage": 9.4037,
+        "grass_coverage": 2.21111,
+        "bare_soil_coverage": 86.5519,
+        "bedrock_coverage": 1.83333
       }
     },
     "Boreal Forest": {
@@ -58,7 +74,11 @@
         "avg_vegetation_cover": 26.2999,
         "max_river_discharge": 134.855,
         "active_river_cells": 2615,
-        "water_coverage": 23.8148
+        "water_coverage": 23.8148,
+        "forest_coverage": 37.8963,
+        "grass_coverage": 1.52222,
+        "bare_soil_coverage": 5.77407,
+        "bedrock_coverage": 54.8074
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
@@ -67,7 +87,11 @@
         "avg_vegetation_cover": 26.2999,
         "max_river_discharge": 134.855,
         "active_river_cells": 2615,
-        "water_coverage": 23.8148
+        "water_coverage": 23.8148,
+        "forest_coverage": 37.8963,
+        "grass_coverage": 1.52222,
+        "bare_soil_coverage": 5.77407,
+        "bedrock_coverage": 54.8074
       }
     },
     "Tropical Rainforest": {
@@ -81,7 +105,11 @@
         "avg_vegetation_cover": 49.6045,
         "max_river_discharge": 546.246,
         "active_river_cells": 4934,
-        "water_coverage": 16.1148
+        "water_coverage": 16.1148,
+        "forest_coverage": 49.2593,
+        "grass_coverage": 0.214815,
+        "bare_soil_coverage": 5.7963,
+        "bedrock_coverage": 44.7296
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
@@ -90,7 +118,11 @@
         "avg_vegetation_cover": 49.6045,
         "max_river_discharge": 546.246,
         "active_river_cells": 4934,
-        "water_coverage": 16.1148
+        "water_coverage": 16.1148,
+        "forest_coverage": 49.2593,
+        "grass_coverage": 0.214815,
+        "bare_soil_coverage": 5.7963,
+        "bedrock_coverage": 44.7296
       }
     },
     "Mediterranean Scrub": {
@@ -104,7 +136,11 @@
         "avg_vegetation_cover": 48.6763,
         "max_river_discharge": 106.175,
         "active_river_cells": 2124,
-        "water_coverage": 3.12222
+        "water_coverage": 3.12222,
+        "forest_coverage": 54.3926,
+        "grass_coverage": 1.11481,
+        "bare_soil_coverage": 3.7037,
+        "bedrock_coverage": 40.7889
       },
       "current": {
         "initial_soil_volume": 9.61679e+06,
@@ -113,7 +149,11 @@
         "avg_vegetation_cover": 48.6763,
         "max_river_discharge": 106.175,
         "active_river_cells": 2124,
-        "water_coverage": 3.12222
+        "water_coverage": 3.12222,
+        "forest_coverage": 54.3926,
+        "grass_coverage": 1.11481,
+        "bare_soil_coverage": 3.7037,
+        "bedrock_coverage": 40.7889
       }
     }
   }
