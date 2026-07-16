@@ -210,6 +210,41 @@
         "bare_soil_coverage": 4.56296,
         "bedrock_coverage": 51.1407
       }
+    },
+    "Temperate Deciduous Forest": {
+      "status": "PASSED",
+      "mismatch_count": 0,
+      "mismatch_percentage": 0,
+      "baseline": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.57902e+06,
+        "net_mass_change": -37764.3,
+        "avg_vegetation_cover": 35.0801,
+        "max_river_discharge": 211.171,
+        "active_river_cells": 3289,
+        "water_coverage": 2.95556,
+        "wetland_coverage": 0,
+        "arable_coverage": 42.4222,
+        "forest_coverage": 43.4481,
+        "grass_coverage": 0.77037,
+        "bare_soil_coverage": 4.65926,
+        "bedrock_coverage": 51.1222
+      },
+      "current": {
+        "initial_soil_volume": 9.61679e+06,
+        "final_soil_volume": 9.57902e+06,
+        "net_mass_change": -37764.3,
+        "avg_vegetation_cover": 35.0801,
+        "max_river_discharge": 211.171,
+        "active_river_cells": 3289,
+        "water_coverage": 2.95556,
+        "wetland_coverage": 0,
+        "arable_coverage": 42.4222,
+        "forest_coverage": 43.4481,
+        "grass_coverage": 0.77037,
+        "bare_soil_coverage": 4.65926,
+        "bedrock_coverage": 51.1222
+      }
     }
   }
 }

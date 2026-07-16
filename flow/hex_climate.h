@@ -156,6 +156,26 @@ public:
                 0.55f,   // wet_blend_weight (55%)
                 215.0f, 130.0f, 45.0f, // wet_blend_color (russet/orange-brown peat bogs)
                 105.0f, 90.0f, 80.0f  // target_sub (dark organic gley soil)
+            },
+            {
+                "Temperate Deciduous Forest",
+                1.20f,   // 1.20 m/yr rain (ample uniform precipitation)
+                14.0f,   // 14C base temperature (mild seasonal average)
+                95.0f,   // 95m altitude cooling divisor
+                5.0f,    // 5C growth limit
+                10.0f,   // 10C range for scaling
+                0.22f,   // 0.22 vegetation growth rate (healthy deciduous growth)
+                0.9f,    // 0.9m rain threshold
+                0.0020f, // 0.0020 evaporation coefficient (moderate evaporation)
+                0.30f,   // 0.30 initial saturation (moist but well-drained soils)
+                0.45f,   // 0.45 infiltration rate (high soil infiltration due to leaf litter layer)
+                40.0f,   // 40.0 m/yr conductivity (excellent drainage of silty loam)
+                0.15f,   // 0.15m lake threshold
+                false,   // check_wetland_groundwater
+                45.0f, 125.0f, 45.0f,  // target_veg (vibrant deciduous forest green)
+                0.0f,    // wet_blend_weight (0% - well-drained forest slopes)
+                0.0f, 0.0f, 0.0f,      // wet_blend_color (unused)
+                110.0f, 85.0f, 65.0f   // target_sub (rich, dark brown forest loam humus)
             }
         };
     }
