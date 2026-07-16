@@ -511,10 +511,10 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                         float water_C = h_lake[r][q];
                         float water_N = h_lake[closest_rn][closest_qn];
 
-                        bool curr_ocean = (water_C > 0.10f && std::abs(H_C + water_C) < 5.0f);
-                        bool neigh_ocean = (water_N > 0.10f && std::abs(H_N + water_N) < 5.0f);
+                        bool is_water_C = (water_C > lake_threshold);
+                        bool is_water_N = (water_N > lake_threshold);
 
-                        if (curr_ocean != neigh_ocean) {
+                        if (is_water_C != is_water_N) {
                             pr = 0;
                             pg = 0;
                             pb = 0;
