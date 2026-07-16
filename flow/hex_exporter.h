@@ -728,8 +728,82 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     rasterize_triangle_3d(top_center, top_verts[i], top_verts[(i + 1) % 6], col_top, pixels, z_buffer, width, height);
                 }
 
-                // A2. Draw Topographic Contour Lines (Exactly 1px wide vector lines at 100m intervals)
-                ColorRGBA_3d col_line = { 50, 50, 50, 255 }; // Clean dark gray vector contour
+                // B. Rasterize Front-Facing Side Walls (Only on the outer border of the grid)
+                for (int i = 0; i <= 3; ++i) {
+                    int nq, nr;
+                    // Map wall index to the correct neighbor direction
+                    int neighbor_dir = (i == 1) ? 5 : ((i == 2) ? 4 : i);
+
+                    // Check if there is a neighbor in this direction
+                    if (g.get_neighbor(q, r, neighbor_dir, nq, nr)) {
+                        continue; // Do not draw walls between adjacent cells inside the grid!
+                    }
+
+                    float wall_shade = 1.0f;
+                    if (i == 0) wall_shade = 0.90f; // East (semi-shaded)
+                    if (i == 1) wall_shade = 0.82f; // South-East (shaded)
+                    if (i == 2) wall_shade = 0.96f; // South-West (brightest front)
+                    if (i == 3) wall_shade = 0.68f; // West (shadowed)
+
+                    // Crust rocky color: [90, 80, 75]
+                    ColorRGBA_3d col_wall = {
+                        (unsigned char)std::min(255.0f, 90.0f * wall_shade),
+                        (unsigned char)std::min(255.0f, 80.0f * wall_shade),
+                        (unsigned char)std::min(255.0f, 75.0f * wall_shade),
+                        255
+                    };
+
+                    // Wall side quad split into two triangles
+                    rasterize_triangle_3d(top_verts[i], top_verts[i + 1], bot_verts[i + 1], col_wall, pixels, z_buffer, width, height);
+                    rasterize_triangle_3d(top_verts[i], bot_verts[i + 1], bot_verts[i], col_wall, pixels, z_buffer, width, height);
+                }
+            }
+        }
+    }
+
+    // Pass 2: Draw all vector lines (Topographic Contours and Shoreline Boundaries)
+    for (int sum = 0; sum <= (g.size_q + g.size_r - 2); ++sum) {
+        for (int r = 0; r <= sum; ++r) {
+            int q = sum - r;
+            if (q >= 0 && q < g.size_q && r >= 0 && r < g.size_r) {
+                float H = g.H_soil[r][q];
+                float water = g.h_surface[r][q] + h_lake[r][q];
+                
+                float cx = R_px * 1.7320508f * (q + r * 0.5f);
+                float cy = R_px * 1.5f * r;
+                float z_top = H + water;
+                
+                Vec3_3d top_center = project_iso(cx, cy, z_top, X_mid, Y_mid, scale_xy, heightScale);
+                Vec3_3d top_verts[6];
+                float phys_z_v[6];
+                for (int i = 0; i < 6; ++i) {
+                    float vx, vy;
+                    get_vertex_coords(g, q, r, i, cx, cy, R_px, vx, vy);
+                    float z_v = get_vertex_height(g, h_lake, q, r, i);
+                    phys_z_v[i] = z_v;
+                    top_verts[i] = project_iso(vx, vy, z_v, X_mid, Y_mid, scale_xy, heightScale);
+                }
+
+                // 1. Draw Shoreline Boundary (White line on land-ocean interface edges)
+                for (int i = 0; i < 6; ++i) {
+                    int nq, nr;
+                    if (g.get_neighbor(q, r, i, nq, nr)) {
+                        bool curr_ocean = (water > 0.10f && std::abs(H + water) < 0.1f);
+                        float neighbor_water = g.h_surface[nr][nq] + h_lake[nr][nq];
+                        bool neigh_ocean = (neighbor_water > 0.10f && std::abs(g.H_soil[nr][nq] + neighbor_water) < 0.1f);
+                        
+                        bool curr_land = !curr_ocean;
+                        bool neigh_land = !neigh_ocean;
+                        
+                        if (curr_land && neigh_ocean) {
+                            ColorRGBA_3d col_shore = { 0, 0, 0, 255 };
+                            draw_line_z_buffered(top_verts[i], top_verts[(i + 1) % 6], col_shore, pixels, z_buffer, width, height);
+                        }
+                    }
+                }
+
+                // 2. Draw Topographic Contour Lines
+                ColorRGBA_3d col_line = { 50, 50, 50, 255 };
                 for (int i = 0; i < 6; ++i) {
                     float z0 = z_top;
                     float z1 = phys_z_v[i];
@@ -762,36 +836,6 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                             draw_line_z_buffered(pts[0], pts[1], col_line, pixels, z_buffer, width, height);
                         }
                     }
-                }
-
-                // B. Rasterize Front-Facing Side Walls (Only on the outer border of the grid)
-                for (int i = 0; i <= 3; ++i) {
-                    int nq, nr;
-                    // Map wall index to the correct neighbor direction
-                    int neighbor_dir = (i == 1) ? 5 : ((i == 2) ? 4 : i);
-
-                    // Check if there is a neighbor in this direction
-                    if (g.get_neighbor(q, r, neighbor_dir, nq, nr)) {
-                        continue; // Do not draw walls between adjacent cells inside the grid!
-                    }
-
-                    float wall_shade = 1.0f;
-                    if (i == 0) wall_shade = 0.90f; // East (semi-shaded)
-                    if (i == 1) wall_shade = 0.82f; // South-East (shaded)
-                    if (i == 2) wall_shade = 0.96f; // South-West (brightest front)
-                    if (i == 3) wall_shade = 0.68f; // West (shadowed)
-
-                    // Crust rocky color: [90, 80, 75]
-                    ColorRGBA_3d col_wall = {
-                        (unsigned char)std::min(255.0f, 90.0f * wall_shade),
-                        (unsigned char)std::min(255.0f, 80.0f * wall_shade),
-                        (unsigned char)std::min(255.0f, 75.0f * wall_shade),
-                        255
-                    };
-
-                    // Wall side quad split into two triangles
-                    rasterize_triangle_3d(top_verts[i], top_verts[i + 1], bot_verts[i + 1], col_wall, pixels, z_buffer, width, height);
-                    rasterize_triangle_3d(top_verts[i], bot_verts[i + 1], bot_verts[i], col_wall, pixels, z_buffer, width, height);
                 }
             }
         }

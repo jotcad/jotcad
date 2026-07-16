@@ -90,7 +90,11 @@ void apply_coastal_ramp(HexGrid& g, float start_height, float end_height) {
     for (int r = 0; r < g.size_r; ++r) {
         for (int q = 0; q < g.size_q; ++q) {
             float slant_factor = 1.0f - (float)q / (float)(g.size_q - 1);
-            g.H_soil[r][q] += end_height + (start_height - end_height) * slant_factor;
+            float h = end_height + (start_height - end_height) * slant_factor;
+            if (h < 0.0f) {
+                h *= 5.0f; // 5x steeper drop-off for deep ocean basin (reaches -750m)
+            }
+            g.H_soil[r][q] += h;
         }
     }
 }
