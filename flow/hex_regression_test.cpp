@@ -96,6 +96,50 @@ void apply_coastal_ramp(HexGrid& g, float start_height, float end_height) {
     }
 }
 
+void apply_multipoint_island(HexGrid& g, float center_height, float ocean_depth, float max_dist_m, float noise_scale, float noise_amp) {
+    float center_q = g.size_q * 0.5f;
+    float center_r = g.size_r * 0.5f;
+    
+    float cx = g.scale.hex_radius_m * 1.7320508f * (center_q + center_r * 0.5f);
+    float cy = g.scale.hex_radius_m * 1.5f * center_r;
+
+    struct Point { float x, y; };
+    std::vector<Point> seeds = {
+        { cx - 30000.0f, cy - 15000.0f },
+        { cx + 35000.0f, cy + 20000.0f },
+        { cx - 15000.0f, cy + 30000.0f },
+        { cx + 25000.0f, cy - 25000.0f }
+    };
+
+    PerlinNoise2D perlin;
+
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
+            float x = g.scale.hex_radius_m * 1.7320508f * (q + r * 0.5f);
+            float y = g.scale.hex_radius_m * 1.5f * r;
+
+            float min_d = 1e9f;
+            for (const auto& seed : seeds) {
+                float dx = x - seed.x;
+                float dy = y - seed.y;
+                float d = std::sqrt(dx*dx + dy*dy);
+                min_d = std::min(min_d, d);
+            }
+
+            float pn = perlin.noise(q * noise_scale, r * noise_scale) + 0.35f * perlin.noise(q * 2.75f * noise_scale, r * 2.75f * noise_scale);
+            float eff_dist = std::max(0.0f, min_d + pn * noise_amp);
+
+            float h = ocean_depth;
+            if (eff_dist < max_dist_m) {
+                float t = eff_dist / max_dist_m;
+                float factor = 0.5f * (1.0f + std::cos(t * 3.14159265f));
+                h = ocean_depth + (center_height - ocean_depth) * factor;
+            }
+            g.H_soil[r][q] = h;
+        }
+    }
+}
+
 void apply_sea_borders(HexGrid& g) {
     auto& is_sea_border = g.request_field<HexSeaBorder>();
     int sr = g.size_r;
@@ -154,10 +198,9 @@ void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
     }
 
     if (profile.builder_type == TerrainBuilderType::CoastalRamp) {
-        // Compose Littoral Coastline
-        apply_coastal_ramp(g, 150.0f, -300.0f);
-        apply_perlin_noise(g, 0.022f, 180.0f, 100.0f, /*fade_right=*/false);
-        apply_perlin_noise(g, 0.25f, 80.0f, 0.0f, /*fade_right=*/false);
+        // Compose Littoral Coastline as a multipoint island
+        apply_multipoint_island(g, 150.0f, -300.0f, 50000.0f, 0.05f, 15000.0f);
+        apply_perlin_noise(g, 0.25f, 40.0f, 0.0f, /*fade_right=*/false);
         apply_sea_borders(g);
         finalize_soil_and_bedrock(g, 0.5f, 12.0f, /*scale_with_mountain=*/false);
     } else {
