@@ -450,12 +450,13 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                 }
 
                 if (h_lake[r][q] > lake_threshold) {
-                    float w_norm = std::min(1.0f, (h_lake[r][q] - lake_threshold) / 1.00f);
+                    float depth = h_lake[r][q] - lake_threshold;
+                    float w_norm = 1.0f - 0.7f * std::exp(-depth / 1.5f) - 0.3f * std::exp(-depth / 150.0f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
                     float wb = 224.0f + (150.0f - 224.0f) * w_norm;
-
-                    float opacity = 0.30f + w_norm * 0.62f;
+ 
+                    float opacity = 0.30f + w_norm * 0.70f;
                     pr = (unsigned char)((1.0f - opacity) * pr + opacity * wr);
                     pg = (unsigned char)((1.0f - opacity) * pg + opacity * wg);
                     pb = (unsigned char)((1.0f - opacity) * pb + opacity * wb);
