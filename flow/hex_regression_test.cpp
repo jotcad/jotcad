@@ -123,11 +123,13 @@ void finalize_soil_and_bedrock(HexGrid& g, float min_thickness, float max_thickn
                 float dist_to_ridge = std::abs((q - center_q) + (r - center_r)) / 1.4142f;
                 float ridge_factor = std::max(0.0f, 1.0f - dist_to_ridge / 31.5f);
                 thickness = min_thickness + (max_thickness - min_thickness) * (1.0f - ridge_factor);
+                g.H_bedrock[r][q] = g.H_soil[r][q] - thickness;
             } else {
                 float slant_factor = 1.0f - (float)q / (float)(g.size_q - 1);
                 thickness = min_thickness + (max_thickness - min_thickness) * slant_factor;
+                g.H_bedrock[r][q] = g.H_soil[r][q];
+                g.H_soil[r][q] = g.H_bedrock[r][q] + thickness;
             }
-            g.H_bedrock[r][q] = g.H_soil[r][q] - thickness;
             g.h_surface[r][q] = 0.0f;
             g.Q[r][q] = 0.0f;
             g.sediment[r][q] = 0.0f;
@@ -143,7 +145,8 @@ void finalize_soil_and_bedrock(HexGrid& g, float min_thickness, float max_thickn
 
 // Composition function
 void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
-    // Reset elevations to zero first
+    int sq = g.size_q;
+    int sr = g.size_r;
     for (int r = 0; r < g.size_r; ++r) {
         for (int q = 0; q < g.size_q; ++q) {
             g.H_soil[r][q] = 0.0f;
@@ -156,7 +159,7 @@ void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
         apply_perlin_noise(g, 0.022f, 180.0f, 100.0f, /*fade_right=*/false);
         apply_perlin_noise(g, 0.25f, 80.0f, 0.0f, /*fade_right=*/false);
         apply_sea_borders(g);
-        finalize_soil_and_bedrock(g, 0.5f, 8.0f, /*scale_with_mountain=*/false);
+        finalize_soil_and_bedrock(g, 0.5f, 12.0f, /*scale_with_mountain=*/false);
     } else {
         // Compose standard mountain range
         apply_perlin_noise(g, 0.08f, 260.0f, 97.5f); // (0.15 + pn*0.4)*650.0f
