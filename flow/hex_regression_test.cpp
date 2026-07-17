@@ -91,9 +91,6 @@ void apply_coastal_ramp(HexGrid& g, float start_height, float end_height) {
         for (int q = 0; q < g.size_q; ++q) {
             float slant_factor = 1.0f - (float)q / (float)(g.size_q - 1);
             float h = end_height + (start_height - end_height) * slant_factor;
-            if (h < 0.0f) {
-                h *= 5.0f; // 5x steeper drop-off for deep ocean basin (reaches -750m)
-            }
             g.H_soil[r][q] += h;
         }
     }
@@ -155,10 +152,11 @@ void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
 
     if (profile.builder_type == TerrainBuilderType::CoastalRamp) {
         // Compose Littoral Coastline
-        apply_coastal_ramp(g, 450.0f, -150.0f);
-        apply_perlin_noise(g, 0.08f, 120.0f, 0.0f, /*fade_right=*/true);
+        apply_coastal_ramp(g, 150.0f, -300.0f);
+        apply_perlin_noise(g, 0.022f, 180.0f, 100.0f, /*fade_right=*/false);
+        apply_perlin_noise(g, 0.25f, 80.0f, 0.0f, /*fade_right=*/false);
         apply_sea_borders(g);
-        finalize_soil_and_bedrock(g, 2.0f, 20.0f, /*scale_with_mountain=*/false);
+        finalize_soil_and_bedrock(g, 0.5f, 8.0f, /*scale_with_mountain=*/false);
     } else {
         // Compose standard mountain range
         apply_perlin_noise(g, 0.08f, 260.0f, 97.5f); // (0.15 + pn*0.4)*650.0f

@@ -414,9 +414,15 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                     sg = base_g * shade;
                     sb = base_b * shade;
                 } else {
+                    float soil_thick = H - g.H_bedrock[r][q];
                     float substrate_r = target_sub_r;
                     float substrate_g = target_sub_g;
                     float substrate_b = target_sub_b;
+                    if (soil_thick < 0.10f) {
+                        substrate_r = 130.0f;
+                        substrate_g = 125.0f;
+                        substrate_b = 120.0f;
+                    }
 
                     float sub_r = (1.0f - alpha_arab) * substrate_r + alpha_arab * 235.0f;
                     float sub_g = (1.0f - alpha_arab) * substrate_g + alpha_arab * 45.0f;
