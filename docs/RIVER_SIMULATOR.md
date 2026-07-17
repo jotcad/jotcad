@@ -37,6 +37,8 @@ To maintain simulation stability and prevent the spring head (water source) from
 *   **Non-Erodible Boundaries**: Cells located along the grid boundaries ($x=0, x=w-1, y=0, y=h-1$) are marked non-erodible. Erosion and deposition calculations are skipped for these cells, keeping the inlet and outlet elevations perfectly stable.
 *   **Constant Sediment Feed**: Water droplets spawn at the spring head saturated with clay and gravel to match the local carrying capacity ($\text{sediment} = C \times 0.8$), preventing severe headwater erosion.
 *   **Dynamic Boundary Drainage**: When `DRAIN_MARGINS` is set to `1` in the soil profile's `WORLD` block, all surface water reaching the grid margins is destroyed. This prevents bathtub-style flooding in closed, flat basins.
+*   **Virtual Border Drainage (Hex Routing)**: Instead of modifying the physical ground height $H_{\text{soil}}$ of border cells in-place to force a drainage slope (which causes numerical slope explosions in river erosion when mountains meet the deep ocean), the hex routing model implements virtual off-grid routing. Border cells evaluate a virtual neighbor off-grid whose water level is always $F_{\text{border}} - \text{drop\_val}$, allowing water to drain off-grid naturally while keeping the physical terrain completely unaltered.
+*   **Natural Ocean Boundary Filling (Hex Routing)**: Border cells that are below sea level ($H_{\text{soil}} < 0.0\text{ m}$) are initialized with their filled water level $F$ locked to $0.0\text{ m}$ (sea level). This allows them to fill naturally with standing ocean water rather than acting as dry drains, completely eliminating boundary land/beach artifacts.
 
 ---
 
