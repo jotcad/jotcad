@@ -23,11 +23,12 @@ private:
     float base_temp;
     float lapse_rate_divisor;
     float evap_coefficient;
+    float lake_threshold;
 
 public:
     HexRouting(float coeff = 0.15f, float exponent = 0.4f, bool fill_sinks = true)
         : depth_coefficient(coeff), depth_exponent(exponent), run_sink_fill(fill_sinks),
-          base_temp(25.0f), lapse_rate_divisor(85.0f), evap_coefficient(0.0f) {}
+          base_temp(25.0f), lapse_rate_divisor(85.0f), evap_coefficient(0.0f), lake_threshold(0.15f) {}
 
     HexRouting(const ClimateProfile& profile, const HexRoutingParams& params)
         : depth_coefficient(params.depth_coefficient),
@@ -35,7 +36,8 @@ public:
           run_sink_fill(params.run_sink_fill),
           base_temp(profile.base_temp),
           lapse_rate_divisor(profile.lapse_rate_divisor),
-          evap_coefficient(params.evap_coefficient) {}
+          evap_coefficient(params.evap_coefficient),
+          lake_threshold(profile.lake_threshold) {}
 
     // Adapt Planchon-Darboux sink filling to the hexagonal grid
     void fill_depressions(HexGrid& g) {
@@ -492,9 +494,21 @@ public:
 
         // 5. Update soil salinity: Set to 1.0f for ocean and shoreline cells, 0.0f inland
         auto& salinity = g.request_field<HexSalinity>();
+        if (step == 0) {
+            for (int r = 0; r < sr; ++r) {
+                for (int q = 0; q < sq; ++q) {
+                    if (g.H_soil[r][q] < 0.0f) {
+                        salinity[r][q] = 1.0f;
+                    } else {
+                        salinity[r][q] = 0.0f;
+                    }
+                }
+            }
+        }
+
         for (int r = 0; r < sr; ++r) {
             for (int q = 0; q < sq; ++q) {
-                bool is_ocean = (g.H_soil[r][q] < 0.0f) || (is_sea_border && (*is_sea_border)[r][q] > 0.0f);
+                bool is_ocean = (h_lake[r][q] > lake_threshold && salinity[r][q] > 0.0f);
                 if (is_ocean) {
                     salinity[r][q] = 1.0f;
                 } else {
@@ -502,7 +516,7 @@ public:
                     for (int d = 0; d < 6; ++d) {
                         int nq, nr;
                         if (g.get_neighbor(q, r, d, nq, nr)) {
-                            if (g.H_soil[nr][nq] < 0.0f || (is_sea_border && (*is_sea_border)[nr][nq] > 0.0f)) {
+                            if (h_lake[nr][nq] > lake_threshold && salinity[nr][nq] > 0.0f) {
                                 ocean_neighbors++;
                             }
                         }
