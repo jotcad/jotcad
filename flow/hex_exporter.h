@@ -424,6 +424,24 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                         substrate_b = 120.0f;
                     }
 
+                    bool is_cliff = false;
+                    for (int dir = 0; dir < 6; ++dir) {
+                        int nq, nr;
+                        if (g.get_neighbor(q, r, dir, nq, nr)) {
+                            float h_diff = H - g.H_soil[nr][nq];
+                            if (h_diff > 0.50f * 86.60254f) { // exceeds landslide threshold
+                                is_cliff = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (is_cliff) {
+                        substrate_r = 255.0f;
+                        substrate_g = 0.0f;
+                        substrate_b = 255.0f;
+                        veg = 0.0f;
+                    }
+
                     float sub_r = (1.0f - alpha_arab) * substrate_r + alpha_arab * 235.0f;
                     float sub_g = (1.0f - alpha_arab) * substrate_g + alpha_arab * 45.0f;
                     float sub_b = (1.0f - alpha_arab) * substrate_b + alpha_arab * 45.0f;
