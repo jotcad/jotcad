@@ -41,47 +41,58 @@ public:
                     }
                 }
 
-                if (ocean_neighbors >= 3) {
-                    // This is an exposed headland cell! Erode it.
-                    float eroded_soil = erosion_rate * ocean_neighbors * dt;
-                    // Cap erosion by available soil so we don't go negative or erode into bedrock too easily
+                if (ocean_neighbors >= 1) {
+                    // Soil erosion is 10x faster than bedrock erosion because it's loose sediment
+                    float eroded_soil = erosion_rate * 10.0f * ocean_neighbors * dt;
                     float soil_thickness = std::max(0.0f, g.H_soil[r][q] - g.H_bedrock[r][q]);
                     float bedrock_erosion = 0.0f;
-                    if (eroded_soil > soil_thickness) {
-                        float remaining_erosion = eroded_soil - soil_thickness;
-                        eroded_soil = soil_thickness;
-                        bedrock_erosion = remaining_erosion * 0.025f; // Bedrock is 40x harder
+                    
+                    if (ocean_neighbors >= 3) {
+                        // High-energy headlands can erode bedrock if soil is fully stripped
+                        if (eroded_soil > soil_thickness) {
+                            float remaining_erosion = eroded_soil - soil_thickness;
+                            eroded_soil = soil_thickness;
+                            bedrock_erosion = remaining_erosion * 0.025f; // Bedrock is hard
+                        }
+                    } else {
+                        // Straight shorelines and bays only erode soil, not bedrock
+                        if (eroded_soil > soil_thickness) {
+                            eroded_soil = soil_thickness;
+                        }
                     }
+                    
                     float total_erosion = eroded_soil + bedrock_erosion;
                     dH[r][q] -= total_erosion;
 
-                    // Distribute the eroded sediment to adjacent sheltered land cells (ocean_neighbors <= 2)
-                    std::vector<std::pair<int, int>> sheltered_neighbors;
-                    for (int dir = 0; dir < 6; ++dir) {
-                        int nq, nr;
-                        if (g.get_neighbor(q, r, dir, nq, nr)) {
-                            // Check if neighbor is land and sheltered
-                            if (g.H_soil[nr][nq] >= 0.0f && is_sea_border[nr][nq] == 0.0f) {
-                                int n_ocean = 0;
-                                for (int nd = 0; nd < 6; ++nd) {
-                                    int nnq, nnr;
-                                    if (g.get_neighbor(nq, nr, nd, nnq, nnr)) {
-                                        if (g.H_soil[nnr][nnq] < 0.0f || is_sea_border[nnr][nnq] > 0.0f) {
-                                            n_ocean++;
+                    // Distribute 50% of the eroded sediment to adjacent sheltered land cells (longshore drift)
+                    // The other 50% is washed offshore into the deep ocean (cross-shore transport)
+                    if (total_erosion > 0.0f) {
+                        std::vector<std::pair<int, int>> sheltered_neighbors;
+                        for (int dir = 0; dir < 6; ++dir) {
+                            int nq, nr;
+                            if (g.get_neighbor(q, r, dir, nq, nr)) {
+                                if (g.H_soil[nr][nq] >= 0.0f && is_sea_border[nr][nq] == 0.0f) {
+                                    int n_ocean = 0;
+                                    for (int nd = 0; nd < 6; ++nd) {
+                                        int nnq, nnr;
+                                        if (g.get_neighbor(nq, nr, nd, nnq, nnr)) {
+                                            if (g.H_soil[nnr][nnq] < 0.0f || is_sea_border[nnr][nnq] > 0.0f) {
+                                                n_ocean++;
+                                            }
                                         }
                                     }
-                                }
-                                if (n_ocean <= 2) {
-                                    sheltered_neighbors.push_back({nq, nr});
+                                    if (n_ocean <= 2) {
+                                        sheltered_neighbors.push_back({nq, nr});
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    if (!sheltered_neighbors.empty()) {
-                        float deposition_per_neighbor = total_erosion / sheltered_neighbors.size();
-                        for (auto& neigh : sheltered_neighbors) {
-                            dH[neigh.second][neigh.first] += deposition_per_neighbor;
+                        if (!sheltered_neighbors.empty()) {
+                            float deposition_per_neighbor = (total_erosion * 0.5f) / sheltered_neighbors.size();
+                            for (auto& neigh : sheltered_neighbors) {
+                                dH[neigh.second][neigh.first] += deposition_per_neighbor;
+                            }
                         }
                     }
                 }
