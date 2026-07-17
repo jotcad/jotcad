@@ -521,7 +521,7 @@ public:
                             }
                         }
                     }
-                    if (ocean_neighbors > 0) {
+                    if (ocean_neighbors > 0 && g.H_soil[r][q] < 2.5f && g.H_bedrock[r][q] < 0.0f) {
                         // Bordering the ocean = beach zone! Dilute with river discharge for estuaries.
                         float Q_m3s = g.Q[r][q] / SECONDS_PER_YEAR;
                         float dilution = std::min(1.0f, Q_m3s * 0.5f);
