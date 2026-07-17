@@ -481,19 +481,8 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                     }
                 }
 
-                bool is_sea_b = false;
-                if (g.has_field<HexSeaBorder>()) {
-                    auto& is_sea_border = const_cast<HexGrid&>(g).request_field<HexSeaBorder>();
-                    if (is_sea_border[r][q] > 0.0f) {
-                        is_sea_b = true;
-                    }
-                }
-
-                if (h_lake[r][q] > lake_threshold || is_sea_b) {
+                if (h_lake[r][q] > lake_threshold) {
                     float depth = h_lake[r][q] - lake_threshold;
-                    if (is_sea_b) {
-                        depth = 150.0f;
-                    }
                     float w_norm = 1.0f - 0.7f * std::exp(-depth / 1.5f) - 0.3f * std::exp(-depth / 150.0f);
                     float wr = 38.0f + (3.0f - 38.0f) * w_norm;
                     float wg = 145.0f + (80.0f - 145.0f) * w_norm;
@@ -661,23 +650,10 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
             int q = sum - r;
             if (q >= 0 && q < g.size_q && r >= 0 && r < g.size_r) {
                 float H = g.H_soil[r][q];
-                bool is_sea_b = false;
-                if (g.has_field<HexSeaBorder>()) {
-                    auto& is_sea_border = const_cast<HexGrid&>(g).request_field<HexSeaBorder>();
-                    if (is_sea_border[r][q] > 0.0f) {
-                        is_sea_b = true;
-                    }
-                }
                 float water = g.h_surface[r][q] + h_lake[r][q];
-                if (is_sea_b) {
-                    water = 10.0f;
-                }
                 float veg = g.vegetation[r][q];
 
                 float z_top = H + water;
-                if (is_sea_b) {
-                    z_top = 0.0f;
-                }
 
                 // 2D hex center
                 float cx = R_px * 1.7320508f * (q + r * 0.5f);

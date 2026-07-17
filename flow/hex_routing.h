@@ -44,44 +44,15 @@ public:
         int sq = g.size_q;
         int sr = g.size_r;
         float dx = g.scale.hex_radius_m * 1.7320508f;
-        float outward_slope = 0.015f; // 1.5% slope
-        float drop = outward_slope * dx;
-
-        // Enforce constant outward slope on H_soil for all border cells
-        for (int r = 0; r < sr; ++r) {
-            for (int q = 0; q < sq; ++q) {
-                if (r == 0 || r == sr - 1 || q == 0 || q == sq - 1) {
-                    float min_interior_h = 99999.0f;
-                    for (int dir = 0; dir < 6; ++dir) {
-                        int nq, nr;
-                        if (g.get_neighbor(q, r, dir, nq, nr)) {
-                            if (nr > 0 && nr < sr - 1 && nq > 0 && nq < sq - 1) {
-                                min_interior_h = std::min(min_interior_h, g.H_soil[nr][nq]);
-                            }
-                        }
-                    }
-                    if (min_interior_h < 99999.0f) {
-                        g.H_soil[r][q] = min_interior_h - drop;
-                    }
-                }
-            }
-        }
-
         std::vector<std::vector<float>> F(sr, std::vector<float>(sq, 99999.0f));
-
-        // 1. Initialize boundaries to H_soil, but lock sea borders to at least sea level (0.0m)
-        std::vector<std::vector<float>>* is_sea_border = nullptr;
-        if (g.has_field<HexSeaBorder>()) {
-            is_sea_border = &g.request_field<HexSeaBorder>();
-        }
-
+ 
         for (int q = 0; q < sq; ++q) {
-            F[0][q] = (is_sea_border && (*is_sea_border)[0][q] > 0.0f) ? std::max(0.0f, g.H_soil[0][q]) : g.H_soil[0][q];
-            F[sr - 1][q] = (is_sea_border && (*is_sea_border)[sr - 1][q] > 0.0f) ? std::max(0.0f, g.H_soil[sr - 1][q]) : g.H_soil[sr - 1][q];
+            F[0][q] = (g.H_soil[0][q] < 0.0f) ? 0.0f : g.H_soil[0][q];
+            F[sr - 1][q] = (g.H_soil[sr - 1][q] < 0.0f) ? 0.0f : g.H_soil[sr - 1][q];
         }
         for (int r = 0; r < sr; ++r) {
-            F[r][0] = (is_sea_border && (*is_sea_border)[r][0] > 0.0f) ? std::max(0.0f, g.H_soil[r][0]) : g.H_soil[r][0];
-            F[r][sq - 1] = (is_sea_border && (*is_sea_border)[r][sq - 1] > 0.0f) ? std::max(0.0f, g.H_soil[r][sq - 1]) : g.H_soil[r][sq - 1];
+            F[r][0] = (g.H_soil[r][0] < 0.0f) ? 0.0f : g.H_soil[r][0];
+            F[r][sq - 1] = (g.H_soil[r][sq - 1] < 0.0f) ? 0.0f : g.H_soil[r][sq - 1];
         }
 
         // 2. Iterative forward-backward relaxation pass
@@ -199,6 +170,11 @@ public:
             return a.water_surface_height > b.water_surface_height;
         });
 
+        // Compute virtual boundary drop
+        float dx = g.scale.hex_radius_m * 1.7320508f;
+        float outward_slope = 0.015f;
+        float drop_val = outward_slope * dx;
+
         // Pass 1: Global Routing to accumulate inflows
         for (const auto& cell : cells) {
             int q = cell.q;
@@ -207,7 +183,11 @@ public:
 
             // Find steepest downhill neighbor on the filled surface
             int steepest_dir = -1;
+            bool is_border = (r == 0 || r == sr - 1 || q == 0 || q == sq - 1);
             float max_slope = 0.0f;
+            if (is_border && F_curr >= 0.0f) {
+                max_slope = drop_val;
+            }
             int steepest_nq = -1;
             int steepest_nr = -1;
 
