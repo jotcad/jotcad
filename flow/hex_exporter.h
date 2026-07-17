@@ -425,20 +425,28 @@ inline void generate_top_view_pixels(const HexGrid& g, float R_px, std::vector<u
                     }
 
                     bool is_cliff = false;
+                    float max_h_diff = 0.0f;
                     for (int dir = 0; dir < 6; ++dir) {
                         int nq, nr;
                         if (g.get_neighbor(q, r, dir, nq, nr)) {
                             float h_diff = H - g.H_soil[nr][nq];
-                            if (h_diff > 0.50f * 86.60254f) { // exceeds landslide threshold
-                                is_cliff = true;
-                                break;
+                            if (h_diff > max_h_diff) {
+                                max_h_diff = h_diff;
                             }
                         }
                     }
+                    if (max_h_diff > 0.50f * 86.60254f) {
+                        is_cliff = true;
+                    }
                     if (is_cliff) {
-                        substrate_r = 255.0f;
-                        substrate_g = 0.0f;
-                        substrate_b = 255.0f;
+                        float min_c = 0.50f * 86.60254f;
+                        float max_c = 220.0f;
+                        float t = std::max(0.0f, std::min(1.0f, (max_h_diff - min_c) / (max_c - min_c)));
+                        
+                        // Interpolate from violet/indigo {80, 100, 255} to hot pink/magenta {255, 0, 128}
+                        substrate_r = (1.0f - t) * 80.0f + t * 255.0f;
+                        substrate_g = (1.0f - t) * 100.0f + t * 0.0f;
+                        substrate_b = (1.0f - t) * 255.0f + t * 128.0f;
                         veg = 0.0f;
                     }
 
