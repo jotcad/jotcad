@@ -240,7 +240,6 @@
             border-radius: 12px;
             overflow: hidden;
             border: 1px solid var(--border);
-            aspect-ratio: 1778 / 912;
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             background: #020408;
@@ -354,15 +353,23 @@
                     const tr = document.createElement('tr');
                     tr.id = `row-${safeName}`;
                     tr.innerHTML = `
-                        <!-- Left: Image Column (Fixed 450px with Tab Switcher) -->
+                        <!-- Left: Image Column (Fixed 450px with Double Tab Switcher) -->
                         <td style="width: 450px; padding-left: 0; padding-top: 1.5rem; padding-bottom: 1.5rem;">
-                            <div style="display: flex; gap: 6px; margin-bottom: 10px;">
-                                <button class="btn-tab active" onclick="switchView(this, './hex_frames/frame_1000_${safeName}_large.png')">Current</button>
-                                <button class="btn-tab" onclick="switchView(this, './hex_regression_large_ref_${safeName}.png')">Reference</button>
-                                <button class="btn-tab" onclick="switchView(this, './hex_regression_large_diff_${safeName}.png')">Diff Map</button>
+                            <!-- Projection Toggles -->
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                                <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; width: 85px;">Projection:</span>
+                                <button class="btn-tab active" id="proj-topdown-${safeName}" onclick="setProjection('${safeName}', 'topdown')">Top-Down</button>
+                                <button class="btn-tab" id="proj-iso-${safeName}" onclick="setProjection('${safeName}', 'iso')">3D Isometric</button>
+                            </div>
+                            <!-- View Toggles -->
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                                <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; width: 85px;">View:</span>
+                                <button class="btn-tab active" id="view-current-${safeName}" onclick="setView('${safeName}', 'current')">Current</button>
+                                <button class="btn-tab" id="view-ref-${safeName}" onclick="setView('${safeName}', 'ref')">Reference</button>
+                                <button class="btn-tab" id="view-diff-${safeName}" onclick="setView('${safeName}', 'diff')">Diff Map</button>
                             </div>
                             <div class="image-column" style="display: block; width: 450px;">
-                                <img src="./hex_frames/frame_1000_${safeName}_large.png" alt="${profileName} Top View" class="top-view-img">
+                                <img src="./hex_frames/frame_1000_${safeName}_large.png" alt="${profileName} View" class="top-view-img" id="display-img-${safeName}">
                             </div>
                         </td>
                         <!-- Right: Info Column with Wrapped Columns (3x3 grid) -->
@@ -555,13 +562,60 @@
             }
         }
 
-        function switchView(btn, src) {
-            const tabs = btn.parentElement.querySelectorAll('.btn-tab');
-            tabs.forEach(t => t.classList.remove('active'));
-            btn.classList.add('active');
-            
-            const img = btn.parentElement.nextElementSibling.querySelector('.top-view-img');
+        const uiState = {
+            projection: 'topdown',
+            view: 'current'
+        };
+
+        function updateImage(safeName) {
+            const img = document.getElementById(`display-img-${safeName}`);
+            let src = '';
+            if (uiState.projection === 'topdown') {
+                if (uiState.view === 'current') {
+                    src = `./hex_frames/frame_1000_${safeName}_large.png`;
+                } else if (uiState.view === 'ref') {
+                    src = `./hex_regression_large_ref_${safeName}.png`;
+                } else {
+                    src = `./hex_regression_large_diff_${safeName}.png`;
+                }
+            } else {
+                if (uiState.view === 'current') {
+                    src = `./hex_frames/frame_1000_${safeName}_3d_large.png`;
+                } else if (uiState.view === 'ref') {
+                    src = `./hex_regression_large_ref_${safeName}_3d.png`;
+                } else {
+                    src = `./hex_frames/frame_1000_${safeName}_3d_large.png`;
+                }
+            }
             img.src = src;
+        }
+
+        function setProjection(safeName, proj) {
+            uiState.projection = proj;
+            document.getElementById(`proj-topdown-${safeName}`).classList.toggle('active', proj === 'topdown');
+            document.getElementById(`proj-iso-${safeName}`).classList.toggle('active', proj === 'iso');
+            
+            const diffBtn = document.getElementById(`view-diff-${safeName}`);
+            if (proj === 'iso') {
+                diffBtn.style.opacity = '0.25';
+                diffBtn.style.pointerEvents = 'none';
+                if (uiState.view === 'diff') {
+                    setView(safeName, 'current');
+                    return;
+                }
+            } else {
+                diffBtn.style.opacity = '1';
+                diffBtn.style.pointerEvents = 'auto';
+            }
+            updateImage(safeName);
+        }
+
+        function setView(safeName, view) {
+            uiState.view = view;
+            document.getElementById(`view-current-${safeName}`).classList.toggle('active', view === 'current');
+            document.getElementById(`view-ref-${safeName}`).classList.toggle('active', view === 'ref');
+            document.getElementById(`view-diff-${safeName}`).classList.toggle('active', view === 'diff');
+            updateImage(safeName);
         }
 
         // Initialize loading

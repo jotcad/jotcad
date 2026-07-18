@@ -335,7 +335,7 @@ int main(int argc, char* argv[]) {
         p1->add<HexErosion>(1.0e-2f, 0.04f, 0.15f, 2.0f);
         p1->add<HexLandslide>(0.14f, 0.50f);
         p1->add<HexWaveErosion>(0.000005f); // Wave erosion on exposed headlands
-        p1->add<HexTectonicStrikeSlip>(180.0f, 0.0f, 30.0f, 300.0f, 40000.0f, 0.0003f, 3000.0f, 80.0f);
+        p1->add<HexTectonicStrikeSlip>(180.0f, 0.0f, 30.0f, 300.0f, 12000.0f, 0.0003f, 3000.0f, 80.0f);
         p1->add<HexVegetation>(profile, 1.0f);
 
         {
@@ -494,8 +494,12 @@ int main(int argc, char* argv[]) {
             // Save PNG reference
             stbi_write_png(ref_png_save.c_str(), w, h, 3, pixels.data(), w * 3);
 
+            std::string ref_png_3d_save = get_write_path("hex_regression_large_ref_" + safe + "_3d.png");
+            save_hex_png_3d(ref_png_3d_save, g, 4.0f);
+
             std::cout << "✨ Reference baseline saved successfully to '" << ref_bin_save << "'!" << std::endl;
             std::cout << "✨ Reference PNG saved successfully to '" << ref_png_save << "'!" << std::endl;
+            std::cout << "✨ Reference 3D PNG saved successfully to '" << ref_png_3d_save << "'!" << std::endl;
             
             results.push_back(result);
             continue;
@@ -607,6 +611,9 @@ int main(int argc, char* argv[]) {
 
         stbi_write_png(current_png_save.c_str(), w, h, 3, pixels.data(), w * 3);
         stbi_write_png(diff_png_save.c_str(), w, h, 3, diff_pixels.data(), w * 3);
+
+        std::string current_png_3d_save = get_write_path("hex_frames/frame_1000_" + safe + "_3d_large.png");
+        save_hex_png_3d(current_png_3d_save, g, 4.0f);
 
         result.failed = failed;
         result.mismatch_count = mismatch_count;
