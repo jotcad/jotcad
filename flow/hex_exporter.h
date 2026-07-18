@@ -646,7 +646,7 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
 
     // Zoom/scale parameters to fit the 3D model on screen (scales dynamically with grid size)
     float scale_xy = 0.82f * (90.0f / g.size_q);
-    float heightScale = 0.06f; // Balanced 3D vertical relief scale
+    float heightScale = scale_xy * 0.95f; // Proportional 3D vertical relief scale to avoid squashing
 
     // Traversal: Back-to-Front Painter's Order
     for (int sum = 0; sum <= (g.size_q + g.size_r - 2); ++sum) {
@@ -839,9 +839,8 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                 for (int i = 0; i < 6; ++i) {
                     int nq, nr;
                     if (g.get_neighbor(q, r, i, nq, nr)) {
-                        bool curr_ocean = (water > 0.10f && std::abs(H + water) < 0.1f);
-                        float neighbor_water = g.h_surface[nr][nq] + h_lake[nr][nq];
-                        bool neigh_ocean = (neighbor_water > 0.10f && std::abs(g.H_soil[nr][nq] + neighbor_water) < 0.1f);
+                        bool curr_ocean = (H < 0.0f);
+                        bool neigh_ocean = (g.H_soil[nr][nq] < 0.0f);
                         
                         bool curr_land = !curr_ocean;
                         bool neigh_land = !neigh_ocean;

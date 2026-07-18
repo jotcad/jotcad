@@ -353,23 +353,35 @@
                     const tr = document.createElement('tr');
                     tr.id = `row-${safeName}`;
                     tr.innerHTML = `
-                        <!-- Left: Image Column (Fixed 450px with Double Tab Switcher) -->
-                        <td style="width: 450px; padding-left: 0; padding-top: 1.5rem; padding-bottom: 1.5rem;">
-                            <!-- Projection Toggles -->
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                                <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; width: 85px;">Projection:</span>
-                                <button class="btn-tab active" id="proj-topdown-${safeName}" onclick="setProjection('${safeName}', 'topdown')">Top-Down</button>
-                                <button class="btn-tab" id="proj-iso-${safeName}" onclick="setProjection('${safeName}', 'iso')">3D Isometric</button>
+                        <!-- Left: Image Column (Fixed 450px with Stacked Views) -->
+                        <td style="width: 450px; padding-left: 0; padding-top: 1.5rem; padding-bottom: 1.5rem; vertical-align: top;">
+                            <!-- Section 1: Top-Down View -->
+                            <div style="margin-bottom: 24px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <span style="font-size: 0.72rem; color: #ffffff; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Top-Down View</span>
+                                    <div style="display: flex; gap: 4px;">
+                                        <button class="btn-tab active" id="view-topdown-current-${safeName}" onclick="setView('${safeName}', 'topdown', 'current')">Current</button>
+                                        <button class="btn-tab" id="view-topdown-ref-${safeName}" onclick="setView('${safeName}', 'topdown', 'ref')">Reference</button>
+                                        <button class="btn-tab" id="view-topdown-diff-${safeName}" onclick="setView('${safeName}', 'topdown', 'diff')">Diff</button>
+                                    </div>
+                                </div>
+                                <div class="image-column" style="display: block; width: 450px;">
+                                    <img src="./hex_frames/frame_1000_${safeName}_large.png" alt="${profileName} Top-Down" class="top-view-img" id="img-topdown-${safeName}">
+                                </div>
                             </div>
-                            <!-- View Toggles -->
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
-                                <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; width: 85px;">View:</span>
-                                <button class="btn-tab active" id="view-current-${safeName}" onclick="setView('${safeName}', 'current')">Current</button>
-                                <button class="btn-tab" id="view-ref-${safeName}" onclick="setView('${safeName}', 'ref')">Reference</button>
-                                <button class="btn-tab" id="view-diff-${safeName}" onclick="setView('${safeName}', 'diff')">Diff Map</button>
-                            </div>
-                            <div class="image-column" style="display: block; width: 450px;">
-                                <img src="./hex_frames/frame_1000_${safeName}_large.png" alt="${profileName} View" class="top-view-img" id="display-img-${safeName}">
+
+                            <!-- Section 2: 3D Isometric View -->
+                            <div>
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                    <span style="font-size: 0.72rem; color: #ffffff; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">3D Isometric View</span>
+                                    <div style="display: flex; gap: 4px;">
+                                        <button class="btn-tab active" id="view-iso-current-${safeName}" onclick="setView('${safeName}', 'iso', 'current')">Current</button>
+                                        <button class="btn-tab" id="view-iso-ref-${safeName}" onclick="setView('${safeName}', 'iso', 'ref')">Reference</button>
+                                    </div>
+                                </div>
+                                <div class="image-column" style="display: block; width: 450px;">
+                                    <img src="./hex_frames/frame_1000_${safeName}_3d_large.png" alt="${profileName} 3D Isometric" class="top-view-img" id="img-iso-${safeName}">
+                                </div>
                             </div>
                         </td>
                         <!-- Right: Info Column with Wrapped Columns (3x3 grid) -->
@@ -562,60 +574,38 @@
             }
         }
 
-        const uiState = {
-            projection: 'topdown',
-            view: 'current'
+        const viewState = {
+            topdown: 'current',
+            iso: 'current'
         };
 
-        function updateImage(safeName) {
-            const img = document.getElementById(`display-img-${safeName}`);
-            let src = '';
-            if (uiState.projection === 'topdown') {
-                if (uiState.view === 'current') {
-                    src = `./hex_frames/frame_1000_${safeName}_large.png`;
-                } else if (uiState.view === 'ref') {
-                    src = `./hex_regression_large_ref_${safeName}.png`;
+        function setView(safeName, proj, view) {
+            if (proj === 'topdown') {
+                viewState.topdown = view;
+                document.getElementById(`view-topdown-current-${safeName}`).classList.toggle('active', view === 'current');
+                document.getElementById(`view-topdown-ref-${safeName}`).classList.toggle('active', view === 'ref');
+                document.getElementById(`view-topdown-diff-${safeName}`).classList.toggle('active', view === 'diff');
+
+                const img = document.getElementById(`img-topdown-${safeName}`);
+                if (view === 'current') {
+                    img.src = `./hex_frames/frame_1000_${safeName}_large.png`;
+                } else if (view === 'ref') {
+                    img.src = `./hex_regression_large_ref_${safeName}.png`;
                 } else {
-                    src = `./hex_regression_large_diff_${safeName}.png`;
+                    img.src = `./hex_regression_large_diff_${safeName}.png`;
                 }
             } else {
-                if (uiState.view === 'current') {
-                    src = `./hex_frames/frame_1000_${safeName}_3d_large.png`;
-                } else if (uiState.view === 'ref') {
-                    src = `./hex_regression_large_ref_${safeName}_3d.png`;
+                viewState.iso = view;
+                document.getElementById(`view-iso-current-${safeName}`).classList.toggle('active', view === 'current');
+                document.getElementById(`view-iso-ref-${safeName}`).classList.toggle('active', view === 'ref');
+
+                const img = document.getElementById(`img-iso-${safeName}`);
+                if (view === 'current') {
+                    img.src = `./hex_frames/frame_1000_${safeName}_3d_large.png`;
                 } else {
-                    src = `./hex_frames/frame_1000_${safeName}_3d_large.png`;
+                    img.src = `./hex_regression_large_ref_${safeName}_3d.png`;
                 }
             }
-            img.src = src;
-        }
-
-        function setProjection(safeName, proj) {
-            uiState.projection = proj;
-            document.getElementById(`proj-topdown-${safeName}`).classList.toggle('active', proj === 'topdown');
-            document.getElementById(`proj-iso-${safeName}`).classList.toggle('active', proj === 'iso');
-            
-            const diffBtn = document.getElementById(`view-diff-${safeName}`);
-            if (proj === 'iso') {
-                diffBtn.style.opacity = '0.25';
-                diffBtn.style.pointerEvents = 'none';
-                if (uiState.view === 'diff') {
-                    setView(safeName, 'current');
-                    return;
-                }
-            } else {
-                diffBtn.style.opacity = '1';
-                diffBtn.style.pointerEvents = 'auto';
-            }
-            updateImage(safeName);
-        }
-
-        function setView(safeName, view) {
-            uiState.view = view;
-            document.getElementById(`view-current-${safeName}`).classList.toggle('active', view === 'current');
-            document.getElementById(`view-ref-${safeName}`).classList.toggle('active', view === 'ref');
-            document.getElementById(`view-diff-${safeName}`).classList.toggle('active', view === 'diff');
-            updateImage(safeName);
         }
 
         // Initialize loading
