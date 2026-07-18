@@ -335,7 +335,7 @@ int main(int argc, char* argv[]) {
         p1->add<HexErosion>(1.0e-2f, 0.04f, 0.15f, 2.0f);
         p1->add<HexLandslide>(0.14f, 0.50f);
         p1->add<HexWaveErosion>(0.000005f); // Wave erosion on exposed headlands
-        p1->add<HexTectonicStrikeSlip>(180.0f, 0.0f, 30.0f, 300.0f, 12000.0f, 0.0003f, 3000.0f, 80.0f);
+        p1->add<HexTectonicStrikeSlip>(180.0f, 0.0f, 30.0f, 300.0f, 3000.0f, 0.0003f, 2000.0f, 25.0f);
         p1->add<HexVegetation>(profile, 1.0f);
 
         {
@@ -495,7 +495,10 @@ int main(int argc, char* argv[]) {
             stbi_write_png(ref_png_save.c_str(), w, h, 3, pixels.data(), w * 3);
 
             std::string ref_png_3d_save = get_write_path("hex_regression_large_ref_" + safe + "_3d.png");
-            save_hex_png_3d(ref_png_3d_save, g, 4.0f);
+            save_hex_png_3d(ref_png_3d_save, g, 4.0f, profile.lake_threshold, profile.check_wetland_groundwater,
+                            profile.target_veg_r, profile.target_veg_g, profile.target_veg_b,
+                            profile.wet_blend_weight, profile.wet_blend_r, profile.wet_blend_g, profile.wet_blend_b,
+                            profile.target_sub_r, profile.target_sub_g, profile.target_sub_b);
 
             std::cout << "✨ Reference baseline saved successfully to '" << ref_bin_save << "'!" << std::endl;
             std::cout << "✨ Reference PNG saved successfully to '" << ref_png_save << "'!" << std::endl;
@@ -613,7 +616,10 @@ int main(int argc, char* argv[]) {
         stbi_write_png(diff_png_save.c_str(), w, h, 3, diff_pixels.data(), w * 3);
 
         std::string current_png_3d_save = get_write_path("hex_frames/frame_1000_" + safe + "_3d_large.png");
-        save_hex_png_3d(current_png_3d_save, g, 4.0f);
+        save_hex_png_3d(current_png_3d_save, g, 4.0f, profile.lake_threshold, profile.check_wetland_groundwater,
+                        profile.target_veg_r, profile.target_veg_g, profile.target_veg_b,
+                        profile.wet_blend_weight, profile.wet_blend_r, profile.wet_blend_g, profile.wet_blend_b,
+                        profile.target_sub_r, profile.target_sub_g, profile.target_sub_b);
 
         result.failed = failed;
         result.mismatch_count = mismatch_count;

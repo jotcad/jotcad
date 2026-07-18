@@ -621,17 +621,21 @@ inline void save_hex_png(const std::string& filename, const HexGrid& g, float R_
 }
 
 // Bakes the HexGrid layout to a 3D isometric projected PNG frame directly in C++
-inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float R_px) {
+inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float R_px,
+                            float lake_threshold = 0.25f, bool check_wetland_groundwater = false,
+                            float target_veg_r = 34.0f, float target_veg_g = 130.0f, float target_veg_b = 54.0f,
+                            float wet_blend_weight = 0.0f, float wet_blend_r = 0.0f, float wet_blend_g = 0.0f, float wet_blend_b = 0.0f,
+                            float target_sub_r = 215.0f, float target_sub_g = 185.0f, float target_sub_b = 125.0f) {
     auto& h_lake = const_cast<HexGrid&>(g).request_field<HexLakeDepth>();
     int width = 1000;
     int height = 650;
 
-    // Background matches the page dark green theme: #0d2419 (r=13, g=36, b=25)
+    // Background matches the page deep space blue theme: #0f172a (r=15, g=23, b=42)
     std::vector<unsigned char> pixels(width * height * 3);
     for (int i = 0; i < width * height; ++i) {
-        pixels[i * 3]     = 13;
-        pixels[i * 3 + 1] = 36;
-        pixels[i * 3 + 2] = 25;
+        pixels[i * 3]     = 15;
+        pixels[i * 3 + 1] = 23;
+        pixels[i * 3 + 2] = 42;
     }
 
     std::vector<double> z_buffer(width * height, -1e18);
@@ -642,7 +646,7 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
 
     // Zoom/scale parameters to fit the 3D model on screen (scales dynamically with grid size)
     float scale_xy = 0.82f * (90.0f / g.size_q);
-    float heightScale = 0.01f; // 1200m peak -> 12px vertical offset (30x vertical exaggeration)
+    float heightScale = 0.06f; // Balanced 3D vertical relief scale
 
     // Traversal: Back-to-Front Painter's Order
     for (int sum = 0; sum <= (g.size_q + g.size_r - 2); ++sum) {
@@ -692,30 +696,18 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     sg = (1.0f - alpha_arab) * sg + alpha_arab * 45.0f;
                     sb = (1.0f - alpha_arab) * sb + alpha_arab * 45.0f;
                 } else {
-                    // Moisture factor: increases near river flows (Q) and standing water depth (water)
-                    float Q_m3s = g.Q[r][q] / 31557600.0f;
-                    float moisture_factor = std::min(1.0f, (Q_m3s / 30.0f) + (water / 0.5f));
+                    // Blend target vegetation color based on climate registry
+                    float target_r = target_veg_r;
+                    float target_g = target_veg_g;
+                    float target_b = target_veg_b;
 
-                    // Grass: Bright yellowish-green [185, 230, 85]
-                    // Forest: Bright forest green [20, 120, 45]
-                    float target_r, target_g, target_b;
-                    if (moisture_factor >= 0.35f) {
-                        target_r = 20.0f;
-                        target_g = 120.0f;
-                        target_b = 45.0f;
-                    } else {
-                        target_r = 185.0f;
-                        target_g = 230.0f;
-                        target_b = 85.0f;
-                    }
-
-                    // Blend sand [195, 178, 130] or rock [135, 135, 135] based on soil thickness
+                    // Blend target substrate color based on soil thickness (rock if thin)
                     float soil_t_m = H - g.H_bedrock[r][q];
                     float bedrock_blend = std::max(0.0f, std::min(1.0f, (0.50f - soil_t_m) / 0.50f));
                     
-                    float substrate_r = (1.0f - bedrock_blend) * 195.0f + bedrock_blend * 135.0f;
-                    float substrate_g = (1.0f - bedrock_blend) * 178.0f + bedrock_blend * 135.0f;
-                    float substrate_b = (1.0f - bedrock_blend) * 130.0f + bedrock_blend * 135.0f;
+                    float substrate_r = (1.0f - bedrock_blend) * target_sub_r + bedrock_blend * 130.0f;
+                    float substrate_g = (1.0f - bedrock_blend) * target_sub_g + bedrock_blend * 125.0f;
+                    float substrate_b = (1.0f - bedrock_blend) * target_sub_b + bedrock_blend * 120.0f;
 
                     // Apply soft arability overlay directly to the base substrate
                     float sub_r = (1.0f - alpha_arab) * substrate_r + alpha_arab * 235.0f;
@@ -726,6 +718,20 @@ inline void save_hex_png_3d(const std::string& filename, const HexGrid& g, float
                     sr = ((1.0f - veg) * sub_r + veg * target_r) * shade;
                     sg = ((1.0f - veg) * sub_g + veg * target_g) * shade;
                     sb = ((1.0f - veg) * sub_b + veg * target_b) * shade;
+                }
+
+                // Render saturated wetland soils with a marshy teal-blue tint
+                if (check_wetland_groundwater && g.has_field<HexGroundwater>()) {
+                    auto& h_g = const_cast<HexGrid&>(g).request_field<HexGroundwater>();
+                    float soil_thick = H - g.H_bedrock[r][q];
+                    if (soil_thick > 0.05f) {
+                        float depth_below = soil_thick - h_g[r][q];
+                        if (depth_below < 0.10f && wet_blend_weight > 0.0f) {
+                            sr = (1.0f - wet_blend_weight) * sr + wet_blend_weight * wet_blend_r;
+                            sg = (1.0f - wet_blend_weight) * sg + wet_blend_weight * wet_blend_g;
+                            sb = (1.0f - wet_blend_weight) * sb + wet_blend_weight * wet_blend_b;
+                        }
+                    }
                 }
 
                 // 3. Render water depth overlay (Physical relief scaling)
