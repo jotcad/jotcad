@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JotCAD Regression Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #090d16;
+            --panel-bg: rgba(13, 20, 35, 0.75);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --text: #f3f4f6;
+            --text-muted: #9ca3af;
+            
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.18);
+            --fail: #f43f5e;
+            --fail-glow: rgba(244, 63, 94, 0.18);
+            --gold: #f59e0b;
+            
+            --font: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.03) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(56, 189, 248, 0.03) 0px, transparent 50%);
+            color: var(--text);
+            font-family: var(--font);
+            min-height: 100vh;
+            padding: 3rem 2rem;
+            display: flex;
+            flex-direction: column;
+            overflow-x: auto; /* Enable page-level horizontal scroll if viewport < 900px */
+        }
+
+        header {
+            width: 100%;
+            max-width: 1200px;
+            min-width: 900px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 0 auto 3rem auto;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1.5rem;
+        }
+
+        .title-area h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff 30%, var(--text-muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.03em;
+        }
+
+        .title-area p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 0.25rem;
+        }
+
+        .btn-refresh {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-refresh:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--border-hover);
+        }
+
+        main {
+            width: 100%;
+            max-width: 1200px;
+            min-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        /* Bulletproof Table-Based Layout Container */
+        .dashboard-container {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(12px);
+            width: 100%;
+        }
+
+        .dashboard-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .dashboard-table td {
+            padding: 1.5rem;
+            vertical-align: top;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dashboard-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .profile-info {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* Compact Table Grid Styling */
+        .table-wrapper {
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .compact-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        .compact-table td {
+            padding: 0.65rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .compact-table td:last-child {
+            border-right: none;
+        }
+
+        .compact-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.2rem 0.65rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.7rem;
+            border: 1px solid var(--border);
+        }
+
+        .status-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .status-badge.passed {
+            border-color: var(--success);
+            color: var(--success);
+            background: var(--success-glow);
+        }
+        .status-badge.passed .status-indicator {
+            background-color: var(--success);
+            box-shadow: 0 0 4px var(--success);
+        }
+
+        .status-badge.failed {
+            border-color: var(--fail);
+            color: var(--fail);
+            background: var(--fail-glow);
+        }
+        .status-badge.failed .status-indicator {
+            background-color: var(--fail);
+            box-shadow: 0 0 4px var(--fail);
+        }
+
+        .mono {
+            font-family: var(--mono);
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .delta-badge {
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 0.08rem 0.3rem;
+            border-radius: 4px;
+            font-family: var(--mono);
+            display: inline-block;
+        }
+
+        .delta-badge.match {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+        }
+
+        .delta-badge.success {
+            background: var(--success-glow);
+            color: var(--success);
+        }
+
+        .delta-badge.error {
+            background: var(--fail-glow);
+            color: var(--fail);
+        }
+
+        /* Image Display Column */
+        .image-column {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            aspect-ratio: 1778 / 912;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #020408;
+            cursor: pointer;
+        }
+
+        .image-column:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .top-view-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .btn-tab {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: var(--font);
+        }
+
+        .btn-tab:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+        }
+
+        .btn-tab.active {
+            background: rgba(56, 189, 248, 0.15);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        footer {
+            margin: 5rem auto 0 auto;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 2rem;
+            width: 100%;
+            max-width: 1200px;
+            min-width: 900px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="title-area">
+            <h1>JotCAD Hex Large Regression Visualizer</h1>
+            <p>Verification & physical parameter drift analysis (360 × 300 Grid)</p>
+        </div>
+        <button class="btn-refresh" onclick="loadStats()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            Refresh
+        </button>
+    </header>
+
+    <main>
+        <div class="dashboard-container">
+            <table class="dashboard-table">
+                <tbody id="dashboard-rows">
+                    <!-- Dynamic profile rows will be injected here -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <footer>
+        <p>JotCAD Web VFS System &bull; Ports: 8085 (HTTPS) &bull; Core: C++ Simulation Engine</p>
+    </footer>
+
+    <script>
+        async function loadStats() {
+            try {
+                const response = await fetch('./hex_regression_large_stats.json?' + new Date().getTime());
+                if (!response.ok) throw new Error("JSON file load failed");
+                const data = await response.json();
+
+                const dashboardRows = document.getElementById('dashboard-rows');
+                dashboardRows.innerHTML = '';
+
+                // Helper to render a cell containing a stacked label, value, and badge
+                const makeCellHTML = (label, valHTML, badgeHTML = '') => {
+                    return `
+                        <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; font-weight: 600;">${label}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                            <div class="mono" style="font-size: 0.95rem; font-weight: 700; color: #ffffff;">${valHTML}</div>
+                            ${badgeHTML}
+                        </div>
+                    `;
+                };
+
+                // Loop over each profile from the JSON
+                for (const [profileName, profileData] of Object.entries(data.profiles)) {
+                    const safeName = profileName.toLowerCase().replace(/ /g, '_');
+                    const innerTbodyId = `metrics-body-${safeName}`;
+
+                    // Create row
+                    const tr = document.createElement('tr');
+                    tr.id = `row-${safeName}`;
+                    tr.innerHTML = `
+                        <!-- Left: Image Column (Fixed 450px with Tab Switcher) -->
+                        <td style="width: 450px; padding-left: 0; padding-top: 1.5rem; padding-bottom: 1.5rem;">
+                            <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                                <button class="btn-tab active" onclick="switchView(this, './hex_frames/frame_1000_${safeName}_large.png')">Current</button>
+                                <button class="btn-tab" onclick="switchView(this, './hex_regression_large_ref_${safeName}.png')">Reference</button>
+                                <button class="btn-tab" onclick="switchView(this, './hex_regression_large_diff_${safeName}.png')">Diff Map</button>
+                            </div>
+                            <div class="image-column" style="display: block; width: 450px;">
+                                <img src="./hex_frames/frame_1000_${safeName}_large.png" alt="${profileName} Top View" class="top-view-img">
+                            </div>
+                        </td>
+                        <!-- Right: Info Column with Wrapped Columns (3x3 grid) -->
+                        <td style="padding-right: 0; padding-top: 1.5rem; padding-bottom: 1.5rem; vertical-align: middle;">
+                            <div class="profile-info">
+                                <div class="table-wrapper">
+                                    <table class="compact-table">
+                                        <tbody id="${innerTbodyId}">
+                                            <!-- Inner grid rows populated dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    dashboardRows.appendChild(tr);
+
+                    const innerTbody = document.getElementById(innerTbodyId);
+
+                    // 1. Status row
+                    const statusBadgeHTML = `<span class="status-badge ${profileData.status.toLowerCase()}"><span class="status-indicator"></span>${profileData.status}</span>`;
+
+                    // Generate parameter text depending on profile
+                    let paramsText = 'Rain: 1.4m | Temp: 25°C / 85m';
+                    if (profileName === 'Arid Desert') {
+                        paramsText = 'Rain: 0.15m | Temp: 35°C / 90m';
+                    } else if (profileName === 'Boreal Forest') {
+                        paramsText = 'Rain: 0.75m | Temp: 8°C / 70m';
+                    } else if (profileName === 'Tropical Rainforest') {
+                        paramsText = 'Rain: 3.2m | Temp: 28°C / 100m';
+                    } else if (profileName === 'Mediterranean Scrub') {
+                        paramsText = 'Rain: 0.65m | Temp: 20°C / 85m';
+                    } else if (profileName === 'Tundra') {
+                        paramsText = 'Rain: 0.35m | Temp: 1°C / 70m';
+                    } else if (profileName === 'Temperate Deciduous Forest') {
+                        paramsText = 'Rain: 1.2m | Temp: 14°C / 95m';
+                    } else if (profileName === 'Littoral Coastline') {
+                        paramsText = 'Rain: 1.4m | Temp: 15°C / 85m';
+                    }
+
+                    // Row 1: Profile Name, Status, Parameters
+                    const cell1 = makeCellHTML('Profile Name', `<span style="color: #ffffff; font-weight: 600;">${profileName}</span>`);
+                    const cell2 = makeCellHTML('Status', statusBadgeHTML);
+                    const cell3 = makeCellHTML('Parameters', `<span style="color: var(--text-muted); font-size: 0.85rem;">${paramsText}</span>`);
+
+                    const innerTr1 = document.createElement('tr');
+                    innerTr1.innerHTML = `
+                        <td style="width: 33.3%;">${cell1}</td>
+                        <td style="width: 33.3%;">${cell2}</td>
+                        <td style="width: 33.3%;">${cell3}</td>
+                    `;
+                    innerTbody.appendChild(innerTr1);
+
+                    // 2. Metrics Setup
+                    const fields = [
+                        { key: 'final_soil_volume', label: 'Final Soil Mass', format: 'e', tol: 0.001 },
+                        { key: 'net_mass_change', label: 'Net Soil Drift', format: 'f', suffix: ' m', tol: 0.001 },
+                        { key: 'avg_vegetation_cover', label: 'Avg Vegetation', format: 'pct', suffix: '%', tol: 0.005 },
+                        { key: 'max_river_discharge', label: 'Max River Flow', format: 'f', suffix: ' m³/s', tol: 0.005 },
+                        { key: 'active_river_cells', label: 'Active River Cells', format: 'int', tol: 10 },
+                        { key: 'water_coverage', label: 'Open Water', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'wetland_coverage', label: 'Wetland Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'arable_coverage', label: 'Arable Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'forest_coverage', label: 'Forest Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'grass_coverage', label: 'Grass Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'bare_soil_coverage', label: 'Bare Soil Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'bedrock_coverage', label: 'Bedrock Coverage', format: 'pct', suffix: '%', tol: 0.01 },
+                        { key: 'pixel_deviation', label: 'Pixel Mismatch', format: 'dev', suffix: '%', tol: 0.1 }
+                    ];
+
+                    const renderedMetrics = {};
+
+                    fields.forEach(field => {
+                        let baseVal = 0, currVal = 0;
+                        if (field.key === 'pixel_deviation') {
+                            baseVal = 0;
+                            currVal = profileData.mismatch_percentage;
+                        } else {
+                            baseVal = profileData.baseline[field.key];
+                            currVal = profileData.current[field.key];
+                        }
+
+                        let currStr = '';
+                        let diffVal = currVal - baseVal;
+                        let relDiff = baseVal !== 0.0 ? diffVal / Math.abs(baseVal) : diffVal;
+
+                        if (field.format === 'e') {
+                            currStr = currVal.toExponential(2);
+                        } else if (field.format === 'pct' || field.format === 'dev') {
+                            currStr = currVal.toFixed(2) + (field.suffix || '');
+                        } else if (field.format === 'int') {
+                            currStr = Math.round(currVal).toLocaleString();
+                        } else {
+                            currStr = currVal.toFixed(1) + (field.suffix || '');
+                        }
+
+                        let deltaClass = 'match';
+                        let deltaText = '0.00%';
+
+                        if (field.key === 'pixel_deviation') {
+                            if (currVal > field.tol) {
+                                deltaClass = 'error';
+                                deltaText = currVal.toFixed(2) + '%';
+                            } else if (currVal > 0) {
+                                deltaClass = 'success';
+                                deltaText = currVal.toFixed(2) + '%';
+                            } else {
+                                deltaText = 'Match';
+                            }
+                        } else if (field.format === 'int') {
+                            const cellDiff = Math.abs(currVal - baseVal);
+                            if (cellDiff > field.tol) {
+                                deltaClass = 'error';
+                                deltaText = (diffVal > 0 ? '+' : '') + Math.round(diffVal);
+                            } else if (cellDiff > 0) {
+                                deltaClass = 'success';
+                                deltaText = (diffVal > 0 ? '+' : '') + Math.round(diffVal);
+                            } else {
+                                deltaText = 'Match';
+                            }
+                        } else {
+                            const absRelDiff = Math.abs(relDiff);
+                            if (absRelDiff > field.tol) {
+                                deltaClass = 'error';
+                                deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
+                            } else if (absRelDiff > 0) {
+                                deltaClass = 'success';
+                                deltaText = (relDiff > 0 ? '+' : '') + (relDiff * 100.0).toFixed(2) + '%';
+                            } else {
+                                deltaText = 'Match';
+                            }
+                        }
+
+                        renderedMetrics[field.key] = {
+                            valHTML: currStr,
+                            badgeHTML: `<span class="delta-badge ${deltaClass}">${deltaText}</span>`
+                        };
+                    });
+
+                    // Row 2: Final Soil Mass, Net Soil Drift, Avg Vegetation
+                    const innerTr2 = document.createElement('tr');
+                    innerTr2.innerHTML = `
+                        <td>${makeCellHTML('Final Soil Mass', renderedMetrics['final_soil_volume'].valHTML, renderedMetrics['final_soil_volume'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Net Soil Drift', renderedMetrics['net_mass_change'].valHTML, renderedMetrics['net_mass_change'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Avg Vegetation', renderedMetrics['avg_vegetation_cover'].valHTML, renderedMetrics['avg_vegetation_cover'].badgeHTML)}</td>
+                    `;
+                    innerTbody.appendChild(innerTr2);
+
+                    // Row 3: Max River Flow, Active River Cells, Open Water
+                    const innerTr3 = document.createElement('tr');
+                    innerTr3.innerHTML = `
+                        <td>${makeCellHTML('Max River Flow', renderedMetrics['max_river_discharge'].valHTML, renderedMetrics['max_river_discharge'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Active River Cells', renderedMetrics['active_river_cells'].valHTML, renderedMetrics['active_river_cells'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Open Water', renderedMetrics['water_coverage'].valHTML, renderedMetrics['water_coverage'].badgeHTML)}</td>
+                    `;
+                    innerTbody.appendChild(innerTr3);
+
+                    // Row 4: Forest Coverage, Grass Coverage, Bare Soil Coverage
+                    const innerTr4 = document.createElement('tr');
+                    innerTr4.innerHTML = `
+                        <td>${makeCellHTML('Forest Coverage', renderedMetrics['forest_coverage'].valHTML, renderedMetrics['forest_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Grass Coverage', renderedMetrics['grass_coverage'].valHTML, renderedMetrics['grass_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Bare Soil Coverage', renderedMetrics['bare_soil_coverage'].valHTML, renderedMetrics['bare_soil_coverage'].badgeHTML)}</td>
+                    `;
+                    innerTbody.appendChild(innerTr4);
+
+                    // Row 5: Bedrock Coverage, Wetland Coverage, Arable Coverage
+                    const innerTr5 = document.createElement('tr');
+                    innerTr5.innerHTML = `
+                        <td>${makeCellHTML('Bedrock Coverage', renderedMetrics['bedrock_coverage'].valHTML, renderedMetrics['bedrock_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Wetland Coverage', renderedMetrics['wetland_coverage'].valHTML, renderedMetrics['wetland_coverage'].badgeHTML)}</td>
+                        <td>${makeCellHTML('Arable Coverage', renderedMetrics['arable_coverage'].valHTML, renderedMetrics['arable_coverage'].badgeHTML)}</td>
+                    `;
+                    innerTbody.appendChild(innerTr5);
+
+                    // Row 6: Pixel Mismatch
+                    const innerTr6 = document.createElement('tr');
+                    innerTr6.innerHTML = `
+                        <td>${makeCellHTML('Pixel Mismatch', renderedMetrics['pixel_deviation'].valHTML, renderedMetrics['pixel_deviation'].badgeHTML)}</td>
+                        <td></td>
+                        <td></td>
+                    `;
+                    innerTbody.appendChild(innerTr6);
+                }
+
+            } catch (err) {
+                console.error("Failed to load statistics:", err);
+                const dashboardRows = document.getElementById('dashboard-rows');
+                dashboardRows.innerHTML = '<tr><td colspan="2" style="text-align: center; color: var(--fail); padding: 3rem;">❌ Failed to load simulation metrics</td></tr>';
+            }
+        }
+
+        function switchView(btn, src) {
+            const tabs = btn.parentElement.querySelectorAll('.btn-tab');
+            tabs.forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            
+            const img = btn.parentElement.nextElementSibling.querySelector('.top-view-img');
+            img.src = src;
+        }
+
+        // Initialize loading
+        loadStats();
+    </script>
+</body>
+</html>

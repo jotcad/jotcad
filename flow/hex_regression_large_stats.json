@@ -1,0 +1,40 @@
+{
+  "status": "PASSED",
+  "profiles": {
+    "Littoral Coastline": {
+      "status": "PASSED",
+      "mismatch_count": 0,
+      "mismatch_percentage": 0,
+      "baseline": {
+        "initial_soil_volume": -4.41886e+06,
+        "final_soil_volume": -4.28733e+06,
+        "net_mass_change": 131532,
+        "avg_vegetation_cover": 64.6222,
+        "max_river_discharge": 192.658,
+        "active_river_cells": 33133,
+        "water_coverage": 61.9194,
+        "wetland_coverage": 11.5306,
+        "arable_coverage": 28.0083,
+        "forest_coverage": 28.1537,
+        "grass_coverage": 1.24907,
+        "bare_soil_coverage": 60.1926,
+        "bedrock_coverage": 10.4046
+      },
+      "current": {
+        "initial_soil_volume": -4.41886e+06,
+        "final_soil_volume": -4.28733e+06,
+        "net_mass_change": 131532,
+        "avg_vegetation_cover": 64.6222,
+        "max_river_discharge": 192.658,
+        "active_river_cells": 33133,
+        "water_coverage": 61.9194,
+        "wetland_coverage": 11.5306,
+        "arable_coverage": 28.0083,
+        "forest_coverage": 28.1537,
+        "grass_coverage": 1.24907,
+        "bare_soil_coverage": 60.1926,
+        "bedrock_coverage": 10.4046
+      }
+    }
+  }
+}
