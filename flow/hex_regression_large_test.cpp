@@ -17,6 +17,7 @@
 #include "hex_vegetation.h"
 #include "hex_subsurface.h"
 #include "hex_wave_erosion.h"
+#include "hex_tectonic_strikeslip.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "hex_exporter.h"
 #include "perlin_noise.h"
@@ -237,6 +238,32 @@ void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
         apply_perlin_noise(g, 0.125f, 40.0f, 0.0f, /*fade_right=*/false);
         apply_sea_borders(g);
         finalize_soil_and_bedrock(g, 0.5f, 12.0f, /*scale_with_mountain=*/false);
+
+        // Allocate and initialize bedrock erodibility sparse field
+        auto& erod_mult = g.request_field<HexBedrockErodibility>();
+        for (int r = 0; r < sr; ++r) {
+            for (int q = 0; q < sq; ++q) {
+                float x = g.scale.hex_radius_m * 1.7320508f * (q + r * 0.5f);
+                float y = g.scale.hex_radius_m * 1.5f * r;
+                
+                // 1. Folded strata layers (alternating bands of hard and soft rock)
+                float wave = std::sin((x * 0.8f + y * 0.6f) * 0.00008f);
+                float mult = 1.0f;
+                if (wave > 0.35f) {
+                    mult = 0.25f; // Extremely resistant granite/quartzite layers
+                } else if (wave < -0.35f) {
+                    mult = 2.0f;  // Highly erodible sandstone/shale layers
+                }
+                
+                // 2. Active fault damage zone running down the middle (x = 180 * R * sqrt(3))
+                // Fault zone is fractured, making bedrock 8x easier to erode
+                float fault_x = 180.0f * g.scale.hex_radius_m * 1.7320508f;
+                float dist_x = std::abs(x - fault_x);
+                float fault_zone = std::exp(-std::pow(dist_x / 3000.0f, 2.0f)); // 3km zone
+                
+                erod_mult[r][q] = mult * (1.0f + 7.0f * fault_zone);
+            }
+        }
     } else {
         // Compose standard mountain range
         apply_perlin_noise(g, 0.08f, 260.0f, 97.5f); // (0.15 + pn*0.4)*650.0f
@@ -308,6 +335,7 @@ int main(int argc, char* argv[]) {
         p1->add<HexErosion>(1.0e-2f, 0.04f, 0.15f, 2.0f);
         p1->add<HexLandslide>(0.14f, 0.50f);
         p1->add<HexWaveErosion>(0.000005f); // Wave erosion on exposed headlands
+        p1->add<HexTectonicStrikeSlip>(180.0f, 0.0f, 30.0f, 300.0f, 40000.0f, 0.0003f, 3000.0f, 80.0f);
         p1->add<HexVegetation>(profile, 1.0f);
 
         {

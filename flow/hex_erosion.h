@@ -118,6 +118,10 @@ public:
                 // Bedrock is 40x harder than soil
                 float k_eff_soil = k_eff;
                 float k_eff_bedrock = k_eff * 0.025f;
+                if (g.has_field<HexBedrockErodibility>()) {
+                    auto& erod_mult = g.request_field<HexBedrockErodibility>();
+                    k_eff_bedrock *= erod_mult[r][q];
+                }
 
                 float eroded_height = 0.0f;
 

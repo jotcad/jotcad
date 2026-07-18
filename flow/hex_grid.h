@@ -29,6 +29,9 @@ struct HexGroundwater {};
 // Dynamic sparse field tag for sea border cells
 struct HexSeaBorder {};
 
+// Dynamic sparse field tag for bedrock erodibility multiplier (faults, strata)
+struct HexBedrockErodibility {};
+
 // Dynamic sparse field tag for soil salinity
 struct HexSalinity {};
 
