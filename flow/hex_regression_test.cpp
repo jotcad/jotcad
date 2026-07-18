@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstring>
 #include <sys/stat.h>
+#include <random>
 #include "hex_orchestrator.h"
 #include "hex_climate.h"
 #include "hex_precipitation.h"
@@ -96,20 +97,24 @@ void apply_coastal_ramp(HexGrid& g, float start_height, float end_height) {
     }
 }
 
-void apply_multipoint_island(HexGrid& g, float center_height, float ocean_depth, float max_dist_m, float noise_scale, float noise_amp) {
+void apply_multipoint_island(HexGrid& g, float center_height, float ocean_depth, float max_dist_m, float noise_scale, float noise_amp, int num_seeds, float spread_radius) {
     float center_q = g.size_q * 0.5f;
     float center_r = g.size_r * 0.5f;
     
     float cx = g.scale.hex_radius_m * 1.7320508f * (center_q + center_r * 0.5f);
     float cy = g.scale.hex_radius_m * 1.5f * center_r;
 
+    // Use a deterministic standard C++ PRNG
+    std::mt19937 gen(1337);
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+
     struct Point { float x, y; };
-    std::vector<Point> seeds = {
-        { cx - 30000.0f, cy - 15000.0f },
-        { cx + 35000.0f, cy + 20000.0f },
-        { cx - 15000.0f, cy + 30000.0f },
-        { cx + 25000.0f, cy - 25000.0f }
-    };
+    std::vector<Point> seeds;
+    for (int i = 0; i < num_seeds; ++i) {
+        float angle = dis(gen) * 2.0f * 3.14159265f;
+        float r_dist = dis(gen) * spread_radius;
+        seeds.push_back({ cx + r_dist * std::cos(angle), cy + r_dist * std::sin(angle) });
+    }
 
     PerlinNoise2D perlin;
 
@@ -199,7 +204,7 @@ void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
 
     if (profile.builder_type == TerrainBuilderType::CoastalRamp) {
         // Compose Littoral Coastline as a multipoint island
-        apply_multipoint_island(g, 150.0f, -300.0f, 50000.0f, 0.05f, 15000.0f);
+        apply_multipoint_island(g, 150.0f, -300.0f, 75000.0f, 0.05f, 18000.0f, 6, 20000.0f);
         apply_perlin_noise(g, 0.25f, 40.0f, 0.0f, /*fade_right=*/false);
         apply_sea_borders(g);
         finalize_soil_and_bedrock(g, 0.5f, 12.0f, /*scale_with_mountain=*/false);
