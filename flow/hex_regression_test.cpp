@@ -97,7 +97,7 @@ void apply_coastal_ramp(HexGrid& g, float start_height, float end_height) {
     }
 }
 
-void apply_multipoint_island(HexGrid& g, float center_height, float ocean_depth, float max_dist_m, float noise_scale, float noise_amp, int num_seeds, float spread_radius) {
+void apply_multipoint_island(HexGrid& g, float center_height, float ocean_depth, float noise_scale, float noise_amp, int num_seeds, float spread_radius) {
     float center_q = g.size_q * 0.5f;
     float center_r = g.size_r * 0.5f;
     
@@ -118,6 +118,35 @@ void apply_multipoint_island(HexGrid& g, float center_height, float ocean_depth,
 
     PerlinNoise2D perlin;
 
+    // Dynamically calculate the minimum effective distance on any border cell to prevent land contact
+    float min_border_eff_dist = 1e9f;
+    for (int r = 0; r < g.size_r; ++r) {
+        for (int q = 0; q < g.size_q; ++q) {
+            bool is_border = (r == 0 || r == g.size_r - 1 || q == 0 || q == g.size_q - 1);
+            if (is_border) {
+                float x = g.scale.hex_radius_m * 1.7320508f * (q + r * 0.5f);
+                float y = g.scale.hex_radius_m * 1.5f * r;
+                
+                float min_d = 1e9f;
+                for (const auto& seed : seeds) {
+                    float dx = x - seed.x;
+                    float dy = y - seed.y;
+                    float d = std::sqrt(dx*dx + dy*dy);
+                    min_d = std::min(min_d, d);
+                }
+                
+                float pn = perlin.noise(q * noise_scale, r * noise_scale) + 0.35f * perlin.noise(q * 2.75f * noise_scale, r * 2.75f * noise_scale);
+                float eff_dist = std::max(0.0f, min_d + pn * noise_amp);
+                min_border_eff_dist = std::min(min_border_eff_dist, eff_dist);
+            }
+        }
+    }
+
+    // Set maximum landmass radius so that the land shoreline (elevation 0.0m, which occurs at t = 0.391826f)
+    // stays at least 6km away from the borders.
+    float t_shoreline = 0.391826f;
+    float active_max_dist_m = std::max(0.0f, (min_border_eff_dist - 6000.0f) / t_shoreline);
+
     for (int r = 0; r < g.size_r; ++r) {
         for (int q = 0; q < g.size_q; ++q) {
             float x = g.scale.hex_radius_m * 1.7320508f * (q + r * 0.5f);
@@ -135,8 +164,8 @@ void apply_multipoint_island(HexGrid& g, float center_height, float ocean_depth,
             float eff_dist = std::max(0.0f, min_d + pn * noise_amp);
 
             float h = ocean_depth;
-            if (eff_dist < max_dist_m) {
-                float t = eff_dist / max_dist_m;
+            if (eff_dist < active_max_dist_m) {
+                float t = eff_dist / active_max_dist_m;
                 float factor = 0.5f * (1.0f + std::cos(t * 3.14159265f));
                 h = ocean_depth + (center_height - ocean_depth) * factor;
             }
@@ -204,7 +233,7 @@ void initialize_hex_soil_perlin(HexGrid& g, const ClimateProfile& profile) {
 
     if (profile.builder_type == TerrainBuilderType::CoastalRamp) {
         // Compose Littoral Coastline as a multipoint island
-        apply_multipoint_island(g, 150.0f, -300.0f, 75000.0f, 0.05f, 18000.0f, 6, 20000.0f);
+        apply_multipoint_island(g, 150.0f, -300.0f, 0.05f, 12000.0f, 6, 12000.0f);
         apply_perlin_noise(g, 0.25f, 40.0f, 0.0f, /*fade_right=*/false);
         apply_sea_borders(g);
         finalize_soil_and_bedrock(g, 0.5f, 12.0f, /*scale_with_mountain=*/false);
