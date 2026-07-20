@@ -245,7 +245,6 @@ export class MeshLinkBase {
             } catch (err) {
               payload = payloadBytes;
             }
-            console.log(`[MeshLink ${this.vfs.id}] Subscriber Notify: received notification for ${path}`);
             if (path === 'sys/schema') {
               this.updateCatalog(payload);
             } else {
