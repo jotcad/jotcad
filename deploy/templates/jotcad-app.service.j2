@@ -1,0 +1,16 @@
+[Unit]
+Description=JotCAD Production Spatial Desktop App Service
+After=network.target jotcad-bridge.service
+Requires=jotcad-bridge.service
+
+[Service]
+Type=simple
+User={{ ansible_user_id }}
+WorkingDirectory={{ deploy_dir }}
+ExecStart=/usr/bin/env npx http-server ux/dist/live -p 3030 -c-1 --cors --ssl --key .ssl/localhost-key.pem --cert .ssl/localhost-cert.pem
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

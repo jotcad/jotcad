@@ -72,11 +72,19 @@
       become: yes
       register: ux_service
 
+    - name: Deploy App systemd service file
+      template:
+        src: templates/jotcad-app.service.j2
+        dest: /etc/systemd/system/jotcad-app.service
+        mode: '0644'
+      become: yes
+      register: app_service
+
     - name: Reload systemd daemon if any service file changed
       systemd:
         daemon_reload: yes
       become: yes
-      when: router_service.changed or bridge_service.changed or webcam_service.changed or ux_service.changed
+      when: router_service.changed or bridge_service.changed or webcam_service.changed or ux_service.changed or app_service.changed
 
     - name: Ensure Zenoh Router service is enabled and restarted
       systemd:
@@ -105,3 +113,11 @@
         state: restarted
         enabled: yes
       become: yes
+
+    - name: Ensure App service is enabled and restarted
+      systemd:
+        name: jotcad-app
+        state: restarted
+        enabled: yes
+      become: yes
+
