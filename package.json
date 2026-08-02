@@ -69,6 +69,7 @@
     "sys",
     "threejs",
     "ux",
-    "web"
+    "web",
+    "ugc"
   ]
 }

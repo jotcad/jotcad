@@ -1,0 +1,10 @@
+{
+  "name": "@jotcad/ugc",
+  "version": "0.0.1",
+  "description": "JotCAD User-Generated Content (UGC) engine for script evaluation, custom fulfillers, and persistence",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  }
+}
