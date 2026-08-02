@@ -1,0 +1,12 @@
+{
+  "name": "@jotcad/web",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "./render/GeometryDecoder": "./src/render/GeometryDecoder.js",
+    "./render/Viewer3D": "./src/render/Viewer3D.js"
+  },
+  "dependencies": {
+    "three": "^0.128.0"
+  }
+}

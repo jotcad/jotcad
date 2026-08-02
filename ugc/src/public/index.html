@@ -464,6 +464,20 @@
       }
     }
   </style>
+
+  <!-- Import Maps for ES Modules -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.min.js"
+      }
+    }
+  </script>
+
+  <!-- Traditional CDN scripts to populate window.THREE namespaces for loaders & controls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/STLLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
@@ -546,16 +560,13 @@
 
   </div>
 
-  <!-- Three.js CDN Packages -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/STLLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
+  <script type="module">
+    import { JotViewer3D } from '/web/src/render/Viewer3D.js';
 
-  <script>
     let snapshots = [];
     let activeSnapshot = null;
     let activeArtifact = null;
-    let scene, camera, renderer, controls, activeMesh;
+    let viewer = null;
     
     const canvasContainer = document.getElementById('canvas3d');
     const imgViewport = document.getElementById('img-viewport');
@@ -567,7 +578,9 @@
       document.getElementById(viewId).classList.add('active');
       
       // Resize Three.js canvas dynamically to prevent distortion
-      setTimeout(onWindowResize, 100);
+      if (viewer) {
+        setTimeout(() => viewer.resize(), 100);
+      }
     }
 
     // Triggered when browser back/forward or hash changes
@@ -595,87 +608,14 @@
       window.location.hash = '';
     };
 
-    // 2. Initialize Three.js Viewport
+    // 2. Initialize Shared Viewer
     function init3D() {
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x060709);
-
-      camera = new THREE.PerspectiveCamera(45, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
-      camera.position.set(40, 40, 50);
-
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
-      renderer.setPixelRatio(window.devicePixelRatio);
-      canvasContainer.appendChild(renderer.domElement);
-
-      controls = new THREE.OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
-
-      // Lights
-      const ambientLight = new THREE.AmbientLight(0x222222);
-      scene.add(ambientLight);
-
-      const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.85);
-      dirLight1.position.set(1, 1, 1).normalize();
-      scene.add(dirLight1);
-
-      const dirLight2 = new THREE.DirectionalLight(0x444444, 0.5);
-      dirLight2.position.set(-1, -1, -1).normalize();
-      scene.add(dirLight2);
-
-      window.addEventListener('resize', onWindowResize);
-      window.addEventListener('orientationchange', () => setTimeout(onWindowResize, 200));
-      animate();
+      viewer = new JotViewer3D(canvasContainer);
+      window.addEventListener('resize', () => viewer.resize());
+      window.addEventListener('orientationchange', () => setTimeout(() => viewer.resize(), 200));
     }
 
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-
-    function onWindowResize() {
-      if (!canvasContainer || !renderer) return;
-      camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
-    }
-
-    // 3. Load STL Model into Viewport
-    function loadSTL(url) {
-      const loader = new THREE.STLLoader();
-      loader.load(url, (geometry) => {
-        if (activeMesh) {
-          scene.remove(activeMesh);
-          activeMesh.geometry.dispose();
-          activeMesh.material.dispose();
-        }
-
-        const material = new THREE.MeshPhongMaterial({
-          color: 0x8a2be2,
-          specular: 0x111111,
-          shininess: 200,
-          flatShading: true
-        });
-        
-        activeMesh = new THREE.Mesh(geometry, material);
-        geometry.computeVertexNormals();
-        geometry.center();
-        
-        const boundingBox = new THREE.Box3().setFromObject(activeMesh);
-        const size = boundingBox.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        camera.position.set(maxDim * 1.5, maxDim * 1.5, maxDim * 1.8);
-        controls.target.set(0, 0, 0);
-
-        scene.add(activeMesh);
-      }, undefined, (err) => {
-        console.error('Failed to load STL model:', err);
-      });
-    }
-
-    // 4. Load Session Data (Latest First)
+    // 3. Load Session Data (Latest First)
     let prevSnapshotCount = 0;
     async function loadSession() {
       try {
@@ -733,7 +673,7 @@
       }
     }
 
-    // 5. Select and Navigate to Snapshot sub-page
+    // 4. Select and Navigate to Snapshot sub-page
     async function selectSnapshot(snap, updateHash = true) {
       activeSnapshot = snap;
       
@@ -770,7 +710,7 @@
       const artList = document.getElementById('artifacts-list');
       artList.innerHTML = '';
 
-      let firstStl = null;
+      let firstInteractiveArtifact = null;
 
       if (snap.run && snap.run.outputs) {
         Object.entries(snap.run.outputs).forEach(([port, out]) => {
@@ -787,9 +727,9 @@
             <span class="artifact-size-badge">${sizeStr}</span>
           `;
 
-          // Track first STL to auto-load it later
-          if (out.filename.endsWith('.stl') && !firstStl) {
-            firstStl = out;
+          const fn = out.filename.toLowerCase();
+          if ((fn.endsWith('.stl') || fn.endsWith('.jot') || fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg')) && !firstInteractiveArtifact) {
+            firstInteractiveArtifact = { port, out };
           }
 
           item.onclick = () => selectArtifact(port, out);
@@ -797,10 +737,9 @@
         });
       }
 
-      // Auto-load first STL or fallback to PNG if no STL found
-      if (firstStl) {
-        const stlPort = Object.keys(snap.run.outputs).find(k => snap.run.outputs[k] === firstStl);
-        selectArtifact(stlPort, firstStl);
+      // Auto-load first 3D or visual artifact found
+      if (firstInteractiveArtifact) {
+        selectArtifact(firstInteractiveArtifact.port, firstInteractiveArtifact.out);
       } else if (snap.run && snap.run.outputs && Object.keys(snap.run.outputs).length > 0) {
         const firstPort = Object.keys(snap.run.outputs)[0];
         selectArtifact(firstPort, snap.run.outputs[firstPort]);
@@ -809,7 +748,7 @@
       showView('details-view');
     }
 
-    // 6. Select and Render Artifact inside Viewport
+    // 5. Select and Render Artifact inside Viewport
     async function selectArtifact(port, out) {
       activeArtifact = out;
       
@@ -835,14 +774,30 @@
       // STL 3D Mesh
       if (filename.endsWith('.stl')) {
         canvasContainer.style.display = 'block';
-        loadSTL(fileUrl);
+        if (viewer) {
+          viewer.clear();
+          viewer.loadSTL(fileUrl, window.THREE?.STLLoader);
+        }
       } 
+      // JOT Shape Geometry -> Custom NATIVE 3D Render
+      else if (filename.endsWith('.jot')) {
+        canvasContainer.style.display = 'block';
+        try {
+          const jotResp = await fetch(fileUrl);
+          const jotText = await jotResp.text();
+          if (viewer) {
+            viewer.loadJotGeometry(jotText);
+          }
+        } catch (e) {
+          console.error('Error rendering Jot mesh:', e);
+        }
+      }
       // PNG/JPG Images
       else if (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg')) {
         imgViewport.style.display = 'block';
         imgViewport.src = fileUrl;
       } 
-      // Text/JSON/Jot data
+      // Text/JSON/Jot data fallback
       else {
         textViewport.style.display = 'block';
         try {
