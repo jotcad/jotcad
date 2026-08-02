@@ -1,0 +1,13 @@
+{
+  "name": "@jotcad/cli",
+  "version": "0.0.1",
+  "description": "JotCAD Command-Line Interface for script compilation, VFS mesh resolution, and format export",
+  "type": "module",
+  "main": "cli.js",
+  "bin": {
+    "jotcad": "./cli.js"
+  },
+  "scripts": {
+    "start": "node cli.js"
+  }
+}
