@@ -49,6 +49,8 @@ async function main() {
     input: { type: 'string', short: 'i', multiple: true, default: [] },
     output: { type: 'string', short: 'o', multiple: true, default: [] },
     gateway: { type: 'string', short: 'g' },
+    session: { type: 'string', short: 's' },
+    note: { type: 'string', short: 'm' },
     help: { type: 'boolean', short: 'h' }
   };
 
@@ -70,11 +72,14 @@ Usage:
 Options:
   -i, --input <name=val>     Input variables to bind (e.g. -i size=20)
   -o, --output <name=path>   Output file destinations (e.g. -o stl_file=part.stl)
+  -s, --session <dir>        Output session directory to track sequentially
+  -m, --note <string>        Descriptive snapshot note for the session run
   -g, --gateway <url>        Zenoh router gateway URL (auto-discovered if omitted)
   -h, --help                 Show this help menu
 
 Examples:
   jotcad model.jot -i size=25 -o stl_file=cube.stl -o png_file=preview.png
+  jotcad model.jot -i size=25 -s ./sessions -m "expanded cylinder diameter"
 `);
     process.exit(0);
   }
@@ -99,17 +104,35 @@ Examples:
     }
   }
 
-  // Parse outputs: -o stl_file=part.stl -> { stl_file: 'part.stl' }
+  // Parse outputs: -o stl_file:file=part.stl -> { stl_file: { type: 'jot:file', path: 'part.stl' } }
   const cliOutputs = {};
   const outputArgs = parsed.values.output || [];
   for (const arg of outputArgs) {
-    const idx = arg.indexOf('=');
-    if (idx !== -1) {
-      const k = arg.slice(0, idx).trim();
-      const v = arg.slice(idx + 1).trim();
-      cliOutputs[k] = path.resolve(v);
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx !== -1) {
+      const targetPath = arg.slice(eqIdx + 1).trim();
+      const portSpec = arg.slice(0, eqIdx).trim();
+
+      const colonIdx = portSpec.indexOf(':');
+      let portName = portSpec;
+      let portType = 'file'; // Default type
+
+      if (colonIdx !== -1) {
+        portName = portSpec.slice(0, colonIdx).trim();
+        portType = portSpec.slice(colonIdx + 1).trim();
+      }
+
+      // Map short type names to canonical Jot types
+      const canonicalType = portType === 'file' ? 'jot:file' : (portType === 'shape' ? 'jot:shape' : `jot:${portType}`);
+
+      cliOutputs[portName] = {
+        type: canonicalType,
+        path: parsed.values.session ? path.basename(targetPath) : path.resolve(targetPath)
+      };
     }
   }
+
+
 
   // 1. Discover Zenoh router
   const gatewayUrl = await discoverGateway(parsed.values.gateway);
@@ -150,51 +173,69 @@ Examples:
     console.warn('[JotCAD CLI] Warning: Catalog discovery timed out. Proceeding with local registries.');
   }
 
-  // 4. Construct outputs schema
-  const schema = {
-    outputs: Object.keys(cliOutputs).reduce((acc, key) => {
-      acc[key] = { type: 'jot:file' };
-      return acc;
-    }, {})
-  };
-
-  // 5. Evaluate script
-  console.log('[JotCAD CLI] Evaluating script with inputs:', cliInputs);
-  let results;
-  try {
-    results = await ugc.evaluate(scriptContent, cliInputs, schema);
-  } catch (err) {
-    console.error(`[JotCAD CLI] Compilation Error: ${err.message}`);
-    await mesh.stop();
-    process.exit(1);
-  }
-
-  // 6. Map and save output files
-  for (const { port, selector } of results) {
-    const targetFile = cliOutputs[port];
-    if (!targetFile) continue;
-
-    console.log(`[JotCAD CLI] Resolving output port: ${port} -> ${targetFile}`);
-
+  // 4. Session Mode Execution
+  if (parsed.values.session) {
+    const sessionDir = path.resolve(parsed.values.session);
+    console.log(`[JotCAD CLI] Running inside session workspace: ${sessionDir}`);
+    
+    const session = ugc.createSession(sessionDir);
+    const note = parsed.values.note || 'CLI Run';
+    
     try {
-      const streamResult = await vfs.readSelector(selector);
-      if (streamResult && streamResult.stream) {
-        const chunks = [];
-        for await (const chunk of streamResult.stream) {
-          chunks.push(chunk);
-        }
-        const bytes = Buffer.concat(chunks);
-        fs.writeFileSync(targetFile, bytes);
-        console.log(`[JotCAD CLI] Saved: ${targetFile} (${bytes.length} bytes)`);
-      } else {
-        console.error(`[JotCAD CLI] Failed to resolve output port ${port}`);
-      }
+      const { snapshotDir } = await session.createSnapshot(scriptContent, cliInputs, cliOutputs, note);
+      console.log(`[JotCAD CLI] Snapshot compiled successfully: ${snapshotDir}`);
     } catch (err) {
-      console.error(`[JotCAD CLI] Error exporting ${port}: ${err.message}`);
+      console.error(`[JotCAD CLI] Session Compile Error: ${err.message}`);
+      await mesh.stop();
+      process.exit(1);
+    }
+  } 
+  // 5. Standard Mode Execution (Direct Single File Exports)
+  else {
+    const schema = {
+      outputs: Object.entries(cliOutputs).reduce((acc, [portName, spec]) => {
+        acc[portName] = { type: spec.type };
+        return acc;
+      }, {})
+    };
+
+    console.log('[JotCAD CLI] Evaluating script with inputs:', cliInputs);
+    let results;
+    try {
+      results = await ugc.evaluate(scriptContent, cliInputs, schema);
+    } catch (err) {
+      console.error(`[JotCAD CLI] Compilation Error: ${err.message}`);
+      await mesh.stop();
+      process.exit(1);
+    }
+
+    for (const { port, selector } of results) {
+      const spec = cliOutputs[port];
+      if (!spec) continue;
+      const targetFile = spec.path;
+
+      console.log(`[JotCAD CLI] Resolving output port: ${port} -> ${targetFile}`);
+
+      try {
+        const streamResult = await vfs.readSelector(selector);
+        if (streamResult && streamResult.stream) {
+          const chunks = [];
+          for await (const chunk of streamResult.stream) {
+            chunks.push(chunk);
+          }
+          const bytes = Buffer.concat(chunks);
+          fs.writeFileSync(targetFile, bytes);
+          console.log(`[JotCAD CLI] Saved: ${targetFile} (${bytes.length} bytes)`);
+        } else {
+          console.error(`[JotCAD CLI] Failed to resolve output port ${port}`);
+        }
+      } catch (err) {
+        console.error(`[JotCAD CLI] Error exporting ${port}: ${err.message}`);
+      }
     }
   }
 
-  // 7. Clean Shutdown
+  // Clean Shutdown
   await mesh.stop();
   console.log('[JotCAD CLI] Done!');
 }

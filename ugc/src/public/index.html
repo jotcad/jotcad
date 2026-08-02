@@ -79,7 +79,7 @@
       height: 100%;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.25s ease-in-out;
+      transition: opacity 0.2s ease-in-out;
       display: flex;
       flex-direction: column;
     }
@@ -207,12 +207,34 @@
       height: 100%;
       background: #060709;
       border-right: 1px solid var(--border-color);
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
 
     #canvas3d {
       width: 100%;
       height: 100%;
       outline: none;
+    }
+
+    #img-viewport {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      padding: 2rem;
+    }
+
+    #text-viewport {
+      width: 100%;
+      height: 100%;
+      padding: 2rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--text-color);
+      background: #060709;
+      overflow: auto;
+      white-space: pre-wrap;
     }
 
     .controls-overlay {
@@ -275,7 +297,7 @@
     }
 
     .details-section-header {
-      padding: 1.25rem;
+      padding: 0.75rem 1.25rem;
       background: rgba(0, 0, 0, 0.15);
       border-bottom: 1px solid var(--border-color);
       font-size: 0.85rem;
@@ -317,6 +339,65 @@
       color: var(--secondary);
     }
 
+    /* Artifact List inside Details Right */
+    .artifact-list-container {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .artifact-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.65rem 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .artifact-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .artifact-item.active {
+      background: rgba(138, 43, 226, 0.06);
+      border-color: var(--primary);
+    }
+
+    .artifact-name-col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .artifact-port {
+      font-family: monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
+    .artifact-file {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    .artifact-size-badge {
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: var(--secondary);
+      background: rgba(0, 240, 255, 0.05);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+    }
+
     .code-container {
       flex: 1;
       overflow: hidden;
@@ -334,6 +415,53 @@
       line-height: 1.5;
       margin: 0;
       background: #060709;
+    }
+
+    /* MOBILE / RESPONSIVE LAYOUT */
+    @media (max-width: 768px) {
+      header {
+        padding: 0.75rem 1rem;
+        height: 50px;
+      }
+      
+      header h1 {
+        font-size: 1.15rem;
+      }
+
+      #list-view {
+        padding: 1rem;
+      }
+
+      .timeline-container {
+        gap: 0.65rem;
+      }
+
+      .snapshot-item {
+        padding: 0.85rem;
+        gap: 1rem;
+      }
+
+      /* Stack panels vertically on mobile */
+      .details-workspace {
+        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .viewport-panel {
+        height: 40vh;
+        min-height: 280px;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .details-right-panel {
+        height: 60vh;
+      }
+
+      .artifact-list-container {
+        max-height: 160px;
+      }
     }
   </style>
 </head>
@@ -357,7 +485,7 @@
           </div>
         </div>
         <div id="snapshots-list">
-          <!-- Dyn lists -->
+          <!-- Dynamic snapshot list items -->
         </div>
       </div>
     </div>
@@ -369,28 +497,40 @@
         <!-- Viewport Left -->
         <div class="viewport-panel">
           <div class="controls-overlay">
-            <button class="btn-action" id="btn-back">← Back to Timeline</button>
+            <button class="btn-action" id="btn-back">← Back</button>
           </div>
           <div class="actions-overlay">
-            <a id="btn-png" class="btn-action" target="_blank">View PNG</a>
-            <a id="btn-stl" class="btn-action primary" download>Download STL</a>
+            <a id="btn-download" class="btn-action primary" download>Download File</a>
           </div>
+          
+          <!-- Viewport View Modes -->
           <div id="canvas3d"></div>
+          <img id="img-viewport" style="display: none;" alt="Preview image">
+          <pre id="text-viewport" style="display: none;"></pre>
         </div>
 
         <!-- Details Right -->
         <div class="details-right-panel">
           
+          <!-- Run Details Meta -->
           <div class="details-meta-card">
             <h3 id="detail-note">Run Note</h3>
             <div class="meta-detail-grid">
               <div class="meta-detail-item">Sequence: <span id="detail-seq">#000</span></div>
               <div class="meta-detail-item">Timestamp: <span id="detail-time">--</span></div>
               <div class="meta-detail-item">Duration: <span id="detail-duration">0ms</span></div>
-              <div class="meta-detail-item">STL Size: <span id="detail-size">0 KB</span></div>
             </div>
           </div>
 
+          <!-- Dynamic Artifact Selectors -->
+          <div class="details-section-header">
+            <span>Produced Artifacts</span>
+          </div>
+          <div class="artifact-list-container" id="artifacts-list">
+            <!-- Dynamic artifacts -->
+          </div>
+
+          <!-- Code Script Display -->
           <div class="code-container">
             <div class="details-section-header">
               <span>script.jot</span>
@@ -412,23 +552,47 @@
   <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
 
   <script>
+    let snapshots = [];
     let activeSnapshot = null;
+    let activeArtifact = null;
     let scene, camera, renderer, controls, activeMesh;
+    
     const canvasContainer = document.getElementById('canvas3d');
+    const imgViewport = document.getElementById('img-viewport');
+    const textViewport = document.getElementById('text-viewport');
 
-    // 1. SPA Navigation Router
+    // 1. URL Hash Router & Navigation
     function showView(viewId) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.getElementById(viewId).classList.add('active');
       
-      if (viewId === 'details-view') {
-        onWindowResize(); // Force resize three.js canvas when container appears
-      }
+      // Resize Three.js canvas dynamically to prevent distortion
+      setTimeout(onWindowResize, 100);
     }
 
-    document.getElementById('btn-back').onclick = () => {
+    // Triggered when browser back/forward or hash changes
+    function handleRouting() {
+      const hash = window.location.hash;
+      const match = hash.match(/^#snapshot-(\d{3})$/);
+      
+      if (match && snapshots.length > 0) {
+        const seq = match[1];
+        const snap = snapshots.find(s => s.sequence === seq);
+        if (snap) {
+          selectSnapshot(snap, false);
+          return;
+        }
+      }
+      
       activeSnapshot = null;
+      activeArtifact = null;
       showView('list-view');
+    }
+
+    window.onhashchange = handleRouting;
+
+    document.getElementById('btn-back').onclick = () => {
+      window.location.hash = '';
     };
 
     // 2. Initialize Three.js Viewport
@@ -461,6 +625,7 @@
       scene.add(dirLight2);
 
       window.addEventListener('resize', onWindowResize);
+      window.addEventListener('orientationchange', () => setTimeout(onWindowResize, 200));
       animate();
     }
 
@@ -498,7 +663,6 @@
         geometry.computeVertexNormals();
         geometry.center();
         
-        // Adjust camera to fit
         const boundingBox = new THREE.Box3().setFromObject(activeMesh);
         const size = boundingBox.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
@@ -521,6 +685,7 @@
         document.getElementById('session-id').innerText = data.sessionId.split('/').pop();
         
         const snapshotsList = document.getElementById('snapshots-list');
+        snapshots = data.snapshots;
         
         if (data.snapshots.length !== prevSnapshotCount) {
           prevSnapshotCount = data.snapshots.length;
@@ -534,7 +699,6 @@
             item.className = 'snapshot-item';
             
             const dateStr = snap.timestamp.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/, '$1-$2-$3 $4:$5');
-            const inputsText = snap.run ? Object.entries(snap.run.inputs).map(([k, v]) => `${k}=${v}`).join(', ') : '';
 
             item.innerHTML = `
               <div class="snapshot-info">
@@ -547,14 +711,19 @@
               <div class="arrow-icon">→</div>
             `;
 
-            item.onclick = () => selectSnapshot(snap);
+            item.onclick = () => {
+              window.location.hash = `snapshot-${snap.sequence}`;
+            };
             snapshotsList.appendChild(item);
           });
           
-          // Refresh active snapshot if details page is currently open
+          // Initial routing trigger on first list load
+          handleRouting();
+        } else {
+          // If details page is open, refresh background snapshot stats if they changed
           if (activeSnapshot) {
             const refreshed = data.snapshots.find(s => s.sequence === activeSnapshot.sequence);
-            if (refreshed) {
+            if (refreshed && JSON.stringify(refreshed.run) !== JSON.stringify(activeSnapshot.run)) {
               selectSnapshot(refreshed, false);
             }
           }
@@ -565,10 +734,14 @@
     }
 
     // 5. Select and Navigate to Snapshot sub-page
-    async function selectSnapshot(snap, navigate = true) {
+    async function selectSnapshot(snap, updateHash = true) {
       activeSnapshot = snap;
       
-      // Update metadata card fields
+      if (updateHash) {
+        window.location.hash = `snapshot-${snap.sequence}`;
+      }
+
+      // Update metadata fields
       document.getElementById('detail-note').innerText = snap.note;
       document.getElementById('detail-seq').innerText = `#${snap.sequence}`;
       
@@ -576,19 +749,15 @@
       document.getElementById('detail-time').innerText = dateStr;
 
       if (snap.run) {
-        const stlSizeKB = (snap.run.outputs?.stl_file?.size / 1024).toFixed(1);
         document.getElementById('detail-duration').innerText = `${snap.run.compileDurationMs}ms`;
-        document.getElementById('detail-size').innerText = `${stlSizeKB} KB`;
-        
         const inputsText = Object.entries(snap.run.inputs).map(([k, v]) => `${k}=${v}`).join(', ');
         document.getElementById('detail-inputs').innerText = inputsText;
       } else {
         document.getElementById('detail-duration').innerText = '0ms';
-        document.getElementById('detail-size').innerText = '0 KB';
         document.getElementById('detail-inputs').innerText = '';
       }
 
-      // Load Script code block
+      // Load script source
       const scriptUrl = `/api/session/snapshots/${encodeURIComponent(snap.dirName)}/script.jot`;
       try {
         const scriptResp = await fetch(scriptUrl);
@@ -597,16 +766,91 @@
         document.getElementById('code-block').innerText = '// Failed to load script code';
       }
 
-      // Load Viewport STL & setup actions
-      const stlUrl = `/api/session/snapshots/${encodeURIComponent(snap.dirName)}/output.stl`;
-      const pngUrl = `/api/session/snapshots/${encodeURIComponent(snap.dirName)}/preview.png`;
+      // Render Dynamic Outputs Artifact List
+      const artList = document.getElementById('artifacts-list');
+      artList.innerHTML = '';
 
-      loadSTL(stlUrl);
-      document.getElementById('btn-stl').href = stlUrl;
-      document.getElementById('btn-png').href = pngUrl;
+      let firstStl = null;
 
-      if (navigate) {
-        showView('details-view');
+      if (snap.run && snap.run.outputs) {
+        Object.entries(snap.run.outputs).forEach(([port, out]) => {
+          const item = document.createElement('div');
+          item.className = 'artifact-item';
+          
+          const sizeStr = (out.size / 1024).toFixed(1) + ' KB';
+          
+          item.innerHTML = `
+            <div class="artifact-name-col">
+              <span class="artifact-port">${port}</span>
+              <span class="artifact-file">${out.filename}</span>
+            </div>
+            <span class="artifact-size-badge">${sizeStr}</span>
+          `;
+
+          // Track first STL to auto-load it later
+          if (out.filename.endsWith('.stl') && !firstStl) {
+            firstStl = out;
+          }
+
+          item.onclick = () => selectArtifact(port, out);
+          artList.appendChild(item);
+        });
+      }
+
+      // Auto-load first STL or fallback to PNG if no STL found
+      if (firstStl) {
+        const stlPort = Object.keys(snap.run.outputs).find(k => snap.run.outputs[k] === firstStl);
+        selectArtifact(stlPort, firstStl);
+      } else if (snap.run && snap.run.outputs && Object.keys(snap.run.outputs).length > 0) {
+        const firstPort = Object.keys(snap.run.outputs)[0];
+        selectArtifact(firstPort, snap.run.outputs[firstPort]);
+      }
+
+      showView('details-view');
+    }
+
+    // 6. Select and Render Artifact inside Viewport
+    async function selectArtifact(port, out) {
+      activeArtifact = out;
+      
+      // Update active highlight classes in artifacts list
+      document.querySelectorAll('.artifact-item').forEach(el => {
+        const nameSpan = el.querySelector('.artifact-port').innerText;
+        el.className = 'artifact-item' + (nameSpan === port ? ' active' : '');
+      });
+
+      const fileUrl = `/api/session/snapshots/${encodeURIComponent(activeSnapshot.dirName)}/${encodeURIComponent(out.filename)}`;
+      
+      // Map general download button
+      document.getElementById('btn-download').href = fileUrl;
+      document.getElementById('btn-download').download = out.filename;
+
+      const filename = out.filename.toLowerCase();
+
+      // Hide all viewport types
+      canvasContainer.style.display = 'none';
+      imgViewport.style.display = 'none';
+      textViewport.style.display = 'none';
+
+      // STL 3D Mesh
+      if (filename.endsWith('.stl')) {
+        canvasContainer.style.display = 'block';
+        loadSTL(fileUrl);
+      } 
+      // PNG/JPG Images
+      else if (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg')) {
+        imgViewport.style.display = 'block';
+        imgViewport.src = fileUrl;
+      } 
+      // Text/JSON/Jot data
+      else {
+        textViewport.style.display = 'block';
+        try {
+          const textResp = await fetch(fileUrl);
+          textViewport.innerText = await textResp.text();
+        } catch (e) {
+          textViewport.innerText = '// Error loading file content';
+        }
       }
     }
 

@@ -1,0 +1,172 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+export class UGCSession {
+  constructor(sessionDir, ugcEngine) {
+    this.sessionDir = path.resolve(sessionDir);
+    this.ugcEngine = ugcEngine;
+  }
+
+  /**
+   * Initializes the base session directory
+   */
+  init() {
+    if (!fs.existsSync(this.sessionDir)) {
+      fs.mkdirSync(this.sessionDir, { recursive: true });
+    }
+  }
+
+  /**
+   * Computes the next sequence number by scanning the directory
+   */
+  _getNextSequence() {
+    this.init();
+    const files = fs.readdirSync(this.sessionDir);
+    let maxSeq = 0;
+    for (const f of files) {
+      const match = f.match(/^(\d{3})_/);
+      if (match) {
+        const seq = parseInt(match[1], 10);
+        if (seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    }
+    const nextSeq = maxSeq + 1;
+    return String(nextSeq).padStart(3, '0');
+  }
+
+  /**
+   * Formats the current date and time as YYYYMMDD_HHMMSS
+   */
+  _getTimestamp() {
+    const d = new Date();
+    const pad = (num) => String(num).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const min = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    return `${yyyy}${mm}${dd}_${hh}${min}${ss}`;
+  }
+
+  /**
+   * Compiles the script and exports all results into a new sequential snapshot subdirectory
+   * @param {string} scriptContent 
+   * @param {Object} cliInputs 
+   * @param {Object} cliOutputs Mappings of port name -> target base filename (e.g. stl_file: 'output.stl')
+   * @param {string} note A descriptive note summarizing the run operation
+   * @returns {Promise<Object>} Run metadata
+   */
+  async createSnapshot(scriptContent, cliInputs = {}, cliOutputs = {}, note = 'run') {
+    this.init();
+
+    // 1. Setup sequence, timestamp, and snapshot folder
+    const seq = this._getNextSequence();
+    const timestamp = this._getTimestamp();
+    const sanitizedNote = note.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '');
+    const folderName = `${seq}_${timestamp}_${sanitizedNote || 'run'}`;
+    const snapshotDir = path.join(this.sessionDir, folderName);
+
+    fs.mkdirSync(snapshotDir, { recursive: true });
+    console.log(`[UGCSession] Creating snapshot folder: ${snapshotDir}`);
+
+    // 2. Save the source script copy
+    const scriptPath = path.join(snapshotDir, 'script.jot');
+    fs.writeFileSync(scriptPath, scriptContent);
+
+    // 3. Construct dynamic outputs schema matching required ports
+    const schema = {
+      outputs: Object.entries(cliOutputs).reduce((acc, [key, val]) => {
+        const type = typeof val === 'object' ? val.type : 'jot:file';
+        acc[key] = { type };
+        return acc;
+      }, {})
+    };
+
+    // 4. Run compilation & evaluation
+    const startTime = Date.now();
+    const results = await this.ugcEngine.evaluate(scriptContent, cliInputs, schema);
+    const compileDuration = Date.now() - startTime;
+
+    const exportedFiles = {};
+
+    // 5. Drain format streams to files inside snapshot directory
+    for (const { port, selector } of results) {
+      const val = cliOutputs[port];
+      if (!val) continue;
+
+      const baseFilename = typeof val === 'object' ? val.path : val;
+      const targetPath = path.join(snapshotDir, baseFilename);
+      console.log(`[UGCSession] Draining port '${port}' (Selector: ${selector.path}) -> ${targetPath}`);
+
+      const streamResult = await this.ugcEngine.vfs.readSelector(selector);
+      if (streamResult && streamResult.stream) {
+        const chunks = [];
+        for await (const chunk of streamResult.stream) {
+          chunks.push(chunk);
+        }
+        const bytes = Buffer.concat(chunks);
+        fs.writeFileSync(targetPath, bytes);
+        exportedFiles[port] = {
+          filename: baseFilename,
+          size: bytes.length,
+          cid: selector.cid || null
+        };
+      } else {
+        throw new Error(`Failed to resolve output stream for port: ${port}`);
+      }
+    }
+
+    // 6. Write run metadata file
+    const runMetadata = {
+      sequence: seq,
+      timestamp,
+      note,
+      inputs: cliInputs,
+      outputs: exportedFiles,
+      compileDurationMs: compileDuration
+    };
+
+    fs.writeFileSync(
+      path.join(snapshotDir, 'run.json'),
+      JSON.stringify(runMetadata, null, 2)
+    );
+
+    console.log(`[UGCSession] Snapshot ${seq} successfully compiled in ${compileDuration}ms.`);
+    return { snapshotDir, metadata: runMetadata };
+  }
+
+  /**
+   * Lists all snapshot directories in chronological order
+   */
+  listSnapshots() {
+    this.init();
+    const items = fs.readdirSync(this.sessionDir);
+    const snapshots = [];
+
+    for (const item of items) {
+      const match = item.match(/^(\d{3})_(\d{8}_\d{6})_(.+)$/);
+      if (match) {
+        const runJsonPath = path.join(this.sessionDir, item, 'run.json');
+        let runData = null;
+        if (fs.existsSync(runJsonPath)) {
+          try {
+            runData = JSON.parse(fs.readFileSync(runJsonPath, 'utf-8'));
+          } catch (e) {}
+        }
+        snapshots.push({
+          dirName: item,
+          sequence: match[1],
+          timestamp: match[2],
+          note: match[3],
+          run: runData
+        });
+      }
+    }
+
+    // Sort by sequence number
+    return snapshots.sort((a, b) => a.sequence.localeCompare(b.sequence));
+  }
+}
