@@ -14,6 +14,7 @@ int main() {
 
     // 1. Create a sphere (Orb)
     fs::Selector orb_sel("jot/Orb");
+    orb_sel.parameters["method"] = "uv";
     Shape orb = vfs.read<Shape>(orb_sel.with_output("$out"));
 
     // 2. Approximate with 20 proxies (facets)
