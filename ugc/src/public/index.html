@@ -27,8 +27,7 @@
       background-color: var(--bg-color);
       color: var(--text-color);
       font-family: 'Inter', sans-serif;
-      height: 100vh;
-      overflow: hidden;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
@@ -43,6 +42,8 @@
       align-items: center;
       z-index: 100;
       height: 60px;
+      position: sticky;
+      top: 0;
     }
 
     header h1 {
@@ -67,33 +68,24 @@
     /* Screen Views Container */
     .view-container {
       flex: 1;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .view {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s ease-in-out;
       display: flex;
       flex-direction: column;
     }
 
+    .view {
+      display: none;
+      width: 100%;
+      flex-direction: column;
+    }
+
     .view.active {
-      opacity: 1;
-      pointer-events: auto;
+      display: flex;
     }
 
     /* VIEW 1: Lean Timeline View */
     #list-view {
       align-items: center;
-      padding: 2rem;
-      overflow-y: auto;
+      padding: 2rem 1rem;
     }
 
     .timeline-container {
@@ -198,13 +190,14 @@
     .details-workspace {
       flex: 1;
       display: grid;
-      grid-template-columns: 1fr 450px;
-      overflow: hidden;
+      grid-template-columns: 1fr 480px;
     }
 
     .viewport-panel {
-      position: relative;
-      height: 100%;
+      position: sticky;
+      top: 60px;
+      height: calc(100vh - 60px);
+      min-height: 400px;
       background: #060709;
       border-right: 1px solid var(--border-color);
       display: flex;
@@ -286,19 +279,19 @@
       background: rgba(0, 240, 255, 0.2);
     }
 
-    /* Details Right Panel: Script & Parameters */
+    /* Details Right Panel: Script & Parameters (Natural vertical flow) */
     .details-right-panel {
       background: var(--panel-bg);
       backdrop-filter: blur(16px);
       display: flex;
       flex-direction: column;
-      height: 100%;
-      overflow: hidden;
+      border-left: 1px solid var(--border-color);
     }
 
     .details-section-header {
       padding: 0.75rem 1.25rem;
       background: rgba(0, 0, 0, 0.15);
+      border-top: 1px solid var(--border-color);
       border-bottom: 1px solid var(--border-color);
       font-size: 0.85rem;
       font-weight: 500;
@@ -306,6 +299,10 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+    }
+
+    .details-section-header:first-of-type {
+      border-top: none;
     }
 
     .details-meta-card {
@@ -342,12 +339,9 @@
     /* Artifact List inside Details Right */
     .artifact-list-container {
       padding: 1rem 1.25rem;
-      border-bottom: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
-      max-height: 220px;
-      overflow-y: auto;
     }
 
     .artifact-item {
@@ -399,15 +393,11 @@
     }
 
     .code-container {
-      flex: 1;
-      overflow: hidden;
       display: flex;
       flex-direction: column;
     }
 
     pre.code-display {
-      flex: 1;
-      overflow: auto;
       padding: 1.25rem;
       font-family: 'Courier New', Courier, monospace;
       font-size: 0.85rem;
@@ -415,13 +405,17 @@
       line-height: 1.5;
       margin: 0;
       background: #060709;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
     }
 
     /* MOBILE / RESPONSIVE LAYOUT */
-    @media (max-width: 768px) {
+    @media (max-width: 900px) {
       header {
         padding: 0.75rem 1rem;
         height: 50px;
+        position: relative;
       }
       
       header h1 {
@@ -436,12 +430,7 @@
         gap: 0.65rem;
       }
 
-      .snapshot-item {
-        padding: 0.85rem;
-        gap: 1rem;
-      }
-
-      /* Stack panels vertically on mobile */
+      /* Stack panels vertically, let everything scroll naturally */
       .details-workspace {
         grid-template-columns: 1fr;
         display: flex;
@@ -449,18 +438,27 @@
       }
 
       .viewport-panel {
-        height: 40vh;
-        min-height: 280px;
+        position: relative;
+        top: 0;
+        height: 45vh;
+        min-height: 300px;
         border-right: none;
         border-bottom: 1px solid var(--border-color);
       }
 
       .details-right-panel {
-        height: 60vh;
+        border-left: none;
       }
 
-      .artifact-list-container {
-        max-height: 160px;
+      .controls-overlay {
+        top: 0.75rem;
+        left: 0.75rem;
+      }
+
+      .actions-overlay {
+        top: 0.75rem;
+        right: 0.75rem;
+        gap: 0.5rem;
       }
     }
   </style>
@@ -469,7 +467,7 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.min.js"
+        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
       }
     }
   </script>
@@ -508,7 +506,7 @@
     <div id="details-view" class="view">
       <div class="details-workspace">
         
-        <!-- Viewport Left -->
+        <!-- Viewport Left (Sticky on desktop, flows at top on mobile) -->
         <div class="viewport-panel">
           <div class="controls-overlay">
             <button class="btn-action" id="btn-back">← Back</button>
@@ -523,7 +521,7 @@
           <pre id="text-viewport" style="display: none;"></pre>
         </div>
 
-        <!-- Details Right -->
+        <!-- Details Right (Scrolls naturally) -->
         <div class="details-right-panel">
           
           <!-- Run Details Meta -->
@@ -545,11 +543,11 @@
           </div>
 
           <!-- Code Script Display -->
+          <div class="details-section-header">
+            <span>script.jot</span>
+            <span id="detail-inputs" style="font-family: monospace; color: var(--secondary);">size=22</span>
+          </div>
           <div class="code-container">
-            <div class="details-section-header">
-              <span>script.jot</span>
-              <span id="detail-inputs" style="font-family: monospace; color: var(--secondary);">size=22</span>
-            </div>
             <pre class="code-display" id="code-block">// Loading script...</pre>
           </div>
 

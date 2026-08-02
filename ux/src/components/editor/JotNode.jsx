@@ -2,8 +2,8 @@ import { createSignal, onMount, Show, createEffect, createMemo, onCleanup, untra
 import interact from 'interactjs';
 import { vfs, blackboard, DEFAULT_CODE } from '../../lib/blackboard';
 import { Minus, Maximize2, X, Globe, Trash2, Zap } from 'lucide-solid';
-import { JotParser } from '../../../../jot/src/parser';
-import { JotCompiler } from '../../../../jot/src/compiler';
+import { JotParser } from '@jotcad/jot/src/parser.js';
+import { JotCompiler } from '@jotcad/jot/src/compiler.js';
 import { packZFS } from '../../lib/render/GeometryDecoder';
 
 import { ArgumentList } from './ArgumentList';

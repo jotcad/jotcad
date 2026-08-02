@@ -1,4 +1,4 @@
-import { Selector } from '../../../../fs/src/vfs_browser.js';
+import { Selector } from '@jotcad/fs/src/vfs_browser.js';
 
 const DEFAULT_CONFIG = {
   instruments: [

@@ -1,5 +1,5 @@
 // console.log('[Trace] Executing JotRegistry.js');
-import { Selector } from '../../../../fs/src/vfs_browser.js';
+import { Selector } from '@jotcad/fs/src/vfs_browser.js';
 import { setSchemas, setDynamicOps } from '../state/MeshState.js';
 import { Worksheet } from './Worksheet';
 
@@ -84,8 +84,8 @@ export const JotRegistry = {
     // 2. Register Provider
     vfs.registerProvider(targetPath, async (v, s) => {
       console.log(`[JotRegistry] Executing User Op: ${targetPath}`);
-      const { JotCompiler } = await import('../../../../jot/src/compiler');
-      const { JotParser } = await import('../../../../jot/src/parser');
+      const { JotCompiler } = await import('@jotcad/jot/src/compiler.js');
+      const { JotParser } = await import('@jotcad/jot/src/parser.js');
       
       const compiler = new JotCompiler(v);
       const currentSchemas = bb ? bb.schemas() : {};

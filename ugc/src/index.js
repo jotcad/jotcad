@@ -1,8 +1,10 @@
 import { JotEvaluator } from './evaluator.js';
 import { UserFulfillerManager } from './fulfiller.js';
 import { UGCStorage } from './storage.js';
+import { UGCSession } from './session.js';
+import { startSessionServer } from './server.js';
 
-export { JotEvaluator, UserFulfillerManager, UGCStorage };
+export { JotEvaluator, UserFulfillerManager, UGCStorage, UGCSession, startSessionServer };
 
 export class UGCEngine {
   constructor(vfs, mesh = null, storagePath = null) {
@@ -11,6 +13,15 @@ export class UGCEngine {
     this.evaluator = new JotEvaluator(vfs, mesh);
     this.storage = new UGCStorage(vfs, storagePath);
     this.fulfiller = new UserFulfillerManager(vfs, mesh, this.evaluator, this.storage);
+  }
+
+  /**
+   * Helper to spawn a new sequential workspace session
+   * @param {string} sessionDir 
+   * @returns {UGCSession}
+   */
+  createSession(sessionDir) {
+    return new UGCSession(sessionDir, this);
   }
 
   /**

@@ -1,6 +1,62 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Helper to stringify complex objects as a cache key (matching normalizeId in AssetManager.js)
+function normalizeId(id) {
+  if (typeof id === 'string') return id;
+  if (id && typeof id === 'object' && id.path) {
+    const params = id.parameters || {};
+    const sortedParams = Object.keys(params).sort().reduce((acc, key) => { acc[key] = params[key]; return acc; }, {});
+    return id.path + '?' + JSON.stringify(sortedParams);
+  }
+  return JSON.stringify(id);
+}
+
+// Ported packZFS shape packaging logic from ux/src/lib/render/GeometryDecoder.js
+async function packZFS(vfs, shape) {
+  const assets = new Map();
+  const walk = async (s) => {
+    if (!s || typeof s !== 'object') return;
+    if (s.geometry) {
+      const id = normalizeId(s.geometry);
+      if (!assets.has(id)) {
+        try {
+          const res = await vfs.readCID(id);
+          if (res) {
+            let text = '';
+            if (res.data) {
+              text = typeof res.data === 'string' ? res.data : new TextDecoder().decode(res.data);
+            } else if (res.stream) {
+              const chunks = [];
+              for await (const chunk of res.stream) chunks.push(chunk);
+              text = new TextDecoder().decode(Buffer.concat(chunks));
+            }
+            if (text) {
+              assets.set(id, text);
+            }
+          }
+        } catch (e) {
+          console.warn('[packZFS] Failed to fetch VFS asset:', id, e);
+        }
+      }
+    }
+    if (s.components && Array.isArray(s.components)) {
+      for (const sub of s.components) {
+        await walk(sub);
+      }
+    }
+  };
+  await walk(shape);
+  
+  let zfs = '';
+  const mainJson = JSON.stringify(shape);
+  zfs += `=${mainJson.length} files/main.json\n${mainJson}\n`;
+  for (const [id, text] of assets) {
+    zfs += `=${text.length} assets/text/${id}\n${text}\n`;
+  }
+  return Buffer.from(zfs);
+}
+
 export class UGCSession {
   constructor(sessionDir, ugcEngine) {
     this.sessionDir = path.resolve(sessionDir);
@@ -100,6 +156,32 @@ export class UGCSession {
       const baseFilename = typeof val === 'object' ? val.path : val;
       const targetPath = path.join(snapshotDir, baseFilename);
       console.log(`[UGCSession] Draining port '${port}' (Selector: ${selector.path}) -> ${targetPath}`);
+
+      const ext = path.extname(baseFilename).toLowerCase();
+      if (ext === '.jot') {
+        const streamResult = await this.ugcEngine.vfs.readSelector(selector);
+        if (streamResult) {
+          let rawData = streamResult.data;
+          if (!rawData && streamResult.stream) {
+            const chunks = [];
+            for await (const chunk of streamResult.stream) chunks.push(chunk);
+            rawData = Buffer.concat(chunks);
+          }
+          if (rawData) {
+            const rawText = typeof rawData === 'string' ? rawData : new TextDecoder().decode(rawData);
+            let shapeObj = JSON.parse(rawText);
+            
+            const packedBytes = await packZFS(this.ugcEngine.vfs, shapeObj);
+            fs.writeFileSync(targetPath, packedBytes);
+            exportedFiles[port] = {
+              filename: baseFilename,
+              size: packedBytes.length,
+              cid: selector.cid || null
+            };
+            continue;
+          }
+        }
+      }
 
       const streamResult = await this.ugcEngine.vfs.readSelector(selector);
       if (streamResult && streamResult.stream) {

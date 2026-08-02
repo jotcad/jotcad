@@ -1,4 +1,4 @@
-import { Selector } from '../../../../fs/src/vfs_browser.js';
+import { Selector } from '@jotcad/fs/src/vfs_browser.js';
 
 let fsModule = null;
 if (typeof process !== 'undefined' && process.release && process.release.name === 'node') {

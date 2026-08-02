@@ -1,4 +1,4 @@
-import { Selector } from '../../../../fs/src/vfs_browser.js';
+import { Selector } from '@jotcad/fs/src/vfs_browser.js';
 import { MATERIAL_PALETTE } from '../render/AssetManager.js';
 
 /**

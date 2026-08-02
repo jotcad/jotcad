@@ -33,3 +33,7 @@
 
 ## VFS & Mesh (Zenoh Migration)
 - [x] **Clean Up Rubbish / Legacy Compatibility Stubs**: Refactor `VFSManager.js` and visualizer components (like `MeshGraphApp.jsx`) to remove dependencies on legacy WebSocket tunnel maps (`mesh.peers` and `mesh.interests`), aligning them fully with Zenoh's native pub-sub topology and metadata queries. Clean up the placeholder dummy maps in `MeshLinkBase`.
+
+## Research & Papers
+- [ ] **Follow up on `GIFT` paper (`docs/2603.27448v1.pdf`)**: Review *GIFT: Bootstrapping Image-to-CAD Program Synthesis via Geometric Feedback* (Giannone et al., 2026) for leveraging geometric kernel feedback (IoU / verification) in parametric CAD program synthesis.
+
