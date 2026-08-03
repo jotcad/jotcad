@@ -91,6 +91,7 @@ public:
     std::string get_cid(const Selector& sel);
     VFSResult get_local(const std::string& cid);
     bool has_local(const std::string& cid);
+    void delete_cid(const std::string& cid);
 
     Selector write(const Selector& sel, const json& data);
     Selector write(const Selector& sel, const std::vector<uint8_t>& data);

@@ -51,7 +51,7 @@ cd geo && make && cd ..
 Run the orchestration script to start the Peer Nodes (VFS Hub, Ops Node, Export Node) and the UX:
 
 ```bash
-npm start
+npm run start:dev
 ```
 
 #### Running with Webcam VFS Integration

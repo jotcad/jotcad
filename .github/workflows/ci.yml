@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y xvfb libgbm1
           ./scripts/generate_dev_cert.sh
           npm run install_deps
-          npm run setup
+          npm run build:cpp
           npm run build:test --workspace=ux
       - name: Run CI Suite
         run: npm run ci

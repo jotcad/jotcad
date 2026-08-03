@@ -11,6 +11,7 @@ ExecStart=/usr/bin/env node dual_camera_ux.js
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
+Environment=ZENOH_ROUTER_URL=http://127.0.0.1:9000
 
 [Install]
 WantedBy=multi-user.target

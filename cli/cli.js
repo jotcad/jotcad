@@ -7,6 +7,7 @@ import net from 'node:net';
 
 import { VFS, DiskStorage, MeshLink, Selector } from '../fs/src/index.js';
 import { UGCEngine } from '../ugc/src/index.js';
+import { PROFILES } from '../orchestrator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,27 +30,46 @@ function isPortOpen(port, host = '127.0.0.1') {
   });
 }
 
-// Router Auto-Discovery
-async function discoverGateway(explicitGateway) {
+// Router Discovery
+async function discoverGateway(selectedProfile, explicitGateway) {
   if (explicitGateway) return explicitGateway;
   if (process.env.ZENOH_ROUTER_URL) return process.env.ZENOH_ROUTER_URL;
   if (process.env.VITE_VFS_URL) return process.env.VITE_VFS_URL;
 
-  const candidatePorts = [9000, 9200, 9092];
-  for (const port of candidatePorts) {
-    if (await isPortOpen(port)) {
-      return `http://127.0.0.1:${port}`;
-    }
+  const profileKey = selectedProfile || process.env.JOTCAD_PROFILE;
+  if (!profileKey) {
+    console.error('Error: Target profile is mandatory. Specify --profile <dev|test|prod> (or set JOTCAD_PROFILE).');
+    process.exit(1);
   }
-  return 'http://127.0.0.1:9000';
+
+  const profileMap = {
+    'dev': 'live/standard',
+    'test': 'test/standard',
+    'prod': 'prod',
+    'live/standard': 'live/standard',
+    'test/standard': 'test/standard',
+    'prod/standard': 'prod'
+  };
+
+  const resolvedProfile = profileMap[profileKey.toLowerCase()];
+  if (!resolvedProfile) {
+    console.error(`Error: Unknown profile "${profileKey}". Available options: dev, test, prod`);
+    process.exit(1);
+  }
+
+  const profile = PROFILES[resolvedProfile];
+  const routerPort = profile.components.zenoh_router.port;
+  return `http://127.0.0.1:${routerPort}`;
 }
 
 async function main() {
   const options = {
     input: { type: 'string', short: 'i', multiple: true, default: [] },
     output: { type: 'string', short: 'o', multiple: true, default: [] },
+    profile: { type: 'string', short: 'p' },
     gateway: { type: 'string', short: 'g' },
-    session: { type: 'string', short: 's' },
+    eval: { type: 'string', short: 'e' },
+    session: { type: 'string', short: 's', default: 'scratch/my_cad_session' },
     note: { type: 'string', short: 'm' },
     help: { type: 'boolean', short: 'h' }
   };
@@ -62,35 +82,59 @@ async function main() {
     process.exit(1);
   }
 
-  if (parsed.values.help || parsed.positionals.length === 0) {
+  if (parsed.values.help || (parsed.positionals.length === 0 && !parsed.values.eval)) {
     console.log(`
 JotCAD CLI - Command Line Interface for Jot Script Compilation & CAD Export
 
 Usage:
   jotcad <input.jot> [options]
+  jotcad -e "<expression>" [options]
 
 Options:
+  -p, --profile <dev|test|prod> Target cluster profile (MANDATORY, or set JOTCAD_PROFILE)
+  -e, --eval <script>        Jot script string expression to evaluate directly
   -i, --input <name=val>     Input variables to bind (e.g. -i size=20)
   -o, --output <name=path>   Output file destinations (e.g. -o stl_file=part.stl)
   -s, --session <dir>        Output session directory to track sequentially
   -m, --note <string>        Descriptive snapshot note for the session run
-  -g, --gateway <url>        Zenoh router gateway URL (auto-discovered if omitted)
+  -g, --gateway <url>        Override Zenoh router gateway URL
   -h, --help                 Show this help menu
 
 Examples:
-  jotcad model.jot -i size=25 -o stl_file=cube.stl -o png_file=preview.png
-  jotcad model.jot -i size=25 -s ./sessions -m "expanded cylinder diameter"
+  jotcad -p dev -e "Box(25).stl() -> out;" -o out=box.stl
+  jotcad model.jot -p dev -i size=25 -o stl_file=cube.stl -o png_file=preview.png
+  echo "Box(25).stl() -> out;" | jotcad -p dev - -o out=box.stl
 `);
     process.exit(0);
   }
 
-  const inputFile = path.resolve(parsed.positionals[0]);
-  if (!fs.existsSync(inputFile)) {
-    console.error(`Error: Input file '${inputFile}' does not exist.`);
+  const profileKey = parsed.values.profile || process.env.JOTCAD_PROFILE;
+  if (!profileKey) {
+    console.error('Error: Target profile is mandatory. Specify --profile <dev|test|prod> (or set JOTCAD_PROFILE environment variable).');
     process.exit(1);
   }
 
-  const scriptContent = fs.readFileSync(inputFile, 'utf-8');
+  let scriptContent = '';
+  if (parsed.values.eval) {
+    scriptContent = parsed.values.eval;
+  } else if (parsed.positionals[0] === '-') {
+    scriptContent = await new Promise((resolve) => {
+      let data = '';
+      process.stdin.setEncoding('utf-8');
+      process.stdin.on('data', chunk => data += chunk);
+      process.stdin.on('end', () => resolve(data));
+    });
+  } else if (parsed.positionals.length > 0) {
+    const inputFile = path.resolve(parsed.positionals[0]);
+    if (!fs.existsSync(inputFile)) {
+      console.error(`Error: Input file '${inputFile}' does not exist.`);
+      process.exit(1);
+    }
+    scriptContent = fs.readFileSync(inputFile, 'utf-8');
+  } else {
+    console.error('Error: You must specify an input file, use "-" for stdin, or use -e/--eval.');
+    process.exit(1);
+  }
 
   // Parse inputs: -i size=20 -> { size: 20 }
   const cliInputs = {};
@@ -135,7 +179,7 @@ Examples:
 
 
   // 1. Discover Zenoh router
-  const gatewayUrl = await discoverGateway(parsed.values.gateway);
+  const gatewayUrl = await discoverGateway(parsed.values.profile, parsed.values.gateway);
   console.log(`[JotCAD CLI] Connecting mesh gateway: ${gatewayUrl}`);
 
   // 2. Initialize VFS and MeshLink

@@ -218,8 +218,12 @@ VFSResult VFSNode::read_cid_impl(const VFSRequest& req) {
                     result.data = rec_payload;
                     result.metadata = rec_header.value("metadata", json::object());
                     success = true;
-                    // Write cache locally
-                    write_local(req.cid, result.data, "", json::object());
+                    // Write cache locally preserving full metadata
+                    std::filesystem::path p_dir(config_.storage_dir);
+                    std::ofstream os_data(p_dir / (req.cid + ".data"), std::ios::binary);
+                    os_data.write((const char*)result.data.data(), result.data.size());
+                    std::ofstream os_meta(p_dir / (req.cid + ".meta"));
+                    os_meta << result.metadata.dump();
                     break;
                 } else if (status != 404) {
                     err_code = status;
@@ -536,6 +540,29 @@ VFSResult VFSNode::get_local(const std::string& cid) {
     }
 
     return res;
+}
+
+void VFSNode::delete_cid(const std::string& cid) {
+    std::filesystem::path p = std::filesystem::path(config_.storage_dir) / (cid + ".data");
+    std::filesystem::path mp = std::filesystem::path(config_.storage_dir) / (cid + ".meta");
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex_);
+        std::error_code ec;
+        std::filesystem::remove(p, ec);
+        std::filesystem::remove(mp, ec);
+    }
+    
+    if (server_ptr_) {
+        ZenohState* state = (ZenohState*)server_ptr_;
+        std::string key = "jot/vfs/cid/" + cid;
+        z_view_keyexpr_t ke;
+        z_view_keyexpr_from_str(&ke, key.c_str());
+        
+        z_delete_options_t opts;
+        z_delete_options_default(&opts);
+        
+        z_delete(z_loan(state->session), z_loan(ke), &opts);
+    }
 }
 
 Selector VFSNode::write_bytes(const Selector& sel, const std::vector<uint8_t>& data) {

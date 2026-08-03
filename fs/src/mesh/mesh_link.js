@@ -146,11 +146,21 @@ export class MeshLinkBase {
         MeshLinkBase.activeStartingInstance = this;
         this.session = await zenohOpen(config);
         MeshLinkBase.activeStartingInstance = null;
-        log(`[MeshLink ${this.vfs.id}] Connected to Zenoh session at ${locator}`);
+        console.log(`[MeshLink ${this.vfs.id}] Connected to Zenoh session at ${locator}`);
+        try {
+          const sessionInfo = await this.session.info();
+          const routers = sessionInfo.routersZid();
+          const peers = sessionInfo.peersZid();
+          console.log(`[MeshLink ${this.vfs.id}] Actual Session ZID: ${sessionInfo.zid().toString()}`);
+          console.log(`[MeshLink ${this.vfs.id}] Connected to routers: [${routers.map(r => r.toString()).join(', ')}]`);
+          console.log(`[MeshLink ${this.vfs.id}] Discovered peers: [${peers.map(p => p.toString()).join(', ')}]`);
+        } catch (e) {
+          console.warn(`[MeshLink ${this.vfs.id}] Failed to retrieve session info: ${e.message}`);
+        }
         connected = true;
         break;
       } catch (err) {
-        log(`[MeshLink ${this.vfs.id}] Failed connecting to ${locator}: ${err.message}`);
+        console.log(`[MeshLink ${this.vfs.id}] Failed connecting to ${locator}: ${err.message}`);
       }
     }
 
@@ -326,7 +336,7 @@ export class MeshLinkBase {
     }
     const queryExpr = params.length > 0 ? `${key}?${params.join(';')}` : key;
     
-    log(`[MeshLink ${this.vfs.id}] readSelector generative: z_get(${queryExpr})`);
+    console.log(`[MeshLink ${this.vfs.id}] readSelector generative: z_get(${queryExpr})`);
     
     try {
       const receiver = await this.session.get(queryExpr, {
@@ -376,7 +386,7 @@ export class MeshLinkBase {
     const expiresAt = Math.min(context.expiresAt || Infinity, Date.now() + 2000);
     
     const key = `jot/vfs/cid/${cid}`;
-    log(`[MeshLink ${this.vfs.id}] readCID: z_get(${key})`);
+    console.log(`[MeshLink ${this.vfs.id}] readCID: z_get(${key})`);
     
     try {
       const receiver = await this.session.get(key, {

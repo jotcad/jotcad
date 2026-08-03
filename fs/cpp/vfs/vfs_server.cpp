@@ -168,7 +168,7 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
             req.selector = Selector(op_path, parsed_params, output);
             req.selector.validate();
             req.expiresAt = expiresAt;
-            req.localOnly = true; // Queryable handler only services local resources
+            req.localOnly = false; // Queryable handler can service mesh sub-resources
             
             // Execute the handler
             auto start = std::chrono::high_resolution_clock::now();
@@ -471,6 +471,14 @@ void VFSNode::listen() {
     }
     json_str += "}";
 
+    if (!config_.neighbors.empty()) {
+        std::cout << "[VFSNode " << config_.id << "] Configured to connect to Zenoh Router(s): ";
+        for (const auto& n : config_.neighbors) {
+            std::cout << n << " ";
+        }
+        std::cout << std::endl;
+    }
+
     z_owned_config_t config;
     if (zc_config_from_str(&config, json_str.c_str()) != Z_OK) {
         std::cerr << "[VFSNode " << config_.id << "] Failed parsing custom configuration, falling back to defaults. JSON was: " << json_str << std::endl;
@@ -483,6 +491,7 @@ void VFSNode::listen() {
         delete state;
         return;
     }
+    std::cout << "[VFSNode " << config_.id << "] Successfully established session with Zenoh Router." << std::endl;
     server_ptr_ = state;
 
     // 1. Declare operator fulfillment queryables for all registered handlers

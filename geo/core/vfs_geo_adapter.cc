@@ -97,6 +97,39 @@ template<> jotcad::geo::Geometry VFSNode::read<jotcad::geo::Geometry>(const CID&
 
 template<> jotcad::geo::Shape VFSNode::read<jotcad::geo::Shape>(const CID& cid) {
     auto j = this->read<nlohmann::json>(cid);
+    if (j.contains("geometry") && j["geometry"].is_string()) {
+        std::string geom_cid = j["geometry"].get<std::string>();
+        try {
+            // Verify that the underlying geometry binary is still present.
+            this->read<std::vector<uint8_t>>(CID{geom_cid});
+        } catch (const VFSException& e) {
+            if (e.code == 404) {
+                // Geometry is missing! Retrieve metadata first, then evict the stale Shape CID locally and globally.
+                VFSResult meta = this->get_local(cid.value);
+                this->delete_cid(cid.value);
+                
+                if (meta.metadata.contains("selector")) {
+                    try {
+                        Selector sel = Selector::from_json(meta.metadata["selector"]);
+                        VFSRequest req;
+                        req.op = "READ_SELECTOR";
+                        req.selector = sel;
+                        req.localOnly = false;
+                        
+                        // Re-evaluate on the mesh to regenerate the geometry.
+                        VFSResult fresh = this->read<VFSResult>(req);
+                        j = json::parse(std::string(fresh.data.begin(), fresh.data.end()));
+                    } catch (...) {
+                        throw e;
+                    }
+                } else {
+                    throw e;
+                }
+            } else {
+                throw e;
+            }
+        }
+    }
     return jotcad::geo::Shape::from_json(j);
 }
 

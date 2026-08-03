@@ -66,7 +66,7 @@ The easiest way to start the Hub, Dispatcher, and UX simultaneously is from the
 root directory:
 
 ```bash
-npm start
+npm run start:dev
 ```
 
 ### 2. Manual Start (Individual Components)
