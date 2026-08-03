@@ -12,9 +12,10 @@ struct StlOp : P {
     static constexpr const char* path = "jot/stl";
 
     static void walk(fs::VFSNode* vfs, const Shape& shape, STLWriter& writer) {
+        if (!shape.is_real()) return;
         Matrix current_tf = shape.tf;
         
-        if (shape.geometry.has_value() && !shape.is_gap()) {
+        if (shape.geometry.has_value()) {
             try {
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
                 geo.apply_tf(current_tf);

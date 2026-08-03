@@ -559,7 +559,7 @@ struct Engine {
     // --- Recursive Boolean Orchestrators ---
 
     static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open, bool stamp = false) {
-        if (!s.is_solid() && !s.is_gap()) return;
+        if (!s.is_real() && !s.is_gap()) return;
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
@@ -632,7 +632,7 @@ struct Engine {
     }
 
     static void recursive_union(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
-        if (!s.is_solid() && !s.is_gap()) return;
+        if (!s.is_real() && !s.is_gap()) return;
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 
@@ -700,7 +700,7 @@ struct Engine {
     }
 
     static void recursive_intersect(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
-        if (!s.is_solid() && !s.is_gap()) return;
+        if (!s.is_real() && !s.is_gap()) return;
         Matrix subject_world_tf = parent_tf * s.tf;
         Matrix subject_world_inv = subject_world_tf.inverse();
 

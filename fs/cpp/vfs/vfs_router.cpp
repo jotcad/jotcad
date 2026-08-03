@@ -75,7 +75,7 @@ VFSNode::Config VFSNode::Config::load_from_env() {
     if (const char* env_storage = std::getenv("JOT_STORAGE_DIR")) {
         cfg.storage_dir = env_storage;
     } else {
-        cfg.storage_dir = ".vfs_storage_" + cfg.id;
+        cfg.storage_dir = ".vfs_storage/" + cfg.id;
     }
 
     return cfg;
@@ -83,7 +83,7 @@ VFSNode::Config VFSNode::Config::load_from_env() {
 
 VFSNode::VFSNode(const Config& config) : config_(config), server_ptr_(nullptr), max_concurrent_ops_(config.max_concurrent_ops) {
     if (config_.storage_dir.empty()) {
-        config_.storage_dir = ".vfs_storage_" + config_.id;
+        config_.storage_dir = ".vfs_storage/" + config_.id;
     }
     std::filesystem::create_directories(config_.storage_dir);
 

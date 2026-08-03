@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    config.storage_dir = (argc > 2) ? argv[2] : ".vfs_storage_" + config.id;
+    config.storage_dir = (argc > 2) ? argv[2] : ".vfs_storage/" + config.id;
 
     fs::VFSNode node(config);
     global_node = &node;

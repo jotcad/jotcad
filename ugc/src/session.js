@@ -12,6 +12,175 @@ function normalizeId(id) {
   return JSON.stringify(id);
 }
 
+// Helper to format expressions recursively based on max line length (default 80 characters)
+function formatExpression(expr, indentLevel = 0, maxLen = 80, baseSpaces = null) {
+  const currentIndent = baseSpaces !== null ? ' '.repeat(baseSpaces) : '  '.repeat(indentLevel);
+  
+  // 1. Try horizontal layout first
+  const horizontal = expr.replace(/\s+/g, ' ').trim();
+  if (currentIndent.length + horizontal.length <= maxLen) {
+    return horizontal;
+  }
+
+  // 2. If it exceeds maxLen, find top-level dots/arrows to split
+  const splits = [];
+  let inString = false;
+  let stringChar = null;
+  let inBracket = 0;
+  let inParens = 0;
+
+  for (let i = 0; i < expr.length; i++) {
+    const char = expr[i];
+    if ((char === '"' || char === "'" || char === '`') && expr[i - 1] !== '\\') {
+      if (!inString) {
+        inString = true;
+        stringChar = char;
+      } else if (char === stringChar) {
+        inString = false;
+        stringChar = null;
+      }
+    }
+    if (inString) continue;
+
+    if (char === '[') inBracket++;
+    if (char === ']') inBracket--;
+    if (char === '(') inParens++;
+    if (char === ')') inParens--;
+
+    if (inBracket === 0 && inParens === 0) {
+      if (char === '.') {
+        const nextChar = expr[i + 1];
+        const isDigit = nextChar >= '0' && nextChar <= '9';
+        if (!isDigit) {
+          splits.push({ index: i, type: 'dot' });
+        }
+      } else if (char === '-' && expr[i + 1] === '>') {
+        splits.push({ index: i, type: 'arrow' });
+        i++; // skip '>'
+      }
+    }
+  }
+
+  if (splits.length === 0) {
+    // No top-level splits, but exceeds maxLen. Check if it has brackets/parens we can format inside.
+    const firstParen = expr.indexOf('(');
+    const lastParen = expr.lastIndexOf(')');
+    if (firstParen !== -1 && lastParen > firstParen) {
+      const name = expr.slice(0, firstParen).trim();
+      const argsStr = expr.slice(firstParen + 1, lastParen).trim();
+      const trailing = expr.slice(lastParen + 1);
+      
+      const argOffset = (baseSpaces !== null ? baseSpaces : indentLevel * 2) + firstParen + 1;
+      const formattedArgs = formatExpression(argsStr, indentLevel + 1, maxLen, argOffset + 2);
+      return `${name}(${formattedArgs})${trailing}`;
+    }
+    return horizontal;
+  }
+
+  // Split into segments based on splits
+  const segments = [];
+  let lastIdx = 0;
+  for (const s of splits) {
+    segments.push(expr.slice(lastIdx, s.index).trim());
+    lastIdx = s.index + (s.type === 'dot' ? 1 : 2);
+  }
+  segments.push(expr.slice(lastIdx).trim());
+
+  // Format each segment recursively
+  const formattedSegments = segments.map((seg, idx) => {
+    const firstParen = seg.indexOf('(');
+    const lastParen = seg.lastIndexOf(')');
+    if (firstParen !== -1 && lastParen > firstParen) {
+      const name = seg.slice(0, firstParen).trim();
+      const argsStr = seg.slice(firstParen + 1, lastParen).trim();
+      const trailing = seg.slice(lastParen + 1);
+      
+      let argOffset;
+      if (idx === 0) {
+        argOffset = (baseSpaces !== null ? baseSpaces : indentLevel * 2) + firstParen + 1;
+      } else {
+        const prevSplit = splits[idx - 1];
+        const indentSpaces = baseSpaces !== null ? baseSpaces : (indentLevel + 1) * 2;
+        const prefixLen = indentSpaces + (prevSplit.type === 'dot' ? 1 : 3) + name.length + 1;
+        argOffset = prefixLen;
+      }
+      
+      const formattedArgs = formatExpression(argsStr, indentLevel + 1, maxLen, argOffset + 2);
+      return `${name}(${formattedArgs})${trailing}`;
+    }
+    return seg;
+  });
+
+  // Assemble vertically
+  let result = formattedSegments[0];
+  const nextIndent = baseSpaces !== null ? ' '.repeat(baseSpaces) : '  '.repeat(indentLevel + 1);
+  for (let i = 1; i < formattedSegments.length; i++) {
+    const splitType = splits[i - 1].type;
+    if (splitType === 'dot') {
+      result += `\n${nextIndent}.${formattedSegments[i]}`;
+    } else {
+      result += `\n${nextIndent}-> ${formattedSegments[i]}`;
+    }
+  }
+  return result;
+}
+
+// Helper to prettify JOT scripts for rendering in the session viewer
+function formatJotCode(code, maxLen = 60) {
+  // First, split into individual statements (preserving strings/brackets)
+  const statements = [];
+  let currentStmt = '';
+  let inString = false;
+  let stringChar = null;
+  let inBracket = 0;
+  let inParens = 0;
+
+  for (let i = 0; i < code.length; i++) {
+    const char = code[i];
+    
+    if ((char === '"' || char === "'" || char === '`') && code[i - 1] !== '\\') {
+      if (!inString) {
+        inString = true;
+        stringChar = char;
+      } else if (char === stringChar) {
+        inString = false;
+        stringChar = null;
+      }
+    }
+
+    currentStmt += char;
+
+    if (inString) continue;
+
+    if (char === '[') inBracket++;
+    if (char === ']') inBracket--;
+    if (char === '(') inParens++;
+    if (char === ')') inParens--;
+
+    if (char === ';') {
+      if (inBracket === 0 && inParens === 0) {
+        statements.push(currentStmt.trim());
+        currentStmt = '';
+        if (code[i + 1] === ' ') i++;
+      }
+    }
+  }
+  if (currentStmt.trim()) {
+    statements.push(currentStmt.trim());
+  }
+
+  // Format each statement
+  const formattedStatements = statements.map(stmt => {
+    const hasSemicolon = stmt.endsWith(';');
+    const cleanStmt = hasSemicolon ? stmt.slice(0, -1).trim() : stmt;
+    
+    const formatted = formatExpression(cleanStmt, 0, maxLen);
+    return hasSemicolon ? formatted + ';' : formatted;
+  });
+
+  return formattedStatements.join('\n\n');
+}
+
 // Ported packZFS shape packaging logic from ux/src/lib/render/GeometryDecoder.js
 async function packZFS(vfs, shape) {
   const assets = new Map();
@@ -130,7 +299,7 @@ export class UGCSession {
 
     // 2. Save the source script copy
     const scriptPath = path.join(snapshotDir, 'script.jot');
-    fs.writeFileSync(scriptPath, scriptContent);
+    fs.writeFileSync(scriptPath, formatJotCode(scriptContent));
 
     // 3. Construct dynamic outputs schema matching required ports
     const schema = {

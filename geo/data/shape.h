@@ -66,9 +66,8 @@ struct Shape {
         return role() == "mark";
     }
 
-    bool is_solid() const {
-        std::string r = role();
-        return r == "" || r == "solid";
+    bool is_real() const {
+        return role() == "";
     }
 
     double opacity() const {

@@ -12,9 +12,10 @@ struct ObjOp : P {
     static constexpr const char* path = "jot/obj";
 
     static void walk(fs::VFSNode* vfs, const Shape& shape, OBJWriter& writer) {
+        if (!shape.is_real()) return;
         Matrix current_tf = shape.tf;
         
-        if (shape.geometry.has_value() && !shape.is_gap()) {
+        if (shape.geometry.has_value()) {
             try {
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
                 geo.apply_tf(current_tf);

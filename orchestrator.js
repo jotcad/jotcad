@@ -46,78 +46,78 @@ const findOpsNode = (map) => {
  */
 export const PROFILES = {
   'live/standard': {
-    storagePrefix: '.vfs_storage_live_',
+    storagePrefix: '.vfs_storage/live_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9100, websocket_port: 10100, multicast: false },
-      ...getSplitOpsComponents(9100, 14500, '.vfs_storage_live_', 'live_standard'),
+      ...getSplitOpsComponents(9100, 14500, '.vfs_storage/live_', 'live_standard'),
       export: { type: 'export', protocol: 'https', port: 9102, vfs_id: 'live_standard_export', neighbors: ['http://127.0.0.1:9100'] },
       ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live', gateway_port: 9100 }
     }
   },
   'test/standard': {
-    storagePrefix: '.vfs_storage_test_',
+    storagePrefix: '.vfs_storage/test_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200, websocket_port: 10200, multicast: false },
-      ...getSplitOpsComponents(9200, 17430, '.vfs_storage_test_', 'test_standard'),
+      ...getSplitOpsComponents(9200, 17430, '.vfs_storage/test_', 'test_standard'),
       export: { type: 'export', protocol: 'https', port: 9202, vfs_id: 'test_standard_export', neighbors: ['http://127.0.0.1:9200'] },
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test', gateway_port: 9200 }
     }
   },
   'live/esp32': {
-    storagePrefix: '.vfs_storage_esp32_live_',
+    storagePrefix: '.vfs_storage/esp32_live_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9100, websocket_port: 10100, multicast: false },
-      ...getSplitOpsComponents(9100, 14500, '.vfs_storage_esp32_live_', 'live_esp32'),
+      ...getSplitOpsComponents(9100, 14500, '.vfs_storage/esp32_live_', 'live_esp32'),
       export:     { type: 'export',     protocol: 'https', port: 9102, vfs_id: 'live_esp32_export', neighbors: ['http://127.0.0.1:9100'] },
       subscriber: { type: 'subscriber', protocol: 'http',  port: 11225, env: { NEIGHBORS: 'http://127.0.0.1:9100' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3030, dist: 'ux/dist/live', gateway_port: 9100 }
     }
   },
   'test/esp32': {
-    storagePrefix: '.vfs_storage_esp32_test_',
+    storagePrefix: '.vfs_storage/esp32_test_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200, websocket_port: 10200, multicast: false },
-      ...getSplitOpsComponents(9200, 17430, '.vfs_storage_esp32_test_', 'test_esp32'),
+      ...getSplitOpsComponents(9200, 17430, '.vfs_storage/esp32_test_', 'test_esp32'),
       export:     { type: 'export',     protocol: 'https', port: 9202, vfs_id: 'test_esp32_export', neighbors: ['http://127.0.0.1:9200'] },
       subscriber: { type: 'subscriber', protocol: 'http',  port: 11226, env: { NEIGHBORS: 'http://127.0.0.1:9200' } },
       ux:         { type: 'ux',         protocol: 'https', port: 3131, dist: 'ux/dist/test', gateway_port: 9200 }
     }
   },
   'test/sovereign_js': {
-    storagePrefix: '.vfs_storage_sovereign_js_',
+    storagePrefix: '.vfs_storage/sovereign_js_',
     gateway: 'node_a',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9400, websocket_port: 10400, multicast: false },
       node_a: { type: 'node_a', protocol: 'http', port: 8181, env: { NEIGHBORS: 'http://127.0.0.1:9400' } },
       node_b: { type: 'node_b', protocol: 'http', port: 8182, env: { NEIGHBORS: 'http://127.0.0.1:9400' } },
-      ...getSplitOpsComponents(9400, 18183, '.vfs_storage_sovereign_js_', 'test_sovereign_js')
+      ...getSplitOpsComponents(9400, 18183, '.vfs_storage/sovereign_js_', 'test_sovereign_js')
     }
   },
   'test/complex_topology': {
-    storagePrefix: '.vfs_storage_complex_topo_',
+    storagePrefix: '.vfs_storage/complex_topo_',
     gateway: 'node_js',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9300, websocket_port: 10300, multicast: false },
-      cpp_node_1: { type: 'vfs_cpp', protocol: 'http', port: 19591, storage: '.vfs_storage_complex_topo_cpp_node_1', peer_id: 'test_complex_topology_cpp_node_1', neighbors: ['tcp/127.0.0.1:9300'] },
-      cpp_node_2: { type: 'vfs_cpp', protocol: 'http', port: 19592, storage: '.vfs_storage_complex_topo_cpp_node_2', peer_id: 'test_complex_topology_cpp_node_2', neighbors: ['tcp/127.0.0.1:9300'] },
+      cpp_node_1: { type: 'vfs_cpp', protocol: 'http', port: 19591, storage: '.vfs_storage/complex_topo_cpp_node_1', peer_id: 'test_complex_topology_cpp_node_1', neighbors: ['tcp/127.0.0.1:9300'] },
+      cpp_node_2: { type: 'vfs_cpp', protocol: 'http', port: 19592, storage: '.vfs_storage/complex_topo_cpp_node_2', peer_id: 'test_complex_topology_cpp_node_2', neighbors: ['tcp/127.0.0.1:9300'] },
       node_js:    { type: 'node_a',  protocol: 'http', port: 19593, env: { NEIGHBORS: 'http://127.0.0.1:9300' } }
     }
   },
   'live/direct_cpp': {
-    storagePrefix: '.vfs_storage_direct_cpp_live_',
+    storagePrefix: '.vfs_storage/direct_cpp_live_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9500, websocket_port: 10500, multicast: false },
-      ...getSplitOpsComponents(9500, 18500, '.vfs_storage_direct_cpp_live_', 'live_direct_cpp'),
+      ...getSplitOpsComponents(9500, 18500, '.vfs_storage/direct_cpp_live_', 'live_direct_cpp'),
       ux:  { type: 'ux',  protocol: 'https', port: 3232, dist: 'ux/dist/test', gateway_port: 9500 }
     }
   },
   'live/webcam': {
-    storagePrefix: '.vfs_storage_webcam_live_',
+    storagePrefix: '.vfs_storage/webcam_live_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9100, websocket_port: 10100, multicast: false },
@@ -125,7 +125,7 @@ export const PROFILES = {
     }
   },
   'test/webcam': {
-    storagePrefix: '.vfs_storage_webcam_test_',
+    storagePrefix: '.vfs_storage/webcam_test_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9200, websocket_port: 10200, multicast: false },
@@ -133,11 +133,11 @@ export const PROFILES = {
     }
   },
   'prod': {
-    storagePrefix: '.vfs_storage_prod_',
+    storagePrefix: '.vfs_storage/prod_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9000, websocket_port: 10000, multicast: false },
-      ...getSplitOpsComponents(9000, 9091, '.vfs_storage_prod_', 'prod'),
+      ...getSplitOpsComponents(9000, 9091, '.vfs_storage/prod_', 'prod'),
       export: { type: 'export', protocol: 'https', port: 9092, vfs_id: 'prod_export', neighbors: ['http://127.0.0.1:9000'] },
       ux:     { type: 'ux',     protocol: 'https', port: 3031, dist: 'ux/dist/prod', gateway_port: 9000 }
     }
@@ -158,7 +158,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
   if (options.basePort && profileKey === 'test/standard') {
     const basePort = options.basePort;
     config = {
-      storagePrefix: `.vfs_storage_test_${basePort}_`,
+      storagePrefix: `.vfs_storage/test_${basePort}_`,
       gateway: 'zenoh_router',
       components: {
         zenoh_router: { type: 'zenoh_router', port: basePort },
@@ -206,10 +206,22 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       info(`[Orchestrator] Cleaning up ports: ${portList}`);
       execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
     }
-    for (const [id, cfg] of Object.entries(componentMap)) {
-      if (cfg.port) {
-        execSync(`rm -rf ${storagePrefix}${id} || true`);
+    // Native VFS cache cleanup
+    const vfsStorageDir = '.vfs_storage';
+    if (fs.existsSync(vfsStorageDir)) {
+      try {
+        const files = fs.readdirSync(vfsStorageDir);
+        const prefixToken = storagePrefix.split('/').pop(); // Extract prefix (e.g., 'live_')
+        for (const file of files) {
+          if (prefixToken && file.startsWith(prefixToken)) {
+            fs.rmSync(path.join(vfsStorageDir, file), { recursive: true, force: true });
+          }
+        }
+      } catch (err) {
+        warn(`[Orchestrator] Error reading cache directory: ${err.message}`);
       }
+      fs.rmSync(path.join(vfsStorageDir, 'cli'), { recursive: true, force: true });
+      fs.rmSync(path.join(vfsStorageDir, 'scratch-client'), { recursive: true, force: true });
     }
     execSync('sleep 1');
   } catch (e) {}

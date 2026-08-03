@@ -130,7 +130,7 @@ export class VFS extends CoreVFS {
     const vfsId = id || crypto.randomUUID();
     super({
       id: vfsId,
-      storage: storage || new DiskStorage(path.resolve('.vfs_storage_' + vfsId)),
+      storage: storage || new DiskStorage(path.resolve('.vfs_storage/' + vfsId)),
     });
   }
 

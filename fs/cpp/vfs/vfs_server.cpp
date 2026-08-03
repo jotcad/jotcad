@@ -11,6 +11,13 @@
 #include <list>
 #include <map>
 #include <fstream>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <cstring>
+#include <cerrno>
+
 
 namespace fs {
 
@@ -387,7 +394,40 @@ inline bool file_exists_helper(const std::string& name) {
     return f.good();
 }
 
+static bool is_port_available(int port) {
+    int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return false;
+    }
+    
+    int opt = 1;
+    ::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    
+    struct sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons(port);
+    
+    bool available = true;
+    if (::bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        available = false;
+    }
+    
+    ::close(sock);
+    return available;
+}
+
 void VFSNode::listen() {
+    if (!is_port_available(config_.port)) {
+        std::cerr << "[VFSNode " << config_.id << "] CRITICAL ERROR: Port " << config_.port << " is already in use! Fail fast to prevent silent hang." << std::endl;
+        return;
+    }
+    if (!is_port_available(config_.port + 1000)) {
+        std::cerr << "[VFSNode " << config_.id << "] CRITICAL ERROR: WebSocket port " << (config_.port + 1000) << " is already in use! Fail fast to prevent silent hang." << std::endl;
+        return;
+    }
+
     std::cout << "[VFSNode " << config_.id << "] Initializing Zenoh Session..." << std::endl;
     
     std::string cert_path = "";
@@ -495,8 +535,10 @@ void VFSNode::listen() {
     server_ptr_ = state;
 
     // 1. Declare operator fulfillment queryables for all registered handlers
+    std::cout << "[VFSNode " << config_.id << "] Declaring " << handlers_.size() << " operator queryables..." << std::endl;
     for (const auto& [op_path, handler] : handlers_) {
         std::string key = get_machine_prefix() + "/jot/vfs/op/" + op_path;
+        std::cout << "[VFSNode " << config_.id << "]   Declaring queryable: " << key << std::endl;
         state->queryable_keys.push_back(key);
         const std::string& persistent_key = state->queryable_keys.back();
 
@@ -513,9 +555,11 @@ void VFSNode::listen() {
         } else {
             state->queryable_ops.push_back(queryable);
         }
+        std::cout << "[VFSNode " << config_.id << "]   Queryable " << key << " declared successfully." << std::endl;
     }
 
     // 2. Declare content (CID) queryable on: jot/vfs/cid/**
+    std::cout << "[VFSNode " << config_.id << "] Declaring content CID queryable..." << std::endl;
     z_view_keyexpr_t ke_cid;
     z_view_keyexpr_from_str(&ke_cid, "jot/vfs/cid/**");
     z_owned_closure_query_t cb_cid;
@@ -526,8 +570,10 @@ void VFSNode::listen() {
     if (z_declare_queryable(z_loan(state->session), &state->queryable_cid, z_loan(ke_cid), z_move(cb_cid), &opts_cid) != Z_OK) {
         std::cerr << "[VFSNode " << config_.id << "] Failed declaring content queryable!" << std::endl;
     }
+    std::cout << "[VFSNode " << config_.id << "] Content CID queryable declared successfully." << std::endl;
 
     // 3. Declare catalog queryable on: jot/vfs/catalog
+    std::cout << "[VFSNode " << config_.id << "] Declaring catalog queryable..." << std::endl;
     z_view_keyexpr_t ke_cat;
     z_view_keyexpr_from_str(&ke_cat, "jot/vfs/catalog");
     z_owned_closure_query_t cb_cat;
@@ -538,10 +584,13 @@ void VFSNode::listen() {
     if (z_declare_queryable(z_loan(state->session), &state->queryable_catalog, z_loan(ke_cat), z_move(cb_cat), &opts_cat) != Z_OK) {
         std::cerr << "[VFSNode " << config_.id << "] Failed declaring catalog queryable!" << std::endl;
     }
+    std::cout << "[VFSNode " << config_.id << "] Catalog queryable declared successfully." << std::endl;
 
     // 4. Declare subscribers for all registered callbacks
+    std::cout << "[VFSNode " << config_.id << "] Declaring " << subscriptions_.size() << " subscriber callbacks..." << std::endl;
     for (const auto& [sub_path, callback] : subscriptions_) {
         std::string key = "*/jot/vfs/pub/" + sub_path;
+        std::cout << "[VFSNode " << config_.id << "]   Declaring subscriber for: " << key << std::endl;
         state->queryable_keys.push_back(key);
         const std::string& persistent_key = state->queryable_keys.back();
 
@@ -577,9 +626,12 @@ void VFSNode::listen() {
             std::cerr << "[VFSNode " << config_.id << "] Failed declaring subscriber on startup for: " << persistent_key << std::endl;
             delete cb_ctx;
         }
+        std::cout << "[VFSNode " << config_.id << "]   Subscriber " << key << " declared successfully." << std::endl;
     }
+    std::cout << "[VFSNode " << config_.id << "] Subscriber callbacks declared successfully." << std::endl;
 
     // Subscribe to system metrics of all peers in the mesh
+    std::cout << "[VFSNode " << config_.id << "] Declaring metrics subscriber..." << std::endl;
     {
         std::string metrics_key = "*/jot/vfs/pub/jot/vfs/metrics/system/**";
         z_view_keyexpr_t ke_metrics;
@@ -590,7 +642,7 @@ void VFSNode::listen() {
                 std::string provider = payload.value("provider", "");
                 if (!provider.empty() && provider != config_.id) {
                     std::lock_guard<std::mutex> lock(peers_mutex_);
-                    PeerInfo& pi = peers_[provider];
+                     PeerInfo& pi = peers_[provider];
                     pi.id = provider;
                     pi.last_seen_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 }
@@ -623,6 +675,7 @@ void VFSNode::listen() {
             delete metrics_cb_ctx;
         }
     }
+    std::cout << "[VFSNode " << config_.id << "] Metrics subscriber declared successfully." << std::endl;
 
     std::cout << "[VFSNode " << config_.id << "] Zenoh listener successfully started on port " << config_.port << std::endl;
 
