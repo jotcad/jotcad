@@ -203,6 +203,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      overflow: hidden;
     }
 
     #canvas3d {
@@ -216,6 +217,14 @@
       height: 100%;
       object-fit: contain;
       padding: 2rem;
+      transform-origin: center center;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    #img-viewport:active {
+      cursor: grabbing;
     }
 
     #text-viewport {
@@ -568,6 +577,126 @@
     const imgViewport = document.getElementById('img-viewport');
     const textViewport = document.getElementById('text-viewport');
 
+    function initPanZoom(img) {
+      let scale = 1;
+      let pointX = 0;
+      let pointY = 0;
+      let startX = 0;
+      let startY = 0;
+      let isDragging = false;
+      let touchStartDistance = 0;
+      let touchStartScale = 1;
+
+      function updateTransform(transition = false) {
+        img.style.transition = transition ? 'transform 0.15s ease-out' : 'none';
+        img.style.transform = `translate(${pointX}px, ${pointY}px) scale(${scale})`;
+      }
+
+      img.resetZoom = function() {
+        scale = 1;
+        pointX = 0;
+        pointY = 0;
+        updateTransform(true);
+      };
+
+      img.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        isDragging = true;
+        startX = e.clientX - pointX;
+        startY = e.clientY - pointY;
+        img.style.cursor = 'grabbing';
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        pointX = e.clientX - startX;
+        pointY = e.clientY - startY;
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isDragging) {
+          isDragging = false;
+          img.style.cursor = 'grab';
+        }
+      });
+
+      img.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomFactor = 0.1;
+        let nextScale = scale + (e.deltaY < 0 ? zoomFactor : -zoomFactor);
+        nextScale = Math.min(Math.max(1, nextScale), 10);
+
+        if (nextScale !== scale) {
+          const rect = img.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left - rect.width / 2;
+          const mouseY = e.clientY - rect.top - rect.height / 2;
+
+          pointX -= mouseX * (nextScale / scale - 1);
+          pointY -= mouseY * (nextScale / scale - 1);
+          scale = nextScale;
+
+          if (scale === 1) {
+            pointX = 0;
+            pointY = 0;
+          }
+          updateTransform(true);
+        }
+      }, { passive: false });
+
+      img.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX - pointX;
+          startY = e.touches[0].clientY - pointY;
+        } else if (e.touches.length === 2) {
+          isDragging = false;
+          touchStartDistance = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          touchStartScale = scale;
+        }
+      });
+
+      img.addEventListener('touchmove', (e) => {
+        if (isDragging && e.touches.length === 1) {
+          e.preventDefault();
+          pointX = e.touches[0].clientX - startX;
+          pointY = e.touches[0].clientY - startY;
+          updateTransform();
+        } else if (e.touches.length === 2) {
+          e.preventDefault();
+          const dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          const factor = dist / touchStartDistance;
+          let nextScale = touchStartScale * factor;
+          nextScale = Math.min(Math.max(1, nextScale), 10);
+
+          if (nextScale !== scale) {
+            scale = nextScale;
+            if (scale === 1) {
+              pointX = 0;
+              pointY = 0;
+            }
+            updateTransform();
+          }
+        }
+      }, { passive: false });
+
+      img.addEventListener('touchend', () => {
+        isDragging = false;
+      });
+
+      img.addEventListener('dblclick', () => {
+        img.resetZoom();
+      });
+    }
+
+    initPanZoom(imgViewport);
+
     // 1. URL Hash Router & Navigation
     function showView(viewId) {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -792,6 +921,9 @@
       else if (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg')) {
         imgViewport.style.display = 'block';
         imgViewport.src = fileUrl;
+        if (typeof imgViewport.resetZoom === 'function') {
+          imgViewport.resetZoom();
+        }
       } 
       // Text/JSON/Jot data fallback
       else {
