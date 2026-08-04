@@ -5,7 +5,7 @@
   "repository": "https://github.com/jsxcad/JSxCAD",
   "type": "module",
   "scripts": {
-    "start:dev": "node orchestrator.js",
+    "start:dev": "node orchestrator.js dev/standard",
     "start:test": "node test_orchestrator.js",
     "setup:ha": "./ha/setup.sh",
     "start:ha": "./ha/start.sh",

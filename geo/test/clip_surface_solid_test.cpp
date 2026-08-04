@@ -14,8 +14,8 @@ int main() {
     Selector box_addr = Selector{"jot/Box", {{"width", 100.0}, {"height", 100.0}}}.with_output("$out");
     Processor::execute(&vfs, box_addr);
 
-    // 2. Create an Orb (Solid) with diameter 50
-    Selector orb_addr = Selector{"jot/Orb", {{"diameter", 50.0}}}.with_output("$out");
+    // 2. Create an Orb (Solid) with width 50
+    Selector orb_addr = Selector{"jot/Orb", {{"width", 50.0}}}.with_output("$out");
     Processor::execute(&vfs, orb_addr);
 
     // 3. Perform Clip: Box clipped by Orb

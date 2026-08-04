@@ -8,7 +8,8 @@
 #include "rs/ruled_surfaces_strategy_linear_slg.h"
 #include "rs/ruled_surfaces_strategy_linear_all.h"
 #include "rs/ruled_surfaces_strategy_seam_search_all.h"
-#include "rs/ruled_surfaces_join_strategy_naive.h"
+#include "rs/ruled_surfaces_join_strategy_centroid.h"
+#include "rs/ruled_surfaces_join_strategy_multijoin.h"
 #include "rs/ruled_surfaces_sa_stopping_rules.h"
 #include "boolean/engine.h"
 #include <CGAL/Surface_mesh.h>
@@ -80,9 +81,31 @@ struct RuleOp : P {
         return out;
     }
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& a, const Shape& b) {
+    static Geometry collect_merged_geometry(fs::VFSNode* vfs, const Shape& s) {
+        Geometry out;
+        s.visit([&](const Shape& node, const Matrix& world_tf) {
+            if (!node.is_real()) return;
+            if (!node.geometry.has_value()) return;
+
+            Geometry g = vfs->read<Geometry>(node.geometry.value());
+            if (!g.faces.empty()) {
+                g.apply_tf(world_tf);
+                out = merge_and_weld(out, g);
+            }
+        });
+        return out;
+    }
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& a, const Shape& b, bool capped = true) {
+        auto t_start = std::chrono::high_resolution_clock::now();
+
+        auto t0 = std::chrono::high_resolution_clock::now();
         std::vector<ruled_surfaces::PolygonalChain> p_chains = extract_chains(vfs, a);
         std::vector<ruled_surfaces::PolygonalChain> q_chains = extract_chains(vfs, b);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        std::cout << "[PROFILE RuleOp] extract_chains took: " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() 
+                  << " ms" << std::endl;
 
         std::cout << "[DEBUG RuleOp] p_chains size: " << p_chains.size() << ", q_chains size: " << q_chains.size() << std::endl;
         for (size_t i = 0; i < p_chains.size(); ++i) {
@@ -109,49 +132,54 @@ struct RuleOp : P {
         ruled_surfaces::SolutionStats::Status status;
         using TriangulationStrategy = ruled_surfaces::LinearSearchSlg<ruled_surfaces::MinArea>;
         
+        auto t2 = std::chrono::high_resolution_clock::now();
         if (all_closed) {
             using SeamStrategy = ruled_surfaces::SeamSearchAll<TriangulationStrategy>;
-            status = ruled_surfaces::NaiveJoinStrategy<SeamStrategy>::generate(
+            status = ruled_surfaces::MultiJoinStrategy<SeamStrategy>::generate(
                 p_chains, q_chains, objective, 1, &stats, &result_mesh);
         } else {
-            status = ruled_surfaces::NaiveJoinStrategy<TriangulationStrategy>::generate(
+            status = ruled_surfaces::MultiJoinStrategy<TriangulationStrategy>::generate(
                 p_chains, q_chains, objective, 1, &stats, &result_mesh);
         }
+        auto t3 = std::chrono::high_resolution_clock::now();
+        std::cout << "[PROFILE RuleOp] MultiJoinStrategy::generate took: " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() 
+                  << " ms" << std::endl;
 
-        std::cout << "[DEBUG RuleOp] NaiveJoinStrategy status: " << status << ", result_mesh faces: " << result_mesh.number_of_faces() << std::endl;
+        std::cout << "[DEBUG RuleOp] MultiJoinStrategy status: " << status << ", result_mesh faces: " << result_mesh.number_of_faces() << std::endl;
 
         if (status != ruled_surfaces::SolutionStats::OK) {
             vfs->write(fulfilling.with_output("$out"), a);
             return;
         }
 
+        auto t4 = std::chrono::high_resolution_clock::now();
         Geometry res = mesh_to_geometry(result_mesh);
+        auto t5 = std::chrono::high_resolution_clock::now();
+        std::cout << "[PROFILE RuleOp] mesh_to_geometry took: " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t5 - t4).count() 
+                  << " ms" << std::endl;
         
-        Geometry g_a;
-        if (a.geometry.has_value()) {
-            g_a = vfs->read<Geometry>(a.geometry.value());
-            g_a.apply_tf(a.tf);
-        }
-        Geometry g_b;
-        if (b.geometry.has_value()) {
-            g_b = vfs->read<Geometry>(b.geometry.value());
-            g_b.apply_tf(b.tf);
-        }
-
-        std::cout << "[DEBUG RuleOp] res vertices: " << res.vertices.size() << ", faces: " << res.faces.size() << std::endl;
-        std::cout << "[DEBUG RuleOp] g_a vertices: " << g_a.vertices.size() << ", faces: " << g_a.faces.size() << std::endl;
-        std::cout << "[DEBUG RuleOp] g_b vertices: " << g_b.vertices.size() << ", faces: " << g_b.faces.size() << std::endl;
-
+        auto t6 = std::chrono::high_resolution_clock::now();
         Geometry final_geo = res;
-        if (a.geometry.has_value()) {
-            final_geo = merge_and_weld(final_geo, g_a);
+        if (capped) {
+            Geometry g_a = collect_merged_geometry(vfs, a);
+            Geometry g_b = collect_merged_geometry(vfs, b);
+            if (!g_a.faces.empty() || !g_a.vertices.empty()) {
+                final_geo = merge_and_weld(final_geo, g_a);
+            }
+            if (!g_b.faces.empty() || !g_b.vertices.empty()) {
+                final_geo = merge_and_weld(final_geo, g_b);
+            }
         }
-        if (b.geometry.has_value()) {
-            final_geo = merge_and_weld(final_geo, g_b);
-        }
+        auto t7 = std::chrono::high_resolution_clock::now();
+        std::cout << "[PROFILE RuleOp] merge_and_weld took: " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t7 - t6).count() 
+                  << " ms" << std::endl;
 
         std::cout << "[DEBUG RuleOp] final_geo (before orient) vertices: " << final_geo.vertices.size() << ", faces: " << final_geo.faces.size() << ", triangles: " << final_geo.triangles.size() << std::endl;
 
+        auto t8 = std::chrono::high_resolution_clock::now();
         try {
             boolean::Surface_mesh mesh = boolean::Engine::geometry_to_mesh(final_geo);
             std::cout << "[DEBUG RuleOp] converted Surface_mesh vertices: " << mesh.number_of_vertices() << ", faces: " << mesh.number_of_faces() << ", closed: " << CGAL::is_closed(mesh) << std::endl;
@@ -164,14 +192,27 @@ struct RuleOp : P {
         } catch (...) {
             std::cout << "[DEBUG RuleOp] Unknown mesh conversion exception" << std::endl;
         }
+        auto t9 = std::chrono::high_resolution_clock::now();
+        std::cout << "[PROFILE RuleOp] mesh conversion/orientation took: " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t9 - t8).count() 
+                  << " ms" << std::endl;
 
         std::cout << "[DEBUG RuleOp] final_geo (after orient) vertices: " << final_geo.vertices.size() << ", faces: " << final_geo.faces.size() << ", triangles: " << final_geo.triangles.size() << std::endl;
 
+        auto t10 = std::chrono::high_resolution_clock::now();
         Shape out;
         final_geo.triangulate();
         out.geometry = vfs->materialize<Geometry>(final_geo);
-        out.add_tag("type", "ruled_surface");
+        out.add_tag("type", capped ? "closed" : "ruled_surface");
         vfs->write(fulfilling.with_output("$out"), out);
+        auto t11 = std::chrono::high_resolution_clock::now();
+        std::cout << "[PROFILE RuleOp] triangulate & materialize took: " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t11 - t10).count() 
+                  << " ms" << std::endl;
+
+        std::cout << "[PROFILE RuleOp] Total execute time: " 
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t11 - t_start).count() 
+                  << " ms" << std::endl;
     }
 
     static std::vector<ruled_surfaces::PolygonalChain> extract_mesh_boundary_chains(const Geometry& geo) {
@@ -202,14 +243,16 @@ struct RuleOp : P {
 
     static std::vector<ruled_surfaces::PolygonalChain> extract_chains(fs::VFSNode* vfs, const Shape& s) {
         std::vector<ruled_surfaces::PolygonalChain> chains;
-        Matrix tf = s.tf;
+        s.visit([&](const Shape& node, const Matrix& world_tf) {
+            if (!node.is_real()) return;
+            if (!node.geometry.has_value()) return;
 
-        if (s.geometry.has_value()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
 
+            std::vector<ruled_surfaces::PolygonalChain> node_chains;
             auto boundary_chains = extract_mesh_boundary_chains(geo);
             if (!boundary_chains.empty()) {
-                chains = boundary_chains;
+                node_chains = boundary_chains;
             } else if (!geo.faces.empty()) {
                 for (const auto& face : geo.faces) {
                     for (const auto& loop : face.loops) {
@@ -222,7 +265,7 @@ struct RuleOp : P {
                         }
                         if (!chain.empty()) {
                             if (chain.front() != chain.back()) chain.push_back(chain.front());
-                            chains.push_back(chain);
+                            node_chains.push_back(chain);
                         }
                     }
                 }
@@ -253,7 +296,7 @@ struct RuleOp : P {
                         prev = curr; curr = next;
                     }
                     if (is_loop && !chain.empty()) chain.push_back(chain.front());
-                    if (chain.size() >= 2) chains.push_back(chain);
+                    if (chain.size() >= 2) node_chains.push_back(chain);
                 };
 
                 for (const auto& [v_idx, neighbors] : adj) {
@@ -264,36 +307,16 @@ struct RuleOp : P {
                 }
             }
 
-            // Transform all extracted chains by the shape's transform tf
-            for (auto& chain : chains) {
+            // Transform all extracted chains by world_tf
+            for (auto& chain : node_chains) {
                 for (auto& pt : chain) {
-                    Point_3 p(pt.x(), pt.y(), pt.z());
-                    Point_3 tp = tf.transform(p);
+                    EK::Point_3 p(pt.x(), pt.y(), pt.z());
+                    EK::Point_3 tp = world_tf.transform(p);
                     pt = ruled_surfaces::PointCgal(CGAL::to_double(tp.x()), CGAL::to_double(tp.y()), CGAL::to_double(tp.z()));
                 }
-            }
-        }
-
-        if (chains.empty() && !s.geometry.has_value() && !s.components.empty()) {
-            ruled_surfaces::PolygonalChain chain;
-            for (const auto& comp : s.components) {
-                Matrix m = tf * comp.tf;
-                Point_3 p = m.t.transform(Point_3(0, 0, 0));
-                chain.push_back(ruled_surfaces::PointCgal(CGAL::to_double(p.x()), CGAL::to_double(p.y()), CGAL::to_double(p.z())));
-            }
-            if (chain.size() >= 3) {
-                if (chain.front() != chain.back()) chain.push_back(chain.front());
                 chains.push_back(chain);
             }
-        }
-
-        for (const auto& comp : s.components) {
-            Shape global_comp = comp;
-            Matrix comp_tf = tf * comp.tf;
-            global_comp.tf = comp_tf;
-            auto comp_chains = extract_chains(vfs, global_comp);
-            chains.insert(chains.end(), comp_chains.begin(), comp_chains.end());
-        }
+        });
         return chains;
     }
 
@@ -317,7 +340,7 @@ struct RuleOp : P {
         return geo;
     }
 
-    static std::vector<std::string> argument_keys() { return {"$a", "$b"}; }
+    static std::vector<std::string> argument_keys() { return {"$a", "$b", "capped"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Rule"},
@@ -325,7 +348,8 @@ struct RuleOp : P {
             {"inputs", nlohmann::json::object()},
             {"arguments", nlohmann::json::array({
                 {{"name", "$a"}, {"type", "jot:shape"}},
-                {{"name", "$b"}, {"type", "jot:shape"}}
+                {{"name", "$b"}, {"type", "jot:shape"}},
+                {{"name", "capped"}, {"type", "jot:bool"}, {"default", true}}
             })},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}}}
@@ -337,7 +361,7 @@ struct RuleOp : P {
 template <typename P = JotVfsProtocol>
 struct RuleMethodOp : RuleOp<P> {
     static constexpr const char* path = "jot/rule";
-    static std::vector<std::string> argument_keys() { return {"$in", "$b"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "$b", "capped"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/rule"},
@@ -346,7 +370,8 @@ struct RuleMethodOp : RuleOp<P> {
                 {"$in", {{"type", "jot:shape"}, {"affiliate", "$out"}}}
             }},
             {"arguments", nlohmann::json::array({
-                {{"name", "$b"}, {"type", "jot:shape"}}
+                {{"name", "$b"}, {"type", "jot:shape"}},
+                {{"name", "capped"}, {"type", "jot:bool"}, {"default", true}}
             })},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}}}
@@ -356,8 +381,8 @@ struct RuleMethodOp : RuleOp<P> {
 };
 
 static void rule_init(fs::VFSNode* vfs) {
-    Processor::register_op<RuleOp<>, Shape, Shape>(vfs, "jot/Rule");
-    Processor::register_op<RuleMethodOp<>, Shape, Shape>(vfs, "jot/rule");
+    Processor::register_op<RuleOp<>, Shape, Shape, bool>(vfs, "jot/Rule");
+    Processor::register_op<RuleMethodOp<>, Shape, Shape, bool>(vfs, "jot/rule");
 }
 
 } // namespace geo

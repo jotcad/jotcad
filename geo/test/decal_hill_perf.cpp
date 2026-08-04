@@ -55,7 +55,7 @@ int main() {
 
     // 3. Create Subject: High-res Orb (Sphere)
     // zag=2.0 on a 30mm orb to keep it manageable but testing performance
-    Selector orb_sel = Selector{"jot/Orb", {{"diameter", 30.0}, {"zag", 2.0}}}.with_output("$out");
+    Selector orb_sel = Selector{"jot/Orb", {{"width", 30.0}, {"zag", 2.0}}}.with_output("$out");
     std::cout << "  - Executing OrbOp (Subject)..." << std::endl;
     Processor::execute(&vfs, orb_sel);
 

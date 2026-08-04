@@ -45,14 +45,14 @@ const findOpsNode = (map) => {
  * Explicit Profiles
  */
 export const PROFILES = {
-  'live/standard': {
-    storagePrefix: '.vfs_storage/live_',
+  'dev/standard': {
+    storagePrefix: '.vfs_storage/dev_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9100, websocket_port: 10100, multicast: false },
-      ...getSplitOpsComponents(9100, 14500, '.vfs_storage/live_', 'live_standard'),
-      export: { type: 'export', protocol: 'https', port: 9102, vfs_id: 'live_standard_export', neighbors: ['http://127.0.0.1:9100'] },
-      ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/live', gateway_port: 9100 }
+      ...getSplitOpsComponents(9100, 14500, '.vfs_storage/dev_', 'dev_standard'),
+      export: { type: 'export', protocol: 'https', port: 9102, vfs_id: 'dev_standard_export', neighbors: ['http://127.0.0.1:9100'] },
+      ux:     { type: 'ux',     protocol: 'https', port: 3030, dist: 'ux/dist/dev', gateway_port: 9100 }
     }
   },
   'test/standard': {
@@ -65,15 +65,15 @@ export const PROFILES = {
       ux:     { type: 'ux',     protocol: 'https', port: 3131, dist: 'ux/dist/test', gateway_port: 9200 }
     }
   },
-  'live/esp32': {
-    storagePrefix: '.vfs_storage/esp32_live_',
+  'dev/esp32': {
+    storagePrefix: '.vfs_storage/esp32_dev_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9100, websocket_port: 10100, multicast: false },
-      ...getSplitOpsComponents(9100, 14500, '.vfs_storage/esp32_live_', 'live_esp32'),
-      export:     { type: 'export',     protocol: 'https', port: 9102, vfs_id: 'live_esp32_export', neighbors: ['http://127.0.0.1:9100'] },
+      ...getSplitOpsComponents(9100, 14500, '.vfs_storage/esp32_dev_', 'dev_esp32'),
+      export:     { type: 'export',     protocol: 'https', port: 9102, vfs_id: 'dev_esp32_export', neighbors: ['http://127.0.0.1:9100'] },
       subscriber: { type: 'subscriber', protocol: 'http',  port: 11225, env: { NEIGHBORS: 'http://127.0.0.1:9100' } },
-      ux:         { type: 'ux',         protocol: 'https', port: 3030, dist: 'ux/dist/live', gateway_port: 9100 }
+      ux:         { type: 'ux',         protocol: 'https', port: 3030, dist: 'ux/dist/dev', gateway_port: 9100 }
     }
   },
   'test/esp32': {
@@ -107,17 +107,17 @@ export const PROFILES = {
       node_js:    { type: 'node_a',  protocol: 'http', port: 19593, env: { NEIGHBORS: 'http://127.0.0.1:9300' } }
     }
   },
-  'live/direct_cpp': {
-    storagePrefix: '.vfs_storage/direct_cpp_live_',
+  'dev/direct_cpp': {
+    storagePrefix: '.vfs_storage/direct_cpp_dev_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9500, websocket_port: 10500, multicast: false },
-      ...getSplitOpsComponents(9500, 18500, '.vfs_storage/direct_cpp_live_', 'live_direct_cpp'),
+      ...getSplitOpsComponents(9500, 18500, '.vfs_storage/direct_cpp_dev_', 'dev_direct_cpp'),
       ux:  { type: 'ux',  protocol: 'https', port: 3232, dist: 'ux/dist/test', gateway_port: 9500 }
     }
   },
-  'live/webcam': {
-    storagePrefix: '.vfs_storage/webcam_live_',
+  'dev/webcam': {
+    storagePrefix: '.vfs_storage/webcam_dev_',
     gateway: 'zenoh_router',
     components: {
       zenoh_router: { type: 'zenoh_router', port: 9100, websocket_port: 10100, multicast: false },
@@ -648,8 +648,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         logLevel = 'DEBUG';
     }
 
-    const profileName = args.find(arg => !arg.startsWith('--')) || 'standard';
-    const profileKey = `${isTest ? 'test' : 'live'}/${profileName}`;
+    const profileKey = args.find(arg => !arg.startsWith('--'));
+    if (!profileKey) {
+        error(`[Orchestrator] Error: Target profile key is mandatory. Specify a profile (e.g., "dev/standard" or "test/standard").`);
+        process.exit(1);
+    }
     
     try {
         const sys = await launchSystem(profileKey, logLevel);

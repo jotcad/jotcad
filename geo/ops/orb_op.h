@@ -19,11 +19,11 @@ template <typename P = JotVfsProtocol>
 struct OrbOp : P {
     static constexpr const char* path = "jot/Orb";
 
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Interval diameter, Interval width, Interval height, Interval depth, double zag_val, std::string method = "geodesic") {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Interval width, Interval height, Interval depth, double zag_val, std::string method = "geodesic") {
         Geometry res;
-        Interval x_range = (width.size() > 0) ? width : diameter;
-        Interval y_range = (height.size() > 0) ? height : diameter;
-        Interval z_range = (depth.size() > 0) ? depth : diameter;
+        Interval x_range = width;
+        Interval y_range = (height.size() > 0) ? height : width;
+        Interval z_range = (depth.size() > 0) ? depth : y_range;
 
         double w = x_range.size();
         double h = y_range.size();
@@ -190,15 +190,14 @@ struct OrbOp : P {
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
-    static std::vector<std::string> argument_keys() { return {"diameter", "width", "height", "depth", "zag", "method"}; }
+    static std::vector<std::string> argument_keys() { return {"width", "height", "depth", "zag", "method"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Orb"},
             {"description", "Generates a 3D sphere or ellipsoid solid."},
             {"inputs", nlohmann::json::object()},
             {"arguments", nlohmann::json::array({
-                {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
-                {{"name", "width"}, {"type", "jot:interval"}, {"default", 0.0}},
+                {{"name", "width"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "depth"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "zag"}, {"type", "jot:number"}, {"default", 0.1}},
@@ -210,7 +209,7 @@ struct OrbOp : P {
 };
 
 static void orb_init(fs::VFSNode* vfs) {
-    Processor::register_op<OrbOp<>, Interval, Interval, Interval, Interval, double, std::string>(vfs, "jot/Orb");
+    Processor::register_op<OrbOp<>, Interval, Interval, Interval, double, std::string>(vfs, "jot/Orb");
 }
 
 } // namespace geo

@@ -35,7 +35,7 @@ int main() {
     {
         // Use a resolution that hits quadrants (4, 8, 12...)
         Selector sel = Selector{"jot/Disk", {
-            {"diameter", json::array({20.0, 40.0})},
+            {"width", json::array({20.0, 40.0})},
             {"start", 0.0}, {"end", 1.0},
             {"zag", 0.01} // High resolution to get close to 20
         }}.with_output("$out");
@@ -61,7 +61,7 @@ int main() {
     // 3. Orb with asymmetric depth [50]
     {
         Selector sel = Selector{"jot/Orb", {
-            {"diameter", 10.0},
+            {"width", 10.0},
             {"depth", json::array({50.0})}
         }}.with_output("$out");
 

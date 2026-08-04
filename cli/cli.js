@@ -43,10 +43,10 @@ async function discoverGateway(selectedProfile, explicitGateway) {
   }
 
   const profileMap = {
-    'dev': 'live/standard',
+    'dev': 'dev/standard',
     'test': 'test/standard',
     'prod': 'prod',
-    'live/standard': 'live/standard',
+    'dev/standard': 'dev/standard',
     'test/standard': 'test/standard',
     'prod/standard': 'prod'
   };

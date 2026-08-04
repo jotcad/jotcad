@@ -11,12 +11,11 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct DiskOp : P {
     static constexpr const char* path = "jot/Disk";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Interval diameter, Interval width, Interval height, double start, double end, double zag_val) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Interval width, Interval height, double start, double end, double zag_val) {
         Geometry res;
         
-        // Interval logic: width/height override diameter if they are non-zero size
-        Interval x_range = (width.size() > 0) ? width : diameter;
-        Interval y_range = (height.size() > 0) ? height : diameter;
+        Interval x_range = width;
+        Interval y_range = (height.size() > 0) ? height : width;
 
         double w = x_range.size();
         double h = y_range.size();
@@ -56,15 +55,14 @@ struct DiskOp : P {
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
-    static std::vector<std::string> argument_keys() { return {"diameter", "width", "height", "start", "end", "zag"}; }
+    static std::vector<std::string> argument_keys() { return {"width", "height", "start", "end", "zag"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/Disk"},
             {"description", "Generates a circular or elliptical disk/sector."},
             {"inputs", nlohmann::json::object()},
             {"arguments", nlohmann::json::array({
-                {{"name", "diameter"}, {"type", "jot:interval"}, {"default", 10.0}},
-                {{"name", "width"}, {"type", "jot:interval"}, {"default", 0.0}},
+                {{"name", "width"}, {"type", "jot:interval"}, {"default", 10.0}},
                 {{"name", "height"}, {"type", "jot:interval"}, {"default", 0.0}},
                 {{"name", "start"}, {"type", "jot:number"}, {"default", 0.0}},
                 {{"name", "end"}, {"type", "jot:number"}, {"default", 1.0}},
@@ -76,7 +74,7 @@ struct DiskOp : P {
 };
 
 static void disk_init(fs::VFSNode* vfs) {
-    Processor::register_op<DiskOp<>, Interval, Interval, Interval, double, double, double>(vfs, "jot/Disk");
+    Processor::register_op<DiskOp<>, Interval, Interval, double, double, double>(vfs, "jot/Disk");
 }
 
 } // namespace geo

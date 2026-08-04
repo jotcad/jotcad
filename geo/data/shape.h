@@ -144,6 +144,33 @@ struct Shape {
             c.apply_transform(m);
         }
     }
+
+    /**
+     * Traverses this shape and all its component children, calling visitor for each shape with its cumulative world transform.
+     */
+    void visit(const std::function<void(const Shape&, const Matrix&)>& visitor, Matrix parent_tf = Matrix::identity()) const {
+        Matrix world_tf = parent_tf * tf;
+        visitor(*this, world_tf);
+        for (const auto& c : components) {
+            c.visit(visitor, world_tf);
+        }
+    }
+
+    /**
+     * Collects all geometry CIDs in this shape tree along with their accumulated world-space transforms.
+     */
+    std::vector<std::pair<fs::CID, Matrix>> collect_geometry_cids(Matrix parent_tf = Matrix::identity()) const {
+        std::vector<std::pair<fs::CID, Matrix>> result;
+        Matrix world_tf = parent_tf * tf;
+        if (geometry.has_value()) {
+            result.push_back({geometry.value(), world_tf});
+        }
+        for (const auto& c : components) {
+            auto child_cids = c.collect_geometry_cids(world_tf);
+            result.insert(result.end(), child_cids.begin(), child_cids.end());
+        }
+        return result;
+    }
 };
 
 // ADL helpers for nlohmann::json

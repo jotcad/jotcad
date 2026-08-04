@@ -24,7 +24,7 @@ int main() {
     Shape box = vfs.read<Shape>(box_sel.with_output("$out"));
 
     // 2. Create an Orb (diameter 15)
-    fs::Selector orb_sel("jot/Orb", {{"diameter", 15.0}});
+    fs::Selector orb_sel("jot/Orb", {{"width", 15.0}});
     OrbOp<>::execute(&vfs, orb_sel, {-7.5, 7.5}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, 0.1);
     Shape orb = vfs.read<Shape>(orb_sel.with_output("$out"));
     orb.tf = Matrix::translate(FT(10), FT(10), FT(0));

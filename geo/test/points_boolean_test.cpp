@@ -19,7 +19,7 @@ int main() {
     Processor::execute(&vfs, pts_addr);
 
     // 2. Create a Solid Tool: Orb(50) at center
-    Selector orb_addr = Selector{"jot/Orb", {{"diameter", 50.0}}}.with_output("$out");
+    Selector orb_addr = Selector{"jot/Orb", {{"width", 50.0}}}.with_output("$out");
     Processor::execute(&vfs, orb_addr);
 
     // 3. Create a Surface Tool: Box(50, 50) at X=60

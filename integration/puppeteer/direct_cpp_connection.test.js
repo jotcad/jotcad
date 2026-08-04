@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 test('Direct C++ Connection: UX to Ops Node Discovery', async (t) => {
   let cluster, browser;
   try {
-    cluster = await launchSystem('live/direct_cpp');
+    cluster = await launchSystem('dev/direct_cpp');
     const PORT_UX = cluster.ports.ux;
 
     // VERIFY IDENTITY (Catch Divergence)
