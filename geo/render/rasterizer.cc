@@ -72,30 +72,47 @@ void Rasterizer::rasterize_triangle(
     }
 }
 
-void Rasterizer::rasterize_line(int x0, int y0, int x1, int y1, ColorRGBA col, std::vector<unsigned char>& pixels, int width, int height) {
-    int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy, e2;
+void Rasterizer::rasterize_line(
+    Vec3 p0, Vec3 p1, ColorRGBA col,
+    std::vector<unsigned char>& pixels, std::vector<double>& z_buffer,
+    int width, int height, double scale, double offset_x, double offset_y) {
+
+    double x0 = p0.x * scale + offset_x, y0 = (height - 1) - (p0.y * scale + offset_y);
+    double x1 = p1.x * scale + offset_x, y1 = (height - 1) - (p1.y * scale + offset_y);
+    double z0 = p0.z, z1 = p1.z;
+
+    int ix0 = (int)std::round(x0), iy0 = (int)std::round(y0);
+    int ix1 = (int)std::round(x1), iy1 = (int)std::round(y1);
+
+    int dx = std::abs(ix1 - ix0), dy = -std::abs(iy1 - iy0);
+    int sx = ix0 < ix1 ? 1 : -1;
+    int sy = iy0 < iy1 ? 1 : -1;
+    int err = dx + dy;
+
+    double total_steps = std::max(dx, std::abs(dy));
+    int step = 0;
+
     while (true) {
-        if (x0 >= 0 && x0 < width && y0 >= 0 && y0 < height) {
-            int idx = (y0 * width + x0) * 4;
-            if (col.a == 255) {
-                pixels[idx] = col.r; pixels[idx+1] = col.g; pixels[idx+2] = col.b; pixels[idx+3] = 255;
-            } else {
-                double a = col.a / 255.0;
-                pixels[idx] = (unsigned char)(pixels[idx] * (1.0 - a) + col.r * a);
-                pixels[idx+1] = (unsigned char)(pixels[idx+1] * (1.0 - a) + col.g * a);
-                pixels[idx+2] = (unsigned char)(pixels[idx+2] * (1.0 - a) + col.b * a);
+        if (ix0 >= 0 && ix0 < width && iy0 >= 0 && iy0 < height) {
+            double t = (total_steps > 0) ? (double)step / total_steps : 0.0;
+            double depth = (1.0 - t) * z0 + t * z1;
+            int idx = iy0 * width + ix0;
+            if (depth >= z_buffer[idx] - 0.01) {
+                pixels[idx * 4] = col.r;
+                pixels[idx * 4 + 1] = col.g;
+                pixels[idx * 4 + 2] = col.b;
+                pixels[idx * 4 + 3] = col.a;
             }
         }
-        if (x0 == x1 && y0 == y1) break;
-        e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
+        if (ix0 == ix1 && iy0 == iy1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; ix0 += sx; }
+        if (e2 <= dx) { err += dx; iy0 += sy; }
+        step++;
     }
 }
 
-std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape, int width, int height, double ax, double ay) {
+std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape, int width, int height, double ax, double ay, bool wireframe_mode) {
     std::vector<unsigned char> pixels(width * height * 4, 30);
     for (int i = 3; i < (int)pixels.size(); i += 4) pixels[i] = 255;
     std::vector<double> z_buffer(width * height, -1e18);
@@ -115,7 +132,7 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
             for (const auto& child : s.components) self(self, child, next_color);
             return;
         }
-        unsigned char alpha = (unsigned char)(opacity * 255);
+        unsigned char alpha = (unsigned char)(std::clamp(opacity, 0.0, 1.0) * 255.0);
 
         std::string material = s.tags.value("material", "");
         const Texture* active_texture = nullptr;
@@ -124,8 +141,6 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
                 try {
                     fs::Selector req("jot/texture", {{"material", material}});
                     req.output = "$out";
-                    // Attempt to resolve texture data. We might get raw bytes or a link to a CID.
-                    // The vfs->read<std::vector<uint8_t>> should handle link resolution.
                     auto img_data = vfs->read<std::vector<uint8_t>>(req);
                     if (!img_data.empty()) {
                         int w, h, channels;
@@ -141,12 +156,11 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
                         texture_cache[material] = Texture{};
                     }
                 } catch (...) {
-                    texture_cache[material] = Texture{}; // Cache failure to avoid refetching
+                    texture_cache[material] = Texture{};
                 }
             }
-            auto it = texture_cache.find(material);
-            if (it != texture_cache.end() && !it->second.pixels.empty()) {
-                active_texture = &it->second;
+            if (!texture_cache[material].pixels.empty()) {
+                active_texture = &texture_cache[material];
             }
         }
 
@@ -179,6 +193,13 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
                     base_color.a
                 };
                 triangles.push_back({{p0, p1, p2}, {uv0, uv1, uv2}, normal, lit_color, active_texture, (p0.z + p1.z + p2.z) / 3.0});
+                
+                if (wireframe_mode) {
+                    ColorRGBA wf_col = {40, 40, 40, 255};
+                    wireframe.push_back({p0, p1, wf_col});
+                    wireframe.push_back({p1, p2, wf_col});
+                    wireframe.push_back({p2, p0, wf_col});
+                }
             };
 
             for (const auto& f : geo.faces) Triangulation::triangulate_face(f, pts, add_tri);
@@ -212,8 +233,13 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
     double offset_x = width / 2.0 - (min_x + max_x) / 2.0 * scale;
     double offset_y = height / 2.0 - (min_y + max_y) / 2.0 * scale;
 
-    // 3. Rasterization
+    // 3. Rasterization: Opaque triangles first, then transparent/ghosts back-to-front
     std::sort(triangles.begin(), triangles.end(), [](const RenderTriangle& a, const RenderTriangle& b) {
+        bool a_opaque = (a.color.a == 255);
+        bool b_opaque = (b.color.a == 255);
+        if (a_opaque != b_opaque) {
+            return a_opaque;
+        }
         return a.avg_z < b.avg_z;
     });
 
@@ -221,9 +247,7 @@ std::vector<uint8_t> Rasterizer::render_png(fs::VFSNode* vfs, const Shape& shape
         rasterize_triangle(tri, pixels, z_buffer, width, height, scale, offset_x, offset_y);
     }
     for (const auto& wf : wireframe) {
-        rasterize_line((int)(wf.p0.x * scale + offset_x), (int)((height - 1) - (wf.p0.y * scale + offset_y)),
-                       (int)(wf.p1.x * scale + offset_x), (int)((height - 1) - (wf.p1.y * scale + offset_y)),
-                       wf.color, pixels, width, height);
+        rasterize_line(wf.p0, wf.p1, wf.color, pixels, z_buffer, width, height, scale, offset_x, offset_y);
     }
 
     int len;

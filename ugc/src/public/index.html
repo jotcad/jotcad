@@ -236,7 +236,8 @@
       color: var(--text-color);
       background: #060709;
       overflow: auto;
-      white-space: pre;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
 
     .controls-overlay {
@@ -860,6 +861,20 @@
           item.onclick = () => selectArtifact(port, out);
           artList.appendChild(item);
         });
+      }
+
+      // Check for compilation error
+      if (snap.run && snap.run.status === 'error') {
+        document.getElementById('canvas3d').style.display = 'none';
+        document.getElementById('img-viewport').style.display = 'none';
+        
+        const textView = document.getElementById('text-viewport');
+        textView.style.display = 'block';
+        textView.style.color = '#ef4444';
+        textView.innerText = `❌ SCRIPT COMPILATION ERROR:\n\n${snap.run.error || 'Unknown Compilation Error'}`;
+        
+        showView('details-view');
+        return;
       }
 
       // Auto-load first 3D or visual artifact found

@@ -312,66 +312,86 @@ export class UGCSession {
 
     // 4. Run compilation & evaluation
     const startTime = Date.now();
-    const results = await this.ugcEngine.evaluate(scriptContent, cliInputs, schema);
-    const compileDuration = Date.now() - startTime;
+    let results;
+    let exportedFiles = {};
 
-    const exportedFiles = {};
+    try {
+      results = await this.ugcEngine.evaluate(scriptContent, cliInputs, schema);
 
-    // 5. Drain format streams to files inside snapshot directory
-    for (const { port, selector } of results) {
-      const val = cliOutputs[port];
-      if (!val) continue;
+      // 5. Drain format streams to files inside snapshot directory
+      for (const { port, selector } of results) {
+        const val = cliOutputs[port];
+        if (!val) continue;
 
-      const baseFilename = typeof val === 'object' ? val.path : val;
-      const targetPath = path.join(snapshotDir, baseFilename);
-      console.log(`[UGCSession] Draining port '${port}' (Selector: ${selector.path}) -> ${targetPath}`);
+        const baseFilename = typeof val === 'object' ? val.path : val;
+        const targetPath = path.join(snapshotDir, baseFilename);
+        console.log(`[UGCSession] Draining port '${port}' (Selector: ${selector.path}) -> ${targetPath}`);
 
-      const ext = path.extname(baseFilename).toLowerCase();
-      if (ext === '.jot') {
+        const ext = path.extname(baseFilename).toLowerCase();
+        if (ext === '.jot') {
+          const streamResult = await this.ugcEngine.vfs.readSelector(selector);
+          if (streamResult) {
+            let rawData = streamResult.data;
+            if (!rawData && streamResult.stream) {
+              const chunks = [];
+              for await (const chunk of streamResult.stream) chunks.push(chunk);
+              rawData = Buffer.concat(chunks);
+            }
+            if (rawData) {
+              const rawText = typeof rawData === 'string' ? rawData : new TextDecoder().decode(rawData);
+              let shapeObj = JSON.parse(rawText);
+              
+              const packedBytes = await packZFS(this.ugcEngine.vfs, shapeObj);
+              fs.writeFileSync(targetPath, packedBytes);
+              exportedFiles[port] = {
+                filename: baseFilename,
+                size: packedBytes.length,
+                cid: selector.cid || null
+              };
+              continue;
+            }
+          }
+        }
+
         const streamResult = await this.ugcEngine.vfs.readSelector(selector);
-        if (streamResult) {
-          let rawData = streamResult.data;
-          if (!rawData && streamResult.stream) {
-            const chunks = [];
-            for await (const chunk of streamResult.stream) chunks.push(chunk);
-            rawData = Buffer.concat(chunks);
+        if (streamResult && streamResult.stream) {
+          const chunks = [];
+          for await (const chunk of streamResult.stream) {
+            chunks.push(chunk);
           }
-          if (rawData) {
-            const rawText = typeof rawData === 'string' ? rawData : new TextDecoder().decode(rawData);
-            let shapeObj = JSON.parse(rawText);
-            
-            const packedBytes = await packZFS(this.ugcEngine.vfs, shapeObj);
-            fs.writeFileSync(targetPath, packedBytes);
-            exportedFiles[port] = {
-              filename: baseFilename,
-              size: packedBytes.length,
-              cid: selector.cid || null
-            };
-            continue;
-          }
+          const bytes = Buffer.concat(chunks);
+          fs.writeFileSync(targetPath, bytes);
+          exportedFiles[port] = {
+            filename: baseFilename,
+            size: bytes.length,
+            cid: selector.cid || null
+          };
+        } else {
+          throw new Error(`Failed to resolve output stream for port: ${port}`);
         }
       }
-
-      const streamResult = await this.ugcEngine.vfs.readSelector(selector);
-      if (streamResult && streamResult.stream) {
-        const chunks = [];
-        for await (const chunk of streamResult.stream) {
-          chunks.push(chunk);
-        }
-        const bytes = Buffer.concat(chunks);
-        fs.writeFileSync(targetPath, bytes);
-        exportedFiles[port] = {
-          filename: baseFilename,
-          size: bytes.length,
-          cid: selector.cid || null
-        };
-      } else {
-        throw new Error(`Failed to resolve output stream for port: ${port}`);
-      }
+    } catch (err) {
+      const errorMetadata = {
+        status: 'error',
+        error: err.message,
+        sequence: seq,
+        timestamp,
+        note,
+        inputs: cliInputs,
+        compileDurationMs: Date.now() - startTime
+      };
+      fs.writeFileSync(
+        path.join(snapshotDir, 'run.json'),
+        JSON.stringify(errorMetadata, null, 2)
+      );
+      throw err;
     }
+
+    const compileDuration = Date.now() - startTime;
 
     // 6. Write run metadata file
     const runMetadata = {
+      status: 'success',
       sequence: seq,
       timestamp,
       note,

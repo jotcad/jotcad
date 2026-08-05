@@ -69,7 +69,7 @@ struct OutlineContext {
 
 template <typename P = JotVfsProtocol>
 struct TextOp : P {
-    static constexpr const char* path = "jot/text";
+    static constexpr const char* path = "jot/Text";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::string& text, const nlohmann::json& font_identity, double size) {
         try {
             std::vector<uint8_t> font_data;
@@ -91,38 +91,53 @@ struct TextOp : P {
             funcs.conic_to = OutlineContext::conic_to; funcs.cubic_to = OutlineContext::cubic_to;
             funcs.shift = 0; funcs.delta = 0;
 
-            for (char c : text) {
-                if (FT_Load_Char(face, c, FT_LOAD_NO_BITMAP)) continue;
+            std::vector<uint32_t> codepoints;
+            size_t i_str = 0;
+            while (i_str < text.size()) {
+                uint32_t cp = 0;
+                unsigned char c = (unsigned char)text[i_str];
+                if (c <= 0x7F) {
+                    cp = c; i_str += 1;
+                } else if ((c & 0xE0) == 0xC0) {
+                    if (i_str + 1 < text.size()) cp = ((c & 0x1F) << 6) | ((unsigned char)text[i_str+1] & 0x3F);
+                    i_str += 2;
+                } else if ((c & 0xF0) == 0xE0) {
+                    if (i_str + 2 < text.size()) cp = ((c & 0x0F) << 12) | (((unsigned char)text[i_str+1] & 0x3F) << 6) | ((unsigned char)text[i_str+2] & 0x3F);
+                    i_str += 3;
+                } else if ((c & 0xF8) == 0xF0) {
+                    if (i_str + 3 < text.size()) cp = ((c & 0x07) << 18) | (((unsigned char)text[i_str+1] & 0x3F) << 12) | (((unsigned char)text[i_str+2] & 0x3F) << 6) | ((unsigned char)text[i_str+3] & 0x3F);
+                    i_str += 4;
+                } else {
+                    i_str += 1;
+                }
+                codepoints.push_back(cp);
+            }
+
+            for (uint32_t cp : codepoints) {
+                FT_UInt glyph_idx = FT_Get_Char_Index(face, cp);
+                if (glyph_idx == 0) continue;
+                if (FT_Load_Glyph(face, glyph_idx, FT_LOAD_NO_BITMAP)) continue;
                 OutlineContext ctx; ctx.scale = scale;
                 FT_Outline_Decompose(&face->glyph->outline, &funcs, &ctx);
-                std::vector<Polygon> polygons;
+                std::vector<EK::Segment_2> segments;
                 for (auto& raw_path : ctx.paths) {
-                    if (raw_path.size() < 3) continue;
+                    if (raw_path.size() < 2) continue;
                     std::vector<EK::Point_2> clean_path;
                     for (const auto& p : raw_path) {
-                        if (clean_path.empty() || CGAL::squared_distance(clean_path.back(), p) > FT(1e-12)) clean_path.push_back(p);
-                    }
-                    if (clean_path.size() >= 3 && CGAL::squared_distance(clean_path.front(), clean_path.back()) < FT(1e-12)) clean_path.pop_back();
-                    if (clean_path.size() < 3) continue;
-                    Polygon poly;
-                    for (auto& p : clean_path) poly.push_back(EK::Point_2(p.x() + x_offset, p.y()));
-                    if (poly.size() >= 3 && poly.is_simple()) polygons.push_back(poly);
-                }
-                auto groups = ContourUtils::group_polygons(polygons);
-                for (const auto& group : groups) {
-                    Geometry::Face f;
-                    auto add_loop = [&](const Polygon& p) {
-                        std::vector<int> loop;
-                        for (auto it = p.vertices_begin(); it != p.vertices_end(); ++it) {
-                            loop.push_back(geo.vertices.size());
-                            geo.vertices.push_back({it->x(), it->y(), 0});
+                        EK::Point_2 p_off(p.x() + x_offset, p.y());
+                        if (clean_path.empty() || CGAL::squared_distance(clean_path.back(), p_off) > FT(1e-12)) {
+                            clean_path.push_back(p_off);
                         }
-                        return loop;
-                    };
-                    f.loops.push_back(add_loop(polygons[group.outer]));
-                    for (size_t h_idx : group.holes) f.loops.push_back(add_loop(polygons[h_idx]));
-                    geo.faces.push_back(f);
+                    }
+                    if (clean_path.size() < 2) continue;
+                    for (size_t k = 0; k < clean_path.size(); ++k) {
+                        size_t next_k = (k + 1) % clean_path.size();
+                        if (CGAL::squared_distance(clean_path[k], clean_path[next_k]) > FT(1e-12)) {
+                            segments.push_back(EK::Segment_2(clean_path[k], clean_path[next_k]));
+                        }
+                    }
                 }
+                ContourUtils::build_faces_from_segments(segments, geo);
                 x_offset += FT(face->glyph->advance.x) * scale;
             }
             FT_Done_Face(face); FT_Done_FreeType(library);
@@ -134,12 +149,12 @@ struct TextOp : P {
     }
     static std::vector<std::string> argument_keys() { return {"text", "font", "size"}; }
     static typename P::json schema() {
-        return { {"path", "jot/text"}, {"arguments", nlohmann::json::array({ {{"name", "text"}, {"type", "jot:string"}}, {{"name", "font"}, {"type", "jot:font"}}, {{"name", "size"}, {"type", "jot:number"}, {"default", 10}} })}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
+        return { {"path", "jot/Text"}, {"arguments", nlohmann::json::array({ {{"name", "text"}, {"type", "jot:string"}}, {{"name", "font"}, {"type", "jot:font"}}, {{"name", "size"}, {"type", "jot:number"}, {"default", 10}} })}, {"outputs", {{"$out", {{"type", "jot:shape"}}}}} };
     }
 };
 
 inline void text_init(fs::VFSNode* vfs) {
-    Processor::register_op<TextOp<>, std::string, nlohmann::json, double>(vfs, "jot/text");
+    Processor::register_op<TextOp<>, std::string, nlohmann::json, double>(vfs, "jot/Text");
 }
 
 } // namespace geo

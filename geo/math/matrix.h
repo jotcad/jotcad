@@ -26,10 +26,10 @@ struct Matrix {
 
     void update_string() {
         std::stringstream ss;
-        // Serialize the 3x4 affine matrix (12 coefficients)
+        // Serialize the 3x4 affine matrix (12 coefficients) as exact CGAL ratios
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 4; ++j) {
-                ss << t.cartesian(i, j) << ( (i == 2 && j == 3) ? "" : " ");
+                ss << t.m(i, j) << ( (i == 2 && j == 3) ? "" : " ");
             }
         }
         s = ss.str();

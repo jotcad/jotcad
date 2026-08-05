@@ -5,14 +5,19 @@
 #include <map>
 #include <list>
 #include <chrono>
-#include <iostream>
 #include <CGAL/Polygon_2.h>
+#include <CGAL/Arrangement_2.h>
+#include <CGAL/Arr_segment_traits_2.h>
+#include <map>
+#include <queue>
 #include "geometry.h"
 
 namespace jotcad {
 namespace geo {
 
 typedef CGAL::Polygon_2<EK> Polygon;
+typedef CGAL::Arr_segment_traits_2<EK> ArrTraits;
+typedef CGAL::Arrangement_2<ArrTraits> Arrangement_2;
 
 struct FaceGroup {
     size_t outer;
@@ -21,6 +26,72 @@ struct FaceGroup {
 
 class ContourUtils {
 public:
+    static void build_faces_from_segments(const std::vector<EK::Segment_2>& segments, Geometry& geo, const std::string& rule = "odd") {
+        if (segments.empty()) return;
+        Arrangement_2 arr;
+        CGAL::insert(arr, segments.begin(), segments.end());
+
+        // Propagate Winding / Parity starting from unbounded exterior
+        std::map<Arrangement_2::Face_handle, int> face_info;
+        std::queue<Arrangement_2::Face_handle> q;
+
+        for (auto f = arr.unbounded_faces_begin(); f != arr.unbounded_faces_end(); ++f) {
+            face_info[f] = 0;
+            q.push(f);
+        }
+
+        while (!q.empty()) {
+            Arrangement_2::Face_handle curr = q.front(); q.pop();
+            int curr_val = face_info[curr];
+
+            auto process_ccb = [&](auto circ) {
+                auto curr_edge = circ;
+                do {
+                    Arrangement_2::Face_handle next = curr_edge->twin()->face();
+                    if (face_info.find(next) == face_info.end()) {
+                        face_info[next] = 1 - curr_val;
+                        q.push(next);
+                    }
+                } while (++curr_edge != circ);
+            };
+
+            for (auto hole = curr->holes_begin(); hole != curr->holes_end(); ++hole) {
+                process_ccb(*hole);
+            }
+            if (!curr->is_unbounded()) {
+                process_ccb(curr->outer_ccb());
+            }
+        }
+
+        // Extract Solid Faces (Odd Parity)
+        for (auto fit = arr.faces_begin(); fit != arr.faces_end(); ++fit) {
+            if (fit->is_unbounded()) continue;
+
+            int val = face_info[fit];
+            bool is_solid = (val % 2 != 0); // Odd parity = solid material, Even = hole
+
+            if (is_solid) {
+                Geometry::Face f;
+                auto add_ccb = [&](auto ccb) {
+                    std::vector<int> loop;
+                    auto curr = ccb;
+                    do {
+                        auto p = curr->source()->point();
+                        loop.push_back((int)geo.vertices.size());
+                        geo.vertices.push_back({p.x(), p.y(), 0});
+                        ++curr;
+                    } while (curr != ccb);
+                    return loop;
+                };
+
+                f.loops.push_back(add_ccb(fit->outer_ccb()));
+                for (auto hit = fit->holes_begin(); hit != fit->holes_end(); ++hit) {
+                    f.loops.push_back(add_ccb(*hit));
+                }
+                geo.faces.push_back(f);
+            }
+        }
+    }
     static std::vector<FaceGroup> group_polygons(const std::vector<Polygon>& polygons) {
         if (polygons.empty()) return {};
         auto t_start = std::chrono::steady_clock::now();

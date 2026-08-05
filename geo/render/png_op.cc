@@ -11,9 +11,10 @@ void PngOpImpl::execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const 
         double ay = fulfilling.parameters.value("ay", 0.0);
         int width = fulfilling.parameters.value("width", 256);
         int height = fulfilling.parameters.value("height", 256);
+        bool wireframe = (fulfilling.parameters.value("wireframe", 0.0) != 0.0);
 
-        // Directly delegate to Rasterizer with the root shape
-        std::vector<uint8_t> bytes = Rasterizer::render_png(vfs, in_shape, width, height, ax, ay);
+        // Directly delegate to Rasterizer with the root shape and wireframe mode
+        std::vector<uint8_t> bytes = Rasterizer::render_png(vfs, in_shape, width, height, ax, ay, wireframe);
         
         if (!bytes.empty()) {
             vfs->write(fulfilling.with_output("$out"), bytes);

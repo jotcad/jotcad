@@ -41,7 +41,7 @@ public:
     static std::vector<uint8_t> render_png(
         fs::VFSNode* vfs,
         const Shape& shape,
-        int width = 256, int height = 256, double ax = 0.0, double ay = 0.0);
+        int width = 256, int height = 256, double ax = 0.0, double ay = 0.0, bool wireframe_mode = false);
 
 private:
     struct RenderTriangle {
@@ -64,8 +64,9 @@ private:
         int width, int height, double scale, double offset_x, double offset_y);
 
     static void rasterize_line(
-        int x0, int y0, int x1, int y1, ColorRGBA col,
-        std::vector<unsigned char>& pixels, int width, int height);
+        Vec3 p0, Vec3 p1, ColorRGBA col,
+        std::vector<unsigned char>& pixels, std::vector<double>& z_buffer,
+        int width, int height, double scale, double offset_x, double offset_y);
 };
 
 } // namespace geo

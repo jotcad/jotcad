@@ -1,17 +1,17 @@
 #pragma once
 #include <vector>
-#include <iterator>
-#include <algorithm>
 #include <set>
+#include <chrono>
+#include <cmath>
+#include <iostream>
 #include "protocols.h"
 #include "processor.h"
 #include "boolean/engine.h"
-#include <CGAL/Polygon_mesh_processing/tangential_relaxation.h>
+#include <CGAL/Polygon_mesh_processing/smooth_shape.h>
 #include <CGAL/Polygon_mesh_processing/remesh.h>
+#include <CGAL/Polygon_mesh_processing/remesh_planar_patches.h>
 #include <CGAL/Polygon_mesh_processing/compute_normal.h>
-#include <CGAL/Side_of_triangle_mesh.h>
-#include <CGAL/boost/graph/iterator.h>
-#include <CGAL/boost/graph/iterator.h>
+#include <CGAL/boost/graph/properties.h>
 
 namespace jotcad {
 namespace geo {
@@ -21,8 +21,9 @@ struct SmoothOp : P {
     static constexpr const char* path = "jot/smooth";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, 
-                        double limit_tau = 1.0/24.0, int iterations = 20, double resolution = 1.0, 
-                        const Shape& region = Shape()) {
+                        double limit_tau = 1.0/24.0, int iterations = 10, double resolution = 1.0, 
+                        const Shape& region = Shape(), double radius = 0.0) {
+        auto t_start = std::chrono::high_resolution_clock::now();
         if (!in.geometry.has_value()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
@@ -34,151 +35,65 @@ struct SmoothOp : P {
             return;
         }
 
-        typedef boolean::Surface_mesh SurfaceMesh;
-        typedef boost::graph_traits<SurfaceMesh>::vertex_descriptor vertex_descriptor;
-        typedef boost::graph_traits<SurfaceMesh>::face_descriptor face_descriptor;
-        typedef boost::graph_traits<SurfaceMesh>::edge_descriptor edge_descriptor;
+        typedef boolean::InexactMesh InexactMesh;
+        typedef boost::graph_traits<InexactMesh>::vertex_descriptor vertex_descriptor;
         
-        SurfaceMesh mesh = boolean::Engine::geometry_to_mesh(geo);
+        InexactMesh mesh = boolean::Engine::geometry_to_mesh_ik(geo);
+
+        double target_len = 0.0;
+        int eff_iterations = iterations;
+        double time_step = 0.005;
+
+        if (radius > 0.0) {
+            // Automatically derive physical grain and iterations from radius
+            target_len = 0.2 * radius;
+            eff_iterations = std::max(1, (int)std::round(radius * 10.0));
+        } else if (resolution > 1.0) {
+            target_len = 2.0 / resolution;
+        }
+
+        // 1. Isotropic Remeshing
+        if (target_len > 0.0) {
+            CGAL::Polygon_mesh_processing::isotropic_remeshing(faces(mesh), target_len, mesh,
+                CGAL::parameters::number_of_iterations(4).protect_constraints(false));
+        }
         
-        // 1. ROI Selection
-        std::vector<vertex_descriptor> roi_vertices;
-        if (region.geometry.has_value()) {
-            Geometry region_geo_data = vfs->read<Geometry>(region.geometry.value());
-            SurfaceMesh region_mesh = boolean::Engine::geometry_to_mesh(region_geo_data);
-            
-            // Transform region mesh by region.tf (EK)
-            for(auto v : region_mesh.vertices()) {
-                region_mesh.point(v) = region.tf.transform(region_mesh.point(v));
-            }
-            
-            CGAL::Side_of_triangle_mesh<SurfaceMesh, EK> inside_check(region_mesh);
-            for (auto v : mesh.vertices()) {
-                if (inside_check(mesh.point(v)) != CGAL::ON_UNBOUNDED_SIDE) {
-                    roi_vertices.push_back(v);
-                }
-            }
-        } else {
-            for (auto v : mesh.vertices()) roi_vertices.push_back(v);
+        // 2. Intermittent Mean Curvature Flow execution
+        for (int step = 0; step < eff_iterations; ++step) {
+            CGAL::Polygon_mesh_processing::smooth_shape(mesh, time_step,
+                CGAL::parameters::number_of_iterations(1)
+            );
         }
 
-        if (roi_vertices.empty()) {
-            vfs->write(fulfilling.with_output("$out"), in);
-            return;
-        }
+        // 3. Post-smooth CGAL planar patch remeshing (decimate interior flat-face micro-triangles)
+        std::vector<InexactMesh> meshes = { mesh };
+        CGAL::Polygon_mesh_processing::decimate_meshes_with_common_interfaces(meshes, -0.999);
+        mesh = meshes[0];
 
-        // 2. Refinement (Density for curves)
-        if (resolution > 1.0) {
-            std::vector<face_descriptor> roi_faces;
-            std::set<face_descriptor> face_set;
-            for (auto v : roi_vertices) {
-                for (auto f : CGAL::faces_around_target(mesh.halfedge(v), mesh)) {
-                    if (f != SurfaceMesh::null_face()) face_set.insert(f);
-                }
-            }
-            roi_faces.assign(face_set.begin(), face_set.end());
-            
-            // Calculate avg edge length
-            double avg_len = 0;
-            int count = 0;
-            for (auto e : mesh.edges()) {
-                auto h = mesh.halfedge(e);
-                avg_len += std::sqrt(CGAL::to_double(CGAL::squared_distance(mesh.point(mesh.source(h)), mesh.point(mesh.target(h)))));
-                count++;
-            }
-            if (count > 0) avg_len /= count;
-            
-            double target_len = avg_len / resolution;
-            CGAL::Polygon_mesh_processing::isotropic_remeshing(roi_faces, target_len, mesh,
-                CGAL::parameters::number_of_iterations(2).protect_constraints(true));
-            
-            // Re-collect ROI vertices after remeshing
-            roi_vertices.clear();
-            if (region.geometry.has_value()) {
-                Geometry region_geo_data = vfs->read<Geometry>(region.geometry.value());
-                SurfaceMesh region_mesh = boolean::Engine::geometry_to_mesh(region_geo_data);
-                for(auto v : region_mesh.vertices()) {
-                    region_mesh.point(v) = region.tf.transform(region_mesh.point(v));
-                }
-                CGAL::Side_of_triangle_mesh<SurfaceMesh, EK> inside_check(region_mesh);
-                for (auto v : mesh.vertices()) {
-                    if (inside_check(mesh.point(v)) != CGAL::ON_UNBOUNDED_SIDE) roi_vertices.push_back(v);
-                }
-            } else {
-                for (auto v : mesh.vertices()) roi_vertices.push_back(v);
-            }
-        }
+        auto t_end = std::chrono::high_resolution_clock::now();
+        double total_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+        std::cout << "[CGAL smooth_shape] Execution time: " << total_ms << "ms (Vertices: " << mesh.number_of_vertices() << ", Radius: " << radius << "mm)" << std::endl;
 
-        // 3. Angle-Limited Smoothing Loop
-        double limit_rad = limit_tau * 2.0 * M_PI;
-        
-        for (int iter = 0; iter < iterations; ++iter) {
-            std::map<vertex_descriptor, EK::Point_3> updates;
-            
-            for (auto v : roi_vertices) {
-                if (CGAL::is_border(v, mesh)) continue;
-
-                double max_angle = 0;
-                for (auto h : CGAL::halfedges_around_target(v, mesh)) {
-                    if (CGAL::is_border(mesh.edge(h), mesh)) continue;
-                    
-                    auto h_opp = mesh.opposite(h);
-                    auto f1 = mesh.face(h);
-                    auto f2 = mesh.face(h_opp);
-                    if (f1 == SurfaceMesh::null_face() || f2 == SurfaceMesh::null_face()) continue;
-                    
-                    auto n1 = CGAL::Polygon_mesh_processing::compute_face_normal(f1, mesh);
-                    auto n2 = CGAL::Polygon_mesh_processing::compute_face_normal(f2, mesh);
-                    
-                    double dot = CGAL::to_double(n1 * n2);
-                    if (dot > 1.0) dot = 1.0;
-                    if (dot < -1.0) dot = -1.0;
-                    double angle = std::acos(dot);
-                    if (angle > max_angle) max_angle = angle;
-                }
-
-                if (max_angle > limit_rad) {
-                    EK::Vector_3 laplacian(0, 0, 0);
-                    int neighbors = 0;
-                    for (auto nb : CGAL::vertices_around_target(v, mesh)) {
-                        laplacian = laplacian + (mesh.point(nb) - mesh.point(v));
-                        neighbors++;
-                    }
-                    if (neighbors > 0) {
-                        laplacian = laplacian / (double)neighbors;
-                        double factor = (max_angle - limit_rad) / M_PI;
-                        factor = std::pow(factor, 0.5);
-                        updates[v] = mesh.point(v) + laplacian * factor * 0.5;
-                    }
-                }
-            }
-            
-            for (auto const& [v, p] : updates) {
-                mesh.point(v) = p;
-            }
-            
-            CGAL::Polygon_mesh_processing::tangential_relaxation(mesh, 
-                CGAL::parameters::number_of_iterations(1));
-        }
-
-        Geometry res = boolean::Engine::mesh_to_geometry(mesh);
+        Geometry res = boolean::Engine::mesh_to_geometry_ik(mesh);
         
         Shape out = in;
+        res.triangulate();
         out.geometry = vfs->materialize<Geometry>(res);
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "limit", "iterations", "resolution", "region"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "limit", "iterations", "resolution", "region", "radius"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/smooth"},
-            {"description", "Smooths the geometry until dihedral angles approach the specified limit (Angle-Limited Smoothing)."},
+            {"description", "Smooths geometry using CGAL native Mean Curvature Flow (smooth_shape) with optional remeshing or target curve radius."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", nlohmann::json::array({
-                {{"name", "limit"}, {"type", "jot:number"}, {"default", 1.0/24.0}, {"description", "Target dihedral angle limit in turns (tau). Smoothing stops when angles hit this threshold."}},
-                {{"name", "iterations"}, {"type", "jot:number"}, {"default", 20}, {"description", "Maximum relaxation steps."}},
-                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 1.0}, {"description", "Subdivision factor. Higher values create denser meshes to support tighter curves."}},
-                {{"name", "region"}, {"type", "jot:shape"}, {"optional", true}, {"description", "Optional bounding shape to limit smoothing to a specific region."}}
+                {{"name", "limit"}, {"type", "jot:number"}, {"default", 1.0/24.0}, {"description", "Target dihedral angle limit in turns (tau)."}},
+                {{"name", "iterations"}, {"type", "jot:number"}, {"default", 10}, {"description", "Number of mean curvature flow iterations."}},
+                {{"name", "resolution"}, {"type", "jot:number"}, {"default", 1.0}, {"description", "Subdivision factor for edge refinement."}},
+                {{"name", "region"}, {"type", "jot:shape"}, {"optional", true}, {"description", "Optional bounding shape region."}},
+                {{"name", "radius"}, {"type", "jot:number"}, {"optional", true}, {"default", 0.0}, {"description", "Physical curve radius in millimeters."}}
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
@@ -186,7 +101,7 @@ struct SmoothOp : P {
 };
 
 inline void smooth_init(fs::VFSNode* vfs) {
-    Processor::register_op<SmoothOp<>, Shape, double, int, double, Shape>(vfs, "jot/smooth");
+    Processor::register_op<SmoothOp<>, Shape, double, int, double, Shape, double>(vfs, "jot/smooth");
 }
 
 } // namespace geo

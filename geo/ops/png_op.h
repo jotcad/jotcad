@@ -15,14 +15,20 @@ struct PngOp : P {
         PngOpImpl::execute(vfs, fulfilling, in);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "ax", "ay", "width", "height", "wireframe"}; }
 
     static typename P::json schema() {
         return {
             {"path", "jot/png"},
-            {"description", "Generates a PNG thumbnail for the input shape and returns it via the '$out' port."},
+            {"description", "Generates a PNG thumbnail for the input shape, with optional wireframe edge overlay."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", nlohmann::json::array()},
+            {"arguments", nlohmann::json::array({
+                {{"name", "ax"}, {"type", "jot:number"}, {"optional", true}, {"default", 0.0}},
+                {{"name", "ay"}, {"type", "jot:number"}, {"optional", true}, {"default", 0.0}},
+                {{"name", "width"}, {"type", "jot:number"}, {"optional", true}, {"default", 256}},
+                {{"name", "height"}, {"type", "jot:number"}, {"optional", true}, {"default", 256}},
+                {{"name", "wireframe"}, {"type", "jot:number"}, {"optional", true}, {"default", 0.0}}
+            })},
             {"outputs", {
                 {"$out", {{"type", "file"}, {"mimeType", "image/png"}, {"description", "The generated PNG thumbnail."}}}
             }}

@@ -1,12 +1,23 @@
 import * as THREE from 'three';
 
-// Helper to evaluate fractions or ratio strings to floats (from ux/src/lib/ft.js)
-export function ratioToNumber(str) {
-  if (str.includes('/')) {
-    const parts = str.split('/');
-    return parseFloat(parts[0]) / parseFloat(parts[1]);
+export function ratioToNumber(s) {
+  if (typeof s === 'number') return s;
+  if (typeof s !== 'string') return 0;
+  
+  // Handle multiple space-delimited ratios/numbers
+  if (s.includes(' ')) {
+    return s.trim().split(/\s+/).map(ratioToNumber);
   }
-  return parseFloat(str);
+
+  const slash = s.indexOf('/');
+  if (slash === -1) return parseFloat(s);
+
+  const nStr = s.substring(0, slash);
+  const dStr = s.substring(slash + 1);
+
+  const n = parseFloat(nStr);
+  const d = parseFloat(dStr);
+  return d !== 0 ? n / d : 0;
 }
 
 // Normalize ID helper (from ux/src/lib/render/AssetManager.js)
