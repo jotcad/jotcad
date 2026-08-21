@@ -31,6 +31,28 @@ struct Frame {
     }
 };
 
+static Point_3 pivot_rotate(const Point_3& p_world,
+                            const Point_3& pivot,
+                            const Vector_3& axis, double angle) {
+    if (angle == 0 || axis.squared_length() == 0) return p_world;
+    double ax = CGAL::to_double(axis.x()), ay = CGAL::to_double(axis.y()),
+           az = CGAL::to_double(axis.z());
+    double len = std::sqrt(ax * ax + ay * ay + az * az);
+    if (len == 0) return p_world;
+    ax /= len; ay /= len; az /= len;
+    double c = std::cos(angle), s = std::sin(angle), t = 1.0 - c;
+    double m00 = c + ax * ax * t, m01 = ax * ay * t - az * s, m02 = ax * az * t + ay * s;
+    double m10 = ay * ax * t + az * s, m11 = c + ay * ay * t, m12 = ay * az * t - ax * s;
+    double m20 = az * ax * t - ay * s, m21 = az * ay * t + ax * s, m22 = c + az * az * t;
+    
+    Vector_3 v = p_world - pivot;
+    double vx = CGAL::to_double(v.x()), vy = CGAL::to_double(v.y()), vz = CGAL::to_double(v.z());
+    double rx = m00 * vx + m01 * vy + m02 * vz;
+    double ry = m10 * vx + m11 * vy + m12 * vz;
+    double rz = m20 * vx + m21 * vy + m22 * vz;
+    return Point_3(pivot.x() + FT(rx), pivot.y() + FT(ry), pivot.z() + FT(rz));
+}
+
 /**
  * generate_rmf: Generates Rotation Minimizing Frames along a path using the Double Reflection method.
  */

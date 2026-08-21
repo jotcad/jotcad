@@ -2,5 +2,5 @@
 
 This directory implements the glue between the VFS and the C++ geometry engine.
 
-- **Responsibilities**: Port injection, Selector resolution, and Operator registration.
-- **Key Files**: `processor.h`, `vfs_geo_adapter.cc`.
+- **Responsibilities**: Port injection, Selector resolution, Operator registration, and Recipe binding.
+- **Key Files**: `processor.h`, `recipe.h`, `vfs_geo_adapter.cc`.

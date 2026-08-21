@@ -19,6 +19,63 @@ inline Shape MaybeGroup(std::vector<Shape>& results) {
 }
 
 template <typename P = JotVfsProtocol>
+struct AsOp : P {
+    static constexpr const char* path = "jot/as";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& name) {
+        Shape out = in;
+        out.add_tag("id", name);
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "name"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/as"},
+            {"description", "Assigns an identifier (id) tag to the subject shape."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
+                {{"name", "name"}, {"type", "string"}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct IdOp : P {
+    static constexpr const char* path = "jot/id";
+
+    static void id_recursive(const Shape& in, const std::string& target_id, std::vector<Shape>& results) {
+        if (in.tags.is_object() && in.tags.contains("id") && in.tags.at("id").is_string() &&
+            in.tags.at("id").get<std::string>() == target_id) {
+            results.push_back(in);
+            return;
+        }
+        for (const auto& c : in.components) {
+            id_recursive(c, target_id, results);
+        }
+    }
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& id_str) {
+        std::vector<Shape> results;
+        id_recursive(in, id_str, results);
+        vfs->write(fulfilling.with_output("$out"), MaybeGroup(results));
+    }
+
+    static std::vector<std::string> argument_keys() { return {"$in", "id"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/id"},
+            {"description", "Queries components in the shape hierarchy matching the given identifier (id)."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({
+                {{"name", "id"}, {"type", "string"}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
 struct SetOp : P {
     static constexpr const char* path = "jot/set";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& key, const typename P::json& value) {
@@ -178,6 +235,8 @@ struct InItemOp : P {
 };
 
 inline void tag_ops_init(fs::VFSNode* vfs) {
+    Processor::register_op<AsOp<>, Shape, std::string>(vfs, "jot/as");
+    Processor::register_op<IdOp<>, Shape, std::string>(vfs, "jot/id");
     Processor::register_op<SetOp<>, Shape, std::string, nlohmann::json>(vfs, "jot/set");
     Processor::register_op<GetOp<>, Shape, std::string>(vfs, "jot/get");
     Processor::register_op<HasOp<>, Shape, std::string, std::optional<nlohmann::json>>(vfs, "jot/has");

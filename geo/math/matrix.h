@@ -36,6 +36,7 @@ struct Matrix {
     }
 
     static Matrix identity() { return Matrix(Transformation(CGAL::IDENTITY)); }
+    bool is_identity() const { return t == Transformation(CGAL::IDENTITY); }
 
     static Matrix translate(FT x, FT y, FT z) {
         return Matrix(Transformation(CGAL::TRANSLATION, EK::Vector_3(x, y, z)));

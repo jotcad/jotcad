@@ -161,8 +161,8 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       storagePrefix: `.vfs_storage/test_${basePort}_`,
       gateway: 'zenoh_router',
       components: {
-        zenoh_router: { type: 'zenoh_router', port: basePort },
-        ...getSplitOpsComponents(basePort, basePort - 9),
+        zenoh_router: { type: 'zenoh_router', port: basePort, websocket_port: basePort + 1000 },
+        ...getSplitOpsComponents(basePort, basePort - 9, `.vfs_storage/test_${basePort}_`, `test_${basePort}`),
         export: { type: 'export', protocol: 'https', port: basePort + 2, env: { NEIGHBORS: `http://127.0.0.1:${basePort}` } },
         ux:     { type: 'ux',     protocol: 'https', port: basePort - 6069, dist: 'ux/dist/test' }
       }

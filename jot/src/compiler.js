@@ -3,6 +3,14 @@ import { log, warn, error } from '../../fs/src/log.js';
 import { JotParser } from './parser.js';
 
 /**
+ * Returns true if an argument definition expects a computational recipe / operation.
+ */
+export function isOpArg(argDef) {
+  if (!argDef || !argDef.type) return false;
+  return String(argDef.type).toLowerCase().startsWith('jot:op');
+}
+
+/**
  * JotCAD Next-Gen Compiler
  */
 export class JotCompiler {
@@ -23,7 +31,6 @@ export class JotCompiler {
       'jot:vec3': (p, a, c, s) => this.JotVec3Consumer(p, a, c, s),
       'jot:vec3s': (p, a, c, s) => this.JotVec3sConsumer(p, a, c, s),
       'jot:interval': (p, a, c, s) => this.JotIntervalConsumer(p, a, c, s),
-      'jot:operation': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
       'jot:op': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
       'jot:selector': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
       'jot:any': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
@@ -442,8 +449,8 @@ export class JotCompiler {
     const params = {}, argList = schema?.arguments || [], inputList = schema?.inputs || {};
     let subjectConsumed = false;
 
-    const evaluateHelper = async (node, subCtx = {}) => {
-        return await this._evaluateRecursive(node, parameters, subject, { ...ctx, ...subCtx });
+    const evaluateHelper = async (node, subCtx = {}, evalSubject = subject) => {
+        return await this._evaluateRecursive(node, parameters, evalSubject, { ...ctx, ...subCtx });
     };
 
     // PASS 0: Formal Inputs
@@ -517,9 +524,20 @@ export class JotCompiler {
     }
 
     // PASS 3: Validation
-    // Protocol Exception: Required inputs ($in) can be missing if the operator is being evaluated 
-    // as a template (no subject) AND we are inside a context that permits it (higher-order op).
-    const isInsideHigherOrder = ctx.allowTemplates === true;
+    // Protocol Exception (Higher-Order Port Injection / Late-Binding):
+    // Required inputs ($in) are intentionally permitted to remain unbound (missing)
+    // when an expression is being evaluated inside an operation-typed argument (isOpArg, e.g. jot:op).
+    //
+    // This is CRITICAL for:
+    // 1. Higher-Order Operators (snap, at, on, by): They take computational recipes
+    //    (e.g., target_anchor: id('b').ty(0.5)) whose innermost subject must remain open
+    //    so the C++ kernel can dynamically bind the runtime target operand.
+    // 2. Composed Assembly Chains: In multi-step topological assemblies (e.g. dome snapping),
+    //    eagerly binding $in at compile-time locks the anchor to the untransformed prototype
+    //    shape at the origin, breaking downstream geometric propagation.
+    // 3. Mathematical Purity: Distinguishes between concrete value evaluation and lambda/recipe
+    //    abstraction at language boundaries without requiring artificial dummy subjects.
+    const isInsideHigherOrder = ctx.inOp === true;
     for (const [name, inputDef] of Object.entries(inputList)) {
         if (params[name] === undefined && !inputDef.optional && !isInsideHigherOrder) {
             throw new Error(`Compiler Error: Missing required input '${name}' for '${opName}'`);
@@ -978,8 +996,9 @@ export class JotCompiler {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        const subCtx = (argDef.type || '').startsWith('jot:op') ? { allowTemplates: true } : {};
-        const val = await ctx.evaluate(p.node, subCtx);
+        const subCtx = isOpArg(argDef) ? { inOp: true } : {};
+        const evalSubject = isOpArg(argDef) ? null : subject;
+        const val = await ctx.evaluate(p.node, subCtx, evalSubject);
         if (this._isJotType(val, ctx.fullType, argDef, ctx)) {
             p.consumed = true;
             return this._normalize(val, ctx.fullType);
@@ -996,11 +1015,9 @@ export class JotCompiler {
     const p = pool.find(p => !p.consumed);
     if (p) {
         if (p.nameHint && p.nameHint !== argDef.name) return undefined;
-        
-        // Protocol: If this is an operator-expecting port (template), allow missing required inputs 
-        // in nested evaluation (they will be satisfied later by higher-order injection).
-        const subCtx = (argDef.type || '').startsWith('jot:op') ? { allowTemplates: true } : {};
-        const val = await ctx.evaluate(p.node, subCtx);
+        const subCtx = isOpArg(argDef) ? { inOp: true } : {};
+        const evalSubject = isOpArg(argDef) ? null : subject;
+        const val = await ctx.evaluate(p.node, subCtx, evalSubject);
         p.consumed = true;
         return this._normalize(val, ctx.fullType);
     }

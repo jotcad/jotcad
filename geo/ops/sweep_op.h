@@ -150,71 +150,129 @@ struct SweepOp : P {
 
         Geometry res;
 
-        for (const auto& path : paths) {
-            if (path.size() < 2) continue;
-            
-            std::vector<Frame> frames = generate_rmf(path, closed_path);
+        auto bridge = [&](const std::vector<std::vector<int>>& path_grid, int i0, int i1) {
+            if (i0 == i1) return;
+            // Bridge faces
+            for (const auto& f : profile.faces) {
+                for (const auto& loop : f.loops) {
+                    for (size_t j = 0; j < loop.size(); ++j) {
+                        int v_sub0 = loop[j];
+                        int v_sub1 = loop[(j + 1) % loop.size()];
 
-            // Generate Slices
-            std::vector<std::vector<int>> grid;
-            for (const auto& frame : frames) {
-                std::vector<int> slice;
-                for (const auto& v : profile.vertices) {
-                    Point_3 lp(v.x, v.y, v.z);
-                    Point_3 wp = frame.transform(lp);
-                    slice.push_back((int)res.vertices.size());
-                    res.vertices.push_back({wp.x(), wp.y(), wp.z()});
-                }
-                grid.push_back(slice);
-            }
+                        int v00 = path_grid[i0][v_sub0];
+                        int v01 = path_grid[i0][v_sub1];
+                        int v10 = path_grid[i1][v_sub0];
+                        int v11 = path_grid[i1][v_sub1];
 
-            auto bridge = [&](const std::vector<std::vector<int>>& path_grid, size_t i0, size_t i1) {
-                // Bridge faces
-                for (const auto& f : profile.faces) {
-                    for (const auto& loop : f.loops) {
-                        for (size_t j = 0; j < loop.size(); ++j) {
-                            int v_sub0 = loop[j];
-                            int v_sub1 = loop[(j + 1) % loop.size()];
-
-                            int v00 = path_grid[i0][v_sub0];
-                            int v01 = path_grid[i0][v_sub1];
-                            int v10 = path_grid[i1][v_sub0];
-                            int v11 = path_grid[i1][v_sub1];
-
-                            if (solid) {
-                                res.faces.push_back({{{v00, v01, v11, v10}}});
-                            } else {
-                                res.segments.push_back({v00, v10});
-                                res.segments.push_back({v01, v11});
-                                res.segments.push_back({v00, v01});
-                            }
+                        if (solid) {
+                            res.faces.push_back({{{v00, v01, v11, v10}}});
+                        } else {
+                            res.segments.push_back({v00, v10});
+                            res.segments.push_back({v01, v11});
+                            res.segments.push_back({v00, v01});
                         }
                     }
                 }
-                // Bridge segments (longitudinal)
-                for (const auto& seg : profile.segments) {
-                    res.segments.push_back({path_grid[i0][seg[0]], path_grid[i1][seg[0]]});
-                    res.segments.push_back({path_grid[i0][seg[1]], path_grid[i1][seg[1]]});
-                    if (!solid) {
-                        res.segments.push_back({path_grid[i0][seg[0]], path_grid[i0][seg[1]]});
-                    }
+            }
+            // Bridge segments (longitudinal)
+            for (const auto& seg : profile.segments) {
+                res.segments.push_back({path_grid[i0][seg[0]], path_grid[i1][seg[0]]});
+                res.segments.push_back({path_grid[i0][seg[1]], path_grid[i1][seg[1]]});
+                if (!solid) {
+                    res.segments.push_back({path_grid[i0][seg[0]], path_grid[i0][seg[1]]});
                 }
+            }
+        };
+
+        for (const auto& raw_path : paths) {
+            if (raw_path.size() < 2) continue;
+
+            std::vector<Point_3> path = raw_path;
+            bool is_closed = closed_path;
+            if (path.size() >= 3 && (path.front() - path.back()).squared_length() < 1e-9) {
+                is_closed = true;
+                path.pop_back(); // Remove duplicate end vertex for frame calculation
+            }
+            if (path.size() < 2) continue;
+            
+            std::vector<Frame> frames = generate_rmf(path, is_closed);
+            if (frames.empty()) continue;
+
+            // Generate Slices & Corner Joints
+            std::vector<std::vector<int>> vertex_grid;
+            struct JointSlices { int in; int out; };
+            std::vector<JointSlices> joint_grid;
+
+            auto add_slice = [&](const std::function<Point_3(const Point_3&)>& transform_fn) -> int {
+                std::vector<int> slice;
+                slice.reserve(profile.vertices.size());
+                for (const auto& v : profile.vertices) {
+                    Point_3 lp(v.x, v.y, v.z);
+                    Point_3 wp = transform_fn(lp);
+                    slice.push_back((int)res.vertices.size());
+                    res.vertices.push_back({wp.x(), wp.y(), wp.z()});
+                }
+                vertex_grid.push_back(slice);
+                return (int)vertex_grid.size() - 1;
             };
 
-            for (size_t i = 0; i < grid.size() - 1; ++i) {
-                bridge(grid, i, i + 1);
+            for (size_t i = 0; i < frames.size(); ++i) {
+                const auto& frame = frames[i];
+                Frame F_prev = (i == 0) ? (is_closed ? frames.back() : frames[0]) : frames[i - 1];
+
+                Vector_3 t_out = frame.tangent;
+                Vector_3 t_in = F_prev.tangent;
+                Vector_3 bisector = t_out - t_in;
+                double b_len_sq = CGAL::to_double(bisector.squared_length());
+
+                double dot_val = CGAL::to_double(CGAL::scalar_product(t_in, t_out));
+                if (dot_val > 1.0) dot_val = 1.0;
+                if (dot_val < -1.0) dot_val = -1.0;
+                double theta = std::acos(dot_val);
+
+                bool is_corner = (is_closed || i > 0) && (theta > 1e-4) && (b_len_sq > 1e-9);
+
+                if (!is_corner) {
+                    int idx = add_slice([&](const Point_3& lp) { return frame.transform(lp); });
+                    joint_grid.push_back({idx, idx});
+                } else {
+                    Vector_3 axis = CGAL::cross_product(t_out, t_in);
+                    int num_round_slices = 6;
+                    int first_idx = -1;
+                    int last_slice_idx = -1;
+
+                    for (int s = 0; s <= num_round_slices; ++s) {
+                        double t = (double)s / (double)num_round_slices;
+                        int current_idx = add_slice([&](const Point_3& lp) {
+                            Point_3 p_world = frame.transform(lp);
+                            return pivot_rotate(p_world, frame.position, axis, theta * (1.0 - t));
+                        });
+
+                        if (first_idx == -1) {
+                            first_idx = current_idx;
+                        } else {
+                            bridge(vertex_grid, last_slice_idx, current_idx);
+                        }
+                        last_slice_idx = current_idx;
+                    }
+                    joint_grid.push_back({first_idx, last_slice_idx});
+                }
             }
 
-            if (closed_path) {
-                bridge(grid, grid.size() - 1, 0);
-            } else if (solid) {
+            for (size_t i = 0; i < joint_grid.size() - 1; ++i) {
+                bridge(vertex_grid, joint_grid[i].out, joint_grid[i + 1].in);
+            }
+
+            if (is_closed && !joint_grid.empty()) {
+                bridge(vertex_grid, joint_grid.back().out, joint_grid[0].in);
+            } else if (solid && !joint_grid.empty()) {
                 // Caps
                 for (const auto& f : profile.faces) {
                     Geometry::Face start_cap, end_cap;
                     for (const auto& loop : f.loops) {
                         std::vector<int> sl, el;
-                        for (int idx : loop) sl.push_back(grid.front()[idx]);
-                        for (int idx : loop) el.push_back(grid.back()[idx]);
+                        for (int idx : loop) sl.push_back(vertex_grid[joint_grid.front().in][idx]);
+                        for (int idx : loop) el.push_back(vertex_grid[joint_grid.back().out][idx]);
                         std::reverse(sl.begin(), sl.end()); // Flip start cap
                         start_cap.loops.push_back(sl);
                         end_cap.loops.push_back(el);

@@ -2,6 +2,7 @@
 #include "protocols.h"
 #include "processor.h"
 #include "matrix.h"
+#include "almost_coplanar.h"
 #include "boolean/engine.h"
 #include <CGAL/General_polygon_set_2.h>
 #include <CGAL/Gps_segment_traits_2.h>
@@ -125,11 +126,13 @@ struct FacesOp : P {
                     auto opp = mesh.opposite(edge);
                     auto neighbor = mesh.face(opp);
                     if (neighbor == ExactMesh::null_face() || visited.count(neighbor)) continue;
-                    bool coplanar = true;
-                    for (auto v : mesh.vertices_around_face(mesh.halfedge(neighbor))) {
-                        if (!patch_plane.has_on(mesh.point(v))) { coplanar = false; break; }
-                    }
-                    if (coplanar) {
+                    
+                    auto p = mesh.point(mesh.source(edge));
+                    auto q_pt = mesh.point(mesh.target(edge));
+                    auto r = mesh.point(mesh.target(mesh.next(edge)));
+                    auto s = mesh.point(mesh.target(mesh.next(opp)));
+
+                    if (is_almost_coplanar_edge(p, q_pt, r, s)) {
                         visited.insert(neighbor);
                         patch.push_back(neighbor);
                         q.push(neighbor);
@@ -195,39 +198,42 @@ struct FacesOp : P {
 
                 EK::Point_3 centroid(tx/FT(count), ty/FT(count), tz/FT(count));
                 
-                EK::Vector_3 X_dir;
-                bool found_x = false;
-                for (size_t i = 1; i < boundary_pts.size(); ++i) {
-                    EK::Vector_3 candidate = boundary_pts[i] - boundary_pts[0];
-                    if (candidate.squared_length() > 0) {
-                        X_dir = candidate;
-                        found_x = true;
-                        break;
-                    }
+                // 1. Outward Normal (strictly unit length)
+                double zx = CGAL::to_double(patch_plane.a());
+                double zy = CGAL::to_double(patch_plane.b());
+                double zz = CGAL::to_double(patch_plane.c());
+                double z_len = std::sqrt(zx*zx + zy*zy + zz*zz);
+                if (z_len <= 1e-12) continue;
+                zx /= z_len; zy /= z_len; zz /= z_len;
+
+                // 2. Up-Slope Vector (project world Z = (0,0,1) onto face plane)
+                double yx, yy, yz;
+                if (std::abs(zz) > 0.9999) {
+                    yx = 0.0;
+                    yy = (zz >= 0) ? 1.0 : -1.0;
+                    yz = 0.0;
+                } else {
+                    yx = -zz * zx;
+                    yy = -zz * zy;
+                    yz = 1.0 - zz * zz;
+                    double y_len = std::sqrt(yx*yx + yy*yy + yz*yz);
+                    if (y_len <= 1e-12) continue;
+                    yx /= y_len; yy /= y_len; yz /= y_len;
                 }
-                if (!found_x) continue;
 
-                EK::Vector_3 Z_dir = patch_plane.orthogonal_vector();
-                EK::Vector_3 Y_dir = CGAL::cross_product(Z_dir, X_dir);
-
-                double dx = std::sqrt(CGAL::to_double(X_dir.squared_length()));
-                double dy = std::sqrt(CGAL::to_double(Y_dir.squared_length()));
-                double dz = std::sqrt(CGAL::to_double(Z_dir.squared_length()));
-
-                if (dx <= 1e-9 || dy <= 1e-9 || dz <= 1e-9) continue;
+                // 3. Horizontal Contour Vector (X = Y × Z)
+                double xx = yy * zz - yz * zy;
+                double xy = yz * zx - yx * zz;
+                double xz = yx * zy - yy * zx;
 
                 FT w(1000000);
-                auto scale_v = [&](const EK::Vector_3& v, double len) {
-                    double s = 1000000.0 / len;
-                    return std::array<FT, 3>{FT(v.x() * s), FT(v.y() * s), FT(v.z() * s)};
-                };
-                auto nx = scale_v(X_dir, dx);
-                auto ny = scale_v(Y_dir, dy);
-                auto nz = scale_v(Z_dir, dz);
+                FT m00(std::round(xx * 1000000.0)), m01(std::round(yx * 1000000.0)), m02(std::round(zx * 1000000.0));
+                FT m10(std::round(xy * 1000000.0)), m11(std::round(yy * 1000000.0)), m12(std::round(zy * 1000000.0));
+                FT m20(std::round(xz * 1000000.0)), m21(std::round(yz * 1000000.0)), m22(std::round(zz * 1000000.0));
 
-                Matrix m(Transformation(nx[0], ny[0], nz[0], centroid.x() * w,
-                                        nx[1], ny[1], nz[1], centroid.y() * w,
-                                        nx[2], ny[2], nz[2], centroid.z() * w, w));
+                Matrix m(Transformation(m00, m01, m02, centroid.x() * w,
+                                        m10, m11, m12, centroid.y() * w,
+                                        m20, m21, m22, centroid.z() * w, w));
 
                 Shape f_shape;
                 f_shape.tf = in.tf * m;
@@ -264,17 +270,110 @@ struct FacesOp : P {
                 out.components.push_back(f_shape);
             }
         }
+
+        // Deterministic sorting: Top first, Bottom second, then Side walls in Clockwise azimuthal order
+        struct FaceEntry {
+            Shape shape;
+            double local_x;
+            double local_y;
+            double local_nz;
+        };
+        std::vector<Shape> tops, bottoms;
+        std::vector<FaceEntry> sides;
+
+        for (const auto& comp : out.components) {
+            // comp.tf contains in.tf * m. Extract local m by multiplying with in.tf.inverse()
+            Matrix local_m = in.tf.inverse() * comp.tf;
+            double nz = CGAL::to_double(local_m.t.cartesian(2, 2));
+            if (nz > 0.9999) {
+                tops.push_back(comp);
+            } else if (nz < -0.9999) {
+                bottoms.push_back(comp);
+            } else {
+                double lx = CGAL::to_double(local_m.t.cartesian(0, 3));
+                double ly = CGAL::to_double(local_m.t.cartesian(1, 3));
+                sides.push_back({comp, lx, ly, nz});
+            }
+        }
+
+        // Sort side walls clockwise around solid's local origin (decreasing atan2 angle)
+        std::sort(sides.begin(), sides.end(), [](const FaceEntry& a, const FaceEntry& b) {
+            double angle_a = std::atan2(a.local_y, a.local_x);
+            double angle_b = std::atan2(b.local_y, b.local_x);
+            return angle_a > angle_b; // Clockwise in local space
+        });
+
+        out.components.clear();
+        out.components.insert(out.components.end(), tops.begin(), tops.end());
+        out.components.insert(out.components.end(), bottoms.begin(), bottoms.end());
+        for (const auto& s : sides) {
+            out.components.push_back(s.shape);
+        }
+
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "proxy"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/faces"},
-            {"description", "Extracts faces from a shape as individual oriented components. Merges contiguous coplanar patches."},
+            {"description", "Extracts faces from a shape as individual oriented components. Top/Bottom first, then Side walls in Clockwise order."},
             {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"arguments", nlohmann::json::array({
                 {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}
             })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct SideFacesOp : P {
+    static constexpr const char* path = "jot/sideFaces";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, bool proxy = true) {
+        fs::Selector faces_sel = fs::Selector("jot/faces", {{"$in", vfs->materialize(in).value}, {"proxy", proxy}}).with_output("$out");
+        Shape all_faces = vfs->read<Shape>(faces_sel);
+        Shape out;
+        out.tf = in.tf;
+        for (const auto& comp : all_faces.components) {
+            double nz = CGAL::to_double(comp.tf.t.cartesian(2, 2));
+            if (std::abs(nz) <= 0.9999) {
+                out.components.push_back(comp);
+            }
+        }
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "proxy"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/sideFaces"},
+            {"description", "Returns all non-horizontal perimeter side faces sorted in Clockwise order."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", nlohmann::json::array({
+                {{"name", "proxy"}, {"type", "jot:boolean"}, {"default", true}}
+            })},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct SideFaceOp : P {
+    static constexpr const char* path = "jot/sideFace";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
+        fs::Selector sides_sel = fs::Selector("jot/sideFaces", {{"$in", vfs->materialize(in).value}}).with_output("$out");
+        Shape sides = vfs->read<Shape>(sides_sel);
+        if (!sides.components.empty()) {
+            vfs->write(fulfilling.with_output("$out"), sides.components[0]);
+        } else {
+            vfs->write(fulfilling.with_output("$out"), in);
+        }
+    }
+    static std::vector<std::string> argument_keys() { return {"$in"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/sideFace"},
+            {"description", "Returns the primary side face anchor of the subject."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }
@@ -505,12 +604,21 @@ struct BackOp : P {
 static void faces_init(fs::VFSNode* vfs) {
     Processor::register_op<AsFacesOp<>, Shape>(vfs, "jot/asFaces");
     Processor::register_op<FacesOp<>, Shape, bool>(vfs, "jot/faces");
+    Processor::register_op<SideFacesOp<>, Shape, bool>(vfs, "jot/sideFaces");
+    Processor::register_op<SideFacesOp<>, Shape, bool>(vfs, "jot/sides");
+    Processor::register_op<SideFaceOp<>, Shape>(vfs, "jot/sideFace");
     Processor::register_op<TopOp<>, Shape>(vfs, "jot/top");
+    Processor::register_op<TopOp<>, Shape>(vfs, "jot/topFace");
     Processor::register_op<BottomOp<>, Shape>(vfs, "jot/bottom");
+    Processor::register_op<BottomOp<>, Shape>(vfs, "jot/bottomFace");
     Processor::register_op<LeftOp<>, Shape>(vfs, "jot/left");
+    Processor::register_op<LeftOp<>, Shape>(vfs, "jot/leftFace");
     Processor::register_op<RightOp<>, Shape>(vfs, "jot/right");
+    Processor::register_op<RightOp<>, Shape>(vfs, "jot/rightFace");
     Processor::register_op<FrontOp<>, Shape>(vfs, "jot/front");
+    Processor::register_op<FrontOp<>, Shape>(vfs, "jot/frontFace");
     Processor::register_op<BackOp<>, Shape>(vfs, "jot/back");
+    Processor::register_op<BackOp<>, Shape>(vfs, "jot/backFace");
 }
 
 } // namespace geo

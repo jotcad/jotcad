@@ -1,6 +1,7 @@
 #pragma once
 #include "protocols.h"
 #include "processor.h"
+#include "almost_coplanar.h"
 #include "boolean/engine.h"
 
 namespace jotcad {
@@ -48,16 +49,12 @@ struct OutlineOp : P {
                     if (f1 == boolean::ExactMesh::null_face() || f2 == boolean::ExactMesh::null_face()) {
                         is_feature = true;
                     } else {
-                        const auto& n1 = face_normals[f1];
-                        const auto& n2 = face_normals[f2];
-                        if (n1.squared_length() == 0 || n2.squared_length() == 0) {
+                        auto p = mesh.point(mesh.source(h1));
+                        auto q_pt = mesh.point(mesh.target(h1));
+                        auto r = mesh.point(mesh.target(mesh.next(h1)));
+                        auto s = mesh.point(mesh.target(mesh.next(h2)));
+                        if (!is_almost_coplanar_edge(p, q_pt, r, s)) {
                             is_feature = true;
-                        } else {
-                            bool parallel = CGAL::cross_product(n1, n2).squared_length() == 0;
-                            bool same_dir = (n1 * n2) > 0;
-                            if (!parallel || !same_dir) {
-                                is_feature = true;
-                            }
                         }
                     }
                 }

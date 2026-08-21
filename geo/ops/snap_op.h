@@ -2,56 +2,47 @@
 #include "protocols.h"
 #include "processor.h"
 #include "matrix.h"
+#include "recipe.h"
 
 namespace jotcad {
 namespace geo {
+
+/**
+ * Recursively resolves the reference coordinate frame of an anchor shape.
+ * Walks down the shape hierarchy to find the first concrete reference frame.
+ */
+inline Matrix resolve_anchor_frame(const Shape& shape) {
+    if (!shape.tf.is_identity()) {
+        return shape.tf;
+    }
+    for (const auto& child : shape.components) {
+        Matrix child_frame = resolve_anchor_frame(child);
+        if (!child_frame.is_identity()) {
+            return child_frame;
+        }
+    }
+    return shape.tf;
+}
 
 template <typename P = JotVfsProtocol>
 struct SnapOp : P {
     static constexpr const char* path = "jot/snap";
 
-    static void bind_innermost_input(fs::VFSNode* vfs, nlohmann::json& param, const nlohmann::json& target_val) {
-        if (param.is_string() && param.get<std::string>().size() == 64) {
-            try {
-                auto result = vfs->read<fs::VFSResult>(fs::CID::from_json(param));
-                if (result.metadata.contains("selector")) {
-                    param = result.metadata["selector"];
-                }
-            } catch (...) {}
-        }
-        if (param.is_object() && param.contains("path")) {
-            if (!param.contains("parameters") || param["parameters"].is_null()) {
-                param["parameters"] = nlohmann::json::object();
-            }
-            if (param["parameters"].contains("$in") && !param["parameters"]["$in"].is_null()) {
-                bind_innermost_input(vfs, param["parameters"]["$in"], target_val);
-            } else {
-                param["parameters"]["$in"] = target_val;
-            }
-        } else {
-            param = target_val;
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, 
                         const Shape& in, const Shape& source_anchor, 
                         const fs::Selector& target_anchor_recipe, const Shape& target_shape) {
         
-        // 1. Evaluate the target anchor recipe on the target shape.
-        nlohmann::json recipe_json = target_anchor_recipe.to_json();
-        bind_innermost_input(vfs, recipe_json, vfs->materialize(target_shape).value);
-        fs::Selector anchor_call = fs::Selector::from_json(recipe_json);
-        Shape target_anchor = vfs->read<Shape>(anchor_call.with_output("$out"));
+        // 1. Evaluate target anchor recipe on target shape
+        fs::Selector tgt_call = bind_recipe(vfs, target_anchor_recipe, vfs->materialize(target_shape).value);
+        Shape target_anchor = vfs->read<Shape>(tgt_call.with_output("$out"));
 
-        // If target_anchor is a group with 1 component, unpack it
-        if (target_anchor.components.size() == 1) {
-            target_anchor = target_anchor.components[0];
-        }
+        // 2. Symmetrically resolve reference frames for both anchors
+        Matrix source_frame = resolve_anchor_frame(source_anchor);
+        Matrix target_frame = resolve_anchor_frame(target_anchor);
 
-        // 2. Compute the snapping transformation.
-        // We want source_anchor to land at target_anchor.
-        Matrix source_inv = source_anchor.tf.inverse();
-        Matrix snap_m = target_anchor.tf * source_inv;
+        // 3. Compute relative mating transform
+        Matrix source_inv = source_frame.inverse();
+        Matrix snap_m = target_frame * source_inv;
 
         // 3. Construct the output group containing:
         //    1) The snapped subject shape
@@ -82,8 +73,8 @@ struct SnapOp : P {
                 {"$in", {{"type", "jot:shape"}, {"description", "The shape to snap/move."}}}
             }},
             {"arguments", nlohmann::json::array({
-                {{"name", "source_anchor"}, {"type", "jot:shape"}, {"description", "The anchor on the subject shape (e.g. top())."}},
-                {{"name", "target_anchor"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "The anchor recipe on the target shape (e.g. bottom())."}},
+                {{"name", "source_anchor"}, {"type", "jot:shape"}, {"description", "The anchor on the subject shape (e.g. id('c'))."}},
+                {{"name", "target_anchor"}, {"type", "jot:op<$in:shape, $out:shape>"}, {"description", "The anchor recipe on the target shape (e.g. id('b').ty(0.5))."}},
                 {{"name", "target_shape"}, {"type", "jot:shape"}, {"description", "The target shape to snap onto."}}
             })},
             {"outputs", {

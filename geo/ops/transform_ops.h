@@ -341,9 +341,153 @@ struct AlignOp : TransformOpBase<P> {
     }
 };
 
+template <typename P = JotVfsProtocol>
+struct AlignXOp : TransformOpBase<P> {
+    static constexpr const char* path = "jot/alignX";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& targets) {
+        if (targets.empty()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+        Shape out = in;
+        Matrix inv = targets[0].tf.inverse();
+        FT tx = inv.t.m(0, 3);
+        out.apply_transform(Matrix::translate(tx, FT(0), FT(0)));
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/alignX"},
+            {"description", "Aligns the subject along X axis only using target shape matrix."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({{{"name", "targets"}, {"type", "jot:shapes"}}})},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct AlignYOp : TransformOpBase<P> {
+    static constexpr const char* path = "jot/alignY";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& targets) {
+        if (targets.empty()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+        Shape out = in;
+        Matrix inv = targets[0].tf.inverse();
+        FT ty = inv.t.m(1, 3);
+        out.apply_transform(Matrix::translate(FT(0), ty, FT(0)));
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/alignY"},
+            {"description", "Aligns the subject along Y axis only using target shape matrix."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({{{"name", "targets"}, {"type", "jot:shapes"}}})},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct AlignZOp : TransformOpBase<P> {
+    static constexpr const char* path = "jot/alignZ";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& targets) {
+        if (targets.empty()) {
+            vfs->write(fulfilling.with_output("$out"), in);
+            return;
+        }
+        Shape out = in;
+        Matrix inv = targets[0].tf.inverse();
+        FT tz = inv.t.m(2, 3);
+        out.apply_transform(Matrix::translate(FT(0), FT(0), tz));
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "targets"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/alignZ"},
+            {"description", "Aligns the subject along Z axis only using target shape matrix."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({{{"name", "targets"}, {"type", "jot:shapes"}}})},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
+template <typename P = JotVfsProtocol>
+struct PointAnchorOp : P {
+    static constexpr const char* path = "jot/point";
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& subject, const std::string& key) {
+        CGAL::Bbox_3 bbox;
+        bool first = true;
+        std::vector<const Shape*> stack;
+        stack.push_back(&subject);
+
+        while (!stack.empty()) {
+            const Shape* curr = stack.back();
+            stack.pop_back();
+
+            if (curr->geometry.has_value()) {
+                Geometry geo = vfs->read<Geometry>(*curr->geometry);
+                for (const auto& v : geo.vertices) {
+                    Point_3 p = curr->tf.transform(Point_3(v.x, v.y, v.z));
+                    if (first) { bbox = p.bbox(); first = false; }
+                    else { bbox += p.bbox(); }
+                }
+            }
+            for (const auto& child : curr->components) stack.push_back(&child);
+        }
+
+        double x = 0, y = 0, z = 0;
+        if (!first) {
+            double xmin = CGAL::to_double(bbox.xmin()), xmax = CGAL::to_double(bbox.xmax());
+            double ymin = CGAL::to_double(bbox.ymin()), ymax = CGAL::to_double(bbox.ymax());
+            double zmin = CGAL::to_double(bbox.zmin()), zmax = CGAL::to_double(bbox.zmax());
+            double xmid = (xmin + xmax) / 2.0, ymid = (ymin + ymax) / 2.0, zmid = (zmin + zmax) / 2.0;
+
+            if (key == "center") { x = xmid; y = ymid; z = zmid; }
+            else if (key == "origin") { Point_3 o = subject.tf.transform(Point_3(0,0,0)); x = CGAL::to_double(o.x()); y = CGAL::to_double(o.y()); z = CGAL::to_double(o.z()); }
+            else if (key == "bld" || key == "xmin-ymin-zmin" || key == "bottom-left-down") { x = xmin; y = ymin; z = zmin; }
+            else if (key == "blu" || key == "xmin-ymin-zmax" || key == "bottom-left-up") { x = xmin; y = ymin; z = zmax; }
+            else if (key == "brd" || key == "xmax-ymin-zmin" || key == "bottom-right-down") { x = xmax; y = ymin; z = zmin; }
+            else if (key == "bru" || key == "xmax-ymin-zmax" || key == "bottom-right-up") { x = xmax; y = ymin; z = zmax; }
+            else if (key == "tld" || key == "xmin-ymax-zmin" || key == "top-left-down") { x = xmin; y = ymax; z = zmin; }
+            else if (key == "tlu" || key == "xmin-ymax-zmax" || key == "top-left-up") { x = xmin; y = ymax; z = zmax; }
+            else if (key == "trd" || key == "xmax-ymax-zmin" || key == "top-right-down") { x = xmax; y = ymax; z = zmin; }
+            else if (key == "tru" || key == "xmax-ymax-zmax" || key == "top-right-up") { x = xmax; y = ymax; z = zmax; }
+            else { x = xmid; y = ymid; z = zmid; }
+        } else {
+            Point_3 o = subject.tf.transform(Point_3(0,0,0));
+            x = CGAL::to_double(o.x()); y = CGAL::to_double(o.y()); z = CGAL::to_double(o.z());
+        }
+
+        Shape out;
+        out.tf = Matrix::translate(FT(x), FT(y), FT(z));
+        vfs->write(fulfilling.with_output("$out"), out);
+    }
+    static std::vector<std::string> argument_keys() { return {"$in", "key"}; }
+    static typename P::json schema() {
+        return {
+            {"path", "jot/point"},
+            {"description", "Returns a 0D spatial frame point anchor (center, origin, bld, tru, etc.)."},
+            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
+            {"arguments", json::array({{{"name", "key"}, {"type", "jot:string"}, {"default", "center"}}})},
+            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
+        };
+    }
+};
+
 inline void transform_ops_init(fs::VFSNode* vfs) {
     Processor::register_op<ByOp<>, Shape, std::vector<Shape>>(vfs, "jot/by");
     Processor::register_op<AlignOp<>, Shape, std::vector<Shape>>(vfs, "jot/align");
+    Processor::register_op<AlignXOp<>, Shape, std::vector<Shape>>(vfs, "jot/alignX");
+    Processor::register_op<AlignYOp<>, Shape, std::vector<Shape>>(vfs, "jot/alignY");
+    Processor::register_op<AlignZOp<>, Shape, std::vector<Shape>>(vfs, "jot/alignZ");
     Processor::register_op<ToOp<>, Shape, std::vector<Shape>>(vfs, "jot/to");
     Processor::register_op<DupOp<>, Shape, double>(vfs, "jot/dup");
     Processor::register_op<GapOp<>, Shape>(vfs, "jot/gap");
@@ -353,6 +497,7 @@ inline void transform_ops_init(fs::VFSNode* vfs) {
     Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/origin");
     Processor::register_op<OriginOp<>, std::optional<Shape>>(vfs, "jot/o");
     Processor::register_op<CenterOp<>, std::optional<Shape>>(vfs, "jot/center");
+    Processor::register_op<PointAnchorOp<>, Shape, std::string>(vfs, "jot/point");
 }
 
 } // namespace geo

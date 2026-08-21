@@ -5,6 +5,7 @@
 #include "orb_op.h"
 #include "cone_op.h"
 #include "triangle_op.h"
+#include "tetrahedron_op.h"
 #include "plane_op.h"
 #include "points_op.h"
 #include "path_op.h"
@@ -22,6 +23,7 @@ void register_primitives_ops(fs::VFSNode* vfs) {
     orb_init(vfs);
     cone_init(vfs);
     triangle_init(vfs);
+    tetrahedron_init(vfs);
     plane_init(vfs);
     points_init(vfs);
     path_init(vfs);
