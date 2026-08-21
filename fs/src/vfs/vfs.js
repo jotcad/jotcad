@@ -127,14 +127,7 @@ export class VFS {
 
   async readSelector(selector, context = {}) {
     this._checkClosed();
-    let s = normalizeSelector(selector);
-    if (!context.unnested && (!context.stack || context.stack.length === 0)) {
-      const { selector: unnestedSelector, tasks } = await this.unnestSelector(s, context);
-      s = unnestedSelector;
-      for (const t of tasks) {
-        await t.fn();
-      }
-    }
+    const s = normalizeSelector(selector);
     const packetContext = { 
         ...context, 
         stack: context.stack || [], 
