@@ -836,7 +836,9 @@
       const artList = document.getElementById('artifacts-list');
       artList.innerHTML = '';
 
-      let firstInteractiveArtifact = null;
+      let jotArtifact = null;
+      let stlArtifact = null;
+      let imgArtifact = null;
 
       if (snap.run && snap.run.outputs) {
         Object.entries(snap.run.outputs).forEach(([port, out]) => {
@@ -854,9 +856,9 @@
           `;
 
           const fn = out.filename.toLowerCase();
-          if ((fn.endsWith('.stl') || fn.endsWith('.jot') || fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg')) && !firstInteractiveArtifact) {
-            firstInteractiveArtifact = { port, out };
-          }
+          if (fn.endsWith('.jot') && !jotArtifact) jotArtifact = { port, out };
+          if (fn.endsWith('.stl') && !stlArtifact) stlArtifact = { port, out };
+          if ((fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg')) && !imgArtifact) imgArtifact = { port, out };
 
           item.onclick = () => selectArtifact(port, out);
           artList.appendChild(item);
@@ -877,9 +879,10 @@
         return;
       }
 
-      // Auto-load first 3D or visual artifact found
-      if (firstInteractiveArtifact) {
-        selectArtifact(firstInteractiveArtifact.port, firstInteractiveArtifact.out);
+      // Auto-load default artifact (prioritizing .jot, then .stl, then images)
+      const defaultArtifact = jotArtifact || stlArtifact || imgArtifact;
+      if (defaultArtifact) {
+        selectArtifact(defaultArtifact.port, defaultArtifact.out);
       } else if (snap.run && snap.run.outputs && Object.keys(snap.run.outputs).length > 0) {
         const firstPort = Object.keys(snap.run.outputs)[0];
         selectArtifact(firstPort, snap.run.outputs[firstPort]);

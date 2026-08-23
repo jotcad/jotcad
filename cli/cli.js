@@ -196,30 +196,7 @@ Examples:
 
   // 3. Sync operators catalog
   console.log('[JotCAD CLI] Syncing operator catalog from mesh...');
-  let catalogReceived = null;
-  vfs.events.on('notify', (selector, payload) => {
-    if (selector.path === 'sys/schema') {
-      catalogReceived = payload;
-    }
-  });
-
-  await mesh.subscribe(new Selector('sys/schema'), Date.now() + 15000);
-
-  // Wait for catalog to stabilize (size stops growing for 500ms)
-  let prevCount = 0;
-  let stableAttempts = 0;
-  for (let i = 0; i < 50; i++) {
-    await new Promise(r => setTimeout(r, 100));
-    const currentCount = Object.keys(mesh.catalog || {}).length;
-    if (currentCount > 0 && currentCount === prevCount) {
-      stableAttempts++;
-      if (stableAttempts >= 5) break;
-    } else {
-      stableAttempts = 0;
-      prevCount = currentCount;
-    }
-  }
-
+  await mesh.fetchCatalog({ timeout: 5000 });
   const catalogCount = Object.keys(mesh.catalog || {}).length;
   if (catalogCount > 0) {
     console.log(`[JotCAD CLI] Loaded ${catalogCount} operators from mesh.`);

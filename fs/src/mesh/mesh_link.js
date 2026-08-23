@@ -429,12 +429,12 @@ export class MeshLinkBase {
     return null;
   }
 
-  async queryCatalog() {
-    if (!this.session) return;
-    log(`[MeshLink ${this.vfs.id}] Initial catalog query on Zenoh mesh...`);
+  async fetchCatalog({ timeout = 5000 } = {}) {
+    if (!this.session) return this.catalog || {};
+    log(`[MeshLink ${this.vfs.id}] Fetching catalog on Zenoh mesh...`);
     try {
       const receiver = await this.session.get('jot/vfs/catalog', {
-        timeout: 5000,
+        timeout,
         target: QueryTarget.ALL,
         consolidation: 1
       });
@@ -458,8 +458,13 @@ export class MeshLinkBase {
         }
       }
     } catch (err) {
-      log(`[MeshLink ${this.vfs.id}] Catalog query failed: ${err.message}`);
+      log(`[MeshLink ${this.vfs.id}] Fetch catalog failed: ${err.message}`);
     }
+    return this.catalog || {};
+  }
+
+  async queryCatalog(options) {
+    return this.fetchCatalog(options);
   }
 
   updateCatalog(payload) {
