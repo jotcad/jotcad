@@ -12,6 +12,8 @@
 #include "tag_ops.h"
 #include "filter_ops.h"
 #include "faces_op.h"
+#include "rim_op.h"
+#include "hole_op.h"
 #include "separate_op.h"
 #include "measure_ops.h"
 #include "sort_ops.h"
@@ -38,6 +40,8 @@ void register_transforms_ops(fs::VFSNode* vfs) {
     tag_ops_init(vfs);
     filter_ops_init(vfs);
     faces_init(vfs);
+    rim_init(vfs);
+    hole_init(vfs);
     separate_init(vfs);
     measure_init(vfs);
     bb_init(vfs);

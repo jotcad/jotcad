@@ -28,22 +28,31 @@ struct TriangleOp : P {
 
     struct Standard {
         static constexpr const char* path = "jot/Triangle";
-        static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, double va, double vb, double vc) {
+        static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, 
+                            std::optional<double> a, 
+                            std::optional<double> b, 
+                            std::optional<double> c, 
+                            std::optional<double> x, 
+                            std::optional<double> y, 
+                            std::optional<bool> center) {
             Geometry res;
-            makeTriangle(res, va, vb, vc);
+            makeTriangle(res, a, b, c, x, y, center);
             Shape out = P::make_shape(vfs, res, {{"type", "surface"}});
             vfs->write(fulfilling.with_output("$out"), out);
         }
-        static std::vector<std::string> argument_keys() { return {"va", "vb", "vc"}; }
+        static std::vector<std::string> argument_keys() { return {"a", "b", "c", "x", "y", "center"}; }
         static typename P::json schema() {
             return {
                 {"path", path},
-                {"description", "Generates a 2D triangle centered on its centroid."},
+                {"description", "Generates a 2D triangle from 3 side lengths (a, b, c) or 2 orthogonal legs (x, y)."},
                 {"inputs", nlohmann::json::object()},
                 {"arguments", json::array({
-                    {{"name", "va"}, {"type", "jot:number"}},
-                    {{"name", "vb"}, {"type", "jot:number"}},
-                    {{"name", "vc"}, {"type", "jot:number"}}
+                    {{"name", "a"}, {"type", "jot:number"}, {"optional", true}},
+                    {{"name", "b"}, {"type", "jot:number"}, {"optional", true}},
+                    {{"name", "c"}, {"type", "jot:number"}, {"optional", true}},
+                    {{"name", "x"}, {"type", "jot:number"}, {"optional", true}},
+                    {{"name", "y"}, {"type", "jot:number"}, {"optional", true}},
+                    {{"name", "center"}, {"type", "jot:boolean"}, {"optional", true}}
                 })},
                 {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
             };
@@ -91,7 +100,13 @@ struct TriangleOp : P {
 };
 
 static void triangle_init(fs::VFSNode* vfs) {
-    Processor::register_op<TriangleOp<>::Standard, double, double, double>(vfs, "jot/Triangle");
+    Processor::register_op<TriangleOp<>::Standard, 
+                           std::optional<double>, 
+                           std::optional<double>, 
+                           std::optional<double>, 
+                           std::optional<double>, 
+                           std::optional<double>, 
+                           std::optional<bool>>(vfs, "jot/Triangle");
     Processor::register_op<TriangleOp<>::Equilateral, double>(vfs, "jot/Triangle/equilateral");
     Processor::register_op<TriangleOp<>::ByHeight, double>(vfs, "jot/Triangle/height");
 }

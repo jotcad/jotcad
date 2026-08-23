@@ -23,15 +23,9 @@ struct ExtrudeProject {
 
 template <typename P = JotVfsProtocol>
 struct ExtrudeOpBase : P {
-    static void execute_sweep(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Matrix& bottom_tf, const Matrix& top_tf) {
-        if (!in.is_real() && !in.is_gap()) {
-            vfs->write(fulfilling.with_output("$out"), in);
-            return;
-        }
-        if (!in.geometry.has_value()) {
-            vfs->write(fulfilling.with_output("$out"), in);
-            return;
-        }
+    static Shape sweep_single_node(fs::VFSNode* vfs, const Shape& in, const Matrix& bottom_tf, const Matrix& top_tf) {
+        if (!in.is_real() && !in.is_gap()) return in;
+        if (!in.geometry.has_value()) return in;
 
         Geometry geo = vfs->read<Geometry>(in.geometry.value());
         Geometry res;
@@ -90,71 +84,64 @@ struct ExtrudeOpBase : P {
             res.segments.push_back({v0, v0+1});
         }
 
-        if (res.vertices.empty()) {
-            vfs->write(fulfilling.with_output("$out"), in);
-            return;
-        }
+        if (res.vertices.empty()) return in;
 
         Shape out = in;
         std::string in_type = in.tags.value("type", "");
         if (in_type == "points") out.add_tag("type", "segments");
         else if (in_type == "segments") out.add_tag("type", "open");
         else if (in_type == "surface") out.add_tag("type", "closed");
-        else if (in_type == "open") out.add_tag("type", "closed"); // Extruding a shell might close it, or keep it open. Default to closed if possible? Actually segments->open is safer.
+        else if (in_type == "open") out.add_tag("type", "closed");
         
         res.triangulate();
         out.geometry = vfs->materialize<Geometry>(res);
-        vfs->write(fulfilling.with_output("$out"), out);
+        return out;
     }
 };
 
 template <typename P = JotVfsProtocol>
 struct ExtrudeOp : ExtrudeOpBase<P> {
     static constexpr const char* path = "jot/extrude";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const typename P::json& target, std::optional<Interval> range) {
+
+    static Shape extrude_node(fs::VFSNode* vfs, const Shape& in, const typename P::json& target, std::optional<Interval> range) {
+        if (!in.geometry.has_value()) return in;
+
         if (target.is_number() || target.is_array()) {
-            // Case 1: Normal-based extrusion (target is distance/interval)
-            if (!in.geometry.has_value()) {
-                vfs->write(fulfilling.with_output("$out"), in);
-                return;
-            }
             Geometry geo = vfs->read<Geometry>(in.geometry.value());
             auto p_opt = geo.find_plane();
-            
             Interval iv = Interval::from_json(target);
 
             if (!p_opt) {
-                // Fallback to local Z if no plane found
-                ExtrudeOpBase<P>::execute_sweep(vfs, fulfilling, in, 
+                return ExtrudeOpBase<P>::sweep_single_node(vfs, in, 
                     Matrix::translate(0, 0, FT(iv.min)), 
                     Matrix::translate(0, 0, FT(iv.max)));
-                return;
             }
 
-            // Normal vector in local space
             Vector_3 n = p_opt->orthogonal_vector();
             Matrix norm_frame = Matrix::fromNormal(Point_3(0,0,0), n);
             Matrix b_tf = norm_frame * Matrix::translate(0, 0, FT(iv.min)) * norm_frame.inverse();
             Matrix t_tf = norm_frame * Matrix::translate(0, 0, FT(iv.max)) * norm_frame.inverse();
 
-            ExtrudeOpBase<P>::execute_sweep(vfs, fulfilling, in, b_tf, t_tf);
+            return ExtrudeOpBase<P>::sweep_single_node(vfs, in, b_tf, t_tf);
         } else {
-            // Case 2: Reference-based extrusion (target is a Shape defining an axis)
-            Shape target_shape = Processor::decode<Shape>(vfs, "target", {{"target", target}}, schema(), {});
-            
-            // The relative transform to the target shape's coordinate system
+            Shape target_shape = Processor::decode<Shape>(vfs, "target", {{"target", target}}, ExtrudeOp<P>::schema(), {});
             Matrix to_target = in.tf.inverse() * target_shape.tf;
 
             if (range.has_value()) {
-                // Extrude between range.min and range.max along the target's local Z axis
                 Matrix b_tf = to_target * Matrix::translate(0, 0, FT(range->min));
                 Matrix t_tf = to_target * Matrix::translate(0, 0, FT(range->max));
-                ExtrudeOpBase<P>::execute_sweep(vfs, fulfilling, in, b_tf, t_tf);
+                return ExtrudeOpBase<P>::sweep_single_node(vfs, in, b_tf, t_tf);
             } else {
-                // Default: Extrude from current position (identity) to the target's origin
-                ExtrudeOpBase<P>::execute_sweep(vfs, fulfilling, in, Matrix::identity(), to_target);
+                return ExtrudeOpBase<P>::sweep_single_node(vfs, in, Matrix::identity(), to_target);
             }
         }
+    }
+
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const typename P::json& target, std::optional<Interval> range) {
+        Shape out = in.map([&](const Shape& node) {
+            return extrude_node(vfs, node, target, range);
+        });
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "target", "range"}; }
     static typename P::json schema() {
@@ -175,9 +162,12 @@ template <typename P = JotVfsProtocol>
 struct ExtrudeXOp : ExtrudeOpBase<P> {
     static constexpr const char* path = "jot/extrudeX";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, Interval height) {
-        ExtrudeOpBase<P>::execute_sweep(vfs, fulfilling, in, 
-            Matrix::translate(FT(height.min), 0, 0), 
-            Matrix::translate(FT(height.max), 0, 0));
+        Shape out = in.map([&](const Shape& node) {
+            return ExtrudeOpBase<P>::sweep_single_node(vfs, node, 
+                Matrix::translate(FT(height.min), 0, 0), 
+                Matrix::translate(FT(height.max), 0, 0));
+        });
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "height"}; }
     static typename P::json schema() {
@@ -197,9 +187,12 @@ template <typename P = JotVfsProtocol>
 struct ExtrudeYOp : ExtrudeOpBase<P> {
     static constexpr const char* path = "jot/extrudeY";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, Interval height) {
-        ExtrudeOpBase<P>::execute_sweep(vfs, fulfilling, in, 
-            Matrix::translate(0, FT(height.min), 0), 
-            Matrix::translate(0, FT(height.max), 0));
+        Shape out = in.map([&](const Shape& node) {
+            return ExtrudeOpBase<P>::sweep_single_node(vfs, node, 
+                Matrix::translate(0, FT(height.min), 0), 
+                Matrix::translate(0, FT(height.max), 0));
+        });
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "height"}; }
     static typename P::json schema() {
@@ -219,9 +212,12 @@ template <typename P = JotVfsProtocol>
 struct ExtrudeZOp : ExtrudeOpBase<P> {
     static constexpr const char* path = "jot/extrudeZ";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, Interval height) {
-        ExtrudeOpBase<P>::execute_sweep(vfs, fulfilling, in, 
-            Matrix::translate(0, 0, FT(height.min)), 
-            Matrix::translate(0, 0, FT(height.max)));
+        Shape out = in.map([&](const Shape& node) {
+            return ExtrudeOpBase<P>::sweep_single_node(vfs, node, 
+                Matrix::translate(0, 0, FT(height.min)), 
+                Matrix::translate(0, 0, FT(height.max)));
+        });
+        vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "height"}; }
     static typename P::json schema() {

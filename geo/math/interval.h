@@ -19,8 +19,15 @@ struct Interval {
 
     static Interval from_json(const nlohmann::json& j) {
         if (j.is_array()) {
-            if (j.size() == 2) return {j[0].get<double>(), j[1].get<double>()};
-            if (j.size() == 1) return {0.0, j[0].get<double>()}; // [30] -> [0, 30]
+            if (j.size() == 2) {
+                double v0 = j[0].get<double>();
+                double v1 = j[1].get<double>();
+                return {std::min(v0, v1), std::max(v0, v1)};
+            }
+            if (j.size() == 1) {
+                double v = j[0].get<double>();
+                return {std::min(0.0, v), std::max(0.0, v)};
+            }
         }
         if (j.is_number()) {
             double v = j.get<double>();

@@ -13,40 +13,8 @@ namespace jotcad {
 namespace geo {
 
 template <typename P = JotVfsProtocol>
-struct AsFacesOp : P {
-    static constexpr const char* path = "jot/asFaces";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        if (!in.geometry.has_value()) {
-            vfs->write(fulfilling.with_output("$out"), in);
-            return;
-        }
-        Geometry geo = vfs->read<Geometry>(in.geometry.value());
-        Geometry res;
-        res.vertices = geo.vertices;
-        res.faces = geo.faces;
-        
-        Shape out;
-        out.tf = in.tf;
-        res.triangulate();
-        out.geometry = vfs->materialize<Geometry>(res);
-        out.add_tag("type", "faces");
-        vfs->write(fulfilling.with_output("$out"), out);
-    }
-    static std::vector<std::string> argument_keys() { return {"$in"}; }
-    static typename P::json schema() {
-        return {
-            {"path", "jot/asFaces"},
-            {"description", "Materializes the subject's faces into a single mesh shape."},
-            {"inputs", {{"$in", {{"type", "jot:shape"}}}}},
-            {"arguments", nlohmann::json::array()},
-            {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
-        };
-    }
-};
-
-template <typename P = JotVfsProtocol>
 struct FacesOp : P {
-    static constexpr const char* path = "jot/faces";
+    static constexpr const char* path = "jot/face";
 
     typedef boolean::ExactMesh ExactMesh;
     typedef CGAL::Gps_segment_traits_2<EK> Gps_traits_2;
@@ -602,7 +570,7 @@ struct BackOp : P {
 };
 
 static void faces_init(fs::VFSNode* vfs) {
-    Processor::register_op<AsFacesOp<>, Shape>(vfs, "jot/asFaces");
+    Processor::register_op<FacesOp<>, Shape, bool>(vfs, "jot/face");
     Processor::register_op<FacesOp<>, Shape, bool>(vfs, "jot/faces");
     Processor::register_op<SideFacesOp<>, Shape, bool>(vfs, "jot/sideFaces");
     Processor::register_op<SideFacesOp<>, Shape, bool>(vfs, "jot/sides");

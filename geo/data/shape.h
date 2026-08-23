@@ -80,6 +80,36 @@ struct Shape {
         return 1.0;
     }
 
+    bool is_singleton_group() const {
+        return !geometry.has_value() && components.size() == 1;
+    }
+
+    Shape unwrap_singleton() const {
+        if (is_singleton_group()) {
+            Shape unwrapped = components[0].unwrap_singleton();
+            unwrapped.tf = tf * unwrapped.tf;
+            for (auto it = tags.begin(); it != tags.end(); ++it) {
+                if (!unwrapped.tags.contains(it.key())) {
+                    unwrapped.tags[it.key()] = it.value();
+                }
+            }
+            return unwrapped;
+        }
+        return *this;
+    }
+
+    template <typename F>
+    Shape map(F&& fn) const {
+        Shape out = fn(*this);
+        std::vector<Shape> new_children;
+        new_children.reserve(components.size());
+        for (const auto& child : components) {
+            new_children.push_back(child.map(fn));
+        }
+        out.components = std::move(new_children);
+        return out;
+    }
+
     static Shape make_ghost(const Shape& s) {
         Shape g = s;
         g.add_tag("role", "ghost");

@@ -184,11 +184,11 @@ struct SweepOp : P {
                             double d_diag_B = CGAL::to_double((p01 - p10).squared_length());
 
                             if (d_diag_A <= d_diag_B) {
-                                res.faces.push_back({{{v00, v01, v11}}});
-                                res.faces.push_back({{{v00, v11, v10}}});
+                                res.faces.push_back({{{v00, v10, v11}}});
+                                res.faces.push_back({{{v00, v11, v01}}});
                             } else {
-                                res.faces.push_back({{{v01, v11, v10}}});
-                                res.faces.push_back({{{v01, v10, v00}}});
+                                res.faces.push_back({{{v01, v00, v10}}});
+                                res.faces.push_back({{{v01, v10, v11}}});
                             }
                         } else {
                             res.segments.push_back({v00, v10});
