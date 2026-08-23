@@ -35,6 +35,13 @@ struct OutlineOp : P {
             }
 
             Geometry res;
+            std::map<boolean::ExactMesh::Vertex_index, int> v_map;
+            for (auto v : mesh.vertices()) {
+                auto p = mesh.point(v);
+                v_map[v] = (int)res.vertices.size();
+                res.vertices.push_back({p.x(), p.y(), p.z()});
+            }
+
             // Iterate over all edges in the mesh
             for (auto e : mesh.edges()) {
                 auto h1 = mesh.halfedge(e, 0);
@@ -60,20 +67,14 @@ struct OutlineOp : P {
                 }
 
                 if (is_feature) {
-                    auto p_a = mesh.point(mesh.source(h1));
-                    auto p_b = mesh.point(mesh.target(h1));
-                    
-                    int base = (int)res.vertices.size();
-                    res.vertices.push_back({p_a.x(), p_a.y(), p_a.z()});
-                    res.vertices.push_back({p_b.x(), p_b.y(), p_b.z()});
-                    res.segments.push_back({base, base + 1});
+                    int i0 = v_map[mesh.source(h1)];
+                    int i1 = v_map[mesh.target(h1)];
+                    res.segments.push_back({i0, i1});
                 }
             }
 
-            std::cout << "[DEBUG OutlineOp] res geometry: vertices = " << res.vertices.size() 
-                      << ", segments = " << res.segments.size() << std::endl;
-
             out.geometry = vfs->materialize<Geometry>(res);
+            out.add_tag("type", "segments");
         }
 
         out.components.clear();
