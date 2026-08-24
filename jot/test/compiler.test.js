@@ -294,5 +294,78 @@ test('JotCompiler Argument Mapping', async (t) => {
     assert.equal(resolved.parameters.image.parameters.url, 'http://example.com/map.png');
     assert.equal(resolved.parameters.width, 15.0);
   });
+
+  await t.test('Zero-Argument Method Chaining (a.b as an alternative for a.b())', async () => {
+    compiler.registerOperator('Box', {
+      path: 'jot/Box',
+      schema: {
+        arguments: [
+          { name: 'size', type: 'jot:number', default: 10 }
+        ],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    compiler.registerOperator('unfold', {
+      path: 'jot/unfold',
+      schema: {
+        inputs: { "$in": { type: "jot:shape" } },
+        arguments: [],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    compiler.registerOperator('pdf', {
+      path: 'jot/pdf',
+      schema: {
+        inputs: { "$in": { type: "jot:shape" } },
+        arguments: [
+          { name: 'margin', type: 'jot:number', default: 5 }
+        ],
+        outputs: { "$out": { type: "jot:bytes" } }
+      }
+    });
+
+    compiler.registerOperator('color', {
+      path: 'jot/color',
+      schema: {
+        inputs: { "$in": { type: "jot:shape" } },
+        arguments: [
+          { name: 'c', type: 'jot:string' }
+        ],
+        outputs: { "$out": { type: "jot:shape" } }
+      }
+    });
+
+    // 1. Single dot call without parens: Box(10).unfold
+    const r1 = await compiler.evaluate(parser.parse('Box(10).unfold -> $out'), {}, defaultSchema);
+    assert.equal(r1.length, 1);
+    assert.equal(r1[0].selector.path, 'jot/unfold');
+    assert.equal(r1[0].selector.parameters.$in.path, 'jot/Box');
+    assert.equal(r1[0].selector.parameters.$in.parameters.size, 10);
+
+    // 2. Multi-level dot calls without parens: Box(10).unfold.pdf
+    const r2 = await compiler.evaluate(parser.parse('Box(10).unfold.pdf -> $out'), {}, { outputs: { "$out": { type: "jot:bytes" } } });
+    assert.equal(r2.length, 1);
+    assert.equal(r2[0].selector.path, 'jot/pdf');
+    assert.equal(r2[0].selector.parameters.$in.path, 'jot/unfold');
+    assert.equal(r2[0].selector.parameters.$in.parameters.$in.path, 'jot/Box');
+
+    // 3. Mixed chaining with arguments and dot calls: Box(10).color('red').unfold.pdf
+    const r3 = await compiler.evaluate(parser.parse("Box(10).color('red').unfold.pdf -> $out"), {}, { outputs: { "$out": { type: "jot:bytes" } } });
+    assert.equal(r3.length, 1);
+    assert.equal(r3[0].selector.path, 'jot/pdf');
+    assert.equal(r3[0].selector.parameters.$in.path, 'jot/unfold');
+    assert.equal(r3[0].selector.parameters.$in.parameters.$in.path, 'jot/color');
+    assert.equal(r3[0].selector.parameters.$in.parameters.$in.parameters.c, 'red');
+
+    // 4. Array universal mapping with dot calls: [Box(10), Box(20)].unfold
+    const r4 = await compiler.evaluate(parser.parse('[Box(10), Box(20)].unfold -> $out'), {}, defaultSchema);
+    assert.equal(r4.length, 2);
+    assert.equal(r4[0].selector.path, 'jot/unfold');
+    assert.equal(r4[0].selector.parameters.$in.parameters.size, 10);
+    assert.equal(r4[1].selector.path, 'jot/unfold');
+    assert.equal(r4[1].selector.parameters.$in.parameters.size, 20);
+  });
 });
 

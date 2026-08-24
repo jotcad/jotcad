@@ -100,8 +100,8 @@ export class JotParser {
         const args = this._parseArguments();
         expr = this._wrapInOp(name, expr, args);
       } else {
-        // Output Port Access (e.g. res.$out)
-        expr = { type: 'OUTPUT_ACCESS', subject: expr, output: name };
+        // Zero-argument method chaining: a.b is an alternative for a.b()
+        expr = this._wrapInOp(name, expr, []);
       }
     }
 
