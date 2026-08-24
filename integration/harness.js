@@ -57,28 +57,10 @@ export async function runIntegrationTest(testName, optionsOrFn) {
                 const nodeId = `${testName.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-node`;
                 const { vfs, mesh, compiler, parser } = await createNode(nodeId);
 
-                // Wait for mesh to sync and find operators
-                await waitForMeshNodes(vfs, ['geo-ops-node']);
-
-                // Fetch catalog
-                let catalogReceived = null;
-                vfs.events.on('notify', (selector, payload) => {
-                    if (selector.path === 'sys/schema') {
-                        catalogReceived = payload;
-                    }
-                });
-                await mesh.subscribe(new Selector('sys/schema'), Date.now() + 15000);
-                
-                let attempts = 0;
-                while (!catalogReceived && attempts < 50) {
-                    await new Promise(r => setTimeout(r, 100));
-                    attempts++;
-                }
-                if (catalogReceived) {
-                    for (const [path, schema] of Object.entries(catalogReceived.catalog)) {
-                        const shortName = path.split('/').pop();
-                        compiler.registerOperator(shortName, { path, schema });
-                    }
+                // Sync operators directly from mesh catalog
+                const catalog = await mesh.fetchCatalog({ timeout: 5000 });
+                for (const [path, schema] of Object.entries(catalog)) {
+                    compiler.registerOperator(path, { path, schema });
                 }
 
                 const readData = async (selector) => {
@@ -118,38 +100,19 @@ export async function runIntegrationTest(testName, optionsOrFn) {
                     readOutput,
                     captureOutputPNG,
                     createNode,
-                    catalog: catalogReceived
+                    catalog
                 });
 
             } else {
                 // Declarative JOT script test
                 const { script, png, pngOptions = {} } = optionsOrFn;
                 const nodeId = `${testName.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-node`;
-                const { vfs, compiler, parser } = await createNode(nodeId);
+                const { vfs, mesh, compiler, parser } = await createNode(nodeId);
 
-                await waitForMeshNodes(vfs, ['geo-ops-node']);
-
-                // Fetch catalog
-                let catalogReceived = null;
-                vfs.events.on('notify', (selector, payload) => {
-                    if (selector.path === 'sys/schema') {
-                        catalogReceived = payload;
-                    }
-                });
-                await vfs.mesh.subscribe(new Selector('sys/schema'), Date.now() + 15000);
-                
-                let attempts = 0;
-                while (!catalogReceived && attempts < 50) {
-                    await new Promise(r => setTimeout(r, 100));
-                    attempts++;
-                }
-                if (!catalogReceived) {
-                    throw new Error("Failed to receive schema catalog from mesh");
-                }
-
-                for (const [path, schema] of Object.entries(catalogReceived.catalog)) {
-                    const shortName = path.split('/').pop();
-                    compiler.registerOperator(shortName, { path, schema });
+                // Sync operators directly from mesh catalog
+                const catalog = await mesh.fetchCatalog({ timeout: 5000 });
+                for (const [path, schema] of Object.entries(catalog)) {
+                    compiler.registerOperator(path, { path, schema });
                 }
 
                 console.log(`[Harness] Compiling declarative JOT script...`);

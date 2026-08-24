@@ -100,9 +100,6 @@ function matrixToString(M) {
 }
 
 runIntegrationTest('jot/rig - Caterpillar S-Curve Organic Rigging Integration', async ({ vfs, readData, capturePNG }) => {
-    console.log("[Test] Waiting for mesh nodes...");
-    await waitForMeshNodes(vfs, ['geo-mapping-node']);
-
     // 1. Generate caterpillar geometry
     console.log("[Test] Generating Caterpillar geometry...");
     const caterpillarGeoText = generateCaterpillarGeoText(10.0, 16, 40);

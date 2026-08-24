@@ -22,32 +22,40 @@ test('E2E Nested Expansion: Op A calls Op B', async (t) => {
         testNode = new TestVFSNode('test-node', TEST_NODE_PORT, [`http://localhost:${routerPort}`]);
         await testNode.start();
 
-        const boxSchema = { arguments: [{ name: 'size', type: 'jot:number' }], outputs: { $out: 'jot:shape' } };
-        const colorSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [{ name: 'color', type: 'jot:string' }], outputs: { $out: 'jot:shape' } };
+        // Sync live catalog for real C++ operators (Box, color, etc.)
+        const catalog = await testNode.meshLink.fetchCatalog({ timeout: 5000 });
+
         const opBSchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } };
         const opASchema = { inputs: { '$in': { type: 'jot:shape' } }, arguments: [], outputs: { $out: 'jot:shape' } };
 
         // Register Op B: Wraps color("blue")
         testNode.registerProvider('user/OpB', async (vfs, selector, context) => {
             const innerCompiler = new JotCompiler(vfs);
-            innerCompiler.registerOperator('color', { path: 'jot/color', schema: colorSchema });
+            for (const [path, schema] of Object.entries(catalog)) {
+                innerCompiler.registerOperator(path, { path, schema });
+            }
             const terminals = await innerCompiler.evaluate((new JotParser()).parse('$in.color("blue") -> $out'), selector.parameters, opBSchema);
-            return await vfs.read(terminals[0].selector, { ...context, stack: [] });
+            return await vfs.readSelector(terminals[0].selector, { ...context, stack: [] });
         }, opBSchema);
 
         // Register Op A: Wraps Op B
         testNode.registerProvider('user/OpA', async (vfs, selector, context) => {
             const innerCompiler = new JotCompiler(vfs);
+            for (const [path, schema] of Object.entries(catalog)) {
+                innerCompiler.registerOperator(path, { path, schema });
+            }
             innerCompiler.registerOperator('user/OpB', { path: 'user/OpB', schema: opBSchema });
             const terminals = await innerCompiler.evaluate((new JotParser()).parse('$in.OpB() -> $out'), selector.parameters, opASchema);
-            return await vfs.read(terminals[0].selector, { ...context, stack: [] });
+            return await vfs.readSelector(terminals[0].selector, { ...context, stack: [] });
         }, opASchema);
 
-        // Execute Box().OpA()
+        // Execute Box(10, 10, 10).OpA()
         const compiler = new JotCompiler(testNode.vfs);
-        compiler.registerOperator('Box', { path: 'jot/Box', schema: boxSchema });
+        for (const [path, schema] of Object.entries(catalog)) {
+            compiler.registerOperator(path, { path, schema });
+        }
         compiler.registerOperator('user/OpA', { path: 'user/OpA', schema: opASchema });
-        const terminals = await compiler.evaluate((new JotParser()).parse('Box(10).OpA() -> $out'), {}, { outputs: { $out: 'jot:shape' } });
+        const terminals = await compiler.evaluate((new JotParser()).parse('Box(10, 10, 10).OpA() -> $out'), {}, { outputs: { $out: 'jot:shape' } });
 
         const resultObj = await testNode.vfs.readSelector(terminals[0].selector);
 

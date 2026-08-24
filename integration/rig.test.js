@@ -59,10 +59,6 @@ function generateCylinderGeoText(radius, height, slices, segments) {
 }
 
 runIntegrationTest('jot/rig - C++ VFS Operator & PBD Skinning Integration', async ({ vfs, readData, capturePNG }) => {
-    // Wait for the C++ ops node to join the Zenoh mesh
-    console.log("[Test] Waiting for mesh nodes...");
-    await waitForMeshNodes(vfs, ['geo-mapping-node']);
-
     // 1. Generate cylinder geometry
     console.log("[Test] Generating Cylinder geometry...");
     const cylinderGeoText = generateCylinderGeoText(1.0, 10.0, 20, 16);

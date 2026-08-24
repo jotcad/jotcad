@@ -174,20 +174,25 @@ export class VFS {
     return { stream, metadata: result.metadata };
   }
 
-  async _drainStream(result) {
-    if (!result) return null;
-    const { stream, metadata } = result;
-    if (!stream) return null;
-    const reader = stream.getReader();
+  async _drainStreamToBytes(result) {
+    if (!result || !result.stream) return null;
+    const stream = result.stream;
     const chunks = [];
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
+    if (typeof stream.getReader === 'function') {
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
       }
-    } finally {
-      reader.releaseLock();
+    } else {
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
     }
     const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
     const bytes = new Uint8Array(totalLength);
@@ -196,7 +201,48 @@ export class VFS {
       bytes.set(chunk, offset);
       offset += chunk.length;
     }
-    const encoding = metadata?.encoding;
+    return bytes;
+  }
+
+  async readSelectorAsBytes(selector, context = {}) {
+    const result = await this.readSelector(selector, context);
+    return await this._drainStreamToBytes(result);
+  }
+
+  async readSelectorAsText(selector, context = {}) {
+    const bytes = await this.readSelectorAsBytes(selector, context);
+    if (bytes === null) return null;
+    return new TextDecoder().decode(bytes);
+  }
+
+  async readSelectorAsJSON(selector, context = {}) {
+    const text = await this.readSelectorAsText(selector, context);
+    if (text === null) return null;
+    return JSON.parse(text);
+  }
+
+  async readCIDAsBytes(cid, context = {}) {
+    const result = await this.readCID(cid, context);
+    return await this._drainStreamToBytes(result);
+  }
+
+  async readCIDAsText(cid, context = {}) {
+    const bytes = await this.readCIDAsBytes(cid, context);
+    if (bytes === null) return null;
+    return new TextDecoder().decode(bytes);
+  }
+
+  async readCIDAsJSON(cid, context = {}) {
+    const text = await this.readCIDAsText(cid, context);
+    if (text === null) return null;
+    return JSON.parse(text);
+  }
+
+  async _drainStream(result) {
+    if (!result) return null;
+    const bytes = await this._drainStreamToBytes(result);
+    if (!bytes) return null;
+    const encoding = result.metadata?.encoding;
     if (encoding === 'json') {
       try {
         return JSON.parse(new TextDecoder().decode(bytes));

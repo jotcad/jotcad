@@ -65,13 +65,14 @@ test('Compiler: Hexagon(30).at(eachCorner(), cut(Triangle(2)))', async (t) => {
   assert.strictEqual(at.path, 'jot/at');
   assert.strictEqual(at.parameters.target.path, 'jot/eachCorner');
   
-  // eachCorner should have inherited the Hexagon(30) subject
-  assert.strictEqual(at.parameters.target.parameters.$in.path, 'jot/Hexagon/full');
+  // In higher-order operations (at, snap, on), $in is bound at the top-level
+  assert.strictEqual(at.parameters.$in.path, 'jot/Hexagon/full');
+  assert.strictEqual(at.parameters.$in.parameters.diameter, 30);
 
   const cut = at.parameters.op;
   assert.strictEqual(cut.path, 'jot/cut');
   assert.strictEqual(cut.parameters.tools[0].path, 'jot/Triangle/equilateral');
-
-  // cut should also have inherited the Hexagon(30) subject
-  assert.strictEqual(cut.parameters.$in.path, 'jot/Hexagon/full');
+  assert.strictEqual(cut.parameters.tools[0].parameters.size, 2);
+  // Recipe $in remains unbound at compile-time for dynamic kernel execution
+  assert.strictEqual(cut.parameters.$in, undefined);
 });

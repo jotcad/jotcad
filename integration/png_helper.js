@@ -21,19 +21,13 @@ export async function captureAndVerifyPNG(vfs, shapeSelector, filename, expected
     // 1. Create the PNG selector
     const pngSelector = new Selector('jot/png', { '$in': shapeSelector, ...options }).withOutput('$out');
     
-    // 2. Read from VFS
-    const result = await vfs.read(pngSelector);
-    if (!result) {
+    // 2. Read from VFS as binary bytes
+    const raw = await vfs.readSelectorAsBytes(pngSelector);
+    if (!raw) {
         throw new Error(`Failed to read PNG for ${filename} from VFS`);
     }
-    
-    // 3. Consume the stream
-    const chunks = [];
-    for await (const chunk of result.stream) {
-        chunks.push(chunk);
-    }
-    const pngBytes = Buffer.concat(chunks);
-    
+    const pngBytes = Buffer.from(raw);
+    console.log(`[PNG Helper] Fetched PNG ${filename}, byte length: ${pngBytes.length}`);
     assert.ok(pngBytes.length > 0, `PNG ${filename} should not be empty`);
     
     // 4. Write to disk (inside actual/ folder relative to project root)

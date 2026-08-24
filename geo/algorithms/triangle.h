@@ -24,6 +24,22 @@ static void makeTriangle(Geometry& geo,
     FT v1x = 0, v1y = 0;
     FT v2x = 0, v2y = 0;
 
+    // Case 0: Single-argument equilateral triangle: Triangle(20)
+    if (has_a && !has_b && !has_c && !has_x && !has_y) {
+        double s = a_opt.value();
+        double h = s * 0.8660254037844386; // sqrt(3)/2
+        bool center = center_opt.value_or(false);
+        FT cx = center ? FT(0) : FT(s / 2.0);
+        FT cy = center ? FT(h / 3.0) : FT(0);
+        geo.vertices.clear();
+        geo.vertices.push_back({-FT(s)/FT(2) + cx, -cy, FT(0)});
+        geo.vertices.push_back({FT(s)/FT(2) + cx, -cy, FT(0)});
+        geo.vertices.push_back({cx, FT(h) - cy, FT(0)});
+        geo.faces.clear();
+        geo.faces.push_back({{{0, 1, 2}}});
+        return;
+    }
+
     // Case 1: 2 orthogonal legs (x and y, or just a and b with no c)
     if ((has_x && has_y && !has_c) || (has_a && has_b && !has_c && !has_x && !has_y)) {
         double x_val = has_x ? x_opt.value() : a_opt.value();
@@ -70,14 +86,12 @@ static void makeTriangle(Geometry& geo,
     FT cx = center ? (v0x + v1x + v2x) / FT(3) : FT(0);
     FT cy = center ? (v0y + v1y + v2y) / FT(3) : FT(0);
 
-    geo.vertices = {
-        {v0x - cx, v0y - cy, FT(0)},
-        {v1x - cx, v1y - cy, FT(0)},
-        {v2x - cx, v2y - cy, FT(0)}
-    };
-    geo.faces = {
-        {{{0, 1, 2}}}
-    };
+    geo.vertices.clear();
+    geo.vertices.push_back({v0x - cx, v0y - cy, FT(0)});
+    geo.vertices.push_back({v1x - cx, v1y - cy, FT(0)});
+    geo.vertices.push_back({v2x - cx, v2y - cy, FT(0)});
+    geo.faces.clear();
+    geo.faces.push_back({{{0, 1, 2}}});
 }
 
 } // namespace geo

@@ -380,12 +380,7 @@ VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
     }
     if (has_local_handler) {
         targets.push_back(get_machine_prefix());
-    }
-
-    std::sort(targets.begin(), targets.end());
-
-    // If no targets discovered, default to wildcard/broadcast
-    if (targets.empty()) {
+    } else {
         targets.push_back("*");
     }
 

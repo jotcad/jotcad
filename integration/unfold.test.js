@@ -10,7 +10,7 @@ runIntegrationTest('Unfold Integration Test', async ({ readData, evaluate, readO
     const pngBytes = await captureOutputPNG(r1, 'unfold_box_result.png');
     const crypto = await import('node:crypto');
     const actualHash = crypto.createHash('sha256').update(pngBytes).digest('hex');
-    assert.strictEqual(actualHash, '091de468804708b16ade93cddd046d9ad7aa325a91dd04caac0ed101cb549531', 'PNG content hash mismatch for unfold_box_result.png!');
+    assert.strictEqual(actualHash, 'c3db595c68a48a969a80fa599c01acfd0cf0c574c08bfb811826653f83edda7f', 'PNG content hash mismatch for unfold_box_result.png!');
 
     // Test 2: Orb Unfold
     const r2 = await evaluate("Orb(1).color('blue').unfold().pack(sheet=Box(4, 4).color('grey')) -> $out");

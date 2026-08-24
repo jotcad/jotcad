@@ -72,9 +72,6 @@ function matrixToString(M) {
 }
 
 runIntegrationTest('jot/rig - spot.obj (Keenan Crane) Cow Skeleton Rigging & PBD Skinning Integration', async ({ vfs, readData, capturePNG }) => {
-    console.log("[Test] Waiting for mesh nodes...");
-    await waitForMeshNodes(vfs, ['geo-mapping-node']);
-
     // 1. Load and convert spot.obj
     console.log("[Test] Loading and converting spot.obj...");
     const objPath = path.join(import.meta.dirname, 'spot.obj');

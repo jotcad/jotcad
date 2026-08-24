@@ -44,11 +44,15 @@ test('JotCAD Next-Gen: Template Modes', async (t) => {
         const res_raw = await compiler.evaluate(ast, {}, schema);
         const res = res_raw[0].selector;
         
+        assert.strictEqual(res.path, 'op/at');
+        // The top-level $in is bound to Hexagon(30)
+        assert.strictEqual(res.parameters.$in.path, 'op/hexagon');
+        assert.strictEqual(res.parameters.$in.parameters.size, 30);
+
         const cutOp = res.parameters.op;
         assert.strictEqual(cutOp.path, 'op/cut');
-        // The $in for cut() should be inherited from Hexagon(30)
-        assert.strictEqual(cutOp.parameters.$in.path, 'op/hexagon');
-        assert.strictEqual(cutOp.parameters.$in.parameters.size, 30);
         assert.strictEqual(cutOp.parameters.tools[0].parameters.size, 5);
+        // Recipe $in remains unbound at compile-time for kernel dynamic binding
+        assert.strictEqual(cutOp.parameters.$in, undefined);
     });
 });

@@ -3,6 +3,8 @@ import https from 'node:https';
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
@@ -1534,6 +1536,192 @@ async function exportToGlb(v, inShape, context) {
 
     return glbBuffer;
 }
+
+function runSlicer(workDir, inputStlPath, outputGcodePath, options = {}) {
+    return new Promise((resolve, reject) => {
+        const args = [
+            'run',
+            `--filesystem=${workDir}`,
+            '--command=prusa-slicer',
+            'com.prusa3d.PrusaSlicer',
+            '--export-gcode',
+            inputStlPath,
+            '--output',
+            outputGcodePath
+        ];
+
+        if (options.layer_height !== undefined && Number.isFinite(Number(options.layer_height))) {
+            args.push('--layer-height', String(Number(options.layer_height)));
+        }
+        if (options.fill_density !== undefined) {
+            const num = parseFloat(options.fill_density);
+            if (Number.isFinite(num)) args.push('--fill-density', String(num));
+        }
+        if (options.fill_pattern && /^[a-zA-Z0-9_-]+$/.test(options.fill_pattern)) {
+            args.push('--fill-pattern', options.fill_pattern);
+        }
+        if (options.perimeters !== undefined && Number.isInteger(Number(options.perimeters))) {
+            args.push('--perimeters', String(Number(options.perimeters)));
+        }
+        if (options.temperature !== undefined && Number.isFinite(Number(options.temperature))) {
+            args.push('--temperature', String(Number(options.temperature)));
+        }
+        if (options.bed_temperature !== undefined && Number.isFinite(Number(options.bed_temperature))) {
+            args.push('--bed-temperature', String(Number(options.bed_temperature)));
+        }
+        if (options.support === true) {
+            args.push('--support-material-auto');
+        }
+        if (options.center) {
+            if (typeof options.center === 'string' && /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(options.center)) {
+                args.push('--center', options.center);
+            } else {
+                args.push('--center', '100,100');
+            }
+        }
+        if (options.load && typeof options.load === 'string' && !options.load.startsWith('-')) {
+            const loadPath = path.resolve(options.load);
+            args.splice(2, 0, `--filesystem=${path.dirname(loadPath)}:ro`);
+            args.push('--load', loadPath);
+        }
+
+        const childEnv = { ...process.env };
+        delete childEnv.DISPLAY;
+        delete childEnv.WAYLAND_DISPLAY;
+
+        execFile('flatpak', args, { env: childEnv, maxBuffer: 10 * 1024 * 1024, timeout: 30000 }, (err, stdout, stderr) => {
+            if (err) {
+                return reject(new Error(`PrusaSlicer execution failed: ${err.message}\nStderr: ${stderr}\nStdout: ${stdout}`));
+            }
+            resolve({ stdout, stderr });
+        });
+    });
+}
+
+// Register the G-code Slicer Op as a VFS Provider
+vfs.registerProvider('jot/gcode', async (v, selector, context) => {
+    let tmpDir = null;
+    try {
+        const { 
+            $in, 
+            path: gcodePath = 'export.gcode',
+            layer_height,
+            fill_density,
+            fill_pattern,
+            perimeters,
+            temperature,
+            bed_temperature,
+            support,
+            load,
+            printer_profile,
+            material_profile,
+            print_profile,
+            center
+        } = selector.parameters;
+        const output = selector.output || '$out';
+
+        if (!$in) throw new Error('Missing input $in');
+
+        console.log(`[Export Node] G-code slice requested for path: ${gcodePath}`);
+
+        // Read STL bytes directly from input or via jot/stl operator
+        let stlBytes;
+        const inData = await readExplicitData(v, $in, context);
+        if (inData instanceof Uint8Array || Buffer.isBuffer(inData)) {
+            stlBytes = inData;
+        } else {
+            const stlSelector = new Selector('jot/stl', { $in: $in, path: 'model.stl' }).withOutput('$out');
+            stlBytes = await readExplicitData(v, stlSelector, context);
+        }
+
+        if (!stlBytes) {
+            throw new Error('Failed to generate or retrieve STL data for G-code slicing');
+        }
+
+        const jotTmpDir = path.join(os.tmpdir(), 'jotcad');
+        await fsPromises.mkdir(jotTmpDir, { recursive: true });
+        tmpDir = await fsPromises.mkdtemp(path.join(jotTmpDir, 'slicer-'));
+        const inputStlPath = path.join(tmpDir, 'model.stl');
+        const outputGcodePath = path.join(tmpDir, 'output.gcode');
+
+        await fsPromises.writeFile(inputStlPath, stlBytes);
+
+        await runSlicer(tmpDir, inputStlPath, outputGcodePath, {
+            layer_height,
+            fill_density,
+            fill_pattern,
+            perimeters,
+            temperature,
+            bed_temperature,
+            support,
+            load,
+            printer_profile,
+            material_profile,
+            print_profile,
+            center
+        });
+
+        const gcodeBytes = await fsPromises.readFile(outputGcodePath);
+
+        if (output === 'file') {
+            const stream = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(gcodeBytes);
+                    controller.close();
+                }
+            });
+            return {
+                stream,
+                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
+            };
+        }
+
+        const gcodeText = new TextDecoder().decode(gcodeBytes);
+        const textBytes = new TextEncoder().encode(gcodeText);
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(textBytes);
+                controller.close();
+            }
+        });
+        return {
+            stream,
+            metadata: { state: 'AVAILABLE', encoding: 'string', selector: selector.toJSON() }
+        };
+
+    } catch (err) {
+        console.error(`[Export Node G-code Error]`, err);
+        return null;
+    } finally {
+        if (tmpDir) {
+            try {
+                await fsPromises.rm(tmpDir, { recursive: true, force: true });
+            } catch (_) {}
+        }
+    }
+}, {
+    schema: {
+        path: 'jot/gcode',
+        description: 'Slices an input shape or STL into 3D printer G-code via PrusaSlicer.',
+        inputs: { '$in': { type: 'jot:shape' } },
+        arguments: [
+            { name: 'path', type: 'jot:string', default: 'export.gcode' },
+            { name: 'layer_height', type: 'jot:number', optional: true },
+            { name: 'fill_density', type: 'jot:number', optional: true },
+            { name: 'fill_pattern', type: 'jot:string', optional: true },
+            { name: 'perimeters', type: 'jot:number', optional: true },
+            { name: 'temperature', type: 'jot:number', optional: true },
+            { name: 'bed_temperature', type: 'jot:number', optional: true },
+            { name: 'support', type: 'jot:boolean', optional: true },
+            { name: 'load', type: 'jot:string', optional: true },
+            { name: 'center', type: 'jot:string', optional: true }
+        ],
+        outputs: {
+            '$out': { type: 'jot:string' },
+            'file': { type: 'file', mimeType: 'text/x-gcode' }
+        }
+    }
+});
 
 registerVFSRoutes(vfs, server, '', meshLink);
 

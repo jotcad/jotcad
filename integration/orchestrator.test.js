@@ -6,7 +6,7 @@ import { runIntegrationTest } from './harness.js';
 runIntegrationTest('Orchestrator Lifecycle: Cluster Launch and Shutdown', async ({ t, vfs, sys, readData, catalog }) => {
     await t.test('Ops Node should be healthy', async () => {
         assert.ok(catalog, 'Should have received schema catalog');
-        assert.ok(catalog.catalog, 'Catalog payload should contain catalog object');
+        assert.ok(Object.keys(catalog).length > 0, 'Catalog should contain registered operators');
     });
 
     await t.test('Export Node should be healthy', async () => {

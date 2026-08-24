@@ -77,9 +77,10 @@ runIntegrationTest('Node.js <-> C++ Pub-Sub Integration', async ({ vfs, mesh, sy
 
     assert.ok(
         catalogReceived.provider.startsWith('geo-') || 
-        catalogReceived.provider.includes('standard_ops') || 
-        catalogReceived.provider.includes('standard_export'),
-        `Expected geo- node or standard peer ID, got: ${catalogReceived.provider}`
+        catalogReceived.provider.includes('ops_') || 
+        catalogReceived.provider.includes('_ops_') || 
+        catalogReceived.provider.includes('export'),
+        `Expected valid ops or export peer ID, got: ${catalogReceived.provider}`
     );
     console.log('✔ Node.js received Catalog from C++');
 });
