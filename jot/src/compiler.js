@@ -172,7 +172,34 @@ export class JotCompiler {
         }
     }
 
-    const topLevelNodes = Array.isArray(ast) ? [...ast] : [ast];
+    let rawTopLevelNodes = [];
+    if (ast?.type === 'BLOCK') {
+      rawTopLevelNodes = ast.statements || (Array.isArray(ast.body) ? ast.body : [ast.body]);
+    } else if (Array.isArray(ast)) {
+      rawTopLevelNodes = ast;
+    } else if (ast) {
+      rawTopLevelNodes = [ast];
+    }
+
+    const topLevelNodes = [];
+    for (const node of rawTopLevelNodes) {
+      if (node?.type === 'OPERATOR_DEF') {
+        for (const param of node.params || []) {
+          if (ctx.localSymbols[param.name] === undefined && param.default !== undefined) {
+            ctx.localSymbols[param.name] = param.default;
+          }
+        }
+        if (node.body?.type === 'BLOCK') {
+          topLevelNodes.push(...(node.body.statements || (Array.isArray(node.body.body) ? node.body.body : [node.body.body])));
+        } else if (Array.isArray(node.body)) {
+          topLevelNodes.push(...node.body);
+        } else if (node.body) {
+          topLevelNodes.push(node.body);
+        }
+      } else {
+        topLevelNodes.push(node);
+      }
+    }
 
     try {
       // 1. VALIDATION: Every top-level statement MUST be an assignment
@@ -275,14 +302,15 @@ export class JotCompiler {
         }
       }
       case 'BLOCK': {
-        const s = await this._evaluateRecursive(node.subject, parameters, subject, ctx);
+        const s = node.subject !== undefined ? await this._evaluateRecursive(node.subject, parameters, subject, ctx) : subject;
         // Protocol Integrity: Create a fresh local scope for the block that inherits from current parameters.
         const blockParams = Object.create(parameters);
-        const topLevelNodes = Array.isArray(node.body) ? node.body : [node.body];
-        for (const innerNode of topLevelNodes) {
-            await this._evaluateRecursive(innerNode, blockParams, s, ctx);
+        const stmts = node.statements || (Array.isArray(node.body) ? node.body : (node.body ? [node.body] : []));
+        let lastVal = s;
+        for (const innerNode of stmts) {
+            lastVal = await this._evaluateRecursive(innerNode, blockParams, s, ctx);
         }
-        return s; // Subject passthrough
+        return node.subject !== undefined ? s : lastVal;
       }
       case 'CALL': return this._dispatchCall(node, parameters, subject, ctx);
       case 'METHOD': return this._evaluateMethod(node, parameters, subject, ctx);

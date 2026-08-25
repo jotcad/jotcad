@@ -4,7 +4,9 @@ import { UGCStorage } from './storage.js';
 import { UGCSession } from './session.js';
 import { startSessionServer } from './server.js';
 
-export { JotEvaluator, UserFulfillerManager, UGCStorage, UGCSession, startSessionServer };
+import { loadModelsFromDirectory } from './models_loader.js';
+
+export { JotEvaluator, UserFulfillerManager, UGCStorage, UGCSession, startSessionServer, loadModelsFromDirectory };
 
 export class UGCEngine {
   constructor(vfs, mesh = null, storagePath = null) {
@@ -25,9 +27,9 @@ export class UGCEngine {
   }
 
   /**
-   * Initializes the UGC engine, loading all persisted user fulfillers
+   * Initializes the UGC engine, loading persisted fulfillers and model library recipes
    */
-  async init() {
+  async init(modelsDir = null) {
     const persisted = await this.storage.readAll();
     console.log(`[UGCEngine] Restoring ${Object.keys(persisted).length} user-defined operators from registry...`);
     for (const [name, data] of Object.entries(persisted)) {
@@ -37,6 +39,9 @@ export class UGCEngine {
         console.error(`[UGCEngine] Error restoring fulfiller '${name}':`, err);
       }
     }
+
+    const modelsCount = await loadModelsFromDirectory(this.fulfiller, modelsDir);
+    console.log(`[UGCEngine] Loaded ${modelsCount} model recipes from models library.`);
   }
 
   /**

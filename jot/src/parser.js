@@ -64,7 +64,21 @@ export class JotParser {
   }
 
   _parseExpression() {
-    // 1. Standard Assignment (B = A)
+    // 1. Arrow Operator Definition: (a = 1, b = 2) => body
+    if (this._peek() === '(') {
+      const arrowDef = this._tryParseArrowFunction();
+      if (arrowDef) {
+        if (this._peek() === '->') {
+          this._consume('->');
+          const name = this._consume();
+          if (!/^[a-zA-Z_\$]/.test(name)) throw new Error(`Expected identifier after ->, got ${name}`);
+          return { type: 'ASSIGNMENT', name, value: arrowDef };
+        }
+        return arrowDef;
+      }
+    }
+
+    // 2. Standard Assignment (B = A)
     if (this.pos + 1 < this.tokens.length && /^[a-zA-Z_\$]/.test(this.tokens[this.pos]) && this.tokens[this.pos+1] === '=') {
       const name = this._consume();
       this._consume('=');
@@ -74,7 +88,7 @@ export class JotParser {
 
     let expr = this._parseChaining();
 
-    // 2. Arrow Assignment (A -> B)
+    // 3. Arrow Assignment (A -> B)
     if (this._peek() === '->') {
         this._consume('->');
         const name = this._consume();
@@ -83,6 +97,60 @@ export class JotParser {
     }
 
     return expr;
+  }
+
+  _tryParseArrowFunction() {
+    if (this._peek() !== '(') return null;
+    const startPos = this.pos;
+    this._consume('(');
+    const params = [];
+    while (this._peek() && this._peek() !== ')') {
+      const name = this._consume();
+      if (!/^[a-zA-Z_\$]/.test(name)) {
+        this.pos = startPos;
+        return null;
+      }
+      let defaultVal = undefined;
+      if (this._peek() === '=') {
+        this._consume('=');
+        const valToken = this._consume();
+        if (/^-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?$/.test(valToken)) {
+          if (valToken.includes('/')) {
+            const parts = valToken.split('/');
+            defaultVal = parseFloat(parts[0]) / parseFloat(parts[1]);
+          } else {
+            defaultVal = parseFloat(valToken);
+          }
+        } else if (valToken.startsWith('"') || valToken.startsWith("'")) {
+          defaultVal = valToken.slice(1, -1);
+        } else if (valToken === 'true') {
+          defaultVal = true;
+        } else if (valToken === 'false') {
+          defaultVal = false;
+        } else {
+          defaultVal = valToken;
+        }
+      }
+      params.push({ name, default: defaultVal });
+      if (this._peek() === ',') {
+        this._consume(',');
+      } else if (this._peek() !== ')') {
+        this.pos = startPos;
+        return null;
+      }
+    }
+    if (this._peek() !== ')') {
+      this.pos = startPos;
+      return null;
+    }
+    this._consume(')');
+    if (this._peek() !== '=>') {
+      this.pos = startPos;
+      return null;
+    }
+    this._consume('=>');
+    const body = this._parseExpression();
+    return { type: 'OPERATOR_DEF', params, body };
   }
 
   _parseChaining() {

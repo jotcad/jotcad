@@ -92,3 +92,4 @@ test_zenoh_direct.js
 test_telemetry.js
 retrieved_videos/
 test_output.txt
+.ugc_registry.json

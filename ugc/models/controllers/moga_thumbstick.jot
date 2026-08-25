@@ -1,0 +1,18 @@
+(dome_d = 18.0, neck_d = 10.0, cap_d = 16.5, cap_h = 4.5) =>
+  Orb(dome_d)
+    .cut(Box(30, 30, [30]).mz(-30, 5))
+    .as('dome')
+    .join(
+      Disk(neck_d)
+        .extrude([4.5])
+        .mz(4.5)
+        .as('neck'),
+      Disk(cap_d)
+        .extrude([cap_h])
+        .mz(8.5)
+        .cut(Orb(26).mz(24.8).as('dish'))
+        .as('cap')
+    )
+    .as('thumbstick')
+    .clean()
+  -> $out;
