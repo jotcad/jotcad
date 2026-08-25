@@ -21,15 +21,7 @@
 
 namespace ruled_surfaces {
 
-template <typename T>
-struct is_seam_search_sa : std::false_type {};
-template <typename TS, typename SR>
-struct is_seam_search_sa<SeamSearchSA<TS, SR>> : std::true_type {};
 
-template <typename T>
-struct is_seam_search_all : std::false_type {};
-template <typename TS>
-struct is_seam_search_all<SeamSearchAll<TS>> : std::true_type {};
 
 // This class implements a join strategy based on solving the linear
 // assignment problem for minimum cost, where the cost of pairing two chains

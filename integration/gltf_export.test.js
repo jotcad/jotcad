@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runIntegrationTest } from './harness.js';
+import { Selector } from '../fs/src/index.js';
 import { registerFileProvider } from '../ux/src/lib/vfs/FileProvider.js';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -39,14 +40,13 @@ runIntegrationTest('glTF/GLB Binary File Export Integration', async ({ vfs, mesh
             inputs: { '$in': { type: 'jot:shape' } },
             arguments: [{ name: 'path', type: 'jot:string', default: 'export.glb' }],
             outputs: {
-                "$out": { type: 'jot:shape' },
-                "file": { type: 'file', mimeType: 'model/gltf-binary' }
+                "$out": { type: 'file', mimeType: 'model/gltf-binary' }
             }
         }
     });
 
     // Create a mock SVG file as input geometry
-    const testSvgPath = path.join(__dirname, 'test_input.svg');
+    const testSvgPath = 'test_input.svg';
     const svgContent = `
 <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
   <rect x="10" y="20" width="100" height="50" />
@@ -54,26 +54,28 @@ runIntegrationTest('glTF/GLB Binary File Export Integration', async ({ vfs, mesh
 </svg>
 `;
     fs.writeFileSync(testSvgPath, svgContent);
+    const svgSelector = new Selector('jot/File', { path: testSvgPath }).withOutput('$out');
+    await vfs.write(svgSelector, new TextEncoder().encode(svgContent), { encoding: 'bytes' });
 
     try {
-        // 1. Evaluate: $shape = Svg(File("integration/test_input.svg"))
+        // 1. Evaluate: $shape = Svg(File("test_input.svg"))
         console.log("[Test] Evaluating SVG Import...");
-        const importTerminals = await evaluate(`Svg(File("integration/test_input.svg")) -> $out`);
+        const importTerminals = await evaluate(`Svg(File("${testSvgPath}")) -> $out`);
         
         const importBundle = importTerminals.find(t => t.port === '$out');
         assert.ok(importBundle, "Should find terminal output bundle");
 
-        // 2. Evaluate glTF/GLB Export: $shape.gltf(path="export.glb").file -> file
+        // 2. Evaluate glTF/GLB Export: $shape.gltf(path="export.glb") -> $out
         console.log("[Test] Evaluating glTF/GLB Export...");
-        const exportTerminals = await compiler.evaluate(parser.parse(`$in.gltf(path="export.glb").file -> file`), {
+        const exportTerminals = await compiler.evaluate(parser.parse(`$in.gltf(path="export.glb") -> $out`), {
             '$in': importBundle.selector
         }, {
             outputs: {
-                "file": { type: "file" }
+                "$out": { type: "file" }
             }
         });
 
-        const glbBytes = await readOutput(exportTerminals, 'file');
+        const glbBytes = await readOutput(exportTerminals, '$out');
         console.log(`[Test] Exported GLB size: ${glbBytes.length} bytes`);
 
         // 3. Verify GLB Binary Format Headers

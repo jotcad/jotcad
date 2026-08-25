@@ -17,10 +17,9 @@ struct FuseHelper {
     };
 
     static void collect_geometries(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& nodes) {
-        std::string type = s.tags.value("type", "");
-        bool is_gap = s.is_gap();
-        if (s.geometry.has_value()) {
-            nodes.push_back({vfs->read<Geometry>(s.geometry.value()), s.tf, type, is_gap});
+        if (s.has_real_geometry()) {
+            std::string type = s.tags.value("type", "");
+            nodes.push_back({vfs->read<Geometry>(s.geometry.value()), s.tf, type, s.has_negative_geometry()});
         }
         for (const auto& child : s.components) {
             collect_geometries(vfs, child, nodes);

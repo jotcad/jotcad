@@ -32,9 +32,8 @@ struct StitchOp : P {
                 (long long)std::round(CGAL::to_double(v.z) * 1000000)};
     }
 
-    static void walk(fs::VFSNode* vfs, const Shape& shape, const Matrix& parent_tf, std::vector<std::pair<Vertex, Vertex>>& all_segs) {
-        Matrix current_tf = parent_tf * shape.tf;
-        if (shape.geometry.has_value()) {
+    static void walk(fs::VFSNode* vfs, const Shape& shape, std::vector<std::pair<Vertex, Vertex>>& all_segs) {
+        if (shape.has_positive_geometry()) {
             try {
                 Geometry geo = vfs->read<Geometry>(shape.geometry.value());
                 for (const auto& s : geo.segments) {
@@ -43,14 +42,14 @@ struct StitchOp : P {
                     // Apply TF
                     auto apply = [&](Vertex v) {
                         EK::Point_3 p(v.x, v.y, v.z);
-                        EK::Point_3 res = current_tf.transform(p);
+                        EK::Point_3 res = shape.tf.transform(p);
                         return Vertex{res.x(), res.y(), res.z()};
                     };
                     all_segs.push_back({apply(v1), apply(v2)});
                 }
             } catch (...) {}
         }
-        for (const auto& child : shape.components) walk(vfs, child, current_tf, all_segs);
+        for (const auto& child : shape.components) walk(vfs, child, all_segs);
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<double>& repeat, const std::vector<double>& start, const std::vector<double>& end, double offset) {
@@ -60,7 +59,7 @@ struct StitchOp : P {
         }
 
         std::vector<std::pair<Vertex, Vertex>> raw_segs;
-        walk(vfs, in, Matrix::identity(), raw_segs);
+        walk(vfs, in, raw_segs);
 
         // 1. Chain Segments
         std::map<PointKey, std::vector<Vertex>> adj;

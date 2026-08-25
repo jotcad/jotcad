@@ -110,7 +110,7 @@ void test_cookie_cutter() {
     auto v3 = relief.add_vertex(EK::Point_3(2, 8, 0));
     relief.add_face(v0, v1, v2, v3);
     
-    ExactMesh cutter = create_cookie_cutter(relief, -5, 5);
+    ExactMesh cutter = jotcad::geo::decal::create_cookie_cutter(relief, -5, 5);
     assert(CGAL::is_closed(cutter));
     auto vol = CGAL::to_double(CGAL::Polygon_mesh_processing::volume(cutter));
     std::cout << "  Cutter Volume: " << vol << std::endl;

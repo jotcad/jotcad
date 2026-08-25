@@ -96,15 +96,14 @@ int main() {
         // contains the accumulated subject and one new Triangle sibling.
         
         std::vector<Matrix> tri_tfs;
-        std::function<void(const Shape&, Matrix)> collect_triangles = [&](const Shape& s, Matrix parent_tf) {
-            Matrix world_tf = parent_tf * s.tf;
+        std::function<void(const Shape&)> collect_triangles = [&](const Shape& s) {
             // The Triangle we added is a 'surface' component with identity birth tf
             if (s.tags.value("type", "") == "surface" && s.components.empty()) {
-                tri_tfs.push_back(world_tf);
+                tri_tfs.push_back(s.tf);
             }
-            for (const auto& c : s.components) collect_triangles(c, world_tf);
+            for (const auto& c : s.components) collect_triangles(c);
         };
-        collect_triangles(result, Matrix::identity());
+        collect_triangles(result);
 
         std::cout << "    Found " << tri_tfs.size() << " Triangle siblings." << std::endl;
         if (tri_tfs.size() < 6) {

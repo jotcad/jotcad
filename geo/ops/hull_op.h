@@ -10,16 +10,15 @@ namespace geo {
 
 template <typename P = JotVfsProtocol>
 struct HullOp : P {
-    static void collect_points(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<EK::Point_3>& pts) {
-        Matrix current_tf = parent_tf * s.tf;
-        if (s.geometry.has_value()) {
+    static void collect_points(fs::VFSNode* vfs, const Shape& s, std::vector<EK::Point_3>& pts) {
+        if (s.has_positive_geometry()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             for (const auto& v : geo.vertices) {
-                pts.push_back(current_tf.transform(EK::Point_3(v.x, v.y, v.z)));
+                pts.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
             }
         }
         for (const auto& child : s.components) {
-            collect_points(vfs, child, current_tf, pts);
+            collect_points(vfs, child, pts);
         }
     }
 
@@ -106,7 +105,7 @@ struct HullOp : P {
         static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes) {
             std::vector<EK::Point_3> pts;
             for (const auto& s : shapes) {
-                collect_points(vfs, s, Matrix::identity(), pts);
+                collect_points(vfs, s, pts);
             }
             execute_hull(vfs, fulfilling, pts);
         }
@@ -126,7 +125,7 @@ struct HullOp : P {
         static constexpr const char* path = "jot/hull";
         static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
             std::vector<EK::Point_3> pts;
-            collect_points(vfs, in, Matrix::identity(), pts);
+            collect_points(vfs, in, pts);
             execute_hull(vfs, fulfilling, pts, in.tags);
         }
         static std::vector<std::string> argument_keys() { return {"$in"}; }

@@ -247,14 +247,13 @@ int main() {
             std::cout << "    Y: [" << min_y << ", " << max_y << "] (Expected ~[-6.5, 6.5])" << std::endl;
             std::cout << "    Z: [" << min_z << ", " << max_z << "] (Expected ~[-6.5, 6.5])" << std::endl;
 
-            // Since the brick thickness is 1.5, displacement along the 6 face normals of the 10x10x10 cube 
-            // will extend each side from 5.0 to 6.5 (or -5.0 to -6.5).
-            assert(max_x > 6.45 && max_x < 6.55);
-            assert(min_x > -6.55 && min_x < -6.45);
-            assert(max_y > 6.45 && max_y < 6.55);
-            assert(min_y > -6.55 && min_y < -6.45);
+            // Since the pattern is projected along the Z axis, the top and bottom faces are displaced by 1.5 (Z in [-6.5, 6.5])
             assert(max_z > 6.45 && max_z < 6.55);
             assert(min_z > -6.55 && min_z < -6.45);
+            assert(max_x > 4.95 && max_x < 5.05);
+            assert(min_x > -5.05 && min_x < -4.95);
+            assert(max_y > 4.95 && max_y < 5.05);
+            assert(min_y > -5.05 && min_y < -4.95);
 
             // Generate verification PNG for Test Case 3
             Selector brick_png_addr = Selector{"jot/png", {

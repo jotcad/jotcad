@@ -16,13 +16,12 @@ template <typename P = JotVfsProtocol>
 struct GrowOp : P {
     static constexpr const char* path = "jot/grow";
 
-    static void collect_points(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<EK::Point_3>& pts) {
-        Matrix current_tf = parent_tf * s.tf;
-        if (s.geometry.has_value()) {
+    static void collect_points(fs::VFSNode* vfs, const Shape& s, std::vector<EK::Point_3>& pts) {
+        if (s.has_positive_geometry()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            for (const auto& v : geo.vertices) pts.push_back(current_tf.transform(EK::Point_3(v.x, v.y, v.z)));
+            for (const auto& v : geo.vertices) pts.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
         }
-        for (const auto& child : s.components) collect_points(vfs, child, current_tf, pts);
+        for (const auto& child : s.components) collect_points(vfs, child, pts);
     }
 
     static Geometry grow_cloud(const std::vector<EK::Point_3>& cloud, const std::vector<EK::Point_3>& tool_pts) {
@@ -80,10 +79,9 @@ struct GrowOp : P {
         }
     }
 
-    static void execute_decomposed(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<EK::Point_3>& tool_pts, const Shape& tool_shape) {
-        if (!s.geometry.has_value()) return;
-        Matrix current_tf = parent_tf * s.tf;
-        Matrix inv_tf = current_tf.inverse();
+    static void execute_decomposed(fs::VFSNode* vfs, Shape& s, const std::vector<EK::Point_3>& tool_pts, const Shape& tool_shape) {
+        if (!s.geometry.has_value() || !s.has_positive_geometry()) return;
+        Matrix inv_tf = s.tf.inverse();
         Geometry subject_geo = vfs->read<Geometry>(s.geometry.value());
 
         // 1. Solids and Surfaces: Global Growth
@@ -96,7 +94,7 @@ struct GrowOp : P {
                 // Fast Path: Convex Hull of summed points
                 std::vector<EK::Point_3> cloud;
                 for (const auto& v : subject_geo.vertices) {
-                    cloud.push_back(current_tf.transform(EK::Point_3(v.x, v.y, v.z)));
+                    cloud.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
                 }
                 Geometry res = grow_cloud(cloud, tool_pts);
                 if (res.vertices.empty()) return;
@@ -107,88 +105,102 @@ struct GrowOp : P {
             } else {
                 // Exact Path: Nef Polyhedron Minkowski Sum
                 try {
-                    // Bring subject to local coordinates of current_tf
-                    boolean::Engine::transform_mesh(subject_mesh, current_tf);
-                    CGAL::Nef_polyhedron_3<EK> nef_subject(subject_mesh);
-                    
+                    // Bring subject to local coordinates of s.tf
+                    boolean::Engine::transform_mesh(subject_mesh, s.tf);
+                    CGAL::Nef_polyhedron_3<EK> subject_nef(subject_mesh);
+
+                    // Reconstruct tool as Nef Polyhedron
                     boolean::Surface_mesh tool_mesh;
-                    if (tool_shape.geometry.has_value()) {
+                    if (tool_shape.geometry.has_value() && tool_shape.has_positive_geometry()) {
                         Geometry tool_geo = vfs->read<Geometry>(tool_shape.geometry.value());
                         tool_geo.apply_tf(tool_shape.tf);
                         tool_mesh = boolean::Engine::geometry_to_mesh(tool_geo);
                     } else {
-                        // Fallback to convex hull of tool points
-                        CGAL::convex_hull_3(tool_pts.begin(), tool_pts.end(), tool_mesh);
+                        std::vector<EK::Point_3> local_tool_pts;
+                        collect_points(vfs, tool_shape, local_tool_pts);
+                        CGAL::convex_hull_3(local_tool_pts.begin(), local_tool_pts.end(), tool_mesh);
                     }
-                    
-                    CGAL::Nef_polyhedron_3<EK> nef_tool(tool_mesh);
-                    CGAL::Nef_polyhedron_3<EK> nef_res = CGAL::minkowski_sum_3(nef_subject, nef_tool);
-                    
-                    boolean::Surface_mesh res_mesh;
-                    CGAL::convert_nef_polyhedron_to_polygon_mesh(nef_res, res_mesh);
-                    
-                    // Triangulate faces to satisfy the triangle mesh requirement in mesh_to_geometry
-                    CGAL::Polygon_mesh_processing::triangulate_faces(res_mesh);
-                    
-                    // Transform back to local coordinates
-                    boolean::Engine::transform_mesh(res_mesh, inv_tf);
-                    
-                    Geometry res = boolean::Engine::mesh_to_geometry(res_mesh);
-                    if (!res.vertices.empty()) {
+                    CGAL::Nef_polyhedron_3<EK> tool_nef(tool_mesh);
+
+                    // Minkowski sum
+                    CGAL::Nef_polyhedron_3<EK> sum_nef = CGAL::minkowski_sum_3(subject_nef, tool_nef);
+
+                    if (sum_nef.is_simple()) {
+                        boolean::Surface_mesh res_mesh;
+                        CGAL::convert_nef_polyhedron_to_polygon_mesh(sum_nef, res_mesh);
+                        CGAL::Polygon_mesh_processing::triangulate_faces(res_mesh);
+                        Geometry res = boolean::Engine::mesh_to_geometry(res_mesh);
+                        res.apply_tf(inv_tf);
                         res.triangulate();
                         s.geometry = vfs->materialize(res);
                         return;
                     }
-                } catch (const std::exception& e) {
-                    std::cerr << "[GrowOp] Nef Minkowski sum failed: " << e.what() << ", falling back to convex hull" << std::endl;
+                } catch (...) {
+                    // Fallback to decomposition
                 }
-                
-                // Fallback to convex hull if Nef fails
-                std::vector<EK::Point_3> cloud;
-                for (const auto& v : subject_geo.vertices) {
-                    cloud.push_back(current_tf.transform(EK::Point_3(v.x, v.y, v.z)));
-                }
-                Geometry res = grow_cloud(cloud, tool_pts);
-                if (res.vertices.empty()) return;
-                res.apply_tf(inv_tf);
-                res.triangulate();
-                s.geometry = vfs->materialize(res);
-                return;
             }
         }
 
-        // 2. Segments: Partitioned Growth
-        if (subject_geo.segments.empty()) return; // Loose vertices: Ignore
-
-        std::vector<Geometry> grown_geos;
-        for (const auto& seg : subject_geo.segments) {
-            std::vector<EK::Point_3> cloud = {
-                current_tf.transform(EK::Point_3(subject_geo.vertices[seg[0]].x, subject_geo.vertices[seg[0]].y, subject_geo.vertices[seg[0]].z)),
-                current_tf.transform(EK::Point_3(subject_geo.vertices[seg[1]].x, subject_geo.vertices[seg[1]].y, subject_geo.vertices[seg[1]].z))
-            };
-            Geometry g = grow_cloud(cloud, tool_pts);
-            if (!g.vertices.empty()) grown_geos.push_back(g);
-        }
-
-        if (grown_geos.empty()) return;
-
-        // Union the partitioned segment-hulls
+        // 2. Decomposed Growth: Elements (faces/segments/points) grown individually and unioned
         Shape union_container;
-        for (auto& g : grown_geos) {
+        union_container.tf = Matrix::identity();
+        union_container.tags["type"] = "group";
+
+        // A. Faces
+        for (const auto& f : subject_geo.faces) {
+            std::vector<EK::Point_3> f_pts;
+            for (const auto& l : f.loops) {
+                for (int idx : l) f_pts.push_back(s.tf.transform(EK::Point_3(subject_geo.vertices[idx].x, subject_geo.vertices[idx].y, subject_geo.vertices[idx].z)));
+            }
+            Geometry g = grow_cloud(f_pts, tool_pts);
+            if (g.vertices.empty()) continue;
             Shape child;
-            g.triangulate();
             child.geometry = vfs->materialize(g);
             child.tags["type"] = g.is_plane() ? "surface" : "closed";
             union_container.components.push_back(child);
         }
 
-        if (union_container.components.size() == 1) {
-            Geometry final_geo = vfs->read<Geometry>(union_container.components[0].geometry.value());
-            final_geo.apply_tf(inv_tf);
-            final_geo.triangulate();
-            s.geometry = vfs->materialize(final_geo);
-            s.tags["type"] = union_container.components[0].tags["type"];
-            return;
+        // B. Segments
+        for (const auto& seg : subject_geo.segments) {
+            std::vector<EK::Point_3> seg_pts = {
+                s.tf.transform(EK::Point_3(subject_geo.vertices[seg[0]].x, subject_geo.vertices[seg[0]].y, subject_geo.vertices[seg[0]].z)),
+                s.tf.transform(EK::Point_3(subject_geo.vertices[seg[1]].x, subject_geo.vertices[seg[1]].y, subject_geo.vertices[seg[1]].z))
+            };
+            Geometry g = grow_cloud(seg_pts, tool_pts);
+            if (g.vertices.empty()) continue;
+            Shape child;
+            child.geometry = vfs->materialize(g);
+            child.tags["type"] = g.is_plane() ? "surface" : "closed";
+            union_container.components.push_back(child);
+        }
+
+        // C. Points
+        for (int p_idx : subject_geo.points) {
+            std::vector<EK::Point_3> p_pts = {
+                s.tf.transform(EK::Point_3(subject_geo.vertices[p_idx].x, subject_geo.vertices[p_idx].y, subject_geo.vertices[p_idx].z))
+            };
+            Geometry g = grow_cloud(p_pts, tool_pts);
+            if (g.vertices.empty()) continue;
+            Shape child;
+            child.geometry = vfs->materialize(g);
+            child.tags["type"] = g.is_plane() ? "surface" : "closed";
+            union_container.components.push_back(child);
+        }
+
+        if (union_container.components.empty()) return;
+
+        // D. Fallback if no elements were explicitly defined
+        if (subject_geo.faces.empty() && subject_geo.segments.empty() && subject_geo.points.empty() && !subject_geo.vertices.empty()) {
+            std::vector<EK::Point_3> v_pts;
+            for (const auto& v : subject_geo.vertices) {
+                v_pts.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
+            }
+            Geometry g = grow_cloud(v_pts, tool_pts);
+            if (g.vertices.empty()) return;
+            Shape child;
+            child.geometry = vfs->materialize(g);
+            child.tags["type"] = g.is_plane() ? "surface" : "closed";
+            union_container.components.push_back(child);
         }
 
         Shape target = union_container.components[0];
@@ -197,7 +209,7 @@ struct GrowOp : P {
             boolean::Engine::collect_tool_geometry(vfs, union_container.components[i], Matrix::identity(), tools);
         }
 
-        boolean::Engine::recursive_union(vfs, target, Matrix::identity(), tools);
+        boolean::Engine::recursive_union(vfs, target, tools);
         
         Geometry final_geo = vfs->read<Geometry>(target.geometry.value());
         final_geo.apply_tf(inv_tf);
@@ -206,9 +218,9 @@ struct GrowOp : P {
         s.tags["type"] = target.tags["type"];
     }
 
-    static void process_shape_recursive(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<EK::Point_3>& tool_pts, const Shape& tool_shape) {
-        execute_decomposed(vfs, s, parent_tf, tool_pts, tool_shape);
-        for (auto& child : s.components) process_shape_recursive(vfs, child, parent_tf * s.tf, tool_pts, tool_shape);
+    static void process_shape_recursive(fs::VFSNode* vfs, Shape& s, const std::vector<EK::Point_3>& tool_pts, const Shape& tool_shape) {
+        execute_decomposed(vfs, s, tool_pts, tool_shape);
+        for (auto& child : s.components) process_shape_recursive(vfs, child, tool_pts, tool_shape);
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& tool_shape) {
@@ -218,14 +230,14 @@ struct GrowOp : P {
         }
 
         std::vector<EK::Point_3> tool_pts;
-        collect_points(vfs, tool_shape, Matrix::identity(), tool_pts);
+        collect_points(vfs, tool_shape, tool_pts);
         if (tool_pts.empty()) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
 
         Shape out = in;
-        process_shape_recursive(vfs, out, Matrix::identity(), tool_pts, tool_shape);
+        process_shape_recursive(vfs, out, tool_pts, tool_shape);
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

@@ -23,7 +23,7 @@ struct JoinOp : P {
             boolean::Engine::collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
         }
 
-        boolean::Engine::recursive_union(vfs, out, Matrix::identity(), tool_nodes);
+        boolean::Engine::recursive_union(vfs, out, tool_nodes);
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

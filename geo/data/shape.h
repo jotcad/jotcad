@@ -70,6 +70,18 @@ struct Shape {
         return role() == "";
     }
 
+    bool has_positive_geometry() const {
+        return geometry.has_value() && is_real();
+    }
+
+    bool has_negative_geometry() const {
+        return geometry.has_value() && is_gap();
+    }
+
+    bool has_real_geometry() const {
+        return has_positive_geometry() || has_negative_geometry();
+    }
+
     double opacity() const {
         if (tags.contains("opacity") && tags.at("opacity").is_number()) {
             return tags.at("opacity").get<double>();
@@ -110,9 +122,41 @@ struct Shape {
         return out;
     }
 
+    void set_role_recursive(const std::string& r) {
+        add_tag("role", r);
+        for (auto& child : components) {
+            child.set_role_recursive(r);
+        }
+    }
+
+    void set_tag_recursive(const std::string& key, const nlohmann::json& value) {
+        add_tag(key, value);
+        for (auto& child : components) {
+            child.set_tag_recursive(key, value);
+        }
+    }
+
     static Shape make_ghost(const Shape& s) {
         Shape g = s;
-        g.add_tag("role", "ghost");
+        g.set_role_recursive("ghost");
+        return g;
+    }
+
+    static Shape make_gap(const Shape& s) {
+        Shape g = s;
+        g.set_role_recursive("gap");
+        return g;
+    }
+
+    static Shape make_mask(const Shape& s) {
+        Shape g = s;
+        g.set_role_recursive("mask");
+        return g;
+    }
+
+    static Shape make_mark(const Shape& s) {
+        Shape g = s;
+        g.set_role_recursive("mark");
         return g;
     }
 

@@ -23,7 +23,7 @@ struct CutOp : P {
             boolean::Engine::collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
         }
 
-        boolean::Engine::recursive_subtract(vfs, result, Matrix::identity(), tool_nodes, open);
+        boolean::Engine::recursive_subtract(vfs, result, tool_nodes, open);
         
         for (const auto& tool : tools) {
             result.components.push_back(Shape::make_ghost(tool));

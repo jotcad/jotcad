@@ -3,14 +3,18 @@
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 
 echo "Building all tests..."
-make -C "$DIR" all
+if ! make -C "$DIR" all; then
+    echo "❌ Build failed. Aborting test execution."
+    exit 1
+fi
 
 tests=0
 pass=0
 fail=0
 
 if [ -f "$DIR/bin/unit_tests" ]; then
-    "$DIR/bin/unit_tests" all
+    TARGET="${1:-all}"
+    "$DIR/bin/unit_tests" "$TARGET"
     exit $?
 else
     echo "Error: bin/unit_tests not found."

@@ -162,7 +162,7 @@ struct GapOp : P {
     static constexpr const char* path = "jot/gap";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         Shape out = in;
-        out.add_tag("role", "gap");
+        out.set_role_recursive("gap");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
@@ -182,7 +182,7 @@ struct GhostOp : P {
     static constexpr const char* path = "jot/ghost";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         Shape out = in;
-        out.add_tag("role", "ghost");
+        out.set_role_recursive("ghost");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
@@ -202,7 +202,7 @@ struct MarkOp : P {
     static constexpr const char* path = "jot/mark";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         Shape out = in;
-        out.add_tag("role", "mark");
+        out.set_role_recursive("mark");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }
@@ -222,7 +222,7 @@ struct MaskOp : P {
     static constexpr const char* path = "jot/mask";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         Shape out = in;
-        out.add_tag("role", "mask");
+        out.set_role_recursive("mask");
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in"}; }

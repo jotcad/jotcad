@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runIntegrationTest } from './harness.js';
+import { Selector } from '../fs/src/index.js';
 import { registerFileProvider } from '../ux/src/lib/vfs/FileProvider.js';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -35,8 +36,7 @@ runIntegrationTest('DXF File Import, Parsing, and Export Roundtrip', async ({ vf
             inputs: { '$in': { type: 'jot:shape' } },
             arguments: [{ name: 'path', type: 'jot:string', default: 'export.dxf' }],
             outputs: {
-                "$out": { type: 'jot:shape' },
-                "file": { type: 'file', mimeType: 'image/vnd.dxf' }
+                "$out": { type: 'file', mimeType: 'image/vnd.dxf' }
             }
         }
     });
@@ -120,13 +120,15 @@ ENDSEC
 EOF
 `;
 
-    const testDxfPath = path.join(__dirname, 'test_input.dxf');
+    const testDxfPath = 'test_input.dxf';
     fs.writeFileSync(testDxfPath, dxfContent);
+    const dxfSelector = new Selector('jot/File', { path: testDxfPath }).withOutput('$out');
+    await vfs.write(dxfSelector, new TextEncoder().encode(dxfContent), { encoding: 'bytes' });
 
     try {
         // --- Test 1: DXF Import ---
         console.log("[Test] Evaluating DXF Import...");
-        const importTerminals = await evaluate(`Dxf(File("integration/test_input.dxf")) -> $out`);
+        const importTerminals = await evaluate(`Dxf(File("${testDxfPath}")) -> $out`);
         
         const importBundle = importTerminals.find(t => t.port === '$out');
         assert.ok(importBundle, "Should find terminal output bundle");
@@ -161,15 +163,15 @@ EOF
 
         // --- Test 2: DXF Export Roundtrip ---
         console.log("[Test] Evaluating DXF Export...");
-        const exportTerminals = await compiler.evaluate(parser.parse(`$in.dxf(path="export_roundtrip.dxf").file -> file`), {
+        const exportTerminals = await compiler.evaluate(parser.parse(`$in.dxf(path="export_roundtrip.dxf") -> $out`), {
             '$in': importBundle.selector
         }, {
             outputs: {
-                "file": { type: "file" }
+                "$out": { type: "file" }
             }
         });
 
-        const dxfExportBytes = await readOutput(exportTerminals, 'file');
+        const dxfExportBytes = await readOutput(exportTerminals, '$out');
         const exportedText = new TextDecoder().decode(dxfExportBytes);
         console.log("[Test] Exported DXF Snippet:\n", exportedText.substring(0, 400));
 

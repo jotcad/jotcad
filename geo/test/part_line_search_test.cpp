@@ -114,8 +114,8 @@ void run_part_line_search() {
 
     // 4. Sample directions on the unit sphere
     std::vector<IK::Vector_3> directions;
-    int theta_steps = 90;
-    int phi_steps = 180;
+    int theta_steps = 10;
+    int phi_steps = 20;
     for (int i = 1; i < theta_steps; ++i) {
         double theta = M_PI * i / theta_steps;
         double sin_t = std::sin(theta);

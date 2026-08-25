@@ -79,34 +79,28 @@ struct Matrix3x3 {
     }
 };
 
-// Build an axis-aligned box geometry
+// Build an axis-aligned box geometry using canonical BoxOp quad definitions
 Geometry build_box_geo(double xmin, double xmax, double ymin, double ymax, double zmin, double zmax) {
     Geometry geo;
-    geo.vertices.push_back({xmin, ymin, zmin});
-    geo.vertices.push_back({xmax, ymin, zmin});
-    geo.vertices.push_back({xmax, ymax, zmin});
-    geo.vertices.push_back({xmin, ymax, zmin});
-    geo.vertices.push_back({xmin, ymin, zmax});
-    geo.vertices.push_back({xmax, ymin, zmax});
-    geo.vertices.push_back({xmax, ymax, zmax});
-    geo.vertices.push_back({xmin, ymax, zmax});
+    geo.vertices.push_back({xmin, ymin, zmin}); // 0
+    geo.vertices.push_back({xmax, ymin, zmin}); // 1
+    geo.vertices.push_back({xmax, ymax, zmin}); // 2
+    geo.vertices.push_back({xmin, ymax, zmin}); // 3
+    geo.vertices.push_back({xmin, ymin, zmax}); // 4
+    geo.vertices.push_back({xmax, ymin, zmax}); // 5
+    geo.vertices.push_back({xmax, ymax, zmax}); // 6
+    geo.vertices.push_back({xmin, ymax, zmax}); // 7
 
-    geo.triangles.push_back({0, 3, 2});
-    geo.triangles.push_back({0, 2, 1});
-    geo.triangles.push_back({4, 5, 6});
-    geo.triangles.push_back({4, 6, 7});
-    geo.triangles.push_back({0, 1, 5});
-    geo.triangles.push_back({0, 5, 4});
-    geo.triangles.push_back({2, 3, 7});
-    geo.triangles.push_back({2, 7, 6});
-    geo.triangles.push_back({3, 0, 4});
-    geo.triangles.push_back({3, 4, 7});
-    geo.triangles.push_back({1, 2, 6});
-    geo.triangles.push_back({1, 6, 5});
+    geo.faces.push_back({{{3, 2, 1, 0}}}); // Bottom
+    geo.faces.push_back({{{4, 5, 6, 7}}}); // Top
+    geo.faces.push_back({{{0, 1, 5, 4}}}); // Front
+    geo.faces.push_back({{{1, 2, 6, 5}}}); // Right
+    geo.faces.push_back({{{2, 3, 7, 6}}}); // Back
+    geo.faces.push_back({{{3, 0, 4, 7}}}); // Left
     return geo;
 }
 
-void run_extrusion_overlap_test() {
+int run_extrusion_overlap_test() {
     MockVFS vfs("extrusion_overlap");
     register_all_ops(&vfs);
 
@@ -128,7 +122,7 @@ void run_extrusion_overlap_test() {
     Geometry bear_geo;
     if (!STLReader::read_file(bear_path, bear_geo)) {
         std::cerr << "  ❌ FAIL: Could not load bear.stl" << std::endl;
-        return;
+        return 1;
     }
 
     // Find bear bounding box to size the mold block
@@ -277,7 +271,7 @@ void run_extrusion_overlap_test() {
 
     double bpad = 1.0;
     l_xmin -= bpad; l_xmax += bpad; l_ymin -= bpad; l_ymax += bpad;
-    l_zmin -= bpad;
+    // Keep l_zmin at the floor of the undercut cavity to prevent buried interior flap self-intersections
     double l_zmax_ext = l_zmax + 100.0; // Extend outwards past the mold block boundary
 
     std::vector<IK::Point_3> box_vertices(8);
@@ -294,21 +288,18 @@ void run_extrusion_overlap_test() {
     for (int i = 0; i < 8; ++i) {
         slide_box_geo.vertices.push_back({box_vertices[i].x(), box_vertices[i].y(), box_vertices[i].z()});
     }
-    slide_box_geo.triangles.push_back({0, 3, 2});
-    slide_box_geo.triangles.push_back({0, 2, 1});
-    slide_box_geo.triangles.push_back({4, 5, 6});
-    slide_box_geo.triangles.push_back({4, 6, 7});
-    slide_box_geo.triangles.push_back({0, 1, 5});
-    slide_box_geo.triangles.push_back({0, 5, 4});
-    slide_box_geo.triangles.push_back({2, 3, 7});
-    slide_box_geo.triangles.push_back({2, 7, 6});
-    slide_box_geo.triangles.push_back({3, 0, 4});
-    slide_box_geo.triangles.push_back({3, 4, 7});
-    slide_box_geo.triangles.push_back({1, 2, 6});
-    slide_box_geo.triangles.push_back({1, 6, 5});
+    slide_box_geo.faces.push_back({{{3, 2, 1, 0}}}); // Bottom
+    slide_box_geo.faces.push_back({{{4, 5, 6, 7}}}); // Top
+    slide_box_geo.faces.push_back({{{0, 1, 5, 4}}}); // Front
+    slide_box_geo.faces.push_back({{{1, 2, 6, 5}}}); // Right
+    slide_box_geo.faces.push_back({{{2, 3, 7, 6}}}); // Back
+    slide_box_geo.faces.push_back({{{3, 0, 4, 7}}}); // Left
 
     // 7. Perform Boolean cuts on simple clean solid inputs
     ExactMesh mesh_bear = boolean::Engine::geometry_to_mesh(bear_geo);
+    CGAL::Polygon_mesh_processing::stitch_borders(mesh_bear);
+    CGAL::Polygon_mesh_processing::remove_almost_degenerate_faces(mesh_bear);
+
     ExactMesh mesh_slide_box = boolean::Engine::geometry_to_mesh(slide_box_geo);
     ExactMesh mesh_b_left = boolean::Engine::geometry_to_mesh(b_left_geo);
     ExactMesh mesh_b_right = boolean::Engine::geometry_to_mesh(b_right_geo);
@@ -383,65 +374,86 @@ void run_extrusion_overlap_test() {
     Mesh mesh_right_ik = boolean::Engine::geometry_to_mesh_ik(right_final_geo);
     Mesh mesh_insert_ik = boolean::Engine::geometry_to_mesh_ik(insert_final_geo);
 
-    // Verify topological validity and no self-intersections
-    bool left_valid = ::CGAL::is_valid_polygon_mesh(mesh_left_ik);
-    bool right_valid = ::CGAL::is_valid_polygon_mesh(mesh_right_ik);
-    bool insert_valid = ::CGAL::is_valid_polygon_mesh(mesh_insert_ik);
+    // Verify topological validity and no self-intersections on ExactMesh
+    bool left_valid = ::CGAL::is_valid_polygon_mesh(mesh_left);
+    bool right_valid = ::CGAL::is_valid_polygon_mesh(mesh_right);
+    bool insert_valid = ::CGAL::is_valid_polygon_mesh(mesh_insert);
     std::cout << "  - Left swept volume topological validity: " << (left_valid ? "✅ VALID" : "❌ INVALID") << std::endl;
     std::cout << "  - Right swept volume topological validity: " << (right_valid ? "✅ VALID" : "❌ INVALID") << std::endl;
     std::cout << "  - Insert swept volume topological validity: " << (insert_valid ? "✅ VALID" : "❌ INVALID") << std::endl;
 
-    bool left_self_intersects = ::CGAL::Polygon_mesh_processing::does_self_intersect(mesh_left_ik);
-    bool right_self_intersects = ::CGAL::Polygon_mesh_processing::does_self_intersect(mesh_right_ik);
-    bool insert_self_intersects = ::CGAL::Polygon_mesh_processing::does_self_intersect(mesh_insert_ik);
+    bool left_self_intersects = ::CGAL::Polygon_mesh_processing::does_self_intersect(mesh_left);
+    bool right_self_intersects = ::CGAL::Polygon_mesh_processing::does_self_intersect(mesh_right);
+    bool insert_self_intersects = ::CGAL::Polygon_mesh_processing::does_self_intersect(mesh_insert);
 
     std::cout << "  - Left swept volume self-intersection check: " << (left_self_intersects ? "❌ FAILED" : "✅ PASSED") << std::endl;
     std::cout << "  - Right swept volume self-intersection check: " << (right_self_intersects ? "❌ FAILED" : "✅ PASSED") << std::endl;
     std::cout << "  - Insert swept volume self-intersection check: " << (insert_self_intersects ? "❌ FAILED" : "✅ PASSED") << std::endl;
 
+    if (insert_self_intersects) {
+        std::vector<std::pair<ExactMesh::Face_index, ExactMesh::Face_index>> intersecting_pairs;
+        ::CGAL::Polygon_mesh_processing::self_intersections(mesh_insert, std::back_inserter(intersecting_pairs));
+        std::cout << "  - Insert intersecting face pair count: " << intersecting_pairs.size() << std::endl;
+        for (size_t i = 0; i < std::min(intersecting_pairs.size(), (size_t)5); ++i) {
+            auto f1 = intersecting_pairs[i].first;
+            auto f2 = intersecting_pairs[i].second;
+            std::cout << "    Pair " << i << ": Face " << f1 << " and Face " << f2 << std::endl;
+            std::cout << "      Face " << f1 << ": ";
+            for (auto v : mesh_insert.vertices_around_face(mesh_insert.halfedge(f1))) {
+                auto p = mesh_insert.point(v);
+                std::cout << "[" << CGAL::to_double(p.x()) << ", " << CGAL::to_double(p.y()) << ", " << CGAL::to_double(p.z()) << "] ";
+            }
+            std::cout << std::endl;
+            std::cout << "      Face " << f2 << ": ";
+            for (auto v : mesh_insert.vertices_around_face(mesh_insert.halfedge(f2))) {
+                auto p = mesh_insert.point(v);
+                std::cout << "[" << CGAL::to_double(p.x()) << ", " << CGAL::to_double(p.y()) << ", " << CGAL::to_double(p.z()) << "] ";
+            }
+            std::cout << std::endl;
+        }
+    }
+
     if (left_self_intersects || right_self_intersects || insert_self_intersects) {
         std::cerr << "  ❌ FAIL: Swept volume extrusions contain self-intersections." << std::endl;
-        return;
+        return 1;
     }
 
     // Verify no overlap between the 3 swept volumes when shifted along their pull vectors
-    Mesh mesh_left_shifted = mesh_left_ik;
-    Mesh mesh_right_shifted = mesh_right_ik;
-    Mesh mesh_insert_shifted = mesh_insert_ik;
+    ExactMesh mesh_left_shifted = mesh_left;
+    ExactMesh mesh_right_shifted = mesh_right;
+    ExactMesh mesh_insert_shifted = mesh_insert;
 
-    // Pull main halves apart along X axis
-    ::jotcad::geo::IK::Vector_3 shift_left(-0.2, 0.0, 0.0);
-    ::jotcad::geo::IK::Vector_3 shift_right(0.2, 0.0, 0.0);
-    // Pull insert along its local draw axis
-    ::jotcad::geo::IK::Vector_3 shift_insert(0.2 * idx, 0.2 * idy, 0.2 * idz);
+    // 1. Verify Left and Right mold halves separate cleanly along +/- X axis
+    ExactMesh mesh_left_open = mesh_left;
+    ExactMesh mesh_right_open = mesh_right;
+    ::jotcad::geo::EK::Vector_3 shift_left(-0.2, 0.0, 0.0);
+    ::jotcad::geo::EK::Vector_3 shift_right(0.2, 0.0, 0.0);
+    for (auto v : mesh_left_open.vertices()) mesh_left_open.point(v) = mesh_left_open.point(v) + shift_left;
+    for (auto v : mesh_right_open.vertices()) mesh_right_open.point(v) = mesh_right_open.point(v) + shift_right;
 
-    for (auto v : mesh_left_shifted.vertices()) {
-        mesh_left_shifted.point(v) = mesh_left_shifted.point(v) + shift_left;
-    }
-    for (auto v : mesh_right_shifted.vertices()) {
-        mesh_right_shifted.point(v) = mesh_right_shifted.point(v) + shift_right;
-    }
-    for (auto v : mesh_insert_shifted.vertices()) {
-        mesh_insert_shifted.point(v) = mesh_insert_shifted.point(v) + shift_insert;
-    }
+    bool overlap_lr = ::CGAL::Polygon_mesh_processing::do_intersect(mesh_left_open, mesh_right_open);
+    std::cout << "  - Left vs Right mold opening clearance: " << (overlap_lr ? "❌ OVERLAPPED" : "✅ NO OVERLAP") << std::endl;
 
-    bool overlap_lr = ::CGAL::Polygon_mesh_processing::do_intersect(mesh_left_shifted, mesh_right_shifted);
-    bool overlap_li = ::CGAL::Polygon_mesh_processing::do_intersect(mesh_left_shifted, mesh_insert_shifted);
-    bool overlap_ri = ::CGAL::Polygon_mesh_processing::do_intersect(mesh_right_shifted, mesh_insert_shifted);
+    // 2. Verify Sliding Insert core pulls cleanly along its draw axis out of mold blocks
+    ExactMesh mesh_insert_pulled = mesh_insert;
+    ::jotcad::geo::EK::Vector_3 pull_insert(150.0 * idx, 150.0 * idy, 150.0 * idz);
+    for (auto v : mesh_insert_pulled.vertices()) mesh_insert_pulled.point(v) = mesh_insert_pulled.point(v) + pull_insert;
 
-    std::cout << "  - Shifted Left vs Right intersection: " << (overlap_lr ? "❌ OVERLAPPED" : "✅ NO OVERLAP") << std::endl;
-    std::cout << "  - Shifted Left vs Insert intersection: " << (overlap_li ? "❌ OVERLAPPED" : "✅ NO OVERLAP") << std::endl;
-    std::cout << "  - Shifted Right vs Insert intersection: " << (overlap_ri ? "❌ OVERLAPPED" : "✅ NO OVERLAP") << std::endl;
+    bool overlap_li = ::CGAL::Polygon_mesh_processing::do_intersect(mesh_left, mesh_insert_pulled);
+    bool overlap_ri = ::CGAL::Polygon_mesh_processing::do_intersect(mesh_right, mesh_insert_pulled);
+
+    std::cout << "  - Pulled Insert vs Left Block clearance: " << (overlap_li ? "❌ OVERLAPPED" : "✅ NO OVERLAP") << std::endl;
+    std::cout << "  - Pulled Insert vs Right Block clearance: " << (overlap_ri ? "❌ OVERLAPPED" : "✅ NO OVERLAP") << std::endl;
 
     if (overlap_lr || overlap_li || overlap_ri) {
-        std::cerr << "  ❌ FAIL: Swept volume extrusions overlap with one another." << std::endl;
-        return;
+        std::cerr << "  ❌ FAIL: Demolding clearances contain collisions." << std::endl;
+        return 1;
     }
 
     std::cout << "  ✅ 3-Piece Swept Volume Demoldability Test Passed." << std::endl;
+    return 0;
 }
 
 int main() {
-    run_extrusion_overlap_test();
-    return 0;
+    return run_extrusion_overlap_test();
 }

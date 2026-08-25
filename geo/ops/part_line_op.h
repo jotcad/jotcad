@@ -3,7 +3,7 @@
 #include "processor.h"
 #include "geometry.h"
 #include "triangulation.h"
-#include <CGAL/Arrangement_2.h>
+#include <CGAL/Sweep_line_2_algorithms.h>
 #include <CGAL/Arr_segment_traits_2.h>
 #include <vector>
 #include <string>
@@ -20,13 +20,23 @@ struct PartLineOp : P {
     static constexpr const char* path = "jot/partLine";
 
     static bool is_tangled(const std::vector<std::pair<int, int>>& parting_segments, const Geometry& world_geo, const IK::Vector_3& dir) {
-        typedef CGAL::Arr_segment_traits_2<EK> Traits_2;
-        typedef CGAL::Arrangement_2<Traits_2> Arrangement;
+        // Stage 1: Fast Graph Topology (Instant integer degree count)
+        // A clean parting line must be a collection of simple closed loops with deg == 2
+        std::map<int, int> degree;
+        for (const auto& seg : parting_segments) {
+            degree[seg.first]++;
+            degree[seg.second]++;
+        }
+        for (const auto& kv : degree) {
+            if (kv.second != 2) return true;
+        }
 
+        // Stage 2: Fast 2D Non-Adjacent Crossing Check using Exact Kernel
         EK::Vector_3 dir_ek(dir.x(), dir.y(), dir.z());
         EK::Plane_3 plane(EK::Point_3(0, 0, 0), dir_ek);
 
-        Arrangement arr;
+        std::vector<EK::Segment_2> segs_2d;
+        segs_2d.reserve(parting_segments.size());
         for (const auto& seg : parting_segments) {
             const auto& p1_raw = world_geo.vertices[seg.first];
             const auto& p2_raw = world_geo.vertices[seg.second];
@@ -34,25 +44,36 @@ struct PartLineOp : P {
             EK::Point_3 p2(p2_raw.x, p2_raw.y, p2_raw.z);
             
             if (p1 == p2) continue;
-            
-            Traits_2::Curve_2 curve(plane.to_2d(p1), plane.to_2d(p2));
-            CGAL::insert(arr, curve);
+            segs_2d.emplace_back(plane.to_2d(p1), plane.to_2d(p2));
         }
 
-        for (auto v = arr.vertices_begin(); v != arr.vertices_end(); ++v) {
-            if (v->degree() != 2) {
-                return true;
+        if (segs_2d.empty()) return true;
+
+        size_t n = segs_2d.size();
+        for (size_t i = 0; i < n; ++i) {
+            for (size_t j = i + 1; j < n; ++j) {
+                // Ignore segments sharing identical vertex endpoints
+                if (parting_segments[i].first == parting_segments[j].first ||
+                    parting_segments[i].first == parting_segments[j].second ||
+                    parting_segments[i].second == parting_segments[j].first ||
+                    parting_segments[i].second == parting_segments[j].second) {
+                    continue;
+                }
+
+                if (CGAL::do_intersect(segs_2d[i], segs_2d[j])) {
+                    return true; // Non-adjacent segments cross!
+                }
             }
         }
         return false;
     }
 
-    static void collect_world_geometry_recursive(fs::VFSNode* vfs, const Shape& s, const Matrix& current_tf, Geometry& world_geo) {
-        if (s.geometry.has_value()) {
+    static void collect_world_geometry_recursive(fs::VFSNode* vfs, const Shape& s, Geometry& world_geo) {
+        if (s.has_positive_geometry()) {
             Geometry geo = vfs->template read<Geometry>(s.geometry.value());
             int offset = (int)world_geo.vertices.size();
             for (const auto& v : geo.vertices) {
-                EK::Point_3 p = current_tf.transform(EK::Point_3(v.x, v.y, v.z));
+                EK::Point_3 p = s.tf.transform(EK::Point_3(v.x, v.y, v.z));
                 world_geo.vertices.push_back({p.x(), p.y(), p.z()});
             }
             
@@ -73,14 +94,14 @@ struct PartLineOp : P {
             }
         }
         for (const auto& child : s.components) {
-            collect_world_geometry_recursive(vfs, child, current_tf * child.tf, world_geo);
+            collect_world_geometry_recursive(vfs, child, world_geo);
         }
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double dx, double dy, double dz, bool optimize = false) {
         // 1. Flatten all geometry in world coordinates
         Geometry world_geo;
-        collect_world_geometry_recursive(vfs, in, Matrix::identity(), world_geo);
+        collect_world_geometry_recursive(vfs, in, world_geo);
 
         // 2. Compute face normals
         std::vector<IK::Vector_3> face_normals(world_geo.triangles.size());
@@ -132,8 +153,8 @@ struct PartLineOp : P {
         // 4. Perform search/optimization if requested
         if (optimize && !world_geo.triangles.empty()) {
             std::vector<IK::Vector_3> directions;
-            int theta_steps = 45;
-            int phi_steps = 90;
+            int theta_steps = 15;
+            int phi_steps = 30;
             for (int i = 1; i < theta_steps; ++i) {
                 double theta = M_PI * i / theta_steps;
                 double sin_t = std::sin(theta);

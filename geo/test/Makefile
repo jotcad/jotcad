@@ -136,7 +136,7 @@ $(BIN_DIR)/decal_hill_perf: $(OBJ_DIR)/decal_hill_perf.o $(LIB_GEO)
 	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
 # Compile unit_tests.o, generating unit_tests_run.h dynamically first
-$(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h
+$(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h $(COMBINED_TEST_SOURCES)
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

@@ -57,7 +57,7 @@ int main() {
     circle_ghost.geometry = cutter.geometry; 
 
     fs::Selector fulfilling("test");
-    ExtrudeOpBase<>::execute_sweep(&vfs, fulfilling, circle_ghost, Matrix::identity(), Matrix::translate(0,0,10));
+    ExtrudeZOp<>::execute(&vfs, fulfilling, circle_ghost, Interval{0, 10});
     Shape extrude_ghost_res = vfs.read<Shape>(fulfilling.with_output("$out"));
     
     assert(extrude_ghost_res.is_ghost());

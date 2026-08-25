@@ -13,7 +13,7 @@ struct DisjointOp : P {
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
         Shape out = in;
-        boolean::Engine::deep_disjoint(vfs, out, Matrix::identity());
+        boolean::Engine::deep_disjoint(vfs, out);
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

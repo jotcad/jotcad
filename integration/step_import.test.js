@@ -50,16 +50,16 @@ runIntegrationTest('STEP File Import and Export Integration', async ({ vfs, mesh
     console.log("✔ STEP Import evaluated successfully.");
 
     // --- Test Step 2: Export a shape ---
-    const exportCode = 'Step(File("test_model.stp")).step("out_mesh.stp").file -> file';
+    const exportCode = 'Step(File("test_model.stp")).step("out_mesh.stp") -> $out';
     console.log(`[Test] Evaluating export DSL: ${exportCode}`);
     
     const exportAst = parser.parse(exportCode);
     const exportTerminals = await compiler.evaluate(exportAst, {}, {
-        outputs: { "file": { type: "file" } }
+        outputs: { "$out": { type: "file" } }
     });
     
-    const exportBundle = exportTerminals.find(t => t.selector.output === 'file');
-    assert.ok(exportBundle, "Should find 'file' output terminal bundle");
+    const exportBundle = exportTerminals.find(t => t.selector.output === '$out');
+    assert.ok(exportBundle, "Should find '$out' output terminal bundle");
     
     console.log("[Test] Fetching exported file stream from VFS...");
     const fileData = await readData(exportBundle.selector);

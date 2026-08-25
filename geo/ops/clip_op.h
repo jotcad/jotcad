@@ -23,7 +23,7 @@ struct ClipOp : P {
             boolean::Engine::collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
         }
 
-        boolean::Engine::recursive_intersect(vfs, result, Matrix::identity(), tool_nodes);
+        boolean::Engine::recursive_intersect(vfs, result, tool_nodes);
 
         for (const auto& tool : tools) {
             result.components.push_back(Shape::make_ghost(tool));

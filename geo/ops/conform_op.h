@@ -21,17 +21,16 @@ struct ConformOp : P {
     typedef CGAL::AABB_traits<IK, Primitive> Traits;
     typedef CGAL::AABB_tree<Traits> Tree;
 
-    static void project_recursive(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const Tree& tree, const Mesh& target_mesh, const IK::Vector_3& dir, double offset) {
-        Matrix current_tf = parent_tf * s.tf;
+    static void project_recursive(fs::VFSNode* vfs, Shape& s, const Tree& tree, const Mesh& target_mesh, const IK::Vector_3& dir, double offset) {
         CGAL::Cartesian_converter<EK, IK> ek_to_ik;
         CGAL::Cartesian_converter<IK, EK> ik_to_ek;
 
-        if (s.geometry.has_value()) {
+        if (s.has_positive_geometry()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             bool changed = false;
 
             for (auto& v : geo.vertices) {
-                EK::Point_3 p_world_ek = current_tf.transform(EK::Point_3(v.x, v.y, v.z));
+                EK::Point_3 p_world_ek = s.tf.transform(EK::Point_3(v.x, v.y, v.z));
                 IK::Point_3 p_world = ek_to_ik(p_world_ek);
                 IK::Point_3 p_new = p_world;
                 bool hit = false;
@@ -67,7 +66,7 @@ struct ConformOp : P {
 
                 if (hit) {
                     p_new = p_new + normal * offset;
-                    EK::Point_3 p_local_ek = current_tf.inverse().transform(ik_to_ek(p_new));
+                    EK::Point_3 p_local_ek = s.tf.inverse().transform(ik_to_ek(p_new));
                     v.x = p_local_ek.x();
                     v.y = p_local_ek.y();
                     v.z = p_local_ek.z();
@@ -81,7 +80,7 @@ struct ConformOp : P {
         }
 
         for (auto& child : s.components) {
-            project_recursive(vfs, child, current_tf, tree, target_mesh, dir, offset);
+            project_recursive(vfs, child, tree, target_mesh, dir, offset);
         }
     }
 
@@ -113,7 +112,7 @@ struct ConformOp : P {
         }
 
         Shape out = in;
-        project_recursive(vfs, out, Matrix::identity(), tree, target_mesh, dir, offset);
+        project_recursive(vfs, out, tree, target_mesh, dir, offset);
         
         vfs->write(fulfilling.with_output("$out"), out);
     }

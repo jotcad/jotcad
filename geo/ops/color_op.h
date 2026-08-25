@@ -10,7 +10,7 @@ struct ColorOp : P {
     static constexpr const char* path = "jot/color";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& color) {
         Shape out = in;
-        out.tags["color"] = color;
+        out.set_tag_recursive("color", color);
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "color"}; }

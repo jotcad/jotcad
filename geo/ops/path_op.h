@@ -9,24 +9,22 @@ namespace jotcad {
 namespace geo {
 
 namespace detail {
-    inline void collect_points_recursive(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf, std::vector<EK::Point_3>& pts) {
-        Matrix current_tf = parent_tf * s.tf;
-        
-        if (s.geometry.has_value()) {
+    inline void collect_points_recursive(fs::VFSNode* vfs, const Shape& s, std::vector<EK::Point_3>& pts) {
+        if (s.has_positive_geometry()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
             if (!geo.vertices.empty()) {
                 for (const auto& v : geo.vertices) {
-                    pts.push_back(current_tf.transform(EK::Point_3(v.x, v.y, v.z)));
+                    pts.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
                 }
             } else {
-                pts.push_back(current_tf.transform(EK::Point_3(0, 0, 0)));
+                pts.push_back(s.tf.transform(EK::Point_3(0, 0, 0)));
             }
-        } else if (s.components.empty()) {
-            pts.push_back(current_tf.transform(EK::Point_3(0, 0, 0)));
+        } else if (s.components.empty() && s.is_real()) {
+            pts.push_back(s.tf.transform(EK::Point_3(0, 0, 0)));
         }
 
         for (const auto& child : s.components) {
-            collect_points_recursive(vfs, child, current_tf, pts);
+            collect_points_recursive(vfs, child, pts);
         }
     }
 
@@ -90,9 +88,9 @@ struct LinkOp : P {
     static constexpr const char* path = "jot/link";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, bool smooth = false, double zag = 0) {
         std::vector<EK::Point_3> pts;
-        detail::collect_points_recursive(vfs, in, Matrix::identity(), pts);
+        detail::collect_points_recursive(vfs, in, pts);
         for (const auto& t : tools) {
-            detail::collect_points_recursive(vfs, t, Matrix::identity(), pts);
+            detail::collect_points_recursive(vfs, t, pts);
         }
 
         Geometry res = detail::generate_path_geometry(pts, false, smooth, zag);
@@ -123,9 +121,9 @@ struct LoopOp : P {
     static constexpr const char* path = "jot/loop";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools, bool smooth = false, double zag = 0) {
         std::vector<EK::Point_3> pts;
-        detail::collect_points_recursive(vfs, in, Matrix::identity(), pts);
+        detail::collect_points_recursive(vfs, in, pts);
         for (const auto& t : tools) {
-            detail::collect_points_recursive(vfs, t, Matrix::identity(), pts);
+            detail::collect_points_recursive(vfs, t, pts);
         }
 
         Geometry res = detail::generate_path_geometry(pts, true, smooth, zag);
@@ -157,7 +155,7 @@ struct LinkConstructorOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes, bool smooth = false, double zag = 0) {
         std::vector<EK::Point_3> pts;
         for (const auto& s : shapes) {
-            detail::collect_points_recursive(vfs, s, Matrix::identity(), pts);
+            detail::collect_points_recursive(vfs, s, pts);
         }
 
         Geometry res = detail::generate_path_geometry(pts, false, smooth, zag);
@@ -189,7 +187,7 @@ struct LoopConstructorOp : P {
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes, bool smooth = false, double zag = 0) {
         std::vector<EK::Point_3> pts;
         for (const auto& s : shapes) {
-            detail::collect_points_recursive(vfs, s, Matrix::identity(), pts);
+            detail::collect_points_recursive(vfs, s, pts);
         }
 
         Geometry res = detail::generate_path_geometry(pts, true, smooth, zag);

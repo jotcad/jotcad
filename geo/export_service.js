@@ -868,29 +868,15 @@ vfs.registerProvider('jot/step', async (v, selector, context) => {
             }
         });
 
-        if (output === 'file') {
-            const stream = new ReadableStream({
-                start(controller) {
-                    controller.enqueue(stepBytes);
-                    controller.close();
-                }
-            });
-            return {
-                stream,
-                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
-            };
-        }
-
-        const bytes = new TextEncoder().encode(JSON.stringify(inShape));
         const stream = new ReadableStream({
             start(controller) {
-                controller.enqueue(bytes);
+                controller.enqueue(stepBytes);
                 controller.close();
             }
         });
         return {
             stream,
-            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+            metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
         };
 
     } catch (err) {
@@ -906,8 +892,7 @@ vfs.registerProvider('jot/step', async (v, selector, context) => {
             { name: 'path', type: 'jot:string', default: 'export.stp' }
         ],
         outputs: { 
-            '$out': { type: 'jot:shape' },
-            'file': { type: 'file', mimeType: 'model/step' }
+            '$out': { type: 'file', mimeType: 'model/step' }
         }
     }
 });
@@ -1073,30 +1058,15 @@ vfs.registerProvider('jot/dxf', async (v, selector, context) => {
 
         dxfContent += `  0\nENDSEC\n  0\nEOF\n`;
         const dxfBytes = new TextEncoder().encode(dxfContent);
-
-        if (output === 'file') {
-            const stream = new ReadableStream({
-                start(controller) {
-                    controller.enqueue(dxfBytes);
-                    controller.close();
-                }
-            });
-            return {
-                stream,
-                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
-            };
-        }
-
-        const bytes = new TextEncoder().encode(JSON.stringify(inShape));
         const stream = new ReadableStream({
             start(controller) {
-                controller.enqueue(bytes);
+                controller.enqueue(dxfBytes);
                 controller.close();
             }
         });
         return {
             stream,
-            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+            metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
         };
 
     } catch (err) {
@@ -1112,8 +1082,7 @@ vfs.registerProvider('jot/dxf', async (v, selector, context) => {
             { name: 'path', type: 'jot:string', default: 'export.dxf' }
         ],
         outputs: { 
-            '$out': { type: 'jot:shape' },
-            'file': { type: 'file', mimeType: 'image/vnd.dxf' }
+            '$out': { type: 'file', mimeType: 'image/vnd.dxf' }
         }
     }
 });
@@ -1283,29 +1252,15 @@ vfs.registerProvider('jot/gltf', async (v, selector, context) => {
 
         const glbBytes = await exportToGlb(v, inShape, context);
 
-        if (output === 'file') {
-            const stream = new ReadableStream({
-                start(controller) {
-                    controller.enqueue(glbBytes);
-                    controller.close();
-                }
-            });
-            return {
-                stream,
-                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
-            };
-        }
-
-        const bytes = new TextEncoder().encode(JSON.stringify(inShape));
         const stream = new ReadableStream({
             start(controller) {
-                controller.enqueue(bytes);
+                controller.enqueue(glbBytes);
                 controller.close();
             }
         });
         return {
             stream,
-            metadata: { state: 'AVAILABLE', encoding: 'json', selector: selector.toJSON() }
+            metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
         };
 
     } catch (err) {
@@ -1321,8 +1276,7 @@ vfs.registerProvider('jot/gltf', async (v, selector, context) => {
             { name: 'path', type: 'jot:string', default: 'export.glb' }
         ],
         outputs: { 
-            '$out': { type: 'jot:shape' },
-            'file': { type: 'file', mimeType: 'model/gltf-binary' }
+            '$out': { type: 'file', mimeType: 'model/gltf-binary' }
         }
     }
 });
@@ -1663,30 +1617,15 @@ vfs.registerProvider('jot/gcode', async (v, selector, context) => {
 
         const gcodeBytes = await fsPromises.readFile(outputGcodePath);
 
-        if (output === 'file') {
-            const stream = new ReadableStream({
-                start(controller) {
-                    controller.enqueue(gcodeBytes);
-                    controller.close();
-                }
-            });
-            return {
-                stream,
-                metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
-            };
-        }
-
-        const gcodeText = new TextDecoder().decode(gcodeBytes);
-        const textBytes = new TextEncoder().encode(gcodeText);
         const stream = new ReadableStream({
             start(controller) {
-                controller.enqueue(textBytes);
+                controller.enqueue(gcodeBytes);
                 controller.close();
             }
         });
         return {
             stream,
-            metadata: { state: 'AVAILABLE', encoding: 'string', selector: selector.toJSON() }
+            metadata: { state: 'AVAILABLE', encoding: 'bytes', selector: selector.toJSON() }
         };
 
     } catch (err) {
@@ -1717,8 +1656,7 @@ vfs.registerProvider('jot/gcode', async (v, selector, context) => {
             { name: 'center', type: 'jot:string', optional: true }
         ],
         outputs: {
-            '$out': { type: 'jot:string' },
-            'file': { type: 'file', mimeType: 'text/x-gcode' }
+            '$out': { type: 'file', mimeType: 'text/x-gcode' }
         }
     }
 });

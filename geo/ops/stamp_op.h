@@ -24,7 +24,7 @@ struct StampOp : P {
         }
 
         // We pass stamp=true to force the "membrane effect" (grafting tool boundary)
-        boolean::Engine::recursive_subtract(vfs, result, Matrix::identity(), tool_nodes, false, true);
+        boolean::Engine::recursive_subtract(vfs, result, tool_nodes, false, true);
         
         for (const auto& tool : tools) {
             result.components.push_back(Shape::make_ghost(tool));

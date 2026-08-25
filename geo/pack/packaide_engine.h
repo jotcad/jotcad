@@ -209,14 +209,13 @@ public:
         return placements;
     }
 
-    static std::optional<std::pair<Geometry, Matrix>> find_packing_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& parent_tf) {
-        Matrix current_tf = parent_tf * s.tf;
-        if (s.geometry.has_value()) {
+    static std::optional<std::pair<Geometry, Matrix>> find_packing_geometry(fs::VFSNode* vfs, const Shape& s) {
+        if (s.has_positive_geometry()) {
             Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            return std::make_pair(geo, current_tf);
+            return std::make_pair(geo, s.tf);
         }
         for (const auto& child : s.components) {
-            auto res = find_packing_geometry(vfs, child, current_tf);
+            auto res = find_packing_geometry(vfs, child);
             if (res.has_value()) return res;
         }
         return std::nullopt;
@@ -235,7 +234,7 @@ public:
 
         std::vector<PartInfo> remaining_parts;
         for (size_t i = 0; i < parts.size(); ++i) {
-            auto packing_res = find_packing_geometry(vfs, parts[i], Matrix::identity());
+            auto packing_res = find_packing_geometry(vfs, parts[i]);
             if (!packing_res.has_value()) continue;
             
             auto geo = packing_res->first;
@@ -296,7 +295,7 @@ public:
                 double rad = p.angle * M_PI / 180.0;
                 Matrix rot_tf = Matrix::rotationZ(turns);
                 
-                auto packing_res = find_packing_geometry(vfs, comp, Matrix::identity());
+                auto packing_res = find_packing_geometry(vfs, comp);
                 if (!packing_res.has_value()) continue;
                 
                 Geometry oriented_geo = packing_res->first;

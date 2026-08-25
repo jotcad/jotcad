@@ -5,15 +5,15 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 runIntegrationTest('G-code Slicing via PrusaSlicer Integration', async ({ vfs, mesh, compiler, parser, readData }) => {
     // --- Test Step 1: Create a box and slice to G-code ---
-    const sliceCode = 'Box(10, 10, 10).gcode("test_box.gcode", layer_height: 0.2, center: "100,100").file -> file';
+    const sliceCode = 'Box(10, 10, 10).gcode("test_box.gcode", layer_height: 0.2, center: "100,100") -> $out';
     console.log(`[Test] Evaluating G-code slicing DSL: ${sliceCode}`);
 
     const ast = parser.parse(sliceCode);
     const terminals = await compiler.evaluate(ast, {}, {
-        outputs: { "file": { type: "file" } }
+        outputs: { "$out": { type: "file" } }
     });
 
-    const terminalBundle = terminals.find(t => t.selector.output === 'file');
+    const terminalBundle = terminals.find(t => t.selector.output === '$out');
     assert.ok(terminalBundle, "Should find terminal output bundle for file");
 
     console.log("[Test] Fetching G-code output from VFS...");

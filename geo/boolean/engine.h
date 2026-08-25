@@ -547,21 +547,21 @@ struct Engine {
     struct ToolNode { Geometry geo; Matrix world_tf; std::string type; bool is_gap = false; };
 
     static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& /*ignored_parent_tf*/, std::vector<ToolNode>& tool_nodes) {
-        if (s.is_ghost() || s.is_mark() || s.is_mask()) return;
         Matrix current_tf = s.tf;
         std::string type = s.tags.value("type", "");
-        bool is_gap = s.is_gap();
-        if (s.geometry.has_value()) tool_nodes.push_back({vfs->read<Geometry>(s.geometry.value()), current_tf, type, is_gap});
-        else if (type == "plane") tool_nodes.push_back({Geometry(), current_tf, type, is_gap});
-        for (const auto& child : s.components) collect_tool_geometry(vfs, child, current_tf /* unused */, tool_nodes);
+        if (s.has_real_geometry()) {
+            tool_nodes.push_back({vfs->read<Geometry>(s.geometry.value()), current_tf, type, s.has_negative_geometry()});
+        } else if (type == "plane" && s.is_real()) {
+            tool_nodes.push_back({Geometry(), current_tf, type, false});
+        }
+        for (const auto& child : s.components) collect_tool_geometry(vfs, child, current_tf, tool_nodes);
     }
 
     // --- Recursive Boolean Orchestrators ---
 
-    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes, bool open, bool stamp = false) {
+    static void recursive_subtract(fs::VFSNode* vfs, Shape& s, const std::vector<ToolNode>& tool_nodes, bool open, bool stamp = false) {
         if (!s.is_real() && !s.is_gap()) return;
-        Matrix subject_world_tf = parent_tf * s.tf;
-        Matrix subject_world_inv = subject_world_tf.inverse();
+        Matrix subject_world_inv = s.tf.inverse();
 
         if (s.geometry.has_value() && !s.is_gap()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
@@ -628,13 +628,12 @@ struct Engine {
             }
             s.geometry = vfs->materialize<Geometry>(target_geo);
         }
-        for (auto& child : s.components) recursive_subtract(vfs, child, subject_world_tf, tool_nodes, open, stamp);
+        for (auto& child : s.components) recursive_subtract(vfs, child, tool_nodes, open, stamp);
     }
 
-    static void recursive_union(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
+    static void recursive_union(fs::VFSNode* vfs, Shape& s, const std::vector<ToolNode>& tool_nodes) {
         if (!s.is_real() && !s.is_gap()) return;
-        Matrix subject_world_tf = parent_tf * s.tf;
-        Matrix subject_world_inv = subject_world_tf.inverse();
+        Matrix subject_world_inv = s.tf.inverse();
 
         if (s.geometry.has_value() && !s.is_gap()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
@@ -696,13 +695,12 @@ struct Engine {
             }
             s.geometry = vfs->materialize<Geometry>(target_geo);
         }
-        for (auto& child : s.components) recursive_union(vfs, child, subject_world_tf, tool_nodes);
+        for (auto& child : s.components) recursive_union(vfs, child, tool_nodes);
     }
 
-    static void recursive_intersect(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf, const std::vector<ToolNode>& tool_nodes) {
+    static void recursive_intersect(fs::VFSNode* vfs, Shape& s, const std::vector<ToolNode>& tool_nodes) {
         if (!s.is_real() && !s.is_gap()) return;
-        Matrix subject_world_tf = parent_tf * s.tf;
-        Matrix subject_world_inv = subject_world_tf.inverse();
+        Matrix subject_world_inv = s.tf.inverse();
 
         if (s.geometry.has_value() && !s.is_gap()) {
             Geometry target_geo = vfs->read<Geometry>(s.geometry.value());
@@ -776,14 +774,21 @@ struct Engine {
             }
             s.geometry = vfs->materialize<Geometry>(target_geo);
         }
-        for (auto& child : s.components) recursive_intersect(vfs, child, subject_world_tf, tool_nodes);
+        for (auto& child : s.components) recursive_intersect(vfs, child, tool_nodes);
     }
 
-    static void deep_disjoint(fs::VFSNode* vfs, Shape& s, const Matrix& parent_tf) {
-        Matrix world_tf = parent_tf * s.tf;
-        if (s.geometry.has_value() && !s.components.empty()) { std::vector<ToolNode> tool_nodes; for (const auto& child : s.components) collect_tool_geometry(vfs, child, world_tf, tool_nodes); recursive_subtract(vfs, s, parent_tf, tool_nodes, false); }
-        for (size_t i = 0; i < s.components.size(); ++i) if (i + 1 < s.components.size()) { std::vector<ToolNode> tool_nodes; for (size_t j = i + 1; j < s.components.size(); ++j) collect_tool_geometry(vfs, s.components[j], world_tf, tool_nodes); recursive_subtract(vfs, s.components[i], world_tf, tool_nodes, false); }
-        for (auto& child : s.components) deep_disjoint(vfs, child, world_tf);
+    static void deep_disjoint(fs::VFSNode* vfs, Shape& s) {
+        if (s.geometry.has_value() && !s.components.empty()) {
+            std::vector<ToolNode> tool_nodes;
+            for (const auto& child : s.components) collect_tool_geometry(vfs, child, Matrix::identity(), tool_nodes);
+            recursive_subtract(vfs, s, tool_nodes, false);
+        }
+        for (size_t i = 0; i < s.components.size(); ++i) if (i + 1 < s.components.size()) {
+            std::vector<ToolNode> tool_nodes;
+            for (size_t j = i + 1; j < s.components.size(); ++j) collect_tool_geometry(vfs, s.components[j], Matrix::identity(), tool_nodes);
+            recursive_subtract(vfs, s.components[i], tool_nodes, false);
+        }
+        for (auto& child : s.components) deep_disjoint(vfs, child);
     }
 };
 

@@ -77,6 +77,8 @@
 #include "obb_op.h"
 #include "measure_ops.h"
 #include "sort_ops.h"
+#include "decal_pipeline.h"
+#include "part_line_op.h"
 
 // Global namespace imports to ensure types like Selector and Shape are visible globally to all tests
 using namespace fs;

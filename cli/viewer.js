@@ -24,7 +24,7 @@ async function main() {
 
   console.log(`[cli-viewer] Serving session folder: ${sessionDir}`);
   startSessionServer(port, session, '0.0.0.0');
-  console.log(`[cli-viewer] Server listening on https://localhost:${port}`);
+  console.log(`[cli-viewer] Server listening on http://localhost:${port} and https://localhost:${port}`);
 }
 
 main().catch(err => {
