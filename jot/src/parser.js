@@ -38,7 +38,7 @@ export class JotParser {
     // Preserve the newline character to avoid merging lines.
     const cleanText = text.replace(/(^|\s)\/\/.*(?=\n|$)/g, '$1');
     const regex =
-      /\s*([a-zA-Z_\$][a-zA-Z0-9_/]*|\->|=>|-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\/|\-|\+|>|<)\s*/g;
+      /\s*([a-zA-Z_\$][a-zA-Z0-9_/]*|\->|=>|-?[0-9]+(?:\.[0-9]+)?(?:\/-?[0-9]+(?:\.[0-9]+)?)?|"[^"]*"|'[^']*'|\.\.\.|\.\.|\.|\(|\)|\{|\}|=|:|\[|\]|,|;|\*|\/|\-|\+|>|<)\s*/g;
     let match;
     while ((match = regex.exec(cleanText)) !== null) {
       tokens.push(match[1]);
@@ -86,7 +86,7 @@ export class JotParser {
       return { type: 'ASSIGNMENT', name, value };
     }
 
-    let expr = this._parseChaining();
+    let expr = this._parseAdditive();
 
     // 3. Arrow Assignment (A -> B)
     if (this._peek() === '->') {
@@ -97,6 +97,36 @@ export class JotParser {
     }
 
     return expr;
+  }
+
+  _parseAdditive() {
+    let left = this._parseMultiplicative();
+    while (this._peek() === '+' || this._peek() === '-') {
+      const op = this._consume();
+      const right = this._parseMultiplicative();
+      if (typeof left === 'number' && typeof right === 'number') {
+        left = op === '+' ? left + right : left - right;
+      } else {
+        const opName = op === '+' ? 'math/add' : 'math/subtract';
+        left = { type: 'CALL', name: opName, args: [left, right] };
+      }
+    }
+    return left;
+  }
+
+  _parseMultiplicative() {
+    let left = this._parseChaining();
+    while (this._peek() === '*' || this._peek() === '/') {
+      const op = this._consume();
+      const right = this._parseChaining();
+      if (typeof left === 'number' && typeof right === 'number') {
+        left = op === '*' ? left * right : left / right;
+      } else {
+        const opName = op === '*' ? 'math/multiply' : 'math/divide';
+        left = { type: 'CALL', name: opName, args: [left, right] };
+      }
+    }
+    return left;
   }
 
   _tryParseArrowFunction() {

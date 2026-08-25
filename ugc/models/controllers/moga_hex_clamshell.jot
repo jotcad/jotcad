@@ -1,11 +1,14 @@
-(hex_d = 20.0, cap_d = 17.3, cap_h = 4.8, neck_d = 10.6, orb_d = 30.0, orb_z = 13.0, total_h = 8.0) =>
+(clearance = 0.4, hex_d = 20.0, orb_d = 30.0, orb_z = 13.0, total_h = 8.0, cut_z = 1.0) =>
   Hexagon(edgeToEdge=hex_d, turns=1/12)
     .extrude([-2.5, total_h])
     .clip(Orb(orb_d).mz(orb_z))
     .cut(
-      Disk(cap_d).extrude([cap_h]).mz(1.5),
-      Disk(neck_d).extrude([3.5]).mz(-2.0)
+      controllers/moga_thumbstick(
+        cap_d  = 16.5 + clearance * 2,
+        neck_d = 10.0 + clearance * 2
+      )
     )
+    .cut(Box(60, 60, 60).mz(-30.0 + cut_z))
     .cut(Box(50, 50, 50).moveX(25))
     .clean()
   -> $out;

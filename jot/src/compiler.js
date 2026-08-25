@@ -36,6 +36,30 @@ export class JotCompiler {
       'jot:any': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
       'any': (p, a, c, s) => this.JotAnyConsumer(p, a, c, s),
     };
+
+    // Built-in Math Operators
+    const mathOps = [
+      { name: 'math/add', path: 'jot/math/add' },
+      { name: 'math/subtract', path: 'jot/math/subtract' },
+      { name: 'math/multiply', path: 'jot/math/multiply' },
+      { name: 'math/divide', path: 'jot/math/divide' },
+    ];
+    for (const op of mathOps) {
+      this.registerOperator(op.name, {
+        path: op.path,
+        schema: {
+          arguments: [{ name: 'a', type: 'jot:any' }, { name: 'b', type: 'jot:any' }],
+          outputs: { $out: 'jot:number' }
+        }
+      });
+      this.registerOperator(op.path, {
+        path: op.path,
+        schema: {
+          arguments: [{ name: 'a', type: 'jot:any' }, { name: 'b', type: 'jot:any' }],
+          outputs: { $out: 'jot:number' }
+        }
+      });
+    }
   }
 
   // --- Core API ---
@@ -427,6 +451,28 @@ export class JotCompiler {
   }
 
   async _dispatchCall(node, parameters, subject, ctx) {
+    // Dynamic Constant Folding for Built-in Math Operators
+    if (node.name === 'math/add' || node.name === 'jot/math/add' ||
+        node.name === 'math/subtract' || node.name === 'jot/math/subtract' ||
+        node.name === 'math/multiply' || node.name === 'jot/math/multiply' ||
+        node.name === 'math/divide' || node.name === 'jot/math/divide') {
+      const evalArgs = [];
+      let allNumbers = true;
+      for (const arg of node.args) {
+        const val = await this._evaluateRecursive(arg?.type === 'ANNOTATED_ARG' ? arg.value : arg, parameters, subject, ctx);
+        evalArgs.push(val);
+        if (typeof val !== 'number') {
+          allNumbers = false;
+        }
+      }
+      if (allNumbers && evalArgs.length >= 2) {
+        if (node.name.endsWith('add')) return evalArgs.reduce((a, b) => a + b);
+        if (node.name.endsWith('subtract')) return evalArgs[0] - evalArgs[1];
+        if (node.name.endsWith('multiply')) return evalArgs.reduce((a, b) => a * b);
+        if (node.name.endsWith('divide')) return evalArgs[0] / evalArgs[1];
+      }
+    }
+
     const candidates = this._resolveOperator(node.name);
     if (!candidates || candidates.length === 0) throw new Error(`Compiler Error: Unregistered operator '${node.name}'`);
 
