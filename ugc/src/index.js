@@ -5,8 +5,9 @@ import { UGCSession } from './session.js';
 import { startSessionServer } from './server.js';
 
 import { loadModelsFromDirectory } from './models_loader.js';
+import { registerUGCFileProvider, FILE_SCHEMA } from './file_provider.js';
 
-export { JotEvaluator, UserFulfillerManager, UGCStorage, UGCSession, startSessionServer, loadModelsFromDirectory };
+export { JotEvaluator, UserFulfillerManager, UGCStorage, UGCSession, startSessionServer, loadModelsFromDirectory, registerUGCFileProvider, FILE_SCHEMA };
 
 export class UGCEngine {
   constructor(vfs, mesh = null, storagePath = null) {
@@ -30,6 +31,9 @@ export class UGCEngine {
    * Initializes the UGC engine, loading persisted fulfillers and model library recipes
    */
   async init(modelsDir = null) {
+    // 1. Register Headless File Provider for 'jot/File'
+    registerUGCFileProvider(this.vfs, this.mesh);
+
     const persisted = await this.storage.readAll();
     console.log(`[UGCEngine] Restoring ${Object.keys(persisted).length} user-defined operators from registry...`);
     for (const [name, data] of Object.entries(persisted)) {

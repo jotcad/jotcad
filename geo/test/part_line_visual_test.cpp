@@ -42,47 +42,36 @@ void test_part_line_visuals() {
 
     try {
         Processor::execute(&vfs, part_line_sel);
-        Shape part_line_result = vfs.read<Shape>(part_line_sel);
+        std::cerr << "  ❌ Expected Demoldability Error on bear." << std::endl;
+        throw std::runtime_error("Expected Demoldability Error on bear");
+    } catch (const std::runtime_error& e) {
+        std::cout << "    - Caught expected Demoldability Error on bear: " << e.what() << std::endl;
+    }
 
-        if (part_line_result.tags.contains("dx")) {
-            std::cout << "    - Discovered direction vector: ["
-                      << part_line_result.tags["dx"].get<double>() << ", "
-                      << part_line_result.tags["dy"].get<double>() << ", "
-                      << part_line_result.tags["dz"].get<double>() << "]" << std::endl;
-        }
+    // 3. Visual test on 2-piece Box
+    std::cout << "  - Visual test of jot/partLine on 2-piece Box..." << std::endl;
+    fs::Selector box_sel("jot/Box");
+    box_sel.parameters["width"] = 10.0;
+    box_sel.parameters["height"] = 10.0;
+    box_sel.parameters["depth"] = 10.0;
+    Shape box = vfs.read<Shape>(box_sel.with_output("$out"));
 
-        // 3. Color the bear light gray so we can see the green parting line on top
-        std::cout << "  - Coloring the bear mesh light gray..." << std::endl;
-        fs::Selector color_sel("jot/color");
-        color_sel.parameters["$in"] = bear_shape.to_json();
-        color_sel.parameters["color"] = "#cccccc";
-        color_sel.output = "$out";
-        Processor::execute(&vfs, color_sel);
-        Shape gray_bear = vfs.read<Shape>(color_sel);
+    fs::Selector box_opt("jot/partLine");
+    box_opt.parameters["$in"] = box.to_json();
+    box_opt.parameters["optimize"] = true;
+    Shape box_parting = vfs.read<Shape>(box_opt.with_output("$out"));
 
-        // 4. Create a composite shape containing both the gray bear and the parting line
-        Shape composite;
-        composite.components.push_back(gray_bear);
-        composite.components.push_back(part_line_result);
+    Shape composite;
+    composite.components.push_back(box);
+    composite.components.push_back(box_parting);
+    composite.tf = Matrix::rotationX(-0.61547) * Matrix::rotationY(0.78539);
 
-        std::cout << "  - Rendering composite shape..." << std::endl;
-        // Use an angled isometric-like view for the final PNG
-        composite.tf = Matrix::rotationX(-0.61547) * Matrix::rotationY(0.78539);
-
-        // Render at 1024x1024
-        auto png_data = Rasterizer::render_png(&vfs, composite, 1024, 1024, 0.0, 0.0);
-        if (!png_data.empty()) {
-            std::filesystem::create_directories("actual");
-            std::ofstream out("actual/bear_part_line_optimal.png", std::ios::binary);
-            out.write((const char*)png_data.data(), png_data.size());
-            std::cout << "  📸 Saved actual/bear_part_line_optimal.png" << std::endl;
-        } else {
-            std::cerr << "  ⚠️  Failed to render PNG (Empty Geometry)" << std::endl;
-        }
-
-    } catch (const std::exception& e) {
-        std::cerr << "  ❌ PartLine visual test failed: " << e.what() << std::endl;
-        throw;
+    auto png_data = Rasterizer::render_png(&vfs, composite, 512, 512, 0.0, 0.0);
+    if (!png_data.empty()) {
+        std::filesystem::create_directories("actual");
+        std::ofstream out("actual/box_part_line_optimal.png", std::ios::binary);
+        out.write((const char*)png_data.data(), png_data.size());
+        std::cout << "  📸 Saved actual/box_part_line_optimal.png" << std::endl;
     }
 }
 

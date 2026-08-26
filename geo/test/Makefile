@@ -76,6 +76,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                part_line_search_test.cpp \
                mold_split_test.cpp \
                extrusion_overlap_test.cpp \
+               mold_test.cpp \
                rig_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build

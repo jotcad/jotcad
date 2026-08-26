@@ -36,8 +36,8 @@ int main() {
 
     Shape bear_shape = JotVfsProtocol::make_shape(&vfs, bear_geo, json::object());
 
-    // 2. Perform PartLine Analysis relative to Z-up [0, 0, 1]
-    std::cout << "  - Executing jot/partLine on bear.stl along [0, 0, 1]..." << std::endl;
+    // 2. Perform PartLine Analysis on bear.stl along [0, 0, 1] (Expect Demoldability Error)
+    std::cout << "  - Verifying jot/partLine on bear.stl along [0, 0, 1] throws Demoldability Error..." << std::endl;
     fs::Selector part_line_sel("jot/partLine");
     part_line_sel.parameters["$in"] = bear_shape.to_json();
     part_line_sel.parameters["dx"] = 0.0;
@@ -45,64 +45,54 @@ int main() {
     part_line_sel.parameters["dz"] = 1.0;
     part_line_sel = part_line_sel.with_output("$out");
 
-    Shape result = vfs.read<Shape>(part_line_sel);
-
-    // 3. Verify Result
-    if (!result.geometry.has_value()) {
-        std::cerr << "  ❌ FAIL: Output shape does not contain geometry." << std::endl;
+    bool threw_z_error = false;
+    try {
+        Processor::execute(&vfs, part_line_sel);
+    } catch (const std::runtime_error& e) {
+        threw_z_error = true;
+        std::cout << "    - Caught expected demoldability error along [0, 0, 1]: " << e.what() << std::endl;
+    }
+    if (!threw_z_error) {
+        std::cerr << "  ❌ FAIL: Expected Demoldability Error on bear along [0, 0, 1]." << std::endl;
         return 1;
     }
 
-    Geometry line_geo = vfs.read<Geometry>(result.geometry.value());
-    size_t segment_count = line_geo.segments.size();
-
-    std::cout << "    - Parting line has " << segment_count << " segments." << std::endl;
-    std::cout << "    - Parting line has " << line_geo.vertices.size() << " vertices." << std::endl;
-
-    if (segment_count == 0) {
-        std::cerr << "  ❌ FAIL: Parting line has 0 segments." << std::endl;
-        return 1;
-    }
-
-    // Verify it contains no triangles/faces
-    if (!line_geo.triangles.empty() || !line_geo.faces.empty()) {
-        std::cerr << "  ❌ FAIL: Parting line geometry contains 2D/3D faces/triangles." << std::endl;
-        return 1;
-    }
-
-    // 4. Verify optimization parameter "optimize"
-    std::cout << "  - Executing jot/partLine on bear.stl with optimize=true..." << std::endl;
+    // 3. Verify optimization parameter "optimize=true" on bear.stl (Expect Demoldability Error)
+    std::cout << "  - Verifying jot/partLine on bear.stl with optimize=true throws Demoldability Error..." << std::endl;
     fs::Selector opt_sel("jot/partLine");
     opt_sel.parameters["$in"] = bear_shape.to_json();
     opt_sel.parameters["optimize"] = true;
     opt_sel = opt_sel.with_output("$out");
 
-    Shape opt_result = vfs.read<Shape>(opt_sel);
-
-    if (!opt_result.geometry.has_value()) {
-        std::cerr << "  ❌ FAIL: Optimized parting line shape does not contain geometry." << std::endl;
+    bool threw_opt_error = false;
+    try {
+        Processor::execute(&vfs, opt_sel);
+    } catch (const std::runtime_error& e) {
+        threw_opt_error = true;
+        std::cout << "    - Caught expected demoldability error during optimize: " << e.what() << std::endl;
+    }
+    if (!threw_opt_error) {
+        std::cerr << "  ❌ FAIL: Expected Demoldability Error on non-2-piece bear shape during optimize=true." << std::endl;
         return 1;
     }
 
-    Geometry opt_line_geo = vfs.read<Geometry>(opt_result.geometry.value());
-    size_t opt_segment_count = opt_line_geo.segments.size();
-    std::cout << "    - Optimized parting line has " << opt_segment_count << " segments." << std::endl;
-    std::cout << "    - Optimized parting line has " << opt_line_geo.vertices.size() << " vertices." << std::endl;
+    // 4. Verify partLine succeeds on 2-piece Box
+    std::cout << "  - Verifying jot/partLine succeeds on Box..." << std::endl;
+    fs::Selector box_sel("jot/Box");
+    box_sel.parameters["width"] = 10.0;
+    box_sel.parameters["height"] = 10.0;
+    box_sel.parameters["depth"] = 10.0;
+    Shape box = vfs.read<Shape>(box_sel.with_output("$out"));
 
-    if (opt_segment_count == 0) {
-        std::cerr << "  ❌ FAIL: Optimized parting line has 0 segments." << std::endl;
+    fs::Selector box_opt_sel("jot/partLine");
+    box_opt_sel.parameters["$in"] = box.to_json();
+    box_opt_sel.parameters["optimize"] = true;
+    Shape box_parting = vfs.read<Shape>(box_opt_sel.with_output("$out"));
+
+    if (!box_parting.geometry.has_value()) {
+        std::cerr << "  ❌ FAIL: Box parting line shape has no geometry." << std::endl;
         return 1;
     }
-
-    if (!opt_result.tags.contains("dx") || !opt_result.tags.contains("dy") || !opt_result.tags.contains("dz")) {
-        std::cerr << "  ❌ FAIL: Optimized output shape tags do not contain direction metadata." << std::endl;
-        return 1;
-    }
-
-    double opt_dx = opt_result.tags["dx"].get<double>();
-    double opt_dy = opt_result.tags["dy"].get<double>();
-    double opt_dz = opt_result.tags["dz"].get<double>();
-    std::cout << "    - Auto-discovered optimal direction: [" << opt_dx << ", " << opt_dy << ", " << opt_dz << "]" << std::endl;
 
     std::cout << "  ✅ PartLine Operator Test Passed." << std::endl;
     return 0;

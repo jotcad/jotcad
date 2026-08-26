@@ -1,0 +1,10 @@
+(hex_d = 20.0, clearance = 0.25, outer_d = 27.0, socket_depth = 7.5, collar_h = 10.0) =>
+  Disk(outer_d)
+    .extrude([collar_h])
+    .cut(
+      Hexagon(edgeToEdge = hex_d + clearance * 2, turns = 1/12)
+        .extrude([socket_depth + 0.5])
+        .as('hex_pocket')
+    )
+    .clean()
+  -> $out;

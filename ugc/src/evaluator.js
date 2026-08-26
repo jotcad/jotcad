@@ -13,9 +13,11 @@ export class JotEvaluator {
    * Sync operator definitions from the local VFS providers and remote mesh catalog
    */
   syncOperators() {
-    // 1. Sync local VFS providers
-    for (const path of this.vfs.providers.keys()) {
-      this.compiler.registerOperator(path, { path, schema: { path, arguments: [] } });
+    // 1. Sync local VFS provider schemas
+    if (this.vfs && this.vfs.schemas) {
+      for (const [path, schema] of this.vfs.schemas.entries()) {
+        this.compiler.registerOperator(path, { path, schema });
+      }
     }
 
     // 2. Sync remote mesh operators

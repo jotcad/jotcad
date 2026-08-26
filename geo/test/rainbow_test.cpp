@@ -50,6 +50,42 @@ int main() {
         }
     }
 
-    std::cout << "  ✅ Rainbow Operator Test Passed." << std::endl;
+    // 4. Test jot/color with opaque argument
+    std::cout << "  - Testing jot/color with opaque argument..." << std::endl;
+    fs::Selector opaque_sel("jot/color");
+    opaque_sel.parameters["$in"] = box.to_json();
+    opaque_sel.parameters["color"] = "blue";
+    opaque_sel.parameters["opaque"] = 0.4;
+    Shape opaque_box = vfs.read<Shape>(opaque_sel.with_output("$out"));
+    assert(opaque_box.opacity() == 0.4);
+    assert(opaque_box.tags["color"].get<std::string>() == "blue");
+    std::cout << "    - jot/color applied opacity: " << opaque_box.opacity() << std::endl;
+
+    // 5. Test jot/color with 8-hex alpha string (#6688cc80)
+    std::cout << "  - Testing jot/color with 8-hex alpha (#6688cc80)..." << std::endl;
+    fs::Selector hex8_sel("jot/color");
+    hex8_sel.parameters["$in"] = box.to_json();
+    hex8_sel.parameters["color"] = "#6688cc80";
+    Shape hex8_box = vfs.read<Shape>(hex8_sel.with_output("$out"));
+    assert(std::abs(hex8_box.opacity() - (128.0 / 255.0)) < 1e-3);
+    assert(hex8_box.tags["color"].get<std::string>() == "#6688cc");
+    std::cout << "    - jot/color parsed hex alpha opacity: " << hex8_box.opacity() << std::endl;
+
+    // 6. Test jot/color with mix factor (blue with 2/3 wash of red)
+    std::cout << "  - Testing jot/color with mix factor..." << std::endl;
+    fs::Selector blue_sel("jot/color");
+    blue_sel.parameters["$in"] = box.to_json();
+    blue_sel.parameters["color"] = "blue";
+    Shape blue_box = vfs.read<Shape>(blue_sel.with_output("$out"));
+
+    fs::Selector mix_sel("jot/color");
+    mix_sel.parameters["$in"] = blue_box.to_json();
+    mix_sel.parameters["color"] = "red";
+    mix_sel.parameters["mix"] = 2.0 / 3.0;
+    Shape mix_box = vfs.read<Shape>(mix_sel.with_output("$out"));
+    assert(mix_box.tags.contains("color"));
+    std::cout << "    - Blended color: " << mix_box.tags["color"].get<std::string>() << std::endl;
+
+    std::cout << "  ✅ Rainbow and Unified Color (Mix / Opaque / 8-Hex) Test Passed." << std::endl;
     return 0;
 }

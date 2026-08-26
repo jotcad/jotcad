@@ -281,6 +281,10 @@ struct PartLineOp : P {
                 }
             }
 
+            if (!best_is_tangle_free) {
+                throw std::runtime_error("Demoldability Error: No 2-piece tangle-free parting line exists for this geometry (requires 3+ piece mold / side inserts).");
+            }
+
             dx = best_dx;
             dy = best_dy;
             dz = best_dz;
@@ -310,6 +314,7 @@ struct PartLineOp : P {
             return new_idx;
         };
 
+        std::vector<std::pair<int, int>> final_parting_segments;
         for (const auto& [edge, faces] : edge_to_faces) {
             bool is_part_line = false;
             if (faces.size() == 1) {
@@ -322,10 +327,15 @@ struct PartLineOp : P {
                 }
             }
             if (is_part_line) {
+                final_parting_segments.push_back({edge.u, edge.v});
                 int u = get_or_add_vertex(edge.u);
                 int v = get_or_add_vertex(edge.v);
                 line_geo.segments.push_back({u, v});
             }
+        }
+
+        if (final_parting_segments.empty() || is_tangled(final_parting_segments, world_geo, dir_ik)) {
+            throw std::runtime_error("Demoldability Error: Parting line for this direction is tangled or self-intersecting (requires 3+ piece mold / side inserts).");
         }
 
         Shape out = P::make_shape(vfs, line_geo, {
@@ -345,12 +355,12 @@ struct PartLineOp : P {
             {"path", "jot/partLine"},
             {"description", "Generates the parting line (silhouette curve) of a shape relative to a pull direction vector (or automatically searches for the optimal direction vector), outputting a set of 3D line segments."},
             {"inputs", {{"$in", {{"type", "jot:shape"}, {"description", "The shape to extract parting line from."}}}}},
-            {"arguments", {
+            {"arguments", json::array({
                 {{"name", "dx"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "X component of the pull direction vector."}},
                 {{"name", "dy"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Y component of the pull direction vector."}},
                 {{"name", "dz"}, {"type", "jot:number"}, {"default", 1.0}, {"description", "Z component of the pull direction vector."}},
                 {{"name", "optimize"}, {"type", "jot:boolean"}, {"default", false}, {"description", "If true, automatically find the optimal pull direction that minimizes parting line loops."}}
-            }},
+            })},
             {"outputs", {{"$out", {{"type", "jot:shape"}}}}}
         };
     }

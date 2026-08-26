@@ -1,0 +1,22 @@
+(stick_h = 40.0, shaft_d = 12.0, cap_d = 20.0, hex_d = 20.0, clearance = 0.25, socket_depth = 7.5, outer_d = 27.0) =>
+  Disk(cap_d)
+    .extrude([5.0])
+    .mz(stick_h)
+    .cut(Orb(cap_d * 1.5).mz(stick_h + 18.0).as('dish'))
+    .as('knob')
+    .join(
+      Disk(shaft_d)
+        .extrude([stick_h - socket_depth])
+        .mz(socket_depth)
+        .as('shaft'),
+      Disk(outer_d)
+        .extrude([socket_depth + 2.0])
+        .as('base_sleeve')
+    )
+    .cut(
+      Hexagon(edgeToEdge = hex_d + clearance * 2, turns = 1/12)
+        .extrude([socket_depth + 0.5])
+        .as('hex_socket')
+    )
+    .clean()
+  -> $out;
