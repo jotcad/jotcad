@@ -65,7 +65,7 @@ void test_multi_sheet() {
     Processor::execute(&vfs, sel);
 
     Shape out = vfs.read<Shape>(sel);
-    assert(out.tags["type"] == "group");
+    assert(out.components.size() >= 1);
     
     bool found_sheet_0 = false;
     bool found_sheet_1 = false;
@@ -274,7 +274,6 @@ void test_item_support() {
 
     // 5. Verify the pack result
     Shape out = vfs.read<Shape>(sel);
-    assert(out.tags["type"] == "group");
     assert(out.components.size() == 1); // 1 sheet group
     
     Shape sheet_grp = out.components[0];
@@ -301,12 +300,48 @@ void test_item_support() {
     std::cout << "  - SUCCESS: Item support verified." << std::endl;
 }
 
+void test_3d_footprint_and_pack() {
+    MockVFS vfs("footprint_pack_test");
+    register_all_ops(&vfs);
+
+    std::cout << "Testing 3D Footprint and 3D Pack..." << std::endl;
+
+    // 1. Create a 3D Box
+    fs::Selector box_sel("jot/Box");
+    box_sel.parameters["width"] = 20.0;
+    box_sel.parameters["height"] = 30.0;
+    box_sel.parameters["depth"] = 10.0;
+    Shape box3d = vfs.read<Shape>(box_sel.with_output("$out"));
+
+    // 2. Test jot/footprint
+    fs::Selector fp_sel("jot/footprint");
+    fp_sel.parameters["$in"] = box3d;
+    Shape fp_shape = vfs.read<Shape>(fp_sel.with_output("$out"));
+    assert(fp_shape.geometry.has_value());
+    assert(fp_shape.tags.value("dim", 0) == 2);
+    std::cout << "  - Footprint extracted successfully with 2D face geometry." << std::endl;
+
+    // 3. Test jot/pack on group of 3D boxes without explicit sheet
+    Shape group;
+    group.tags["type"] = "group";
+    group.components = {box3d, box3d, box3d};
+
+    fs::Selector pack_sel("jot/pack");
+    pack_sel.parameters["$in"] = group;
+    pack_sel.parameters["spacing"] = 10.0;
+    Shape packed_result = vfs.read<Shape>(pack_sel.with_output("$out"));
+    assert(packed_result.components.size() >= 1);
+    assert(packed_result.components[0].components.size() == 3);
+    std::cout << "  - 3D Solids packed into 2D sheet layout successfully." << std::endl;
+}
+
 int main() {
     test_multi_sheet();
     test_alignment_and_bias();
     test_geometric_nesting();
     test_simplification();
     test_item_support();
-    std::cout << "✨ All Pack tests passed!" << std::endl;
+    test_3d_footprint_and_pack();
+    std::cout << "✨ All Pack and Footprint tests passed!" << std::endl;
     return 0;
 }

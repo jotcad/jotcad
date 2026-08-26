@@ -238,8 +238,12 @@ struct MoldOp : P {
             ExactMesh mesh_right = boolean::Engine::geometry_to_mesh(b_right_geo);
             boolean::Engine::cut_mesh_by_mesh(mesh_right, mesh_part);
 
-            Shape left_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_left), {{"color", "#ee2b2b"}, {"name", "left_block"}, {"vector", {-1.0, 0.0, 0.0}}});
-            Shape right_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_right), {{"color", "#2bee2b"}, {"name", "right_block"}, {"vector", {1.0, 0.0, 0.0}}});
+            Shape left_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_left), {
+                {"color", "#ee2b2b"}, {"name", "left_block"}, {"mold", 1}, {"vector", {-1.0, 0.0, 0.0}}
+            });
+            Shape right_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_right), {
+                {"color", "#2bee2b"}, {"name", "right_block"}, {"mold", 2}, {"vector", {1.0, 0.0, 0.0}}
+            });
 
             if (explode > 0.0) {
                 left_shape.tf = Matrix::translate(-explode, 0.0, 0.0);
@@ -275,17 +279,22 @@ struct MoldOp : P {
 
             double bpad = 1.0;
             l_xmin -= bpad; l_xmax += bpad; l_ymin -= bpad; l_ymax += bpad;
-            double l_zmax_ext = l_zmax + padding * 3.0;
+            double l_zmin_pad = l_zmin - 0.5;
+            double l_zmax_ext = l_zmax + padding * 2.5;
+            double dz = l_zmax_ext - l_zmin_pad;
+            double expansion = dz * std::tan(7.5 * M_PI / 180.0);
 
             std::vector<IK::Point_3> box_vertices(8);
-            box_vertices[0] = R.local_to_world(l_xmin, l_ymin, l_zmin);
-            box_vertices[1] = R.local_to_world(l_xmax, l_ymin, l_zmin);
-            box_vertices[2] = R.local_to_world(l_xmax, l_ymax, l_zmin);
-            box_vertices[3] = R.local_to_world(l_xmin, l_ymax, l_zmin);
-            box_vertices[4] = R.local_to_world(l_xmin, l_ymin, l_zmax_ext);
-            box_vertices[5] = R.local_to_world(l_xmax, l_ymin, l_zmax_ext);
-            box_vertices[6] = R.local_to_world(l_xmax, l_ymax, l_zmax_ext);
-            box_vertices[7] = R.local_to_world(l_xmin, l_ymax, l_zmax_ext);
+            // Bottom base (tight to undercut cavity)
+            box_vertices[0] = R.local_to_world(l_xmin, l_ymin, l_zmin_pad);
+            box_vertices[1] = R.local_to_world(l_xmax, l_ymin, l_zmin_pad);
+            box_vertices[2] = R.local_to_world(l_xmax, l_ymax, l_zmin_pad);
+            box_vertices[3] = R.local_to_world(l_xmin, l_ymax, l_zmin_pad);
+            // Top base (drafted outward towards exterior)
+            box_vertices[4] = R.local_to_world(l_xmin - expansion, l_ymin - expansion, l_zmax_ext);
+            box_vertices[5] = R.local_to_world(l_xmax + expansion, l_ymin - expansion, l_zmax_ext);
+            box_vertices[6] = R.local_to_world(l_xmax + expansion, l_ymax + expansion, l_zmax_ext);
+            box_vertices[7] = R.local_to_world(l_xmin - expansion, l_ymax + expansion, l_zmax_ext);
 
             Geometry slide_box_geo;
             for (int i = 0; i < 8; ++i) slide_box_geo.vertices.push_back({box_vertices[i].x(), box_vertices[i].y(), box_vertices[i].z()});
@@ -300,7 +309,12 @@ struct MoldOp : P {
             slide_box_geo.triangles.push_back({2, 3, 7}); slide_box_geo.triangles.push_back({2, 7, 6});
             slide_box_geo.triangles.push_back({3, 0, 4}); slide_box_geo.triangles.push_back({3, 4, 7});
 
+            Geometry b_outer_geo = build_box_geo(mx_min, mx_max, my_min, my_max, mz_min, mz_max);
+            ExactMesh mesh_b_outer = boolean::Engine::geometry_to_mesh(b_outer_geo);
+
             ExactMesh mesh_slide_box = boolean::Engine::geometry_to_mesh(slide_box_geo);
+            boolean::Engine::clip_mesh_by_mesh(mesh_slide_box, mesh_b_outer);
+
             ExactMesh mesh_b_left = boolean::Engine::geometry_to_mesh(b_left_geo);
             ExactMesh mesh_b_right = boolean::Engine::geometry_to_mesh(b_right_geo);
 
@@ -317,9 +331,15 @@ struct MoldOp : P {
             ExactMesh mesh_right = mesh_right_raw;
             boolean::Engine::cut_mesh_by_mesh(mesh_right, mesh_slide_box);
 
-            Shape left_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_left), {{"color", "#ee2b2b"}, {"name", "left_block"}, {"vector", {-1.0, 0.0, 0.0}}});
-            Shape right_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_right), {{"color", "#2bee2b"}, {"name", "right_block"}, {"vector", {1.0, 0.0, 0.0}}});
-            Shape insert_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_insert), {{"color", "#2b2bee"}, {"name", "insert_block"}, {"vector", {idx, idy, idz}}});
+            Shape left_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_left), {
+                {"color", "#ee2b2b"}, {"name", "left_block"}, {"mold", 1}, {"vector", {-1.0, 0.0, 0.0}}
+            });
+            Shape right_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_right), {
+                {"color", "#2bee2b"}, {"name", "right_block"}, {"mold", 2}, {"vector", {1.0, 0.0, 0.0}}
+            });
+            Shape insert_shape = P::make_shape(vfs, boolean::Engine::mesh_to_geometry(mesh_insert), {
+                {"color", "#2b2bee"}, {"name", "insert_block"}, {"mold", 3}, {"vector", {idx, idy, idz}}
+            });
 
             if (explode > 0.0) {
                 left_shape.tf = Matrix::translate(-explode, 0.0, 0.0);
@@ -334,10 +354,8 @@ struct MoldOp : P {
             composite.tags["insert_vector"] = {idx, idy, idz};
         }
 
-        // Always attach original shape as ghost reference (preserving its original color)
-        Shape ghost_shape = in;
-        ghost_shape.tags["role"] = "ghost";
-        composite.components.push_back(ghost_shape);
+        // Attach original shape as itself (preserving its full identity and styling)
+        composite.components.push_back(in);
 
         vfs->write(fulfilling.with_output("$out"), composite);
     }

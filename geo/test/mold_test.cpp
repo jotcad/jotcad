@@ -29,9 +29,10 @@ int main() {
     Shape box_mold = vfs.read<Shape>(mold_sel);
 
     assert(box_mold.tags["pieces"].get<int>() == 2);
-    assert(box_mold.components.size() == 3); // 2 blocks + 1 ghost
-    assert(box_mold.components[2].tags.contains("role") && box_mold.components[2].tags["role"] == "ghost");
-    std::cout << "    - Produced 2-piece mold + ghost successfully." << std::endl;
+    assert(box_mold.components.size() == 3); // 2 mold blocks + 1 original shape
+    assert(box_mold.components[0].tags.contains("mold") && box_mold.components[0].tags["mold"] == 1);
+    assert(box_mold.components[1].tags.contains("mold") && box_mold.components[1].tags["mold"] == 2);
+    std::cout << "    - Produced 2-piece mold blocks + original shape successfully." << std::endl;
 
     // 2. Test 3-piece mold on bear.stl with explode
     std::cout << "  - Testing 3-piece mold on bear.stl with explode=15.0..." << std::endl;
@@ -53,9 +54,11 @@ int main() {
     Shape bear_mold = vfs.read<Shape>(bear_mold_sel);
 
     assert(bear_mold.tags["pieces"].get<int>() == 3);
-    assert(bear_mold.components.size() == 4); // 3 blocks + 1 ghost
-    assert(bear_mold.components[3].tags.contains("role") && bear_mold.components[3].tags["role"] == "ghost");
-    std::cout << "    - Produced 3-piece exploded mold + ghost successfully with side insert." << std::endl;
+    assert(bear_mold.components.size() == 4); // 3 mold blocks + 1 original shape
+    assert(bear_mold.components[0].tags.contains("mold") && bear_mold.components[0].tags["mold"] == 1);
+    assert(bear_mold.components[1].tags.contains("mold") && bear_mold.components[1].tags["mold"] == 2);
+    assert(bear_mold.components[2].tags.contains("mold") && bear_mold.components[2].tags["mold"] == 3);
+    std::cout << "    - Produced 3-piece mold blocks + original shape successfully with side insert." << std::endl;
     std::cout << "  ✅ jot/mold test passed." << std::endl;
     return 0;
 }
