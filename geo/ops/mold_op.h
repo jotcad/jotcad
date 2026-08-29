@@ -23,8 +23,14 @@ struct MoldOp : P {
         const fs::Selector& fulfilling,
         const Shape& in,
         double padding_val = 10.0,
-        double explode_val = 0.0
+        double explode_val = 0.0,
+        double draft_val = 0.0
     ) {
+        mold::MoldParams params;
+        params.padding = FT(padding_val);
+        params.explode = FT(explode_val);
+        params.draft = FT(draft_val);
+
         // 1. Recursive Geometry Aggregation across Scene Graph
         Geometry world_geo;
         mold::collect_world_geometry_recursive(vfs, in, Matrix::identity(), world_geo);
@@ -78,54 +84,33 @@ struct MoldOp : P {
         }
 
         // 4. Bounding Box & Padding Margin
-        FT pad(padding_val);
-        FT mx_min = b_xmin - pad, mx_max = b_xmax + pad;
-        FT my_min = b_ymin - pad, my_max = b_ymax + pad;
-        FT mz_min = b_zmin - pad, mz_max = b_zmax + pad;
+        FT mx_min = b_xmin - params.padding, mx_max = b_xmax + params.padding;
+        FT my_min = b_ymin - params.padding, my_max = b_ymax + params.padding;
+        FT mz_min = b_zmin - params.padding, mz_max = b_zmax + params.padding;
         EK::Point_3 center((b_xmin + b_xmax) / 2, (b_ymin + b_ymax) / 2, (b_zmin + b_zmax) / 2);
 
-        // 5. Recursive Progressive Decomposition Loop
-        Geometry stock_geo = mold::build_box_geo(mx_min, mx_max, my_min, my_max, mz_min, mz_max);
-        mold::ExactMesh remaining_stock = boolean::Engine::geometry_to_mesh(stock_geo);
+        // 5. Construct First Semi-Optimal Demoldable Pillar (Piece 1)
+        mold::FaceBoolMap dummy_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:dummy", false).first;
+        auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, dummy_handled, params);
+        EK::Vector_3 d1 = opt.best_dir;
+        auto wedge = opt.solid_wedge;
 
-        mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:handled", false).first;
-        int remaining_face_count = (int)mesh_part.number_of_faces();
+        Geometry stock_geo = mold::build_box_geo(mx_min, mx_max, my_min, my_max, mz_min, mz_max);
+        mold::ExactMesh stock_mesh = boolean::Engine::geometry_to_mesh(stock_geo);
+
+        std::cout << "    [CSG] Corefining stock intersection..." << std::flush;
+        auto t_csg_start = std::chrono::steady_clock::now();
+        mold::ExactMesh raw_block;
+        CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(stock_mesh, wedge, raw_block);
+        std::cout << " Done. Subtracting model cavity..." << std::flush;
+        mold::ExactMesh piece1_mesh;
+        CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, mesh_part, piece1_mesh);
+        auto t_csg_end = std::chrono::steady_clock::now();
+        double csg_ms = std::chrono::duration<double, std::milli>(t_csg_end - t_csg_start).count();
+        std::cout << " Done in " << csg_ms << "ms." << std::endl << std::flush;
 
         std::vector<mold::MoldPiece> mold_pieces;
-        const std::vector<std::string> piece_colors = {"#ee2b2b80", "#2bee2b80", "#2b2bee80", "#ee882b80", "#882bee80"};
-        int piece_idx = 1;
-
-        while (remaining_face_count > 0) {
-            auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled);
-
-            auto wedge_k = mold::build_parting_solid_wedge(
-                mesh_part, opt.positive_patch_faces, opt.boundary_cycle,
-                opt.best_dir, center, mx_min, mx_max, my_min, my_max, mz_min, mz_max
-            );
-
-            mold::ExactMesh raw_block;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(remaining_stock, wedge_k, raw_block);
-
-            mold::ExactMesh carved_piece;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, mesh_part, carved_piece);
-
-            std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
-            std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
-
-            mold_pieces.push_back({carved_piece, opt.best_dir, piece_name, color, piece_idx});
-
-            mold::ExactMesh next_stock;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(remaining_stock, raw_block, next_stock);
-            remaining_stock = next_stock;
-
-            for (auto f : opt.positive_patch_faces) {
-                if (!is_handled[f]) {
-                    is_handled[f] = true;
-                    remaining_face_count--;
-                }
-            }
-            piece_idx++;
-        }
+        mold_pieces.push_back({piece1_mesh, d1, "mold_piece_1", "#2bee2b80", 1});
 
         // 6. Demoldability Verification
         mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
@@ -138,7 +123,6 @@ struct MoldOp : P {
         Shape result;
         result.tf = Matrix::identity();
 
-        FT explode(explode_val);
         for (const auto& piece : mold_pieces) {
             Geometry piece_geo = boolean::Engine::mesh_to_geometry(piece.mesh);
             Shape piece_shape = P::make_shape(vfs, piece_geo, {
@@ -146,11 +130,11 @@ struct MoldOp : P {
                 {"color", piece.color}
             });
 
-            if (explode > FT(0)) {
+            if (params.explode > FT(0)) {
                 EK::Vector_3 dv = piece.draw_vector;
                 double len = std::sqrt(CGAL::to_double(dv.squared_length()));
                 if (len > 1e-6) {
-                    FT scale = explode / FT(len);
+                    FT scale = params.explode / FT(len);
                     piece_shape.tf = Matrix::translate(CGAL::to_double(dv.x() * scale), CGAL::to_double(dv.y() * scale), CGAL::to_double(dv.z() * scale));
                 }
             }
@@ -163,7 +147,7 @@ struct MoldOp : P {
         vfs->write(fulfilling.with_output("$out"), result);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode", "draft"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/mold"},
@@ -171,9 +155,12 @@ struct MoldOp : P {
             {"role", "method"},
             {"description", "Decomposes a watertight 3D solid geometry into interlocking certified 2-manifold solid mold blocks with 3D parting sheets and slide inserts."},
             {"inputs", {
-                {"$in", {{"type", "jot:shape"}, {"binding", "implicit"}, {"description", "The watertight solid shape to decompose into molds."}}},
-                {"padding", {{"type", "number"}, {"default", 10.0}, {"description", "Stock mold block wall thickness padding in mm."}}},
-                {"explode", {{"type", "number"}, {"default", 0.0}, {"description", "Explosion distance along piece withdrawal vectors in mm."}}}
+                {"$in", {{"type", "jot:shape"}, {"binding", "implicit"}, {"description", "The watertight solid shape to decompose into molds."}}}
+            }},
+            {"arguments", {
+                {{"name", "padding"}, {"type", "jot:number"}, {"default", 10.0}, {"description", "Stock mold block wall thickness padding in mm."}},
+                {{"name", "explode"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Explosion distance along piece withdrawal vectors in mm."}},
+                {{"name", "draft"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees)."}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The multi-piece mold assembly containing mold blocks and the centered model."}}}
@@ -183,7 +170,7 @@ struct MoldOp : P {
 };
 
 inline void mold_init(fs::VFSNode* vfs) {
-    Processor::register_op<MoldOp<>, Shape, double, double>(vfs, "jot/mold");
+    Processor::register_op<MoldOp<>, Shape, double, double, double>(vfs, "jot/mold");
 }
 
 } // namespace geo

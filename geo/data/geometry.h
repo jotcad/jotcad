@@ -70,9 +70,14 @@ struct Geometry {
     }
 
     void decode_text(const std::string& in) {
+        if (in.empty()) {
+            throw std::runtime_error("Geometry Error: Cannot decode empty geometry stream.");
+        }
         std::stringstream ss(in);
         std::string tag;
+        bool found_any_tag = false;
         while (ss >> tag) {
+            found_any_tag = true;
             if (tag == "V") {
                 size_t count; ss >> count;
                 vertices.resize(count);
@@ -104,6 +109,9 @@ struct Geometry {
                 triangles.resize(count);
                 for (size_t i = 0; i < count; ++i) ss >> triangles[i][0] >> triangles[i][1] >> triangles[i][2];
             }
+        }
+        if (!found_any_tag) {
+            throw std::runtime_error("Geometry Error: Invalid geometry stream (no recognized elements).");
         }
     }
 

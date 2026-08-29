@@ -52,6 +52,12 @@ struct UndercutCluster {
     FT xmin, xmax, ymin, ymax, zmin, zmax;
 };
 
+struct MoldParams {
+    FT padding = FT(10);
+    FT explode = FT(0);
+    FT draft = FT(0);
+};
+
 struct MoldPiece {
     ExactMesh mesh;
     EK::Vector_3 draw_vector;
@@ -63,7 +69,7 @@ struct MoldPiece {
 // Helper: Collect world geometry recursively across scene graph
 inline void collect_world_geometry_recursive(fs::VFSNode* vfs, const Shape& s, const Matrix& current_tf, Geometry& world_geo) {
     if (s.geometry.has_value()) {
-        Geometry geo = vfs->template read<Geometry>(s.geometry.value());
+        Geometry geo = JotVfsProtocol::read_shape_geo(vfs, s);
         int offset = (int)world_geo.vertices.size();
         for (const auto& v : geo.vertices) {
             EK::Point_3 p = current_tf.transform(EK::Point_3(v.x, v.y, v.z));

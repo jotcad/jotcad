@@ -68,11 +68,63 @@ void test_no_guessing() {
     stdfs::remove_all(config.storage_dir);
 }
 
+void test_missing_cid_throws_404() {
+    VFSNode::Config config;
+    config.id = "test-node-missing";
+    config.storage_dir = "./test_storage_missing";
+    stdfs::remove_all(config.storage_dir);
+    stdfs::create_directories(config.storage_dir);
+
+    VFSNode node(config);
+
+    CID non_existent_cid{"0000000000000000000000000000000000000000000000000000000000000000"};
+    
+    bool caught_404 = false;
+    try {
+        node.read<std::vector<uint8_t>>(non_existent_cid);
+    } catch (const VFSException& e) {
+        if (e.code == 404) caught_404 = true;
+    }
+    assert(caught_404);
+    std::cout << "✔ VFS Missing CID throws 404 VFSException" << std::endl;
+
+    stdfs::remove_all(config.storage_dir);
+}
+
+void test_type_mismatch_throws_400() {
+    VFSNode::Config config;
+    config.id = "test-node-mismatch";
+    config.storage_dir = "./test_storage_mismatch";
+    stdfs::remove_all(config.storage_dir);
+    stdfs::create_directories(config.storage_dir);
+
+    VFSNode node(config);
+
+    Selector sel;
+    sel.path = "test/string_value";
+    std::string str_val = "not_a_number";
+    std::vector<uint8_t> data(str_val.begin(), str_val.end());
+    node.write(sel, data);
+
+    bool caught_400 = false;
+    try {
+        node.read<double>(sel);
+    } catch (const VFSException& e) {
+        if (e.code == 400 || e.code == 500) caught_400 = true;
+    }
+    assert(caught_400);
+    std::cout << "✔ VFS Type Mismatch throws 400/500 VFSException" << std::endl;
+
+    stdfs::remove_all(config.storage_dir);
+}
+
 int main() {
     try {
         test_formal_link();
         test_no_guessing();
-        std::cout << "All C++ VFS Link tests passed!" << std::endl;
+        test_missing_cid_throws_404();
+        test_type_mismatch_throws_400();
+        std::cout << "All C++ VFS Link and Error Handling tests passed!" << std::endl;
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "Test failed: " << e.what() << std::endl;

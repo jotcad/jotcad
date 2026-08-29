@@ -27,7 +27,7 @@ void test_set_get(MockVFS& vfs) {
     // 3. Get the tag back
     Selector get_sel("jot/get", {{"$in", vfs.materialize(tagged).value}, {"key", "material"}});
     get_sel.output = "$out";
-    std::string val = vfs.read<std::string>(get_sel);
+    json val = vfs.read<json>(get_sel);
     if (val != "steel") {
         std::cerr << "FAIL: Tag not retrieved correctly. Expected 'steel', got " << val << std::endl;
         exit(1);

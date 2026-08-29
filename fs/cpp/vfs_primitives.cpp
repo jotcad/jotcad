@@ -7,6 +7,7 @@
 namespace fs {
 
 // --- read(Selector) ---
+// --- read(Selector) ---
 template <> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) {
     VFSRequest req;
     req.selector = sel;
@@ -19,27 +20,41 @@ template <> json VFSNode::read<json>(const Selector& sel) {
     req.selector = sel;
     req.op = "READ_SELECTOR";
     auto res = read_selector_impl(req);
-    if (res.data.empty()) return json::object();
-    return json::parse(res.data);
+    if (res.data.empty()) throw VFSException("Empty payload reading json for Selector: " + sel.path, 404);
+    std::string enc = res.metadata.value("encoding", "");
+    if (enc != "json") {
+        throw VFSException("Encoding mismatch reading json for Selector: " + sel.path + " (expected 'json', found '" + enc + "')", 400);
+    }
+    try {
+        return json::parse(res.data);
+    } catch (const std::exception& e) {
+        throw VFSException("Invalid JSON payload reading Selector: " + sel.path + " (" + e.what() + ")", 500);
+    }
 }
 
 template<> double VFSNode::read<double>(const Selector& sel) {
-    auto data = read<json>(sel);
-    if (data.is_number()) return data.get<double>();
-    return 0.0;
+    auto j = read<json>(sel);
+    if (j.is_number()) return j.get<double>();
+    throw VFSException("Expected number reading double for Selector: " + sel.path, 400);
 }
 
 template<> int VFSNode::read<int>(const Selector& sel) {
-    auto data = read<json>(sel);
-    if (data.is_number()) return data.get<int>();
-    return 0;
+    auto j = read<json>(sel);
+    if (j.is_number()) return j.get<int>();
+    throw VFSException("Expected number reading int for Selector: " + sel.path, 400);
 }
 
 template<> std::string VFSNode::read<std::string>(const Selector& sel) {
-    auto j = read<json>(sel);
-    if (j.is_string()) return j.get<std::string>();
-    auto data = read<std::vector<uint8_t>>(sel);
-    return std::string(data.begin(), data.end());
+    VFSRequest req;
+    req.selector = sel;
+    req.op = "READ_SELECTOR";
+    auto res = read_selector_impl(req);
+    if (res.data.empty()) throw VFSException("Empty payload reading string for Selector: " + sel.path, 404);
+    std::string enc = res.metadata.value("encoding", "");
+    if (enc != "string") {
+        throw VFSException("Encoding mismatch reading string for Selector: " + sel.path + " (expected 'string', found '" + enc + "')", 400);
+    }
+    return std::string(res.data.begin(), res.data.end());
 }
 
 template<> VFSResult VFSNode::read<VFSResult>(const Selector& sel) {
@@ -57,31 +72,38 @@ template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const VFSReq
 
 template<> json VFSNode::read<json>(const VFSRequest& req) {
     auto res = req.is_cid() ? read_cid_impl(req) : read_selector_impl(req);
-    if (res.data.empty()) return json::object();
+    if (res.data.empty()) throw VFSException("Empty payload reading json for request", 404);
+    std::string enc = res.metadata.value("encoding", "");
+    if (enc != "json") {
+        throw VFSException("Encoding mismatch reading json for request (expected 'json', found '" + enc + "')", 400);
+    }
     try {
         return json::parse(res.data);
-    } catch (...) {
-        return json::object();
+    } catch (const std::exception& e) {
+        throw VFSException("Invalid JSON payload reading request (" + std::string(e.what()) + ")", 500);
     }
 }
 
 template<> double VFSNode::read<double>(const VFSRequest& req) {
-    auto data = read<json>(req);
-    if (data.is_number()) return data.get<double>();
-    return 0.0;
+    auto j = read<json>(req);
+    if (j.is_number()) return j.get<double>();
+    throw VFSException("Expected number reading double for request", 400);
 }
 
 template<> int VFSNode::read<int>(const VFSRequest& req) {
-    auto data = read<json>(req);
-    if (data.is_number()) return data.get<int>();
-    return 0;
+    auto j = read<json>(req);
+    if (j.is_number()) return j.get<int>();
+    throw VFSException("Expected number reading int for request", 400);
 }
 
 template<> std::string VFSNode::read<std::string>(const VFSRequest& req) {
-    auto j = read<json>(req);
-    if (j.is_string()) return j.get<std::string>();
-    auto data = read<std::vector<uint8_t>>(req);
-    return std::string(data.begin(), data.end());
+    auto res = req.is_cid() ? read_cid_impl(req) : read_selector_impl(req);
+    if (res.data.empty()) throw VFSException("Empty payload reading string for request", 404);
+    std::string enc = res.metadata.value("encoding", "");
+    if (enc != "string") {
+        throw VFSException("Encoding mismatch reading string for request (expected 'string', found '" + enc + "')", 400);
+    }
+    return std::string(res.data.begin(), res.data.end());
 }
 
 template<> VFSResult VFSNode::read<VFSResult>(const VFSRequest& req) {
@@ -98,31 +120,39 @@ template<> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const CID& c
 template<> json VFSNode::read<json>(const CID& cid) {
     VFSRequest req; req.cid = cid.value; req.op = "READ_CID";
     auto res = read_cid_impl(req);
-    if (res.data.empty()) return json::object();
+    if (res.data.empty()) throw VFSException("Empty payload reading json for CID: " + cid.value, 404);
+    std::string enc = res.metadata.value("encoding", "");
+    if (enc != "json") {
+        throw VFSException("Encoding mismatch reading json for CID: " + cid.value + " (expected 'json', found '" + enc + "')", 400);
+    }
     try {
         return json::parse(res.data);
-    } catch (...) {
-        return json::object();
+    } catch (const std::exception& e) {
+        throw VFSException("Invalid JSON payload reading CID: " + cid.value + " (" + e.what() + ")", 500);
     }
 }
 
 template<> double VFSNode::read<double>(const CID& cid) {
-    auto data = read<json>(cid);
-    if (data.is_number()) return data.get<double>();
-    return 0.0;
+    auto j = read<json>(cid);
+    if (j.is_number()) return j.get<double>();
+    throw VFSException("Expected number reading double for CID: " + cid.value, 400);
 }
 
 template<> int VFSNode::read<int>(const CID& cid) {
-    auto data = read<json>(cid);
-    if (data.is_number()) return data.get<int>();
-    return 0;
+    auto j = read<json>(cid);
+    if (j.is_number()) return j.get<int>();
+    throw VFSException("Expected number reading int for CID: " + cid.value, 400);
 }
 
 template<> std::string VFSNode::read<std::string>(const CID& cid) {
-    auto j = read<json>(cid);
-    if (j.is_string()) return j.get<std::string>();
-    auto data = read<std::vector<uint8_t>>(cid);
-    return std::string(data.begin(), data.end());
+    VFSRequest req; req.cid = cid.value; req.op = "READ_CID";
+    auto res = read_cid_impl(req);
+    if (res.data.empty()) throw VFSException("Empty payload reading string for CID: " + cid.value, 404);
+    std::string enc = res.metadata.value("encoding", "");
+    if (enc != "string") {
+        throw VFSException("Encoding mismatch reading string for CID: " + cid.value + " (expected 'string', found '" + enc + "')", 400);
+    }
+    return std::string(res.data.begin(), res.data.end());
 }
 
 template<> VFSResult VFSNode::read<VFSResult>(const CID& cid) {
