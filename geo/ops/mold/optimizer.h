@@ -26,9 +26,12 @@ inline PartingOptimizationResult optimize_parting_direction(
 
     std::vector<ExactMesh::Face_index> face_descriptors;
     std::vector<FT> face_areas;
+    std::vector<EK::Point_3> face_centroids;
     face_descriptors.reserve(mesh_part.number_of_faces());
     face_areas.reserve(mesh_part.number_of_faces());
+    face_centroids.reserve(mesh_part.number_of_faces());
 
+    FT max_r_sq = 0;
     for (auto f : CGAL::faces(mesh_part)) {
         face_descriptors.push_back(f);
         auto h = mesh_part.halfedge(f);
@@ -36,10 +39,15 @@ inline PartingOptimizationResult optimize_parting_direction(
         auto p1 = mesh_part.point(mesh_part.target(h));
         auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
         face_areas.push_back(std::sqrt(CGAL::to_double(CGAL::squared_area(p0, p1, p2))));
+        EK::Point_3 c((p0.x() + p1.x() + p2.x()) / 3, (p0.y() + p1.y() + p2.y()) / 3, (p0.z() + p1.z() + p2.z()) / 3);
+        face_centroids.push_back(c);
+        FT d_sq = c.x()*c.x() + c.y()*c.y() + c.z()*c.z();
+        if (d_sq > max_r_sq) max_r_sq = d_sq;
     }
+    double r_bound = std::sqrt(CGAL::to_double(max_r_sq)) + 50.0;
 
     std::vector<EK::Vector_3> candidate_dirs;
-    const int N = 500;
+    const int N = 300;
     const double phi = (1.0 + std::sqrt(5.0)) / 2.0;
     for (int i = 0; i < N; ++i) {
         double y = 1.0 - (i / double(N - 1)) * 2.0;
@@ -49,16 +57,41 @@ inline PartingOptimizationResult optimize_parting_direction(
         double z = std::sin(theta) * radius;
         candidate_dirs.push_back(EK::Vector_3(FT(x), FT(y), FT(z)));
     }
-    candidate_dirs.push_back(EK::Vector_3(FT(1), FT(0), FT(0)));
-    candidate_dirs.push_back(EK::Vector_3(FT(-1), FT(0), FT(0)));
-    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(1), FT(0)));
-    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(-1), FT(0)));
-    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(0), FT(1)));
-    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(0), FT(-1)));
+
+    // Geometry-informed candidate directions:
+    // 1. Vertex corner normals (pulling directly off sharp corners)
+    for (auto v : mesh_part.vertices()) {
+        EK::Vector_3 vn(0, 0, 0);
+        for (auto f : CGAL::faces_around_target(mesh_part.halfedge(v), mesh_part)) {
+            if (f != ExactMesh::null_face()) {
+                vn = vn + face_normals[(size_t)f];
+            }
+        }
+        double len = std::sqrt(CGAL::to_double(vn.squared_length()));
+        if (len > 1e-6) {
+            candidate_dirs.push_back(EK::Vector_3(FT(CGAL::to_double(vn.x()) / len), FT(CGAL::to_double(vn.y()) / len), FT(CGAL::to_double(vn.z()) / len)));
+        }
+    }
+
+    // 2. Edge bisectors
+    for (const auto& [edge, faces] : edge_to_faces) {
+        if (faces.size() >= 2) {
+            EK::Vector_3 en = face_normals[faces[0]] + face_normals[faces[1]];
+            double len = std::sqrt(CGAL::to_double(en.squared_length()));
+            if (len > 1e-6) {
+                candidate_dirs.push_back(EK::Vector_3(FT(CGAL::to_double(en.x()) / len), FT(CGAL::to_double(en.y()) / len), FT(CGAL::to_double(en.z()) / len)));
+            }
+        }
+    }
+
+    // 3. Face normals
+    for (const auto& fn : face_normals) {
+        candidate_dirs.push_back(fn);
+    }
 
     EK::Vector_3 best_dir(FT(1), FT(0), FT(0));
     int best_loop_count = 999999;
-    FT best_patch_area = -1;
+    FT best_patch_score = -1;
     std::vector<ExactMesh::Face_index> best_patch_faces;
 
     std::cout << "    [Optimizer] Scanning " << candidate_dirs.size() << " candidate directions..." << std::flush;
@@ -100,14 +133,21 @@ inline PartingOptimizationResult optimize_parting_direction(
         }
 
         std::vector<ExactMesh::Face_index> largest_comp;
-        FT current_patch_area = 0;
+        FT current_patch_score = 0;
         for (const auto& [root, comp_faces] : components) {
-            FT comp_area = 0;
+            FT comp_score = 0;
             for (auto f : comp_faces) {
-                comp_area += face_areas[(size_t)f];
+                size_t f_idx = (size_t)f;
+                FT a = face_areas[f_idx];
+                FT dot = face_normals[f_idx] * d;
+                if (dot > min_dot) {
+                    const auto& c = face_centroids[f_idx];
+                    FT depth = FT(r_bound) - (c.x()*d.x() + c.y()*d.y() + c.z()*d.z());
+                    comp_score += a * (dot - min_dot) * depth;
+                }
             }
-            if (comp_area > current_patch_area) {
-                current_patch_area = comp_area;
+            if (comp_score > current_patch_score) {
+                current_patch_score = comp_score;
                 largest_comp = comp_faces;
             }
         }
@@ -119,7 +159,9 @@ inline PartingOptimizationResult optimize_parting_direction(
 
         std::map<int, int> next_v;
         for (auto h : border_halfedges) {
-            next_v[(int)mesh_part.source(h)] = (int)mesh_part.target(h);
+            int u = (int)mesh_part.source(h);
+            int v = (int)mesh_part.target(h);
+            next_v[u] = v;
         }
 
         std::set<int> visited;
@@ -146,15 +188,15 @@ inline PartingOptimizationResult optimize_parting_direction(
 
         int cycle_count = (int)cycles.size();
         if (cycle_count == 1) {
-            if (best_loop_count > 1 || current_patch_area > best_patch_area) {
+            if (best_loop_count > 1 || current_patch_score > best_patch_score) {
                 best_loop_count = 1;
-                best_patch_area = current_patch_area;
+                best_patch_score = current_patch_score;
                 best_dir = d;
                 best_patch_faces = largest_comp;
             }
-        } else if (best_loop_count > 1 && cycle_count > 0 && (best_patch_area < 0 || current_patch_area > best_patch_area)) {
+        } else if (best_loop_count > 1 && cycle_count > 0 && (best_patch_score < 0 || current_patch_score > best_patch_score)) {
             best_loop_count = cycle_count;
-            best_patch_area = current_patch_area;
+            best_patch_score = current_patch_score;
             best_dir = d;
             best_patch_faces = largest_comp;
         }

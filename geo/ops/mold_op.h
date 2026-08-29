@@ -83,43 +83,91 @@ struct MoldOp : P {
             f_idx++;
         }
 
-        // 4. Bounding Box & Padding Margin
-        FT mx_min = b_xmin - params.padding, mx_max = b_xmax + params.padding;
-        FT my_min = b_ymin - params.padding, my_max = b_ymax + params.padding;
-        FT mz_min = b_zmin - params.padding, mz_max = b_zmax + params.padding;
-        EK::Point_3 center((b_xmin + b_xmax) / 2, (b_ymin + b_ymax) / 2, (b_zmin + b_zmax) / 2);
+        // 4. Stage 1: Large Conservative Stock Envelope for Unconstrained Extraction
+        FT max_r_sq = 0;
+        for (auto v : mesh_part.vertices()) {
+            auto p = mesh_part.point(v);
+            FT r2 = p.x()*p.x() + p.y()*p.y() + p.z()*p.z();
+            if (r2 > max_r_sq) max_r_sq = r2;
+        }
+        double r_sphere = std::sqrt(CGAL::to_double(max_r_sq)) + CGAL::to_double(params.padding) + 100.0;
+        FT R = FT(r_sphere);
+        Geometry conservative_stock_geo = mold::build_box_geo(-R, R, -R, R, -R, R);
+        mold::ExactMesh conservative_stock = boolean::Engine::geometry_to_mesh(conservative_stock_geo);
 
-        // 5. Construct First Semi-Optimal Demoldable Pillar (Piece 1)
-        mold::FaceBoolMap dummy_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:dummy", false).first;
-        auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, dummy_handled, params);
-        EK::Vector_3 d1 = opt.best_dir;
-        auto wedge = opt.solid_wedge;
-
-        Geometry stock_geo = mold::build_box_geo(mx_min, mx_max, my_min, my_max, mz_min, mz_max);
-        mold::ExactMesh stock_mesh = boolean::Engine::geometry_to_mesh(stock_geo);
-
-        std::cout << "    [CSG] Corefining stock intersection..." << std::flush;
-        auto t_csg_start = std::chrono::steady_clock::now();
-        mold::ExactMesh raw_block;
-        CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(stock_mesh, wedge, raw_block);
-        std::cout << " Done. Subtracting model cavity..." << std::flush;
-        mold::ExactMesh piece1_mesh;
-        CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, mesh_part, piece1_mesh);
-        auto t_csg_end = std::chrono::steady_clock::now();
-        double csg_ms = std::chrono::duration<double, std::milli>(t_csg_end - t_csg_start).count();
-        std::cout << " Done in " << csg_ms << "ms." << std::endl << std::flush;
+        // 5. Multi-Piece Mold Decomposition Loop
+        mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
+        size_t total_faces = mesh_part.number_of_faces();
+        size_t handled_faces_count = 0;
 
         std::vector<mold::MoldPiece> mold_pieces;
-        mold_pieces.push_back({piece1_mesh, d1, "mold_piece_1", "#2bee2b80", 1});
+        std::vector<EK::Vector_3> piece_draw_dirs;
+        std::vector<std::string> piece_colors = {"#2bee2b80", "#2b80ee80", "#ee802b80", "#ee2b8080", "#80ee2b80", "#802bee80"};
 
-        // 6. Demoldability Verification
+        int piece_idx = 1;
+        while (handled_faces_count < total_faces && piece_idx <= 10) {
+            auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params);
+            if (opt.source_faces.empty() || opt.solid_wedge.number_of_faces() == 0) {
+                break;
+            }
+
+            EK::Vector_3 d_i = opt.best_dir;
+            auto wedge = opt.solid_wedge;
+            piece_draw_dirs.push_back(d_i);
+
+            // Mark source faces as handled
+            for (size_t f_idx : opt.source_faces) {
+                auto f = mold::ExactMesh::Face_index(f_idx);
+                if (!is_handled[f]) {
+                    is_handled[f] = true;
+                    handled_faces_count++;
+                }
+            }
+
+            // Corefine conservative stock intersection & model cavity difference
+            mold::ExactMesh raw_block;
+            CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(conservative_stock, wedge, raw_block);
+            mold::ExactMesh piece_mesh;
+            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, mesh_part, piece_mesh);
+
+            std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
+            std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
+            mold_pieces.push_back({piece_mesh, d_i, piece_name, color, piece_idx});
+
+            std::cout << "  - Extracted " << piece_name << " along dir ("
+                      << CGAL::to_double(d_i.x()) << ", " << CGAL::to_double(d_i.y()) << ", " << CGAL::to_double(d_i.z())
+                      << ") covering " << opt.source_faces.size() << " faces (total handled: "
+                      << handled_faces_count << " / " << total_faces << ")." << std::endl << std::flush;
+
+            piece_idx++;
+        }
+
+        // 6. Stage 2: Minimal-Volume OBB Assembly Trimming
+        Geometry obb_geo;
+        if (!mold_pieces.empty()) {
+            std::cout << "    [OBB] Computing Minimal-Volume OBB trim with padding " << CGAL::to_double(params.padding) << "..." << std::flush;
+            auto opt_obb = mold::compute_min_volume_obb(mesh_part, params.padding, piece_draw_dirs);
+            obb_geo = opt_obb.to_geometry();
+            mold::ExactMesh obb_mesh = boolean::Engine::geometry_to_mesh(obb_geo);
+            std::cout << " Done. Min Volume: " << CGAL::to_double(opt_obb.volume) << std::endl << std::flush;
+
+            for (auto& piece : mold_pieces) {
+                mold::ExactMesh trimmed_piece;
+                CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(piece.mesh, obb_mesh, trimmed_piece);
+                if (trimmed_piece.number_of_faces() > 0) {
+                    piece.mesh = trimmed_piece;
+                }
+            }
+        }
+
+        // 7. Demoldability Verification
         mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
         model_tree.build();
         for (const auto& piece : mold_pieces) {
             mold::verify_piece_demoldability(piece, model_tree);
         }
 
-        // 7. Assemble Final Scene Graph & Apply Explosion Transforms
+        // 8. Assemble Final Scene Graph & Apply Explosion Transforms
         Shape result;
         result.tf = Matrix::identity();
 
@@ -139,6 +187,16 @@ struct MoldOp : P {
                 }
             }
             result.components.push_back(piece_shape);
+        }
+
+        // Include Minimal-Volume OBB as ghost outline/reference
+        if (!obb_geo.vertices.empty()) {
+            Shape obb_shape = P::make_shape(vfs, obb_geo, {
+                {"role", "ghost"},
+                {"color", "#ffffff25"},
+                {"name", "minimal_bounding_box"}
+            });
+            result.components.push_back(obb_shape);
         }
 
         // Keep original input model as-is in the result
