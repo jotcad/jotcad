@@ -170,176 +170,88 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     };
 
     ExactMesh solid_wedge;
-    std::map<std::tuple<FT, FT, FT>, ExactMesh::Vertex_index> pt_map;
+    std::map<int, ExactMesh::Vertex_index> v_bot_map;
+    std::map<int, ExactMesh::Vertex_index> v_top_map;
 
-    auto get_v = [&](FT rx, FT ry, FT rz) -> ExactMesh::Vertex_index {
-        auto key = std::make_tuple(rx, ry, rz);
-        auto it = pt_map.find(key);
-        if (it != pt_map.end()) return it->second;
-        EK::Point_3 world_p = unrotate_pt(rx, ry, rz);
-        auto v = solid_wedge.add_vertex(world_p);
-        pt_map[key] = v;
+    FT h_extrude = FT(100);
+
+    auto get_bot_v = [&](int orig_v_idx) -> ExactMesh::Vertex_index {
+        auto it = v_bot_map.find(orig_v_idx);
+        if (it != v_bot_map.end()) return it->second;
+        auto p = mesh_part.point(ExactMesh::Vertex_index(orig_v_idx));
+        auto v = solid_wedge.add_vertex(p);
+        v_bot_map[orig_v_idx] = v;
         return v;
     };
 
+    auto get_top_v = [&](int orig_v_idx) -> ExactMesh::Vertex_index {
+        auto it = v_top_map.find(orig_v_idx);
+        if (it != v_top_map.end()) return it->second;
+        auto p = mesh_part.point(ExactMesh::Vertex_index(orig_v_idx));
+        EK::Point_3 top_p(p.x() + d.x() * h_extrude, p.y() + d.y() * h_extrude, p.z() + d.z() * h_extrude);
+        auto v = solid_wedge.add_vertex(top_p);
+        v_top_map[orig_v_idx] = v;
+        return v;
+    };
+
+    const auto& patch_faces = seed_patch_faces.empty() ? face_descriptors : seed_patch_faces;
     std::set<size_t> source_faces;
-    FT max_vz_rot = -1000000;
 
-    // 1. Add all illuminated surface cells (triangulated)
-    for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
-        if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
+    // 1. Reversed Model Cavity Faces directly in World Space
+    for (auto f : patch_faces) {
+        if (is_handled[f]) continue;
+        source_faces.insert((size_t)f);
 
-        size_t orig_f_idx = fit->surfaces_begin()->data();
-        source_faces.insert(orig_f_idx);
+        auto h = mesh_part.halfedge(f);
+        int i0 = (int)mesh_part.source(h);
+        int i1 = (int)mesh_part.target(h);
+        int i2 = (int)mesh_part.target(mesh_part.next(h));
 
-        std::vector<Envelope_diagram_2::Point_2> pts_2d;
-        auto ccb = fit->outer_ccb();
-        auto curr = ccb;
-        do {
-            auto p2d = curr->target()->point();
-            pts_2d.push_back(p2d);
-            FT vz = get_z(orig_f_idx, p2d.x(), p2d.y());
-            if (vz > max_vz_rot) max_vz_rot = vz;
-            curr = curr->next();
-        } while (curr != ccb);
-
-        if (pts_2d.size() >= 3) {
-            auto v0 = get_v(pts_2d[0].x(), pts_2d[0].y(), get_z(orig_f_idx, pts_2d[0].x(), pts_2d[0].y()));
-            for (size_t i = 1; i + 1 < pts_2d.size(); ++i) {
-                auto v1 = get_v(pts_2d[i].x(), pts_2d[i].y(), get_z(orig_f_idx, pts_2d[i].x(), pts_2d[i].y()));
-                auto v2 = get_v(pts_2d[i + 1].x(), pts_2d[i + 1].y(), get_z(orig_f_idx, pts_2d[i + 1].x(), pts_2d[i + 1].y()));
-                solid_wedge.add_face(v0, v1, v2);
-            }
-        }
+        auto v0 = get_bot_v(i0);
+        auto v1 = get_bot_v(i1);
+        auto v2 = get_bot_v(i2);
+        solid_wedge.add_face(v0, v2, v1);
     }
 
-    auto add_cliff = [&](ExactMesh::Vertex_index u_h, ExactMesh::Vertex_index v_h,
-                         ExactMesh::Vertex_index v_l, ExactMesh::Vertex_index u_l) {
-        if (u_h == u_l && v_h == v_l) return;
-        if (u_h == u_l) {
-            solid_wedge.add_face(v_h, u_h, v_l);
-        } else if (v_h == v_l) {
-            solid_wedge.add_face(v_h, u_h, u_l);
-        } else {
-            solid_wedge.add_face(v_h, u_h, u_l);
-            solid_wedge.add_face(v_h, u_l, v_l);
-        }
-    };
-
-    // 2. Add vertical cliff quads at step discontinuities
-    for (auto eit = max_diag.edges_begin(); eit != max_diag.edges_end(); ++eit) {
-        auto f1 = eit->face();
-        auto f2 = eit->twin()->face();
-        if (f1->is_unbounded() || f2->is_unbounded()) continue;
-        if (f1->number_of_surfaces() == 0 || f2->number_of_surfaces() == 0) continue;
-
-        size_t orig_f1 = f1->surfaces_begin()->data();
-        size_t orig_f2 = f2->surfaces_begin()->data();
-        if (orig_f1 == orig_f2) continue;
-
-        auto p1_2d = eit->source()->point();
-        auto p2_2d = eit->target()->point();
-
-        FT z1_s = get_z(orig_f1, p1_2d.x(), p1_2d.y());
-        FT z1_t = get_z(orig_f1, p2_2d.x(), p2_2d.y());
-
-        FT z2_s = get_z(orig_f2, p1_2d.x(), p1_2d.y());
-        FT z2_t = get_z(orig_f2, p2_2d.x(), p2_2d.y());
-
-        if (z1_s != z2_s || z1_t != z2_t) {
-            auto u1 = get_v(p1_2d.x(), p1_2d.y(), z1_s);
-            auto v1 = get_v(p2_2d.x(), p2_2d.y(), z1_t);
-            auto v2 = get_v(p2_2d.x(), p2_2d.y(), z2_t);
-            auto u2 = get_v(p1_2d.x(), p1_2d.y(), z2_s);
-
-            if ((z1_s + z1_t) >= (z2_s + z2_t)) {
-                add_cliff(u1, v1, v2, u2);
-            } else {
-                add_cliff(v2, u2, u1, v1);
-            }
-        }
-    }
-
-    // 3. Add swept sidewalls for true outer/aperture boundary halfedges
-    FT h_ceiling_rot = max_vz_rot + FT(50);
-
-    auto add_sidewall = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
-        if (h->twin()->face()->is_unbounded() || h->twin()->face()->number_of_surfaces() == 0) {
-            auto p1_2d = h->source()->point();
-            auto p2_2d = h->target()->point();
-
-            FT z_s = get_z(orig_f, p1_2d.x(), p1_2d.y());
-            FT z_t = get_z(orig_f, p2_2d.x(), p2_2d.y());
-
-            auto u_bot = get_v(p1_2d.x(), p1_2d.y(), z_s);
-            auto v_bot = get_v(p2_2d.x(), p2_2d.y(), z_t);
-            auto v_top = get_v(p2_2d.x(), p2_2d.y(), h_ceiling_rot);
-            auto u_top = get_v(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
-
-            if (u_bot == u_top) {
-                solid_wedge.add_face(v_bot, u_bot, v_top);
-            } else if (v_bot == v_top) {
-                solid_wedge.add_face(v_bot, u_bot, u_top);
-            } else {
-                solid_wedge.add_face(v_bot, u_bot, u_top);
-                solid_wedge.add_face(v_bot, u_top, v_top);
-            }
-        }
-    };
-
-    for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
-        if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
-        size_t orig_f = fit->surfaces_begin()->data();
-
-        auto ccb = fit->outer_ccb();
-        auto curr = ccb;
-        do {
-            add_sidewall(curr, orig_f);
-            curr = curr->next();
-        } while (curr != ccb);
-
-        for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
-            auto h_curr = *hole_it;
-            auto h_start = h_curr;
-            do {
-                add_sidewall(h_curr, orig_f);
-                h_curr = h_curr->next();
-            } while (h_curr != h_start);
-        }
-    }
-
-    // 4. Seal top ceiling holes
-    auto assert_is_simple_border = [&](ExactMesh::Halfedge_index h_start) -> bool {
-        auto h = h_start;
-        std::vector<EK::Point_2> pts_2d;
-        std::set<ExactMesh::Vertex_index> seen_v;
-        bool has_duplicate = false;
-        int n = 0;
-        do {
-            auto v = solid_wedge.target(h);
-            if (seen_v.count(v)) has_duplicate = true;
-            seen_v.insert(v);
-            auto p_rot = rotate_pt(solid_wedge.point(v));
-            pts_2d.push_back(EK::Point_2(p_rot.x(), p_rot.y()));
-            n++;
-            h = solid_wedge.next(h);
-        } while (h != h_start && n < 20000);
-        CGAL::Polygon_2<EK> poly(pts_2d.begin(), pts_2d.end());
-        bool is_simple = poly.is_simple();
-        std::cout << "  [Border Assertion] Cycle vertices: " << n
-                  << " | unique: " << seen_v.size()
-                  << " | has_duplicate: " << (has_duplicate ? "YES" : "NO")
-                  << " | is_simple: " << (is_simple ? "YES" : "NO") << std::endl << std::flush;
-        return is_simple;
-    };
-
+    // 2. Extruded Sidewalls on Border Halfedges directly in World Space
     std::vector<ExactMesh::Halfedge_index> border_halfedges;
-    CGAL::Polygon_mesh_processing::extract_boundary_cycles(solid_wedge, std::back_inserter(border_halfedges));
-    for (auto h_border : border_halfedges) {
-        assert_is_simple_border(h_border);
-        std::vector<ExactMesh::Face_index> patch_facets;
-        CGAL::Polygon_mesh_processing::triangulate_hole(solid_wedge, h_border, std::back_inserter(patch_facets));
+    CGAL::Polygon_mesh_processing::border_halfedges(patch_faces, mesh_part, std::back_inserter(border_halfedges));
+    for (auto h : border_halfedges) {
+        int u_idx = (int)mesh_part.source(h);
+        int v_idx = (int)mesh_part.target(h);
+
+        auto u_bot = get_bot_v(u_idx);
+        auto v_bot = get_bot_v(v_idx);
+        auto u_top = get_top_v(u_idx);
+        auto v_top = get_top_v(v_idx);
+
+        solid_wedge.add_face(u_bot, v_bot, v_top);
+        solid_wedge.add_face(u_bot, v_top, u_top);
     }
+
+    // 3. Top Planar Ceiling Cap
+    EK::Point_3 top_center(0, 0, 0);
+    FT count = 0;
+    for (auto h : border_halfedges) {
+        int u_idx = (int)mesh_part.source(h);
+        auto p = mesh_part.point(ExactMesh::Vertex_index(u_idx));
+        top_center = EK::Point_3(top_center.x() + p.x() + d.x() * h_extrude,
+                                 top_center.y() + p.y() + d.y() * h_extrude,
+                                 top_center.z() + p.z() + d.z() * h_extrude);
+        count = count + FT(1);
+    }
+    if (count > FT(0)) {
+        top_center = EK::Point_3(top_center.x() / count, top_center.y() / count, top_center.z() / count);
+        auto c_top = solid_wedge.add_vertex(top_center);
+        for (auto h : border_halfedges) {
+            int u_idx = (int)mesh_part.source(h);
+            int v_idx = (int)mesh_part.target(h);
+            auto u_top = get_top_v(u_idx);
+            auto v_top = get_top_v(v_idx);
+            solid_wedge.add_face(v_top, u_top, c_top);
+        }
+    }
+
     CGAL::Polygon_mesh_processing::stitch_borders(solid_wedge);
     solid_wedge.collect_garbage();
 
@@ -355,7 +267,6 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
               << " | faces: " << solid_wedge.number_of_faces() << std::endl << std::flush;
 
     FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
-
     return {solid_wedge, source_faces, total_area};
 }
 
