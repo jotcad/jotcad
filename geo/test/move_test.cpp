@@ -52,6 +52,30 @@ int main() {
     while(ss3 >> p) parts.push_back(p);
     if (parts[3] != "-2/1" && parts[3] != "-2") return 1;
 
+    // 5. Rational string vector with distance
+    Selector m_str = Selector{"jot/move", {{"$in", box1}, {"vector", "0 0 1"}, {"distance", 15.0}}}.with_output("$out");
+    Processor::execute(&vfs, m_str);
+    Shape s_str = vfs.read<Shape>(m_str);
+    std::cout << "  - move('0 0 1', 15): " << s_str.tf.to_vec() << std::endl;
+    std::stringstream ss_str(s_str.tf.to_vec());
+    parts.clear();
+    while(ss_str >> p) parts.push_back(p);
+    if (parts[11] != "15/1" && parts[11] != "15") return 1;
+
+    // 6. Mold piece pull vector tag decoding
+    Shape tagged_shape = s1;
+    tagged_shape.add_tag("mold/pull_vector", "1 0 0");
+    fs::CID tagged_cid = vfs.materialize<Shape>(tagged_shape);
+
+    Selector m_tag = Selector{"jot/move", {{"$in", box1}, {"vector", tagged_cid.value}, {"distance", 7.0}}}.with_output("$out");
+    Processor::execute(&vfs, m_tag);
+    Shape s_tag = vfs.read<Shape>(m_tag);
+    std::cout << "  - move(shape.get('mold/pull_vector'), 7): " << s_tag.tf.to_vec() << std::endl;
+    std::stringstream ss_tag(s_tag.tf.to_vec());
+    parts.clear();
+    while(ss_tag >> p) parts.push_back(p);
+    if (parts[3] != "7/1" && parts[3] != "7") return 1;
+
     std::cout << "✨ Move Operators PASS" << std::endl;
     return 0;
 }

@@ -29,9 +29,10 @@ int main() {
     Processor::execute(&vfs, mold_sel);
     Shape box_mold = vfs.read<Shape>(mold_sel);
 
-    assert(box_mold.components.size() >= 2); // mold piece 1 + 1 original shape
-    assert(box_mold.components[0].tags.contains("mold_piece") && box_mold.components[0].tags["mold_piece"] == 1);
-    std::cout << "    - Produced 1st demoldable pillar for Box successfully." << std::endl;
+    assert(box_mold.components.size() >= 2); // mold pieces
+    assert(box_mold.components[0].tags.contains("mold/piece") && box_mold.components[0].tags["mold/piece"] == 1);
+    assert(box_mold.components[0].tags.contains("mold/pull_vector"));
+    std::cout << "    - Produced 1st demoldable pillar for Box successfully with pull_vector=" << box_mold.components[0].tags["mold/pull_vector"] << std::endl;
 
     // 2. Test first demoldable pillar on bear.stl with explode
     std::cout << "  - Testing 1st demoldable pillar on bear.stl with explode=15.0..." << std::endl;
@@ -53,9 +54,10 @@ int main() {
     Processor::execute(&vfs, bear_mold_sel);
     Shape bear_mold = vfs.read<Shape>(bear_mold_sel);
 
-    assert(bear_mold.components.size() >= 2); // mold piece 1 + 1 original shape
-    assert(bear_mold.components[0].tags.contains("mold_piece") && bear_mold.components[0].tags["mold_piece"] == 1);
-    std::cout << "    - Produced 1st demoldable pillar for Bear successfully." << std::endl;
+    assert(bear_mold.components.size() >= 2); // mold pieces
+    assert(bear_mold.components[0].tags.contains("mold/piece") && bear_mold.components[0].tags["mold/piece"] == 1);
+    assert(bear_mold.components[0].tags.contains("mold/pull_vector"));
+    std::cout << "    - Produced 1st demoldable pillar for Bear successfully with pull_vector=" << bear_mold.components[0].tags["mold/pull_vector"] << std::endl;
     std::cout << "  ✅ jot/mold test passed." << std::endl;
     return 0;
 }

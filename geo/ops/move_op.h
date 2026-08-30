@@ -31,32 +31,46 @@ struct MoveOpBase : P {
 template <typename P = JotVfsProtocol>
 struct MoveOp : MoveOpBase<P> {
     static constexpr const char* path = "jot/move";
-    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<std::vector<double>>& offsets) {
+    static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in,
+                        const std::vector<EK::Vector_3>& vectors,
+                        const std::optional<std::vector<FT>>& distance) {
         std::vector<Matrix> tfs;
-        for (const auto& offset : offsets) {
-            double x = offset.size() > 0 ? offset[0] : 0.0;
-            double y = offset.size() > 1 ? offset[1] : 0.0;
-            double z = offset.size() > 2 ? offset[2] : 0.0;
-            tfs.push_back(Matrix::translate(x, y, z));
+        for (size_t i = 0; i < vectors.size(); ++i) {
+            EK::Vector_3 v = vectors[i];
+            EK::Vector_3 trans;
+            if (distance.has_value() && !distance->empty()) {
+                FT d = (*distance)[i < distance->size() ? i : distance->size() - 1];
+                double len = std::sqrt(CGAL::to_double(v.squared_length()));
+                if (len > 1e-9) {
+                    FT scale = d / FT(len);
+                    trans = v * scale;
+                } else {
+                    trans = EK::Vector_3(0, 0, 0);
+                }
+            } else {
+                trans = v;
+            }
+            tfs.push_back(Matrix(Transformation(CGAL::TRANSLATION, trans)));
         }
         MoveOpBase<P>::execute_multi(vfs, fulfilling, in, tfs);
     }
-    static std::vector<std::string> argument_keys() { return {"$in", "offset"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "vector", "distance"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/move"},
             {"dsl_name", "move"},
             {"role", "method"},
-            {"description", "Translates the input shape by one or more 3D offset vectors. Supports sequences (e.g. move([[x1,y1,z1], [x2,y2,z2]]))."},
+            {"description", "Translates the input shape by one or more 3D vectors or directions with optional distance."},
             {"synonyms", {"translate", "shift", "offset", "position"}},
             {"inputs", {{"$in", {{"type", "jot:shape"}, {"binding", "implicit"}, {"description", "The shape to move."}}}}},
             {"arguments", json::array({
-                {{"name", "offset"}, {"type", "jot:vec3s"}, {"default", {{0.0, 0.0, 0.0}}}, {"description", "The translation vector(s) [x, y, z]."}},
+                {{"name", "vector"}, {"type", "jot:vec3s"}, {"default", {{0.0, 0.0, 0.0}}}, {"description", "The translation vector(s) [x, y, z] or direction string 'x y z'."}},
+                {{"name", "distance"}, {"type", "jot:numbers"}, {"optional", true}, {"description", "Optional scalar distance along the direction of the vector."}}
             })},
             {"outputs", {{"$out", {{"type", "jot:shape"}, {"description", "The moved shape(s)."}}}}},
             {"examples", {
                 "Box(10).move([5, 0, 0]) -> $out",
-                "Box(10).move([[0,0,0], [10,0,0]]) -> $out"
+                "Box(10).move('1 1 1', 15) -> $out"
             }}
         };
     }
@@ -142,8 +156,8 @@ struct MoveZOp : MoveAxisOp<P> {
 };
 
 static void move_init(fs::VFSNode* vfs) {
-    Processor::register_op<MoveOp<>, Shape, std::vector<std::vector<double>>>(vfs, "jot/move");
-    Processor::register_op<MoveOp<>, Shape, std::vector<std::vector<double>>>(vfs, "jot/m"); 
+    Processor::register_op<MoveOp<>, Shape, std::vector<EK::Vector_3>, std::optional<std::vector<FT>>>(vfs, "jot/move");
+    Processor::register_op<MoveOp<>, Shape, std::vector<EK::Vector_3>, std::optional<std::vector<FT>>>(vfs, "jot/m"); 
     Processor::register_op<MoveXOp<>, Shape, std::vector<double>>(vfs, "jot/moveX");
     Processor::register_op<MoveXOp<>, Shape, std::vector<double>>(vfs, "jot/mx");
     Processor::register_op<MoveYOp<>, Shape, std::vector<double>>(vfs, "jot/moveY");

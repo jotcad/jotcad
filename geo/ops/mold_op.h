@@ -95,6 +95,12 @@ struct MoldOp : P {
         Geometry conservative_stock_geo = mold::build_box_geo(-R, R, -R, R, -R, R);
         mold::ExactMesh conservative_stock = boolean::Engine::geometry_to_mesh(conservative_stock_geo);
 
+        FT pad = params.padding;
+        FT mx_min = b_xmin - pad, mx_max = b_xmax + pad;
+        FT my_min = b_ymin - pad, my_max = b_ymax + pad;
+        FT mz_min = b_zmin - pad, mz_max = b_zmax + pad;
+        EK::Point_3 center((b_xmin + b_xmax) / FT(2), (b_ymin + b_ymax) / FT(2), (b_zmin + b_zmax) / FT(2));
+
         // 5. Multi-Piece Mold Decomposition Loop
         mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
         size_t total_faces = mesh_part.number_of_faces();
@@ -102,7 +108,7 @@ struct MoldOp : P {
 
         std::vector<mold::MoldPiece> mold_pieces;
         std::vector<EK::Vector_3> piece_draw_dirs;
-        std::vector<std::string> piece_colors = {"#2bee2b80", "#2b80ee80", "#ee802b80", "#ee2b8080", "#80ee2b80", "#802bee80"};
+        std::vector<std::string> piece_colors = {"#2bee2b", "#2b80ee", "#ee802b", "#ee2b80", "#80ee2b", "#802bee"};
 
         int piece_idx = 1;
         while (handled_faces_count < total_faces && piece_idx <= 10) {
@@ -125,10 +131,12 @@ struct MoldOp : P {
             }
 
             // Corefine conservative stock intersection & model cavity difference
+            mold::ExactMesh stock_copy = conservative_stock;
             mold::ExactMesh raw_block;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(conservative_stock, wedge, raw_block);
+            CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(stock_copy, wedge, raw_block);
+            mold::ExactMesh model_copy = mesh_part;
             mold::ExactMesh piece_mesh;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, mesh_part, piece_mesh);
+            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, model_copy, piece_mesh);
 
             std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
             std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
@@ -142,7 +150,7 @@ struct MoldOp : P {
             piece_idx++;
         }
 
-        // 6. Stage 2: Minimal-Volume OBB Assembly Trimming
+        // 6. Stage 2: Minimal-Volume OBB Assembly Trimming Aligned with piece_draw_dirs
         Geometry obb_geo;
         if (!mold_pieces.empty()) {
             std::cout << "    [OBB] Computing Minimal-Volume OBB trim with padding " << CGAL::to_double(params.padding) << "..." << std::flush;
@@ -152,11 +160,33 @@ struct MoldOp : P {
             std::cout << " Done. Min Volume: " << CGAL::to_double(opt_obb.volume) << std::endl << std::flush;
 
             for (auto& piece : mold_pieces) {
+                mold::ExactMesh piece_in = piece.mesh;
+                mold::ExactMesh obb_in = obb_mesh;
                 mold::ExactMesh trimmed_piece;
-                CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(piece.mesh, obb_mesh, trimmed_piece);
+                CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(piece_in, obb_in, trimmed_piece);
                 if (trimmed_piece.number_of_faces() > 0) {
                     piece.mesh = trimmed_piece;
                 }
+            }
+
+            // Retain uncarved OBB stock as stationary base block (pull_vector = "0 0 0")
+            mold::ExactMesh obb_copy = obb_mesh;
+            mold::ExactMesh model_copy2 = mesh_part;
+            mold::ExactMesh final_remaining;
+            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(obb_copy, model_copy2, final_remaining);
+            for (const auto& piece : mold_pieces) {
+                mold::ExactMesh piece_copy = piece.mesh;
+                mold::ExactMesh next_rem;
+                CGAL::Polygon_mesh_processing::corefine_and_compute_difference(final_remaining, piece_copy, next_rem);
+                if (next_rem.number_of_faces() > 0) {
+                    final_remaining = next_rem;
+                }
+            }
+            if (final_remaining.number_of_faces() > 0 && CGAL::is_closed(final_remaining) && CGAL::Polygon_mesh_processing::volume(final_remaining) > FT(1)) {
+                std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
+                std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
+                EK::Vector_3 base_dir(FT(0), FT(0), FT(0)); // Stationary foundation: vector "0 0 0"
+                mold_pieces.push_back({final_remaining, base_dir, piece_name, color, piece_idx});
             }
         }
 
@@ -173,17 +203,24 @@ struct MoldOp : P {
 
         for (const auto& piece : mold_pieces) {
             Geometry piece_geo = boolean::Engine::mesh_to_geometry(piece.mesh);
+            std::stringstream ss;
+            ss << piece.draw_vector.x() << " " << piece.draw_vector.y() << " " << piece.draw_vector.z();
+            std::string pull_vec_str = ss.str();
+
             Shape piece_shape = P::make_shape(vfs, piece_geo, {
-                {"mold_piece", piece.mold_piece},
-                {"color", piece.color}
+                {"mold/piece", piece.mold_piece},
+                {"mold/pull_vector", pull_vec_str},
+                {"color", piece.color},
+                {"opacity", 0.5}
             });
 
             if (params.explode > FT(0)) {
                 EK::Vector_3 dv = piece.draw_vector;
                 double len = std::sqrt(CGAL::to_double(dv.squared_length()));
-                if (len > 1e-6) {
+                if (len > 1e-9) {
                     FT scale = params.explode / FT(len);
-                    piece_shape.tf = Matrix::translate(CGAL::to_double(dv.x() * scale), CGAL::to_double(dv.y() * scale), CGAL::to_double(dv.z() * scale));
+                    EK::Vector_3 trans = dv * scale;
+                    piece_shape.tf = Matrix(Transformation(CGAL::TRANSLATION, trans));
                 }
             }
             result.components.push_back(piece_shape);
