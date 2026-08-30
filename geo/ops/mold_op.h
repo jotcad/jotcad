@@ -5,9 +5,7 @@
 #include "mold/types.h"
 #include "mold/repair.h"
 #include "mold/optimizer.h"
-#include "mold/visibility.h"
-#include "mold/ribbon.h"
-#include "mold/partition.h"
+#include "mold/assembly.h"
 #include "mold/verify.h"
 #include <iostream>
 
@@ -42,24 +40,10 @@ struct MoldOp : P {
         // 2. Exact Normalization and Watertight Mesh Repair
         mold::ExactMesh mesh_part = mold::normalize_and_repair_solid(world_geo);
 
-        // 3. Topology & Geometric Centroids / Normals in Pure FT directly from mesh_part
+        // 3. Topology & Geometric Centroids / Normals in Pure FT
         std::map<mold::EdgeKey, std::vector<int>> edge_to_faces;
         std::vector<EK::Vector_3> face_normals;
         std::vector<EK::Point_3> face_centroids;
-
-        FT b_xmin = 1000000, b_xmax = -1000000;
-        FT b_ymin = 1000000, b_ymax = -1000000;
-        FT b_zmin = 1000000, b_zmax = -1000000;
-
-        for (auto v : mesh_part.vertices()) {
-            auto p = mesh_part.point(v);
-            if (p.x() < b_xmin) b_xmin = p.x();
-            if (p.x() > b_xmax) b_xmax = p.x();
-            if (p.y() < b_ymin) b_ymin = p.y();
-            if (p.y() > b_ymax) b_ymax = p.y();
-            if (p.z() < b_zmin) b_zmin = p.z();
-            if (p.z() > b_zmax) b_zmax = p.z();
-        }
 
         int f_idx = 0;
         for (auto f : mesh_part.faces()) {
@@ -83,7 +67,7 @@ struct MoldOp : P {
             f_idx++;
         }
 
-        // 4. Stage 1: Large Conservative Stock Envelope for Unconstrained Extraction
+        // 4. Large Conservative Stock Envelope for Unconstrained Extraction
         FT max_r_sq = 0;
         for (auto v : mesh_part.vertices()) {
             auto p = mesh_part.point(v);
@@ -95,12 +79,6 @@ struct MoldOp : P {
         Geometry conservative_stock_geo = mold::build_box_geo(-R, R, -R, R, -R, R);
         mold::ExactMesh conservative_stock = boolean::Engine::geometry_to_mesh(conservative_stock_geo);
 
-        FT pad = params.padding;
-        FT mx_min = b_xmin - pad, mx_max = b_xmax + pad;
-        FT my_min = b_ymin - pad, my_max = b_ymax + pad;
-        FT mz_min = b_zmin - pad, mz_max = b_zmax + pad;
-        EK::Point_3 center((b_xmin + b_xmax) / FT(2), (b_ymin + b_ymax) / FT(2), (b_zmin + b_zmax) / FT(2));
-
         // 5. Multi-Piece Mold Decomposition Loop
         mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
         size_t total_faces = mesh_part.number_of_faces();
@@ -108,7 +86,7 @@ struct MoldOp : P {
 
         std::vector<mold::MoldPiece> mold_pieces;
         std::vector<EK::Vector_3> piece_draw_dirs;
-        std::vector<std::string> piece_colors = {"#2bee2b", "#2b80ee", "#ee802b", "#ee2b80", "#80ee2b", "#802bee"};
+        const std::vector<std::string> piece_colors = {"#2bee2b", "#2b80ee", "#ee802b", "#ee2b80", "#80ee2b", "#802bee"};
 
         int piece_idx = 1;
         while (handled_faces_count < total_faces && piece_idx <= 10) {
@@ -122,8 +100,8 @@ struct MoldOp : P {
             piece_draw_dirs.push_back(d_i);
 
             // Mark source faces as handled
-            for (size_t f_idx : opt.source_faces) {
-                auto f = mold::ExactMesh::Face_index(f_idx);
+            for (size_t src_f_idx : opt.source_faces) {
+                auto f = mold::ExactMesh::Face_index(src_f_idx);
                 if (!is_handled[f]) {
                     is_handled[f] = true;
                     handled_faces_count++;
@@ -150,45 +128,9 @@ struct MoldOp : P {
             piece_idx++;
         }
 
-        // 6. Stage 2: Minimal-Volume OBB Assembly Trimming Aligned with piece_draw_dirs
+        // 6. Minimal-Volume OBB Trimming & Stationary Remainder Extraction
         Geometry obb_geo;
-        if (!mold_pieces.empty()) {
-            std::cout << "    [OBB] Computing Minimal-Volume OBB trim with padding " << CGAL::to_double(params.padding) << "..." << std::flush;
-            auto opt_obb = mold::compute_min_volume_obb(mesh_part, params.padding, piece_draw_dirs);
-            obb_geo = opt_obb.to_geometry();
-            mold::ExactMesh obb_mesh = boolean::Engine::geometry_to_mesh(obb_geo);
-            std::cout << " Done. Min Volume: " << CGAL::to_double(opt_obb.volume) << std::endl << std::flush;
-
-            for (auto& piece : mold_pieces) {
-                mold::ExactMesh piece_in = piece.mesh;
-                mold::ExactMesh obb_in = obb_mesh;
-                mold::ExactMesh trimmed_piece;
-                CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(piece_in, obb_in, trimmed_piece);
-                if (trimmed_piece.number_of_faces() > 0) {
-                    piece.mesh = trimmed_piece;
-                }
-            }
-
-            // Retain uncarved OBB stock as stationary base block (pull_vector = "0 0 0")
-            mold::ExactMesh obb_copy = obb_mesh;
-            mold::ExactMesh model_copy2 = mesh_part;
-            mold::ExactMesh final_remaining;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(obb_copy, model_copy2, final_remaining);
-            for (const auto& piece : mold_pieces) {
-                mold::ExactMesh piece_copy = piece.mesh;
-                mold::ExactMesh next_rem;
-                CGAL::Polygon_mesh_processing::corefine_and_compute_difference(final_remaining, piece_copy, next_rem);
-                if (next_rem.number_of_faces() > 0) {
-                    final_remaining = next_rem;
-                }
-            }
-            if (final_remaining.number_of_faces() > 0 && CGAL::is_closed(final_remaining) && CGAL::Polygon_mesh_processing::volume(final_remaining) > FT(1)) {
-                std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
-                std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
-                EK::Vector_3 base_dir(FT(0), FT(0), FT(0)); // Stationary foundation: vector "0 0 0"
-                mold_pieces.push_back({final_remaining, base_dir, piece_name, color, piece_idx});
-            }
-        }
+        mold::MoldAssembly<P>::trim_against_obb(mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
 
         // 7. Demoldability Verification
         mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
@@ -197,48 +139,8 @@ struct MoldOp : P {
             mold::verify_piece_demoldability(piece, model_tree);
         }
 
-        // 8. Assemble Final Scene Graph & Apply Explosion Transforms
-        Shape result;
-        result.tf = Matrix::identity();
-
-        for (const auto& piece : mold_pieces) {
-            Geometry piece_geo = boolean::Engine::mesh_to_geometry(piece.mesh);
-            std::stringstream ss;
-            ss << piece.draw_vector.x() << " " << piece.draw_vector.y() << " " << piece.draw_vector.z();
-            std::string pull_vec_str = ss.str();
-
-            Shape piece_shape = P::make_shape(vfs, piece_geo, {
-                {"mold/piece", piece.mold_piece},
-                {"mold/pull_vector", pull_vec_str},
-                {"color", piece.color},
-                {"opacity", 0.5}
-            });
-
-            if (params.explode > FT(0)) {
-                EK::Vector_3 dv = piece.draw_vector;
-                double len = std::sqrt(CGAL::to_double(dv.squared_length()));
-                if (len > 1e-9) {
-                    FT scale = params.explode / FT(len);
-                    EK::Vector_3 trans = dv * scale;
-                    piece_shape.tf = Matrix(Transformation(CGAL::TRANSLATION, trans));
-                }
-            }
-            result.components.push_back(piece_shape);
-        }
-
-        // Include Minimal-Volume OBB as ghost outline/reference
-        if (!obb_geo.vertices.empty()) {
-            Shape obb_shape = P::make_shape(vfs, obb_geo, {
-                {"role", "ghost"},
-                {"color", "#ffffff25"},
-                {"name", "minimal_bounding_box"}
-            });
-            result.components.push_back(obb_shape);
-        }
-
-        // Keep original input model as-is in the result
-        result.components.push_back(in);
-
+        // 8. Assemble Scene Graph & Apply Explosion Transforms
+        Shape result = mold::MoldAssembly<P>::assemble_scene(vfs, in, mold_pieces, obb_geo, params);
         vfs->write(fulfilling.with_output("$out"), result);
     }
 

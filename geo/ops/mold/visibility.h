@@ -309,9 +309,34 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     }
 
     // 4. Seal top ceiling holes
+    auto assert_is_simple_border = [&](ExactMesh::Halfedge_index h_start) -> bool {
+        auto h = h_start;
+        std::vector<EK::Point_2> pts_2d;
+        std::set<ExactMesh::Vertex_index> seen_v;
+        bool has_duplicate = false;
+        int n = 0;
+        do {
+            auto v = solid_wedge.target(h);
+            if (seen_v.count(v)) has_duplicate = true;
+            seen_v.insert(v);
+            auto p_rot = rotate_pt(solid_wedge.point(v));
+            pts_2d.push_back(EK::Point_2(p_rot.x(), p_rot.y()));
+            n++;
+            h = solid_wedge.next(h);
+        } while (h != h_start && n < 20000);
+        CGAL::Polygon_2<EK> poly(pts_2d.begin(), pts_2d.end());
+        bool is_simple = poly.is_simple();
+        std::cout << "  [Border Assertion] Cycle vertices: " << n
+                  << " | unique: " << seen_v.size()
+                  << " | has_duplicate: " << (has_duplicate ? "YES" : "NO")
+                  << " | is_simple: " << (is_simple ? "YES" : "NO") << std::endl << std::flush;
+        return is_simple;
+    };
+
     std::vector<ExactMesh::Halfedge_index> border_halfedges;
     CGAL::Polygon_mesh_processing::extract_boundary_cycles(solid_wedge, std::back_inserter(border_halfedges));
     for (auto h_border : border_halfedges) {
+        assert_is_simple_border(h_border);
         std::vector<ExactMesh::Face_index> patch_facets;
         CGAL::Polygon_mesh_processing::triangulate_hole(solid_wedge, h_border, std::back_inserter(patch_facets));
     }

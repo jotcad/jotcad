@@ -1,17 +1,24 @@
 # Automated Multi-Piece Mold Decomposition Engine (`geo/ops/mold/`)
 
 ## Core Responsibility
-This directory implements the researched, mathematically rigorous **Automated Multi-Piece Mold Decomposition Engine** for JotCAD. Given an arbitrary 3D watertight mesh and stock padding margins, it autonomously partitions the surrounding stock volume into $K$ interlocking, certified 2-manifold solid mold blocks $\{M_1, \dots, M_K\}$ using 3D Ruled Bisector Parting Sheets ($\Sigma$) and oriented slide prisms.
+This directory implements the modular, mathematically rigorous **Automated Multi-Piece Mold Decomposition Engine** for JotCAD. Given an arbitrary 3D watertight mesh and stock padding margins, it autonomously partitions the surrounding stock volume into $K$ interlocking, certified 2-manifold solid mold blocks $\{M_1, \dots, M_K\}$ using 3D Upper Envelope height fields and minimal-volume OBB trimming.
 
 ## Architectural Component Index
 
-| File | Core Responsibility |
-| :--- | :--- |
-| **`types.h`** | Exact rational data structures (`UndercutCluster`, `MoldPiece`, `DSU`, `EdgeKey`, `ExactMesh`). |
-| **`repair.h`** | Normalization, border welding, and Euler border cycle fan triangulation for watertight solids. |
-| **`optimizer.h`** | Spherical search on $\mathbb{S}^2$ minimizing disjoint silhouette loops to find optimal draw vector $\vec{d}^*$. |
-| **`visibility.h`** | Exact topological 1-ring primitive ID visibility raycasting and DSU undercut spatial clustering. |
-| **`ribbon.h`** | Directed topological 1D loop chaining and 2-manifold quad parting sheet ($\Sigma$) extrusion in pure `FT`. |
-| **`prism.h`** | Oriented prismatic slide column synthesis along cluster draw vectors $\vec{d}_{\text{insert}}$. |
-| **`partition.h`** | Monolithic master stock box creation, single CSG cavity difference, and open surface volume slicing. |
-| **`verify.h`** | Authoritative swept-volume demoldability assertion and back-draft hook verification. |
+| File | Lines | Core Responsibility |
+| :--- | :--- | :--- |
+| **`types.h`** | ~130 | Exact rational data structures (`DSU`, `EdgeKey`, `UndercutCluster`, `MoldParams`, `MoldPiece`, `build_box_geo`). |
+| **`obb.h`** | ~140 | Minimal-volume Oriented Bounding Box (`OrientedBox`, `compute_min_volume_obb`) aligned with piece draw vectors. |
+| **`repair.h`** | ~45 | Exact coordinate normalization and watertight solid mesh repair (`normalize_and_repair_solid`). |
+| **`optimizer.h`** | ~130 | Geometry-informed candidate scanning (corner normals, edge bisectors, face normals, Fibonacci lattice). |
+| **`visibility.h`** | ~350 | Exact 3D Upper Envelope projection (`CGAL::upper_envelope_3`) and solid wedge construction. |
+| **`assembly.h`** | ~110 | Minimal-volume OBB trimming, stationary base block extraction (`pull_vector = "0 0 0"`), and scene graph assembly. |
+| **`verify.h`** | ~40 | Authoritative swept-volume demoldability assertions (`verify_piece_demoldability`). |
+
+## Operating Pipeline
+
+1. **Geometry Aggregation & Repair** (`repair.h`): Aggregates world geometry recursively across the scene graph and heals boundary cracks into a watertight 2-manifold exact solid.
+2. **Progressive Direction Optimization & Envelope Extraction** (`optimizer.h`, `visibility.h`): Evaluates candidate draw directions on $\mathbb{S}^2$, computing the 3D Upper Envelope solid wedge for the largest demoldable patch.
+3. **Unconstrained Stock Carving**: Intersects each envelope wedge with the conservative stock envelope and carves the model cavity via CGAL exact boolean corefinement.
+4. **OBB Trimming & Stationary Remainder Extraction** (`assembly.h`): Computes the minimal-volume OBB aligned with all extracted draw vectors, trims each piece, and extracts any uncarved stock remainder as a stationary base foundation block (`pull_vector = "0 0 0"`).
+5. **Demoldability Assertion & Scene Graph Synthesis** (`assembly.h`, `verify.h`): Tags each piece with its withdrawal vector, assigns 50% opacity and 6-digit hex colors, applies explosion offsets along withdrawal vectors, and attaches the centered model cavity.
