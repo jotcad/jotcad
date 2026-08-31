@@ -66,35 +66,6 @@ struct MoldPiece {
     int mold_piece;
 };
 
-// Helper: Collect world geometry recursively across scene graph
-inline void collect_world_geometry_recursive(fs::VFSNode* vfs, const Shape& s, const Matrix& current_tf, Geometry& world_geo) {
-    if (s.geometry.has_value()) {
-        Geometry geo = JotVfsProtocol::read_shape_geo(vfs, s);
-        int offset = (int)world_geo.vertices.size();
-        for (const auto& v : geo.vertices) {
-            EK::Point_3 p = current_tf.transform(EK::Point_3(v.x, v.y, v.z));
-            world_geo.vertices.push_back({p.x(), p.y(), p.z()});
-        }
-        if (!geo.triangles.empty()) {
-            for (const auto& tri : geo.triangles) {
-                world_geo.triangles.push_back({tri[0] + offset, tri[1] + offset, tri[2] + offset});
-            }
-        } else if (!geo.faces.empty()) {
-            std::vector<Vec3> pts;
-            for (const auto& v : geo.vertices) {
-                pts.push_back(Vec3{CGAL::to_double(v.x), CGAL::to_double(v.y), CGAL::to_double(v.z)});
-            }
-            for (const auto& f : geo.faces) {
-                Triangulation::triangulate_face(f, pts, [&](int i0, int i1, int i2) {
-                    world_geo.triangles.push_back({i0 + offset, i1 + offset, i2 + offset});
-                });
-            }
-        }
-    }
-    for (const auto& child : s.components) {
-        collect_world_geometry_recursive(vfs, child, current_tf * child.tf, world_geo);
-    }
-}
 
 // Helper: Build exact rational bounding box in pure FT
 inline Geometry build_box_geo(FT xmin, FT xmax, FT ymin, FT ymax, FT zmin, FT zmax) {

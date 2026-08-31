@@ -29,16 +29,12 @@ struct MoldOp : P {
         params.explode = FT(explode_val);
         params.draft = FT(draft_val);
 
-        // 1. Recursive Geometry Aggregation across Scene Graph
-        Geometry world_geo;
-        mold::collect_world_geometry_recursive(vfs, in, Matrix::identity(), world_geo);
-        if (world_geo.vertices.empty() || world_geo.triangles.empty()) {
+        // 1. Extract unified solid mesh in world space
+        mold::ExactMesh mesh_part;
+        if (!boolean::Engine::shape_to_fused_mesh(vfs, in, mesh_part)) {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
-
-        // 2. Exact Normalization and Watertight Mesh Repair
-        mold::ExactMesh mesh_part = mold::normalize_and_repair_solid(world_geo);
 
         // 3. Topology & Geometric Centroids / Normals in Pure FT
         std::map<mold::EdgeKey, std::vector<int>> edge_to_faces;

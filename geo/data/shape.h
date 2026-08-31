@@ -122,6 +122,14 @@ struct Shape {
         return out;
     }
 
+    template <typename Visitor>
+    void walk(Visitor&& visitor) const {
+        visitor(*this);
+        for (const auto& child : components) {
+            child.walk(visitor);
+        }
+    }
+
     void set_role_recursive(const std::string& r) {
         add_tag("role", r);
         for (auto& child : components) {

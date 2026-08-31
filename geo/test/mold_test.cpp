@@ -2,6 +2,7 @@
 #include "protocols.h"
 #include "processor.h"
 #include "infra/stl.h"
+#include "mold/repair.h"
 
 using namespace jotcad;
 using namespace jotcad::geo;
@@ -43,7 +44,9 @@ int main() {
     }
     assert(success);
 
-    Shape bear_shape = JotVfsProtocol::make_shape(&vfs, bear_geo, {{"type", "closed"}});
+    mold::ExactMesh bear_mesh = mold::normalize_and_repair_solid(bear_geo);
+    Geometry clean_bear = boolean::Engine::mesh_to_geometry(bear_mesh);
+    Shape bear_shape = JotVfsProtocol::make_shape(&vfs, clean_bear, {{"type", "closed"}});
     fs::Selector bear_mold_sel("jot/mold");
     bear_mold_sel.parameters["$in"] = bear_shape.to_json();
     bear_mold_sel.parameters["padding"] = 10.0;

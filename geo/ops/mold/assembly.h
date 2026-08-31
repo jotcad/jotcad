@@ -66,8 +66,9 @@ struct MoldAssembly {
         const Geometry& obb_geo,
         const MoldParams& params
     ) {
-        Shape result;
-        result.tf = Matrix::identity();
+        Shape result = original_input;
+        result.geometry = std::nullopt; // Consumed raw solid geometry
+        result.components.clear();
 
         for (const auto& piece : mold_pieces) {
             Geometry piece_geo = boolean::Engine::mesh_to_geometry(piece.mesh);
@@ -104,8 +105,10 @@ struct MoldAssembly {
             result.components.push_back(obb_shape);
         }
 
-        // Keep original input model as-is in the result
-        result.components.push_back(original_input);
+        // Naturally preserve all unconsumed child branches of the input tree
+        for (const auto& child : original_input.components) {
+            result.components.push_back(child);
+        }
 
         return result;
     }

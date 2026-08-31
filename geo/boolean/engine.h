@@ -39,11 +39,23 @@ typedef CGAL::General_polygon_set_2<Gps_traits_2> General_polygon_set_2;
 typedef CGAL::Polygon_2<EK> Polygon_2;
 typedef CGAL::Polygon_with_holes_2<EK> Polygon_with_holes_2;
 
+template <typename MeshType>
+inline bool do_meshes_overlap(const MeshType& m1, const MeshType& m2) {
+    if (m1.is_empty() || m2.is_empty()) return false;
+    return CGAL::do_overlap(
+        CGAL::Polygon_mesh_processing::bbox(m1),
+        CGAL::Polygon_mesh_processing::bbox(m2)
+    );
+}
+
 struct Engine {
     /**
      * cut_mesh_by_mesh: 3D Volume-Volume subtraction OR Surface-Volume subtraction.
      */
     static bool cut_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
+        if (target.is_empty()) return true;
+        if (!do_meshes_overlap(target, tool)) return true;
+
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
@@ -79,7 +91,15 @@ struct Engine {
      * join_mesh_by_mesh: 3D Volume-Volume union.
      */
     static bool join_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
+        if (tool.is_empty()) return true;
+        if (target.is_empty()) { target = tool; return true; }
         if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) return false;
+
+        if (!do_meshes_overlap(target, tool)) {
+            target.join(tool);
+            return true;
+        }
+
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
@@ -92,6 +112,11 @@ struct Engine {
      * clip_mesh_by_mesh: 3D Volume-Volume intersection OR Surface-Volume intersection.
      */
     static bool clip_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
+        if (!do_meshes_overlap(target, tool)) {
+            target.clear();
+            return true;
+        }
+
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
@@ -462,6 +487,23 @@ struct Engine {
         return mesh;
     }
 
+    static bool shape_to_fused_mesh(fs::VFSNode* vfs, const Shape& s, ExactMesh& out_mesh) {
+        out_mesh.clear();
+        s.walk([&](const Shape& node) {
+            if (node.geometry.has_value() && node.is_real()) {
+                Geometry geo = vfs->readCID<Geometry>(*node.geometry);
+                ExactMesh component = geometry_to_mesh(geo);
+                transform_mesh(component, node.tf);
+                if (out_mesh.is_empty()) {
+                    out_mesh = std::move(component);
+                } else {
+                    join_mesh_by_mesh(out_mesh, component);
+                }
+            }
+        });
+        return !out_mesh.is_empty();
+    }
+
     static Geometry mesh_to_geometry(const ExactMesh& mesh) {
         Geometry geo;
         std::map<ExactMesh::Vertex_index, int> v_map;
@@ -547,6 +589,7 @@ struct Engine {
     struct ToolNode { Geometry geo; Matrix world_tf; std::string type; bool is_gap = false; };
 
     static void collect_tool_geometry(fs::VFSNode* vfs, const Shape& s, const Matrix& /*ignored_parent_tf*/, std::vector<ToolNode>& tool_nodes) {
+        if (!s.is_real() && !s.is_gap()) return;
         Matrix current_tf = s.tf;
         std::string type = s.tags.value("type", "");
         if (s.has_real_geometry()) {

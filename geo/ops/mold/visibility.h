@@ -169,95 +169,155 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         return p0.z() - (n.x() * (vx - p0.x()) + n.y() * (vy - p0.y())) / n.z();
     };
 
-    ExactMesh solid_wedge;
-    std::map<int, ExactMesh::Vertex_index> v_bot_map;
-    std::map<int, ExactMesh::Vertex_index> v_top_map;
-
-    FT h_extrude = FT(100);
-
-    auto get_bot_v = [&](int orig_v_idx) -> ExactMesh::Vertex_index {
-        auto it = v_bot_map.find(orig_v_idx);
-        if (it != v_bot_map.end()) return it->second;
-        auto p = mesh_part.point(ExactMesh::Vertex_index(orig_v_idx));
-        auto v = solid_wedge.add_vertex(p);
-        v_bot_map[orig_v_idx] = v;
-        return v;
-    };
-
-    auto get_top_v = [&](int orig_v_idx) -> ExactMesh::Vertex_index {
-        auto it = v_top_map.find(orig_v_idx);
-        if (it != v_top_map.end()) return it->second;
-        auto p = mesh_part.point(ExactMesh::Vertex_index(orig_v_idx));
-        EK::Point_3 top_p(p.x() + d.x() * h_extrude, p.y() + d.y() * h_extrude, p.z() + d.z() * h_extrude);
-        auto v = solid_wedge.add_vertex(top_p);
-        v_top_map[orig_v_idx] = v;
-        return v;
-    };
-
-    const auto& patch_faces = seed_patch_faces.empty() ? face_descriptors : seed_patch_faces;
+    std::vector<EK::Point_3> soup_points;
+    std::vector<std::vector<size_t>> soup_polygons;
     std::set<size_t> source_faces;
 
-    // 1. Reversed Model Cavity Faces directly in World Space
-    for (auto f : patch_faces) {
-        if (is_handled[f]) continue;
-        source_faces.insert((size_t)f);
+    FT max_vz_rot = -1000000;
 
-        auto h = mesh_part.halfedge(f);
-        int i0 = (int)mesh_part.source(h);
-        int i1 = (int)mesh_part.target(h);
-        int i2 = (int)mesh_part.target(mesh_part.next(h));
+    // 1. Add all illuminated surface cells (native CCW winding)
+    for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
+        if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
 
-        auto v0 = get_bot_v(i0);
-        auto v1 = get_bot_v(i1);
-        auto v2 = get_bot_v(i2);
-        solid_wedge.add_face(v0, v2, v1);
-    }
+        size_t orig_f_idx = fit->surfaces_begin()->data();
+        source_faces.insert(orig_f_idx);
 
-    // 2. Extruded Sidewalls on Border Halfedges directly in World Space
-    std::vector<ExactMesh::Halfedge_index> border_halfedges;
-    CGAL::Polygon_mesh_processing::border_halfedges(patch_faces, mesh_part, std::back_inserter(border_halfedges));
-    for (auto h : border_halfedges) {
-        int u_idx = (int)mesh_part.source(h);
-        int v_idx = (int)mesh_part.target(h);
+        std::vector<size_t> poly_indices;
+        auto ccb = fit->outer_ccb();
+        auto curr = ccb;
+        do {
+            auto p2d = curr->target()->point();
+            FT vx = p2d.x();
+            FT vy = p2d.y();
+            FT vz = get_z(orig_f_idx, vx, vy);
+            if (vz > max_vz_rot) max_vz_rot = vz;
 
-        auto u_bot = get_bot_v(u_idx);
-        auto v_bot = get_bot_v(v_idx);
-        auto u_top = get_top_v(u_idx);
-        auto v_top = get_top_v(v_idx);
+            EK::Point_3 world_p = unrotate_pt(vx, vy, vz);
+            size_t idx = soup_points.size();
+            soup_points.push_back(world_p);
+            poly_indices.push_back(idx);
+            curr = curr->next();
+        } while (curr != ccb);
 
-        solid_wedge.add_face(u_bot, v_bot, v_top);
-        solid_wedge.add_face(u_bot, v_top, u_top);
-    }
-
-    // 3. Top Planar Ceiling Cap
-    EK::Point_3 top_center(0, 0, 0);
-    FT count = 0;
-    for (auto h : border_halfedges) {
-        int u_idx = (int)mesh_part.source(h);
-        auto p = mesh_part.point(ExactMesh::Vertex_index(u_idx));
-        top_center = EK::Point_3(top_center.x() + p.x() + d.x() * h_extrude,
-                                 top_center.y() + p.y() + d.y() * h_extrude,
-                                 top_center.z() + p.z() + d.z() * h_extrude);
-        count = count + FT(1);
-    }
-    if (count > FT(0)) {
-        top_center = EK::Point_3(top_center.x() / count, top_center.y() / count, top_center.z() / count);
-        auto c_top = solid_wedge.add_vertex(top_center);
-        for (auto h : border_halfedges) {
-            int u_idx = (int)mesh_part.source(h);
-            int v_idx = (int)mesh_part.target(h);
-            auto u_top = get_top_v(u_idx);
-            auto v_top = get_top_v(v_idx);
-            solid_wedge.add_face(v_top, u_top, c_top);
+        if (poly_indices.size() >= 3) {
+            soup_polygons.push_back(poly_indices);
         }
     }
 
+    // 2. Add vertical cliff quads at step discontinuities (winding: v1 -> u1 -> u2 -> v2)
+    for (auto eit = max_diag.edges_begin(); eit != max_diag.edges_end(); ++eit) {
+        auto f1 = eit->face();
+        auto f2 = eit->twin()->face();
+        if (f1->is_unbounded() || f2->is_unbounded()) continue;
+        if (f1->number_of_surfaces() == 0 || f2->number_of_surfaces() == 0) continue;
+
+        size_t orig_f1 = f1->surfaces_begin()->data();
+        size_t orig_f2 = f2->surfaces_begin()->data();
+        if (orig_f1 == orig_f2) continue;
+
+        auto p1_2d = eit->source()->point();
+        auto p2_2d = eit->target()->point();
+
+        FT z1_s = get_z(orig_f1, p1_2d.x(), p1_2d.y());
+        FT z1_t = get_z(orig_f1, p2_2d.x(), p2_2d.y());
+
+        FT z2_s = get_z(orig_f2, p1_2d.x(), p1_2d.y());
+        FT z2_t = get_z(orig_f2, p2_2d.x(), p2_2d.y());
+
+        if (z1_s != z2_s || z1_t != z2_t) {
+            EK::Point_3 u1 = unrotate_pt(p1_2d.x(), p1_2d.y(), z1_s);
+            EK::Point_3 v1 = unrotate_pt(p2_2d.x(), p2_2d.y(), z1_t);
+            EK::Point_3 v2 = unrotate_pt(p2_2d.x(), p2_2d.y(), z2_t);
+            EK::Point_3 u2 = unrotate_pt(p1_2d.x(), p1_2d.y(), z2_s);
+
+            size_t idx0 = soup_points.size();
+            soup_points.push_back(v1);
+            soup_points.push_back(u1);
+            soup_points.push_back(u2);
+            soup_points.push_back(v2);
+            soup_polygons.push_back({idx0, idx0 + 1, idx0 + 2, idx0 + 3});
+        }
+    }
+
+    // 3. Add swept sidewall quads for true outer/aperture boundary halfedges (adjacent to unbounded space or empty cells)
+    FT h_ceiling_rot = max_vz_rot + FT(50);
+
+    auto add_sidewall_if_boundary = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
+        if (h->twin()->face()->is_unbounded() || h->twin()->face()->number_of_surfaces() == 0) {
+            auto p1_2d = h->source()->point();
+            auto p2_2d = h->target()->point();
+
+            FT z_s = get_z(orig_f, p1_2d.x(), p1_2d.y());
+            FT z_t = get_z(orig_f, p2_2d.x(), p2_2d.y());
+
+            EK::Point_3 u_bot = unrotate_pt(p1_2d.x(), p1_2d.y(), z_s);
+            EK::Point_3 v_bot = unrotate_pt(p2_2d.x(), p2_2d.y(), z_t);
+            EK::Point_3 v_top = unrotate_pt(p2_2d.x(), p2_2d.y(), h_ceiling_rot);
+            EK::Point_3 u_top = unrotate_pt(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
+
+            size_t idx0 = soup_points.size();
+            soup_points.push_back(v_bot);
+            soup_points.push_back(u_bot);
+            soup_points.push_back(u_top);
+            soup_points.push_back(v_top);
+            soup_polygons.push_back({idx0, idx0 + 1, idx0 + 2, idx0 + 3});
+        }
+    };
+
+    for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
+        if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
+        size_t orig_f = fit->surfaces_begin()->data();
+
+        auto ccb = fit->outer_ccb();
+        auto curr = ccb;
+        do {
+            add_sidewall_if_boundary(curr, orig_f);
+            curr = curr->next();
+        } while (curr != ccb);
+
+        for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
+            auto h_curr = *hole_it;
+            auto h_start = h_curr;
+            do {
+                add_sidewall_if_boundary(h_curr, orig_f);
+                h_curr = h_curr->next();
+            } while (h_curr != h_start);
+        }
+    }
+
+    if (soup_polygons.empty()) return {};
+
+    std::cout << "    [Envelope] Polygon soup has " << soup_polygons.size() << " polygons (" << soup_points.size() << " points). Repairing soup..." << std::flush;
+    auto t_soup_start = std::chrono::steady_clock::now();
+
+    CGAL::Polygon_mesh_processing::repair_polygon_soup(soup_points, soup_polygons);
+    std::cout << " Done. Orienting soup (" << soup_polygons.size() << " polygons, " << soup_points.size() << " points)..." << std::flush;
+
+    CGAL::Polygon_mesh_processing::orient_polygon_soup(soup_points, soup_polygons);
+    std::cout << " Done. Converting to mesh..." << std::flush;
+
+    ExactMesh solid_wedge;
+    CGAL::Polygon_mesh_processing::polygon_soup_to_polygon_mesh(soup_points, soup_polygons, solid_wedge);
     CGAL::Polygon_mesh_processing::stitch_borders(solid_wedge);
+
+    // Seal top ceiling hole
+    std::vector<ExactMesh::Halfedge_index> border_halfedges;
+    CGAL::Polygon_mesh_processing::extract_boundary_cycles(solid_wedge, std::back_inserter(border_halfedges));
+    for (auto h_border : border_halfedges) {
+        std::vector<ExactMesh::Face_index> patch_facets;
+        CGAL::Polygon_mesh_processing::triangulate_hole(solid_wedge, h_border, std::back_inserter(patch_facets));
+    }
+    CGAL::Polygon_mesh_processing::stitch_borders(solid_wedge);
+    CGAL::Polygon_mesh_processing::triangulate_faces(solid_wedge);
     solid_wedge.collect_garbage();
 
     if (CGAL::is_closed(solid_wedge)) {
         CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(solid_wedge);
     }
+
+    auto t_soup_end = std::chrono::steady_clock::now();
+    double soup_ms = std::chrono::duration<double, std::milli>(t_soup_end - t_soup_start).count();
+    std::cout << " Done in " << soup_ms << "ms." << std::endl << std::flush;
 
     bool is_closed = CGAL::is_closed(solid_wedge);
     bool self_intersects = CGAL::Polygon_mesh_processing::does_self_intersect(solid_wedge);
@@ -267,6 +327,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
               << " | faces: " << solid_wedge.number_of_faces() << std::endl << std::flush;
 
     FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
+
     return {solid_wedge, source_faces, total_area};
 }
 
