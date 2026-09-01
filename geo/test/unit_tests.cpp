@@ -79,6 +79,8 @@
 #include "sort_ops.h"
 #include "decal_pipeline.h"
 #include "part_line_op.h"
+#include "fix/repair.h"
+#include "fix/bridge.h"
 
 // Global namespace imports to ensure types like Selector and Shape are visible globally to all tests
 using namespace fs;

@@ -3,6 +3,7 @@
 #include "rotation.h"
 #include "walls.h"
 #include "diagnostics.h"
+#include "fix/repair.h"
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Triangulation_face_base_with_info_2.h>
 #include <CGAL/mark_domain_in_triangulation.h>
@@ -11,6 +12,8 @@
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/Polygon_mesh_processing/measure.h>
+#include <CGAL/IO/polygon_mesh_io.h>
+#include <filesystem>
 #include <chrono>
 #include <list>
 #include <queue>
@@ -416,6 +419,15 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
               << " | does_self_intersect: " << (self_intersects ? "YES" : "NO")
               << " | vertices: " << solid_wedge.number_of_vertices()
               << " | faces: " << solid_wedge.number_of_faces() << std::endl << std::flush;
+
+    if (self_intersects) {
+        std::filesystem::create_directories("scratch");
+        CGAL::IO::write_polygon_mesh("scratch/self_touch_wedge.off", solid_wedge);
+        std::cout << "    [Disambiguation] Resolving zero-volume touches with make_geometry_unambiguous..." << std::endl << std::flush;
+        fix::make_geometry_unambiguous(solid_wedge, pinch_bridge_width_ft());
+        self_intersects = CGAL::Polygon_mesh_processing::does_self_intersect(solid_wedge);
+        std::cout << "    [Disambiguation Result] does_self_intersect: " << (self_intersects ? "YES" : "NO") << std::endl << std::flush;
+    }
 
     audit_polygon_soup(soup_points, soup_polygons);
     inspect_self_intersections(solid_wedge, to_z);

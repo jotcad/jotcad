@@ -58,6 +58,10 @@ struct MoldParams {
     FT draft = FT(0);
 };
 
+// Symbolic constant for expanding 2D arrangement zero-area pinches into positive-area bridges
+constexpr double kPinchBridgeWidthMM = 0.01;
+inline FT pinch_bridge_width_ft() { return FT(1) / FT(100); }
+
 struct MoldPiece {
     ExactMesh mesh;
     EK::Vector_3 draw_vector;

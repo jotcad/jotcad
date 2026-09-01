@@ -78,7 +78,9 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                extrusion_overlap_test.cpp \
                mold_test.cpp \
                rig_test.cpp \
-               pour_test.cpp
+               pour_test.cpp \
+               repair_test.cpp \
+               bridge_test.cpp
 
 # Filter out cid_consistency_test.cpp from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
@@ -136,6 +138,15 @@ $(BIN_DIR)/decal_test: $(OBJ_DIR)/decal_test.o $(LIB_GEO)
 $(BIN_DIR)/decal_hill_perf: $(OBJ_DIR)/decal_hill_perf.o $(LIB_GEO)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+# Rule for building the standalone test_repair_wedge binary
+$(BIN_DIR)/test_repair_wedge: $(OBJ_DIR)/test_repair_wedge.o $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/test_repair_wedge.o: test_repair_wedge.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
 # Compile unit_tests.o, generating unit_tests_run.h dynamically first
 $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h $(COMBINED_TEST_SOURCES)

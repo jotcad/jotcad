@@ -188,7 +188,10 @@ bool make_geometry_unambiguous(CGAL::Surface_mesh<typename K::Point_3>& mesh, ty
         }
     }
 
-    if (changed) CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+    if (changed) {
+        CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+        mesh.collect_garbage();
+    }
     return changed;
 }
 
