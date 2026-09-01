@@ -7,6 +7,7 @@
 #include <CGAL/Env_surface_data_traits_3.h>
 #include <CGAL/envelope_3.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/rational_rotation.h>
 #include <list>
 
 namespace jotcad {
@@ -93,32 +94,33 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     FT min_dot,
     const std::vector<ExactMesh::Face_index>& seed_patch_faces = {}
 ) {
-    // Pure exact rational orthogonal transformation (Zero doubles, Zero sqrt)
-    FT dx = d.x(), dy = d.y(), dz = d.z();
-    FT d_sq = dx*dx + dy*dy + dz*dz;
+    // 100% Exact Rational Rotation via CGAL::rational_rotation_approximation (Zero floats downstream)
+    double dx_d = CGAL::to_double(d.x());
+    double dy_d = CGAL::to_double(d.y());
+    double dz_d = CGAL::to_double(d.z());
 
-    // Choose reference u not collinear with d in pure FT
-    FT ux = 0, uy = 0, uz = 1;
-    if (dz * dz * FT(10) > d_sq * FT(9)) {
-        ux = 1; uy = 0; uz = 0;
-    }
+    double phi = std::atan2(dy_d, dx_d);
+    double theta = std::atan2(std::sqrt(dx_d * dx_d + dy_d * dy_d), dz_d);
 
-    // X_basis = u x d (pure exact cross product in EK::FT)
-    FT Xx = uy*dz - uz*dy;
-    FT Xy = uz*dx - ux*dz;
-    FT Xz = ux*dy - uy*dx;
-
-    // Y_basis = d x X_basis (pure exact cross product in EK::FT)
-    FT Yx = dy*Xz - dz*Xy;
-    FT Yy = dz*Xx - dx*Xz;
-    FT Yz = dx*Xy - dy*Xx;
-
-    // Exact rational affine transformation
-    CGAL::Aff_transformation_3<EK> to_z(
-        Xx, Xy, Xz,
-        Yx, Yy, Yz,
-        dx, dy, dz
+    EK::RT sin_phi, cos_phi, w_phi;
+    CGAL::rational_rotation_approximation(-phi, sin_phi, cos_phi, w_phi, EK::RT(1), EK::RT(1000000));
+    CGAL::Aff_transformation_3<EK> Rz(
+        cos_phi, -sin_phi, 0, 0,
+        sin_phi, cos_phi, 0, 0,
+        0, 0, w_phi, 0,
+        w_phi
     );
+
+    EK::RT sin_theta, cos_theta, w_theta;
+    CGAL::rational_rotation_approximation(-theta, sin_theta, cos_theta, w_theta, EK::RT(1), EK::RT(1000000));
+    CGAL::Aff_transformation_3<EK> Ry(
+        cos_theta, 0, sin_theta, 0,
+        0, w_theta, 0, 0,
+        -sin_theta, 0, cos_theta, 0,
+        w_theta
+    );
+
+    CGAL::Aff_transformation_3<EK> to_z = Ry * Rz;
     CGAL::Aff_transformation_3<EK> from_z = to_z.inverse();
 
     FT p_xmin, p_xmax, p_ymin, p_ymax, p_zmin;
@@ -200,25 +202,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         return p0.z() - (n.x() * (vx - p0.x()) + n.y() * (vy - p0.y())) / n.z();
     };
 
-    std::vector<EK::Point_3> soup_points;
-    std::vector<std::vector<size_t>> soup_polygons;
-    std::set<size_t> source_faces;
-
     FT max_vz_rot = -1000000;
-    std::map<std::pair<FT, FT>, std::vector<FT>> canonical_heights;
-    auto get_canonical_z = [&](size_t orig_f_idx, FT vx, FT vy) -> FT {
-        FT raw_z = get_z(orig_f_idx, vx, vy);
-        auto key = std::make_pair(vx, vy);
-        auto& list = canonical_heights[key];
-        for (const auto& existing_z : list) {
-            if (CGAL::abs(raw_z - existing_z) < FT(1e-6)) {
-                return existing_z;
-            }
-        }
-        list.push_back(raw_z);
-        return raw_z;
-    };
-
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
         if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
         size_t orig_f_idx = fit->surfaces_begin()->data();
@@ -226,13 +210,17 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         auto curr = ccb;
         do {
             auto p2d = curr->target()->point();
-            FT vz = get_canonical_z(orig_f_idx, p2d.x(), p2d.y());
+            FT vz = get_z(orig_f_idx, p2d.x(), p2d.y());
             if (vz > max_vz_rot) max_vz_rot = vz;
             curr = curr->next();
         } while (curr != ccb);
     }
 
     FT h_ceiling_rot = max_vz_rot + FT(50);
+
+    std::vector<EK::Point_3> soup_points;
+    std::vector<std::vector<size_t>> soup_polygons;
+    std::set<size_t> source_faces;
 
     // 1. Add all illuminated surface cells (floor + symmetrical ceiling) via uniform 2D CDT
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
@@ -283,9 +271,9 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             auto p1_2d = cdt_fit->vertex(1)->point();
             auto p2_2d = cdt_fit->vertex(2)->point();
 
-            FT vz0 = get_canonical_z(orig_f_idx, p0_2d.x(), p0_2d.y());
-            FT vz1 = get_canonical_z(orig_f_idx, p1_2d.x(), p1_2d.y());
-            FT vz2 = get_canonical_z(orig_f_idx, p2_2d.x(), p2_2d.y());
+            FT vz0 = get_z(orig_f_idx, p0_2d.x(), p0_2d.y());
+            FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
+            FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
 
             EK::Point_3 floor_p0(p0_2d.x(), p0_2d.y(), vz0);
             EK::Point_3 floor_p1(p1_2d.x(), p1_2d.y(), vz1);
@@ -321,7 +309,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             auto f1 = e_curr->face();
             if (!f1->is_unbounded() && f1->number_of_surfaces() > 0) {
                 size_t orig_f = f1->surfaces_begin()->data();
-                FT z = get_canonical_z(orig_f, vit->point().x(), vit->point().y());
+                FT z = get_z(orig_f, vit->point().x(), vit->point().y());
                 vertex_heights[vit].insert(z);
             }
             ++e_curr;
@@ -394,23 +382,31 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         auto p1_2d = h->source()->point();
         auto p2_2d = h->target()->point();
 
-        FT z1_s = get_canonical_z(orig_f, p1_2d.x(), p1_2d.y());
-        FT z1_t = get_canonical_z(orig_f, p2_2d.x(), p2_2d.y());
+        FT z1_s = get_z(orig_f, p1_2d.x(), p1_2d.y());
+        FT z1_t = get_z(orig_f, p2_2d.x(), p2_2d.y());
 
         auto twin_face = h->twin()->face();
         if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
             // Outer sidewall boundary: sweep from surface height up to ceiling
             add_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot);
         } else {
-            // Internal boundary: drop cliff from higher surface down to lower surface
-            size_t orig_f2 = twin_face->surfaces_begin()->data();
-            if (orig_f != orig_f2) {
-                FT z2_s = get_canonical_z(orig_f2, p1_2d.x(), p1_2d.y());
-                FT z2_t = get_canonical_z(orig_f2, p2_2d.x(), p2_2d.y());
+            // Internal boundary: process each undirected edge exactly once using pointer ordering
+            if (h < h->twin()) {
+                size_t orig_f2 = twin_face->surfaces_begin()->data();
+                if (orig_f != orig_f2) {
+                    FT z2_s = get_z(orig_f2, p1_2d.x(), p1_2d.y());
+                    FT z2_t = get_z(orig_f2, p2_2d.x(), p2_2d.y());
 
-                // Strictly one-way downward cliff wall: only if Face 1 is higher than Face 2
-                if (z1_s >= z2_s && z1_t >= z2_t && (z1_s > z2_s || z1_t > z2_t)) {
-                    add_vertical_wall(h, z2_s, z2_t, z1_s, z1_t);
+                    FT sum1 = z1_s + z1_t;
+                    FT sum2 = z2_s + z2_t;
+
+                    if (sum1 > sum2) {
+                        // Face 1 is higher: use h (p1 -> p2), drop from Face 1 down to Face 2
+                        add_vertical_wall(h, z2_s, z2_t, z1_s, z1_t);
+                    } else if (sum2 > sum1) {
+                        // Face 2 is higher: use twin (p2 -> p1), drop from Face 2 down to Face 1
+                        add_vertical_wall(h->twin(), z1_t, z1_s, z2_t, z2_s);
+                    }
                 }
             }
         }
