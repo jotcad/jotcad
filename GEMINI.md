@@ -13,6 +13,10 @@ instructions. All C++ implementations must link against **`-lcrypto`** and **`-l
 
 ## Protocol Invariants (TERMINAL RULES)
 
+- **EXACT KERNEL PURITY (FT OVER DOUBLES MANDATE)**: All geometric algorithms, coordinate systems, and kernel logic MUST use `EK::FT` exact rational arithmetic.
+  1. **`FT` by Default**: Compute all geometric math, planes, vertices, and boundaries in pure `EK::FT`.
+  2. **Single Transform Boundary**: Where non-rational or floating-point inputs are strictly unavoidable (e.g. angle approximations), perform that operation **once** at the boundary to produce a reusable `Transformation` (`CGAL::Aff_transformation_3<EK>`). Once formed, all downstream geometry MUST operate purely on `EK::FT` and `ExactMesh`.
+  3. **Zero Inner-Loop `double` Conversions**: Never call `to_double`, `std::sqrt`, or manual float casts on individual coordinates, vertices, or plane equations inside algorithms.
 - **WIRE-TO-FACE TRANSITION (MANDATORY)**: 1D Segments (Wires) MUST be explicitly promoted to 2D Faces using `jot/fill` before being passed to operators that expect regions (e.g., `jot/offset`, `jot/pdf`). Silent "guessing" of faces from segments is strictly prohibited.
 - **IDENTITY DUALITY (CRITICAL)**: **CID** and **Selector** are top-level alternatives. NEVER wrap a CID in a "fake" Selector. Requests must explicitly signal whether they target a content-hash (CID) or a computational-recipe (Selector).
 - **INDEPENDENT MATRIX MANDATE (CRITICAL)**: Shape matrices (`tf`) represent absolute world-space transforms. No scene-graph multiplication (parent-child accumulation) is allowed. All transformations MUST be applied recursively to child components.

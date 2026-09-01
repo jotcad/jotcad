@@ -1,16 +1,58 @@
 #pragma once
 #include "types.h"
-#include "render/triangulation.h"
+#include <CGAL/Constrained_Delaunay_triangulation_2.h>
+#include <CGAL/Triangulation_face_base_with_info_2.h>
+#include <CGAL/mark_domain_in_triangulation.h>
 #include <CGAL/Env_triangle_traits_3.h>
 #include <CGAL/Env_surface_data_traits_3.h>
 #include <CGAL/envelope_3.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
-#include <CGAL/mark_domain_in_triangulation.h>
 #include <list>
 
 namespace jotcad {
 namespace geo {
 namespace mold {
+
+struct CDTFaceInfo {
+    bool in_domain = false;
+    int _nesting_level = 0;
+};
+
+template <typename Gt, typename Fb_base = CGAL::Constrained_triangulation_face_base_2<Gt>>
+class CDT_Face_with_info : public Fb_base {
+    CDTFaceInfo _info;
+public:
+    typedef Gt Geom_traits;
+    typedef typename Fb_base::Vertex_handle Vertex_handle;
+    typedef typename Fb_base::Face_handle   Face_handle;
+
+    template < typename TDS2 >
+    struct Rebind_TDS {
+        typedef typename Fb_base::template Rebind_TDS<TDS2>::Other Fb2;
+        typedef CDT_Face_with_info<Gt, Fb2> Other;
+    };
+
+    CDT_Face_with_info() : Fb_base() {}
+    CDT_Face_with_info(Vertex_handle v0, Vertex_handle v1, Vertex_handle v2)
+        : Fb_base(v0, v1, v2) {}
+    CDT_Face_with_info(Vertex_handle v0, Vertex_handle v1, Vertex_handle v2,
+                       Face_handle n0, Face_handle n1, Face_handle n2)
+        : Fb_base(v0, v1, v2, n0, n1, n2) {}
+
+    CDTFaceInfo& info() { return _info; }
+    const CDTFaceInfo& info() const { return _info; }
+
+    bool is_in_domain() const { return _info.in_domain; }
+    void set_in_domain(bool b) { _info.in_domain = b; }
+    int nesting_level() const { return _info._nesting_level; }
+    void set_nesting_level(int l) { _info._nesting_level = l; }
+};
+
+typedef CGAL::Triangulation_vertex_base_2<EK> CDTVb;
+typedef CGAL::Constrained_triangulation_face_base_2<EK> CDTFb;
+typedef CDT_Face_with_info<EK, CDTFb> CDTFb_with_info;
+typedef CGAL::Triangulation_data_structure_2<CDTVb, CDTFb_with_info> CDTTDS;
+typedef CGAL::Constrained_Delaunay_triangulation_2<EK, CDTTDS, CGAL::Exact_intersections_tag> ExactCDT;
 
 typedef CGAL::Env_triangle_traits_3<EK> Env_traits_3;
 typedef CGAL::Env_surface_data_traits_3<Env_traits_3, size_t> Data_traits_3;
@@ -177,6 +219,20 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     std::set<size_t> source_faces;
 
     FT max_vz_rot = -1000000;
+    std::map<std::pair<FT, FT>, std::vector<FT>> canonical_heights;
+    auto get_canonical_z = [&](size_t orig_f_idx, FT vx, FT vy) -> FT {
+        FT raw_z = get_z(orig_f_idx, vx, vy);
+        auto key = std::make_pair(vx, vy);
+        auto& list = canonical_heights[key];
+        for (const auto& existing_z : list) {
+            if (CGAL::abs(raw_z - existing_z) < FT(1e-6)) {
+                return existing_z;
+            }
+        }
+        list.push_back(raw_z);
+        return raw_z;
+    };
+
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
         if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
         size_t orig_f_idx = fit->surfaces_begin()->data();
@@ -184,7 +240,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         auto curr = ccb;
         do {
             auto p2d = curr->target()->point();
-            FT vz = get_z(orig_f_idx, p2d.x(), p2d.y());
+            FT vz = get_canonical_z(orig_f_idx, p2d.x(), p2d.y());
             if (vz > max_vz_rot) max_vz_rot = vz;
             curr = curr->next();
         } while (curr != ccb);
@@ -199,10 +255,10 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         size_t orig_f_idx = fit->surfaces_begin()->data();
         source_faces.insert(orig_f_idx);
 
-        CDT cdt;
+        ExactCDT cdt;
         auto ccb = fit->outer_ccb();
         auto curr = ccb;
-        std::vector<CDT::Vertex_handle> outer_vh;
+        std::vector<ExactCDT::Vertex_handle> outer_vh;
         do {
             auto p2d = curr->target()->point();
             outer_vh.push_back(cdt.insert(p2d));
@@ -218,7 +274,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
             auto h_curr = *hole_it;
             auto h_start = h_curr;
-            std::vector<CDT::Vertex_handle> hole_vh;
+            std::vector<ExactCDT::Vertex_handle> hole_vh;
             do {
                 auto p2d = h_curr->target()->point();
                 hole_vh.push_back(cdt.insert(p2d));
@@ -241,9 +297,9 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             auto p1_2d = cdt_fit->vertex(1)->point();
             auto p2_2d = cdt_fit->vertex(2)->point();
 
-            FT vz0 = get_z(orig_f_idx, p0_2d.x(), p0_2d.y());
-            FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
-            FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
+            FT vz0 = get_canonical_z(orig_f_idx, p0_2d.x(), p0_2d.y());
+            FT vz1 = get_canonical_z(orig_f_idx, p1_2d.x(), p1_2d.y());
+            FT vz2 = get_canonical_z(orig_f_idx, p2_2d.x(), p2_2d.y());
 
             EK::Point_3 floor_p0(p0_2d.x(), p0_2d.y(), vz0);
             EK::Point_3 floor_p1(p1_2d.x(), p1_2d.y(), vz1);
@@ -279,52 +335,71 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             auto f1 = e_curr->face();
             if (!f1->is_unbounded() && f1->number_of_surfaces() > 0) {
                 size_t orig_f = f1->surfaces_begin()->data();
-                FT z = get_z(orig_f, vit->point().x(), vit->point().y());
+                FT z = get_canonical_z(orig_f, vit->point().x(), vit->point().y());
                 vertex_heights[vit].insert(z);
             }
             ++e_curr;
         } while (e_curr != e_start);
     }
 
-    // 2. Helper to add a vertical wall quad along directed halfedge h from low heights to high heights
+    // 2. Helper to add a clean 2D-triangulated vertical wall between height lists along directed halfedge h
     auto add_vertical_wall = [&](Envelope_diagram_2::Halfedge_handle h, FT low_s, FT low_t, FT high_s, FT high_t) {
         if (low_s == high_s && low_t == high_t) return;
         auto p1_2d = h->source()->point();
         auto p2_2d = h->target()->point();
-
-        std::vector<FT> right_zs;
-        for (FT z : vertex_heights[h->target()]) {
-            if (z >= low_t && z <= high_t) right_zs.push_back(z);
-        }
-        std::sort(right_zs.begin(), right_zs.end());
 
         std::vector<FT> left_zs;
         for (FT z : vertex_heights[h->source()]) {
             if (z >= low_s && z <= high_s) left_zs.push_back(z);
         }
         std::sort(left_zs.begin(), left_zs.end());
+        if (left_zs.empty() || left_zs.front() > low_s) left_zs.insert(left_zs.begin(), low_s);
+        if (left_zs.back() < high_s) left_zs.push_back(high_s);
 
-        std::vector<size_t> poly_idxs;
-
-        // 1. Bottom right (p2, low_t)
-        poly_idxs.push_back(soup_points.size());
-        soup_points.push_back(EK::Point_3(p2_2d.x(), p2_2d.y(), low_t));
-
-        // 2. Up left vertical edge from (p1, low_s) to (p1, high_s)
-        for (FT z : left_zs) {
-            poly_idxs.push_back(soup_points.size());
-            soup_points.push_back(EK::Point_3(p1_2d.x(), p1_2d.y(), z));
+        std::vector<FT> right_zs;
+        for (FT z : vertex_heights[h->target()]) {
+            if (z >= low_t && z <= high_t) right_zs.push_back(z);
         }
+        std::sort(right_zs.begin(), right_zs.end());
+        if (right_zs.empty() || right_zs.front() > low_t) right_zs.insert(right_zs.begin(), low_t);
+        if (right_zs.back() < high_t) right_zs.push_back(high_t);
 
-        // 3. Down right vertical edge from (p2, high_t) to just above low_t
-        for (int i = (int)right_zs.size() - 1; i >= 0; --i) {
-            if (right_zs[i] == low_t) continue;
-            poly_idxs.push_back(soup_points.size());
-            soup_points.push_back(EK::Point_3(p2_2d.x(), p2_2d.y(), right_zs[i]));
-        }
+        // Monotonic zip triangulation between left_zs and right_zs
+        // Winding order for outward normal to the RIGHT of p1 -> p2:
+        // Left advance:  (p2, right_zs[j]) -> (p1, left_zs[i]) -> (p1, left_zs[i+1])
+        // Right advance: (p2, right_zs[j]) -> (p1, left_zs[i]) -> (p2, right_zs[j+1])
+        size_t i = 0, j = 0;
+        size_t N = left_zs.size(), M = right_zs.size();
+        FT span_L = high_s - low_s;
+        FT span_R = high_t - low_t;
 
-        if (poly_idxs.size() >= 3) {
-            soup_polygons.push_back(poly_idxs);
+        while (i + 1 < N || j + 1 < M) {
+            bool advance_left = false;
+            if (i + 1 < N && j + 1 < M) {
+                FT t_L = (span_L > FT(0)) ? (left_zs[i + 1] - low_s) / span_L : FT(1);
+                FT t_R = (span_R > FT(0)) ? (right_zs[j + 1] - low_t) / span_R : FT(1);
+                advance_left = (t_L <= t_R);
+            } else if (i + 1 < N) {
+                advance_left = true;
+            } else {
+                advance_left = false;
+            }
+
+            if (advance_left) {
+                size_t idx = soup_points.size();
+                soup_points.push_back(EK::Point_3(p2_2d.x(), p2_2d.y(), right_zs[j]));
+                soup_points.push_back(EK::Point_3(p1_2d.x(), p1_2d.y(), left_zs[i]));
+                soup_points.push_back(EK::Point_3(p1_2d.x(), p1_2d.y(), left_zs[i + 1]));
+                soup_polygons.push_back({idx, idx + 1, idx + 2});
+                i++;
+            } else {
+                size_t idx = soup_points.size();
+                soup_points.push_back(EK::Point_3(p2_2d.x(), p2_2d.y(), right_zs[j]));
+                soup_points.push_back(EK::Point_3(p1_2d.x(), p1_2d.y(), left_zs[i]));
+                soup_points.push_back(EK::Point_3(p2_2d.x(), p2_2d.y(), right_zs[j + 1]));
+                soup_polygons.push_back({idx, idx + 1, idx + 2});
+                j++;
+            }
         }
     };
 
@@ -333,8 +408,8 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         auto p1_2d = h->source()->point();
         auto p2_2d = h->target()->point();
 
-        FT z1_s = get_z(orig_f, p1_2d.x(), p1_2d.y());
-        FT z1_t = get_z(orig_f, p2_2d.x(), p2_2d.y());
+        FT z1_s = get_canonical_z(orig_f, p1_2d.x(), p1_2d.y());
+        FT z1_t = get_canonical_z(orig_f, p2_2d.x(), p2_2d.y());
 
         auto twin_face = h->twin()->face();
         if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
@@ -344,8 +419,8 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             // Internal boundary: drop cliff from higher surface down to lower surface
             size_t orig_f2 = twin_face->surfaces_begin()->data();
             if (orig_f != orig_f2) {
-                FT z2_s = get_z(orig_f2, p1_2d.x(), p1_2d.y());
-                FT z2_t = get_z(orig_f2, p2_2d.x(), p2_2d.y());
+                FT z2_s = get_canonical_z(orig_f2, p1_2d.x(), p1_2d.y());
+                FT z2_t = get_canonical_z(orig_f2, p2_2d.x(), p2_2d.y());
 
                 FT low_s = (std::min)(z1_s, z2_s);
                 FT high_s = (std::max)(z1_s, z2_s);
@@ -478,9 +553,10 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
                 auto h = solid_wedge.halfedge(f);
                 auto curr = h;
                 do {
-                    auto p = solid_wedge.point(solid_wedge.target(curr));
+                    auto v = solid_wedge.target(curr);
+                    auto p = solid_wedge.point(v);
                     auto pr = to_z(p);
-                    std::cout << "(" << CGAL::to_double(pr.x()) << ", " << CGAL::to_double(pr.y()) << ", " << CGAL::to_double(pr.z()) << ") ";
+                    std::cout << "v" << v.idx() << "(" << CGAL::to_double(pr.x()) << ", " << CGAL::to_double(pr.y()) << ", " << CGAL::to_double(pr.z()) << ") ";
                     curr = solid_wedge.next(curr);
                 } while (curr != h);
                 std::cout << std::endl;
