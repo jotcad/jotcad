@@ -1,9 +1,11 @@
 #pragma once
 #include "types.h"
+#include "render/triangulation.h"
 #include <CGAL/Env_triangle_traits_3.h>
 #include <CGAL/Env_surface_data_traits_3.h>
 #include <CGAL/envelope_3.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/mark_domain_in_triangulation.h>
 #include <list>
 
 namespace jotcad {
@@ -196,38 +198,110 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         size_t orig_f_idx = fit->surfaces_begin()->data();
         source_faces.insert(orig_f_idx);
 
-        std::vector<size_t> bot_indices;
-        std::vector<EK::Point_2> cell_pts_2d;
-        auto ccb = fit->outer_ccb();
-        auto curr = ccb;
-        do {
-            auto p2d = curr->target()->point();
-            cell_pts_2d.push_back(p2d);
-            FT vx = p2d.x();
-            FT vy = p2d.y();
-            FT vz = get_z(orig_f_idx, vx, vy);
+        if (fit->holes_begin() == fit->holes_end()) {
+            // Simple face without inner holes: direct polygon
+            std::vector<size_t> bot_indices;
+            std::vector<EK::Point_2> cell_pts_2d;
+            auto ccb = fit->outer_ccb();
+            auto curr = ccb;
+            do {
+                auto p2d = curr->target()->point();
+                cell_pts_2d.push_back(p2d);
+                FT vx = p2d.x();
+                FT vy = p2d.y();
+                FT vz = get_z(orig_f_idx, vx, vy);
 
-            EK::Point_3 world_p = unrotate_pt(vx, vy, vz);
-            size_t idx = soup_points.size();
-            soup_points.push_back(world_p);
-            bot_indices.push_back(idx);
-            curr = curr->next();
-        } while (curr != ccb);
+                EK::Point_3 world_p = unrotate_pt(vx, vy, vz);
+                size_t idx = soup_points.size();
+                soup_points.push_back(world_p);
+                bot_indices.push_back(idx);
+                curr = curr->next();
+            } while (curr != ccb);
 
-        if (bot_indices.size() >= 3) {
-            soup_polygons.push_back(bot_indices);
-        }
+            if (bot_indices.size() >= 3) {
+                soup_polygons.push_back(bot_indices);
+            }
 
-        // Symmetrical ceiling cap for this cell (reversed winding so outward normal points +Z)
-        std::vector<size_t> top_indices;
-        for (int i = (int)cell_pts_2d.size() - 1; i >= 0; --i) {
-            EK::Point_3 top_p = unrotate_pt(cell_pts_2d[i].x(), cell_pts_2d[i].y(), h_ceiling_rot);
-            size_t idx = soup_points.size();
-            soup_points.push_back(top_p);
-            top_indices.push_back(idx);
-        }
-        if (top_indices.size() >= 3) {
-            soup_polygons.push_back(top_indices);
+            std::vector<size_t> top_indices;
+            for (int i = (int)cell_pts_2d.size() - 1; i >= 0; --i) {
+                EK::Point_3 top_p = unrotate_pt(cell_pts_2d[i].x(), cell_pts_2d[i].y(), h_ceiling_rot);
+                size_t idx = soup_points.size();
+                soup_points.push_back(top_p);
+                top_indices.push_back(idx);
+            }
+            if (top_indices.size() >= 3) {
+                soup_polygons.push_back(top_indices);
+            }
+        } else {
+            // Face with inner holes/steps: triangulate annular domain between outer boundary and inner cutouts
+            CDT cdt;
+            auto ccb = fit->outer_ccb();
+            auto curr = ccb;
+            std::vector<CDT::Vertex_handle> outer_vh;
+            do {
+                auto p2d = curr->target()->point();
+                outer_vh.push_back(cdt.insert(p2d));
+                curr = curr->next();
+            } while (curr != ccb);
+
+            if (outer_vh.size() >= 3) {
+                for (size_t i = 0; i < outer_vh.size(); ++i) {
+                    cdt.insert_constraint(outer_vh[i], outer_vh[(i + 1) % outer_vh.size()]);
+                }
+            }
+
+            for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
+                auto h_curr = *hole_it;
+                auto h_start = h_curr;
+                std::vector<CDT::Vertex_handle> hole_vh;
+                do {
+                    auto p2d = h_curr->target()->point();
+                    hole_vh.push_back(cdt.insert(p2d));
+                    h_curr = h_curr->next();
+                } while (h_curr != h_start);
+
+                if (hole_vh.size() >= 3) {
+                    for (size_t i = 0; i < hole_vh.size(); ++i) {
+                        cdt.insert_constraint(hole_vh[i], hole_vh[(i + 1) % hole_vh.size()]);
+                    }
+                }
+            }
+
+            CGAL::mark_domain_in_triangulation(cdt);
+
+            for (auto cdt_fit = cdt.finite_faces_begin(); cdt_fit != cdt.finite_faces_end(); ++cdt_fit) {
+                if (!cdt_fit->info().in_domain) continue;
+
+                auto p0_2d = cdt_fit->vertex(0)->point();
+                auto p1_2d = cdt_fit->vertex(1)->point();
+                auto p2_2d = cdt_fit->vertex(2)->point();
+
+                FT vz0 = get_z(orig_f_idx, p0_2d.x(), p0_2d.y());
+                FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
+                FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
+
+                EK::Point_3 floor_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), vz0);
+                EK::Point_3 floor_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), vz1);
+                EK::Point_3 floor_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), vz2);
+
+                EK::Point_3 ceil_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
+                EK::Point_3 ceil_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
+                EK::Point_3 ceil_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), h_ceiling_rot);
+
+                // Floor triangle (matching CDT CCW winding -> CW in 3D for downward -Z outward normal)
+                size_t idx0 = soup_points.size();
+                soup_points.push_back(floor_p0);
+                soup_points.push_back(floor_p2);
+                soup_points.push_back(floor_p1);
+                soup_polygons.push_back({idx0, idx0 + 1, idx0 + 2});
+
+                // Ceiling triangle (CCW winding for upward +Z outward normal)
+                size_t c_idx0 = soup_points.size();
+                soup_points.push_back(ceil_p0);
+                soup_points.push_back(ceil_p1);
+                soup_points.push_back(ceil_p2);
+                soup_polygons.push_back({c_idx0, c_idx0 + 1, c_idx0 + 2});
+            }
         }
     }
 
