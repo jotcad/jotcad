@@ -93,45 +93,31 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     FT min_dot,
     const std::vector<ExactMesh::Face_index>& seed_patch_faces = {}
 ) {
-    // Strictly orthonormal rotation frame
+    // Pure exact rational orthogonal transformation (Zero doubles, Zero sqrt)
     FT dx = d.x(), dy = d.y(), dz = d.z();
     FT d_sq = dx*dx + dy*dy + dz*dz;
-    double d_len = std::sqrt(CGAL::to_double(d_sq));
-    FT inv_d_len = (d_len > 1e-12) ? FT(1.0 / d_len) : FT(1);
 
-    // Normalized z_basis (look direction):
-    FT zx = dx * inv_d_len;
-    FT zy = dy * inv_d_len;
-    FT zz = dz * inv_d_len;
-
-    // Choose reference u not collinear with z_basis:
+    // Choose reference u not collinear with d in pure FT
     FT ux = 0, uy = 0, uz = 1;
-    if (zz * zz > FT(0.9)) {
+    if (dz * dz * FT(10) > d_sq * FT(9)) {
         ux = 1; uy = 0; uz = 0;
     }
 
-    FT u_dot_z = ux*zx + uy*zy + uz*zz;
-    FT tx = ux - u_dot_z * zx;
-    FT ty = uy - u_dot_z * zy;
-    FT tz = uz - u_dot_z * zz;
-    FT t_sq = tx*tx + ty*ty + tz*tz;
-    double t_len = std::sqrt(CGAL::to_double(t_sq));
-    FT inv_t_len = (t_len > 1e-12) ? FT(1.0 / t_len) : FT(1);
+    // X_basis = u x d (pure exact cross product in EK::FT)
+    FT Xx = uy*dz - uz*dy;
+    FT Xy = uz*dx - ux*dz;
+    FT Xz = ux*dy - uy*dx;
 
-    // Normalized x_basis:
-    FT xx = tx * inv_t_len;
-    FT xy = ty * inv_t_len;
-    FT xz = tz * inv_t_len;
+    // Y_basis = d x X_basis (pure exact cross product in EK::FT)
+    FT Yx = dy*Xz - dz*Xy;
+    FT Yy = dz*Xx - dx*Xz;
+    FT Yz = dx*Xy - dy*Xx;
 
-    // Normalized y_basis = z_basis x x_basis:
-    FT yx = zy*xz - zz*xy;
-    FT yy = zz*xx - zx*xz;
-    FT yz = zx*xy - zy*xx;
-
+    // Exact rational affine transformation
     CGAL::Aff_transformation_3<EK> to_z(
-        xx, xy, xz,
-        yx, yy, yz,
-        zx, zy, zz
+        Xx, Xy, Xz,
+        Yx, Yy, Yz,
+        dx, dy, dz
     );
     CGAL::Aff_transformation_3<EK> from_z = to_z.inverse();
 
@@ -422,14 +408,9 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
                 FT z2_s = get_canonical_z(orig_f2, p1_2d.x(), p1_2d.y());
                 FT z2_t = get_canonical_z(orig_f2, p2_2d.x(), p2_2d.y());
 
-                FT low_s = (std::min)(z1_s, z2_s);
-                FT high_s = (std::max)(z1_s, z2_s);
-                FT low_t = (std::min)(z1_t, z2_t);
-                FT high_t = (std::max)(z1_t, z2_t);
-
-                // Only the strictly higher face emits the downward cliff wall
-                if ((z1_s + z1_t) > (z2_s + z2_t)) {
-                    add_vertical_wall(h, low_s, low_t, high_s, high_t);
+                // Strictly one-way downward cliff wall: only if Face 1 is higher than Face 2
+                if (z1_s >= z2_s && z1_t >= z2_t && (z1_s > z2_s || z1_t > z2_t)) {
+                    add_vertical_wall(h, z2_s, z2_t, z1_s, z1_t);
                 }
             }
         }
@@ -556,7 +537,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
                     auto v = solid_wedge.target(curr);
                     auto p = solid_wedge.point(v);
                     auto pr = to_z(p);
-                    std::cout << "v" << v.idx() << "(" << CGAL::to_double(pr.x()) << ", " << CGAL::to_double(pr.y()) << ", " << CGAL::to_double(pr.z()) << ") ";
+                    std::cout << "v" << v.idx() << "(" << pr.x() << ", " << pr.y() << ", " << pr.z() << ") ";
                     curr = solid_wedge.next(curr);
                 } while (curr != h);
                 std::cout << std::endl;
