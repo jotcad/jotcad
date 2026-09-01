@@ -191,117 +191,80 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
 
     FT h_ceiling_rot = max_vz_rot + FT(50);
 
-    // 1. Add all illuminated surface cells (floor + symmetrical ceiling)
+    // 1. Add all illuminated surface cells (floor + symmetrical ceiling) via uniform 2D CDT
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
         if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
 
         size_t orig_f_idx = fit->surfaces_begin()->data();
         source_faces.insert(orig_f_idx);
 
-        if (fit->holes_begin() == fit->holes_end()) {
-            // Simple face without inner holes: direct polygon
-            std::vector<size_t> bot_indices;
-            std::vector<EK::Point_2> cell_pts_2d;
-            auto ccb = fit->outer_ccb();
-            auto curr = ccb;
+        CDT cdt;
+        auto ccb = fit->outer_ccb();
+        auto curr = ccb;
+        std::vector<CDT::Vertex_handle> outer_vh;
+        do {
+            auto p2d = curr->target()->point();
+            outer_vh.push_back(cdt.insert(p2d));
+            curr = curr->next();
+        } while (curr != ccb);
+
+        if (outer_vh.size() >= 3) {
+            for (size_t i = 0; i < outer_vh.size(); ++i) {
+                cdt.insert_constraint(outer_vh[i], outer_vh[(i + 1) % outer_vh.size()]);
+            }
+        }
+
+        for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
+            auto h_curr = *hole_it;
+            auto h_start = h_curr;
+            std::vector<CDT::Vertex_handle> hole_vh;
             do {
-                auto p2d = curr->target()->point();
-                cell_pts_2d.push_back(p2d);
-                FT vx = p2d.x();
-                FT vy = p2d.y();
-                FT vz = get_z(orig_f_idx, vx, vy);
+                auto p2d = h_curr->target()->point();
+                hole_vh.push_back(cdt.insert(p2d));
+                h_curr = h_curr->next();
+            } while (h_curr != h_start);
 
-                EK::Point_3 world_p = unrotate_pt(vx, vy, vz);
-                size_t idx = soup_points.size();
-                soup_points.push_back(world_p);
-                bot_indices.push_back(idx);
-                curr = curr->next();
-            } while (curr != ccb);
-
-            if (bot_indices.size() >= 3) {
-                soup_polygons.push_back(bot_indices);
-            }
-
-            std::vector<size_t> top_indices;
-            for (int i = (int)cell_pts_2d.size() - 1; i >= 0; --i) {
-                EK::Point_3 top_p = unrotate_pt(cell_pts_2d[i].x(), cell_pts_2d[i].y(), h_ceiling_rot);
-                size_t idx = soup_points.size();
-                soup_points.push_back(top_p);
-                top_indices.push_back(idx);
-            }
-            if (top_indices.size() >= 3) {
-                soup_polygons.push_back(top_indices);
-            }
-        } else {
-            // Face with inner holes/steps: triangulate annular domain between outer boundary and inner cutouts
-            CDT cdt;
-            auto ccb = fit->outer_ccb();
-            auto curr = ccb;
-            std::vector<CDT::Vertex_handle> outer_vh;
-            do {
-                auto p2d = curr->target()->point();
-                outer_vh.push_back(cdt.insert(p2d));
-                curr = curr->next();
-            } while (curr != ccb);
-
-            if (outer_vh.size() >= 3) {
-                for (size_t i = 0; i < outer_vh.size(); ++i) {
-                    cdt.insert_constraint(outer_vh[i], outer_vh[(i + 1) % outer_vh.size()]);
+            if (hole_vh.size() >= 3) {
+                for (size_t i = 0; i < hole_vh.size(); ++i) {
+                    cdt.insert_constraint(hole_vh[i], hole_vh[(i + 1) % hole_vh.size()]);
                 }
             }
+        }
 
-            for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
-                auto h_curr = *hole_it;
-                auto h_start = h_curr;
-                std::vector<CDT::Vertex_handle> hole_vh;
-                do {
-                    auto p2d = h_curr->target()->point();
-                    hole_vh.push_back(cdt.insert(p2d));
-                    h_curr = h_curr->next();
-                } while (h_curr != h_start);
+        CGAL::mark_domain_in_triangulation(cdt);
 
-                if (hole_vh.size() >= 3) {
-                    for (size_t i = 0; i < hole_vh.size(); ++i) {
-                        cdt.insert_constraint(hole_vh[i], hole_vh[(i + 1) % hole_vh.size()]);
-                    }
-                }
-            }
+        for (auto cdt_fit = cdt.finite_faces_begin(); cdt_fit != cdt.finite_faces_end(); ++cdt_fit) {
+            if (!cdt_fit->info().in_domain) continue;
 
-            CGAL::mark_domain_in_triangulation(cdt);
+            auto p0_2d = cdt_fit->vertex(0)->point();
+            auto p1_2d = cdt_fit->vertex(1)->point();
+            auto p2_2d = cdt_fit->vertex(2)->point();
 
-            for (auto cdt_fit = cdt.finite_faces_begin(); cdt_fit != cdt.finite_faces_end(); ++cdt_fit) {
-                if (!cdt_fit->info().in_domain) continue;
+            FT vz0 = get_z(orig_f_idx, p0_2d.x(), p0_2d.y());
+            FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
+            FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
 
-                auto p0_2d = cdt_fit->vertex(0)->point();
-                auto p1_2d = cdt_fit->vertex(1)->point();
-                auto p2_2d = cdt_fit->vertex(2)->point();
+            EK::Point_3 floor_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), vz0);
+            EK::Point_3 floor_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), vz1);
+            EK::Point_3 floor_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), vz2);
 
-                FT vz0 = get_z(orig_f_idx, p0_2d.x(), p0_2d.y());
-                FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
-                FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
+            EK::Point_3 ceil_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), h_ceiling_rot);
 
-                EK::Point_3 floor_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), vz0);
-                EK::Point_3 floor_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), vz1);
-                EK::Point_3 floor_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), vz2);
+            // Floor triangle (matching CDT CCW winding -> CW in 3D for downward -Z outward normal)
+            size_t idx0 = soup_points.size();
+            soup_points.push_back(floor_p0);
+            soup_points.push_back(floor_p2);
+            soup_points.push_back(floor_p1);
+            soup_polygons.push_back({idx0, idx0 + 1, idx0 + 2});
 
-                EK::Point_3 ceil_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
-                EK::Point_3 ceil_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
-                EK::Point_3 ceil_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), h_ceiling_rot);
-
-                // Floor triangle (matching CDT CCW winding -> CW in 3D for downward -Z outward normal)
-                size_t idx0 = soup_points.size();
-                soup_points.push_back(floor_p0);
-                soup_points.push_back(floor_p2);
-                soup_points.push_back(floor_p1);
-                soup_polygons.push_back({idx0, idx0 + 1, idx0 + 2});
-
-                // Ceiling triangle (CCW winding for upward +Z outward normal)
-                size_t c_idx0 = soup_points.size();
-                soup_points.push_back(ceil_p0);
-                soup_points.push_back(ceil_p1);
-                soup_points.push_back(ceil_p2);
-                soup_polygons.push_back({c_idx0, c_idx0 + 1, c_idx0 + 2});
-            }
+            // Ceiling triangle (CCW winding for upward +Z outward normal)
+            size_t c_idx0 = soup_points.size();
+            soup_points.push_back(ceil_p0);
+            soup_points.push_back(ceil_p1);
+            soup_points.push_back(ceil_p2);
+            soup_polygons.push_back({c_idx0, c_idx0 + 1, c_idx0 + 2});
         }
     }
 
@@ -322,113 +285,76 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         } while (e_curr != e_start);
     }
 
-    // 2. Add vertical cliff quads at step discontinuities with intermediate height subdivision
-    for (auto eit = max_diag.edges_begin(); eit != max_diag.edges_end(); ++eit) {
-        auto f1 = eit->face();
-        auto f2 = eit->twin()->face();
-        if (f1->is_unbounded() || f2->is_unbounded()) continue;
-        if (f1->number_of_surfaces() == 0 || f2->number_of_surfaces() == 0) continue;
+    // 2. Helper to add a vertical wall quad along directed halfedge h from low heights to high heights
+    auto add_vertical_wall = [&](Envelope_diagram_2::Halfedge_handle h, FT low_s, FT low_t, FT high_s, FT high_t) {
+        if (low_s == high_s && low_t == high_t) return;
+        auto p1_2d = h->source()->point();
+        auto p2_2d = h->target()->point();
 
-        size_t orig_f1 = f1->surfaces_begin()->data();
-        size_t orig_f2 = f2->surfaces_begin()->data();
-        if (orig_f1 == orig_f2) continue;
-
-        auto p1_2d = eit->source()->point();
-        auto p2_2d = eit->target()->point();
-
-        FT z1_s = get_z(orig_f1, p1_2d.x(), p1_2d.y());
-        FT z1_t = get_z(orig_f1, p2_2d.x(), p2_2d.y());
-
-        FT z2_s = get_z(orig_f2, p1_2d.x(), p1_2d.y());
-        FT z2_t = get_z(orig_f2, p2_2d.x(), p2_2d.y());
-
-        if (z1_s != z2_s || z1_t != z2_t) {
-            bool f1_is_higher = ((z1_s + z1_t) >= (z2_s + z2_t));
-            FT low_s = f1_is_higher ? z2_s : z1_s;
-            FT high_s = f1_is_higher ? z1_s : z2_s;
-            FT low_t = f1_is_higher ? z2_t : z1_t;
-            FT high_t = f1_is_higher ? z1_t : z2_t;
-
-            std::vector<FT> right_zs;
-            for (FT z : vertex_heights[eit->target()]) {
-                if (z >= low_t && z <= high_t) right_zs.push_back(z);
-            }
-            std::sort(right_zs.begin(), right_zs.end());
-
-            std::vector<FT> left_zs;
-            for (FT z : vertex_heights[eit->source()]) {
-                if (z >= low_s && z <= high_s) left_zs.push_back(z);
-            }
-            std::sort(left_zs.begin(), left_zs.end(), std::greater<FT>());
-
-            std::vector<size_t> poly_idxs;
-
-            // Bottom left
-            poly_idxs.push_back(soup_points.size());
-            soup_points.push_back(unrotate_pt(p1_2d.x(), p1_2d.y(), low_s));
-
-            // Up right vertical edge
-            for (FT z : right_zs) {
-                poly_idxs.push_back(soup_points.size());
-                soup_points.push_back(unrotate_pt(p2_2d.x(), p2_2d.y(), z));
-            }
-
-            // Down left vertical edge
-            for (FT z : left_zs) {
-                if (z == low_s) continue;
-                poly_idxs.push_back(soup_points.size());
-                soup_points.push_back(unrotate_pt(p1_2d.x(), p1_2d.y(), z));
-            }
-
-            if (poly_idxs.size() >= 3) {
-                soup_polygons.push_back(poly_idxs);
-            }
+        std::vector<FT> right_zs;
+        for (FT z : vertex_heights[h->target()]) {
+            if (z >= low_t && z <= high_t) right_zs.push_back(z);
         }
-    }
+        std::sort(right_zs.begin(), right_zs.end());
 
-    // 3. Add swept sidewall quads for true outer/aperture boundary halfedges (adjacent to unbounded space or empty cells)
+        std::vector<FT> left_zs;
+        for (FT z : vertex_heights[h->source()]) {
+            if (z >= low_s && z <= high_s) left_zs.push_back(z);
+        }
+        std::sort(left_zs.begin(), left_zs.end());
 
-    auto add_sidewall_if_boundary = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
-        if (h->twin()->face()->is_unbounded() || h->twin()->face()->number_of_surfaces() == 0) {
-            auto p1_2d = h->source()->point();
-            auto p2_2d = h->target()->point();
+        std::vector<size_t> poly_idxs;
 
-            FT z_s = get_z(orig_f, p1_2d.x(), p1_2d.y());
-            FT z_t = get_z(orig_f, p2_2d.x(), p2_2d.y());
+        // 1. Bottom right (p2, low_t)
+        poly_idxs.push_back(soup_points.size());
+        soup_points.push_back(unrotate_pt(p2_2d.x(), p2_2d.y(), low_t));
 
-            std::vector<FT> right_zs;
-            for (FT z : vertex_heights[h->target()]) {
-                if (z >= z_t && z <= h_ceiling_rot) right_zs.push_back(z);
-            }
-            std::sort(right_zs.begin(), right_zs.end());
-
-            std::vector<FT> left_zs;
-            for (FT z : vertex_heights[h->source()]) {
-                if (z >= z_s && z <= h_ceiling_rot) left_zs.push_back(z);
-            }
-            std::sort(left_zs.begin(), left_zs.end());
-
-            std::vector<size_t> poly_idxs;
-
-            // 1. Bottom right (p2, z_t)
+        // 2. Up left vertical edge from (p1, low_s) to (p1, high_s)
+        for (FT z : left_zs) {
             poly_idxs.push_back(soup_points.size());
-            soup_points.push_back(unrotate_pt(p2_2d.x(), p2_2d.y(), z_t));
+            soup_points.push_back(unrotate_pt(p1_2d.x(), p1_2d.y(), z));
+        }
 
-            // 2. Up left vertical edge from (p1, z_s) to (p1, h_ceiling)
-            for (FT z : left_zs) {
-                poly_idxs.push_back(soup_points.size());
-                soup_points.push_back(unrotate_pt(p1_2d.x(), p1_2d.y(), z));
-            }
+        // 3. Down right vertical edge from (p2, high_t) to just above low_t
+        for (int i = (int)right_zs.size() - 1; i >= 0; --i) {
+            if (right_zs[i] == low_t) continue;
+            poly_idxs.push_back(soup_points.size());
+            soup_points.push_back(unrotate_pt(p2_2d.x(), p2_2d.y(), right_zs[i]));
+        }
 
-            // 3. Down right vertical edge from (p2, h_ceiling) to just above z_t
-            for (int i = (int)right_zs.size() - 1; i >= 0; --i) {
-                if (right_zs[i] == z_t) continue;
-                poly_idxs.push_back(soup_points.size());
-                soup_points.push_back(unrotate_pt(p2_2d.x(), p2_2d.y(), right_zs[i]));
-            }
+        if (poly_idxs.size() >= 3) {
+            soup_polygons.push_back(poly_idxs);
+        }
+    };
 
-            if (poly_idxs.size() >= 3) {
-                soup_polygons.push_back(poly_idxs);
+    // 3. Process all directed halfedges for both internal step cliffs and outer sidewalls
+    auto process_halfedge_walls = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
+        auto p1_2d = h->source()->point();
+        auto p2_2d = h->target()->point();
+
+        FT z1_s = get_z(orig_f, p1_2d.x(), p1_2d.y());
+        FT z1_t = get_z(orig_f, p2_2d.x(), p2_2d.y());
+
+        auto twin_face = h->twin()->face();
+        if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
+            // Outer sidewall boundary: sweep from surface height up to ceiling
+            add_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot);
+        } else {
+            // Internal boundary: drop cliff from higher surface down to lower surface
+            size_t orig_f2 = twin_face->surfaces_begin()->data();
+            if (orig_f != orig_f2) {
+                FT z2_s = get_z(orig_f2, p1_2d.x(), p1_2d.y());
+                FT z2_t = get_z(orig_f2, p2_2d.x(), p2_2d.y());
+
+                FT low_s = (std::min)(z1_s, z2_s);
+                FT high_s = (std::max)(z1_s, z2_s);
+                FT low_t = (std::min)(z1_t, z2_t);
+                FT high_t = (std::max)(z1_t, z2_t);
+
+                // Only the strictly higher face emits the downward cliff wall
+                if ((z1_s + z1_t) > (z2_s + z2_t)) {
+                    add_vertical_wall(h, low_s, low_t, high_s, high_t);
+                }
             }
         }
     };
@@ -440,7 +366,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         auto ccb = fit->outer_ccb();
         auto curr = ccb;
         do {
-            add_sidewall_if_boundary(curr, orig_f);
+            process_halfedge_walls(curr, orig_f);
             curr = curr->next();
         } while (curr != ccb);
 
@@ -448,7 +374,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             auto h_curr = *hole_it;
             auto h_start = h_curr;
             do {
-                add_sidewall_if_boundary(h_curr, orig_f);
+                process_halfedge_walls(h_curr, orig_f);
                 h_curr = h_curr->next();
             } while (h_curr != h_start);
         }
@@ -539,10 +465,24 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     CGAL::Polygon_mesh_processing::self_intersections(solid_wedge, std::back_inserter(intersected_pairs));
     if (!intersected_pairs.empty()) {
         std::cout << "    [Self-Intersections] Total intersecting face pairs: " << intersected_pairs.size() << std::endl;
-        for (size_t i = 0; i < (std::min)(intersected_pairs.size(), size_t(5)); ++i) {
+        for (size_t i = 0; i < (std::min)(intersected_pairs.size(), size_t(3)); ++i) {
             auto f1 = intersected_pairs[i].first;
             auto f2 = intersected_pairs[i].second;
             std::cout << "      Pair #" << (i + 1) << ": Face " << f1 << " vs Face " << f2 << std::endl;
+            auto print_f = [&](ExactMesh::Face_index f, const char* name) {
+                std::cout << "        " << name << " " << f << ": ";
+                auto h = solid_wedge.halfedge(f);
+                auto curr = h;
+                do {
+                    auto p = solid_wedge.point(solid_wedge.target(curr));
+                    auto pr = rotate_pt(p);
+                    std::cout << "(" << CGAL::to_double(pr.x()) << ", " << CGAL::to_double(pr.y()) << ", " << CGAL::to_double(pr.z()) << ") ";
+                    curr = solid_wedge.next(curr);
+                } while (curr != h);
+                std::cout << std::endl;
+            };
+            print_f(f1, "f1");
+            print_f(f2, "f2");
         }
     }
 
