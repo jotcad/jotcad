@@ -13,6 +13,7 @@
 #include <CGAL/Polygon_mesh_processing/measure.h>
 #include <chrono>
 #include <list>
+#include <queue>
 
 namespace jotcad {
 namespace geo {
@@ -92,54 +93,89 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
 ) {
     auto [to_z, from_z] = compute_exact_z_rotation(d);
 
-    FT p_xmin, p_xmax, p_ymin, p_ymax, p_zmin;
+    std::set<ExactMesh::Face_index> candidate_faces;
     bool has_seed = !seed_patch_faces.empty();
     if (has_seed) {
-        bool first = true;
+        std::queue<ExactMesh::Face_index> q;
         for (auto f : seed_patch_faces) {
-            auto h = mesh_part.halfedge(f);
-            for (int i = 0; i < 3; ++i) {
-                auto p_rot = to_z(mesh_part.point(mesh_part.source(h)));
-                if (first) {
-                    p_xmin = p_xmax = p_rot.x();
-                    p_ymin = p_ymax = p_rot.y();
-                    p_zmin = p_rot.z();
-                    first = false;
-                } else {
-                    p_xmin = (std::min)(p_xmin, p_rot.x());
-                    p_xmax = (std::max)(p_xmax, p_rot.x());
-                    p_ymin = (std::min)(p_ymin, p_rot.y());
-                    p_ymax = (std::max)(p_ymax, p_rot.y());
-                    p_zmin = (std::min)(p_zmin, p_rot.z());
+            candidate_faces.insert(f);
+            q.push(f);
+        }
+        while (!q.empty()) {
+            auto curr_f = q.front();
+            q.pop();
+            auto h = mesh_part.halfedge(curr_f);
+            auto h_start = h;
+            do {
+                auto h_twin = mesh_part.opposite(h);
+                if (h_twin != ExactMesh::null_halfedge()) {
+                    auto neighbor_f = mesh_part.face(h_twin);
+                    if (neighbor_f != ExactMesh::null_face() && !is_handled[neighbor_f]) {
+                        size_t n_idx = neighbor_f.idx();
+                        if (face_normals[n_idx] * d >= min_dot) {
+                            if (candidate_faces.insert(neighbor_f).second) {
+                                q.push(neighbor_f);
+                            }
+                        }
+                    }
                 }
                 h = mesh_part.next(h);
+            } while (h != h_start);
+        }
+    } else {
+        std::set<ExactMesh::Face_index> eligible;
+        for (size_t f_idx = 0; f_idx < face_descriptors.size(); ++f_idx) {
+            auto f = face_descriptors[f_idx];
+            if (!is_handled[f] && face_normals[f_idx] * d >= min_dot) {
+                eligible.insert(f);
+            }
+        }
+        std::set<ExactMesh::Face_index> visited;
+        std::vector<std::vector<ExactMesh::Face_index>> components;
+        for (auto f : eligible) {
+            if (visited.count(f)) continue;
+            std::vector<ExactMesh::Face_index> comp;
+            std::queue<ExactMesh::Face_index> q;
+            q.push(f);
+            visited.insert(f);
+            while (!q.empty()) {
+                auto curr = q.front();
+                q.pop();
+                comp.push_back(curr);
+                auto h = mesh_part.halfedge(curr);
+                auto h_start = h;
+                do {
+                    auto h_twin = mesh_part.opposite(h);
+                    if (h_twin != ExactMesh::null_halfedge()) {
+                        auto n_f = mesh_part.face(h_twin);
+                        if (n_f != ExactMesh::null_face() && eligible.count(n_f)) {
+                            if (visited.insert(n_f).second) {
+                                q.push(n_f);
+                            }
+                        }
+                    }
+                    h = mesh_part.next(h);
+                } while (h != h_start);
+            }
+            components.push_back(comp);
+        }
+        size_t max_sz = 0;
+        for (const auto& comp : components) {
+            if (comp.size() > max_sz) {
+                max_sz = comp.size();
+                candidate_faces = std::set<ExactMesh::Face_index>(comp.begin(), comp.end());
             }
         }
     }
 
     std::map<size_t, std::array<EK::Point_3, 3>> rotated_tris;
     std::list<Data_triangle_3> triangles;
-    for (size_t f_idx = 0; f_idx < face_descriptors.size(); ++f_idx) {
-        auto f = face_descriptors[f_idx];
-        if (is_handled[f]) continue;
-        if (face_normals[f_idx] * d < min_dot) continue;
-
+    for (auto f : candidate_faces) {
+        size_t f_idx = f.idx();
         auto h = mesh_part.halfedge(f);
         auto p0 = to_z(mesh_part.point(mesh_part.source(h)));
         auto p1 = to_z(mesh_part.point(mesh_part.target(h)));
         auto p2 = to_z(mesh_part.point(mesh_part.target(mesh_part.next(h))));
-
-        if (has_seed) {
-            FT f_xmin = (std::min)({p0.x(), p1.x(), p2.x()});
-            FT f_xmax = (std::max)({p0.x(), p1.x(), p2.x()});
-            FT f_ymin = (std::min)({p0.y(), p1.y(), p2.y()});
-            FT f_ymax = (std::max)({p0.y(), p1.y(), p2.y()});
-            FT f_zmax = (std::max)({p0.z(), p1.z(), p2.z()});
-
-            if (f_xmax < p_xmin || f_xmin > p_xmax || f_ymax < p_ymin || f_ymax > p_ymax || f_zmax < p_zmin) {
-                continue;
-            }
-        }
 
         if (!CGAL::collinear(p0, p1, p2)) {
             EK::Triangle_3 tri(p0, p1, p2);
