@@ -525,21 +525,40 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             auto f1 = intersected_pairs[i].first;
             auto f2 = intersected_pairs[i].second;
             std::cout << "      Pair #" << (i + 1) << ": Face " << f1 << " vs Face " << f2 << std::endl;
-            auto print_f = [&](ExactMesh::Face_index f, const char* name) {
+            
+            std::vector<ExactMesh::Vertex_index> v_f1, v_f2;
+            auto get_verts = [&](ExactMesh::Face_index f, std::vector<ExactMesh::Vertex_index>& out_v, const char* name) {
                 std::cout << "        " << name << " " << f << ": ";
                 auto h = solid_wedge.halfedge(f);
                 auto curr = h;
                 do {
                     auto v = solid_wedge.target(curr);
+                    out_v.push_back(v);
                     auto p = solid_wedge.point(v);
                     auto pr = to_z(p);
-                    std::cout << "v" << v.idx() << "(" << pr.x() << ", " << pr.y() << ", " << pr.z() << ") ";
+                    std::cout << "v" << v.idx() << "(X=" << pr.x() << ", Y=" << pr.y() << ", Z=" << pr.z() << ") ";
                     curr = solid_wedge.next(curr);
                 } while (curr != h);
                 std::cout << std::endl;
             };
-            print_f(f1, "f1");
-            print_f(f2, "f2");
+            get_verts(f1, v_f1, "f1");
+            get_verts(f2, v_f2, "f2");
+
+            for (auto va : v_f1) {
+                auto pa = to_z(solid_wedge.point(va));
+                for (auto vb : v_f2) {
+                    auto pb = to_z(solid_wedge.point(vb));
+                    FT dx = pa.x() - pb.x();
+                    FT dy = pa.y() - pb.y();
+                    FT dz = pa.z() - pb.z();
+                    if (CGAL::abs(dx) < FT(1e-4) && CGAL::abs(dy) < FT(1e-4)) {
+                        std::cout << "        [Vertex Comparison] v" << va.idx() << " vs v" << vb.idx() << ":" << std::endl;
+                        std::cout << "          dx = " << dx << " (is_zero: " << (dx == FT(0)) << ")" << std::endl;
+                        std::cout << "          dy = " << dy << " (is_zero: " << (dy == FT(0)) << ")" << std::endl;
+                        std::cout << "          dz = " << dz << " (is_zero: " << (dz == FT(0)) << ")" << std::endl;
+                    }
+                }
+            }
         }
     }
 
