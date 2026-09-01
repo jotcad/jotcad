@@ -51,46 +51,47 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     FT min_dot,
     const std::vector<ExactMesh::Face_index>& seed_patch_faces = {}
 ) {
-    // Pure FT exact orthogonal frame
+    // Strictly orthonormal rotation frame
     FT dx = d.x(), dy = d.y(), dz = d.z();
     FT d_sq = dx*dx + dy*dy + dz*dz;
+    double d_len = std::sqrt(CGAL::to_double(d_sq));
+    FT inv_d_len = (d_len > 1e-12) ? FT(1.0 / d_len) : FT(1);
 
-    // Choose reference u not collinear with d in pure FT
+    // Normalized z_basis (look direction):
+    FT zx = dx * inv_d_len;
+    FT zy = dy * inv_d_len;
+    FT zz = dz * inv_d_len;
+
+    // Choose reference u not collinear with z_basis:
     FT ux = 0, uy = 0, uz = 1;
-    if (dz * dz * FT(10) > d_sq * FT(9)) {
+    if (zz * zz > FT(0.9)) {
         ux = 1; uy = 0; uz = 0;
     }
 
-    FT u_dot_d = ux*dx + uy*dy + uz*dz;
-    // x_basis = u - (u . d / d_sq) * d
-    FT xx = ux - (u_dot_d * dx) / d_sq;
-    FT xy = uy - (u_dot_d * dy) / d_sq;
-    FT xz = uz - (u_dot_d * dz) / d_sq;
-    FT x_sq = xx*xx + xy*xy + xz*xz;
+    FT u_dot_z = ux*zx + uy*zy + uz*zz;
+    FT tx = ux - u_dot_z * zx;
+    FT ty = uy - u_dot_z * zy;
+    FT tz = uz - u_dot_z * zz;
+    FT t_sq = tx*tx + ty*ty + tz*tz;
+    double t_len = std::sqrt(CGAL::to_double(t_sq));
+    FT inv_t_len = (t_len > 1e-12) ? FT(1.0 / t_len) : FT(1);
 
-    // y_basis = d x x_basis
-    FT yx = dy*xz - dz*xy;
-    FT yy = dz*xx - dx*xz;
-    FT yz = dx*xy - dy*xx;
-    FT y_sq = yx*yx + yy*yy + yz*yz;
+    // Normalized x_basis:
+    FT xx = tx * inv_t_len;
+    FT xy = ty * inv_t_len;
+    FT xz = tz * inv_t_len;
 
-    auto rotate_pt = [&](const EK::Point_3& p) -> EK::Point_3 {
-        FT px = p.x(), py = p.y(), pz = p.z();
-        FT rx = px*xx + py*xy + pz*xz;
-        FT ry = px*yx + py*yy + pz*yz;
-        FT rz = px*dx + py*dy + pz*dz;
-        return EK::Point_3(rx, ry, rz);
-    };
+    // Normalized y_basis = z_basis x x_basis:
+    FT yx = zy*xz - zz*xy;
+    FT yy = zz*xx - zx*xz;
+    FT yz = zx*xy - zy*xx;
 
-    auto unrotate_pt = [&](FT rx, FT ry, FT rz) -> EK::Point_3 {
-        FT cx = rx / x_sq;
-        FT cy = ry / y_sq;
-        FT cz = rz / d_sq;
-        FT px = cx*xx + cy*yx + cz*dx;
-        FT py = cx*xy + cy*yy + cz*dy;
-        FT pz = cx*xz + cy*yz + cz*dz;
-        return EK::Point_3(px, py, pz);
-    };
+    CGAL::Aff_transformation_3<EK> to_z(
+        xx, xy, xz,
+        yx, yy, yz,
+        zx, zy, zz
+    );
+    CGAL::Aff_transformation_3<EK> from_z = to_z.inverse();
 
     FT p_xmin, p_xmax, p_ymin, p_ymax, p_zmin;
     bool has_seed = !seed_patch_faces.empty();
@@ -99,7 +100,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         for (auto f : seed_patch_faces) {
             auto h = mesh_part.halfedge(f);
             for (int i = 0; i < 3; ++i) {
-                auto p_rot = rotate_pt(mesh_part.point(mesh_part.source(h)));
+                auto p_rot = to_z(mesh_part.point(mesh_part.source(h)));
                 if (first) {
                     p_xmin = p_xmax = p_rot.x();
                     p_ymin = p_ymax = p_rot.y();
@@ -125,9 +126,9 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         if (face_normals[f_idx] * d < min_dot) continue;
 
         auto h = mesh_part.halfedge(f);
-        auto p0 = rotate_pt(mesh_part.point(mesh_part.source(h)));
-        auto p1 = rotate_pt(mesh_part.point(mesh_part.target(h)));
-        auto p2 = rotate_pt(mesh_part.point(mesh_part.target(mesh_part.next(h))));
+        auto p0 = to_z(mesh_part.point(mesh_part.source(h)));
+        auto p1 = to_z(mesh_part.point(mesh_part.target(h)));
+        auto p2 = to_z(mesh_part.point(mesh_part.target(mesh_part.next(h))));
 
         if (has_seed) {
             FT f_xmin = (std::min)({p0.x(), p1.x(), p2.x()});
@@ -244,13 +245,13 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
             FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
 
-            EK::Point_3 floor_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), vz0);
-            EK::Point_3 floor_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), vz1);
-            EK::Point_3 floor_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), vz2);
+            EK::Point_3 floor_p0(p0_2d.x(), p0_2d.y(), vz0);
+            EK::Point_3 floor_p1(p1_2d.x(), p1_2d.y(), vz1);
+            EK::Point_3 floor_p2(p2_2d.x(), p2_2d.y(), vz2);
 
-            EK::Point_3 ceil_p0 = unrotate_pt(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
-            EK::Point_3 ceil_p1 = unrotate_pt(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
-            EK::Point_3 ceil_p2 = unrotate_pt(p2_2d.x(), p2_2d.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p0(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p1(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p2(p2_2d.x(), p2_2d.y(), h_ceiling_rot);
 
             // Floor triangle (matching CDT CCW winding -> CW in 3D for downward -Z outward normal)
             size_t idx0 = soup_points.size();
@@ -307,19 +308,19 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
 
         // 1. Bottom right (p2, low_t)
         poly_idxs.push_back(soup_points.size());
-        soup_points.push_back(unrotate_pt(p2_2d.x(), p2_2d.y(), low_t));
+        soup_points.push_back(EK::Point_3(p2_2d.x(), p2_2d.y(), low_t));
 
         // 2. Up left vertical edge from (p1, low_s) to (p1, high_s)
         for (FT z : left_zs) {
             poly_idxs.push_back(soup_points.size());
-            soup_points.push_back(unrotate_pt(p1_2d.x(), p1_2d.y(), z));
+            soup_points.push_back(EK::Point_3(p1_2d.x(), p1_2d.y(), z));
         }
 
         // 3. Down right vertical edge from (p2, high_t) to just above low_t
         for (int i = (int)right_zs.size() - 1; i >= 0; --i) {
             if (right_zs[i] == low_t) continue;
             poly_idxs.push_back(soup_points.size());
-            soup_points.push_back(unrotate_pt(p2_2d.x(), p2_2d.y(), right_zs[i]));
+            soup_points.push_back(EK::Point_3(p2_2d.x(), p2_2d.y(), right_zs[i]));
         }
 
         if (poly_idxs.size() >= 3) {
@@ -401,6 +402,11 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(solid_wedge);
     }
 
+    // Transform solid_wedge back from +Z frame to world space in one exact affine operation
+    for (auto v : solid_wedge.vertices()) {
+        solid_wedge.point(v) = from_z(solid_wedge.point(v));
+    }
+
     auto t_soup_end = std::chrono::steady_clock::now();
     double soup_ms = std::chrono::duration<double, std::milli>(t_soup_end - t_soup_start).count();
     std::cout << " Done in " << soup_ms << "ms." << std::endl << std::flush;
@@ -443,12 +449,10 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             if (single_halfedges <= 10) {
                 auto p0 = soup_points[u];
                 auto p1 = soup_points[v];
-                auto pr0 = rotate_pt(p0);
-                auto pr1 = rotate_pt(p1);
                 std::cout << "      [Open Gap #" << single_halfedges << "] 2D: ("
-                          << CGAL::to_double(pr0.x()) << ", " << CGAL::to_double(pr0.y()) << ") -> ("
-                          << CGAL::to_double(pr1.x()) << ", " << CGAL::to_double(pr1.y()) << ")"
-                          << " | Z: " << CGAL::to_double(pr0.z()) << " -> " << CGAL::to_double(pr1.z())
+                          << CGAL::to_double(p0.x()) << ", " << CGAL::to_double(p0.y()) << ") -> ("
+                          << CGAL::to_double(p1.x()) << ", " << CGAL::to_double(p1.y()) << ")"
+                          << " | Z: " << CGAL::to_double(p0.z()) << " -> " << CGAL::to_double(p1.z())
                           << " (h_ceiling=" << CGAL::to_double(h_ceiling_rot) << ")"
                           << std::endl;
             }
@@ -475,7 +479,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
                 auto curr = h;
                 do {
                     auto p = solid_wedge.point(solid_wedge.target(curr));
-                    auto pr = rotate_pt(p);
+                    auto pr = to_z(p);
                     std::cout << "(" << CGAL::to_double(pr.x()) << ", " << CGAL::to_double(pr.y()) << ", " << CGAL::to_double(pr.z()) << ") ";
                     curr = solid_wedge.next(curr);
                 } while (curr != h);
