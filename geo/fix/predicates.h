@@ -82,6 +82,62 @@ inline int segment_triangle_intersection(
     return -1;
 }
 
+/**
+ * is_point_near_plane:
+ * Checks if point V is within distance threshold from plane (P0, N0):
+ * ((V - P0) . N0)^2 <= max_dist_sq * (N0 . N0)
+ * Pure exact rational arithmetic in EK::FT.
+ */
+template <typename K = EK>
+inline bool is_point_near_plane(
+    const typename K::Point_3& V,
+    const typename K::Point_3& P0,
+    const typename K::Vector_3& N0,
+    const typename K::FT& max_dist_sq
+) {
+    auto n_sq = N0.squared_length();
+    if (n_sq == 0) return true;
+    auto dot = (V - P0) * N0;
+    return (dot * dot) <= (max_dist_sq * n_sq);
+}
+
+/**
+ * are_near_parallel_normals:
+ * Checks if normal vectors N1 and N2 are aligned within angular sine-squared threshold:
+ * |N1 x N2|^2 <= max_sin_sq * |N1|^2 * |N2|^2 and N1 . N2 > 0
+ * Pure exact rational arithmetic in EK::FT.
+ */
+template <typename K = EK>
+inline bool are_near_parallel_normals(
+    const typename K::Vector_3& N1,
+    const typename K::Vector_3& N2,
+    const typename K::FT& max_sin_sq
+) {
+    auto len1_sq = N1.squared_length();
+    auto len2_sq = N2.squared_length();
+    if (len1_sq == 0 || len2_sq == 0) return true;
+    if (N1 * N2 <= 0) return false;
+    auto cross = CGAL::cross_product(N1, N2);
+    return (cross.squared_length() <= max_sin_sq * len1_sq * len2_sq);
+}
+
+/**
+ * do_triangles_form_convex_quad:
+ * Checks whether two neighboring triangles sharing edge (A, B) with opposite vertices C and D
+ * form a strictly convex quadrilateral (i.e. diagonals AB and CD intersect).
+ */
+template <typename K = EK>
+inline bool do_triangles_form_convex_quad(
+    const typename K::Point_3& A,
+    const typename K::Point_3& B,
+    const typename K::Point_3& C,
+    const typename K::Point_3& D
+) {
+    typename K::Segment_3 seg_AB(A, B);
+    typename K::Segment_3 seg_CD(C, D);
+    return CGAL::do_intersect(seg_AB, seg_CD);
+}
+
 } // namespace fix
 } // namespace geo
 } // namespace jotcad

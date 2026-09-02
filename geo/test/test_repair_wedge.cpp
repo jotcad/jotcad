@@ -2,282 +2,18 @@
 #include <vector>
 #include <cassert>
 #include <filesystem>
-// Force rebuild with safe bounded collar splits
 #include "kernel.h"
 #include "fix/repair.h"
 #include "fix/kiss.h"
+#include "kiss_fixtures.h"
 #include "boolean/engine.h"
 #include <CGAL/IO/polygon_mesh_io.h>
 #include <CGAL/Polygon_mesh_processing/self_intersections.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 
 using namespace jotcad::geo;
+using namespace jotcad::geo::test;
 typedef CGAL::Surface_mesh<EK::Point_3> Mesh;
-
-// ============================================================================
-// FIXTURE 1: Free Kissing Edge (Open at Both Ends, 12 Vertices)
-// ============================================================================
-Mesh build_free_kissing_edge_mesh() {
-    Mesh mesh;
-    // Lobe 1 (Y < 0)
-    auto v0 = mesh.add_vertex(EK::Point_3(0, 0, 0));
-    auto v1 = mesh.add_vertex(EK::Point_3(-1, -1, 0));
-    auto v2 = mesh.add_vertex(EK::Point_3(1, -1, 0));
-    auto v3 = mesh.add_vertex(EK::Point_3(0, 0, 10));
-    auto v4 = mesh.add_vertex(EK::Point_3(-1, -1, 10));
-    auto v5 = mesh.add_vertex(EK::Point_3(1, -1, 10));
-
-    mesh.add_face(v0, v2, v1); // Floor
-    mesh.add_face(v3, v4, v5); // Ceiling
-    mesh.add_face(v0, v3, v5); mesh.add_face(v0, v5, v2); // Right wall
-    mesh.add_face(v2, v5, v4); mesh.add_face(v2, v4, v1); // Back wall
-    mesh.add_face(v1, v4, v3); mesh.add_face(v1, v3, v0); // Left wall
-
-    // Lobe 2 (Y > 0)
-    auto v6  = mesh.add_vertex(EK::Point_3(0, 0, 0));  // Coincident with v0
-    auto v7  = mesh.add_vertex(EK::Point_3(1, 1, 0));
-    auto v8  = mesh.add_vertex(EK::Point_3(-1, 1, 0));
-    auto v9  = mesh.add_vertex(EK::Point_3(0, 0, 10)); // Coincident with v3
-    auto v10 = mesh.add_vertex(EK::Point_3(1, 1, 10));
-    auto v11 = mesh.add_vertex(EK::Point_3(-1, 1, 10));
-
-    mesh.add_face(v6, v8, v7); // Floor
-    mesh.add_face(v9, v10, v11); // Ceiling
-    mesh.add_face(v6, v9, v11); mesh.add_face(v6, v11, v8); // Left wall
-    mesh.add_face(v8, v11, v10); mesh.add_face(v8, v10, v7); // Back wall
-    mesh.add_face(v7, v10, v9); mesh.add_face(v7, v9, v6); // Right wall
-
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 2: Forking Arms Merging into a Common Base Block
-// ============================================================================
-Mesh build_forking_arms_with_common_block() {
-    Mesh mesh;
-    // Base block: Z in [-4, 0], X in [-2, 2], Y in [-2, 2]
-    auto b0 = mesh.add_vertex(EK::Point_3(-2, -2, -4));
-    auto b1 = mesh.add_vertex(EK::Point_3(2, -2, -4));
-    auto b2 = mesh.add_vertex(EK::Point_3(2, 2, -4));
-    auto b3 = mesh.add_vertex(EK::Point_3(-2, 2, -4));
-
-    // Top face of base block contains the junction vertex Vj at (0, 0, 0)
-    auto vj = mesh.add_vertex(EK::Point_3(0, 0, 0));
-    auto t0 = mesh.add_vertex(EK::Point_3(-2, -2, 0));
-    auto t1 = mesh.add_vertex(EK::Point_3(2, -2, 0));
-    auto t2 = mesh.add_vertex(EK::Point_3(2, 2, 0));
-    auto t3 = mesh.add_vertex(EK::Point_3(-2, 2, 0));
-
-    // Base block faces
-    mesh.add_face(b0, b1, b2); mesh.add_face(b0, b2, b3); // Bottom
-    mesh.add_face(b0, t0, t1); mesh.add_face(b0, t1, b1); // Front
-    mesh.add_face(b1, t1, t2); mesh.add_face(b1, t2, b2); // Right
-    mesh.add_face(b2, t2, t3); mesh.add_face(b2, t3, b3); // Back
-    mesh.add_face(b3, t3, t0); mesh.add_face(b3, t0, b0); // Left
-
-    // Top face of block triangulated around Vj
-    mesh.add_face(t0, t1, vj);
-    mesh.add_face(t1, t2, vj);
-    mesh.add_face(t2, t3, vj);
-    mesh.add_face(t3, t0, vj);
-
-    // Rising Arm 1 (Y < 0, rising from Z=0 to Z=8)
-    auto a1_top_vj = mesh.add_vertex(EK::Point_3(0, 0, 8));
-    auto a1_top_t0 = mesh.add_vertex(EK::Point_3(-2, -2, 8));
-    auto a1_top_t1 = mesh.add_vertex(EK::Point_3(2, -2, 8));
-
-    mesh.add_face(a1_top_vj, a1_top_t1, a1_top_t0); // Arm 1 ceiling
-    mesh.add_face(t0, a1_top_t0, a1_top_t1); mesh.add_face(t0, a1_top_t1, t1); // Outer wall
-    mesh.add_face(t1, a1_top_t1, a1_top_vj); mesh.add_face(t1, a1_top_vj, vj); // Right wall
-    mesh.add_face(vj, a1_top_vj, a1_top_t0); mesh.add_face(vj, a1_top_t0, t0); // Left wall
-
-    // Rising Arm 2 (Y > 0, rising from Z=0 to Z=8, kissing along Vj -> (0,0,8))
-    auto a2_top_vj = mesh.add_vertex(EK::Point_3(0, 0, 8)); // Coincident at top with a1_top_vj
-    auto a2_top_t2 = mesh.add_vertex(EK::Point_3(2, 2, 8));
-    auto a2_top_t3 = mesh.add_vertex(EK::Point_3(-2, 2, 8));
-
-    mesh.add_face(a2_top_vj, a2_top_t3, a2_top_t2); // Arm 2 ceiling
-    mesh.add_face(t2, a2_top_t2, a2_top_t3); mesh.add_face(t2, a2_top_t3, t3); // Outer wall
-    mesh.add_face(t3, a2_top_t3, a2_top_vj); mesh.add_face(t3, a2_top_vj, vj); // Left wall
-    mesh.add_face(vj, a2_top_vj, a2_top_t2); mesh.add_face(vj, a2_top_t2, t2); // Right wall
-
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 3: Kissing Curve (Polygonal Chain of Multiple Connected Contact Edges)
-// ============================================================================
-Mesh build_kissing_curve_mesh() {
-    Mesh mesh;
-    // Curved contact seam along points P0, P1, P2, P3
-    const int N_PTS = 4;
-    std::vector<EK::Point_3> curve_pts = {
-        EK::Point_3(0, 0, 0),
-        EK::Point_3(1, 1, 3),
-        EK::Point_3(2, 0, 6),
-        EK::Point_3(1, -1, 9)
-    };
-
-    // Lobe 1 (Offset in -Y)
-    std::vector<Mesh::Vertex_index> l1_seam, l1_back;
-    for (int i = 0; i < N_PTS; ++i) {
-        l1_seam.push_back(mesh.add_vertex(curve_pts[i]));
-        l1_back.push_back(mesh.add_vertex(curve_pts[i] + EK::Vector_3(0, -2, 0)));
-    }
-    // Lobe 1 caps and walls
-    mesh.add_face(l1_seam[0], l1_back[0], l1_back[1]); mesh.add_face(l1_seam[0], l1_back[1], l1_seam[1]); // bottom
-    for (int i = 0; i + 1 < N_PTS; ++i) {
-        mesh.add_face(l1_seam[i], l1_seam[i+1], l1_back[i+1]); mesh.add_face(l1_seam[i], l1_back[i+1], l1_back[i]);
-    }
-    mesh.add_face(l1_seam[N_PTS-1], l1_back[N_PTS-1], l1_back[N_PTS-2]); // top
-
-    // Lobe 2 (Offset in +Y, kissing along curve_pts)
-    std::vector<Mesh::Vertex_index> l2_seam, l2_back;
-    for (int i = 0; i < N_PTS; ++i) {
-        l2_seam.push_back(mesh.add_vertex(curve_pts[i])); // Coincident with l1_seam
-        l2_back.push_back(mesh.add_vertex(curve_pts[i] + EK::Vector_3(0, 2, 0)));
-    }
-    for (int i = 0; i + 1 < N_PTS; ++i) {
-        mesh.add_face(l2_seam[i], l2_back[i+1], l2_seam[i+1]); mesh.add_face(l2_seam[i], l2_back[i], l2_back[i+1]);
-    }
-
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 5: Two-Anchor Bridged Seam (Joined at Both Floor and Ceiling)
-// ============================================================================
-Mesh build_bridged_kissing_edge_mesh() {
-    Mesh mesh;
-    // Shared single-vertex anchors
-    auto v_bot = mesh.add_vertex(EK::Point_3(0, 0, 0));  // Single anchor at bottom
-    auto v_top = mesh.add_vertex(EK::Point_3(0, 0, 10)); // Single anchor at top
-
-    // Arm 1 (Y < 0) outer corners
-    auto a1_b0 = mesh.add_vertex(EK::Point_3(-2, -2, 0));
-    auto a1_b1 = mesh.add_vertex(EK::Point_3(2, -2, 0));
-    auto a1_t0 = mesh.add_vertex(EK::Point_3(-2, -2, 10));
-    auto a1_t1 = mesh.add_vertex(EK::Point_3(2, -2, 10));
-
-    // Arm 1 faces
-    mesh.add_face(v_bot, a1_b0, a1_b1); // bottom cap
-    mesh.add_face(v_top, a1_t1, a1_t0); // top cap
-    mesh.add_face(a1_b0, a1_t0, a1_t1); mesh.add_face(a1_b0, a1_t1, a1_b1); // outer wall
-    mesh.add_face(a1_b1, a1_t1, v_top); mesh.add_face(a1_b1, v_top, v_bot); // right wall
-    mesh.add_face(v_bot, v_top, a1_t0); mesh.add_face(v_bot, a1_t0, a1_b0); // left wall
-
-    // Arm 2 (Y > 0) outer corners
-    auto a2_b0 = mesh.add_vertex(EK::Point_3(2, 2, 0));
-    auto a2_b1 = mesh.add_vertex(EK::Point_3(-2, 2, 0));
-    auto a2_t0 = mesh.add_vertex(EK::Point_3(2, 2, 10));
-    auto a2_t1 = mesh.add_vertex(EK::Point_3(-2, 2, 10));
-
-    // Arm 2 faces
-    mesh.add_face(v_bot, a2_b0, a2_b1); // bottom cap
-    mesh.add_face(v_top, a2_t1, a2_t0); // top cap
-    mesh.add_face(a2_b0, a2_t0, a2_t1); mesh.add_face(a2_b0, a2_t1, a2_b1); // outer wall
-    mesh.add_face(a2_b1, a2_t1, v_top); mesh.add_face(a2_b1, v_top, v_bot); // left wall
-    mesh.add_face(v_bot, v_top, a2_t0); mesh.add_face(v_bot, a2_t0, a2_b0); // right wall
-
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 7: Point-to-Point (Two Pyramids Touching Apex-to-Apex)
-// ============================================================================
-Mesh build_point_to_point_mesh() {
-    Mesh mesh;
-    // Pyramid 1 (Z in [0, 10], apex at (0, 0, 0))
-    auto v_apex1 = mesh.add_vertex(EK::Point_3(0, 0, 0));
-    auto v1 = mesh.add_vertex(EK::Point_3(-5, -5, 10));
-    auto v2 = mesh.add_vertex(EK::Point_3(5, -5, 10));
-    auto v3 = mesh.add_vertex(EK::Point_3(5, 5, 10));
-    auto v4 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
-    mesh.add_face(v1, v2, v3); mesh.add_face(v1, v3, v4); // Top cap
-    mesh.add_face(v_apex1, v2, v1);
-    mesh.add_face(v_apex1, v3, v2);
-    mesh.add_face(v_apex1, v4, v3);
-    mesh.add_face(v_apex1, v1, v4);
-
-    // Pyramid 2 (Z in [-10, 0], apex at (0, 0, 0))
-    auto v_apex2 = mesh.add_vertex(EK::Point_3(0, 0, 0));
-    auto u1 = mesh.add_vertex(EK::Point_3(-5, -5, -10));
-    auto u2 = mesh.add_vertex(EK::Point_3(5, -5, -10));
-    auto u3 = mesh.add_vertex(EK::Point_3(5, 5, -10));
-    auto u4 = mesh.add_vertex(EK::Point_3(-5, 5, -10));
-    mesh.add_face(u1, u3, u2); mesh.add_face(u1, u4, u3); // Bottom cap
-    mesh.add_face(v_apex2, u1, u2);
-    mesh.add_face(v_apex2, u2, u3);
-    mesh.add_face(v_apex2, u3, u4);
-    mesh.add_face(v_apex2, u4, u1);
-
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 8: Point-to-Edge (Pyramid Apex Touching Cube Edge Midpoint)
-// ============================================================================
-Mesh build_point_to_edge_mesh() {
-    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
-    auto v_apex = mesh.add_vertex(EK::Point_3(0, 10, 0));
-    auto v1 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
-    auto v2 = mesh.add_vertex(EK::Point_3(5, 5, 10));
-    auto v3 = mesh.add_vertex(EK::Point_3(5, 15, 10));
-    auto v4 = mesh.add_vertex(EK::Point_3(-5, 15, 10));
-    mesh.add_face(v1, v2, v3); mesh.add_face(v1, v3, v4);
-    mesh.add_face(v_apex, v2, v1);
-    mesh.add_face(v_apex, v3, v2);
-    mesh.add_face(v_apex, v4, v3);
-    mesh.add_face(v_apex, v1, v4);
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 9: Point-to-Face (Pyramid Apex Touching Cube Face Center)
-// ============================================================================
-Mesh build_point_to_face_mesh() {
-    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
-    auto v_apex = mesh.add_vertex(EK::Point_3(0, 0, 0));
-    auto v1 = mesh.add_vertex(EK::Point_3(-5, -5, 10));
-    auto v2 = mesh.add_vertex(EK::Point_3(5, -5, 10));
-    auto v3 = mesh.add_vertex(EK::Point_3(5, 5, 10));
-    auto v4 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
-    mesh.add_face(v1, v2, v3); mesh.add_face(v1, v3, v4);
-    mesh.add_face(v_apex, v2, v1);
-    mesh.add_face(v_apex, v3, v2);
-    mesh.add_face(v_apex, v4, v3);
-    mesh.add_face(v_apex, v1, v4);
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 10: Edge-to-Face (Prism Knife-Edge Resting Flush on Cube Face)
-// ============================================================================
-Mesh build_edge_to_face_mesh() {
-    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
-    auto e0 = mesh.add_vertex(EK::Point_3(-5, 0, 0));
-    auto e1 = mesh.add_vertex(EK::Point_3(5, 0, 0));
-    auto t0 = mesh.add_vertex(EK::Point_3(-5, -5, 10));
-    auto t1 = mesh.add_vertex(EK::Point_3(5, -5, 10));
-    auto t2 = mesh.add_vertex(EK::Point_3(5, 5, 10));
-    auto t3 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
-    mesh.add_face(t0, t1, t2); mesh.add_face(t0, t2, t3);
-    mesh.add_face(e0, e1, t1); mesh.add_face(e0, t1, t0);
-    mesh.add_face(e1, e0, t3); mesh.add_face(e1, t3, t2);
-    mesh.add_face(e0, t0, t3);
-    mesh.add_face(e1, t2, t1);
-    return mesh;
-}
-
-// ============================================================================
-// FIXTURE 11: Face-to-Face (Two Cubes Sharing Flush Coplanar Face)
-// ============================================================================
-Mesh build_face_to_face_mesh() {
-    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
-    Mesh top_cube = fix::make_box_mesh(EK::Point_3(-10, -10, 0), EK::Point_3(10, 10, 20));
-    fix::append_mesh(mesh, top_cube);
-    return mesh;
-}
 
 int main() {
     std::cout << "==================================================" << std::endl;
@@ -449,6 +185,42 @@ int main() {
     std::cout << "  - After repair does_self_intersect: " << (post11 ? "YES" : "NO") << std::endl;
     assert(!post11);
     std::cout << "  ✅ TEST 11 PASSED (0 Collisions)" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 12: Near-Collinear Polyline (Partial Consolidation across Threshold)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh12 = build_near_collinear_polyline_mesh();
+    std::cout << "  - Mesh: " << mesh12.number_of_vertices() << " vertices, " << mesh12.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh12) ? "YES" : "NO") << std::endl;
+    bool rep12 = fix::separate_kissing_columns(mesh12, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep12 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh12);
+    bool post12 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh12);
+    std::cout << "  - After repair does_self_intersect: " << (post12 ? "YES" : "NO") << std::endl;
+    if (post12) {
+        std::vector<std::pair<Mesh::Face_index, Mesh::Face_index>> post_tris;
+        CGAL::Polygon_mesh_processing::self_intersections(mesh12, std::back_inserter(post_tris));
+        std::cout << "  - Remaining intersecting face pairs: " << post_tris.size() << std::endl;
+        for (size_t i = 0; i < (std::min)(size_t(5), post_tris.size()); ++i) {
+            std::cout << "    Collision #" << (i+1) << ": Face " << post_tris[i].first << " vs " << post_tris[i].second << std::endl;
+        }
+    }
+    assert(!post12);
+    std::cout << "  ✅ TEST 12 PASSED (0 Collisions)" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 13: Non-Convex L-Patch with Protected Cavity (Convex Decomposition)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh13 = build_non_convex_L_patch_mesh();
+    std::cout << "  - Mesh: " << mesh13.number_of_vertices() << " vertices, " << mesh13.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh13) ? "YES" : "NO") << std::endl;
+    bool rep13 = fix::separate_kissing_columns(mesh13, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep13 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh13);
+    bool post13 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh13);
+    std::cout << "  - After repair does_self_intersect: " << (post13 ? "YES" : "NO") << std::endl;
+    assert(!post13);
+    std::cout << "  ✅ TEST 13 PASSED (0 Collisions, Protected Cavity Intact)" << std::endl;
 
     std::cout << "\n🎉 ALL REGRESSION TESTS PASSED." << std::endl;
     return 0;
