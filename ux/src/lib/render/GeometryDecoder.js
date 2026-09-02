@@ -100,8 +100,11 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
                 side: THREE.DoubleSide, 
                 roughness: 0.4, 
                 metalness: 0.2,
-                transparent, opacity 
+                transparent, 
+                opacity,
+                depthWrite: !transparent
             }));
+            mesh.renderOrder = transparent ? 1 : 0;
             mesh.userData.isJot = true;
 
             // --- COMPUTE BVH ---
@@ -111,8 +114,12 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             
             const edgesGeo = new THREE.EdgesGeometry(g, edgeThreshold);
             const edgesLine = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({ 
-                color: 0xffffff, transparent: true, opacity: isGhost ? 0.2 : 0.5 
+                color: 0xffffff, 
+                transparent: true, 
+                opacity: isGhost ? 0.2 : (transparent ? 0.3 : 0.5),
+                depthWrite: !transparent
             }));
+            edgesLine.renderOrder = transparent ? 1 : 0;
             edgesLine.userData.isJot = true;
             edgesLine.applyMatrix4(worldMat); scene.add(edgesLine);
         }

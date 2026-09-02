@@ -114,6 +114,7 @@ struct PourOp : P {
 
             Geometry tool_geo = boolean::Engine::mesh_to_geometry(tool_mesh);
             Shape tool_shape = P::make_shape(vfs, tool_geo, {
+                {"mold/role", cluster.is_primary ? "sprue" : "vent"},
                 {"name", tool_name},
                 {"color", "#ff222288"}
             });

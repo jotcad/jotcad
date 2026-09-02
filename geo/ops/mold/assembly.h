@@ -70,6 +70,14 @@ struct MoldAssembly {
         result.geometry = std::nullopt; // Consumed raw solid geometry
         result.components.clear();
 
+        // 1. Preserve the center model solid geometry tagged with mold/role="model"
+        if (original_input.geometry.has_value()) {
+            Shape center_model = original_input;
+            center_model.components.clear(); // Children (sprue/vents) are preserved below
+            center_model.tags["mold/role"] = "model";
+            result.components.push_back(center_model);
+        }
+
         for (const auto& piece : mold_pieces) {
             Geometry piece_geo = boolean::Engine::mesh_to_geometry(piece.mesh);
             std::stringstream ss;
@@ -77,6 +85,7 @@ struct MoldAssembly {
             std::string pull_vec_str = ss.str();
 
             Shape piece_shape = P::make_shape(vfs, piece_geo, {
+                {"mold/role", "piece"},
                 {"mold/piece", piece.mold_piece},
                 {"mold/pull_vector", pull_vec_str},
                 {"color", piece.color},
@@ -98,6 +107,7 @@ struct MoldAssembly {
         // Include Minimal-Volume OBB as ghost outline/reference
         if (!obb_geo.vertices.empty()) {
             Shape obb_shape = P::make_shape(vfs, obb_geo, {
+                {"mold/role", "box"},
                 {"role", "ghost"},
                 {"color", "#ffffff25"},
                 {"name", "minimal_bounding_box"}

@@ -202,10 +202,12 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             flatShading: true,
             side: THREE.DoubleSide,
             transparent,
-            opacity
+            opacity,
+            depthWrite: !transparent
           });
 
           const mesh = new THREE.Mesh(g, material);
+          mesh.renderOrder = transparent ? 1 : 0;
           mesh.userData.isJot = true;
           mesh.applyMatrix4(worldMat);
           scene.add(mesh);
@@ -214,8 +216,10 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
           const edgesLine = new THREE.LineSegments(edgesGeo, new THREE.LineBasicMaterial({
             color: isGhost ? 0x00ffff : 0xffffff,
             transparent: true,
-            opacity: isGhost ? 0.2 : 0.5
+            opacity: isGhost ? 0.2 : (transparent ? 0.3 : 0.5),
+            depthWrite: !transparent
           }));
+          edgesLine.renderOrder = transparent ? 1 : 0;
           edgesLine.userData.isJot = true;
           edgesLine.applyMatrix4(worldMat);
           scene.add(edgesLine);
