@@ -144,6 +144,44 @@ Mesh build_kissing_curve_mesh() {
     return mesh;
 }
 
+// ============================================================================
+// FIXTURE 5: Two-Anchor Bridged Seam (Joined at Both Floor and Ceiling)
+// ============================================================================
+Mesh build_bridged_kissing_edge_mesh() {
+    Mesh mesh;
+    // Shared single-vertex anchors
+    auto v_bot = mesh.add_vertex(EK::Point_3(0, 0, 0));  // Single anchor at bottom
+    auto v_top = mesh.add_vertex(EK::Point_3(0, 0, 10)); // Single anchor at top
+
+    // Arm 1 (Y < 0) outer corners
+    auto a1_b0 = mesh.add_vertex(EK::Point_3(-2, -2, 0));
+    auto a1_b1 = mesh.add_vertex(EK::Point_3(2, -2, 0));
+    auto a1_t0 = mesh.add_vertex(EK::Point_3(-2, -2, 10));
+    auto a1_t1 = mesh.add_vertex(EK::Point_3(2, -2, 10));
+
+    // Arm 1 faces
+    mesh.add_face(v_bot, a1_b0, a1_b1); // bottom cap
+    mesh.add_face(v_top, a1_t1, a1_t0); // top cap
+    mesh.add_face(a1_b0, a1_t0, a1_t1); mesh.add_face(a1_b0, a1_t1, a1_b1); // outer wall
+    mesh.add_face(a1_b1, a1_t1, v_top); mesh.add_face(a1_b1, v_top, v_bot); // right wall
+    mesh.add_face(v_bot, v_top, a1_t0); mesh.add_face(v_bot, a1_t0, a1_b0); // left wall
+
+    // Arm 2 (Y > 0) outer corners
+    auto a2_b0 = mesh.add_vertex(EK::Point_3(2, 2, 0));
+    auto a2_b1 = mesh.add_vertex(EK::Point_3(-2, 2, 0));
+    auto a2_t0 = mesh.add_vertex(EK::Point_3(2, 2, 10));
+    auto a2_t1 = mesh.add_vertex(EK::Point_3(-2, 2, 10));
+
+    // Arm 2 faces
+    mesh.add_face(v_bot, a2_b0, a2_b1); // bottom cap
+    mesh.add_face(v_top, a2_t1, a2_t0); // top cap
+    mesh.add_face(a2_b0, a2_t0, a2_t1); mesh.add_face(a2_b0, a2_t1, a2_b1); // outer wall
+    mesh.add_face(a2_b1, a2_t1, v_top); mesh.add_face(a2_b1, v_top, v_bot); // left wall
+    mesh.add_face(v_bot, v_top, a2_t0); mesh.add_face(v_bot, a2_t0, a2_b0); // right wall
+
+    return mesh;
+}
+
 int main() {
     std::cout << "==================================================" << std::endl;
     std::cout << "TEST 1: Free Kissing Edge (Open at Both Ends)" << std::endl;
@@ -154,6 +192,7 @@ int main() {
     std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh1) ? "YES" : "NO") << std::endl;
     bool rep1 = fix::separate_kissing_columns(mesh1, EK::FT(1) / EK::FT(100));
     std::cout << "  - separate_kissing_columns result: " << (rep1 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh1);
     bool post1 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh1);
     std::cout << "  - After repair does_self_intersect: " << (post1 ? "YES" : "NO") << std::endl;
     assert(!post1);
@@ -167,6 +206,7 @@ int main() {
     std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh2) ? "YES" : "NO") << std::endl;
     bool rep2 = fix::separate_kissing_columns(mesh2, EK::FT(1) / EK::FT(100));
     std::cout << "  - separate_kissing_columns result: " << (rep2 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh2);
     bool post2 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh2);
     std::cout << "  - After repair does_self_intersect: " << (post2 ? "YES" : "NO") << std::endl;
     std::cout << "  ✅ TEST 2 COMPLETED (Self-intersect: " << (post2 ? "YES" : "NO") << ")" << std::endl;
@@ -179,6 +219,7 @@ int main() {
     std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh3) ? "YES" : "NO") << std::endl;
     bool rep3 = fix::separate_kissing_columns(mesh3, EK::FT(1) / EK::FT(100));
     std::cout << "  - separate_kissing_columns result: " << (rep3 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh3);
     bool post3 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh3);
     std::cout << "  - After repair does_self_intersect: " << (post3 ? "YES" : "NO") << std::endl;
     std::cout << "  ✅ TEST 3 COMPLETED (Self-intersect: " << (post3 ? "YES" : "NO") << ")" << std::endl;
@@ -196,6 +237,7 @@ int main() {
 
         bool rep4 = fix::separate_kissing_columns(mesh4, EK::FT(1) / EK::FT(100));
         std::cout << "  - separate_kissing_columns returned: " << (rep4 ? "MODIFIED" : "UNCHANGED") << std::endl;
+        CGAL::Polygon_mesh_processing::triangulate_faces(mesh4);
         bool post4 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh4);
         std::cout << "  - After repair does_self_intersect: " << (post4 ? "YES" : "NO") << std::endl;
         if (post4) {
@@ -209,6 +251,20 @@ int main() {
         assert(!post4);
         std::cout << "  ✅ TEST 4 PASSED (0 Collisions on Bear Fixture)" << std::endl;
     }
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 5: Two-Anchor Bridged Seam (Joined at Both Ends)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh5 = build_bridged_kissing_edge_mesh();
+    std::cout << "  - Mesh: " << mesh5.number_of_vertices() << " vertices, " << mesh5.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - is_closed: " << (CGAL::is_closed(mesh5) ? "YES" : "NO") << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh5) ? "YES" : "NO") << std::endl;
+    bool rep5 = fix::separate_kissing_columns(mesh5, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep5 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh5);
+    bool post5 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh5);
+    std::cout << "  - After repair does_self_intersect: " << (post5 ? "YES" : "NO") << std::endl;
+    std::cout << "  ✅ TEST 5 COMPLETED (Self-intersect: " << (post5 ? "YES" : "NO") << ")" << std::endl;
 
     std::cout << "\n🎉 ALL REGRESSION TESTS PASSED." << std::endl;
     return 0;

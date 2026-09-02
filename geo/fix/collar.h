@@ -1,126 +1,134 @@
 #pragma once
 #include "kernel.h"
 #include <CGAL/Surface_mesh.h>
+#include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
-#include <CGAL/boost/graph/Euler_operations.h>
+#include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
 #include <map>
 #include <set>
 #include <vector>
 #include <algorithm>
-#include <cmath>
 
 namespace jotcad {
 namespace geo {
 namespace fix {
 
-// Max fraction of edge length allocated to transition collar (midpoint clamp)
-inline constexpr int kMaxCollarEdgeSubdivisionDenominator = 2;
+template <typename Point_3>
+CGAL::Surface_mesh<Point_3> make_box_mesh(const Point_3& p_min, const Point_3& p_max) {
+    typedef CGAL::Surface_mesh<Point_3> Mesh;
+    Mesh box;
+    auto x1 = p_min.x(), y1 = p_min.y(), z1 = p_min.z();
+    auto x2 = p_max.x(), y2 = p_max.y(), z2 = p_max.z();
 
-/**
- * insert_transition_collars:
- * Subdivides edges rising from single-vertex base anchors into kissing arms,
- * placing collar vertices at safe bounded distance: min(collar_len, L / 2).
- */
-template <typename Mesh, typename CoordMap, typename FT>
-std::vector<typename Mesh::Vertex_index> insert_transition_collars(
-    Mesh& mesh, 
-    const CoordMap& coord_map, 
-    const FT& collar_len
-) {
-    typedef typename Mesh::Halfedge_index Halfedge_index;
+    auto v0 = box.add_vertex(Point_3(x1, y1, z1));
+    auto v1 = box.add_vertex(Point_3(x2, y1, z1));
+    auto v2 = box.add_vertex(Point_3(x2, y2, z1));
+    auto v3 = box.add_vertex(Point_3(x1, y2, z1));
+    auto v4 = box.add_vertex(Point_3(x1, y1, z2));
+    auto v5 = box.add_vertex(Point_3(x2, y1, z2));
+    auto v6 = box.add_vertex(Point_3(x2, y2, z2));
+    auto v7 = box.add_vertex(Point_3(x1, y2, z2));
+
+    box.add_face(v0, v2, v1); box.add_face(v0, v3, v2);
+    box.add_face(v4, v5, v6); box.add_face(v4, v6, v7);
+    box.add_face(v0, v1, v5); box.add_face(v0, v5, v4);
+    box.add_face(v2, v3, v7); box.add_face(v2, v7, v6);
+    box.add_face(v3, v0, v4); box.add_face(v3, v4, v7);
+    box.add_face(v1, v2, v6); box.add_face(v1, v6, v5);
+
+    return box;
+}
+
+template <typename Mesh>
+void append_mesh(Mesh& target, const Mesh& source) {
     typedef typename Mesh::Vertex_index Vertex_index;
-    typedef typename Mesh::Point Point_3;
-    typedef std::pair<Point_3, Point_3> SpatialSegment;
-
-    // Step 1: Map halfedges to canonical 3D spatial segments
-    std::map<SpatialSegment, std::vector<Halfedge_index>> segment_map;
-    for (auto h : mesh.halfedges()) {
-        Point_3 p_src = mesh.point(mesh.source(h));
-        Point_3 p_tgt = mesh.point(mesh.target(h));
-        if (p_src == p_tgt) continue;
-        SpatialSegment seg = (p_src < p_tgt) ? SpatialSegment(p_src, p_tgt) : SpatialSegment(p_tgt, p_src);
-        segment_map[seg].push_back(h);
+    std::map<Vertex_index, Vertex_index> v_map;
+    for (auto v : source.vertices()) {
+        v_map[v] = target.add_vertex(source.point(v));
     }
+    for (auto f : source.faces()) {
+        std::vector<Vertex_index> f_verts;
+        for (auto fv : source.vertices_around_face(source.halfedge(f))) {
+            f_verts.push_back(v_map[fv]);
+        }
+        target.add_face(f_verts);
+    }
+}
 
-    // Step 2: Split only kissing edges (>= 4 halfedges) rising from single-vertex anchors
-    std::vector<std::pair<Halfedge_index, FT>> edges_to_split;
-    for (const auto& [seg, halfedges] : segment_map) {
-        if (halfedges.size() >= 4) {
-            for (Halfedge_index h : halfedges) {
-                Vertex_index u = mesh.source(h);
-                Vertex_index v = mesh.target(h);
-                if (coord_map.at(mesh.point(u)).size() == 1 && coord_map.at(mesh.point(v)).size() > 1) {
-                    Point_3 pu = mesh.point(u);
-                    Point_3 pv = mesh.point(v);
-                    FT sq_len = (pv - pu).squared_length();
-                    if (sq_len > FT(0)) {
-                        FT c_sq = collar_len * collar_len;
-                        FT t = (sq_len <= FT(4) * c_sq) 
-                            ? (FT(1) / FT(kMaxCollarEdgeSubdivisionDenominator)) 
-                            : (collar_len / CGAL::approximate_sqrt(sq_len));
-                        edges_to_split.push_back({h, t});
+template <typename Point_3>
+std::vector<std::pair<Point_3, Point_3>> merge_collinear_segments(
+    const std::vector<std::pair<Point_3, Point_3>>& raw_segments
+) {
+    if (raw_segments.empty()) return {};
+
+    std::vector<std::pair<Point_3, Point_3>> merged;
+    std::vector<bool> used(raw_segments.size(), false);
+
+    for (size_t i = 0; i < raw_segments.size(); ++i) {
+        if (used[i]) continue;
+        Point_3 p_start = raw_segments[i].first;
+        Point_3 p_end = raw_segments[i].second;
+        used[i] = true;
+
+        bool extended = true;
+        while (extended) {
+            extended = false;
+            auto dir = p_end - p_start;
+            for (size_t j = 0; j < raw_segments.size(); ++j) {
+                if (used[j]) continue;
+                Point_3 q1 = raw_segments[j].first;
+                Point_3 q2 = raw_segments[j].second;
+
+                // Check if adjacent to p_end and collinear
+                if (q1 == p_end) {
+                    auto next_dir = q2 - q1;
+                    if (CGAL::cross_product(dir, next_dir) == CGAL::NULL_VECTOR && dir * next_dir > 0) {
+                        p_end = q2;
+                        used[j] = true;
+                        extended = true;
+                        break;
+                    }
+                } else if (q2 == p_end) {
+                    auto next_dir = q1 - q2;
+                    if (CGAL::cross_product(dir, next_dir) == CGAL::NULL_VECTOR && dir * next_dir > 0) {
+                        p_end = q1;
+                        used[j] = true;
+                        extended = true;
+                        break;
+                    }
+                }
+                // Check if adjacent to p_start and collinear
+                else if (q2 == p_start) {
+                    auto prev_dir = q1 - q2;
+                    if (CGAL::cross_product(dir, prev_dir) == CGAL::NULL_VECTOR && dir * prev_dir > 0) {
+                        p_start = q1;
+                        used[j] = true;
+                        extended = true;
+                        break;
+                    }
+                } else if (q1 == p_start) {
+                    auto prev_dir = q2 - q1;
+                    if (CGAL::cross_product(dir, prev_dir) == CGAL::NULL_VECTOR && dir * prev_dir > 0) {
+                        p_start = q2;
+                        used[j] = true;
+                        extended = true;
+                        break;
                     }
                 }
             }
         }
+        merged.push_back({p_start, p_end});
     }
-
-    std::vector<Vertex_index> new_collar_verts;
-    for (const auto& item : edges_to_split) {
-        Halfedge_index eh = item.first;
-        FT t = item.second;
-        Point_3 pu = mesh.point(mesh.source(eh));
-        Point_3 pv = mesh.point(mesh.target(eh));
-        Point_3 split_pt = pu + (pv - pu) * t;
-        
-        Halfedge_index new_h = CGAL::Euler::split_edge(eh, mesh);
-        Vertex_index new_v = mesh.target(new_h);
-        mesh.point(new_v) = split_pt;
-        new_collar_verts.push_back(new_v);
-    }
-    return new_collar_verts;
-}
-
-/**
- * retract_contact_vertices:
- * Computes intrinsic umbrella normal sums and displaces vertices inward into their solid volume.
- */
-template <typename Mesh, typename VertexList, typename FT>
-void retract_contact_vertices(Mesh& mesh, const VertexList& vertices, const FT& delta_max) {
-    typedef typename Mesh::Point Point_3;
-    typedef typename CGAL::Kernel_traits<Point_3>::Kernel::Vector_3 Vector_3;
-
-    for (auto v : vertices) {
-        Vector_3 normal_sum(0, 0, 0);
-        auto h = mesh.halfedge(v);
-        if (h == Mesh::null_halfedge()) continue;
-
-        for (auto f : mesh.faces_around_target(h)) {
-            if (f == Mesh::null_face()) continue;
-            std::vector<Point_3> pts;
-            for (auto fv : mesh.vertices_around_face(mesh.halfedge(f))) {
-                pts.push_back(mesh.point(fv));
-            }
-            if (pts.size() == 3) {
-                normal_sum += CGAL::cross_product(pts[1] - pts[0], pts[2] - pts[0]);
-            }
-        }
-
-        FT sq_len = normal_sum.squared_length();
-        if (sq_len <= FT(0)) continue;
-
-        FT approx_len = CGAL::approximate_sqrt(sq_len);
-        if (approx_len <= FT(0)) continue;
-
-        FT disp = delta_max / approx_len;
-        mesh.point(v) -= normal_sum * disp;
-    }
+    return merged;
 }
 
 /**
  * separate_kissing_columns:
- * Domain-agnostic 3D manifold repair that resolves zero-volume contact singularities
- * (kissing edges, kissing curves, and forking arms) using localized inward clearance collars.
+ * Resolves zero-volume contact singularities (kissing edges, kissing curves, and point touches)
+ * by:
+ *   1. Topologically repairing non-manifold edges to 2 incoming faces per edge (duplicate_non_manifold_vertices)
+ *   2. Merging contiguous collinear kissing segments into maximal straight cutters
+ *   3. Subtracting Minkowski clearance volumes component-wise to physically separate the contacting bodies.
  */
 template <typename K = EK>
 bool separate_kissing_columns(
@@ -130,31 +138,104 @@ bool separate_kissing_columns(
 ) {
     typedef CGAL::Surface_mesh<typename K::Point_3> Surface_mesh;
     typedef typename Surface_mesh::Vertex_index Vertex_index;
+    typedef typename Surface_mesh::Halfedge_index Halfedge_index;
     typedef typename K::Point_3 Point_3;
     typedef typename K::FT FT;
+    typedef std::pair<Point_3, Point_3> SpatialSegment;
+
+    // Step 1: Repair topology so that kissing edges have 2 incoming faces each
+    CGAL::Polygon_mesh_processing::duplicate_non_manifold_vertices(mesh);
 
     std::map<Point_3, std::vector<Vertex_index>> coord_map;
     for (auto v : mesh.vertices()) coord_map[mesh.point(v)].push_back(v);
 
-    std::vector<Vertex_index> colliding_verts;
-    for (const auto& [pt, vs] : coord_map) {
-        if (vs.size() > 1) {
-            for (auto v : vs) colliding_verts.push_back(v);
+    // Map halfedges to canonical 3D spatial segments
+    std::map<SpatialSegment, std::vector<Halfedge_index>> segment_map;
+    for (auto h : mesh.halfedges()) {
+        Point_3 p_src = mesh.point(mesh.source(h));
+        Point_3 p_tgt = mesh.point(mesh.target(h));
+        if (p_src == p_tgt) continue;
+        SpatialSegment seg = (p_src < p_tgt) ? SpatialSegment(p_src, p_tgt) : SpatialSegment(p_tgt, p_src);
+        segment_map[seg].push_back(h);
+    }
+
+    // Identify raw 1D kissing segments
+    std::vector<SpatialSegment> raw_kissing_segments;
+    std::set<Point_3> segment_endpoints;
+    for (const auto& [seg, halfedges] : segment_map) {
+        Point_3 pA = seg.first;
+        Point_3 pB = seg.second;
+        if (halfedges.size() >= 4 || (coord_map[pA].size() > 1 && coord_map[pB].size() > 1)) {
+            raw_kissing_segments.push_back(seg);
+            segment_endpoints.insert(pA);
+            segment_endpoints.insert(pB);
         }
     }
-    if (colliding_verts.empty()) return false;
 
-    // Stage 1: Insert transition collars on edges rising from single-vertex base anchors
-    auto collar_verts = insert_transition_collars(mesh, coord_map, collar_len);
-
-    // Stage 2: Retract all contact and collar vertices inward into solid interior
-    std::set<Vertex_index> verts_to_retract(colliding_verts.begin(), colliding_verts.end());
-    verts_to_retract.insert(collar_verts.begin(), collar_verts.end());
-    retract_contact_vertices(mesh, verts_to_retract, delta_max);
-
-    if (!collar_verts.empty()) {
-        CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
+    // Identify isolated 0D point touches (points with collisions not part of any kissing segment)
+    std::vector<Point_3> isolated_contact_points;
+    for (const auto& [pt, vs] : coord_map) {
+        if (vs.size() > 1 && segment_endpoints.find(pt) == segment_endpoints.end()) {
+            isolated_contact_points.push_back(pt);
+        }
     }
+
+    if (raw_kissing_segments.empty() && isolated_contact_points.empty()) return false;
+
+    // Step 2: Merge contiguous collinear kissing segments into maximal straight cutters
+    auto maximal_segments = merge_collinear_segments(raw_kissing_segments);
+
+    // Build Minkowski cutting boxes
+    std::vector<Surface_mesh> cutters;
+    for (const auto& seg : maximal_segments) {
+        Point_3 p1 = seg.first;
+        Point_3 p2 = seg.second;
+        Point_3 p_min(
+            (std::min)(p1.x(), p2.x()) - delta_max,
+            (std::min)(p1.y(), p2.y()) - delta_max,
+            (std::min)(p1.z(), p2.z()) - delta_max
+        );
+        Point_3 p_max(
+            (std::max)(p1.x(), p2.x()) + delta_max,
+            (std::max)(p1.y(), p2.y()) + delta_max,
+            (std::max)(p1.z(), p2.z()) + delta_max
+        );
+        cutters.push_back(make_box_mesh(p_min, p_max));
+    }
+    for (const auto& pt : isolated_contact_points) {
+        Point_3 p_min(pt.x() - delta_max, pt.y() - delta_max, pt.z() - delta_max);
+        Point_3 p_max(pt.x() + delta_max, pt.y() + delta_max, pt.z() + delta_max);
+        cutters.push_back(make_box_mesh(p_min, p_max));
+    }
+
+    // Step 3: Separate topologically repaired mesh into independent 2-manifold shells
+    std::vector<Surface_mesh> shells;
+    CGAL::Polygon_mesh_processing::split_connected_components(mesh, shells);
+    if (shells.empty()) shells.push_back(std::move(mesh));
+
+    // Step 4: Subtract Minkowski cutting boxes component-by-component
+    for (auto& shell : shells) {
+        for (auto cutter : cutters) {
+            Surface_mesh result;
+            bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
+                shell, cutter, result,
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::all_default()
+            );
+            if (ok && !result.is_empty() && CGAL::is_closed(result)) {
+                shell = std::move(result);
+            }
+        }
+    }
+
+    // Step 5: Recombine cut shells into unified non-self-intersecting mesh
+    mesh.clear();
+    for (const auto& shell : shells) {
+        append_mesh(mesh, shell);
+    }
+
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
     mesh.collect_garbage();
     return true;
 }
