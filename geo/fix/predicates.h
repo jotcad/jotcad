@@ -40,6 +40,48 @@ inline bool is_point_in_triangle(
     return CGAL::do_intersect(P, tri);
 }
 
+/**
+ * segment_triangle_intersection:
+ * Computes exact rational intersection between segment [A, B] and triangle (C, D, E).
+ * Returns:
+ *   - 1: intersection is a 1D segment [out_p1, out_p2] across the face interior
+ *   - 0: intersection is a 0D point out_p1 on the face interior
+ *   - -1: no interior intersection (disjoint or purely on triangle boundary)
+ */
+template <typename K = EK>
+inline int segment_triangle_intersection(
+    const typename K::Point_3& A,
+    const typename K::Point_3& B,
+    const typename K::Point_3& C,
+    const typename K::Point_3& D,
+    const typename K::Point_3& E,
+    typename K::Point_3& out_p1,
+    typename K::Point_3& out_p2
+) {
+    typename K::Segment_3 seg(A, B);
+    typename K::Triangle_3 tri(C, D, E);
+    auto inter = CGAL::intersection(seg, tri);
+    if (!inter) return -1;
+
+    if (const typename K::Segment_3* s = std::get_if<typename K::Segment_3>(&*inter)) {
+        out_p1 = s->source();
+        out_p2 = s->target();
+        if (out_p1 == out_p2) {
+            if (out_p1 == C || out_p1 == D || out_p1 == E) return -1;
+            return 0;
+        }
+        bool p1_is_vert = (out_p1 == C || out_p1 == D || out_p1 == E);
+        bool p2_is_vert = (out_p2 == C || out_p2 == D || out_p2 == E);
+        if (p1_is_vert && p2_is_vert) return -1; // Exact triangle boundary edge
+        return 1;
+    } else if (const typename K::Point_3* p = std::get_if<typename K::Point_3>(&*inter)) {
+        out_p1 = *p;
+        if (out_p1 == C || out_p1 == D || out_p1 == E) return -1;
+        return 0;
+    }
+    return -1;
+}
+
 } // namespace fix
 } // namespace geo
 } // namespace jotcad

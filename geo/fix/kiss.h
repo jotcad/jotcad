@@ -5,6 +5,8 @@
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
+#include <CGAL/Polygon_mesh_processing/self_intersections.h>
+#include <CGAL/intersections.h>
 #include <map>
 #include <set>
 #include <vector>
@@ -128,6 +130,16 @@ std::vector<std::pair<Point_3, Point_3>> merge_collinear_segments(
     return merged;
 }
 
+template <typename Mesh, typename K = EK>
+typename K::Triangle_3 get_face_triangle(const Mesh& mesh, typename Mesh::Face_index f) {
+    auto h = mesh.halfedge(f);
+    return typename K::Triangle_3(
+        mesh.point(mesh.source(h)),
+        mesh.point(mesh.target(h)),
+        mesh.point(mesh.target(mesh.next(h)))
+    );
+}
+
 /**
  * resolve_kissing_seams:
  * Resolves zero-volume contact singularities (kissing edges, kissing curves, and point touches)
@@ -148,71 +160,58 @@ bool resolve_kissing_seams(
     typedef typename K::FT FT;
     typedef std::pair<Point_3, Point_3> SpatialSegment;
 
-    // Step 1: Repair topology so that kissing edges have 2 incoming faces each
+    // Step 1: Repair topology so that non-manifold kissing edges have 2 incoming faces each
     CGAL::Polygon_mesh_processing::duplicate_non_manifold_vertices(mesh);
 
-    std::map<Point_3, std::vector<Vertex_index>> coord_map;
-    for (auto v : mesh.vertices()) coord_map[mesh.point(v)].push_back(v);
+    // Extract all colliding non-adjacent face pairs via exact AABB spatial search
+    std::vector<std::pair<typename Surface_mesh::Face_index, typename Surface_mesh::Face_index>> colliding_pairs;
+    CGAL::Polygon_mesh_processing::self_intersections(mesh, std::back_inserter(colliding_pairs));
 
-    // Map halfedges to canonical 3D spatial segments
-    std::map<SpatialSegment, std::vector<Halfedge_index>> segment_map;
-    for (auto h : mesh.halfedges()) {
-        Point_3 p_src = mesh.point(mesh.source(h));
-        Point_3 p_tgt = mesh.point(mesh.target(h));
-        if (p_src == p_tgt) continue;
-        SpatialSegment seg = (p_src < p_tgt) ? SpatialSegment(p_src, p_tgt) : SpatialSegment(p_tgt, p_src);
-        segment_map[seg].push_back(h);
-    }
-
-    // Identify raw 1D kissing segments
+    std::set<Point_3> contact_point_set;
     std::vector<SpatialSegment> raw_kissing_segments;
-    std::set<Point_3> segment_endpoints;
-    for (const auto& [seg, halfedges] : segment_map) {
-        Point_3 pA = seg.first;
-        Point_3 pB = seg.second;
-        if (halfedges.size() >= 4 || (coord_map[pA].size() > 1 && coord_map[pB].size() > 1)) {
-            raw_kissing_segments.push_back(seg);
-            segment_endpoints.insert(pA);
-            segment_endpoints.insert(pB);
-        }
-    }
 
-    // Identify isolated 0D point touches (points with collisions not part of any kissing segment)
-    std::vector<Point_3> isolated_contact_points;
-    for (const auto& [pt, vs] : coord_map) {
-        if (vs.size() > 1 && segment_endpoints.find(pt) == segment_endpoints.end()) {
-            isolated_contact_points.push_back(pt);
-        }
-    }
+    for (const auto& [f1, f2] : colliding_pairs) {
+        auto t1 = get_face_triangle<Surface_mesh, K>(mesh, f1);
+        auto t2 = get_face_triangle<Surface_mesh, K>(mesh, f2);
+        auto inter = CGAL::intersection(t1, t2);
+        if (!inter) continue;
 
-    // Identify asymmetric Point-to-Edge contacts (0D vertex touching interior of 1D edge)
-    for (const auto& [pt, vs] : coord_map) {
-        for (const auto& [seg, halfedges] : segment_map) {
-            if (is_point_on_segment<K>(pt, seg.first, seg.second)) {
-                isolated_contact_points.push_back(pt);
-                break;
+        if (const Point_3* pt = std::get_if<Point_3>(&*inter)) {
+            contact_point_set.insert(*pt);
+        } else if (const typename K::Segment_3* seg = std::get_if<typename K::Segment_3>(&*inter)) {
+            Point_3 p1 = seg->source();
+            Point_3 p2 = seg->target();
+            if (p1 != p2) {
+                SpatialSegment s = (p1 < p2) ? SpatialSegment(p1, p2) : SpatialSegment(p2, p1);
+                raw_kissing_segments.push_back(s);
+            }
+        } else if (const typename K::Triangle_3* tri = std::get_if<typename K::Triangle_3>(&*inter)) {
+            for (int i = 0; i < 3; ++i) {
+                Point_3 p1 = (*tri)[i];
+                Point_3 p2 = (*tri)[(i + 1) % 3];
+                if (p1 != p2) {
+                    SpatialSegment s = (p1 < p2) ? SpatialSegment(p1, p2) : SpatialSegment(p2, p1);
+                    raw_kissing_segments.push_back(s);
+                }
+            }
+        } else if (const std::vector<Point_3>* poly = std::get_if<std::vector<Point_3>>(&*inter)) {
+            size_t n = poly->size();
+            for (size_t i = 0; i < n; ++i) {
+                Point_3 p1 = (*poly)[i];
+                Point_3 p2 = (*poly)[(i + 1) % n];
+                if (p1 != p2) {
+                    SpatialSegment s = (p1 < p2) ? SpatialSegment(p1, p2) : SpatialSegment(p2, p1);
+                    raw_kissing_segments.push_back(s);
+                }
             }
         }
     }
 
-    // Identify asymmetric Point-to-Face contacts (0D vertex touching interior of 2D triangle)
-    for (const auto& [pt, vs] : coord_map) {
-        for (auto f : mesh.faces()) {
-            auto h = mesh.halfedge(f);
-            Point_3 A = mesh.point(mesh.source(h));
-            Point_3 B = mesh.point(mesh.target(h));
-            Point_3 C = mesh.point(mesh.target(mesh.next(h)));
-            if (is_point_in_triangle<K>(pt, A, B, C)) {
-                isolated_contact_points.push_back(pt);
-                break;
-            }
-        }
-    }
-
-    if (raw_kissing_segments.empty() && isolated_contact_points.empty()) return false;
+    if (raw_kissing_segments.empty() && contact_point_set.empty()) return false;
 
     // Step 2: Merge contiguous collinear kissing segments into maximal straight tools
     auto maximal_segments = merge_collinear_segments(raw_kissing_segments);
+    std::vector<Point_3> isolated_contact_points(contact_point_set.begin(), contact_point_set.end());
 
     // Build Minkowski boxes (cutters for PART, weld bridges for WELD)
     std::vector<Surface_mesh> tools;
@@ -237,24 +236,40 @@ bool resolve_kissing_seams(
         tools.push_back(make_box_mesh(p_min, p_max));
     }
 
-    // Step 3: Apply Minkowski Corefinement according to KissMode
+    // Step 3: Combine tools into a unified Minkowski tool to ensure single-pass Corefinement
+    Surface_mesh unified_tool;
+    if (!tools.empty()) {
+        unified_tool = tools[0];
+        for (size_t i = 1; i < tools.size(); ++i) {
+            Surface_mesh u_res;
+            if (CGAL::Polygon_mesh_processing::corefine_and_compute_union(
+                    unified_tool, tools[i], u_res,
+                    CGAL::parameters::throw_on_self_intersection(false),
+                    CGAL::parameters::throw_on_self_intersection(false),
+                    CGAL::parameters::all_default()) && !u_res.is_empty() && CGAL::is_closed(u_res)) {
+                unified_tool = std::move(u_res);
+            } else {
+                append_mesh(unified_tool, tools[i]);
+            }
+        }
+    }
+
+    // Step 4: Apply Minkowski Corefinement according to KissMode
     if (mode == KissMode::PART) {
         std::vector<Surface_mesh> shells;
         CGAL::Polygon_mesh_processing::split_connected_components(mesh, shells);
         if (shells.empty()) shells.push_back(std::move(mesh));
 
         for (auto& shell : shells) {
-            for (auto tool : tools) {
-                Surface_mesh result;
-                bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
-                    shell, tool, result,
-                    CGAL::parameters::throw_on_self_intersection(false),
-                    CGAL::parameters::throw_on_self_intersection(false),
-                    CGAL::parameters::all_default()
-                );
-                if (ok && !result.is_empty() && CGAL::is_closed(result)) {
-                    shell = std::move(result);
-                }
+            Surface_mesh result;
+            bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
+                shell, unified_tool, result,
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::all_default()
+            );
+            if (ok && !result.is_empty() && CGAL::is_closed(result)) {
+                shell = std::move(result);
             }
         }
 
@@ -263,17 +278,15 @@ bool resolve_kissing_seams(
             append_mesh(mesh, shell);
         }
     } else { // KissMode::WELD
-        for (auto tool : tools) {
-            Surface_mesh result;
-            bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
-                mesh, tool, result,
-                CGAL::parameters::throw_on_self_intersection(false),
-                CGAL::parameters::throw_on_self_intersection(false),
-                CGAL::parameters::all_default()
-            );
-            if (ok && !result.is_empty() && CGAL::is_closed(result)) {
-                mesh = std::move(result);
-            }
+        Surface_mesh result;
+        bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
+            mesh, unified_tool, result,
+            CGAL::parameters::throw_on_self_intersection(false),
+            CGAL::parameters::throw_on_self_intersection(false),
+            CGAL::parameters::all_default()
+        );
+        if (ok && !result.is_empty() && CGAL::is_closed(result)) {
+            mesh = std::move(result);
         }
     }
 
