@@ -182,6 +182,103 @@ Mesh build_bridged_kissing_edge_mesh() {
     return mesh;
 }
 
+// ============================================================================
+// FIXTURE 7: Point-to-Point (Two Pyramids Touching Apex-to-Apex)
+// ============================================================================
+Mesh build_point_to_point_mesh() {
+    Mesh mesh;
+    // Pyramid 1 (Z in [0, 10], apex at (0, 0, 0))
+    auto v_apex1 = mesh.add_vertex(EK::Point_3(0, 0, 0));
+    auto v1 = mesh.add_vertex(EK::Point_3(-5, -5, 10));
+    auto v2 = mesh.add_vertex(EK::Point_3(5, -5, 10));
+    auto v3 = mesh.add_vertex(EK::Point_3(5, 5, 10));
+    auto v4 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
+    mesh.add_face(v1, v2, v3); mesh.add_face(v1, v3, v4); // Top cap
+    mesh.add_face(v_apex1, v2, v1);
+    mesh.add_face(v_apex1, v3, v2);
+    mesh.add_face(v_apex1, v4, v3);
+    mesh.add_face(v_apex1, v1, v4);
+
+    // Pyramid 2 (Z in [-10, 0], apex at (0, 0, 0))
+    auto v_apex2 = mesh.add_vertex(EK::Point_3(0, 0, 0));
+    auto u1 = mesh.add_vertex(EK::Point_3(-5, -5, -10));
+    auto u2 = mesh.add_vertex(EK::Point_3(5, -5, -10));
+    auto u3 = mesh.add_vertex(EK::Point_3(5, 5, -10));
+    auto u4 = mesh.add_vertex(EK::Point_3(-5, 5, -10));
+    mesh.add_face(u1, u3, u2); mesh.add_face(u1, u4, u3); // Bottom cap
+    mesh.add_face(v_apex2, u1, u2);
+    mesh.add_face(v_apex2, u2, u3);
+    mesh.add_face(v_apex2, u3, u4);
+    mesh.add_face(v_apex2, u4, u1);
+
+    return mesh;
+}
+
+// ============================================================================
+// FIXTURE 8: Point-to-Edge (Pyramid Apex Touching Cube Edge Midpoint)
+// ============================================================================
+Mesh build_point_to_edge_mesh() {
+    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
+    auto v_apex = mesh.add_vertex(EK::Point_3(0, 10, 0));
+    auto v1 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
+    auto v2 = mesh.add_vertex(EK::Point_3(5, 5, 10));
+    auto v3 = mesh.add_vertex(EK::Point_3(5, 15, 10));
+    auto v4 = mesh.add_vertex(EK::Point_3(-5, 15, 10));
+    mesh.add_face(v1, v2, v3); mesh.add_face(v1, v3, v4);
+    mesh.add_face(v_apex, v2, v1);
+    mesh.add_face(v_apex, v3, v2);
+    mesh.add_face(v_apex, v4, v3);
+    mesh.add_face(v_apex, v1, v4);
+    return mesh;
+}
+
+// ============================================================================
+// FIXTURE 9: Point-to-Face (Pyramid Apex Touching Cube Face Center)
+// ============================================================================
+Mesh build_point_to_face_mesh() {
+    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
+    auto v_apex = mesh.add_vertex(EK::Point_3(0, 0, 0));
+    auto v1 = mesh.add_vertex(EK::Point_3(-5, -5, 10));
+    auto v2 = mesh.add_vertex(EK::Point_3(5, -5, 10));
+    auto v3 = mesh.add_vertex(EK::Point_3(5, 5, 10));
+    auto v4 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
+    mesh.add_face(v1, v2, v3); mesh.add_face(v1, v3, v4);
+    mesh.add_face(v_apex, v2, v1);
+    mesh.add_face(v_apex, v3, v2);
+    mesh.add_face(v_apex, v4, v3);
+    mesh.add_face(v_apex, v1, v4);
+    return mesh;
+}
+
+// ============================================================================
+// FIXTURE 10: Edge-to-Face (Prism Knife-Edge Resting Flush on Cube Face)
+// ============================================================================
+Mesh build_edge_to_face_mesh() {
+    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
+    auto e0 = mesh.add_vertex(EK::Point_3(-5, 0, 0));
+    auto e1 = mesh.add_vertex(EK::Point_3(5, 0, 0));
+    auto t0 = mesh.add_vertex(EK::Point_3(-5, -5, 10));
+    auto t1 = mesh.add_vertex(EK::Point_3(5, -5, 10));
+    auto t2 = mesh.add_vertex(EK::Point_3(5, 5, 10));
+    auto t3 = mesh.add_vertex(EK::Point_3(-5, 5, 10));
+    mesh.add_face(t0, t1, t2); mesh.add_face(t0, t2, t3);
+    mesh.add_face(e0, e1, t1); mesh.add_face(e0, t1, t0);
+    mesh.add_face(e1, e0, t3); mesh.add_face(e1, t3, t2);
+    mesh.add_face(e0, t0, t3);
+    mesh.add_face(e1, t2, t1);
+    return mesh;
+}
+
+// ============================================================================
+// FIXTURE 11: Face-to-Face (Two Cubes Sharing Flush Coplanar Face)
+// ============================================================================
+Mesh build_face_to_face_mesh() {
+    Mesh mesh = fix::make_box_mesh(EK::Point_3(-10, -10, -20), EK::Point_3(10, 10, 0));
+    Mesh top_cube = fix::make_box_mesh(EK::Point_3(-10, -10, 0), EK::Point_3(10, 10, 20));
+    fix::append_mesh(mesh, top_cube);
+    return mesh;
+}
+
 int main() {
     std::cout << "==================================================" << std::endl;
     std::cout << "TEST 1: Free Kissing Edge (Open at Both Ends)" << std::endl;
@@ -282,6 +379,76 @@ int main() {
     assert(!post6);
     assert(CGAL::is_closed(mesh6));
     std::cout << "  ✅ TEST 6 PASSED (Weld produces 0 collisions and watertight manifold)" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 7: Point-to-Point Kiss (Two Pyramids Apex-to-Apex)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh7 = build_point_to_point_mesh();
+    std::cout << "  - Mesh: " << mesh7.number_of_vertices() << " vertices, " << mesh7.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh7) ? "YES" : "NO") << std::endl;
+    bool rep7 = fix::separate_kissing_columns(mesh7, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep7 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh7);
+    bool post7 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh7);
+    std::cout << "  - After repair does_self_intersect: " << (post7 ? "YES" : "NO") << std::endl;
+    assert(!post7);
+    std::cout << "  ✅ TEST 7 PASSED (0 Collisions)" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 8: Point-to-Edge Kiss (Pyramid Apex on Cube Edge)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh8 = build_point_to_edge_mesh();
+    std::cout << "  - Mesh: " << mesh8.number_of_vertices() << " vertices, " << mesh8.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh8) ? "YES" : "NO") << std::endl;
+    bool rep8 = fix::separate_kissing_columns(mesh8, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep8 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh8);
+    bool post8 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh8);
+    std::cout << "  - After repair does_self_intersect: " << (post8 ? "YES" : "NO") << std::endl;
+    assert(!post8);
+    std::cout << "  ✅ TEST 8 PASSED (0 Collisions)" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 9: Point-to-Face Kiss (Pyramid Apex on Cube Face)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh9 = build_point_to_face_mesh();
+    std::cout << "  - Mesh: " << mesh9.number_of_vertices() << " vertices, " << mesh9.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh9) ? "YES" : "NO") << std::endl;
+    bool rep9 = fix::separate_kissing_columns(mesh9, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep9 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh9);
+    bool post9 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh9);
+    std::cout << "  - After repair does_self_intersect: " << (post9 ? "YES" : "NO") << std::endl;
+    assert(!post9);
+    std::cout << "  ✅ TEST 9 PASSED (0 Collisions)" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 10: Edge-to-Face Kiss (Prism Edge on Cube Face)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh10 = build_edge_to_face_mesh();
+    std::cout << "  - Mesh: " << mesh10.number_of_vertices() << " vertices, " << mesh10.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh10) ? "YES" : "NO") << std::endl;
+    bool rep10 = fix::separate_kissing_columns(mesh10, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep10 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh10);
+    bool post10 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh10);
+    std::cout << "  - After repair does_self_intersect: " << (post10 ? "YES" : "NO") << std::endl;
+    assert(!post10);
+    std::cout << "  ✅ TEST 10 PASSED (0 Collisions)" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 11: Face-to-Face Kiss (Two Cubes Sharing Flush Face)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh11 = build_face_to_face_mesh();
+    std::cout << "  - Mesh: " << mesh11.number_of_vertices() << " vertices, " << mesh11.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before repair does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh11) ? "YES" : "NO") << std::endl;
+    bool rep11 = fix::separate_kissing_columns(mesh11, EK::FT(1) / EK::FT(100));
+    std::cout << "  - separate_kissing_columns result: " << (rep11 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh11);
+    bool post11 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh11);
+    std::cout << "  - After repair does_self_intersect: " << (post11 ? "YES" : "NO") << std::endl;
+    assert(!post11);
+    std::cout << "  ✅ TEST 11 PASSED (0 Collisions)" << std::endl;
 
     std::cout << "\n🎉 ALL REGRESSION TESTS PASSED." << std::endl;
     return 0;

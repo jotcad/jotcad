@@ -1,5 +1,6 @@
 #pragma once
 #include "kernel.h"
+#include "predicates.h"
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
@@ -181,6 +182,30 @@ bool resolve_kissing_seams(
     for (const auto& [pt, vs] : coord_map) {
         if (vs.size() > 1 && segment_endpoints.find(pt) == segment_endpoints.end()) {
             isolated_contact_points.push_back(pt);
+        }
+    }
+
+    // Identify asymmetric Point-to-Edge contacts (0D vertex touching interior of 1D edge)
+    for (const auto& [pt, vs] : coord_map) {
+        for (const auto& [seg, halfedges] : segment_map) {
+            if (is_point_on_segment<K>(pt, seg.first, seg.second)) {
+                isolated_contact_points.push_back(pt);
+                break;
+            }
+        }
+    }
+
+    // Identify asymmetric Point-to-Face contacts (0D vertex touching interior of 2D triangle)
+    for (const auto& [pt, vs] : coord_map) {
+        for (auto f : mesh.faces()) {
+            auto h = mesh.halfedge(f);
+            Point_3 A = mesh.point(mesh.source(h));
+            Point_3 B = mesh.point(mesh.target(h));
+            Point_3 C = mesh.point(mesh.target(mesh.next(h)));
+            if (is_point_in_triangle<K>(pt, A, B, C)) {
+                isolated_contact_points.push_back(pt);
+                break;
+            }
         }
     }
 
