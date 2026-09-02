@@ -1,68 +1,79 @@
-# Specification: `repair_self_touches` (Manifold Recovery)
-
-**Reference**: See [docs/TOPOLOGICAL_SINGULARITIES.md](../../docs/TOPOLOGICAL_SINGULARITIES.md) for the foundational problem definition and resolution classes.
+# Specification: Universal Zero-Volume Contact & Kiss Resolution (`geo/fix/kiss.h`)
 
 ## 1. Objective
-Implement a robust manifold recovery pass in the JotCAD native kernel to resolve **Zero-Volume Contacts** (Topological Singularities). The goal is to ensure that all geometric results are strictly manifold and immune to inadvertent spatial merging.
+Provide a mathematically complete, robust, and unified module to detect and resolve **Zero-Volume Contacts (Kissing Singularities)** in 3D CAD meshes. The system supports dual engineering intents:
+1. **Parting (`KissMode::PART`)**: Carves a deterministic physical clearance channel ($2\delta = 0.02\text{ mm}$) to ensure independent mold separation and eliminate non-manifold self-intersections.
+2. **Joining (`KissMode::WELD`)**: Adds a solid structural bridge ($2\delta = 0.02\text{ mm}$) to fuse touching bodies into a single watertight 2-manifold solid.
 
-## 2. API Design
+---
 
-### `is_geometry_unambiguous<K>(mesh)`
-- **Predicate**: Returns `true` if the mesh is strictly manifold and free of "pinched" vertices or edges.
-- **Usage**: Use this to determine if a geometry requires resolution before downstream operations.
+## 2. Complete 3D Boundary Contact Taxonomy ($3 \times 3$ Matrix)
 
-### `make_geometry_unambiguous<K>(mesh, delta)`
-- **Action**: Resolves non-manifold singularities using **Umbrella Splitting & Geometric Locking**.
-- **Transformation**: Localizes distortion via subdivision and applies coordinate displacement to ensure topological shells have distinct geometric points.
+In 3D Euclidean geometry, any polyhedral boundary consists exclusively of **0-cells (Vertices)**, **1-cells (Edges)**, and **2-cells (Faces)**. The symmetric pair matrix defines exactly 6 contact configurations:
 
-## 2. Core 3D Algorithm: Umbrella Splitting & Geometric Locking
-This algorithm targets "bowtie" vertices and "hinge" edges by localizing geometric distortion through subdivision.
+| Contact Type | Features Involved | Contact Dimension | Minkowski Correction Tool |
+| :--- | :--- | :---: | :--- |
+| **Point-to-Point** | Vertex $V_1$ touches Vertex $V_2$ | **0D Point** | **3D Cube** ($[x \pm \delta, y \pm \delta, z \pm \delta]$) |
+| **Point-to-Edge** | Vertex $V$ touches interior of Edge $E$ | **0D Point** | **3D Cube** at vertex coordinate $P$ |
+| **Point-to-Face** | Vertex $V$ touches interior of Face $F$ | **0D Point** | **3D Cube** at vertex coordinate $P$ |
+| **Edge-to-Edge** | Edge $E_1$ touches Edge $E_2$ (collinear or crossing) | **1D Segment** or **0D Point** | **Swept Prism / Box** ($[P_{\text{start}}, P_{\text{end}}] \pm \delta$) |
+| **Edge-to-Face** | Edge $E$ lies flush on flat Face $F$ | **1D Segment** | **Swept Prism / Box** along contact segment |
+| **Face-to-Face** | Face $F_1$ touches Face $F_2$ coplanar ($A > 0$) | **2D Polygon Patch** | **Extruded Slab** (Thickness $2\delta$ along normal $\vec{N}$) |
 
-### Step 1: Identification
-- Use `CGAL::Polygon_mesh_processing::non_manifold_vertices` to identify "pinched" vertices.
-- A vertex is non-manifold if its incident faces form more than one disjoint cycle (umbrella).
+---
 
-### Step 2: Combinatorial Splitting
-- Use `CGAL::Polygon_mesh_processing::duplicate_non_manifold_vertices` with an `output_iterator`.
-- **Output**: A set of vertex groups, where each group `[V_orig, V_new1, V_new2, ...]` represents topologically distinct umbrellas sharing a coordinate.
+## 3. Core Principles & Invariants
 
-### Step 3: Local Subdivision (Planarity Preservation)
-For each vertex `V` in a group:
-1.  **Identify Edges**: Collect all outgoing halfedges from `V`.
-2.  **Split Edges**: For each halfedge, insert a new vertex `V_prime` at an infinitesimal distance `delta` (default: `0.0001`) from `V`.
-    - Use `CGAL::Euler::split_edge(edge, mesh)`.
-3.  **Split Faces**: Connect the new `V_prime` vertices by splitting the incident faces using `CGAL::Euler::split_face`.
-    - This creates a small "transition triangle" (the cap) that isolates `V` from the rest of the face.
+### A. Principle of Least Distortion (Lower-Dimension Preference)
+In asymmetric contacts (e.g. Point-to-Face or Edge-to-Face), the correction is applied to the **lower-dimensional feature** ($0\text{D} \to 1\text{D} \to 2\text{D}$):
+- **Point-to-Face**: Blunting the 0D apex tip alters an infinitesimal volume ($O(\delta^3) \approx 10^{-6}\text{ mm}^3$) while keeping the 2D functional reference plane **100% flat, continuous, and untouched**.
+- **Edge-to-Face**: Relieving the 1D knife edge ($O(L \cdot \delta^2)$) preserves the 2D reference plane completely flat.
 
-### Step 4: Geometric Perturbation
-1.  **Calculate Offset**: Compute the average vector of all `(V_prime - V)` offsets for this specific umbrella.
-2.  **Displace Apex**: Move the apex vertex `V` by `average_offset / 2`.
-3.  **Result**: Topologically distinct components now have distinct geometric coordinates.
+### B. Prismatic Hulls & Cubical Extrusions in Pure `EK::FT`
+All correction tools are exact convex polyhedra (cubes, collinear swept boxes, and extruded slabs):
+- **Kernel Purity**: All coordinates are computed purely in exact rational `EK::FT` with zero trigonometric or square-root rounding.
+- **Convexity Guarantee**: Convex prismatic tools ensure clean, well-conditioned Corefinement.
+- **Bounded Envelope**: The Chebyshev radius ($L_\infty \le \delta$) guarantees zero geometric modification beyond the $\delta = 0.01\text{ mm}$ boundary.
 
-## 3. 2D Algorithm: Bisector-Based Gap Injection
-Targets results from `jot/cut` and `jot/join` where separate boundaries "kiss" at a vertex.
+### C. Topological Pre-Conditioning
+1. **Unpinning**: `CGAL::Polygon_mesh_processing::duplicate_non_manifold_vertices` ensures every edge in the topological graph has degree 2 (zero points moved).
+2. **Collinear Merging**: Contiguous collinear kissing segments are chained into maximal straight lines prior to tool generation, minimizing Boolean operations.
 
-### Step 1: Detection
-- Iterate through all polygons in the result set (`General_polygon_set_2`).
-- Identify vertices from different boundaries (or different loops of the same polygon) that share a coordinate.
+---
 
-### Step 2: Perturbation
-- For each coincident vertex $V$:
-  1. Calculate the **inward-pointing bisector** of the two incident edges.
-  2. Displace $V$ along this bisector by `delta`.
-  3. This "shrinks" the polygon locally, creating a visible (but infinitesimal) gap.
+## 4. API Design (`geo/fix/kiss.h`)
 
-## 4. Implementation Plan
-1.  **`geo/impl/repair.h`**: Add `repair_self_touches<K>(Surface_mesh& mesh)` function.
-2.  **`geo/cut_op.h`**: Integrate the 2D recovery pass into `gps_to_geometry`.
-3.  **`geo/test/fix_test.cpp`**: 
-    - Test Case A: Two squares sharing a corner (2D).
-    - Test Case B: Two cones sharing an apex (3D).
-    - Verification: `is_manifold(mesh)` must return `true`.
+```cpp
+namespace jotcad::geo::fix {
 
-## 5. Numerical Constraints
-- **Exactness**: Identify coincident points using **Exact Predicates** (`EK`).
-## 6. Status
-- **Implementation**: [COMPLETED] Core logic added in `geo/fix/repair.h`.
-- **Verification**: [VERIFIED] All tests in `geo/fix/repair_test.cpp` passed.
-- **Integration**: [READY] The pass is available for integration into Boolean and Rule operators.
+enum class KissMode {
+    PART, // Minkowski Difference: carves clearance gap (2*delta)
+    WELD  // Minkowski Union: adds solid structural bridge (2*delta)
+};
+
+template <typename K = EK>
+bool resolve_kissing_seams(
+    CGAL::Surface_mesh<typename K::Point_3>& mesh, 
+    KissMode mode = KissMode::PART,
+    typename K::FT delta = 0.01
+);
+
+template <typename K = EK>
+inline bool separate_kissing_columns(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename K::FT delta = 0.01);
+
+template <typename K = EK>
+inline bool weld_kissing_columns(CGAL::Surface_mesh<typename K::Point_3>& mesh, typename K::FT delta = 0.01);
+
+} // namespace jotcad::geo::fix
+```
+
+---
+
+## 5. Verification & Status
+- **Implementation**: Fully established in [`geo/fix/kiss.h`](file:///home/brian/github/jotcad_ez/geo/fix/kiss.h).
+- **Regression Suite**: Validated in [`geo/test/test_repair_wedge.cpp`](file:///home/brian/github/jotcad_ez/geo/test/test_repair_wedge.cpp) across 6 test cases:
+  - Free Kissing Edges (0 collisions).
+  - Real-world 345-vertex Bear Fixture (0 collisions).
+  - Bridged Seams (0 collisions).
+  - Watertight Minkowski Welding (0 collisions, closed 2-manifold solid).
+- **Status**: [VERIFIED & COMMITTED] (Commit `58c78eb`).
