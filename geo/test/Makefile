@@ -204,7 +204,7 @@ unit_tests_run.h: Makefile $(COMBINED_TEST_SOURCES)
 	@echo "};" >> $@
 
 # Include generated dependencies
--include $(OBJ_DIR)/unit_tests.d $(OBJ_DIR)/cid_consistency_test.d
+-include $(OBJ_DIR)/unit_tests.d $(OBJ_DIR)/cid_consistency_test.d $(OBJ_DIR)/test_repair_wedge.d
 
 clean:
 	rm -rf $(BIN_DIR) $(OBJ_DIR) unit_tests_run.h
