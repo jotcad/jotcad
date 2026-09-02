@@ -5,7 +5,7 @@
 // Force rebuild with safe bounded collar splits
 #include "kernel.h"
 #include "fix/repair.h"
-#include "fix/collar.h"
+#include "fix/kiss.h"
 #include "boolean/engine.h"
 #include <CGAL/IO/polygon_mesh_io.h>
 #include <CGAL/Polygon_mesh_processing/self_intersections.h>
@@ -265,6 +265,23 @@ int main() {
     bool post5 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh5);
     std::cout << "  - After repair does_self_intersect: " << (post5 ? "YES" : "NO") << std::endl;
     std::cout << "  ✅ TEST 5 COMPLETED (Self-intersect: " << (post5 ? "YES" : "NO") << ")" << std::endl;
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "TEST 6: Dual Minkowski Welding (KissMode::WELD)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+    Mesh mesh6 = build_free_kissing_edge_mesh();
+    std::cout << "  - Mesh: " << mesh6.number_of_vertices() << " vertices, " << mesh6.number_of_faces() << " faces." << std::endl;
+    std::cout << "  - Before weld does_self_intersect: " << (CGAL::Polygon_mesh_processing::does_self_intersect(mesh6) ? "YES" : "NO") << std::endl;
+    bool rep6 = fix::weld_kissing_columns(mesh6, EK::FT(1) / EK::FT(100));
+    std::cout << "  - weld_kissing_columns result: " << (rep6 ? "MODIFIED" : "UNCHANGED") << std::endl;
+    CGAL::Polygon_mesh_processing::triangulate_faces(mesh6);
+    bool post6 = CGAL::Polygon_mesh_processing::does_self_intersect(mesh6);
+    std::cout << "  - After weld does_self_intersect: " << (post6 ? "YES" : "NO") << std::endl;
+    std::cout << "  - is_closed: " << (CGAL::is_closed(mesh6) ? "YES" : "NO") << std::endl;
+    std::cout << "  - is_triangle_mesh: " << (CGAL::is_triangle_mesh(mesh6) ? "YES" : "NO") << std::endl;
+    assert(!post6);
+    assert(CGAL::is_closed(mesh6));
+    std::cout << "  ✅ TEST 6 PASSED (Weld produces 0 collisions and watertight manifold)" << std::endl;
 
     std::cout << "\n🎉 ALL REGRESSION TESTS PASSED." << std::endl;
     return 0;

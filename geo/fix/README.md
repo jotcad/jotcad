@@ -5,8 +5,7 @@ This module provides utilities to verify and enforce topological mesh integrity,
 ## Directory Index
 
 * **[repair.h](file:///home/brian/github/jotcad_ez/geo/fix/repair.h)**: Implements Strategy I (Separation): checks for topological ambiguity (`is_geometry_unambiguous`), verifies solid properties (`is_geometry_solid`), and resolves singularities via Umbrella Splitting & Geometric Locking (`make_geometry_unambiguous`).
-* **[bridge.h](file:///home/brian/github/jotcad_ez/geo/fix/bridge.h)**: Implements Strategy II (Bridging): resolves zero-volume contact singularities by fusing coincident touching apexes into a continuous positive-volume neck (`bridge_zero_volume_touches`).
-* **[collar.h](file:///home/brian/github/jotcad_ez/geo/fix/collar.h)**: Implements Localized Transition Collar Separation (`separate_kissing_columns`): resolves 1D vertical contact seam singularities on 2.5D extrusions while preserving exact CAD model base/ceiling alignment.
+* **[kiss.h](file:///home/brian/github/jotcad_ez/geo/fix/kiss.h)**: Universal Zero-Volume Kissing Seam Resolution (`resolve_kissing_seams`, `separate_kissing_columns`, `weld_kissing_columns`): unpins non-manifold 4-face edges into 2-manifold topological edges and resolves kissing seams via dual Minkowski Parting (Difference) and Joining (Union) Corefinements.
 * **[SPEC.md](file:///home/brian/github/jotcad_ez/geo/fix/SPEC.md)**: Details the formal specifications, design choices, 2D and 3D algorithms, and numerical constraints for manifold recovery.
-* **[repair_test.cpp](file:///home/brian/github/jotcad_ez/geo/fix/repair_test.cpp)**: Contains unit tests validating collision-detection and ambiguity resolution on degenerate models (such as tetrahedrons touching cube facets at coincident coordinates).
+* **[repair_test.cpp](file:///home/brian/github/jotcad_ez/geo/fix/repair_test.cpp)**: Contains unit tests validating collision-detection and ambiguity resolution on degenerate models.
 * **[bridge_test.cpp](file:///home/brian/github/jotcad_ez/geo/fix/bridge_test.cpp)**: Contains unit tests validating bridge expansion across touching apexes.
