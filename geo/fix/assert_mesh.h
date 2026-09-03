@@ -5,6 +5,7 @@
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/self_intersections.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>
+#include <CGAL/boost/graph/helpers.h>
 
 namespace jotcad {
 namespace geo {
@@ -52,7 +53,7 @@ inline MeshStatus check_corefinement_preconditions(const Mesh& m) {
     if (!CGAL::is_triangle_mesh(m)) return MeshStatus::NOT_TRIANGULATED;
 
     // 5. O(N) Exhaustive combinatorial graph audit
-    if (!m.is_valid()) return MeshStatus::INVALID_CONNECTIVITY;
+    if (!m.is_valid() || !CGAL::is_valid_polygon_mesh(m)) return MeshStatus::INVALID_CONNECTIVITY;
 
     return MeshStatus::OK;
 }

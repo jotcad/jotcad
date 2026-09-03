@@ -8,7 +8,9 @@
 #include "mold/assembly.h"
 #include "mold/verify.h"
 #include "fix/assert_mesh.h"
+#include "boolean/corefine.h"
 #include <iostream>
+#include <stdexcept>
 
 namespace jotcad {
 namespace geo {
@@ -23,12 +25,23 @@ struct MoldOp : P {
         const Shape& in,
         double padding_val = 10.0,
         double explode_val = 0.0,
-        double draft_val = 0.0
+        double draft_val = 0.0,
+        std::string kiss_val = "weld",
+        double kiss_width_val = 0.01
     ) {
         mold::MoldParams params;
         params.padding = FT(padding_val);
         params.explode = FT(explode_val);
         params.draft = FT(draft_val);
+
+        if (kiss_val == "weld") {
+            params.kiss_mode = fix::KissMode::WELD;
+        } else if (kiss_val == "part") {
+            params.kiss_mode = fix::KissMode::PART;
+        } else {
+            throw std::runtime_error("Invalid kiss mode '" + kiss_val + "': must be 'weld' or 'part'");
+        }
+        params.kiss_width = FT(kiss_width_val);
 
         // 1. Extract unified solid mesh in world space
         mold::ExactMesh mesh_part;
@@ -108,17 +121,14 @@ struct MoldOp : P {
             }
 
             // Corefine conservative stock intersection & model cavity difference
-            fix::assert_well_formed_for_corefinement(wedge, "wedge in MoldOp");
             mold::ExactMesh stock_copy = conservative_stock;
-            fix::assert_well_formed_for_corefinement(stock_copy, "stock_copy in MoldOp");
             mold::ExactMesh raw_block;
-            bool ok_inter = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(stock_copy, wedge, raw_block);
+            bool ok_inter = boolean::corefine_intersection(stock_copy, wedge, raw_block, params.kiss_mode, params.kiss_width, "stock ∩ wedge in MoldOp");
             assert(ok_inter && "stock_copy ∩ wedge failed in MoldOp!");
-            fix::assert_well_formed_for_corefinement(raw_block, "raw_block after stock ∩ wedge in MoldOp");
+
             mold::ExactMesh model_copy = mesh_part;
-            fix::assert_well_formed_for_corefinement(model_copy, "model_copy in MoldOp");
             mold::ExactMesh piece_mesh;
-            bool ok_diff = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, model_copy, piece_mesh);
+            bool ok_diff = boolean::corefine_difference(raw_block, model_copy, piece_mesh, params.kiss_mode, params.kiss_width, "raw_block \\ model_copy in MoldOp");
             assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
             fix::assert_well_formed_mesh(piece_mesh, "piece_mesh in MoldOp");
 
@@ -150,7 +160,7 @@ struct MoldOp : P {
         vfs->write(fulfilling.with_output("$out"), result);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode", "draft"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode", "draft", "kiss", "kiss_width"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/mold"},
@@ -163,7 +173,9 @@ struct MoldOp : P {
             {"arguments", {
                 {{"name", "padding"}, {"type", "jot:number"}, {"default", 10.0}, {"description", "Stock mold block wall thickness padding in mm."}},
                 {{"name", "explode"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Explosion distance along piece withdrawal vectors in mm."}},
-                {{"name", "draft"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees)."}}
+                {{"name", "draft"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees)."}},
+                {{"name", "kiss"}, {"type", "jot:string"}, {"default", "weld"}, {"description", "Resolution mode for zero-volume contact singularities ('weld' or 'part')."}},
+                {{"name", "kiss_width"}, {"type", "jot:number"}, {"default", 0.01}, {"description", "Physical width in mm of structural bridge ('weld') or clearance gap ('part')."}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The multi-piece mold assembly containing mold blocks and the centered model."}}}
@@ -173,7 +185,7 @@ struct MoldOp : P {
 };
 
 inline void mold_init(fs::VFSNode* vfs) {
-    Processor::register_op<MoldOp<>, Shape, double, double, double>(vfs, "jot/mold");
+    Processor::register_op<MoldOp<>, Shape, double, double, double, std::string, double>(vfs, "jot/mold");
 }
 
 } // namespace geo

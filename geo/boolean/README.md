@@ -4,6 +4,7 @@ This directory contains the C++ boolean operation engine for Constructive Solid 
 
 ## Contents
 
+* `corefine.h` — Atomic boolean corefinement abstractions (`corefine_difference`, `corefine_intersection`, `corefine_union`) with automated non-manifold topological recovery and unambiguous kiss resolution.
 * `engine.h` — Core engine interface. Implements Union, Difference, Intersection, Clip, and Corefinement algorithms using CGAL's Exact Kernel.
 * [SPEC.md](file:///home/brian/github/jotcad_ez/geo/boolean/SPEC.md) — Technical specification detailing vertex matching tolerances, manifold recovery rules, and performance constraints.
 

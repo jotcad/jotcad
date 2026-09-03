@@ -2,6 +2,7 @@
 #include "protocols.h"
 #include "processor.h"
 #include "geometry.h"
+#include "fix/kiss.h"
 #include "boolean/engine.h"
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits_3.h>
@@ -52,15 +53,17 @@ struct UndercutCluster {
     FT xmin, xmax, ymin, ymax, zmin, zmax;
 };
 
+// Symbolic constant for expanding 2D arrangement zero-area pinches into positive-area bridges
+constexpr double kPinchBridgeWidthMM = 0.01;
+inline FT pinch_bridge_width_ft() { return FT(1) / FT(100); }
+
 struct MoldParams {
     FT padding = FT(10);
     FT explode = FT(0);
     FT draft = FT(0);
+    fix::KissMode kiss_mode = fix::KissMode::WELD;
+    FT kiss_width = pinch_bridge_width_ft();
 };
-
-// Symbolic constant for expanding 2D arrangement zero-area pinches into positive-area bridges
-constexpr double kPinchBridgeWidthMM = 0.01;
-inline FT pinch_bridge_width_ft() { return FT(1) / FT(100); }
 
 struct MoldPiece {
     ExactMesh mesh;

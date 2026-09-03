@@ -2,6 +2,8 @@
 #include "types.h"
 #include "obb.h"
 #include "verify.h"
+#include "fix/assert_mesh.h"
+#include "boolean/corefine.h"
 #include <sstream>
 
 namespace jotcad {
@@ -24,26 +26,23 @@ struct MoldAssembly {
         out_obb_geo = opt_obb.to_geometry();
         ExactMesh obb_mesh = boolean::Engine::geometry_to_mesh(out_obb_geo);
         std::cout << " Done. Min Volume: " << CGAL::to_double(opt_obb.volume) << std::endl << std::flush;
+        fix::assert_well_formed_for_corefinement(obb_mesh, "obb_mesh in MoldAssembly::trim_against_obb");
 
         for (auto& piece : mold_pieces) {
-            ExactMesh piece_in = piece.mesh;
-            ExactMesh obb_in = obb_mesh;
             ExactMesh trimmed_piece;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(piece_in, obb_in, trimmed_piece);
+            boolean::corefine_intersection(piece.mesh, obb_mesh, trimmed_piece, params.kiss_mode, params.kiss_width, piece.name + " OBB trim");
             if (trimmed_piece.number_of_faces() > 0) {
                 piece.mesh = trimmed_piece;
             }
         }
 
         // Extract stationary foundation remainder block from uncarved OBB stock
-        ExactMesh obb_copy = obb_mesh;
-        ExactMesh model_copy = mesh_part;
         ExactMesh final_remaining;
-        CGAL::Polygon_mesh_processing::corefine_and_compute_difference(obb_copy, model_copy, final_remaining);
+        boolean::corefine_difference(obb_mesh, mesh_part, final_remaining, params.kiss_mode, params.kiss_width, "obb \\ model in assembly");
+
         for (const auto& piece : mold_pieces) {
-            ExactMesh piece_copy = piece.mesh;
             ExactMesh next_rem;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(final_remaining, piece_copy, next_rem);
+            boolean::corefine_difference(final_remaining, piece.mesh, next_rem, params.kiss_mode, params.kiss_width, "final_remaining \\ " + piece.name);
             if (next_rem.number_of_faces() > 0) {
                 final_remaining = next_rem;
             }

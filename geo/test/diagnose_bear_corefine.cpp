@@ -5,6 +5,10 @@
 #include "data/surface_mesh_geometry.h"
 #include "infra/stl.h"
 #include "ops/pour/orientation.h"
+#include "ops/mold/obb.h"
+#include "ops/mold/optimizer.h"
+#include "boolean/corefine.h"
+#include <CGAL/boost/graph/helpers.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
@@ -12,6 +16,7 @@
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
 #include <CGAL/Polygon_mesh_processing/self_intersections.h>
 #include <CGAL/Polygon_mesh_processing/measure.h>
+#include <CGAL/Polygon_mesh_processing/manifoldness.h>
 #include <CGAL/IO/polygon_mesh_io.h>
 #include <CGAL/make_surface_mesh.h>
 
@@ -308,6 +313,153 @@ int main() {
               << " out vertices=" << out_inter.number_of_vertices()
               << " faces=" << out_inter.number_of_faces()
               << std::endl;
+
+    std::cout << "\n--- 5. Diagnosing OBB Mesh Invariants & Trimming ---" << std::endl;
+    auto opt_obb = mold::compute_min_volume_obb(m_from_soup, EK::FT(15));
+    Geometry obb_geo = opt_obb.to_geometry();
+    ExactMesh obb_mesh = to_surface_mesh(obb_geo);
+
+    std::cout << "OBB Mesh:" << std::endl;
+    std::cout << "  vertices: " << obb_mesh.number_of_vertices() << std::endl;
+    std::cout << "  faces: " << obb_mesh.number_of_faces() << std::endl;
+    std::cout << "  is_closed: " << CGAL::is_closed(obb_mesh) << std::endl;
+    std::cout << "  is_triangle_mesh: " << CGAL::is_triangle_mesh(obb_mesh) << std::endl;
+    std::cout << "  m.is_valid(): " << obb_mesh.is_valid() << std::endl;
+    std::cout << "  is_valid_polygon_mesh: " << CGAL::is_valid_polygon_mesh(obb_mesh, true) << std::endl;
+    std::cout << "  does_bound_a_volume: " << CGAL::Polygon_mesh_processing::does_bound_a_volume(obb_mesh) << std::endl;
+    std::cout << "  is_outward_oriented: " << CGAL::Polygon_mesh_processing::is_outward_oriented(obb_mesh) << std::endl;
+
+    std::cout << "\nout_inter (piece wedge) Mesh:" << std::endl;
+    std::cout << "  is_valid_polygon_mesh: " << CGAL::is_valid_polygon_mesh(out_inter, true) << std::endl;
+    std::cout << "  does_bound_a_volume: " << CGAL::Polygon_mesh_processing::does_bound_a_volume(out_inter) << std::endl;
+    std::cout << "  is_outward_oriented: " << CGAL::Polygon_mesh_processing::is_outward_oriented(out_inter) << std::endl;
+
+    std::cout << "\nTesting corefine_and_compute_intersection(out_inter, obb_mesh)..." << std::endl;
+    ExactMesh trimmed_wedge;
+    bool ok_trim = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(out_inter, obb_mesh, trimmed_wedge);
+    std::cout << "Trim result: " << (ok_trim ? "SUCCESS" : "FAIL")
+              << " trimmed vertices=" << trimmed_wedge.number_of_vertices()
+              << " faces=" << trimmed_wedge.number_of_faces()
+              << std::endl;
+
+    std::cout << "\n--- 6. Isolating Mold Piece #1 Extraction & Gaps ---" << std::endl;
+    std::map<mold::EdgeKey, std::vector<int>> edge_to_faces;
+    std::vector<EK::Vector_3> face_normals;
+    int f_idx = 0;
+    for (auto f : m_rot.faces()) {
+        auto h = m_rot.halfedge(f);
+        int v0 = (int)m_rot.source(h);
+        int v1 = (int)m_rot.target(h);
+        int v2 = (int)m_rot.target(m_rot.next(h));
+
+        auto p0 = m_rot.point(m_rot.source(h));
+        auto p1 = m_rot.point(m_rot.target(h));
+        auto p2 = m_rot.point(m_rot.target(m_rot.next(h)));
+
+        face_normals.push_back(CGAL::normal(p0, p1, p2));
+        std::array<std::pair<int, int>, 3> edges = {std::make_pair(v0, v1), std::make_pair(v1, v2), std::make_pair(v2, v0)};
+        for (auto [u, v] : edges) {
+            if (u > v) std::swap(u, v);
+            edge_to_faces[{u, v}].push_back(f_idx);
+        }
+        f_idx++;
+    }
+
+    mold::FaceBoolMap is_handled = m_rot.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
+    mold::MoldParams params;
+    params.padding = EK::FT(15);
+    params.draft = EK::FT(0);
+    params.explode = EK::FT(0);
+
+    auto opt = mold::optimize_parting_direction(m_rot, face_normals, edge_to_faces, is_handled, params);
+    std::cout << "Piece #1 optimize_parting_direction: source_faces=" << opt.source_faces.size()
+              << " wedge faces=" << opt.solid_wedge.number_of_faces()
+              << " is_closed=" << CGAL::is_closed(opt.solid_wedge)
+              << " is_valid_polygon_mesh=" << CGAL::is_valid_polygon_mesh(opt.solid_wedge)
+              << std::endl;
+
+    FT max_r_sq = 0;
+    for (auto v : m_rot.vertices()) {
+        auto p = m_rot.point(v);
+        FT r2 = p.x()*p.x() + p.y()*p.y() + p.z()*p.z();
+        if (r2 > max_r_sq) max_r_sq = r2;
+    }
+    double r_sphere = std::sqrt(CGAL::to_double(max_r_sq)) + CGAL::to_double(params.padding) + 100.0;
+    FT R = FT(r_sphere);
+    Geometry stock_geo = mold::build_box_geo(-R, R, -R, R, -R, R);
+    ExactMesh stock_mesh = to_surface_mesh(stock_geo);
+
+    ExactMesh wedge_copy = opt.solid_wedge;
+    ExactMesh raw_block;
+    bool ok_inter_piece = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(stock_mesh, wedge_copy, raw_block);
+    std::cout << "stock ∩ wedge: " << (ok_inter_piece ? "SUCCESS" : "FAIL")
+              << " faces=" << raw_block.number_of_faces()
+              << " is_valid_polygon_mesh=" << CGAL::is_valid_polygon_mesh(raw_block, true)
+              << std::endl;
+
+    ExactMesh m_rot_copy = m_rot;
+    ExactMesh piece_1;
+    bool ok_diff_piece = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, m_rot_copy, piece_1);
+    std::cout << "raw_block \\ bear: " << (ok_diff_piece ? "SUCCESS" : "FAIL")
+              << " faces=" << piece_1.number_of_faces()
+              << " is_valid_polygon_mesh=" << CGAL::is_valid_polygon_mesh(piece_1, true)
+              << std::endl;
+
+    fix::MeshStatus piece_status = fix::check_solid_mesh(piece_1);
+    std::cout << "Piece #1 check_solid_mesh status: " << fix::to_string(piece_status) << std::endl;
+
+    std::cout << "\n--- Investigating Non-Manifold Vertex in piece_1 ---" << std::endl;
+    std::vector<ExactMesh::Halfedge_index> non_manifold_cones;
+    CGAL::Polygon_mesh_processing::non_manifold_vertices(piece_1, std::back_inserter(non_manifold_cones));
+    std::cout << "Detected " << non_manifold_cones.size() << " non-manifold cones." << std::endl;
+
+    for (size_t i = 0; i < non_manifold_cones.size(); ++i) {
+        auto h_cone = non_manifold_cones[i];
+        auto v = piece_1.target(h_cone);
+        auto pt = piece_1.point(v);
+        std::cout << "\nNon-manifold cone #" << i << " at vertex v_" << v.idx() << ": ("
+                  << CGAL::to_double(pt.x()) << ", " << CGAL::to_double(pt.y()) << ", " << CGAL::to_double(pt.z()) << ")" << std::endl;
+
+        auto h = h_cone;
+        int face_in_cone_count = 0;
+        do {
+            auto f = piece_1.face(h);
+            if (f != ExactMesh::null_face()) {
+                face_in_cone_count++;
+                auto h0 = piece_1.halfedge(f);
+                auto p0 = piece_1.point(piece_1.source(h0));
+                auto p1 = piece_1.point(piece_1.target(h0));
+                auto p2 = piece_1.point(piece_1.target(piece_1.next(h0)));
+                auto v01 = p1 - p0;
+                auto v02 = p2 - p0;
+                double a = std::sqrt(CGAL::to_double(CGAL::cross_product(v01, v02).squared_length())) / 2.0;
+                std::cout << "    Face #" << f.idx() << " (area=" << a << "): ["
+                          << "(" << CGAL::to_double(p0.x()) << "," << CGAL::to_double(p0.y()) << "," << CGAL::to_double(p0.z()) << "), "
+                          << "(" << CGAL::to_double(p1.x()) << "," << CGAL::to_double(p1.y()) << "," << CGAL::to_double(p1.z()) << "), "
+                          << "(" << CGAL::to_double(p2.x()) << "," << CGAL::to_double(p2.y()) << "," << CGAL::to_double(p2.z()) << ")]" << std::endl;
+            }
+            h = piece_1.opposite(piece_1.next(h));
+        } while (h != h_cone && h != ExactMesh::null_halfedge());
+        std::cout << "  Total faces in this cone: " << face_in_cone_count << std::endl;
+    }
+
+    std::cout << "\nAttempting duplicate_non_manifold_vertices(piece_1)..." << std::endl;
+    std::size_t nb_new = CGAL::Polygon_mesh_processing::duplicate_non_manifold_vertices(piece_1);
+    std::cout << "duplicate_non_manifold_vertices created " << nb_new << " new vertices." << std::endl;
+    std::cout << "Post-duplication is_valid_polygon_mesh: " << CGAL::is_valid_polygon_mesh(piece_1, true) << std::endl;
+    piece_status = fix::check_solid_mesh(piece_1);
+    std::cout << "Post-duplication check_solid_mesh status: " << fix::to_string(piece_status) << std::endl;
+
+    std::cout << "\n--- Testing Unified boolean::corefine_difference on Piece #1 ---" << std::endl;
+    ExactMesh piece_unified;
+    bool ok_unified = boolean::corefine_difference(raw_block, m_rot, piece_unified, fix::KissMode::WELD, EK::FT(1)/100, "piece_unified in test");
+    std::cout << "boolean::corefine_difference returned: " << (ok_unified ? "SUCCESS" : "FAIL") << std::endl;
+    std::cout << "piece_unified: faces=" << piece_unified.number_of_faces()
+              << " is_valid_polygon_mesh=" << CGAL::is_valid_polygon_mesh(piece_unified)
+              << " does_self_intersect=" << CGAL::Polygon_mesh_processing::does_self_intersect(piece_unified)
+              << std::endl;
+    fix::MeshStatus unified_status = fix::check_solid_mesh(piece_unified);
+    std::cout << "piece_unified check_solid_mesh status: " << fix::to_string(unified_status) << std::endl;
 
     return 0;
 }
