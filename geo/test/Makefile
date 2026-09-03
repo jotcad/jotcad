@@ -88,10 +88,9 @@ COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
 # Targets
 all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)/test_zenoh_link $(BIN_DIR)/test_zenoh_queryable $(BIN_DIR)/test_zenoh_caching
 
-# Ensure the library is built first
-.PHONY: $(LIB_GEO)
+# Ensure the library is built first if missing
 $(LIB_GEO):
-	$(MAKE) -C .. all ops
+	$(MAKE) -C .. bin/libjotgeo.a
 
 # Rule for building the standalone test_zenoh_caching binary
 $(BIN_DIR)/test_zenoh_caching: $(OBJ_DIR)/test_zenoh_caching.o
@@ -213,7 +212,7 @@ unit_tests_run.h: Makefile $(COMBINED_TEST_SOURCES)
 	@echo "};" >> $@
 
 # Include generated dependencies
--include $(OBJ_DIR)/unit_tests.d $(OBJ_DIR)/cid_consistency_test.d $(OBJ_DIR)/test_repair_wedge.d
+-include $(wildcard $(OBJ_DIR)/*.d)
 
 clean:
 	rm -rf $(BIN_DIR) $(OBJ_DIR) unit_tests_run.h

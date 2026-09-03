@@ -3,6 +3,8 @@
 #include "processor.h"
 #include "stl.h"
 #include "matrix.h"
+#include "data/surface_mesh_geometry.h"
+#include "fix/assert_mesh.h"
 
 namespace jotcad {
 namespace geo {
@@ -76,6 +78,10 @@ struct StlImportOp : P {
         if (!success) {
             throw std::runtime_error("Failed to parse STL file");
         }
+
+        // Assert loaded STL is a well-formed solid with no self-intersections or self-touches
+        ExactMesh imported_mesh = to_surface_mesh(geo);
+        fix::assert_well_formed_mesh(imported_mesh, "StlImportOp: loaded STL");
 
         Shape out = P::make_shape(vfs, geo, {{"type", "closed"}});
         vfs->write(fulfilling.with_output("$out"), out);
