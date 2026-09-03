@@ -7,6 +7,7 @@
 #include "mold/optimizer.h"
 #include "mold/assembly.h"
 #include "mold/verify.h"
+#include "fix/assert_mesh.h"
 #include <iostream>
 
 namespace jotcad {
@@ -35,6 +36,7 @@ struct MoldOp : P {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
+        fix::assert_well_formed_mesh(mesh_part, "mesh_part in MoldOp");
 
         // 3. Topology & Geometric Centroids / Normals in Pure FT
         std::map<mold::EdgeKey, std::vector<int>> edge_to_faces;
@@ -74,6 +76,7 @@ struct MoldOp : P {
         FT R = FT(r_sphere);
         Geometry conservative_stock_geo = mold::build_box_geo(-R, R, -R, R, -R, R);
         mold::ExactMesh conservative_stock = boolean::Engine::geometry_to_mesh(conservative_stock_geo);
+        fix::assert_well_formed_mesh(conservative_stock, "conservative_stock in MoldOp");
 
         // 5. Multi-Piece Mold Decomposition Loop
         mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
@@ -105,12 +108,19 @@ struct MoldOp : P {
             }
 
             // Corefine conservative stock intersection & model cavity difference
+            fix::assert_well_formed_for_corefinement(wedge, "wedge in MoldOp");
             mold::ExactMesh stock_copy = conservative_stock;
+            fix::assert_well_formed_for_corefinement(stock_copy, "stock_copy in MoldOp");
             mold::ExactMesh raw_block;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(stock_copy, wedge, raw_block);
+            bool ok_inter = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(stock_copy, wedge, raw_block);
+            assert(ok_inter && "stock_copy ∩ wedge failed in MoldOp!");
+            fix::assert_well_formed_for_corefinement(raw_block, "raw_block after stock ∩ wedge in MoldOp");
             mold::ExactMesh model_copy = mesh_part;
+            fix::assert_well_formed_for_corefinement(model_copy, "model_copy in MoldOp");
             mold::ExactMesh piece_mesh;
-            CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, model_copy, piece_mesh);
+            bool ok_diff = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(raw_block, model_copy, piece_mesh);
+            assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
+            fix::assert_well_formed_mesh(piece_mesh, "piece_mesh in MoldOp");
 
             std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
             std::string piece_name = "mold_piece_" + std::to_string(piece_idx);

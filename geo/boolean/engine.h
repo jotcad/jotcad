@@ -4,6 +4,7 @@
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/clip.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
 #include <CGAL/General_polygon_set_2.h>
 #include <CGAL/Gps_segment_traits_2.h>
@@ -20,7 +21,6 @@
 #include <cassert>
 #include <iterator>
 #include "kernel.h"
-#include "../fix/repair.h"
 #include "../data/geometry.h"
 #include "../data/shape.h"
 #include "../math/matrix.h"
@@ -60,7 +60,6 @@ struct Engine {
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
         );
-        fix::make_geometry_unambiguous(target);
         return success;
     }
 
@@ -104,7 +103,6 @@ struct Engine {
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
         );
-        fix::make_geometry_unambiguous(target);
         return success;
     }
 
@@ -121,7 +119,6 @@ struct Engine {
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
         );
-        fix::make_geometry_unambiguous(target);
         return success;
     }
 
@@ -130,7 +127,6 @@ struct Engine {
             target, plane.opposite(),
             CGAL::parameters::use_compact_clipper(true).clip_volume(true)
         );
-        fix::make_geometry_unambiguous(target);
         return success;
     }
 
@@ -139,7 +135,6 @@ struct Engine {
             target, plane,
             CGAL::parameters::use_compact_clipper(true).clip_volume(true)
         );
-        fix::make_geometry_unambiguous(target);
         return success;
     }
 

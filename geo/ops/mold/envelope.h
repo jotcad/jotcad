@@ -3,7 +3,8 @@
 #include "rotation.h"
 #include "walls.h"
 #include "diagnostics.h"
-#include "fix/repair.h"
+#include "fix/kiss.h"
+#include "fix/assert_mesh.h"
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Triangulation_face_base_with_info_2.h>
 #include <CGAL/mark_domain_in_triangulation.h>
@@ -399,6 +400,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     CGAL::Polygon_mesh_processing::stitch_borders(solid_wedge);
     CGAL::Polygon_mesh_processing::triangulate_faces(solid_wedge);
     solid_wedge.collect_garbage();
+    fix::assert_well_formed_for_corefinement(solid_wedge, "raw solid_wedge from polygon soup in envelope.h");
 
     if (CGAL::is_closed(solid_wedge)) {
         CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(solid_wedge);
@@ -423,8 +425,9 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     if (self_intersects) {
         std::filesystem::create_directories("scratch");
         CGAL::IO::write_polygon_mesh("scratch/self_touch_wedge.off", solid_wedge);
-        std::cout << "    [Disambiguation] Resolving zero-volume touches with make_geometry_unambiguous..." << std::endl << std::flush;
-        fix::make_geometry_unambiguous(solid_wedge, pinch_bridge_width_ft());
+        std::cout << "    [Disambiguation] Resolving zero-volume touches with separate_kissing_columns..." << std::endl << std::flush;
+        fix::separate_kissing_columns(solid_wedge, pinch_bridge_width_ft());
+        CGAL::Polygon_mesh_processing::triangulate_faces(solid_wedge);
         self_intersects = CGAL::Polygon_mesh_processing::does_self_intersect(solid_wedge);
         std::cout << "    [Disambiguation Result] does_self_intersect: " << (self_intersects ? "YES" : "NO") << std::endl << std::flush;
     }
@@ -433,6 +436,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     inspect_self_intersections(solid_wedge, to_z);
 
     FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
+    fix::assert_well_formed_mesh(solid_wedge, "solid_wedge in compute_exact_upper_envelope_mesh");
     return {solid_wedge, source_faces, total_area};
 }
 

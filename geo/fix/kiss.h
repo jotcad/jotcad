@@ -2,6 +2,7 @@
 #include "kernel.h"
 #include "predicates.h"
 #include "tool_builder.h"
+#include "assert_mesh.h"
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
@@ -108,62 +109,43 @@ bool resolve_kissing_seams(
         tools.push_back(make_minkowski_tool_from_feature(poly, delta));
     }
 
-    // Step 3: Combine tools into a unified Minkowski tool to ensure single-pass Corefinement
-    Surface_mesh unified_tool;
-    if (!tools.empty()) {
-        unified_tool = tools[0];
-        for (size_t i = 1; i < tools.size(); ++i) {
-            Surface_mesh u_res;
-            if (CGAL::Polygon_mesh_processing::corefine_and_compute_union(
-                    unified_tool, tools[i], u_res,
-                    CGAL::parameters::throw_on_self_intersection(false),
-                    CGAL::parameters::throw_on_self_intersection(false),
-                    CGAL::parameters::all_default()) && !u_res.is_empty() && CGAL::is_closed(u_res)) {
-                unified_tool = std::move(u_res);
-            } else {
-                append_mesh(unified_tool, tools[i]);
-            }
-        }
+    // Step 3: Verify well-formedness of all generated tools
+    for (const auto& tool : tools) {
+        assert_well_formed_mesh(tool, "Minkowski tool in kiss.h");
     }
 
-    // Step 4: Apply Minkowski Corefinement according to KissMode
-    if (mode == KissMode::PART) {
-        std::vector<Surface_mesh> shells;
-        CGAL::Polygon_mesh_processing::split_connected_components(mesh, shells);
-        if (shells.empty()) shells.push_back(std::move(mesh));
-
-        for (auto& shell : shells) {
-            Surface_mesh result;
-            bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
-                shell, unified_tool, result,
+    // Step 4: Apply Minkowski Corefinement directly per tool
+    for (auto& tool : tools) {
+        if (tool.is_empty()) continue;
+        assert_well_formed_for_corefinement(tool, "tool before corefinement in kiss.h");
+        assert_well_formed_for_corefinement(mesh, "mesh before corefinement in kiss.h");
+        Surface_mesh result;
+        bool ok = false;
+        if (mode == KissMode::PART) {
+            ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
+                mesh, tool, result,
                 CGAL::parameters::throw_on_self_intersection(false),
                 CGAL::parameters::throw_on_self_intersection(false),
                 CGAL::parameters::all_default()
             );
-            if (ok && !result.is_empty() && CGAL::is_closed(result)) {
-                shell = std::move(result);
-            }
+        } else { // KissMode::WELD
+            ok = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
+                mesh, tool, result,
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::all_default()
+            );
         }
 
-        mesh.clear();
-        for (const auto& shell : shells) {
-            append_mesh(mesh, shell);
-        }
-    } else { // KissMode::WELD
-        Surface_mesh result;
-        bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
-            mesh, unified_tool, result,
-            CGAL::parameters::throw_on_self_intersection(false),
-            CGAL::parameters::throw_on_self_intersection(false),
-            CGAL::parameters::all_default()
-        );
-        if (ok && !result.is_empty() && CGAL::is_closed(result)) {
-            mesh = std::move(result);
-        }
+        assert(ok);
+        assert_well_formed_for_corefinement(result, "result after tool in kiss.h");
+        mesh = std::move(result);
+        CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
     }
 
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
     mesh.collect_garbage();
+    assert_well_formed_mesh(mesh, "mesh after resolve_kissing_seams");
     return true;
 }
 

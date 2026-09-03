@@ -25,6 +25,7 @@
     "test:js": "node --test --test-concurrency=1 --test-force-exit jot/test/*.js && TEST_UX_PORT=3039 TEST_OPS_PORT=9099 node --test --test-concurrency=1 --test-force-exit fs/test/*.js",
     "test:cpp": "cd geo/test && ./run_unit_tests.sh",
     "test:wedge": "make -C geo/test bin/test_repair_wedge && (cd geo/test && ./bin/test_repair_wedge)",
+    "test:bear:corefine": "make -C geo/test bin/diagnose_bear_corefine && ./geo/test/bin/diagnose_bear_corefine",
     "test:pio": "export $(grep -v '^#' .env | xargs) && pio run -d pio",
     "test:cpp:individual": "make -C geo/test",
     "test:integration": "node test_orchestrator.js integration",

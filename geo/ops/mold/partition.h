@@ -3,6 +3,7 @@
 #include "prism.h"
 #include <CGAL/Polygon_mesh_processing/clip.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>
+#include "fix/assert_mesh.h"
 
 namespace jotcad {
 namespace geo {
@@ -31,6 +32,8 @@ inline std::vector<MoldPiece> partition_mold_blocks(
         std::make_optional(&mesh_b2), // TM1_MINUS_TM2 (Stock \ V_sigma)
         std::nullopt                  // TM2_MINUS_TM1
     };
+    fix::assert_well_formed_for_corefinement(stock_mesh, "stock_mesh in partition_mold_blocks");
+    fix::assert_well_formed_for_corefinement(mesh_v_sigma, "mesh_v_sigma in partition_mold_blocks");
     CGAL::Polygon_mesh_processing::corefine_and_compute_boolean_operations(
         stock_mesh, mesh_v_sigma, ops
     );
