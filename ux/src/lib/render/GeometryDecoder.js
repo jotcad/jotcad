@@ -102,10 +102,8 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
                 metalness: 0.2,
                 transparent, 
                 opacity,
-                depthWrite: true,
-                polygonOffset: true,
-                polygonOffsetFactor: 1,
-                polygonOffsetUnits: 1
+                blending: transparent ? THREE.AdditiveBlending : THREE.NormalBlending,
+                depthWrite: !transparent
             }));
             mesh.renderOrder = transparent ? 1 : 0;
             mesh.userData.isJot = true;

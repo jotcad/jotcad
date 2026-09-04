@@ -203,10 +203,8 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             side: THREE.FrontSide,
             transparent,
             opacity,
-            depthWrite: true,
-            polygonOffset: true,
-            polygonOffsetFactor: 1,
-            polygonOffsetUnits: 1
+            blending: transparent ? THREE.AdditiveBlending : THREE.NormalBlending,
+            depthWrite: !transparent
           });
 
           const mesh = new THREE.Mesh(g, material);
