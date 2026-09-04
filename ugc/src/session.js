@@ -282,10 +282,17 @@ export class UGCSession {
    * @param {Object} cliInputs 
    * @param {Object} cliOutputs Mappings of port name -> target base filename (e.g. stl_file: 'output.stl')
    * @param {string} note A descriptive note summarizing the run operation
+   * @param {Object} [options={}] Additional execution options including mandatory timeout
    * @returns {Promise<Object>} Run metadata
    */
-  async createSnapshot(scriptContent, cliInputs = {}, cliOutputs = {}, note = 'run') {
+  async createSnapshot(scriptContent, cliInputs = {}, cliOutputs = {}, note = 'run', options = {}) {
     this.init();
+
+    const { timeoutMs } = options;
+    if (!timeoutMs || typeof timeoutMs !== 'number' || timeoutMs <= 0) {
+      throw new Error('[UGCSession] createSnapshot requires an explicit, positive options.timeoutMs');
+    }
+    const readContext = { timeoutMs };
 
     // 1. Setup sequence, timestamp, and snapshot folder
     const seq = this._getNextSequence();
@@ -329,7 +336,7 @@ export class UGCSession {
 
         const ext = path.extname(baseFilename).toLowerCase();
         if (ext === '.jot') {
-          const streamResult = await this.ugcEngine.vfs.readSelector(selector);
+          const streamResult = await this.ugcEngine.vfs.readSelector(selector, readContext);
           if (streamResult) {
             let rawData = streamResult.data;
             if (!rawData && streamResult.stream) {
@@ -353,7 +360,7 @@ export class UGCSession {
           }
         }
 
-        const streamResult = await this.ugcEngine.vfs.readSelector(selector);
+        const streamResult = await this.ugcEngine.vfs.readSelector(selector, readContext);
         if (streamResult && streamResult.stream) {
           const chunks = [];
           for await (const chunk of streamResult.stream) {

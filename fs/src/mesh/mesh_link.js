@@ -315,10 +315,9 @@ export class MeshLinkBase {
 
   async readSelector(selector, context = {}) {
     if (!this.session) return null;
-    const { expiresAt = Date.now() + 10000 } = context;
-
-    if (Date.now() > expiresAt) {
-      throw new Error(`[MeshLink ${this.vfs.id}] Request expired (expiresAt: ${expiresAt})`);
+    const { timeoutMs } = context;
+    if (!timeoutMs || typeof timeoutMs !== 'number' || timeoutMs <= 0) {
+      throw new Error(`[MeshLink ${this.vfs.id}] readSelector missing mandatory positive timeoutMs in context! No default is permitted.`);
     }
 
     const path = selector.path;
@@ -336,11 +335,14 @@ export class MeshLinkBase {
     }
     const queryExpr = params.length > 0 ? `${key}?${params.join(';')}` : key;
     
-    console.log(`[MeshLink ${this.vfs.id}] readSelector generative: z_get(${queryExpr})`);
+    console.log(`[MeshLink ${this.vfs.id}] readSelector generative: z_get(${queryExpr}) with timeoutMs: ${timeoutMs}`);
     
+    const attachmentBytes = new TextEncoder().encode(JSON.stringify({ timeoutMs }));
+
     try {
       const receiver = await this.session.get(queryExpr, {
-        timeout: expiresAt - Date.now() > 0 ? expiresAt - Date.now() : 10000,
+        timeout: timeoutMs,
+        attachment: attachmentBytes,
         target: 1
       });
       if (receiver) {
@@ -581,7 +583,24 @@ export class MeshLinkBase {
             }
             log(`[MeshLink ${this.vfs.id}] Queryable OP (${pattern}): got request for ${selector.path}`);
             
-            const result = await this.vfs.readSelector(selector);
+            let timeoutMs = 0;
+            const attBytes = query.attachment();
+            if (attBytes) {
+              try {
+                const attStr = new TextDecoder().decode(attBytes.toBytes());
+                const attObj = JSON.parse(attStr);
+                if (attObj && typeof attObj.timeoutMs === 'number') {
+                  timeoutMs = attObj.timeoutMs;
+                }
+              } catch (e) {
+                log(`[MeshLink ${this.vfs.id}] Error parsing attachment: ${e.message}`);
+              }
+            }
+            if (!timeoutMs || timeoutMs <= 0) {
+              throw new Error(`[MeshLink ${this.vfs.id}] Missing mandatory query attachment 'timeoutMs'`);
+            }
+
+            const result = await this.vfs.readSelector(selector, { timeoutMs });
             if (result) {
               const { stream, metadata } = result;
               const payload = await this.streamToUint8Array(stream);

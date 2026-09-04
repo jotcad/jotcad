@@ -200,10 +200,13 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             specular: 0x111111,
             shininess: 200,
             flatShading: true,
-            side: THREE.DoubleSide,
+            side: THREE.FrontSide,
             transparent,
             opacity,
-            depthWrite: !transparent
+            depthWrite: true,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1
           });
 
           const mesh = new THREE.Mesh(g, material);
@@ -217,7 +220,7 @@ export const buildMeshes = async ({ assets, shape, scene, edgeThreshold = 15 }) 
             color: isGhost ? 0x00ffff : 0xffffff,
             transparent: true,
             opacity: isGhost ? 0.2 : (transparent ? 0.3 : 0.5),
-            depthWrite: !transparent
+            depthWrite: false
           }));
           edgesLine.renderOrder = transparent ? 1 : 0;
           edgesLine.userData.isJot = true;

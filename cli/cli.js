@@ -71,6 +71,7 @@ async function main() {
     eval: { type: 'string', short: 'e' },
     session: { type: 'string', short: 's', default: 'scratch/my_cad_session' },
     note: { type: 'string', short: 'm' },
+    timeout: { type: 'string', short: 't', default: '600' },
     help: { type: 'boolean', short: 'h' }
   };
 
@@ -97,6 +98,7 @@ Options:
   -o, --output <name=path>   Output file destinations (e.g. -o stl_file=part.stl)
   -s, --session <dir>        Output session directory to track sequentially
   -m, --note <string>        Descriptive snapshot note for the session run
+  -t, --timeout <seconds>    Operation evaluation timeout in seconds (default: 600)
   -g, --gateway <url>        Override Zenoh router gateway URL
   -h, --help                 Show this help menu
 
@@ -204,7 +206,14 @@ Examples:
     console.warn('[JotCAD CLI] Warning: Catalog discovery timed out. Proceeding with local registries.');
   }
 
-  // 4. Session Mode Execution
+  const timeoutSec = parseFloat(parsed.values.timeout || '600');
+  if (isNaN(timeoutSec) || timeoutSec <= 0) {
+    console.error(`Invalid --timeout value: ${parsed.values.timeout}`);
+    process.exit(1);
+  }
+  const timeoutMs = Math.round(timeoutSec * 1000);
+
+  // 4. Session Mode Execution (Chronological Snapshots)
   if (parsed.values.session) {
     const sessionDir = path.resolve(parsed.values.session);
     console.log(`[JotCAD CLI] Running inside session workspace: ${sessionDir}`);
@@ -213,7 +222,7 @@ Examples:
     const note = parsed.values.note || 'CLI Run';
     
     try {
-      const { snapshotDir } = await session.createSnapshot(scriptContent, cliInputs, cliOutputs, note);
+      const { snapshotDir } = await session.createSnapshot(scriptContent, cliInputs, cliOutputs, note, { timeoutMs });
       console.log(`[JotCAD CLI] Snapshot compiled successfully: ${snapshotDir}`);
     } catch (err) {
       console.error(`[JotCAD CLI] Session Compile Error: ${err.message}`);
@@ -248,7 +257,7 @@ Examples:
       console.log(`[JotCAD CLI] Resolving output port: ${port} -> ${targetFile}`);
 
       try {
-        const streamResult = await vfs.readSelector(selector);
+        const streamResult = await vfs.readSelector(selector, { timeoutMs });
         if (streamResult && streamResult.stream) {
           const chunks = [];
           for await (const chunk of streamResult.stream) {

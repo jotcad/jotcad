@@ -54,12 +54,16 @@ public:
         std::vector<uint8_t> binary_data;
         std::vector<std::string> stack;
         std::vector<std::string> resolutionStack;
+        uint64_t timeoutMs = 0;
         long long expiresAt = 0;
         bool followLinks = true;
         bool localOnly = false;
 
         bool is_cid() const { return !cid.empty(); }
     };
+
+    static const VFSRequest* get_current_request_context();
+    static void set_current_request_context(const VFSRequest* req);
 
     using OpHandler = std::function<void(const VFSRequest& req)>;
 

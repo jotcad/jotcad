@@ -169,12 +169,34 @@ static void query_handler_op(z_loaned_query_t* query, void* context) {
         try {
             VFSNode::VFSRequest req;
             req.op = "READ_SELECTOR";
+
+            // Verify and unpack mandatory query attachment 'timeoutMs'
+            const z_loaned_bytes_t* att = z_query_attachment(z_loan(query_owned));
+            if (!att || z_bytes_len(att) == 0) {
+                throw VFSException("[" + node->config_.id + "] Missing mandatory query attachment 'timeoutMs'", 400);
+            }
+            size_t att_len = z_bytes_len(att);
+            z_owned_slice_t slice;
+            z_bytes_to_slice(att, &slice);
+            std::string att_str((const char*)z_slice_data(z_loan(slice)), att_len);
+            z_drop(z_move(slice));
+
+            json att_json;
+            try {
+                att_json = json::parse(att_str);
+            } catch (const std::exception& e) {
+                throw VFSException("[" + node->config_.id + "] Malformed query attachment JSON: " + std::string(e.what()), 400);
+            }
+            if (!att_json.contains("timeoutMs") || !att_json["timeoutMs"].is_number() || att_json["timeoutMs"].get<int64_t>() <= 0) {
+                throw VFSException("[" + node->config_.id + "] Query attachment missing mandatory positive 'timeoutMs'", 400);
+            }
+            req.timeoutMs = att_json["timeoutMs"].get<uint64_t>();
+
             std::string output = "";
-            long long expiresAt = 0;
-            json parsed_params = parse_query_params(params, arg_types, output, expiresAt);
+            long long legacy_expiresAt = 0;
+            json parsed_params = parse_query_params(params, arg_types, output, legacy_expiresAt);
             req.selector = Selector(op_path, parsed_params, output);
             req.selector.validate();
-            req.expiresAt = expiresAt;
             req.localOnly = false; // Queryable handler can service mesh sub-resources
             
             // Execute the handler

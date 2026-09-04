@@ -7,18 +7,26 @@
 namespace fs {
 
 // --- read(Selector) ---
-// --- read(Selector) ---
-template <> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) {
-    VFSRequest req;
+static VFSNode::VFSRequest make_context_selector_request(const Selector& sel) {
+    VFSNode::VFSRequest req;
     req.selector = sel;
     req.op = "READ_SELECTOR";
+    const auto* ctx = VFSNode::get_current_request_context();
+    if (ctx) {
+        req.timeoutMs = ctx->timeoutMs;
+        req.stack = ctx->stack;
+        req.resolutionStack = ctx->resolutionStack;
+    }
+    return req;
+}
+
+template <> std::vector<uint8_t> VFSNode::read<std::vector<uint8_t>>(const Selector& sel) {
+    VFSRequest req = make_context_selector_request(sel);
     return read_selector_impl(req).data;
 }
 
 template <> json VFSNode::read<json>(const Selector& sel) {
-    VFSRequest req;
-    req.selector = sel;
-    req.op = "READ_SELECTOR";
+    VFSRequest req = make_context_selector_request(sel);
     auto res = read_selector_impl(req);
     if (res.data.empty()) throw VFSException("Empty payload reading json for Selector: " + sel.path, 404);
     std::string enc = res.metadata.value("encoding", "");
@@ -45,9 +53,7 @@ template<> int VFSNode::read<int>(const Selector& sel) {
 }
 
 template<> std::string VFSNode::read<std::string>(const Selector& sel) {
-    VFSRequest req;
-    req.selector = sel;
-    req.op = "READ_SELECTOR";
+    VFSRequest req = make_context_selector_request(sel);
     auto res = read_selector_impl(req);
     if (res.data.empty()) throw VFSException("Empty payload reading string for Selector: " + sel.path, 404);
     std::string enc = res.metadata.value("encoding", "");
@@ -58,9 +64,7 @@ template<> std::string VFSNode::read<std::string>(const Selector& sel) {
 }
 
 template<> VFSResult VFSNode::read<VFSResult>(const Selector& sel) {
-    VFSRequest req;
-    req.selector = sel;
-    req.op = "READ_SELECTOR";
+    VFSRequest req = make_context_selector_request(sel);
     return read_selector_impl(req);
 }
 

@@ -30,6 +30,30 @@ struct ZenohState {
 };
 #endif
 
+static thread_local const fs::VFSNode::VFSRequest* tl_current_request = nullptr;
+
+const fs::VFSNode::VFSRequest* fs::VFSNode::get_current_request_context() {
+    return tl_current_request;
+}
+
+void fs::VFSNode::set_current_request_context(const VFSRequest* req) {
+    tl_current_request = req;
+}
+
+struct RequestScope {
+    const fs::VFSNode::VFSRequest* prev;
+    RequestScope(const fs::VFSNode::VFSRequest* curr) : prev(tl_current_request) {
+        tl_current_request = curr;
+    }
+    ~RequestScope() {
+        tl_current_request = prev;
+    }
+};
+
+static void delete_vector_u8_router(void* data, void* context) {
+    delete static_cast<std::vector<uint8_t>*>(context);
+}
+
 VFSNode::Config VFSNode::Config::load_from_env() {
     Config cfg;
     
@@ -250,10 +274,10 @@ VFSResult VFSNode::read_cid_impl(const VFSRequest& req) {
 }
 
 VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
-    if (req.expiresAt > 0) {
-        auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        if (now > req.expiresAt) throw VFSException("Request expired", 408);
+    if (req.timeoutMs == 0) {
+        throw VFSException("[" + config_.id + "] VFSRequest missing mandatory positive timeoutMs for selector: " + req.selector.path + ". Context was not forwarded!", 400);
     }
+    RequestScope scope(&req);
 
     std::string target_cid = get_cid(req.selector);
 
@@ -455,7 +479,15 @@ VFSResult VFSNode::read_selector_impl(const VFSRequest& req) {
 
         z_get_options_t get_opts;
         z_get_options_default(&get_opts);
-        get_opts.timeout_ms = 3000; // 3-second timeout per target query
+        get_opts.timeout_ms = req.timeoutMs;
+
+        // Forward mandatory timeoutMs via query attachment
+        json att_json = {{"timeoutMs", req.timeoutMs}};
+        std::string att_str = att_json.dump();
+        auto* att_buf = new std::vector<uint8_t>(att_str.begin(), att_str.end());
+        z_owned_bytes_t att_bytes;
+        z_bytes_from_buf(&att_bytes, att_buf->data(), att_buf->size(), delete_vector_u8_router, att_buf);
+        get_opts.attachment = z_move(att_bytes);
 
         z_get(z_loan(state->session), z_loan(q_ke), query_params.empty() ? nullptr : query_params.c_str(), z_move(closure), &get_opts);
 
