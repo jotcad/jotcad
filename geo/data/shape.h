@@ -44,6 +44,33 @@ struct Shape {
         tags[key] = value;
     }
 
+    bool has_tag(const std::string& key) const {
+        return tags.is_object() && tags.contains(key);
+    }
+
+    bool has_tag(const std::string& key, const char* expected_value) const {
+        if (!tags.is_object() || !tags.contains(key)) return false;
+        const auto& val = tags.at(key);
+        return val.is_string() && val.get<std::string>() == expected_value;
+    }
+
+    bool has_tag(const std::string& key, const std::string& expected_value) const {
+        return has_tag(key, expected_value.c_str());
+    }
+
+    template <typename T>
+    bool has_tag(const std::string& key, const T& expected_value) const {
+        if (!tags.is_object() || !tags.contains(key)) return false;
+        return tags.at(key) == expected_value;
+    }
+
+    std::string tag_string(const std::string& key, const std::string& default_val = "") const {
+        if (tags.is_object() && tags.contains(key) && tags.at(key).is_string()) {
+            return tags.at(key).get<std::string>();
+        }
+        return default_val;
+    }
+
     std::string role() const {
         if (tags.contains("role") && tags.at("role").is_string()) return tags.at("role").get<std::string>();
         if (tags.value("gap", false)) return "gap"; // Legacy fallback

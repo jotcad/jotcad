@@ -24,17 +24,20 @@ int main() {
     pour_sel.parameters["sprue_base"] = 6.0;
     pour_sel.parameters["sprue_top"] = 12.0;
     pour_sel.parameters["vent_dia"] = 2.0;
-    pour_sel.parameters["auto_orient"] = 1.0;
+    pour_sel.parameters["auto_orient"] = true;
+    pour_sel.parameters["vents"] = true;
     pour_sel.output = "$out";
 
     Processor::execute(&vfs, pour_sel);
     Shape prepped_box = vfs.read<Shape>(pour_sel);
 
     assert(prepped_box.is_real());
-    assert(prepped_box.tags.contains("pour/peaks"));
-    int peak_count = prepped_box.tags["pour/peaks"].get<int>();
-    std::cout << "    - Detected " << peak_count << " peak summit(s) for Box." << std::endl;
-    assert(peak_count >= 1);
+    bool has_sprue = false;
+    for (const auto& comp : prepped_box.components) {
+        if (comp.has_tag("mold/role", "sprue")) has_sprue = true;
+    }
+    assert(has_sprue);
+    std::cout << "    - Confirmed pour_sprue component attached to Box." << std::endl;
 
     // 2. Test Multi-Piece Mold Decomposition on the Prepped Box with Sprue
     std::cout << "  - Testing mold decomposition on prepped box with sprue..." << std::endl;

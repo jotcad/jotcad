@@ -77,6 +77,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                mold_split_test.cpp \
                extrusion_overlap_test.cpp \
                mold_test.cpp \
+               mold_l_test.cpp \
                rig_test.cpp \
                pour_test.cpp \
                repair_test.cpp \

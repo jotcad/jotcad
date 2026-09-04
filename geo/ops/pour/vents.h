@@ -71,13 +71,13 @@ inline ExactMesh build_sprue_mesh(
     ));
 
     // 5. Build hemisphere faces
-    // Bottom pole triangle fan
+    // Bottom pole triangle fan (outward pointing normal in -Z)
     for (int s = 0; s < segments; ++s) {
         int next_s = (s + 1) % segments;
-        mesh.add_face(v_bot_pole, rings[1][s], rings[1][next_s]);
+        mesh.add_face(v_bot_pole, rings[1][next_s], rings[1][s]);
     }
 
-    // Quad strips between hemisphere rings
+    // Quad strips between hemisphere rings (counterclockwise outward)
     for (int r = 1; r < hemisphere_rings; ++r) {
         for (int s = 0; s < segments; ++s) {
             int next_s = (s + 1) % segments;
@@ -86,8 +86,8 @@ inline ExactMesh build_sprue_mesh(
             auto v10 = rings[r + 1][s];
             auto v11 = rings[r + 1][next_s];
 
-            mesh.add_face(v00, v10, v11);
-            mesh.add_face(v00, v11, v01);
+            mesh.add_face(v00, v01, v11);
+            mesh.add_face(v00, v11, v10);
         }
     }
 
@@ -99,36 +99,33 @@ inline ExactMesh build_sprue_mesh(
         auto v10 = top_ring[s];
         auto v11 = top_ring[next_s];
 
-        mesh.add_face(v00, v10, v11);
-        mesh.add_face(v00, v11, v01);
+        mesh.add_face(v00, v01, v11);
+        mesh.add_face(v00, v11, v10);
     }
 
-    // Top cap triangle fan
+    // Top cap triangle fan (outward pointing normal in +Z)
     for (int s = 0; s < segments; ++s) {
         int next_s = (s + 1) % segments;
         mesh.add_face(top_ring[s], top_ring[next_s], v_top_pole);
     }
 
     CGAL::Polygon_mesh_processing::stitch_borders(mesh);
+    CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
     return mesh;
 }
 
-inline ExactMesh synthesize_vents_and_sprue(
-    const ExactMesh& oriented_mesh,
+struct ToolComponentMesh {
+    ExactMesh mesh;
+    bool is_primary = false;
+    EK::Point_3 apex;
+};
+
+inline std::vector<ToolComponentMesh> generate_sprue_and_vents(
     const std::vector<PeakCluster>& peaks,
-    const PourParams& params
+    const PourParams& params,
+    FT sprue_top_z
 ) {
-    if (peaks.empty()) return oriented_mesh;
-
-    FT max_model_z = FT(-1e9);
-    for (auto v : oriented_mesh.vertices()) {
-        FT z = oriented_mesh.point(v).z();
-        if (z > max_model_z) max_model_z = z;
-    }
-
-    FT sprue_top_z = max_model_z + params.sprue_height;
-    ExactMesh combined = oriented_mesh;
-
+    std::vector<ToolComponentMesh> result;
     for (const auto& cluster : peaks) {
         FT h = sprue_top_z - cluster.apex.z();
         if (h <= FT(0)) h = FT(10.0);
@@ -157,19 +154,17 @@ inline ExactMesh synthesize_vents_and_sprue(
         }
 
         if (CGAL::is_closed(vent_geom)) {
-            ExactMesh union_out;
-            try {
-                CGAL::Polygon_mesh_processing::corefine_and_compute_union(combined, vent_geom, union_out);
-                if (union_out.number_of_faces() > 0 && CGAL::is_closed(union_out)) {
-                    combined = union_out;
-                }
-            } catch (...) {
-                // If corefinement fails, continue
-            }
+            fix::assert_well_formed_mesh(vent_geom, "vent_geom in generate_sprue_and_vents");
+            std::cout << "  [Pour Prep] Generated " << (cluster.is_primary ? "primary sprue" : "vent")
+                      << " at apex (" << CGAL::to_double(cluster.apex.x()) << ", "
+                      << CGAL::to_double(cluster.apex.y()) << ", "
+                      << CGAL::to_double(cluster.apex.z()) << ") height=" << CGAL::to_double(h) << "." << std::endl << std::flush;
+            result.push_back({std::move(vent_geom), cluster.is_primary, cluster.apex});
+        } else {
+            std::cerr << "  [Pour Prep Warning] vent_geom is not closed! faces=" << vent_geom.number_of_faces() << std::endl << std::flush;
         }
     }
-
-    return combined;
+    return result;
 }
 
 } // namespace pour

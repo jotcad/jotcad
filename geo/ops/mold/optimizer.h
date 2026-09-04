@@ -47,6 +47,14 @@ inline PartingOptimizationResult optimize_parting_direction(
     double r_bound = std::sqrt(CGAL::to_double(max_r_sq)) + 50.0;
 
     std::vector<EK::Vector_3> candidate_dirs;
+    // Explicit Cardinal Directions (Vertical ±Z, Horizontal ±X, ±Y)
+    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(0), FT(1)));  // +Z (Top)
+    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(0), FT(-1))); // -Z (Bottom)
+    candidate_dirs.push_back(EK::Vector_3(FT(1), FT(0), FT(0)));  // +X (Right)
+    candidate_dirs.push_back(EK::Vector_3(FT(-1), FT(0), FT(0))); // -X (Left)
+    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(1), FT(0)));  // +Y (Front)
+    candidate_dirs.push_back(EK::Vector_3(FT(0), FT(-1), FT(0))); // -Y (Back)
+
     const int N = 300;
     const double phi = (1.0 + std::sqrt(5.0)) / 2.0;
     for (int i = 0; i < N; ++i) {
@@ -188,9 +196,27 @@ inline PartingOptimizationResult optimize_parting_direction(
 
         int cycle_count = (int)cycles.size();
         if (cycle_count == 1) {
-            if (best_loop_count > 1 || current_patch_score > best_patch_score) {
+            // Apply slight continuous ranking bias in pure FT:
+            // Vertical (+3%), Horizontal orthogonal (+1.5%), Arbitrary (0%)
+            FT dx2 = d.x() * d.x();
+            FT dy2 = d.y() * d.y();
+            FT dz2 = d.z() * d.z();
+            FT dxy2 = dx2 + dy2;
+            FT len_sq = dxy2 + dz2;
+
+            FT bias = FT(1);
+            if (len_sq > FT(0)) {
+                bias += (FT(3) / FT(100)) * (dz2 / len_sq);
+                if (dxy2 > FT(0)) {
+                    FT horiz_ortho = (dx2 * dx2 + dy2 * dy2) / (dxy2 * dxy2);
+                    bias += (FT(15) / FT(1000)) * (dxy2 / len_sq) * horiz_ortho;
+                }
+            }
+            FT ranked_score = current_patch_score * bias;
+
+            if (best_loop_count > 1 || ranked_score > best_patch_score) {
                 best_loop_count = 1;
-                best_patch_score = current_patch_score;
+                best_patch_score = ranked_score;
                 best_dir = d;
                 best_patch_faces = largest_comp;
             }

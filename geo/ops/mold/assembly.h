@@ -13,19 +13,38 @@ namespace mold {
 template <typename P = JotVfsProtocol>
 struct MoldAssembly {
     static void trim_against_obb(
+        fs::VFSNode* vfs,
+        const Shape& original_input,
         const ExactMesh& mesh_part,
         const MoldParams& params,
         std::vector<MoldPiece>& mold_pieces,
         const std::vector<EK::Vector_3>& piece_draw_dirs,
-        Geometry& out_obb_geo
+        Geometry& out_obb_geo,
+        const std::vector<ExactMesh>& tool_meshes = {}
     ) {
         if (mold_pieces.empty()) return;
 
-        std::cout << "    [OBB] Computing Minimal-Volume OBB trim with padding " << CGAL::to_double(params.padding) << "..." << std::flush;
-        auto opt_obb = compute_min_volume_obb(mesh_part, params.padding, piece_draw_dirs);
-        out_obb_geo = opt_obb.to_geometry();
-        ExactMesh obb_mesh = boolean::Engine::geometry_to_mesh(out_obb_geo);
-        std::cout << " Done. Min Volume: " << CGAL::to_double(opt_obb.volume) << std::endl << std::flush;
+        ExactMesh obb_mesh;
+        bool found_box = false;
+        for (const auto& child : original_input.components) {
+            if (child.has_tag("mold/role", "box") && child.geometry.has_value()) {
+                std::cout << "    [OBB] Using attached mold stock box component..." << std::flush;
+                out_obb_geo = vfs->template readCID<Geometry>(*child.geometry);
+                obb_mesh = boolean::Engine::geometry_to_mesh(out_obb_geo);
+                boolean::Engine::transform_mesh(obb_mesh, child.tf);
+                found_box = true;
+                std::cout << " Done." << std::endl << std::flush;
+                break;
+            }
+        }
+
+        if (!found_box) {
+            std::cout << "    [OBB] Computing Minimal-Volume OBB trim with padding " << CGAL::to_double(params.padding) << "..." << std::flush;
+            auto opt_obb = compute_min_volume_obb(mesh_part, params.padding, piece_draw_dirs);
+            out_obb_geo = opt_obb.to_geometry();
+            obb_mesh = boolean::Engine::geometry_to_mesh(out_obb_geo);
+            std::cout << " Done. Min Volume: " << CGAL::to_double(opt_obb.volume) << std::endl << std::flush;
+        }
         fix::assert_well_formed_for_corefinement(obb_mesh, "obb_mesh in MoldAssembly::trim_against_obb");
 
         for (auto& piece : mold_pieces) {
@@ -45,6 +64,13 @@ struct MoldAssembly {
             boolean::corefine_difference(final_remaining, piece.mesh, next_rem, params.kiss_mode, params.kiss_width, "final_remaining \\ " + piece.name);
             if (next_rem.number_of_faces() > 0) {
                 final_remaining = next_rem;
+            }
+        }
+
+        for (const auto& tm : tool_meshes) {
+            ExactMesh tool_carved;
+            if (boolean::corefine_difference(final_remaining, tm, tool_carved, params.kiss_mode, params.kiss_width, "final_remaining \\ tool in assembly")) {
+                final_remaining = tool_carved;
             }
         }
 
@@ -114,8 +140,11 @@ struct MoldAssembly {
             result.components.push_back(obb_shape);
         }
 
-        // Naturally preserve all unconsumed child branches of the input tree
+        // Naturally preserve all unconsumed child branches of the input tree (skipping consumed mold stock box)
         for (const auto& child : original_input.components) {
+            if (child.has_tag("mold/role", "box")) {
+                continue; // Consumed as mold pieces!
+            }
             result.components.push_back(child);
         }
 
