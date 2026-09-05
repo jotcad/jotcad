@@ -57,6 +57,9 @@ struct Engine {
         if (target.is_empty()) return true;
         if (!do_meshes_overlap(target, tool)) return true;
 
+        if (target.has_garbage()) target.collect_garbage();
+        if (tool.has_garbage()) tool.collect_garbage();
+
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
@@ -100,6 +103,9 @@ struct Engine {
             return true;
         }
 
+        if (target.has_garbage()) target.collect_garbage();
+        if (tool.has_garbage()) tool.collect_garbage();
+
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
@@ -115,6 +121,9 @@ struct Engine {
             target.clear();
             return true;
         }
+
+        if (target.has_garbage()) target.collect_garbage();
+        if (tool.has_garbage()) tool.collect_garbage();
 
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
             target, tool, target,

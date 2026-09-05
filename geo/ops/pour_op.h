@@ -82,7 +82,9 @@ struct PourOp : P {
         Geometry stock_box_geo = mold::build_box_geo(box_xmin, box_xmax, box_ymin, box_ymax, box_zmin, box_zmax);
         Shape stock_box = P::make_shape(vfs, stock_box_geo, {
             {"mold/role", "box"},
-            {"color", "#ffffff33"},
+            {"role", "ghost"},
+            {"color", "#ffffff25"},
+            {"opacity", 0.2},
             {"name", "mold_stock_box"}
         });
 
@@ -103,7 +105,13 @@ struct PourOp : P {
                       << ") [vents disabled]" << std::endl << std::flush;
         }
 
-        // 7. Create the oriented core casting shape
+        // 7. Directly add the sprue and vents to the model
+        for (auto& tc : tool_components) {
+            boolean::Engine::join_mesh_by_mesh(oriented_mesh, tc.mesh);
+        }
+        fix::assert_well_formed_mesh(oriented_mesh, "oriented_mesh with sprue/vents in PourOp");
+
+        // Create the oriented core casting shape
         Geometry oriented_geo = boolean::Engine::mesh_to_geometry(oriented_mesh);
         nlohmann::json result_tags = nlohmann::json::object();
         result_tags["type"] = "closed";
@@ -112,21 +120,23 @@ struct PourOp : P {
                                        std::to_string(CGAL::to_double(up_dir.z()));
         Shape result = P::make_shape(vfs, oriented_geo, result_tags);
 
-        // Attach discrete sprue and vent tool components as gap roles
+        // Attach discrete sprue and vent visual components as mark roles (for viewer inspection)
         int vent_idx = 1;
         for (const auto& tc : tool_components) {
             Geometry tc_geo = boolean::Engine::mesh_to_geometry(tc.mesh);
             nlohmann::json tc_tags = nlohmann::json::object();
             tc_tags["type"] = "closed";
-            tc_tags["role"] = "gap";
+            tc_tags["role"] = "mark";
             if (tc.is_primary) {
                 tc_tags["mold/role"] = "sprue";
                 tc_tags["name"] = "pour_sprue";
-                tc_tags["color"] = "#ee802baa";
+                tc_tags["color"] = "#ee802b";
+                tc_tags["opacity"] = 0.8;
             } else {
                 tc_tags["mold/role"] = "vent";
                 tc_tags["name"] = "air_vent_" + std::to_string(vent_idx++);
-                tc_tags["color"] = "#2bee80aa";
+                tc_tags["color"] = "#2bee80";
+                tc_tags["opacity"] = 0.8;
             }
             Shape tc_shape = P::make_shape(vfs, tc_geo, tc_tags);
             result.components.push_back(tc_shape);

@@ -58,19 +58,27 @@ inline MeshStatus check_corefinement_preconditions(const Mesh& m) {
     return MeshStatus::OK;
 }
 
-// 2. Solid Mesh Invariants: Full topological & geometric correctness (checks 1-7 in increasing cost order)
+// 2. Solid Mesh Invariants: Full topological & geometric correctness (checks in increasing cost order)
 template <typename Mesh>
 inline MeshStatus check_solid_mesh(const Mesh& m) {
-    // Run topological precondition checks (1-5) first
-    MeshStatus status = check_corefinement_preconditions(m);
-    if (status != MeshStatus::OK) return status;
+    // 1. O(1) Size check
+    if (m.number_of_vertices() == 0 || m.number_of_faces() == 0) return MeshStatus::EMPTY;
 
-    // 6. O(N) Volume enclosure & normal orientation test
+    // 2. O(1)-O(N) Early-exiting border halfedge scan
+    if (!CGAL::is_closed(m)) return MeshStatus::NOT_CLOSED;
+
+    // 3. O(1)-O(N) Early-exiting face degree scan
+    if (!CGAL::is_triangle_mesh(m)) return MeshStatus::NOT_TRIANGULATED;
+
+    // 4. O(N) Exhaustive combinatorial graph audit
+    if (!m.is_valid() || !CGAL::is_valid_polygon_mesh(m)) return MeshStatus::INVALID_CONNECTIVITY;
+
+    // 5. O(N) Volume enclosure & normal orientation test
     if (!CGAL::Polygon_mesh_processing::does_bound_a_volume(m)) {
         return MeshStatus::DOES_NOT_BOUND_VOLUME;
     }
 
-    // 7. O(N log N) Exact rational geometric collision / self-intersection test
+    // 6. O(N log N) Exact rational geometric collision / self-intersection test
     if (CGAL::Polygon_mesh_processing::does_self_intersect(m)) {
         return MeshStatus::SELF_INTERSECTING;
     }
@@ -92,7 +100,7 @@ inline bool is_well_formed_mesh(const Mesh& m) {
 
 template <typename Mesh>
 inline bool is_closed_2manifold(const Mesh& m) {
-    return !m.has_garbage() && m.number_of_vertices() > 0 && m.number_of_faces() > 0 && CGAL::is_closed(m) && m.is_valid();
+    return m.number_of_vertices() > 0 && m.number_of_faces() > 0 && CGAL::is_closed(m) && m.is_valid();
 }
 
 template <typename Mesh>

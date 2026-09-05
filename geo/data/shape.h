@@ -13,6 +13,11 @@ namespace geo {
 
 using json = nlohmann::json;
 
+template <typename ShapeType> class BasicShapeIterator;
+struct Shape;
+using ShapeIterator = BasicShapeIterator<Shape>;
+using ConstShapeIterator = BasicShapeIterator<const Shape>;
+
 /**
  * Operation: A semantic recipe for a JOT operation.
  * Inherits from Selector but is distinguishable at the type level.
@@ -157,6 +162,14 @@ struct Shape {
         }
     }
 
+    ConstShapeIterator begin() const;
+    ConstShapeIterator end() const;
+    ConstShapeIterator cbegin() const;
+    ConstShapeIterator cend() const;
+
+    ShapeIterator begin();
+    ShapeIterator end();
+
     void set_role_recursive(const std::string& r) {
         add_tag("role", r);
         for (auto& child : components) {
@@ -289,3 +302,5 @@ inline void to_json(json& j, const Operation& op) { j = op.to_json(); }
 
 } // namespace geo
 } // namespace jotcad
+
+#include "shape_iterator.h"

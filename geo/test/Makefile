@@ -89,9 +89,6 @@ COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
 # Targets
 all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)/test_zenoh_link $(BIN_DIR)/test_zenoh_queryable $(BIN_DIR)/test_zenoh_caching
 
-# Ensure the library is built first if missing
-$(LIB_GEO):
-	$(MAKE) -C .. bin/libjotgeo.a
 
 # Rule for building the standalone test_zenoh_caching binary
 $(BIN_DIR)/test_zenoh_caching: $(OBJ_DIR)/test_zenoh_caching.o
@@ -118,6 +115,13 @@ REG_OBJS = ../obj/ops_library.o \
            ../obj/ops_unfold_reg.o \
            ../obj/ops_tooling_reg.o \
            ../obj/ops_io_reg.o
+
+# Ensure parent library and operator registration objects are up to date
+$(REG_OBJS) $(LIB_GEO): FORCE
+	$(MAKE) -C .. $(patsubst ../%,%,$@)
+
+FORCE:
+.PHONY: FORCE
 
 # Rule for building the combined unit_tests binary from a single translation unit
 $(BIN_DIR)/unit_tests: $(OBJ_DIR)/unit_tests.o $(REG_OBJS) $(LIB_GEO)

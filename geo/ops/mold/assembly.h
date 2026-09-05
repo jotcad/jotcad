@@ -19,8 +19,7 @@ struct MoldAssembly {
         const MoldParams& params,
         std::vector<MoldPiece>& mold_pieces,
         const std::vector<EK::Vector_3>& piece_draw_dirs,
-        Geometry& out_obb_geo,
-        const std::vector<ExactMesh>& tool_meshes = {}
+        Geometry& out_obb_geo
     ) {
         if (mold_pieces.empty()) return;
 
@@ -64,13 +63,6 @@ struct MoldAssembly {
             boolean::corefine_difference(final_remaining, piece.mesh, next_rem, params.kiss_mode, params.kiss_width, "final_remaining \\ " + piece.name);
             if (next_rem.number_of_faces() > 0) {
                 final_remaining = next_rem;
-            }
-        }
-
-        for (const auto& tm : tool_meshes) {
-            ExactMesh tool_carved;
-            if (boolean::corefine_difference(final_remaining, tm, tool_carved, params.kiss_mode, params.kiss_width, "final_remaining \\ tool in assembly")) {
-                final_remaining = tool_carved;
             }
         }
 

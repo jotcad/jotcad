@@ -43,21 +43,11 @@ struct MoldOp : P {
         }
         params.kiss_width = FT(kiss_width_val);
 
-        // 1. Extract core casting mesh (mesh_part) and tooling meshes (sprues, vents, gaps) in world space
+        // 1. Extract core casting mesh (mesh_part) in world space
         mold::ExactMesh mesh_part;
-        std::vector<mold::ExactMesh> tool_meshes;
         in.walk([&](const Shape& node) {
             if (node.has_tag("mold/role", "box")) {
                 return; // Stock box handled separately during OBB trimming
-            }
-            if (node.has_tag("mold/role", "sprue") || node.has_tag("mold/role", "vent") || node.has_tag("role", "gap")) {
-                if (node.geometry.has_value()) {
-                    Geometry geo = vfs->template readCID<Geometry>(*node.geometry);
-                    mold::ExactMesh comp = boolean::Engine::geometry_to_mesh(geo);
-                    boolean::Engine::transform_mesh(comp, node.tf);
-                    tool_meshes.push_back(std::move(comp));
-                }
-                return;
             }
             if (node.geometry.has_value() && node.is_real()) {
                 Geometry geo = vfs->template readCID<Geometry>(*node.geometry);
@@ -156,14 +146,6 @@ struct MoldOp : P {
             bool ok_diff = boolean::corefine_difference(raw_block, model_copy, piece_mesh, params.kiss_mode, params.kiss_width, "raw_block \\ model_copy in MoldOp");
             assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
 
-            // Carve sprue, vent, and gap channel tools through this piece
-            for (const auto& tm : tool_meshes) {
-                mold::ExactMesh tool_copy = tm;
-                mold::ExactMesh carved;
-                if (boolean::corefine_difference(piece_mesh, tool_copy, carved, params.kiss_mode, params.kiss_width, "piece_mesh \\ tool in MoldOp")) {
-                    piece_mesh = carved;
-                }
-            }
             fix::assert_well_formed_mesh(piece_mesh, "piece_mesh in MoldOp");
 
             std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
@@ -180,7 +162,7 @@ struct MoldOp : P {
 
         // 6. Minimal-Volume OBB Trimming & Stationary Remainder Extraction
         Geometry obb_geo;
-        mold::MoldAssembly<P>::trim_against_obb(vfs, in, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo, tool_meshes);
+        mold::MoldAssembly<P>::trim_against_obb(vfs, in, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
 
         // 7. Demoldability Verification
         mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);

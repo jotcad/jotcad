@@ -179,7 +179,7 @@ $(OBJ_DIR)/triangulation.o: render/triangulation.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
-$(OBJ_DIR)/ops_library.o: infra/ops_library.cc $(wildcard ops/*.h)
+$(OBJ_DIR)/ops_library.o: infra/ops_library.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
@@ -260,6 +260,9 @@ $(OBJ_DIR)/ops_tooling_reg.o: infra/ops_tooling_reg.cc
 $(OBJ_DIR)/ops_io_reg.o: infra/ops_io_reg.cc
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Include generated dependencies
+-include $(wildcard $(OBJ_DIR)/*.d)
 
 clean:
 	rm -rf $(BIN_DIR) $(OBJ_DIR)

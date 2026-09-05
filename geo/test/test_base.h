@@ -21,15 +21,21 @@ void register_all_ops(fs::VFSNode* vfs);
  * MockVFS: A minimal file-system-backed VFS for testing.
  */
 class MockVFS : public fs::VFSNode {
+    fs::VFSNode::VFSRequest m_test_req;
 public:
     MockVFS(const std::string& test_name) : fs::VFSNode(create_config(test_name)), m_storage_dir(create_config(test_name).storage_dir) {
         std::filesystem::remove_all(m_storage_dir);
         std::filesystem::create_directories(m_storage_dir);
         // Pre-provision standard empty geometry CID
         this->materialize(std::vector<uint8_t>{});
+        m_test_req.timeoutMs = 10000;
+        fs::VFSNode::set_current_request_context(&m_test_req);
     }
 
     ~MockVFS() {
+        if (fs::VFSNode::get_current_request_context() == &m_test_req) {
+            fs::VFSNode::set_current_request_context(nullptr);
+        }
         try {
             std::filesystem::remove_all(m_storage_dir);
         } catch (...) {}

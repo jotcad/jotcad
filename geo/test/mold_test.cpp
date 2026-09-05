@@ -31,9 +31,16 @@ int main() {
     Shape box_mold = vfs.read<Shape>(mold_sel);
 
     assert(box_mold.components.size() >= 2); // mold pieces
-    assert(box_mold.components[0].tags.contains("mold/piece") && box_mold.components[0].tags["mold/piece"] == 1);
-    assert(box_mold.components[0].tags.contains("mold/pull_vector"));
-    std::cout << "    - Produced 1st demoldable pillar for Box successfully with pull_vector=" << box_mold.components[0].tags["mold/pull_vector"] << std::endl;
+    bool found_box_piece1 = false;
+    for (const auto& s : box_mold) {
+        if (s.has_tag("mold/piece", 1)) {
+            assert(s.has_tag("mold/pull_vector"));
+            std::cout << "    - Produced 1st demoldable pillar for Box successfully with pull_vector=" << s.tags["mold/pull_vector"] << std::endl;
+            found_box_piece1 = true;
+            break;
+        }
+    }
+    assert(found_box_piece1);
 
     // 2. Test first demoldable pillar on bear.stl with explode
     std::cout << "  - Testing 1st demoldable pillar on bear.stl with explode=15.0..." << std::endl;
@@ -58,9 +65,16 @@ int main() {
     Shape bear_mold = vfs.read<Shape>(bear_mold_sel);
 
     assert(bear_mold.components.size() >= 2); // mold pieces
-    assert(bear_mold.components[0].tags.contains("mold/piece") && bear_mold.components[0].tags["mold/piece"] == 1);
-    assert(bear_mold.components[0].tags.contains("mold/pull_vector"));
-    std::cout << "    - Produced 1st demoldable pillar for Bear successfully with pull_vector=" << bear_mold.components[0].tags["mold/pull_vector"] << std::endl;
+    bool found_bear_piece1 = false;
+    for (const auto& s : bear_mold) {
+        if (s.has_tag("mold/piece", 1)) {
+            assert(s.has_tag("mold/pull_vector"));
+            std::cout << "    - Produced 1st demoldable pillar for Bear successfully with pull_vector=" << s.tags["mold/pull_vector"] << std::endl;
+            found_bear_piece1 = true;
+            break;
+        }
+    }
+    assert(found_bear_piece1);
     std::cout << "  ✅ jot/mold test passed." << std::endl;
     return 0;
 }
