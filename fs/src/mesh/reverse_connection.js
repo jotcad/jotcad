@@ -323,7 +323,8 @@ export class ReverseConnection extends Connection {
               const sel = cmd.selector ? Selector.fromObject(cmd.selector) : null;
               if (cmd.op === 'READ_SELECTOR' || (cmd.op === 'READ' && sel)) {
                 try {
-                  const result = await this.vfs.readSelector(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt });
+                  const timeoutMs = cmd.timeoutMs || (cmd.expiresAt ? Math.max(1, cmd.expiresAt - Date.now()) : 10000);
+                  const result = await this.vfs.readSelector(sel, { stack: cmd.stack, expiresAt: cmd.expiresAt, timeoutMs });
                   if (result) { stream = result.stream; metadata = result.metadata; } 
                   else { metadata = { error: 'Not Found' }; }
                 } catch (readErr) {

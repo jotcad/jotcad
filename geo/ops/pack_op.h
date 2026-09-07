@@ -132,24 +132,8 @@ struct PackOp : P {
     }
 
     static void collect_packable_items(const Shape& s, std::vector<Shape>& items) {
-        if (s.tags.contains("mold") || s.tags.contains("item") || (s.tags.contains("type") && s.tags["type"] == "item") || (s.components.empty() && s.has_positive_geometry())) {
-            items.push_back(s);
-        } else if (!s.components.empty()) {
-            for (const auto& child : s.components) {
-                collect_packable_items(child, items);
-            }
-        } else {
-            items.push_back(s);
-        }
-    }
-
-    static void collect_leaf_shapes(const Shape& s, std::vector<Shape>& leaves) {
-        if (s.geometry.has_value() || (s.tags.contains("type") && s.tags.at("type") == "item")) {
-            leaves.push_back(s);
-        } else {
-            for (const auto& child : s.components) {
-                collect_leaf_shapes(child, leaves);
-            }
+        for (const auto& item : s.items()) {
+            items.push_back(item);
         }
     }
     

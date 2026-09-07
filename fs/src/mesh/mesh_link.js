@@ -315,7 +315,14 @@ export class MeshLinkBase {
 
   async readSelector(selector, context = {}) {
     if (!this.session) return null;
-    const { timeoutMs } = context;
+    let { timeoutMs, expiresAt } = context;
+    if (!timeoutMs && expiresAt) {
+      if (Date.now() > expiresAt) {
+        throw new Error(`[MeshLink ${this.vfs.id}] Request expired (expiresAt: ${expiresAt})`);
+      }
+      timeoutMs = Math.max(1, expiresAt - Date.now());
+    }
+    timeoutMs = timeoutMs || this.options?.timeoutMs || 10000;
     if (!timeoutMs || typeof timeoutMs !== 'number' || timeoutMs <= 0) {
       throw new Error(`[MeshLink ${this.vfs.id}] readSelector missing mandatory positive timeoutMs in context! No default is permitted.`);
     }

@@ -335,6 +335,51 @@ void test_3d_footprint_and_pack() {
     std::cout << "  - 3D Solids packed into 2D sheet layout successfully." << std::endl;
 }
 
+void test_hollow_box_unfold_pack() {
+    MockVFS vfs("hollow_box_unfold_pack");
+    register_all_ops(&vfs);
+
+    std::cout << "Testing Hollow Box Unfold and Pack..." << std::endl;
+
+    fs::Selector b1_sel("jot/Box");
+    b1_sel.parameters["width"] = 20.0;
+    b1_sel.parameters["height"] = 20.0;
+    b1_sel.parameters["depth"] = 20.0;
+    Shape b1 = vfs.read<Shape>(b1_sel.with_output("$out"));
+
+    fs::Selector b2_sel("jot/Box");
+    b2_sel.parameters["width"] = 10.0;
+    b2_sel.parameters["height"] = 10.0;
+    b2_sel.parameters["depth"] = 20.0;
+    Shape b2 = vfs.read<Shape>(b2_sel.with_output("$out"));
+
+    fs::Selector cut_sel("jot/cut");
+    cut_sel.parameters["$in"] = b1;
+    cut_sel.parameters["tools"] = std::vector<Shape>{b2};
+    Shape cut_res = vfs.read<Shape>(cut_sel.with_output("$out"));
+
+    fs::Selector unfold_sel("jot/unfold");
+    unfold_sel.parameters["$in"] = cut_res;
+    unfold_sel.parameters["strategy"] = "pair";
+    Shape unfold_res = vfs.read<Shape>(unfold_sel.with_output("$out"));
+
+    fs::Selector sheet_sel("jot/Box");
+    sheet_sel.parameters["width"] = 100.0;
+    sheet_sel.parameters["height"] = 100.0;
+    sheet_sel.parameters["depth"] = 0.0;
+    Shape sheet = vfs.read<Shape>(sheet_sel.with_output("$out"));
+
+    fs::Selector pack_sel("jot/pack");
+    pack_sel.parameters["$in"] = unfold_res;
+    pack_sel.parameters["sheet"] = sheet;
+    Shape pack_res = vfs.read<Shape>(pack_sel.with_output("$out"));
+    std::cout << "  - Packed sheets: " << pack_res.components.size() << std::endl;
+    assert(pack_res.components.size() == 1);
+    Shape sheet_grp = pack_res.components[0];
+    std::cout << "  - Placed parts on sheet: " << sheet_grp.components.size() - 1 << std::endl;
+    assert(sheet_grp.components.size() == 1 + unfold_res.components.size()); // background + placed islands
+}
+
 int main() {
     test_multi_sheet();
     test_alignment_and_bias();
@@ -342,6 +387,7 @@ int main() {
     test_simplification();
     test_item_support();
     test_3d_footprint_and_pack();
+    test_hollow_box_unfold_pack();
     std::cout << "✨ All Pack and Footprint tests passed!" << std::endl;
     return 0;
 }

@@ -63,10 +63,11 @@ export async function runIntegrationTest(testName, optionsOrFn) {
                     compiler.registerOperator(path, { path, schema });
                 }
 
-                const readData = async (selector) => {
+                const readData = async (selector, context = {}) => {
+                    const timeoutMs = context.timeoutMs || 10000;
                     const result = (selector instanceof Selector)
-                        ? await vfs.readSelector(selector)
-                        : await vfs.readCID(selector);
+                        ? await vfs.readSelector(selector, { ...context, timeoutMs })
+                        : await vfs.readCID(selector, { ...context, timeoutMs });
                     return vfs._drainStream(result);
                 };
                 const capturePNG = async (selector, filename, opts = {}) => {

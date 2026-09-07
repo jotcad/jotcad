@@ -154,7 +154,7 @@ inline std::vector<ToolComponentMesh> generate_sprue_and_vents(
         }
 
         if (CGAL::is_closed(vent_geom)) {
-            fix::assert_well_formed_mesh(vent_geom, "vent_geom in generate_sprue_and_vents");
+            fix::assert_well_formed_closed_mesh(vent_geom, "vent_geom in generate_sprue_and_vents");
             std::cout << "  [Pour Prep] Generated " << (cluster.is_primary ? "primary sprue" : "vent")
                       << " at apex (" << CGAL::to_double(cluster.apex.x()) << ", "
                       << CGAL::to_double(cluster.apex.y()) << ", "

@@ -115,7 +115,11 @@ inline std::size_t regularize_solid_soup_faces(const PointRange& points, Polygon
         }
     }
 
-    // 4. Iterative Valency Pruning (Excise any remaining dangling single-sheet flaps with valency <= 2)
+    // 4. Iterative Valency Pruning (TEMPORARILY DISABLED)
+    // Valency pruning (valency <= 2) was intended to peel dangling fins from solids,
+    // but unconditionally destroys legitimate 2D planar surfaces (e.g. Box(w,h,0), Disk, Fill)
+    // whose boundary vertices naturally have valency 1 or 2.
+    /*
     for (std::size_t fi = 0; fi < polygons.size(); ++fi) {
         if (remove_face[fi]) {
             for (auto v : polygons[fi]) {
@@ -160,6 +164,7 @@ inline std::size_t regularize_solid_soup_faces(const PointRange& points, Polygon
             }
         }
     }
+    */
 
     // 5. Compact the polygon container
     PolygonRange cleaned_polygons;

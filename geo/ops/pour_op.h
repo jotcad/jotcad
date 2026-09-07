@@ -109,7 +109,7 @@ struct PourOp : P {
         for (auto& tc : tool_components) {
             boolean::Engine::join_mesh_by_mesh(oriented_mesh, tc.mesh);
         }
-        fix::assert_well_formed_mesh(oriented_mesh, "oriented_mesh with sprue/vents in PourOp");
+        fix::assert_well_formed_closed_mesh(oriented_mesh, "oriented_mesh with sprue/vents in PourOp");
 
         // Create the oriented core casting shape
         Geometry oriented_geo = boolean::Engine::mesh_to_geometry(oriented_mesh);

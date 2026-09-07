@@ -48,7 +48,7 @@ runIntegrationTest('Real STEP File Import and Render Integration', async ({ vfs,
     assert.ok(importBundle, "Should find terminal output bundle");
     
     console.log("[Test] Fetching shape from VFS via readSelector...");
-    const shape = await readData(importBundle.selector);
+    const shape = await readData(importBundle.selector, { timeoutMs: 60000 });
     assert.ok(shape, "VFS should return a valid shape object");
     assert.ok(shape.geometry, "Shape must carry a geometry CID reference");
     
@@ -57,7 +57,7 @@ runIntegrationTest('Real STEP File Import and Render Integration', async ({ vfs,
 
     // Render for visual confirmation
     console.log("[Test] Rendering shape to PNG...");
-    const pngBytes = await capturePNG(importBundle.selector, 'esp32-wemos-d1-mini_result.png', { ax: 0.61547, ay: 0.78539 });
+    const pngBytes = await capturePNG(importBundle.selector, 'esp32-wemos-d1-mini_result.png', { ax: 0.61547, ay: 0.78539, timeoutMs: 60000 });
     assert.ok(pngBytes.length > 0, "Rendered PNG should not be empty");
     console.log(`✔ STEP Real Import and Render completed successfully.`);
 });

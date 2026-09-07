@@ -3,6 +3,7 @@
 #include <vector>
 #include <array>
 #include <optional>
+#include <type_traits>
 #include <iostream>
 #include <json.hpp>
 #include "vfs_node.h"
@@ -13,10 +14,21 @@ namespace geo {
 
 using json = nlohmann::json;
 
-template <typename ShapeType> class BasicShapeIterator;
+template <typename ShapeType, bool StopAtItems> class BasicShapeIterator;
+template <typename IteratorType> struct ShapeRange;
 struct Shape;
-using ShapeIterator = BasicShapeIterator<Shape>;
-using ConstShapeIterator = BasicShapeIterator<const Shape>;
+using ShapeIterator = BasicShapeIterator<Shape, false>;
+using ConstShapeIterator = BasicShapeIterator<const Shape, false>;
+using ItemShapeIterator = BasicShapeIterator<Shape, true>;
+using ConstItemShapeIterator = BasicShapeIterator<const Shape, true>;
+
+template <typename IteratorType>
+struct ShapeRange {
+    IteratorType m_begin;
+    IteratorType m_end;
+    IteratorType begin() const { return m_begin; }
+    IteratorType end() const { return m_end; }
+};
 
 /**
  * Operation: A semantic recipe for a JOT operation.
@@ -102,6 +114,10 @@ struct Shape {
         return role() == "";
     }
 
+    bool is_item() const {
+        return has_tag("type", "item");
+    }
+
     bool has_positive_geometry() const {
         return geometry.has_value() && is_real();
     }
@@ -143,15 +159,73 @@ struct Shape {
     }
 
     template <typename F>
-    Shape map(F&& fn) const {
-        Shape out = fn(*this);
-        std::vector<Shape> new_children;
-        new_children.reserve(components.size());
-        for (const auto& child : components) {
-            new_children.push_back(child.map(fn));
+    auto map(F&& fn) const -> std::conditional_t<
+        std::is_same_v<std::decay_t<std::invoke_result_t<F, const Shape&>>, std::optional<Shape>>,
+        std::optional<Shape>,
+        Shape> {
+        using Ret = std::decay_t<std::invoke_result_t<F, const Shape&>>;
+        constexpr bool IsOptional = std::is_same_v<Ret, std::optional<Shape>>;
+
+        if constexpr (IsOptional) {
+            auto self_res = fn(*this);
+            if (!self_res.has_value()) {
+                return std::optional<Shape>(std::nullopt);
+            }
+            Shape out = std::move(*self_res);
+            std::vector<Shape> new_children;
+            for (const auto& child : components) {
+                auto child_res = child.map(fn);
+                if (child_res.has_value()) {
+                    new_children.push_back(std::move(*child_res));
+                }
+            }
+            out.components = std::move(new_children);
+            return std::optional<Shape>(std::move(out));
+        } else {
+            Shape out = fn(*this);
+            std::vector<Shape> new_children;
+            new_children.reserve(components.size());
+            for (const auto& child : components) {
+                new_children.push_back(child.map(fn));
+            }
+            out.components = std::move(new_children);
+            return out;
         }
-        out.components = std::move(new_children);
-        return out;
+    }
+
+    template <typename F>
+    auto map_items(F&& fn) const -> std::conditional_t<
+        std::is_same_v<std::decay_t<std::invoke_result_t<F, const Shape&>>, std::optional<Shape>>,
+        std::optional<Shape>,
+        Shape> {
+        using Ret = std::decay_t<std::invoke_result_t<F, const Shape&>>;
+        constexpr bool IsOptional = std::is_same_v<Ret, std::optional<Shape>>;
+
+        if (is_item() || (components.empty() && geometry.has_value())) {
+            return fn(*this);
+        }
+
+        if constexpr (IsOptional) {
+            Shape out = *this;
+            std::vector<Shape> new_children;
+            for (const auto& child : components) {
+                auto child_res = child.map_items(fn);
+                if (child_res.has_value()) {
+                    new_children.push_back(std::move(*child_res));
+                }
+            }
+            out.components = std::move(new_children);
+            return std::optional<Shape>(std::move(out));
+        } else {
+            Shape out = *this;
+            std::vector<Shape> new_children;
+            new_children.reserve(components.size());
+            for (const auto& child : components) {
+                new_children.push_back(child.map_items(fn));
+            }
+            out.components = std::move(new_children);
+            return out;
+        }
     }
 
     template <typename Visitor>
@@ -169,6 +243,12 @@ struct Shape {
 
     ShapeIterator begin();
     ShapeIterator end();
+
+    ShapeRange<ShapeIterator> shapes();
+    ShapeRange<ConstShapeIterator> shapes() const;
+
+    ShapeRange<ItemShapeIterator> items();
+    ShapeRange<ConstItemShapeIterator> items() const;
 
     void set_role_recursive(const std::string& r) {
         add_tag("role", r);

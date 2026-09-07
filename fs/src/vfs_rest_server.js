@@ -147,9 +147,10 @@ export function registerVFSRoutes(vfs, server, prefix = '', meshLink = null) {
         
         const stack = record.header.stack || [];
         const expiresAt = record.header.expiresAt || null;
+        const timeoutMs = record.header.timeoutMs || (expiresAt ? Math.max(1, expiresAt - Date.now()) : 10000);
 
         log(`[MeshServer ${vfs.id}] POST /read_selector: Selector(${selector.path})`);
-        const result = await vfs.readSelector(selector, { stack, expiresAt });
+        const result = await vfs.readSelector(selector, { stack, expiresAt, timeoutMs });
 
         if (result) {
           const { stream, metadata } = result;

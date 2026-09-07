@@ -128,6 +128,12 @@ inline EK::Vector_3 find_optimal_pour_orientation(
         }
     }
 
+    std::cout << "  [Pour Orientation] Scanned " << candidate_dirs.size() 
+              << " candidate up-vectors. Best score: " << best_score << " dir: ("
+              << CGAL::to_double(best_dir.x()) << ", "
+              << CGAL::to_double(best_dir.y()) << ", "
+              << CGAL::to_double(best_dir.z()) << ")" << std::endl << std::flush;
+
     return best_dir;
 }
 

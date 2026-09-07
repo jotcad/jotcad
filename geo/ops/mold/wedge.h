@@ -292,7 +292,7 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     inspect_self_intersections(solid_wedge, to_z);
 
     FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
-    fix::assert_well_formed_mesh(solid_wedge, "solid_wedge in construct_envelope_wedge");
+    fix::assert_well_formed_closed_mesh(solid_wedge, "solid_wedge in construct_envelope_wedge");
     return {solid_wedge, source_faces, total_area};
 }
 

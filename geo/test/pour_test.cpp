@@ -45,7 +45,6 @@ int main() {
     mold_sel.parameters["$in"] = prepped_box.to_json();
     mold_sel.parameters["padding"] = 5.0;
     mold_sel.parameters["explode"] = 15.0;
-    mold_sel.parameters["draft"] = 0.0;
     mold_sel.output = "$out";
 
     Processor::execute(&vfs, mold_sel);

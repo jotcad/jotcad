@@ -60,7 +60,7 @@ inline FT pinch_bridge_width_ft() { return FT(1) / FT(100); }
 struct MoldParams {
     FT padding = FT(10);
     FT explode = FT(0);
-    FT draft = FT(0);
+    FT draft = FT(-3) / FT(1000); // Default -0.003 turns (~ -1.08 deg) negative draft allowance from shrinkage
     fix::KissMode kiss_mode = fix::KissMode::WELD;
     FT kiss_width = pinch_bridge_width_ft();
 };

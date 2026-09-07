@@ -111,7 +111,7 @@ bool resolve_kissing_seams(
 
     // Step 3: Verify well-formedness of all generated tools
     for (const auto& tool : tools) {
-        assert_well_formed_mesh(tool, "Minkowski tool in kiss.h");
+        assert_well_formed_closed_mesh(tool, "Minkowski tool in kiss.h");
     }
 
     // Step 4: Apply Minkowski Corefinement directly per tool
@@ -145,7 +145,7 @@ bool resolve_kissing_seams(
 
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
     mesh.collect_garbage();
-    assert_well_formed_mesh(mesh, "mesh after resolve_kissing_seams");
+    assert_well_formed_closed_mesh(mesh, "mesh after resolve_kissing_seams");
     return true;
 }
 

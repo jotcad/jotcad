@@ -8,15 +8,13 @@
 #include "ops/cut_op.h"
 #include "ops/clean_op.h"
 #include "ops/extrude_op.h"
+#include "test_base.h"
 
 using namespace jotcad;
 using namespace jotcad::geo;
 
 int main() {
-    fs::VFSNode::Config config;
-    config.id = "ghost-test";
-    config.storage_dir = ".vfs_storage_ghost_test";
-    fs::VFSNode vfs(config);
+    MockVFS vfs("ghost_test");
 
     // 1. Create a Box
     fs::Selector box_sel("jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 10.0}});

@@ -72,7 +72,8 @@ export class WSConnectionBase extends Connection {
       try {
         const target = Selector.fromObject(selector);
         log(`[WSConnectionBase ${this.neighborId}] -> VFS.readSelector(${target.path})`);
-        const result = await this.vfs.readSelector(target, { stack, expiresAt });
+        const timeoutMs = frame.timeoutMs || (expiresAt ? Math.max(1, expiresAt - Date.now()) : 10000);
+        const result = await this.vfs.readSelector(target, { stack, expiresAt, timeoutMs });
         this._handleReadResult(txId, result);
       } catch (err) {
         this._send({ txId, type: 'READ_RESPONSE', status: 500, payload: { error: err.message } });

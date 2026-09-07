@@ -55,7 +55,7 @@ runIntegrationTest('STL Import and Export End-to-End Integration', async ({ vfs,
             : JSON.parse(typeof shapeData === 'string' ? shapeData : new TextDecoder().decode(shapeData));
         console.log("Imported Shape JSON:", JSON.stringify(shapeObj, null, 2));
 
-        assert.strictEqual(shapeObj.tags.type, 'closed', 'Imported shape should be marked as closed');
+        assert.strictEqual(shapeObj.tags.type, 'surface', 'Imported shape should be marked as surface');
         assert.ok(shapeObj.geometry, 'Imported shape should have a valid geometry CID');
 
         console.log("SUCCESS: STL Import/Export round-trip test passed!");

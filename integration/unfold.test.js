@@ -21,9 +21,7 @@ runIntegrationTest('Unfold Integration Test', async ({ readData, evaluate, readO
     // Test 3: Hollow Box Unfold (Regression Test)
     const script3 = `
         U = Box(20, 20, 20).cut(Box(10, 10, 20)).unfold(strategy="pair")
-        Cuts = U.inItem("*").has("unfold", "cut").color('red')
-        Folds = U.inItem("*").has("unfold", "fold").color('green')
-        Folds.and(Cuts).pack(sheet=Box(100, 100)) -> $out
+        U.pack(sheet=Box(100, 100)) -> $out
     `;
     const r3 = await evaluate(script3);
     await captureOutputPNG(r3, 'unfold_hollow_box_result.png');

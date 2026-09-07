@@ -15,8 +15,13 @@ inline std::pair<CGAL::Aff_transformation_3<EK>, CGAL::Aff_transformation_3<EK>>
     double phi = std::atan2(dy_d, dx_d);
     double theta = std::atan2(std::sqrt(dx_d * dx_d + dy_d * dy_d), dz_d);
 
-    EK::RT sin_phi, cos_phi, w_phi;
-    CGAL::rational_rotation_approximation(-phi, sin_phi, cos_phi, w_phi, EK::RT(1), EK::RT(1000000));
+    double s_phi, c_phi, w_p;
+    CGAL::rational_rotation_approximation(-phi, s_phi, c_phi, w_p, 1.0, 1000000.0);
+
+    EK::RT sin_phi(std::llround(s_phi));
+    EK::RT cos_phi(std::llround(c_phi));
+    EK::RT w_phi(std::llround(w_p));
+
     CGAL::Aff_transformation_3<EK> Rz(
         cos_phi, -sin_phi, 0, 0,
         sin_phi, cos_phi, 0, 0,
@@ -24,17 +29,35 @@ inline std::pair<CGAL::Aff_transformation_3<EK>, CGAL::Aff_transformation_3<EK>>
         w_phi
     );
 
-    EK::RT sin_theta, cos_theta, w_theta;
-    CGAL::rational_rotation_approximation(-theta, sin_theta, cos_theta, w_theta, EK::RT(1), EK::RT(1000000));
+    CGAL::Aff_transformation_3<EK> Rz_inv(
+        cos_phi, sin_phi, 0, 0,
+        -sin_phi, cos_phi, 0, 0,
+        0, 0, w_phi, 0,
+        w_phi
+    );
+
+    double s_theta, c_theta, w_t;
+    CGAL::rational_rotation_approximation(-theta, s_theta, c_theta, w_t, 1.0, 1000000.0);
+
+    EK::RT sin_theta(std::llround(s_theta));
+    EK::RT cos_theta(std::llround(c_theta));
+    EK::RT w_theta(std::llround(w_t));
+
     CGAL::Aff_transformation_3<EK> Ry(
         cos_theta, 0, sin_theta, 0,
         0, w_theta, 0, 0,
         -sin_theta, 0, cos_theta, 0,
         w_theta
     );
+    CGAL::Aff_transformation_3<EK> Ry_inv(
+        cos_theta, 0, -sin_theta, 0,
+        0, w_theta, 0, 0,
+        sin_theta, 0, cos_theta, 0,
+        w_theta
+    );
 
     CGAL::Aff_transformation_3<EK> to_z = Ry * Rz;
-    CGAL::Aff_transformation_3<EK> from_z = to_z.inverse();
+    CGAL::Aff_transformation_3<EK> from_z = Rz_inv * Ry_inv;
     return {to_z, from_z};
 }
 

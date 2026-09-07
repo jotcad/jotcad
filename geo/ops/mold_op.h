@@ -25,7 +25,7 @@ struct MoldOp : P {
         const Shape& in,
         double padding_val = 10.0,
         double explode_val = 0.0,
-        double draft_val = 0.0,
+        double draft_val = -0.003,
         std::string kiss_val = "weld",
         double kiss_width_val = 0.01
     ) {
@@ -43,11 +43,16 @@ struct MoldOp : P {
         }
         params.kiss_width = FT(kiss_width_val);
 
-        // 1. Extract core casting mesh (mesh_part) in world space
+        // 1. Extract core casting mesh (mesh_part) and attached stock box in world space
         mold::ExactMesh mesh_part;
+        std::optional<mold::ExactMesh> stock_box_mesh;
         in.walk([&](const Shape& node) {
-            if (node.has_tag("mold/role", "box")) {
-                return; // Stock box handled separately during OBB trimming
+            if (node.has_tag("mold/role", "box") && node.geometry.has_value() && !stock_box_mesh.has_value()) {
+                Geometry box_geo = vfs->template readCID<Geometry>(*node.geometry);
+                mold::ExactMesh box_m = boolean::Engine::geometry_to_mesh(box_geo);
+                boolean::Engine::transform_mesh(box_m, node.tf);
+                stock_box_mesh = std::move(box_m);
+                return;
             }
             if (node.geometry.has_value() && node.is_real()) {
                 Geometry geo = vfs->template readCID<Geometry>(*node.geometry);
@@ -64,15 +69,32 @@ struct MoldOp : P {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
-        fix::assert_well_formed_mesh(mesh_part, "mesh_part in MoldOp");
+        fix::assert_well_formed_closed_mesh(mesh_part, "mesh_part in MoldOp");
+
+        // 2. Trim model-with-sprue against stock box (if provided) so cavity is strictly bounded by stock
+        if (stock_box_mesh.has_value()) {
+            mold::ExactMesh trimmed_model;
+            bool ok_trim = boolean::corefine_intersection(mesh_part, *stock_box_mesh, trimmed_model, params.kiss_mode, params.kiss_width, "model ∩ stock_box in MoldOp");
+            if (ok_trim && trimmed_model.number_of_faces() > 0) {
+                mesh_part = std::move(trimmed_model);
+                mesh_part.collect_garbage();
+                fix::assert_well_formed_closed_mesh(mesh_part, "trimmed mesh_part in MoldOp");
+            }
+        }
+
+        // Flatten mesh_part vertex coordinates to pure rational leaves
+        for (auto v : mesh_part.vertices()) {
+            const auto& p = mesh_part.point(v);
+            mesh_part.point(v) = EK::Point_3(EK::FT(p.x().exact()), EK::FT(p.y().exact()), EK::FT(p.z().exact()));
+        }
 
         // 3. Topology & Geometric Centroids / Normals in Pure FT
         std::map<mold::EdgeKey, std::vector<int>> edge_to_faces;
-        std::vector<EK::Vector_3> face_normals;
-        std::vector<EK::Point_3> face_centroids;
+        std::vector<EK::Vector_3> face_normals(mesh_part.num_faces());
+        std::vector<EK::Point_3> face_centroids(mesh_part.num_faces());
 
-        int f_idx = 0;
         for (auto f : mesh_part.faces()) {
+            size_t f_idx = f.idx();
             auto h = mesh_part.halfedge(f);
             int v0 = (int)mesh_part.source(h);
             int v1 = (int)mesh_part.target(h);
@@ -82,15 +104,24 @@ struct MoldOp : P {
             auto p1 = mesh_part.point(mesh_part.target(h));
             auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
 
-            face_normals.push_back(CGAL::normal(p0, p1, p2));
-            face_centroids.push_back(EK::Point_3((p0.x() + p1.x() + p2.x()) / FT(3), (p0.y() + p1.y() + p2.y()) / FT(3), (p0.z() + p1.z() + p2.z()) / FT(3)));
+            EK::Vector_3 raw_n = CGAL::normal(p0, p1, p2);
+            double len = std::sqrt(CGAL::to_double(raw_n.squared_length()));
+            if (len > 1e-9) {
+                face_normals[f_idx] = EK::Vector_3(
+                    FT(CGAL::to_double(raw_n.x()) / len),
+                    FT(CGAL::to_double(raw_n.y()) / len),
+                    FT(CGAL::to_double(raw_n.z()) / len)
+                );
+            } else {
+                face_normals[f_idx] = raw_n;
+            }
+            face_centroids[f_idx] = EK::Point_3((p0.x() + p1.x() + p2.x()) / FT(3), (p0.y() + p1.y() + p2.y()) / FT(3), (p0.z() + p1.z() + p2.z()) / FT(3));
 
             std::array<std::pair<int, int>, 3> edges = {std::make_pair(v0, v1), std::make_pair(v1, v2), std::make_pair(v2, v0)};
             for (auto [u, v] : edges) {
                 if (u > v) std::swap(u, v);
-                edge_to_faces[{u, v}].push_back(f_idx);
+                edge_to_faces[{u, v}].push_back((int)f_idx);
             }
-            f_idx++;
         }
 
         // 4. Large Conservative Stock Envelope for Unconstrained Extraction
@@ -104,7 +135,7 @@ struct MoldOp : P {
         FT R = FT(r_sphere);
         Geometry conservative_stock_geo = mold::build_box_geo(-R, R, -R, R, -R, R);
         mold::ExactMesh conservative_stock = boolean::Engine::geometry_to_mesh(conservative_stock_geo);
-        fix::assert_well_formed_mesh(conservative_stock, "conservative_stock in MoldOp");
+        fix::assert_well_formed_closed_mesh(conservative_stock, "conservative_stock in MoldOp");
 
         // 5. Multi-Piece Mold Decomposition Loop
         mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
@@ -146,7 +177,7 @@ struct MoldOp : P {
             bool ok_diff = boolean::corefine_difference(raw_block, model_copy, piece_mesh, params.kiss_mode, params.kiss_width, "raw_block \\ model_copy in MoldOp");
             assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
 
-            fix::assert_well_formed_mesh(piece_mesh, "piece_mesh in MoldOp");
+            fix::assert_well_formed_closed_mesh(piece_mesh, "piece_mesh in MoldOp");
 
             std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
             std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
@@ -168,7 +199,7 @@ struct MoldOp : P {
         mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
         model_tree.build();
         for (const auto& piece : mold_pieces) {
-            mold::verify_piece_demoldability(piece, model_tree);
+            mold::verify_piece_demoldability(piece, model_tree, params);
         }
 
         // 8. Assemble Scene Graph & Apply Explosion Transforms
@@ -189,7 +220,7 @@ struct MoldOp : P {
             {"arguments", {
                 {{"name", "padding"}, {"type", "jot:number"}, {"default", 10.0}, {"description", "Stock mold block wall thickness padding in mm."}},
                 {{"name", "explode"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Explosion distance along piece withdrawal vectors in mm."}},
-                {{"name", "draft"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees)."}},
+                {{"name", "draft"}, {"type", "jot:number"}, {"default", -0.003}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees). Defaults to -0.003 (~ -1.08 deg) negative draft allowance to account for slipcast shrinkage clearance."}},
                 {{"name", "kiss"}, {"type", "jot:string"}, {"default", "weld"}, {"description", "Resolution mode for zero-volume contact singularities ('weld' or 'part')."}},
                 {{"name", "kiss_width"}, {"type", "jot:number"}, {"default", 0.01}, {"description", "Physical width in mm of structural bridge ('weld') or clearance gap ('part')."}}
             }},

@@ -49,8 +49,9 @@ struct MoldAssembly {
         for (auto& piece : mold_pieces) {
             ExactMesh trimmed_piece;
             boolean::corefine_intersection(piece.mesh, obb_mesh, trimmed_piece, params.kiss_mode, params.kiss_width, piece.name + " OBB trim");
-            if (trimmed_piece.number_of_faces() > 0) {
-                piece.mesh = trimmed_piece;
+            piece.mesh = trimmed_piece;
+            if (trimmed_piece.is_empty() || trimmed_piece.number_of_faces() == 0) {
+                std::cout << "    [OBB Trim] " << piece.name << " was outside stock envelope; preserved as empty piece for provenance." << std::endl;
             }
         }
 
@@ -59,6 +60,7 @@ struct MoldAssembly {
         boolean::corefine_difference(obb_mesh, mesh_part, final_remaining, params.kiss_mode, params.kiss_width, "obb \\ model in assembly");
 
         for (const auto& piece : mold_pieces) {
+            if (piece.mesh.is_empty() || piece.mesh.number_of_faces() == 0) continue;
             ExactMesh next_rem;
             boolean::corefine_difference(final_remaining, piece.mesh, next_rem, params.kiss_mode, params.kiss_width, "final_remaining \\ " + piece.name);
             if (next_rem.number_of_faces() > 0) {

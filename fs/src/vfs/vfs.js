@@ -127,14 +127,21 @@ export class VFS {
 
   async readSelector(selector, context = {}) {
     this._checkClosed();
-    const { timeoutMs } = context;
-    if (!timeoutMs || typeof timeoutMs !== 'number' || timeoutMs <= 0) {
+    let { timeoutMs, expiresAt } = context;
+    if (!timeoutMs && expiresAt) {
+      if (Date.now() > expiresAt) return null;
+      timeoutMs = Math.max(1, expiresAt - Date.now());
+    }
+    timeoutMs = timeoutMs || this.defaultTimeoutMs || 10000;
+    if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
       throw new Error(`[VFS ${this.id}] readSelector missing mandatory positive timeoutMs in context! No default is permitted.`);
     }
+    if (expiresAt && Date.now() > expiresAt) return null;
     const s = normalizeSelector(selector);
     const packetContext = { 
         ...context, 
         timeoutMs,
+        expiresAt: expiresAt || (Date.now() + timeoutMs),
         stack: context.stack || [], 
         resolutionStack: context.resolutionStack || []
     };

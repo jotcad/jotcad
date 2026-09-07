@@ -7,9 +7,12 @@ namespace mold {
 
 inline void verify_piece_demoldability(
     const MoldPiece& piece,
-    const Tree& model_tree
+    const Tree& model_tree,
+    const MoldParams& params = MoldParams()
 ) {
+    if (piece.mesh.is_empty() || piece.mesh.number_of_faces() == 0) return;
     int backdraft_count = 0;
+    FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
     for (auto f : piece.mesh.faces()) {
         auto h = piece.mesh.halfedge(f);
         auto p0 = piece.mesh.point(piece.mesh.source(h));
@@ -21,9 +24,13 @@ inline void verify_piece_demoldability(
         if (model_tree.squared_distance(mid) < FT(1) / FT(10000)) {
             EK::Vector_3 fn = CGAL::normal(p0, p1, p2);
             // On cavity faces, mold normal points inward toward model (-model_normal).
-            // Opening clearance requires mold withdrawal vector d dot mold_normal >= 0
-            if (fn * piece.draw_vector < FT(0)) {
-                backdraft_count++;
+            // Opening clearance requires (-fn / |fn|) * d >= min_dot <=> (fn / |fn|) * d <= -min_dot
+            double len = std::sqrt(CGAL::to_double(fn.squared_length()));
+            if (len > 1e-9) {
+                FT dot = (fn * piece.draw_vector) / FT(len);
+                if (dot > -min_dot) {
+                    backdraft_count++;
+                }
             }
         }
     }

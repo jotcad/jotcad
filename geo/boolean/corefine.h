@@ -59,6 +59,11 @@ inline bool corefine_difference(
     );
     if (!ok) return false;
 
+    if (out.is_empty() || out.number_of_faces() == 0) {
+        out.clear();
+        return true;
+    }
+
     regularize_and_resolve_kisses(out, kiss_mode, width);
     fix::assert_well_formed_for_corefinement(out, label + " (out)");
     return true;
@@ -90,6 +95,11 @@ inline bool corefine_intersection(
     );
     if (!ok) return false;
 
+    if (out.is_empty() || out.number_of_faces() == 0) {
+        out.clear();
+        return true;
+    }
+
     regularize_and_resolve_kisses(out, kiss_mode, width);
     fix::assert_well_formed_for_corefinement(out, label + " (out)");
     return true;
@@ -120,6 +130,11 @@ inline bool corefine_union(
         CGAL::parameters::all_default()
     );
     if (!ok) return false;
+
+    if (out.is_empty() || out.number_of_faces() == 0) {
+        out.clear();
+        return true;
+    }
 
     regularize_and_resolve_kisses(out, kiss_mode, width);
     fix::assert_well_formed_for_corefinement(out, label + " (out)");

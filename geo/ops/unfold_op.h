@@ -12,7 +12,14 @@ struct UnfoldOp : P {
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Shape subject, double minFold = 1.0, std::string rule = "grow", std::string strategy = "") {
         boolean::ExactMesh mesh;
-        collect_and_merge_mesh(vfs, subject, mesh);
+        for (const auto& node : subject) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
+            boolean::ExactMesh child_mesh = boolean::Engine::geometry_to_mesh(geo);
+            boolean::Engine::transform_mesh(child_mesh, node.tf);
+            if (mesh.is_empty()) mesh = std::move(child_mesh);
+            else boolean::Engine::join_mesh_by_mesh(mesh, child_mesh);
+        }
         if (mesh.is_empty()) return;
 
         // Support both strategy and rule for backwards compatibility
@@ -43,6 +50,7 @@ struct UnfoldOp : P {
             cut_shape.tags["type"] = "surface";
             cut_shape.tags["unfold"] = "cut";
             cut_shape.tags["isJot"] = true;
+            cut_shape.add_tag("item:name", "island_" + std::to_string(i));
             
             Geometry cut_geo;
             cut_geo.vertices = patch.geometry.vertices;
@@ -58,6 +66,7 @@ struct UnfoldOp : P {
                 fold_shape.tags["type"] = "segments";
                 fold_shape.tags["unfold"] = "fold";
                 fold_shape.tags["isJot"] = true;
+                fold_shape.add_tag("item:name", "island_" + std::to_string(i));
 
                 Geometry fold_geo;
                 fold_geo.vertices = patch.geometry.vertices;
@@ -69,17 +78,6 @@ struct UnfoldOp : P {
             out.components.push_back(std::move(island_group));
         }
         vfs->write(fulfilling.with_output("$out"), out);
-    }
-
-    static void collect_and_merge_mesh(fs::VFSNode* vfs, const Shape& s, boolean::ExactMesh& target) {
-        if (s.geometry.has_value()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            boolean::ExactMesh mesh = boolean::Engine::geometry_to_mesh(geo);
-            boolean::Engine::transform_mesh(mesh, s.tf);
-            if (target.is_empty()) target = std::move(mesh);
-            else boolean::Engine::join_mesh_by_mesh(target, mesh);
-        }
-        for (const auto& child : s.components) collect_and_merge_mesh(vfs, child, target);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "minFold", "rule", "strategy"}; }

@@ -58,32 +58,48 @@ struct StlOp : P {
     }
 };
 
+#include <CGAL/IO/STL.h>
+#include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+#include <CGAL/Polygon_mesh_processing/stitch_borders.h>
+#include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
+#include <sstream>
+
 template <typename P = JotVfsProtocol>
 struct StlImportOp : P {
     static constexpr const char* path = "jot/Stl";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const fs::Selector& file) {
         fs::VFSResult file_res = vfs->read<fs::VFSResult>(file);
-        
-        Geometry geo;
-        bool success = false;
-        if (file_res.data.size() >= 84) {
-            success = STLReader::read_binary(file_res.data, geo);
-        }
-        if (!success) {
-            std::string stl_text(file_res.data.begin(), file_res.data.end());
-            success = STLReader::read_ascii(stl_text, geo);
+        if (file_res.data.empty()) {
+            throw std::runtime_error("StlImportOp: Empty STL file payload");
         }
 
-        if (!success) {
-            throw std::runtime_error("Failed to parse STL file");
+        std::string str(reinterpret_cast<const char*>(file_res.data.data()), file_res.data.size());
+        std::istringstream is(str, std::ios::binary);
+
+        std::vector<EK::Point_3> points;
+        std::vector<std::vector<std::size_t>> facets;
+        if (!CGAL::IO::read_STL(is, points, facets)) {
+            throw std::runtime_error("Failed to parse STL file via CGAL::IO::read_STL");
         }
 
-        // Assert loaded STL is a well-formed solid with no self-intersections or self-touches
-        ExactMesh imported_mesh = to_surface_mesh(geo);
-        fix::assert_well_formed_mesh(imported_mesh, "StlImportOp: loaded STL");
+        // Repair and orient polygon soup
+        CGAL::Polygon_mesh_processing::repair_polygon_soup(points, facets);
+        CGAL::Polygon_mesh_processing::orient_polygon_soup(points, facets);
 
-        Shape out = P::make_shape(vfs, geo, {{"type", "closed"}});
+        ExactMesh imported_mesh;
+        CGAL::Polygon_mesh_processing::polygon_soup_to_polygon_mesh(points, facets, imported_mesh);
+        CGAL::Polygon_mesh_processing::stitch_borders(imported_mesh);
+        CGAL::Polygon_mesh_processing::triangulate_faces(imported_mesh);
+
+        // Assert loaded STL is a well-formed 2-manifold with no self-intersections
+        fix::assert_well_formed_open_or_closed_mesh(imported_mesh, "StlImportOp: loaded STL");
+
+        bool is_closed = CGAL::is_closed(imported_mesh);
+        Geometry geo = to_geometry(imported_mesh);
+        Shape out = P::make_shape(vfs, geo, {{"type", is_closed ? "closed" : "surface"}});
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

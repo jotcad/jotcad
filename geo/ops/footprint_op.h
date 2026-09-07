@@ -12,27 +12,26 @@ template <typename P = JotVfsProtocol>
 struct FootprintOp : P {
     static constexpr const char* path = "jot/footprint";
 
-    static void collect_real_solids(const Shape& s, std::vector<Shape>& out) {
-        if (s.has_positive_geometry() || (s.geometry.has_value() && s.is_real())) {
-            out.push_back(s);
-        }
-        for (const auto& child : s.components) {
-            collect_real_solids(child, out);
-        }
-    }
-
     static pack::packaide::Polygon_with_holes_2 compute_footprint_polygon(fs::VFSNode* vfs, const Shape& in) {
         std::vector<Shape> leaves;
-        collect_real_solids(in, leaves);
-        if (leaves.empty() && in.geometry.has_value()) {
-            leaves.push_back(in);
+        for (const auto& node : in.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
+            if (!geo.faces.empty()) {
+                leaves.push_back(node);
+            }
+        }
+        if (leaves.empty()) {
+            for (const auto& node : in.shapes()) {
+                if (node.has_positive_geometry()) leaves.push_back(node);
+            }
         }
         if (leaves.empty()) return {};
 
-        // Fast path for 2D planar faces/surfaces
+        // Fast path for single 2D planar face/surface
         if (leaves.size() == 1 && leaves[0].geometry.has_value()) {
             Geometry geo = vfs->read<Geometry>(leaves[0].geometry.value());
-            if (!geo.faces.empty() && !geo.faces[0].loops.empty()) {
+            if (geo.faces.size() == 1 && !geo.faces[0].loops.empty()) {
                 const auto& loops = geo.faces[0].loops;
                 pack::packaide::Polygon_2 outer;
                 for (int idx : loops[0]) {
@@ -91,8 +90,8 @@ struct FootprintOp : P {
         for (auto vit = boundary.vertices_begin(); vit != boundary.vertices_end(); ++vit) {
             int idx = (int)out_geo.vertices.size();
             Vertex v;
-            v.x = FT(CGAL::to_double(vit->x()));
-            v.y = FT(CGAL::to_double(vit->y()));
+            v.x = vit->x();
+            v.y = vit->y();
             v.z = FT(0);
             out_geo.vertices.push_back(v);
             outer_loop.push_back(idx);
@@ -107,8 +106,8 @@ struct FootprintOp : P {
             for (auto vit = hit->vertices_begin(); vit != hit->vertices_end(); ++vit) {
                 int idx = (int)out_geo.vertices.size();
                 Vertex v;
-                v.x = FT(CGAL::to_double(vit->x()));
-                v.y = FT(CGAL::to_double(vit->y()));
+                v.x = vit->x();
+                v.y = vit->y();
                 v.z = FT(0);
                 out_geo.vertices.push_back(v);
                 hole_loop.push_back(idx);
@@ -127,7 +126,9 @@ struct FootprintOp : P {
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        Shape out = compute_footprint_shape(vfs, in);
+        Shape out = in.map_items([&](const Shape& item) {
+            return compute_footprint_shape(vfs, item);
+        });
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

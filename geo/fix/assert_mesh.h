@@ -86,6 +86,26 @@ inline MeshStatus check_solid_mesh(const Mesh& m) {
     return MeshStatus::OK;
 }
 
+// 3. Open or Closed Mesh Invariants: Valid 2-manifold (with or without boundary) and non-self-intersecting
+template <typename Mesh>
+inline MeshStatus check_open_or_closed_mesh(const Mesh& m) {
+    // 1. O(1) Size check
+    if (m.number_of_vertices() == 0 || m.number_of_faces() == 0) return MeshStatus::EMPTY;
+
+    // 2. O(1)-O(N) Early-exiting face degree scan
+    if (!CGAL::is_triangle_mesh(m)) return MeshStatus::NOT_TRIANGULATED;
+
+    // 3. O(N) Exhaustive combinatorial graph audit
+    if (!m.is_valid() || !CGAL::is_valid_polygon_mesh(m)) return MeshStatus::INVALID_CONNECTIVITY;
+
+    // 4. O(N log N) Exact rational geometric collision / self-intersection test
+    if (CGAL::Polygon_mesh_processing::does_self_intersect(m)) {
+        return MeshStatus::SELF_INTERSECTING;
+    }
+
+    return MeshStatus::OK;
+}
+
 // --- Queryable Boolean Predicates ---
 
 template <typename Mesh>
@@ -94,8 +114,13 @@ inline bool is_well_formed_for_corefinement(const Mesh& m) {
 }
 
 template <typename Mesh>
-inline bool is_well_formed_mesh(const Mesh& m) {
+inline bool is_well_formed_closed_mesh(const Mesh& m) {
     return check_solid_mesh(m) == MeshStatus::OK;
+}
+
+template <typename Mesh>
+inline bool is_well_formed_open_or_closed_mesh(const Mesh& m) {
+    return check_open_or_closed_mesh(m) == MeshStatus::OK;
 }
 
 template <typename Mesh>
@@ -105,7 +130,7 @@ inline bool is_closed_2manifold(const Mesh& m) {
 
 template <typename Mesh>
 inline bool is_watertight_solid(const Mesh& m) {
-    return is_well_formed_mesh(m);
+    return is_well_formed_closed_mesh(m);
 }
 
 // --- Hard Invariant Assertions ---
@@ -120,11 +145,29 @@ inline void assert_well_formed_for_corefinement(const Mesh& m, const std::string
 }
 
 template <typename Mesh>
-inline void assert_well_formed_mesh(const Mesh& m, const std::string& label) {
-    MeshStatus status = check_solid_mesh(m);
+inline void assert_well_formed_open_or_closed_mesh(const Mesh& m, const std::string& label) {
+    MeshStatus status = check_open_or_closed_mesh(m);
     if (status != MeshStatus::OK) {
         std::cerr << "❌ [GEOMETRY FAILED] " << label << ": " << to_string(status) << "!" << std::endl;
-        assert(false && "Mesh failed solid geometry assertion");
+        assert(false && "Mesh failed open or closed geometry assertion");
+    }
+}
+
+template <typename Mesh>
+inline void assert_well_formed_closed_mesh(const Mesh& m, const std::string& label) {
+    // 1. Must satisfy all general 2-manifold and non-self-intersection invariants
+    assert_well_formed_open_or_closed_mesh(m, label);
+
+    // 2. Must be topologically closed (no boundary borders)
+    if (!CGAL::is_closed(m)) {
+        std::cerr << "❌ [GEOMETRY FAILED] " << label << ": " << to_string(MeshStatus::NOT_CLOSED) << "!" << std::endl;
+        assert(false && "Mesh failed solid closed geometry assertion: contains open boundary border halfedges");
+    }
+
+    // 3. Must enclose a positive volume with consistent outward orientation
+    if (!CGAL::Polygon_mesh_processing::does_bound_a_volume(m)) {
+        std::cerr << "❌ [GEOMETRY FAILED] " << label << ": " << to_string(MeshStatus::DOES_NOT_BOUND_VOLUME) << "!" << std::endl;
+        assert(false && "Mesh failed solid closed geometry assertion: does not bound a positive volume");
     }
 }
 

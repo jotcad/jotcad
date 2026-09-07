@@ -22,7 +22,8 @@ export async function captureAndVerifyPNG(vfs, shapeSelector, filename, expected
     const pngSelector = new Selector('jot/png', { '$in': shapeSelector, ...options }).withOutput('$out');
     
     // 2. Read from VFS as binary bytes
-    const raw = await vfs.readSelectorAsBytes(pngSelector);
+    const timeoutMs = options.timeoutMs || 10000;
+    const raw = await vfs.readSelectorAsBytes(pngSelector, { ...options, timeoutMs });
     if (!raw) {
         throw new Error(`Failed to read PNG for ${filename} from VFS`);
     }
