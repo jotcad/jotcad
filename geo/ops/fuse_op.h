@@ -13,21 +13,25 @@ struct FuseHelper {
         Geometry geo;
         Matrix tf;
         std::string type;
-        bool is_gap;
     };
 
-    static void collect_geometries(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& nodes) {
-        if (s.has_real_geometry()) {
-            std::string type = s.tags.value("type", "");
-            nodes.push_back({vfs->read<Geometry>(s.geometry.value()), s.tf, type, s.has_negative_geometry()});
-        }
-        for (const auto& child : s.components) {
-            collect_geometries(vfs, child, nodes);
+    static void collect_from_shape(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& regular_nodes, std::vector<GeometryNode>& gap_nodes) {
+        for (const auto& node : s.shapes()) {
+            if (!node.has_real_geometry()) continue;
+            std::string type = node.tags.value("type", "");
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
+            if (node.has_negative_geometry()) {
+                gap_nodes.push_back({std::move(geo), node.tf, std::move(type)});
+            } else {
+                regular_nodes.push_back({std::move(geo), node.tf, std::move(type)});
+            }
         }
     }
 
-    static void execute_fuse_nodes(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<GeometryNode>& all_nodes) {
-        if (all_nodes.empty()) {
+    static void execute_fuse_nodes(fs::VFSNode* vfs, const fs::Selector& fulfilling, 
+                                   const std::vector<GeometryNode>& regular_nodes, 
+                                   const std::vector<GeometryNode>& gap_nodes) {
+        if (regular_nodes.empty() && gap_nodes.empty()) {
             vfs->write(fulfilling.with_output("$out"), Shape());
             return;
         }
@@ -35,12 +39,6 @@ struct FuseHelper {
         // 2. Group components by type (Closed Solids vs Coplanar Surfaces)
         boolean::Surface_mesh combined_solids;
         std::vector<std::pair<EK::Plane_3, boolean::General_polygon_set_2>> plane_groups;
-
-        std::vector<GeometryNode> regular_nodes, gap_nodes;
-        for (const auto& node : all_nodes) {
-            if (node.is_gap) gap_nodes.push_back(node);
-            else regular_nodes.push_back(node);
-        }
 
         // Process Regular Nodes
         for (const auto& node : regular_nodes) {
@@ -163,12 +161,12 @@ struct FuseOp : P {
     static constexpr const char* path = "jot/fuse";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        std::vector<FuseHelper::GeometryNode> all_nodes;
-        FuseHelper::collect_geometries(vfs, in, all_nodes);
+        std::vector<FuseHelper::GeometryNode> regular_nodes, gap_nodes;
+        FuseHelper::collect_from_shape(vfs, in, regular_nodes, gap_nodes);
         for (const auto& tool : tools) {
-            FuseHelper::collect_geometries(vfs, tool, all_nodes);
+            FuseHelper::collect_from_shape(vfs, tool, regular_nodes, gap_nodes);
         }
-        FuseHelper::execute_fuse_nodes(vfs, fulfilling, all_nodes);
+        FuseHelper::execute_fuse_nodes(vfs, fulfilling, regular_nodes, gap_nodes);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }
@@ -189,11 +187,11 @@ struct FusePrimitiveOp : P {
     static constexpr const char* path = "jot/Fuse";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes) {
-        std::vector<FuseHelper::GeometryNode> all_nodes;
+        std::vector<FuseHelper::GeometryNode> regular_nodes, gap_nodes;
         for (const auto& shape : shapes) {
-            FuseHelper::collect_geometries(vfs, shape, all_nodes);
+            FuseHelper::collect_from_shape(vfs, shape, regular_nodes, gap_nodes);
         }
-        FuseHelper::execute_fuse_nodes(vfs, fulfilling, all_nodes);
+        FuseHelper::execute_fuse_nodes(vfs, fulfilling, regular_nodes, gap_nodes);
     }
 
     static std::vector<std::string> argument_keys() { return {"shapes"}; }

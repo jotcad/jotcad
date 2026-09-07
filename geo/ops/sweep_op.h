@@ -11,12 +11,13 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct SweepOp : P {
     static void collect_profile(fs::VFSNode* vfs, const Shape& s, Geometry& combined) {
-        if (s.has_positive_geometry()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+        for (const auto& node : s.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
             std::map<int, int> v_map;
             for (size_t i = 0; i < geo.vertices.size(); ++i) {
                 Point_3 p(geo.vertices[i].x, geo.vertices[i].y, geo.vertices[i].z);
-                Point_3 tp = s.tf.transform(p);
+                Point_3 tp = node.tf.transform(p);
                 v_map[i] = (int)combined.vertices.size();
                 combined.vertices.push_back({tp.x(), tp.y(), tp.z()});
             }
@@ -36,14 +37,12 @@ struct SweepOp : P {
                 combined.triangles.push_back({v_map[tri[0]], v_map[tri[1]], v_map[tri[2]]});
             }
         }
-        for (const auto& child : s.components) {
-            collect_profile(vfs, child, combined);
-        }
     }
 
     static void collect_paths(fs::VFSNode* vfs, const Shape& s, std::vector<std::vector<Point_3>>& paths) {
-        if (s.has_positive_geometry()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+        for (const auto& node : s.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
             if (!geo.segments.empty()) {
                 // Adjacency map for segments
                 std::map<int, std::vector<int>> adj;
@@ -72,7 +71,7 @@ struct SweepOp : P {
                             if (edge_idx == -1) continue; // Already swept
 
                             std::vector<Point_3> chain;
-                            chain.push_back(s.tf.transform(Point_3(geo.vertices[start_node].x, geo.vertices[start_node].y, geo.vertices[start_node].z)));
+                            chain.push_back(node.tf.transform(Point_3(geo.vertices[start_node].x, geo.vertices[start_node].y, geo.vertices[start_node].z)));
                             
                             int curr = start_node;
                             int next = neighbor;
@@ -82,7 +81,7 @@ struct SweepOp : P {
                                 if (e_idx == -1) break;
                                 remaining_edges.erase(remaining_edges.begin() + e_idx);
                                 
-                                chain.push_back(s.tf.transform(Point_3(geo.vertices[next].x, geo.vertices[next].y, geo.vertices[next].z)));
+                                chain.push_back(node.tf.transform(Point_3(geo.vertices[next].x, geo.vertices[next].y, geo.vertices[next].z)));
                                 
                                 // Continue if the next node is a simple turn (degree 2)
                                 if (adj[next].size() == 2) {
@@ -106,8 +105,8 @@ struct SweepOp : P {
                     std::vector<Point_3> chain;
                     int start = edge.first;
                     int curr = edge.second;
-                    chain.push_back(s.tf.transform(Point_3(geo.vertices[start].x, geo.vertices[start].y, geo.vertices[start].z)));
-                    chain.push_back(s.tf.transform(Point_3(geo.vertices[curr].x, geo.vertices[curr].y, geo.vertices[curr].z)));
+                    chain.push_back(node.tf.transform(Point_3(geo.vertices[start].x, geo.vertices[start].y, geo.vertices[start].z)));
+                    chain.push_back(node.tf.transform(Point_3(geo.vertices[curr].x, geo.vertices[curr].y, geo.vertices[curr].z)));
 
                     while (true) {
                         int next = -1;
@@ -119,7 +118,7 @@ struct SweepOp : P {
                         
                         int e_idx = get_edge_idx(curr, next);
                         remaining_edges.erase(remaining_edges.begin() + e_idx);
-                        chain.push_back(s.tf.transform(Point_3(geo.vertices[next].x, geo.vertices[next].y, geo.vertices[next].z)));
+                        chain.push_back(node.tf.transform(Point_3(geo.vertices[next].x, geo.vertices[next].y, geo.vertices[next].z)));
                         curr = next;
                     }
                     if (chain.size() >= 2) paths.push_back(chain);
@@ -128,13 +127,10 @@ struct SweepOp : P {
                 // Isolated points (ignored by sweep logic usually, but collected anyway)
                 std::vector<Point_3> chain;
                 for (const auto& v : geo.vertices) {
-                    chain.push_back(s.tf.transform(Point_3(v.x, v.y, v.z)));
+                    chain.push_back(node.tf.transform(Point_3(v.x, v.y, v.z)));
                 }
                 paths.push_back(chain);
             }
-        }
-        for (const auto& child : s.components) {
-            collect_paths(vfs, child, paths);
         }
     }
 

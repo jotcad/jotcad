@@ -15,12 +15,13 @@ struct WrapOp : P {
     static void collect_for_wrap(fs::VFSNode* vfs, const Shape& s, 
                                  std::vector<EK::Point_3>& all_pts, 
                                  std::vector<std::vector<size_t>>& all_tris) {
-        if (s.has_positive_geometry()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+        for (const auto& node : s.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
             size_t v_base = all_pts.size();
 
             for (const auto& v : geo.vertices) {
-                all_pts.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
+                all_pts.push_back(node.tf.transform(EK::Point_3(v.x, v.y, v.z)));
             }
 
             // 1. Existing Triangles
@@ -45,7 +46,7 @@ struct WrapOp : P {
                 size_t t_idx = v_base + seg[1];
                 size_t ti_idx = all_pts.size();
                 const auto& p = geo.vertices[seg[0]];
-                all_pts.push_back(s.tf.transform(EK::Point_3(p.x + iota, p.y + iota, p.z + iota)));
+                all_pts.push_back(node.tf.transform(EK::Point_3(p.x + iota, p.y + iota, p.z + iota)));
                 all_tris.push_back({s_idx, t_idx, ti_idx});
             }
 
@@ -54,14 +55,11 @@ struct WrapOp : P {
                 const auto& p = geo.vertices[p_idx];
                 size_t idx0 = v_base + p_idx;
                 size_t idx1 = all_pts.size();
-                all_pts.push_back(s.tf.transform(EK::Point_3(p.x + iota, p.y, p.z)));
+                all_pts.push_back(node.tf.transform(EK::Point_3(p.x + iota, p.y, p.z)));
                 size_t idx2 = all_pts.size();
-                all_pts.push_back(s.tf.transform(EK::Point_3(p.x, p.y + iota, p.z)));
+                all_pts.push_back(node.tf.transform(EK::Point_3(p.x, p.y + iota, p.z)));
                 all_tris.push_back({idx0, idx1, idx2});
             }
-        }
-        for (const auto& child : s.components) {
-            collect_for_wrap(vfs, child, all_pts, all_tris);
         }
     }
 
