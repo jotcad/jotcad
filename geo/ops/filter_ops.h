@@ -78,20 +78,11 @@ template <typename P = JotVfsProtocol>
 struct DropOp : P {
     static constexpr const char* path = "jot/drop";
 
-    static std::optional<Shape> drop_recursive(const Shape& in, const Shape& tool) {
-        if (KeepOp<P>::matches_tool_tree(in, tool)) return std::nullopt;
-
-        Shape out = in;
-        out.components.clear();
-        for (const auto& c : in.components) {
-            auto res = drop_recursive(c, tool);
-            if (res) out.components.push_back(*res);
-        }
-        return out;
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& selector) {
-        auto res = drop_recursive(in, selector);
+        auto res = in.map([&](const Shape& node) -> std::optional<Shape> {
+            if (KeepOp<P>::matches_tool_tree(node, selector)) return std::nullopt;
+            return node;
+        });
         if (res) {
             vfs->write(fulfilling.with_output("$out"), *res);
         } else {

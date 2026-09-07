@@ -68,12 +68,13 @@ struct PartLineOp : P {
         return false;
     }
 
-    static void collect_world_geometry_recursive(fs::VFSNode* vfs, const Shape& s, Geometry& world_geo) {
-        if (s.has_positive_geometry()) {
-            Geometry geo = vfs->template read<Geometry>(s.geometry.value());
+    static void collect_world_geometry(fs::VFSNode* vfs, const Shape& s, Geometry& world_geo) {
+        for (const auto& node : s.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->template read<Geometry>(node.geometry.value());
             int offset = (int)world_geo.vertices.size();
             for (const auto& v : geo.vertices) {
-                EK::Point_3 p = s.tf.transform(EK::Point_3(v.x, v.y, v.z));
+                EK::Point_3 p = node.tf.transform(EK::Point_3(v.x, v.y, v.z));
                 world_geo.vertices.push_back({p.x(), p.y(), p.z()});
             }
             
@@ -93,15 +94,12 @@ struct PartLineOp : P {
                 }
             }
         }
-        for (const auto& child : s.components) {
-            collect_world_geometry_recursive(vfs, child, world_geo);
-        }
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double dx, double dy, double dz, bool optimize = false) {
         // 1. Flatten all geometry in world coordinates
         Geometry world_geo;
-        collect_world_geometry_recursive(vfs, in, world_geo);
+        collect_world_geometry(vfs, in, world_geo);
 
         // 2. Compute face normals
         std::vector<IK::Vector_3> face_normals(world_geo.triangles.size());

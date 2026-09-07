@@ -172,6 +172,9 @@ struct Shape {
                 return std::optional<Shape>(std::nullopt);
             }
             Shape out = std::move(*self_res);
+            if (components.empty()) {
+                return std::optional<Shape>(std::move(out));
+            }
             std::vector<Shape> new_children;
             for (const auto& child : components) {
                 auto child_res = child.map(fn);
@@ -183,6 +186,9 @@ struct Shape {
             return std::optional<Shape>(std::move(out));
         } else {
             Shape out = fn(*this);
+            if (components.empty()) {
+                return out;
+            }
             std::vector<Shape> new_children;
             new_children.reserve(components.size());
             for (const auto& child : components) {

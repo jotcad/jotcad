@@ -29,12 +29,13 @@ struct UndercutOp : P {
     typedef CGAL::AABB_traits<IK, Primitive> Traits;
     typedef CGAL::AABB_tree<Traits> Tree;
 
-    static void collect_world_geometry_recursive(fs::VFSNode* vfs, const Shape& s, const Matrix& current_tf, Geometry& world_geo) {
-        if (s.geometry.has_value()) {
-            Geometry geo = vfs->template read<Geometry>(s.geometry.value());
+    static void collect_world_geometry(fs::VFSNode* vfs, const Shape& s, Geometry& world_geo) {
+        for (const auto& node : s.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->template read<Geometry>(node.geometry.value());
             int offset = (int)world_geo.vertices.size();
             for (const auto& v : geo.vertices) {
-                EK::Point_3 p = current_tf.transform(EK::Point_3(v.x, v.y, v.z));
+                EK::Point_3 p = node.tf.transform(EK::Point_3(v.x, v.y, v.z));
                 world_geo.vertices.push_back({p.x(), p.y(), p.z()});
             }
             
@@ -54,17 +55,13 @@ struct UndercutOp : P {
                 }
             }
         }
-        for (const auto& child : s.components) {
-            collect_world_geometry_recursive(vfs, child, current_tf * child.tf, world_geo);
-        }
     }
 
-    static Shape analyze_shape_recursive(fs::VFSNode* vfs, const Shape& in, const Matrix& current_tf, double dx, double dy, double dz, double sin_alpha, double L, const Tree* tree, const Mesh* world_mesh) {
-        Shape out = in;
-        out.components.clear();
-        
-        if (in.geometry.has_value()) {
-            Geometry geo = vfs->template read<Geometry>(in.geometry.value());
+    static Shape analyze_shape(fs::VFSNode* vfs, const Shape& in, double dx, double dy, double dz, double sin_alpha, double L, const Tree* tree, const Mesh* world_mesh) {
+        return in.map([&](const Shape& node) -> Shape {
+            if (!node.has_positive_geometry()) return node;
+            
+            Geometry geo = vfs->template read<Geometry>(node.geometry.value());
             
             Geometry safe_geo, undercut_geo, flat_geo;
             std::map<int, int> safe_vmap, undercut_vmap, flat_vmap;
@@ -91,9 +88,9 @@ struct UndercutOp : P {
                                         double p0_x, double p0_y, double p0_z,
                                         double p1_x, double p1_y, double p1_z,
                                         double p2_x, double p2_y, double p2_z) {
-                EK::Point_3 w0 = current_tf.transform(EK::Point_3(p0_x, p0_y, p0_z));
-                EK::Point_3 w1 = current_tf.transform(EK::Point_3(p1_x, p1_y, p1_z));
-                EK::Point_3 w2 = current_tf.transform(EK::Point_3(p2_x, p2_y, p2_z));
+                EK::Point_3 w0 = node.tf.transform(EK::Point_3(p0_x, p0_y, p0_z));
+                EK::Point_3 w1 = node.tf.transform(EK::Point_3(p1_x, p1_y, p1_z));
+                EK::Point_3 w2 = node.tf.transform(EK::Point_3(p2_x, p2_y, p2_z));
 
                 double centroid_x = CGAL::to_double(w0.x() + w1.x() + w2.x()) / 3.0;
                 double centroid_y = CGAL::to_double(w0.y() + w1.y() + w2.y()) / 3.0;
@@ -203,30 +200,28 @@ struct UndercutOp : P {
             
             if (!safe_geo.triangles.empty()) {
                 Shape s_safe = P::make_shape(vfs, safe_geo, {{"color", "#2bee2b"}, {"name", "safe_faces"}});
+                s_safe.tf = node.tf;
                 sub_shapes.push_back(s_safe);
             }
             
             if (!undercut_geo.triangles.empty()) {
                 Shape s_undercut = P::make_shape(vfs, undercut_geo, {{"color", "#ee2b2b"}, {"name", "undercut_faces"}});
+                s_undercut.tf = node.tf;
                 sub_shapes.push_back(s_undercut);
             }
             
             if (!flat_geo.triangles.empty()) {
                 Shape s_flat = P::make_shape(vfs, flat_geo, {{"color", "#eeee2b"}, {"name", "flat_faces"}});
+                s_flat.tf = node.tf;
                 sub_shapes.push_back(s_flat);
             }
             
+            Shape out = node;
             out.geometry = std::nullopt;
             out.components = sub_shapes;
             out.add_tag("type", "group");
-        }
-
-        // Process children recursively
-        for (const auto& child : in.components) {
-            out.components.push_back(analyze_shape_recursive(vfs, child, current_tf * child.tf, dx, dy, dz, sin_alpha, L, tree, world_mesh));
-        }
-        
-        return out;
+            return out;
+        });
     }
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double dx, double dy, double dz, double min_draft = 0.5) {
@@ -244,7 +239,7 @@ struct UndercutOp : P {
 
         // 1. Flatten/collect all geometry in world coordinates to build a global AABB tree
         Geometry world_geo;
-        collect_world_geometry_recursive(vfs, in, Matrix::identity(), world_geo);
+        collect_world_geometry(vfs, in, world_geo);
         
         double L = 100.0;
         std::unique_ptr<Tree> tree = nullptr;
@@ -283,7 +278,7 @@ struct UndercutOp : P {
             tree->build();
         }
 
-        Shape out = analyze_shape_recursive(vfs, in, Matrix::identity(), dx, dy, dz, sin_alpha, L, tree.get(), world_mesh.get());
+        Shape out = analyze_shape(vfs, in, dx, dy, dz, sin_alpha, L, tree.get(), world_mesh.get());
         vfs->write(fulfilling.with_output("$out"), out);
     }
 
