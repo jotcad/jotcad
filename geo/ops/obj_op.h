@@ -11,28 +11,18 @@ template <typename P = JotVfsProtocol>
 struct ObjOp : P {
     static constexpr const char* path = "jot/obj";
 
-    static void walk(fs::VFSNode* vfs, const Shape& shape, OBJWriter& writer) {
-        if (!shape.is_real()) return;
-        Matrix current_tf = shape.tf;
-        
-        if (shape.geometry.has_value()) {
-            try {
-                Geometry geo = vfs->read<Geometry>(shape.geometry.value());
-                geo.apply_tf(current_tf);
-                writer.add_geometry(geo);
-            } catch (const std::exception& e) {
-                std::cerr << "[ObjOp::walk] Error reading geometry: " << e.what() << std::endl;
-            }
-        }
-        
-        for (const auto& child : shape.components) {
-            walk(vfs, child, writer);
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& obj_path) {
         OBJWriter writer;
-        walk(vfs, in, writer);
+        for (const auto& node : in.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            try {
+                Geometry geo = vfs->read<Geometry>(node.geometry.value());
+                geo.apply_tf(node.tf);
+                writer.add_geometry(geo);
+            } catch (const std::exception& e) {
+                std::cerr << "[ObjOp] Error reading geometry: " << e.what() << std::endl;
+            }
+        }
         std::string obj_text = writer.write_text();
         
         // Output: OBJ text bytes in the primary '$out' port

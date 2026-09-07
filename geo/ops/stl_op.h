@@ -13,28 +13,18 @@ template <typename P = JotVfsProtocol>
 struct StlOp : P {
     static constexpr const char* path = "jot/stl";
 
-    static void walk(fs::VFSNode* vfs, const Shape& shape, STLWriter& writer) {
-        if (!shape.is_real()) return;
-        Matrix current_tf = shape.tf;
-        
-        if (shape.geometry.has_value()) {
-            try {
-                Geometry geo = vfs->read<Geometry>(shape.geometry.value());
-                geo.apply_tf(current_tf);
-                writer.add_geometry(geo);
-            } catch (const std::exception& e) {
-                std::cerr << "[StlOp::walk] Error reading geometry: " << e.what() << std::endl;
-            }
-        }
-        
-        for (const auto& child : shape.components) {
-            walk(vfs, child, writer);
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& stl_path) {
         STLWriter writer;
-        walk(vfs, in, writer);
+        for (const auto& node : in.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            try {
+                Geometry geo = vfs->read<Geometry>(node.geometry.value());
+                geo.apply_tf(node.tf);
+                writer.add_geometry(geo);
+            } catch (const std::exception& e) {
+                std::cerr << "[StlOp] Error reading geometry: " << e.what() << std::endl;
+            }
+        }
         auto stl_bytes = writer.write_binary();
         
         // Output: STL bytes in the primary '$out' port
