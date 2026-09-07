@@ -17,11 +17,13 @@ struct GrowOp : P {
     static constexpr const char* path = "jot/grow";
 
     static void collect_points(fs::VFSNode* vfs, const Shape& s, std::vector<EK::Point_3>& pts) {
-        if (s.has_positive_geometry()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            for (const auto& v : geo.vertices) pts.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
+        for (const auto& node : s.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
+            for (const auto& v : geo.vertices) {
+                pts.push_back(node.tf.transform(EK::Point_3(v.x, v.y, v.z)));
+            }
         }
-        for (const auto& child : s.components) collect_points(vfs, child, pts);
     }
 
     static Geometry grow_cloud(const std::vector<EK::Point_3>& cloud, const std::vector<EK::Point_3>& tool_pts) {
@@ -218,11 +220,6 @@ struct GrowOp : P {
         s.tags["type"] = target.tags["type"];
     }
 
-    static void process_shape_recursive(fs::VFSNode* vfs, Shape& s, const std::vector<EK::Point_3>& tool_pts, const Shape& tool_shape) {
-        execute_decomposed(vfs, s, tool_pts, tool_shape);
-        for (auto& child : s.components) process_shape_recursive(vfs, child, tool_pts, tool_shape);
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& tool_shape) {
         if (!in.geometry.has_value() && in.components.empty()) {
             vfs->write(fulfilling.with_output("$out"), in);
@@ -236,8 +233,12 @@ struct GrowOp : P {
             return;
         }
 
-        Shape out = in;
-        process_shape_recursive(vfs, out, tool_pts, tool_shape);
+        Shape out = in.map([&](Shape node) {
+            if (node.has_positive_geometry()) {
+                execute_decomposed(vfs, node, tool_pts, tool_shape);
+            }
+            return node;
+        });
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

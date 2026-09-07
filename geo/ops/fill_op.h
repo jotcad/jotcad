@@ -22,27 +22,11 @@ struct FillOp : P {
     typedef Arrangement::Face_handle Face_handle;
     typedef Arrangement::Halfedge_handle Halfedge_handle;
 
-    struct GeometryNode {
-        Geometry geo;
-        Matrix tf;
-    };
-
-    static void collect_geometries(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& nodes) {
-        if (s.has_positive_geometry()) {
-            nodes.push_back({vfs->read<Geometry>(s.geometry.value()), s.tf});
-        }
-        for (const auto& child : s.components) {
-            collect_geometries(vfs, child, nodes);
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, std::string rule, const Shape& plane_shape) {
-        std::vector<GeometryNode> all_nodes;
-        collect_geometries(vfs, in, all_nodes);
-
         Geometry geo;
-        for (const auto& node : all_nodes) {
-            Geometry local_geo = node.geo;
+        for (const auto& node : in.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry local_geo = vfs->read<Geometry>(node.geometry.value());
             local_geo.apply_tf(node.tf);
             int base = (int)geo.vertices.size();
             for (const auto& v : local_geo.vertices) geo.vertices.push_back(v);

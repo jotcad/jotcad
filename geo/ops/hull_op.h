@@ -11,14 +11,12 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct HullOp : P {
     static void collect_points(fs::VFSNode* vfs, const Shape& s, std::vector<EK::Point_3>& pts) {
-        if (s.has_positive_geometry()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
+        for (const auto& node : s.shapes()) {
+            if (!node.has_positive_geometry()) continue;
+            Geometry geo = vfs->read<Geometry>(node.geometry.value());
             for (const auto& v : geo.vertices) {
-                pts.push_back(s.tf.transform(EK::Point_3(v.x, v.y, v.z)));
+                pts.push_back(node.tf.transform(EK::Point_3(v.x, v.y, v.z)));
             }
-        }
-        for (const auto& child : s.components) {
-            collect_points(vfs, child, pts);
         }
     }
 
