@@ -46,31 +46,14 @@ struct RainbowOp : P {
         return std::string(buf);
     }
 
-    static void count_geometry_components(const Shape& s, size_t& count) {
-        if (s.geometry.has_value()) {
-            count++;
-        }
-        for (const auto& child : s.components) {
-            count_geometry_components(child, count);
-        }
-    }
-
-    static void color_shapes_recursive(const std::vector<std::string>& colors, size_t& color_idx, Shape& s) {
-        if (s.geometry.has_value() && color_idx < colors.size()) {
-            s.add_tag("color", colors[color_idx]);
-            color_idx++;
-        }
-        for (auto& child : s.components) {
-            color_shapes_recursive(colors, color_idx, child);
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in) {
-        Shape out = in;
-        
         // 1. Count components with geometry
         size_t total_geom = 0;
-        count_geometry_components(out, total_geom);
+        for (const auto& s : in.shapes()) {
+            if (s.geometry.has_value()) {
+                total_geom++;
+            }
+        }
 
         // 2. Generate evenly spaced colors in HSL space (Saturation=0.85, Lightness=0.55)
         std::vector<std::string> colors;
@@ -82,9 +65,14 @@ struct RainbowOp : P {
             }
         }
 
-        // 3. Apply colors recursively
+        // 3. Apply colors
         size_t color_idx = 0;
-        color_shapes_recursive(colors, color_idx, out);
+        Shape out = in.map([&](Shape node) {
+            if (node.geometry.has_value() && color_idx < colors.size()) {
+                node.add_tag("color", colors[color_idx++]);
+            }
+            return node;
+        });
 
         vfs->write(fulfilling.with_output("$out"), out);
     }

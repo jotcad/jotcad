@@ -44,21 +44,7 @@ struct ColorOp : P {
         return ss.str();
     }
 
-    static void set_color_recursive(Shape& s, const std::string& target, double mix, std::optional<double> opaque) {
-        if (!target.empty()) {
-            std::string existing = s.tags.contains("color") ? s.tags["color"].get<std::string>() : "";
-            s.tags["color"] = blend_colors(existing, target, mix);
-        }
-        if (opaque.has_value()) {
-            s.tags["opacity"] = opaque.value();
-        }
-        for (auto& child : s.components) {
-            set_color_recursive(child, target, mix, opaque);
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::string& color = "", double mix = 1.0, double opaque = -1.0) {
-        Shape out = in;
         std::optional<double> alpha_extracted;
         std::string clean_color = color.empty() ? "" : parse_hex_alpha(color, alpha_extracted);
 
@@ -69,7 +55,17 @@ struct ColorOp : P {
             final_opaque = alpha_extracted;
         }
 
-        set_color_recursive(out, clean_color, mix, final_opaque);
+        Shape out = in.map([&](Shape node) {
+            if (!clean_color.empty()) {
+                std::string existing = node.tags.contains("color") ? node.tags["color"].get<std::string>() : "";
+                node.tags["color"] = blend_colors(existing, clean_color, mix);
+            }
+            if (final_opaque.has_value()) {
+                node.tags["opacity"] = final_opaque.value();
+            }
+            return node;
+        });
+
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

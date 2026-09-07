@@ -10,14 +10,10 @@ template <typename P = JotVfsProtocol>
 struct AtOp : P {
     static constexpr const char* path = "jot/at";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const Shape& target, const fs::Selector& op) {
-        Shape current = in;
-        apply_at_recursive(vfs, current, target, op);
-        vfs->write(fulfilling.with_output("$out"), current);
-    }
-
-    static void apply_at_recursive(fs::VFSNode* vfs, Shape& subject, const Shape& target, const fs::Selector& op) {
-        if (target.geometry.has_value()) {
-            Matrix world_frame = target.tf;
+        Shape subject = in;
+        for (const auto& anchor : target.shapes()) {
+            if (!anchor.geometry.has_value()) continue;
+            Matrix world_frame = anchor.tf;
             // Anchor Pattern:
             // 1. Invert the anchor's matrix to reach its local origin.
             Matrix world_inv = world_frame.inverse();
@@ -36,11 +32,8 @@ struct AtOp : P {
             
             // 5. Update the subject for the next anchor (Sequential Reduction).
             subject = local_result;
-        } else {
-            for (const auto& child : target.components) {
-                apply_at_recursive(vfs, subject, child, op);
-            }
         }
+        vfs->write(fulfilling.with_output("$out"), subject);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "target", "op"}; }

@@ -9,20 +9,11 @@ template <typename P = JotVfsProtocol>
 struct CleanOp : P {
     static constexpr const char* path = "jot/clean";
 
-    static std::optional<Shape> clean_recursive(const Shape& in, const std::string& target_role) {
-        if (in.role() == target_role) return std::nullopt;
-
-        Shape out = in;
-        out.components.clear();
-        for (const auto& c : in.components) {
-            auto res = clean_recursive(c, target_role);
-            if (res) out.components.push_back(*res);
-        }
-        return out;
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, std::string role) {
-        auto res = clean_recursive(in, role);
+        auto res = in.map([&](const Shape& node) -> std::optional<Shape> {
+            if (node.role() == role) return std::nullopt;
+            return node;
+        });
         if (res) {
             vfs->write(fulfilling.with_output("$out"), *res);
         } else {

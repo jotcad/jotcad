@@ -14,25 +14,15 @@ struct PlaceOp : P {
         Shape out;
         out.add_tag("type", "group");
         
-        apply_place_recursive(out, in, Matrix::identity(), template_shape);
-
-        vfs->write(fulfilling.with_output("$out"), out);
-    }
-
-    static void apply_place_recursive(Shape& out, const Shape& target, const Matrix& parent_frame, const Shape& template_shape) {
-        Matrix world_frame = parent_frame * target.tf;
-        
-        // If the target has geometry (a proxy or a real shape) or is an empty group (implicit frame), treat it as an anchor.
-        if (target.geometry.has_value() || target.components.empty()) {
-            Shape instance = template_shape;
-            instance.tf = world_frame * instance.tf;
-            out.components.push_back(instance);
-        } else {
-            // Recurse into collection components
-            for (const auto& child : target.components) {
-                apply_place_recursive(out, child, world_frame, template_shape);
+        for (const auto& target : in.shapes()) {
+            if (target.geometry.has_value() || target.components.empty()) {
+                Shape instance = template_shape;
+                instance.apply_transform(target.tf);
+                out.components.push_back(instance);
             }
         }
+
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "template_shape"}; }

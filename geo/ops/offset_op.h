@@ -10,21 +10,16 @@ template <typename P = JotVfsProtocol>
 struct OffsetOp : P {
     static constexpr const char* path = "jot/offset";
 
-    static void apply_offset_recursive(fs::VFSNode* vfs, Shape& s, double diameter) {
-        if (s.geometry.has_value()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            applyOffset(geo, FT(diameter));
-            geo.triangulate();
-            s.geometry = vfs->materialize<Geometry>(geo);
-        }
-        for (auto& child : s.components) {
-            apply_offset_recursive(vfs, child, diameter);
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double diameter) {
-        Shape out = in;
-        apply_offset_recursive(vfs, out, diameter);
+        Shape out = in.map([&](Shape node) {
+            if (node.has_positive_geometry()) {
+                Geometry geo = vfs->read<Geometry>(node.geometry.value());
+                applyOffset(geo, FT(diameter));
+                geo.triangulate();
+                node.geometry = vfs->materialize<Geometry>(geo);
+            }
+            return node;
+        });
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter"}; }
@@ -45,24 +40,19 @@ template <typename P = JotVfsProtocol>
 struct OffsetClosureOp : P {
     static constexpr const char* path = "jot/offset/closure";
 
-    static void apply_closure_recursive(fs::VFSNode* vfs, Shape& s, double diameter) {
-        if (s.geometry.has_value()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            Geometry expanded = geo;
-            applyOffset(expanded, FT(std::abs(diameter)));
-            Geometry closed = expanded;
-            applyOffset(closed, FT(-std::abs(diameter)));
-            closed.triangulate();
-            s.geometry = vfs->materialize<Geometry>(closed);
-        }
-        for (auto& child : s.components) {
-            apply_closure_recursive(vfs, child, diameter);
-        }
-    }
-
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, double diameter, bool closure) {
-        Shape out = in;
-        apply_closure_recursive(vfs, out, diameter);
+        Shape out = in.map([&](Shape node) {
+            if (node.has_positive_geometry()) {
+                Geometry geo = vfs->read<Geometry>(node.geometry.value());
+                Geometry expanded = geo;
+                applyOffset(expanded, FT(std::abs(diameter)));
+                Geometry closed = expanded;
+                applyOffset(closed, FT(-std::abs(diameter)));
+                closed.triangulate();
+                node.geometry = vfs->materialize<Geometry>(closed);
+            }
+            return node;
+        });
         vfs->write(fulfilling.with_output("$out"), out);
     }
     static std::vector<std::string> argument_keys() { return {"$in", "diameter", "closure"}; }

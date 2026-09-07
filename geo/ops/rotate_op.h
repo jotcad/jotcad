@@ -109,20 +109,18 @@ struct RotateZOp : RotateAxisOp<P> {
 
 template <typename P = JotVfsProtocol>
 struct TurnOpBase : P {
-    static void turn_local_recursive(Shape& s, const Matrix& m) {
-        if (!s.geometry.has_value() && !s.components.empty()) {
-            for (auto& c : s.components) {
-                turn_local_recursive(c, m);
+    static Shape turn_local(const Shape& in, const Matrix& m) {
+        return in.map([&](Shape node) {
+            if (node.geometry.has_value() || node.components.empty()) {
+                node.tf = node.tf * m;
             }
-        } else {
-            s.tf = s.tf * m;
-        }
+            return node;
+        });
     }
 
     static void execute_multi(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Matrix>& transforms) {
         if (transforms.size() == 1) {
-            Shape out = in;
-            turn_local_recursive(out, transforms[0]);
+            Shape out = turn_local(in, transforms[0]);
             vfs->write(fulfilling.with_output("$out"), out);
             return;
         }
@@ -131,9 +129,7 @@ struct TurnOpBase : P {
         out.tf = Matrix::identity();
         out.add_tag("type", "group");
         for (const auto& m : transforms) {
-            Shape c = in;
-            turn_local_recursive(c, m);
-            out.components.push_back(c);
+            out.components.push_back(turn_local(in, m));
         }
         vfs->write(fulfilling.with_output("$out"), out);
     }
