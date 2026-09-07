@@ -13,6 +13,7 @@
 #include "geometry.h"
 #include "matrix.h"
 #include "shape.h"
+#include "../ops/footprint_op.h"
 
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Constrained_triangulation_plus_2.h>
@@ -49,44 +50,6 @@ public:
     static packaide::Polygon_with_holes_2 simplify_pwh(const packaide::Polygon_with_holes_2& pwh, packaide::FT tolerance) {
         if (tolerance <= packaide::FT(0)) return pwh;
         return PS::simplify(pwh, PS::Squared_distance_cost(), PS::Stop_above_cost_threshold(CGAL::to_double(tolerance)));
-    }
-
-    static packaide::Polygon_with_holes_2 geometry_to_cgal(const Geometry& geo, const Matrix& tf = Matrix::identity()) {
-        if (geo.faces.empty()) return {};
-        const auto& loops = geo.faces[0].loops;
-        if (loops.empty()) return {};
-
-        auto get_loop = [&](const std::vector<int>& loop) {
-            packaide::Polygon_2 p;
-            for (size_t i = 0; i < loop.size(); ++i) {
-                Vertex v = geo.vertices[loop[i]];
-                Point_3 p3 = tf.transform(Point_3(v.x, v.y, v.z));
-                packaide::Point_2 pt(p3.x(), p3.y());
-                if (i > 0) {
-                    Vertex prev_v = geo.vertices[loop[i-1]];
-                    Point_3 prev3 = tf.transform(Point_3(prev_v.x, prev_v.y, prev_v.z));
-                    if (packaide::Point_2(prev3.x(), prev3.y()) == pt) continue;
-                }
-                p.push_back(pt);
-            }
-            if (p.size() > 1 && p.vertex(0) == p.vertex(p.size() - 1)) {
-                p.erase(p.vertices_end() - 1);
-            }
-            return p;
-        };
-
-        packaide::Polygon_2 outer = get_loop(loops[0]);
-        if (!packaide::is_good_polygon(outer)) return {};
-        if (outer.is_clockwise_oriented()) outer.reverse_orientation();
-
-        packaide::Polygon_with_holes_2 pwh(outer);
-        for (size_t i = 1; i < loops.size(); ++i) {
-            packaide::Polygon_2 hole = get_loop(loops[i]);
-            if (!packaide::is_good_polygon(hole)) continue;
-            if (hole.is_counterclockwise_oriented()) hole.reverse_orientation();
-            pwh.add_hole(hole);
-        }
-        return pwh;
     }
 
     struct PartInfo {
@@ -209,18 +172,6 @@ public:
         return placements;
     }
 
-    static std::optional<std::pair<Geometry, Matrix>> find_packing_geometry(fs::VFSNode* vfs, const Shape& s) {
-        if (s.has_positive_geometry()) {
-            Geometry geo = vfs->read<Geometry>(s.geometry.value());
-            return std::make_pair(geo, s.tf);
-        }
-        for (const auto& child : s.components) {
-            auto res = find_packing_geometry(vfs, child);
-            if (res.has_value()) return res;
-        }
-        return std::nullopt;
-    }
-
     static void apply_transform_recursive(Shape& s, const Matrix& transform) {
         s.tf = transform * s.tf;
         for (auto& child : s.components) {
@@ -234,13 +185,7 @@ public:
 
         std::vector<PartInfo> remaining_parts;
         for (size_t i = 0; i < parts.size(); ++i) {
-            auto packing_res = find_packing_geometry(vfs, parts[i]);
-            if (!packing_res.has_value()) continue;
-            
-            auto geo = packing_res->first;
-            auto combined_tf = packing_res->second;
-            
-            auto cgal_poly = geometry_to_cgal(geo, combined_tf);
+            auto cgal_poly = FootprintOp<>::compute_footprint_polygon(vfs, parts[i]);
             if (cgal_poly.outer_boundary().is_empty()) continue;
 
             if (config.simplification_tolerance > packaide::FT(0)) {
@@ -266,11 +211,12 @@ public:
 
         for (size_t s_idx = 0; s_idx < sheets.size(); ++s_idx) {
             if (remaining_parts.empty()) break;
-            if (!sheets[s_idx].geometry.has_value()) continue;
 
-            auto sheet_geo = vfs->read<Geometry>(sheets[s_idx].geometry.value());
+            auto s_poly = FootprintOp<>::compute_footprint_polygon(vfs, sheets[s_idx]);
+            if (s_poly.outer_boundary().is_empty()) continue;
+
             packaide::Sheet bin_sheet;
-            bin_sheet.material.insert(geometry_to_cgal(sheet_geo, sheets[s_idx].tf));
+            bin_sheet.material.insert(s_poly);
 
             auto placements = pack_geometric(remaining_parts, bin_sheet, config);
 
@@ -280,7 +226,7 @@ public:
             out_bin.tf = Matrix::identity(); 
 
             packaide::Polygon_set_2 sheet_remainder;
-            sheet_remainder.insert(geometry_to_cgal(sheet_geo, sheets[s_idx].tf));
+            sheet_remainder.insert(s_poly);
 
             std::set<size_t> placed_indices;
             for (const auto& p : placements) {
@@ -294,31 +240,24 @@ public:
                 double turns = p.angle / 360.0;
                 double rad = p.angle * M_PI / 180.0;
                 Matrix rot_tf = Matrix::rotationZ(turns);
-                
-                auto packing_res = find_packing_geometry(vfs, comp);
-                if (!packing_res.has_value()) continue;
-                
-                Geometry oriented_geo = packing_res->first;
-                Matrix orig_combined_tf = packing_res->second;
-                
-                oriented_geo.apply_tf(rot_tf * orig_combined_tf);
-                auto oriented_bb = oriented_geo.bounds();
-                
-                packaide::FT world_x = p.x + config.margin;
-                packaide::FT world_y = p.y + config.margin;
-                
-                Matrix placement_tf = Matrix::translate(FT(world_x - FT(oriented_bb.xmin())), FT(world_y - FT(oriented_bb.ymin())), FT(0));
-                
-                // Recursively apply absolute world-space transforms to maintain INDEPENDENT MATRIX MANDATE
-                apply_transform_recursive(comp, placement_tf * rot_tf);
-                out_bin.components.push_back(comp);
 
                 packaide::Transformation rotate_cgal(CGAL::ROTATION, std::sin(rad), std::cos(rad));
                 auto rotated_pwh = CGAL::transform(rotate_cgal, it->cgal_poly);
                 auto r_bb = rotated_pwh.outer_boundary().bbox();
                 packaide::Transformation normalize(CGAL::TRANSLATION, packaide::Vector_2(-r_bb.xmin(), -r_bb.ymin()));
                 rotated_pwh = CGAL::transform(normalize, rotated_pwh);
-                
+
+                packaide::FT world_x = p.x + config.margin;
+                packaide::FT world_y = p.y + config.margin;
+
+                Matrix to_origin = Matrix::translate(FT(-it->xmin_off), FT(-it->ymin_off), FT(0));
+                Matrix to_world = Matrix::translate(FT(world_x - FT(r_bb.xmin())), FT(world_y - FT(r_bb.ymin())), FT(0));
+                Matrix placement_tf = to_world * rot_tf * to_origin;
+
+                // Recursively apply absolute world-space transforms to maintain INDEPENDENT MATRIX MANDATE
+                apply_transform_recursive(comp, placement_tf);
+                out_bin.components.push_back(comp);
+
                 packaide::Transformation final_tr(CGAL::TRANSLATION, packaide::Vector_2(world_x, world_y));
                 auto placed_poly = CGAL::transform(final_tr, rotated_pwh);
                 

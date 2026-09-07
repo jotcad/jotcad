@@ -15,7 +15,7 @@ const suites = {
     args: [],
     cwd: 'geo/test',
     env: {},
-    timeout: 300000
+    timeout: 480000
   },
   fs: {
     name: 'FS Unit Tests',

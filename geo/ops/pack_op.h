@@ -29,15 +29,7 @@ struct PackOp : P {
             return;
         }
 
-        // 2. Generate 2D footprints for each part
-        std::vector<Shape> footprint_parts;
-        for (size_t i = 0; i < parts.size(); ++i) {
-            Shape fp = FootprintOp<P>::compute_footprint_shape(vfs, parts[i]);
-            fp.add_tag("orig_index", (double)i);
-            footprint_parts.push_back(fp);
-        }
-
-        // 3. Identify sheets (default to 2000x2000 workbench sheet if none provided)
+        // 2. Identify sheets (default to 2000x2000 workbench sheet if none provided)
         std::vector<Shape> sheets;
         bool auto_sheet = false;
         if (sheet.has_value()) {
@@ -60,15 +52,15 @@ struct PackOp : P {
             sheets.push_back(default_sheet);
         }
 
-        // 4. Execute 2D Nesting on Footprints
+        // 3. Execute 2D Nesting on parts
         pack::PackaideEngine::Config config;
         config.spacing = FT(spacing);
         config.margin = FT(margin);
         config.rotations = (int)rotations;
 
-        pack::PackaideEngine::PackResult res = pack::PackaideEngine::pack(vfs, footprint_parts, sheets, config);
+        pack::PackaideEngine::PackResult res = pack::PackaideEngine::pack(vfs, parts, sheets, config);
 
-        // 5. Construct Output Assembly, replacing footprints with the original 3D items
+        // 4. Construct Output Assembly
         Shape out;
         out.tf = Matrix::identity();
         
@@ -89,15 +81,8 @@ struct PackOp : P {
                 sheet_group.components.push_back(sheet_background);
             }
 
-            for (const auto& placed_fp : res.bins[b].components) {
-                if (placed_fp.tags.contains("orig_index")) {
-                    size_t orig_idx = (size_t)placed_fp.tags["orig_index"].get<double>();
-                    if (orig_idx < parts.size()) {
-                        Shape original_item = parts[orig_idx];
-                        apply_transform_recursive(original_item, placed_fp.tf);
-                        sheet_group.components.push_back(original_item);
-                    }
-                }
+            for (const auto& placed_comp : res.bins[b].components) {
+                sheet_group.components.push_back(placed_comp);
             }
 
             FT sw = FT(100.0);

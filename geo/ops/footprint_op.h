@@ -13,71 +13,75 @@ struct FootprintOp : P {
     static constexpr const char* path = "jot/footprint";
 
     static pack::packaide::Polygon_with_holes_2 compute_footprint_polygon(fs::VFSNode* vfs, const Shape& in) {
-        std::vector<Shape> leaves;
+        pack::packaide::Polygon_set_2 pset;
+        std::vector<pack::packaide::Point_2> solid_points;
+
         for (const auto& node : in.shapes()) {
             if (!node.has_positive_geometry()) continue;
             Geometry geo = vfs->read<Geometry>(node.geometry.value());
-            if (!geo.faces.empty()) {
-                leaves.push_back(node);
-            }
-        }
-        if (leaves.empty()) {
-            for (const auto& node : in.shapes()) {
-                if (node.has_positive_geometry()) leaves.push_back(node);
-            }
-        }
-        if (leaves.empty()) return {};
+            boolean::ExactMesh mesh = boolean::Engine::geometry_to_mesh(geo);
+            if (mesh.is_empty()) continue;
+            boolean::Engine::transform_mesh(mesh, node.tf);
 
-        // Fast path for single 2D planar face/surface
-        if (leaves.size() == 1 && leaves[0].geometry.has_value()) {
-            Geometry geo = vfs->read<Geometry>(leaves[0].geometry.value());
-            if (geo.faces.size() == 1 && !geo.faces[0].loops.empty()) {
-                const auto& loops = geo.faces[0].loops;
-                pack::packaide::Polygon_2 outer;
-                for (int idx : loops[0]) {
-                    Point_3 p3 = leaves[0].tf.transform(Point_3(geo.vertices[idx].x, geo.vertices[idx].y, geo.vertices[idx].z));
-                    outer.push_back(pack::packaide::Point_2(p3.x(), p3.y()));
+            // Check if this component has border halfedges (open surface / 2D face) or is a closed solid
+            bool has_borders = false;
+            for (auto h : mesh.halfedges()) {
+                if (mesh.is_border(h)) {
+                    has_borders = true;
+                    break;
                 }
-                if (outer.is_clockwise_oriented()) outer.reverse_orientation();
-                std::vector<pack::packaide::Polygon_2> holes;
-                for (size_t l = 1; l < loops.size(); ++l) {
-                    pack::packaide::Polygon_2 hole;
-                    for (int idx : loops[l]) {
-                        Point_3 p3 = leaves[0].tf.transform(Point_3(geo.vertices[idx].x, geo.vertices[idx].y, geo.vertices[idx].z));
-                        hole.push_back(pack::packaide::Point_2(p3.x(), p3.y()));
+            }
+
+            if (has_borders) {
+                // 2D Surface / Open Mesh: join each face into the polygon set
+                for (auto f : mesh.faces()) {
+                    pack::packaide::Polygon_2 f_poly;
+                    for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
+                        auto p3 = mesh.point(v);
+                        f_poly.push_back(pack::packaide::Point_2(p3.x(), p3.y()));
                     }
-                    if (hole.is_counterclockwise_oriented()) hole.reverse_orientation();
-                    holes.push_back(hole);
+                    if (f_poly.size() >= 3) {
+                        if (f_poly.is_clockwise_oriented()) f_poly.reverse_orientation();
+                        if (f_poly.is_simple()) {
+                            pset.join(f_poly);
+                        }
+                    }
                 }
-                return pack::packaide::Polygon_with_holes_2(outer, holes.begin(), holes.end());
+            } else {
+                // Closed 3D Solid: collect points for 2D ground projection
+                for (auto v : mesh.vertices()) {
+                    auto p3 = mesh.point(v);
+                    solid_points.push_back(pack::packaide::Point_2(p3.x(), p3.y()));
+                }
             }
         }
 
-        // 3D Solids / Multi-component convex projection
-        std::vector<pack::packaide::Point_2> all_projected_pts;
-        for (const auto& leaf : leaves) {
-            if (!leaf.geometry.has_value()) continue;
-            Geometry geo = vfs->read<Geometry>(leaf.geometry.value());
-            for (const auto& v : geo.vertices) {
-                Point_3 p3 = leaf.tf.transform(Point_3(v.x, v.y, v.z));
-                all_projected_pts.push_back(pack::packaide::Point_2(p3.x(), p3.y()));
+        if (!solid_points.empty()) {
+            std::vector<pack::packaide::Point_2> hull;
+            CGAL::convex_hull_2(solid_points.begin(), solid_points.end(), std::back_inserter(hull));
+            if (hull.size() >= 3) {
+                pack::packaide::Polygon_2 p;
+                for (const auto& pt : hull) p.push_back(pt);
+                if (p.is_clockwise_oriented()) p.reverse_orientation();
+                pset.join(p);
             }
         }
 
-        if (all_projected_pts.size() < 3) return {};
+        std::vector<pack::packaide::Polygon_with_holes_2> pwhs;
+        pset.polygons_with_holes(std::back_inserter(pwhs));
+        if (pwhs.empty()) return {};
 
-        std::vector<pack::packaide::Point_2> hull_pts;
-        CGAL::convex_hull_2(all_projected_pts.begin(), all_projected_pts.end(), std::back_inserter(hull_pts));
-        if (hull_pts.size() < 3) return {};
-
-        pack::packaide::Polygon_2 p;
-        for (const auto& pt : hull_pts) {
-            p.push_back(pt);
+        // Return the largest polygon by outer boundary area
+        size_t best_idx = 0;
+        pack::packaide::FT best_area = pwhs[0].outer_boundary().area();
+        for (size_t i = 1; i < pwhs.size(); ++i) {
+            auto a = pwhs[i].outer_boundary().area();
+            if (a > best_area) {
+                best_area = a;
+                best_idx = i;
+            }
         }
-        if (p.is_clockwise_oriented()) {
-            p.reverse_orientation();
-        }
-        return pack::packaide::Polygon_with_holes_2(p);
+        return pwhs[best_idx];
     }
 
     static Shape compute_footprint_shape(fs::VFSNode* vfs, const Shape& in) {
@@ -117,11 +121,7 @@ struct FootprintOp : P {
 
         out_geo.faces.push_back(out_face);
 
-        boolean::ExactMesh mesh = boolean::Engine::geometry_to_mesh(out_geo);
-        Geometry triangulated = boolean::Engine::mesh_to_geometry(mesh);
-        triangulated.faces = out_geo.faces;
-
-        Shape res = P::make_shape(vfs, triangulated, {{"type", "surface"}, {"dim", 2}});
+        Shape res = P::make_shape(vfs, out_geo, {{"type", "surface"}});
         return res;
     }
 

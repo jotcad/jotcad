@@ -318,7 +318,7 @@ void test_3d_footprint_and_pack() {
     fp_sel.parameters["$in"] = box3d;
     Shape fp_shape = vfs.read<Shape>(fp_sel.with_output("$out"));
     assert(fp_shape.geometry.has_value());
-    assert(fp_shape.tags.value("dim", 0) == 2);
+    assert(fp_shape.has_tag("type", "surface"));
     std::cout << "  - Footprint extracted successfully with 2D face geometry." << std::endl;
 
     // 3. Test jot/pack on group of 3D boxes without explicit sheet
