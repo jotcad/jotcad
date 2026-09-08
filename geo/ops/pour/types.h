@@ -1,6 +1,7 @@
 #pragma once
 #include "protocols.h"
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Aff_transformation_3.h>
 #include <CGAL/Surface_mesh.h>
 #include <vector>
 #include <string>
@@ -10,6 +11,7 @@ namespace geo {
 namespace pour {
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
+typedef CGAL::Aff_transformation_3<EK> Transformation;
 typedef CGAL::Surface_mesh<EK::Point_3> ExactMesh;
 typedef EK::FT FT;
 

@@ -7,6 +7,7 @@
 #include "pour/vents.h"
 #include "boolean/engine.h"
 #include "mold/types.h"
+#include "matrix.h"
 
 namespace jotcad {
 namespace geo {
@@ -52,9 +53,11 @@ struct PourOp : P {
         // 2. Find optimal pour orientation
         pour::EK::Vector_3 up_dir(0, 0, 1);
         pour::ExactMesh oriented_mesh = mesh_part;
+        pour::Transformation rot_tf(CGAL::IDENTITY);
         if (params.auto_orient) {
             up_dir = pour::find_optimal_pour_orientation(mesh_part, face_normals, face_areas);
-            oriented_mesh = pour::rotate_mesh_to_gravity(mesh_part, up_dir);
+            rot_tf = pour::get_gravity_rotation(up_dir);
+            oriented_mesh = pour::rotate_mesh_to_gravity(mesh_part, rot_tf);
         }
 
         // 3. Compute unvented model bounding limits in pure FT
@@ -145,9 +148,13 @@ struct PourOp : P {
         // Attach the mold stock box as a component with role: "box"
         result.components.push_back(stock_box);
 
-        // Naturally preserve any existing components from input
+        // Naturally preserve any existing components from input, transformed into the pour frame (skipping CAD construction ghosts)
+        Matrix rot_m(rot_tf);
         for (const auto& child : in.components) {
-            result.components.push_back(child);
+            if (child.is_ghost()) continue; // Skip CAD construction ghosts
+            Shape child_copy = child;
+            child_copy.apply_transform(rot_m);
+            result.components.push_back(child_copy);
         }
 
         vfs->write(fulfilling.with_output("$out"), result);

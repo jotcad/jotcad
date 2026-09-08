@@ -137,15 +137,16 @@ inline EK::Vector_3 find_optimal_pour_orientation(
     return best_dir;
 }
 
-inline ExactMesh rotate_mesh_to_gravity(const ExactMesh& mesh, const EK::Vector_3& up_dir) {
+inline Transformation get_gravity_rotation(const EK::Vector_3& up_dir) {
     double len = std::sqrt(CGAL::to_double(up_dir.squared_length()));
+    if (len < 1e-9) {
+        return Transformation(CGAL::IDENTITY);
+    }
     EK::Vector_3 z_axis(up_dir.x() / FT(len), up_dir.y() / FT(len), up_dir.z() / FT(len));
 
-    EK::Vector_3 target_z(0, 0, 1);
     double dot = CGAL::to_double(z_axis.z());
-
     if (dot > 0.999999) {
-        return mesh; // Already aligned with +Z
+        return Transformation(CGAL::IDENTITY); // Already aligned with +Z
     }
 
     EK::Vector_3 ref(0, 1, 0);
@@ -155,21 +156,34 @@ inline ExactMesh rotate_mesh_to_gravity(const ExactMesh& mesh, const EK::Vector_
 
     EK::Vector_3 x_axis = CGAL::cross_product(ref, z_axis);
     double x_len = std::sqrt(CGAL::to_double(x_axis.squared_length()));
+    if (x_len < 1e-9) {
+        return Transformation(CGAL::IDENTITY);
+    }
     x_axis = EK::Vector_3(x_axis.x() / FT(x_len), x_axis.y() / FT(x_len), x_axis.z() / FT(x_len));
 
     EK::Vector_3 y_axis = CGAL::cross_product(z_axis, x_axis);
 
+    return Transformation(
+        x_axis.x(), x_axis.y(), x_axis.z(), FT(0),
+        y_axis.x(), y_axis.y(), y_axis.z(), FT(0),
+        z_axis.x(), z_axis.y(), z_axis.z(), FT(0)
+    );
+}
+
+inline ExactMesh rotate_mesh_to_gravity(const ExactMesh& mesh, const Transformation& rot_tf) {
+    if (rot_tf == Transformation(CGAL::IDENTITY)) {
+        return mesh;
+    }
     ExactMesh oriented_mesh = mesh;
     for (auto v : oriented_mesh.vertices()) {
-        auto p = oriented_mesh.point(v);
-        EK::Vector_3 pv(p.x(), p.y(), p.z());
-        FT rx = pv * x_axis;
-        FT ry = pv * y_axis;
-        FT rz = pv * z_axis;
-        oriented_mesh.point(v) = EK::Point_3(rx, ry, rz);
+        oriented_mesh.point(v) = rot_tf.transform(oriented_mesh.point(v));
     }
-
     return oriented_mesh;
+}
+
+inline ExactMesh rotate_mesh_to_gravity(const ExactMesh& mesh, const EK::Vector_3& up_dir) {
+    Transformation rot_tf = get_gravity_rotation(up_dir);
+    return rotate_mesh_to_gravity(mesh, rot_tf);
 }
 
 } // namespace pour

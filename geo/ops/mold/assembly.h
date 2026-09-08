@@ -134,10 +134,10 @@ struct MoldAssembly {
             result.components.push_back(obb_shape);
         }
 
-        // Naturally preserve all unconsumed child branches of the input tree (skipping consumed mold stock box)
+        // Naturally preserve all unconsumed child branches of the input tree (skipping consumed mold stock box and construction ghosts)
         for (const auto& child : original_input.components) {
-            if (child.has_tag("mold/role", "box")) {
-                continue; // Consumed as mold pieces!
+            if (child.has_tag("mold/role", "box") || child.is_ghost()) {
+                continue; // Consumed as mold pieces or CAD construction ghost!
             }
             result.components.push_back(child);
         }
