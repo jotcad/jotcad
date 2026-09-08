@@ -24,7 +24,8 @@ struct PourOp : P {
         double sprue_top,
         double vent_dia,
         bool auto_orient,
-        bool vents
+        bool vents,
+        double min_angle = 15.0 / 360.0
     ) {
         pour::ExactMesh mesh_part;
         if (!boolean::Engine::shape_to_fused_mesh(vfs, in, mesh_part)) {
@@ -37,6 +38,7 @@ struct PourOp : P {
         params.sprue_top_dia = pour::FT(sprue_top);
         params.vent_dia = pour::FT(vent_dia);
         params.auto_orient = auto_orient;
+        params.min_angle = min_angle;
 
         // 1. Compute face normals and areas
         std::vector<pour::EK::Vector_3> face_normals;
@@ -55,7 +57,7 @@ struct PourOp : P {
         pour::ExactMesh oriented_mesh = mesh_part;
         pour::Transformation rot_tf(CGAL::IDENTITY);
         if (params.auto_orient) {
-            up_dir = pour::find_optimal_pour_orientation(mesh_part, face_normals, face_areas);
+            up_dir = pour::find_optimal_pour_orientation(mesh_part, face_normals, face_areas, params.min_angle);
             rot_tf = pour::get_gravity_rotation(up_dir);
             oriented_mesh = pour::rotate_mesh_to_gravity(mesh_part, rot_tf);
         }
@@ -160,7 +162,7 @@ struct PourOp : P {
         vfs->write(fulfilling.with_output("$out"), result);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "sprue_base", "sprue_top", "vent_dia", "auto_orient", "vents"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "sprue_base", "sprue_top", "vent_dia", "auto_orient", "vents", "min_angle"}; }
 
     static typename P::json schema() {
         return {
@@ -176,7 +178,8 @@ struct PourOp : P {
                 {{"name", "sprue_top"}, {"type", "jot:number"}, {"default", 36.0}, {"description", "Pour funnel top opening diameter in mm."}},
                 {{"name", "vent_dia"}, {"type", "jot:number"}, {"default", 2.5}, {"description", "Air bleed riser diameter in mm."}},
                 {{"name", "auto_orient"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to auto-orient along gravity."}},
-                {{"name", "vents"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to synthesize and attach pour sprues and vents."}}
+                {{"name", "vents"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to synthesize and attach pour sprues and vents."}},
+                {{"name", "min_angle"}, {"type", "jot:number"}, {"default", 15.0 / 360.0}, {"description", "Minimum ceiling and ridge drainage angle in turns (1.0 = 360 degrees, default 15.0/360.0 ~= 15 deg) to ensure bubble escape."}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The oriented shape with attached pour sprue and vents as gap components."}}}
@@ -186,8 +189,8 @@ struct PourOp : P {
 };
 
 inline void pour_init(fs::VFSNode* vfs) {
-    Processor::register_op<PourOp<>, Shape, double, double, double, bool, bool>(vfs, "jot/pourPrep");
-    Processor::register_op<PourOp<>, Shape, double, double, double, bool, bool>(vfs, "jot/orientPour");
+    Processor::register_op<PourOp<>, Shape, double, double, double, bool, bool, double>(vfs, "jot/pourPrep");
+    Processor::register_op<PourOp<>, Shape, double, double, double, bool, bool, double>(vfs, "jot/orientPour");
 }
 
 } // namespace geo

@@ -11,7 +11,8 @@ namespace pour {
 inline EK::Vector_3 find_optimal_pour_orientation(
     const ExactMesh& mesh,
     const std::vector<EK::Vector_3>& face_normals,
-    const std::vector<FT>& face_areas
+    const std::vector<FT>& face_areas,
+    double min_angle_turns = 15.0 / 360.0 // Default 15 degrees in turns
 ) {
     std::vector<EK::Vector_3> candidate_dirs;
 
@@ -33,13 +34,22 @@ inline EK::Vector_3 find_optimal_pour_orientation(
     candidate_dirs.push_back(EK::Vector_3(-1, -1, 1));
     candidate_dirs.push_back(EK::Vector_3(-1, -1, -1));
 
-    // 3. Face normals
+    // 3. Edge diagonals (12 directions for planar 45-degree alignments)
+    for (int s1 : {-1, 1}) {
+        for (int s2 : {-1, 1}) {
+            candidate_dirs.push_back(EK::Vector_3(s1, s2, 0));
+            candidate_dirs.push_back(EK::Vector_3(s1, 0, s2));
+            candidate_dirs.push_back(EK::Vector_3(0, s1, s2));
+        }
+    }
+
+    // 4. Face normals
     for (const auto& fn : face_normals) {
         candidate_dirs.push_back(fn);
         candidate_dirs.push_back(-fn);
     }
 
-    // 4. Fibonacci spherical grid
+    // 5. Fibonacci spherical grid
     const int N_SPHERE = 150;
     const double phi = (1.0 + std::sqrt(5.0)) / 2.0;
     for (int i = 0; i < N_SPHERE; ++i) {
@@ -59,16 +69,21 @@ inline EK::Vector_3 find_optimal_pour_orientation(
     }
 
     std::vector<std::vector<int>> neighbors(mesh.number_of_vertices());
+    struct EdgeInfo { int u; int v; double length; };
+    std::vector<EdgeInfo> edge_list;
     for (auto e : mesh.edges()) {
         auto h = mesh.halfedge(e);
         int u = (int)mesh.source(h);
         int v = (int)mesh.target(h);
         neighbors[u].push_back(v);
         neighbors[v].push_back(u);
+        double l = std::sqrt(CGAL::to_double((pts[v] - pts[u]).squared_length()));
+        edge_list.push_back({u, v, l});
     }
 
     double best_score = 1e18;
     EK::Vector_3 best_dir(0, 0, 1);
+    double sin_min = std::sin(min_angle_turns * 2.0 * M_PI);
 
     for (const auto& raw_dir : candidate_dirs) {
         double len = std::sqrt(CGAL::to_double(raw_dir.squared_length()));
@@ -85,8 +100,8 @@ inline EK::Vector_3 find_optimal_pour_orientation(
             if (h > max_h) max_h = h;
         }
 
-        // 2. Count 1-ring local peaks
-        int peak_count = 0;
+        // 2. Count 1-ring local peaks with plateau tie-breaking
+        std::vector<int> peak_indices;
         for (size_t i = 0; i < pts.size(); ++i) {
             bool is_peak = true;
             for (int n_idx : neighbors[i]) {
@@ -95,10 +110,20 @@ inline EK::Vector_3 find_optimal_pour_orientation(
                     break;
                 }
             }
-            if (is_peak) peak_count++;
+            if (is_peak) {
+                bool is_rep = true;
+                for (int n_idx : neighbors[i]) {
+                    if (std::abs(heights[n_idx] - heights[i]) <= 1e-6 && n_idx < (int)i) {
+                        is_rep = false;
+                        break;
+                    }
+                }
+                if (is_rep) peak_indices.push_back((int)i);
+            }
         }
+        int peak_count = (int)peak_indices.size();
 
-        // 3. Calculate ceiling slope penalties
+        // 3. Calculate ceiling slope penalties (internal cavity ceiling: normal points upward into mold)
         double ceiling_penalty = 0.0;
         for (size_t f_idx = 0; f_idx < face_normals.size(); ++f_idx) {
             const auto& fn = face_normals[f_idx];
@@ -108,19 +133,39 @@ inline EK::Vector_3 find_optimal_pour_orientation(
             double dot_up = CGAL::to_double((fn.x()*u_dir.x() + fn.y()*u_dir.y() + fn.z()*u_dir.z()) / FT(fn_len));
             double area = CGAL::to_double(face_areas[f_idx]);
 
-            // Ceiling surface (normal facing downward)
-            if (dot_up < -0.05) {
+            // Cavity ceiling surface
+            if (dot_up > 0.001) {
                 double sin_phi = std::sqrt((std::max)(0.0, 1.0 - dot_up * dot_up));
-                if (sin_phi < 0.25) { // slope < 15 degrees: flat ceiling stagnation trap
-                    ceiling_penalty += area * 100.0;
+                if (sin_phi < sin_min) { // slope < min_angle: bubble stagnation trap!
+                    ceiling_penalty += area * 500.0 * (sin_min - sin_phi + 0.1);
                 } else {
                     ceiling_penalty += area * (1.0 - sin_phi) * 2.0;
                 }
             }
         }
 
+        // 4. Calculate edge slope penalties for ridges connected to summit peaks
+        double edge_penalty = 0.0;
+        for (const auto& edge : edge_list) {
+            if (edge.length < 1e-6) continue;
+            bool connects_peak = false;
+            for (int p_idx : peak_indices) {
+                if (edge.u == p_idx || edge.v == p_idx) {
+                    connects_peak = true;
+                    break;
+                }
+            }
+            if (connects_peak) {
+                double dz = std::abs(heights[edge.v] - heights[edge.u]);
+                double sin_edge = dz / edge.length;
+                if (sin_edge < sin_min) {
+                    edge_penalty += edge.length * 100.0 * (sin_min - sin_edge + 0.05);
+                }
+            }
+        }
+
         double height_span = max_h - min_h;
-        double score = double(peak_count) * 1000.0 + ceiling_penalty - height_span * 0.1;
+        double score = double(peak_count) * 1000.0 + ceiling_penalty + edge_penalty - height_span * 0.1;
 
         if (score < best_score) {
             best_score = score;
@@ -129,7 +174,7 @@ inline EK::Vector_3 find_optimal_pour_orientation(
     }
 
     std::cout << "  [Pour Orientation] Scanned " << candidate_dirs.size() 
-              << " candidate up-vectors. Best score: " << best_score << " dir: ("
+              << " candidate up-vectors (min_angle=" << min_angle_turns << " turns). Best score: " << best_score << " dir: ("
               << CGAL::to_double(best_dir.x()) << ", "
               << CGAL::to_double(best_dir.y()) << ", "
               << CGAL::to_double(best_dir.z()) << ")" << std::endl << std::flush;

@@ -20,7 +20,8 @@ struct PourParams {
     FT sprue_top_dia = FT(36.0);     // Top opening diameter of main pour funnel in mm
     FT sprue_height = FT(20.0);      // Extra height above model top
     FT vent_dia = FT(2.5);           // Secondary air bleed riser diameter in mm
-    bool auto_orient = true;         // Whether to optimize orientation for minimal bubble trapping
+    bool auto_orient = true;             // Whether to optimize orientation for minimal bubble trapping
+    double min_angle = 15.0 / 360.0;     // Minimum ceiling drainage angle in turns (15.0 / 360.0 ~= 15 deg)
 };
 
 struct PeakCluster {

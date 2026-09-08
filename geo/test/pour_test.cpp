@@ -79,6 +79,7 @@ int main() {
     l_pour_sel.parameters["vent_dia"] = 2.0;
     l_pour_sel.parameters["auto_orient"] = true;
     l_pour_sel.parameters["vents"] = false;
+    l_pour_sel.parameters["min_angle"] = 15.0 / 360.0;
     l_pour_sel.output = "$out";
 
     Processor::execute(&vfs, l_pour_sel);
