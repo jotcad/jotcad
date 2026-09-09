@@ -26,6 +26,7 @@
     "test:cpp": "cd geo/test && ./run_unit_tests.sh",
     "test:wedge": "make -C geo/test bin/test_repair_wedge && (cd geo/test && ./bin/test_repair_wedge)",
     "test:bear:corefine": "make -C geo/test bin/diagnose_bear_corefine && ./geo/test/bin/diagnose_bear_corefine",
+    "test:bear:voxel": "make -C geo/test bin/mold_voxel_bear_test && ./geo/test/bin/mold_voxel_bear_test",
     "test:pio": "export $(grep -v '^#' .env | xargs) && pio run -d pio",
     "test:cpp:individual": "make -C geo/test",
     "test:integration": "node test_orchestrator.js integration",

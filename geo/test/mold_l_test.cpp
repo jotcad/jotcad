@@ -65,10 +65,14 @@ int main() {
         } else if (role == "piece") {
             piece_count++;
             assert(comp.has_tag("mold/piece"));
-            assert(comp.has_tag("mold/pull_vector"));
-            std::cout << "    * Mold piece #" << comp.tags["mold/piece"]
-                      << " pull_vector=[" << comp.tags["mold/pull_vector"] << "]"
-                      << " color=" << comp.tags["color"] << std::endl;
+            if (comp.has_tag("mold/pull_vector")) {
+                std::cout << "    * Mold piece #" << comp.tags["mold/piece"]
+                          << " pull_vector=[" << comp.tags["mold/pull_vector"] << "]"
+                          << " color=" << comp.tags["color"] << std::endl;
+            } else {
+                std::cout << "    * Mold piece #" << comp.tags["mold/piece"]
+                          << " (stationary base) color=" << comp.tags["color"] << std::endl;
+            }
 
             assert(comp.geometry.has_value());
             Geometry piece_geo = vfs.read<Geometry>(comp.geometry.value());

@@ -99,19 +99,23 @@ struct MoldAssembly {
 
         for (const auto& piece : mold_pieces) {
             Geometry piece_geo = boolean::Engine::mesh_to_geometry(piece.mesh);
-            std::stringstream ss;
-            ss << piece.draw_vector.x() << " " << piece.draw_vector.y() << " " << piece.draw_vector.z();
-            std::string pull_vec_str = ss.str();
+            bool is_stationary = (piece.draw_vector == EK::Vector_3(FT(0), FT(0), FT(0)));
 
-            Shape piece_shape = P::make_shape(vfs, piece_geo, {
+            typename P::json tags = {
                 {"mold/role", "piece"},
                 {"mold/piece", piece.mold_piece},
-                {"mold/pull_vector", pull_vec_str},
                 {"color", piece.color},
                 {"opacity", 0.5}
-            });
+            };
+            if (!is_stationary) {
+                std::stringstream ss;
+                ss << piece.draw_vector.x() << " " << piece.draw_vector.y() << " " << piece.draw_vector.z();
+                tags["mold/pull_vector"] = ss.str();
+            }
 
-            if (params.explode > FT(0)) {
+            Shape piece_shape = P::make_shape(vfs, piece_geo, tags);
+
+            if (!is_stationary && params.explode > FT(0)) {
                 EK::Vector_3 dv = piece.draw_vector;
                 double len = std::sqrt(CGAL::to_double(dv.squared_length()));
                 if (len > 1e-9) {

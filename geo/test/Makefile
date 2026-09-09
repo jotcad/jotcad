@@ -78,6 +78,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                extrusion_overlap_test.cpp \
                mold_test.cpp \
                mold_l_test.cpp \
+               mold_voxel_bear_test.cpp \
                rig_test.cpp \
                pour_test.cpp \
                repair_test.cpp \
@@ -158,6 +159,15 @@ $(BIN_DIR)/diagnose_bear_corefine: $(OBJ_DIR)/diagnose_bear_corefine.o $(LIB_GEO
 	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
 $(OBJ_DIR)/diagnose_bear_corefine.o: diagnose_bear_corefine.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Rule for building the standalone mold_voxel_bear_test binary
+$(BIN_DIR)/mold_voxel_bear_test: $(OBJ_DIR)/mold_voxel_bear_test.o $(REG_OBJS) $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/mold_voxel_bear_test.o: mold_voxel_bear_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
