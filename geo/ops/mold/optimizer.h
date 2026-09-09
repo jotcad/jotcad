@@ -1,6 +1,8 @@
 #pragma once
 #include "types.h"
 #include "visibility.h"
+#include "modes.h"
+#include "climb.h"
 #include <cmath>
 #include <CGAL/Polygon_mesh_processing/border.h>
 
@@ -122,48 +124,42 @@ inline PartingOptimizationResult optimize_parting_direction(
 
     std::vector<EK::Vector_3> candidate_dirs;
 
-    const int N = 300;
-    const double phi = (1.0 + std::sqrt(5.0)) / 2.0;
-    for (int i = 0; i < N; ++i) {
-        double y = 1.0 - (i / double(N - 1)) * 2.0;
-        double radius = std::sqrt(std::max(0.0, 1.0 - y * y));
-        double theta = 2.0 * M_PI * i / phi;
-        double x = std::cos(theta) * radius;
-        double z = std::sin(theta) * radius;
-        candidate_dirs.push_back(EK::Vector_3(FT(x), FT(y), FT(z)));
-    }
+    // Phase 3: Area-Weighted Normal Mode Clustering + Continuous Spherical Hill Climbing
+    auto mode_seeds = compute_normal_modes(face_descriptors, face_normals, face_areas, is_handled, 6);
 
-    // Geometry-informed candidate directions:
-    // 1. Vertex corner normals (pulling directly off sharp corners)
-    for (auto v : mesh_part.vertices()) {
-        EK::Vector_3 vn(0, 0, 0);
-        for (auto f : CGAL::faces_around_target(mesh_part.halfedge(v), mesh_part)) {
-            if (f != ExactMesh::null_face()) {
-                vn = vn + face_normals[(size_t)f];
+    // Complement mode seeds with cardinal axes to guarantee full spatial coverage
+    const std::vector<Vector3d> cardinal_dirs = {
+        { 0,  0,  1}, { 0,  0, -1},
+        { 1,  0,  0}, {-1,  0,  0},
+        { 0,  1,  0}, { 0, -1,  0}
+    };
+    for (const auto& card : cardinal_dirs) {
+        bool duplicate = false;
+        for (const auto& s : mode_seeds) {
+            if (card.dot(s) > 0.95) {
+                duplicate = true;
+                break;
             }
         }
-        double len = std::sqrt(CGAL::to_double(vn.squared_length()));
-        if (len > 1e-6) {
-            candidate_dirs.push_back(EK::Vector_3(FT(CGAL::to_double(vn.x()) / len), FT(CGAL::to_double(vn.y()) / len), FT(CGAL::to_double(vn.z()) / len)));
-        }
+        if (!duplicate) mode_seeds.push_back(card);
     }
 
-    // 2. Edge bisectors
-    for (const auto& [edge, faces] : edge_to_faces) {
-        if (faces.size() >= 2) {
-            EK::Vector_3 en = face_normals[faces[0]] + face_normals[faces[1]];
-            double len = std::sqrt(CGAL::to_double(en.squared_length()));
-            if (len > 1e-6) {
-                candidate_dirs.push_back(EK::Vector_3(FT(CGAL::to_double(en.x()) / len), FT(CGAL::to_double(en.y()) / len), FT(CGAL::to_double(en.z()) / len)));
+    double min_dot_d = CGAL::to_double(min_dot);
+    std::vector<Vector3d> optimized_summits;
+    for (const auto& seed : mode_seeds) {
+        Vector3d summit = climb_spherical_hill(
+            seed, face_descriptors, face_normals, face_areas, is_handled, min_dot_d
+        );
+        bool duplicate = false;
+        for (const auto& opt_s : optimized_summits) {
+            if (summit.dot(opt_s) > 0.99) {
+                duplicate = true;
+                break;
             }
         }
-    }
-
-    // 3. Face normals (normalized)
-    for (const auto& fn : face_normals) {
-        double len = std::sqrt(CGAL::to_double(fn.squared_length()));
-        if (len > 1e-6) {
-            candidate_dirs.push_back(EK::Vector_3(FT(CGAL::to_double(fn.x()) / len), FT(CGAL::to_double(fn.y()) / len), FT(CGAL::to_double(fn.z()) / len)));
+        if (!duplicate) {
+            optimized_summits.push_back(summit);
+            candidate_dirs.push_back(summit.to_exact());
         }
     }
 

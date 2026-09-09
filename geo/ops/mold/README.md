@@ -16,7 +16,9 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 | **`visibility.h`** | ~20 | Aggregating facade for mold visibility and envelope submodules. |
 | **`obb.h`** | ~140 | Minimal-volume Oriented Bounding Box (`OrientedBox`, `compute_min_volume_obb`) aligned with piece draw vectors. |
 | **`repair.h`** | ~45 | Exact coordinate normalization and watertight solid mesh repair (`normalize_and_repair_solid`). |
-| **`optimizer.h`** | ~130 | Geometry-informed candidate scanning (corner normals, edge bisectors, face normals, Fibonacci lattice). |
+| **`modes.h`** | ~135 | Area-weighted normal mode clustering on $\mathbb{S}^2$ via spherical $k$-means (`compute_normal_modes`). |
+| **`climb.h`** | ~100 | Continuous spherical gradient ascent on $\mathbb{S}^2$ with geodesic line search (`climb_spherical_hill`). |
+| **`optimizer.h`** | ~300 | Multi-component disjoint patch optimization, spherical hill climbing orchestration, and candidate evaluation. |
 | **`assembly.h`** | ~110 | Minimal-volume OBB trimming, stationary base block extraction (`pull_vector = "0 0 0"`), and scene graph assembly. |
 | **`verify.h`** | ~40 | Authoritative swept-volume demoldability assertions (`verify_piece_demoldability`). |
 
