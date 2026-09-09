@@ -8,6 +8,81 @@ namespace jotcad {
 namespace geo {
 namespace mold {
 
+// Pure EK::FT tangent basis orthogonal to d
+inline std::pair<EK::Vector_3, EK::Vector_3> compute_exact_tangent_basis(const EK::Vector_3& d) {
+    EK::FT dx = d.x();
+    EK::FT dy = d.y();
+    EK::FT dz = d.z();
+    EK::FT abs_dx = (dx < EK::FT(0)) ? -dx : dx;
+    EK::FT abs_dy = (dy < EK::FT(0)) ? -dy : dy;
+    EK::FT abs_dz = (dz < EK::FT(0)) ? -dz : dz;
+
+    EK::Vector_3 ref(EK::FT(0), EK::FT(0), EK::FT(0));
+    if (abs_dx <= abs_dy && abs_dx <= abs_dz) {
+        ref = EK::Vector_3(EK::FT(1), EK::FT(0), EK::FT(0));
+    } else if (abs_dy <= abs_dz) {
+        ref = EK::Vector_3(EK::FT(0), EK::FT(1), EK::FT(0));
+    } else {
+        ref = EK::Vector_3(EK::FT(0), EK::FT(0), EK::FT(1));
+    }
+
+    EK::Vector_3 u = CGAL::cross_product(d, ref);
+    EK::Vector_3 v = CGAL::cross_product(d, u);
+    return {u, v};
+}
+
+struct BoundingBox2D {
+    EK::FT u_min = 0, u_max = 0;
+    EK::FT v_min = 0, v_max = 0;
+
+    bool overlaps(const BoundingBox2D& other) const {
+        if (u_max < other.u_min || other.u_max < u_min) return false;
+        if (v_max < other.v_min || other.v_max < v_min) return false;
+        return true;
+    }
+};
+
+inline int count_component_boundary_cycles(
+    const std::vector<ExactMesh::Face_index>& comp_faces,
+    const ExactMesh& mesh_part
+) {
+    std::vector<ExactMesh::Halfedge_index> border_halfedges;
+    CGAL::Polygon_mesh_processing::border_halfedges(
+        comp_faces, mesh_part, std::back_inserter(border_halfedges)
+    );
+
+    std::map<int, int> next_v;
+    for (auto h : border_halfedges) {
+        int u = (int)mesh_part.source(h);
+        int v = (int)mesh_part.target(h);
+        next_v[u] = v;
+    }
+
+    std::set<int> visited;
+    int cycle_count = 0;
+    for (auto h : border_halfedges) {
+        int start = (int)mesh_part.source(h);
+        if (visited.count(start)) continue;
+
+        int curr = start;
+        int step = 0;
+        while (curr != -1 && !visited.count(curr)) {
+            visited.insert(curr);
+            auto it = next_v.find(curr);
+            if (it == next_v.end()) break;
+            int nxt = it->second;
+            step++;
+            curr = nxt;
+            if (curr == start) break;
+        }
+        if (curr == start && step >= 3) {
+            cycle_count++;
+        }
+    }
+    return cycle_count;
+}
+
+
 struct PartingOptimizationResult {
     EK::Vector_3 best_dir;
     ExactMesh solid_wedge;
@@ -146,10 +221,23 @@ inline PartingOptimizationResult optimize_parting_direction(
             components[root].push_back(visible_faces[i]);
         }
 
-        std::vector<ExactMesh::Face_index> largest_comp;
-        FT current_patch_score = 0;
+        auto [u_basis, v_basis] = compute_exact_tangent_basis(d);
+
+        struct CompData {
+            std::vector<ExactMesh::Face_index> faces;
+            FT score = 0;
+            int cycle_count = 0;
+            BoundingBox2D bbox;
+        };
+
+        std::vector<CompData> disk_comps;
+        std::vector<CompData> non_disk_comps;
+
         for (const auto& [root, comp_faces] : components) {
             FT comp_score = 0;
+            BoundingBox2D bbox;
+            bool first_pt = true;
+
             for (auto f : comp_faces) {
                 size_t f_idx = (size_t)f;
                 FT a = face_areas[f_idx];
@@ -159,69 +247,100 @@ inline PartingOptimizationResult optimize_parting_direction(
                     FT depth = FT(r_bound) - (c.x()*d.x() + c.y()*d.y() + c.z()*d.z());
                     comp_score += a * (dot - min_dot) * depth;
                 }
+
+                auto h = mesh_part.halfedge(f);
+                for (int i = 0; i < 3; ++i) {
+                    const auto& p = mesh_part.point(mesh_part.target(h));
+                    FT up = p.x()*u_basis.x() + p.y()*u_basis.y() + p.z()*u_basis.z();
+                    FT vp = p.x()*v_basis.x() + p.y()*v_basis.y() + p.z()*v_basis.z();
+                    if (first_pt) {
+                        bbox.u_min = bbox.u_max = up;
+                        bbox.v_min = bbox.v_max = vp;
+                        first_pt = false;
+                    } else {
+                        if (up < bbox.u_min) bbox.u_min = up;
+                        if (up > bbox.u_max) bbox.u_max = up;
+                        if (vp < bbox.v_min) bbox.v_min = vp;
+                        if (vp > bbox.v_max) bbox.v_max = vp;
+                    }
+                    h = mesh_part.next(h);
+                }
             }
-            if (comp_score > current_patch_score) {
-                current_patch_score = comp_score;
-                largest_comp = comp_faces;
-            }
-        }
 
-        std::vector<ExactMesh::Halfedge_index> border_halfedges;
-        CGAL::Polygon_mesh_processing::border_halfedges(
-            largest_comp, mesh_part, std::back_inserter(border_halfedges)
-        );
+            if (comp_score <= FT(0)) continue;
 
-        std::map<int, int> next_v;
-        for (auto h : border_halfedges) {
-            int u = (int)mesh_part.source(h);
-            int v = (int)mesh_part.target(h);
-            next_v[u] = v;
-        }
+            int cycles = count_component_boundary_cycles(comp_faces, mesh_part);
+            CompData cd{comp_faces, comp_score, cycles, bbox};
 
-        std::set<int> visited;
-        std::vector<std::vector<std::pair<int, int>>> cycles;
-        for (auto h : border_halfedges) {
-            int start = (int)mesh_part.source(h);
-            if (visited.count(start)) continue;
-
-            std::vector<std::pair<int, int>> current_cycle;
-            int curr = start;
-            while (curr != -1 && !visited.count(curr)) {
-                visited.insert(curr);
-                auto it = next_v.find(curr);
-                if (it == next_v.end()) break;
-                int nxt = it->second;
-                current_cycle.push_back({curr, nxt});
-                curr = nxt;
-                if (curr == start) break;
-            }
-            if (curr == start && current_cycle.size() >= 3) {
-                cycles.push_back(current_cycle);
+            if (cycles == 1) {
+                disk_comps.push_back(std::move(cd));
+            } else if (cycles > 1) {
+                non_disk_comps.push_back(std::move(cd));
             }
         }
 
-        int cycle_count = (int)cycles.size();
+        std::vector<ExactMesh::Face_index> candidate_patch_faces;
+        FT current_patch_score = 0;
+        int cycle_count = 0;
+
+        if (!disk_comps.empty()) {
+            std::sort(disk_comps.begin(), disk_comps.end(), [](const auto& a, const auto& b) {
+                return a.score > b.score;
+            });
+
+            std::vector<BoundingBox2D> accepted_bboxes;
+            candidate_patch_faces = disk_comps[0].faces;
+            current_patch_score = disk_comps[0].score;
+            accepted_bboxes.push_back(disk_comps[0].bbox);
+
+            for (size_t i = 1; i < disk_comps.size(); ++i) {
+                const auto& cand = disk_comps[i];
+                bool overlaps = false;
+                for (const auto& acc_box : accepted_bboxes) {
+                    if (cand.bbox.overlaps(acc_box)) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+                if (!overlaps) {
+                    candidate_patch_faces.insert(candidate_patch_faces.end(), cand.faces.begin(), cand.faces.end());
+                    current_patch_score += cand.score;
+                    accepted_bboxes.push_back(cand.bbox);
+                }
+            }
+            cycle_count = 1;
+        } else if (!non_disk_comps.empty()) {
+            std::sort(non_disk_comps.begin(), non_disk_comps.end(), [](const auto& a, const auto& b) {
+                return a.score > b.score;
+            });
+            candidate_patch_faces = non_disk_comps[0].faces;
+            current_patch_score = non_disk_comps[0].score;
+            cycle_count = non_disk_comps[0].cycle_count;
+        } else {
+            continue;
+        }
+
         if (cycle_count == 1) {
-            ranked_candidates.push_back({d, current_patch_score, largest_comp.size(), 1});
+            ranked_candidates.push_back({d, current_patch_score, candidate_patch_faces.size(), 1});
             if (best_loop_count > 1 || current_patch_score > best_patch_score) {
                 best_loop_count = 1;
                 best_patch_score = current_patch_score;
                 best_dir = d;
-                best_patch_faces = largest_comp;
+                best_patch_faces = candidate_patch_faces;
             }
         } else if (best_loop_count > 1 && cycle_count > 0 && (best_patch_score < 0 || current_patch_score > best_patch_score)) {
             best_loop_count = cycle_count;
             best_patch_score = current_patch_score;
             best_dir = d;
-            best_patch_faces = largest_comp;
+            best_patch_faces = candidate_patch_faces;
         }
 
         double dz_val = CGAL::to_double(d.z());
         if (dz_val < -0.85 && current_patch_score > best_downward.score) {
-            best_downward = {d, current_patch_score, largest_comp.size(), cycle_count};
+            best_downward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count};
         }
         if (dz_val > 0.85 && current_patch_score > best_upward.score) {
-            best_upward = {d, current_patch_score, largest_comp.size(), cycle_count};
+            best_upward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count};
         }
     }
 
