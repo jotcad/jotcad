@@ -184,12 +184,13 @@ This resolves the smoking gun bug where Piece 2 excluded the sprue and feet.
 * ✅ Executed baseline run: Confirmed that Piece 2 and Piece 4 share the exact same draw vector $\mathbf{d}_2 = \mathbf{d}_4 = (-0.754409, -0.411371, +0.511508)$, and confirmed that 111/117 unhandled sprue faces are forward-facing under $\mathbf{d}_2$.
 * ✅ Baseline committed cleanly at `f140a97`.
 
-### Phase 2: Disjoint Component Retention in [`optimizer.h`](file:///home/brian/github/jotcad_ez/geo/ops/mold/optimizer.h) (CURRENT)
-* Replace the greedy single-island `largest_comp` filter with per-component cycle checking ($C(K_i) == 1$) and multi-component aggregation.
-* Pass all non-occluding components sharing $\mathbf{d}^*$ into `best_patch_faces`.
-* Verify via `npm run test:bear:voxel` that Piece 2 absorbs the feet and sprue faces, eliminating Piece 4 and reducing piece count.
+### Phase 2: Disjoint Component Retention in [`optimizer.h`](file:///home/brian/github/jotcad_ez/geo/ops/mold/optimizer.h) (COMPLETED)
+* ✅ Added `compute_exact_tangent_basis` in pure `EK::FT` to project faces onto the orthogonal tangent frame $(\vec{u}, \vec{v})$.
+* ✅ Replaced greedy single-island `largest_comp` filter with per-component boundary cycle checking ($C(K_i) == 1$) and greedy non-overlapping 2D bounding box aggregation.
+* ✅ Verified via `npm run test:bear:voxel` that Piece 2 absorbs disjoint features along $\vec{d}_2$, eliminating redundant duplicate draw vector Piece 4 and reducing piece count from 6 down to 4.
+* ✅ Committed cleanly at `cf07e8b`.
 
-### Phase 3: Mode Clustering & Spherical Hill Climbing Engine
+### Phase 3: Mode Clustering & Spherical Hill Climbing Engine (CURRENT)
 * Implement `compute_normal_modes(mesh_part, unhandled_faces, k=6)`.
 * Implement `climb_spherical_hill(initial_d, unhandled_faces)`.
 * Replace the 300 Fibonacci loop and geometry-informed candidate arrays.
