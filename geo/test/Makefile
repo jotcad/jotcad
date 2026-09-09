@@ -84,11 +84,11 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                repair_test.cpp \
                bridge_test.cpp
 
-# Filter out cid_consistency_test.cpp from combined build
-COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp, $(TEST_SOURCES))
+# Filter out standalone tests from combined build
+COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp mold_voxel_bear_test.cpp, $(TEST_SOURCES))
 
 # Targets
-all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)/test_zenoh_link $(BIN_DIR)/test_zenoh_queryable $(BIN_DIR)/test_zenoh_caching
+all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)/mold_voxel_bear_test $(BIN_DIR)/test_zenoh_link $(BIN_DIR)/test_zenoh_queryable $(BIN_DIR)/test_zenoh_caching
 
 
 # Rule for building the standalone test_zenoh_caching binary

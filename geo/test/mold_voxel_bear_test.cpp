@@ -1,20 +1,22 @@
 #include "test_base.h"
 #include "protocols.h"
 #include "processor.h"
-#include "box_op.h"
-#include "fuse_op.h"
-#include "pour_op.h"
-#include "mold_op.h"
+#include "boolean/engine.h"
+#include "boolean/corefine.h"
+#include "fix/assert_mesh.h"
+#include "mold/types.h"
 #include "mold/optimizer.h"
 #include "mold/envelope.h"
-#include "mold/assembly.h"
 #include <iostream>
 #include <iomanip>
 #include <cassert>
 
-using namespace jotcad;
-using namespace jotcad::geo;
-using namespace fs;
+using namespace ::jotcad;
+using namespace ::jotcad::geo;
+using namespace ::jotcad::geo::mold;
+using namespace ::fs;
+using ExactMesh = ::jotcad::geo::boolean::ExactMesh;
+using ::CGAL::to_double;
 
 int main() {
     MockVFS vfs("mold_voxel_bear_test");
@@ -55,8 +57,11 @@ int main() {
     std::cout << "  - Fusing into watertight solid bear..." << std::endl;
     std::vector<Shape> all_parts = {body, leg_fl, leg_fr, leg_bl, leg_br, foot_fl, foot_fr, foot_bl, foot_br};
     Selector fuse_sel{"jot/Fuse"};
+    json parts_arr = json::array();
+    for (const auto& p : all_parts) parts_arr.push_back(p.to_json());
+    fuse_sel.parameters["shapes"] = parts_arr;
     fuse_sel.output = "$out";
-    FusePrimitiveOp<>::execute(&vfs, fuse_sel, all_parts);
+    Processor::execute(&vfs, fuse_sel);
     Shape bear = vfs.read<Shape>(fuse_sel);
     assert(bear.geometry.has_value());
     Geometry bear_geo = vfs.read<Geometry>(*bear.geometry);
@@ -89,19 +94,19 @@ int main() {
     assert(has_sprue_child && has_box_child);
 
     // 6. Deep Investigation: Inspect mesh_part and sprue faces before mold decomposition
-    mold::ExactMesh mesh_part;
-    std::optional<mold::ExactMesh> stock_box_mesh;
+    ExactMesh mesh_part;
+    std::optional<ExactMesh> stock_box_mesh;
     prepped.walk([&](const Shape& node) {
         if (node.has_tag("mold/role", "box") && node.geometry.has_value() && !stock_box_mesh.has_value()) {
             Geometry box_geo = vfs.read<Geometry>(*node.geometry);
-            mold::ExactMesh box_m = boolean::Engine::geometry_to_mesh(box_geo);
+            ExactMesh box_m = boolean::Engine::geometry_to_mesh(box_geo);
             boolean::Engine::transform_mesh(box_m, node.tf);
             stock_box_mesh = std::move(box_m);
             return;
         }
         if (node.geometry.has_value() && node.is_real()) {
             Geometry geo = vfs.read<Geometry>(*node.geometry);
-            mold::ExactMesh component = boolean::Engine::geometry_to_mesh(geo);
+            ExactMesh component = boolean::Engine::geometry_to_mesh(geo);
             boolean::Engine::transform_mesh(component, node.tf);
             if (mesh_part.is_empty()) {
                 mesh_part = std::move(component);
@@ -112,7 +117,7 @@ int main() {
     });
 
     // Trim against stock box
-    mold::MoldParams params;
+    MoldParams params;
     params.padding = FT(5.0);
     params.explode = FT(0.0);
     params.draft = FT(-0.003);
@@ -120,7 +125,7 @@ int main() {
     params.kiss_width = FT(0.01);
 
     if (stock_box_mesh.has_value()) {
-        mold::ExactMesh trimmed_model;
+        ExactMesh trimmed_model;
         bool ok_trim = boolean::corefine_intersection(mesh_part, *stock_box_mesh, trimmed_model, params.kiss_mode, params.kiss_width, "model ∩ stock_box in test");
         if (ok_trim && trimmed_model.number_of_faces() > 0) {
             mesh_part = std::move(trimmed_model);
@@ -140,10 +145,10 @@ int main() {
     std::cout << "------------------------------------------------------------" << std::endl;
 
     // Build topology, normals, centroids
-    std::map<mold::EdgeKey, std::vector<int>> edge_to_faces;
+    std::map<EdgeKey, std::vector<int>> edge_to_faces;
     std::vector<EK::Vector_3> face_normals(total_faces);
     std::vector<EK::Point_3> face_centroids(total_faces);
-    std::vector<mold::ExactMesh::Face_index> face_descriptors;
+    std::vector<ExactMesh::Face_index> face_descriptors;
     face_descriptors.reserve(total_faces);
 
     // Identify sprue faces: find sprue apex or identify faces at the sprue end
@@ -179,20 +184,20 @@ int main() {
             sprue_face_count++;
         }
     }
-    std::cout << "  - Identified " << sprue_face_count << " candidate sprue faces (Z > " << CGAL::to_double(max_z - FT(20.0)) << ")." << std::endl;
+    std::cout << "  - Identified " << sprue_face_count << " candidate sprue faces (Z > " << to_double(max_z - FT(20.0)) << ")." << std::endl;
 
     // Setup is_handled tracking
-    mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
+    FaceBoolMap is_handled = mesh_part.add_property_map<ExactMesh::Face_index, bool>("f:is_handled", false).first;
 
     // STEP 1: Piece 1 Extraction
     std::cout << "\n>>> STEP 1: Optimizing Piece 1..." << std::endl;
-    auto opt1 = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params);
-    std::cout << "  - Piece 1 dir: (" << CGAL::to_double(opt1.best_dir.x()) << ", " << CGAL::to_double(opt1.best_dir.y()) << ", " << CGAL::to_double(opt1.best_dir.z()) << ")" << std::endl;
+    auto opt1 = optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params);
+    std::cout << "  - Piece 1 dir: (" << to_double(opt1.best_dir.x()) << ", " << to_double(opt1.best_dir.y()) << ", " << to_double(opt1.best_dir.z()) << ")" << std::endl;
     std::cout << "  - Piece 1 handled " << opt1.source_faces.size() << " faces." << std::endl;
 
     size_t sprue_handled_p1 = 0;
     for (size_t f_idx : opt1.source_faces) {
-        auto f = mold::ExactMesh::Face_index(f_idx);
+        auto f = ExactMesh::Face_index(f_idx);
         is_handled[f] = true;
         if (is_sprue_face[f_idx]) sprue_handled_p1++;
     }
@@ -201,10 +206,10 @@ int main() {
 
     // STEP 2: Piece 2 Investigation
     std::cout << "\n>>> STEP 2: Investigating Piece 2 Draw Direction & Sprue Visibility..." << std::endl;
-    auto opt2 = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params);
+    auto opt2 = optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params);
     EK::Vector_3 d2 = opt2.best_dir;
     std::cout << "  - Piece 2 selected best_dir: ("
-              << CGAL::to_double(d2.x()) << ", " << CGAL::to_double(d2.y()) << ", " << CGAL::to_double(d2.z()) << ")" << std::endl;
+              << to_double(d2.x()) << ", " << to_double(d2.y()) << ", " << to_double(d2.z()) << ")" << std::endl;
     std::cout << "  - Piece 2 handled " << opt2.source_faces.size() << " faces." << std::endl;
 
     size_t sprue_handled_p2 = 0;
@@ -214,15 +219,15 @@ int main() {
     std::cout << "  - Sprue faces captured by Piece 2: " << sprue_handled_p2 << std::endl;
 
     // Now analyze why unhandled sprue faces were or were not captured by Piece 2:
-    FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
-    std::cout << "  - Draft min_dot: " << CGAL::to_double(min_dot) << std::endl;
+    FT min_dot(std::sin(to_double(params.draft) * 2.0 * M_PI));
+    std::cout << "  - Draft min_dot: " << to_double(min_dot) << std::endl;
 
     size_t unhandled_sprue_visible_d2 = 0;
     size_t unhandled_sprue_backfacing_d2 = 0;
 
-    std::vector<mold::ExactMesh::Face_index> unhandled_sprue_faces;
+    std::vector<ExactMesh::Face_index> unhandled_sprue_faces;
     for (size_t f_idx = 0; f_idx < total_faces; ++f_idx) {
-        auto f = mold::ExactMesh::Face_index(f_idx);
+        auto f = ExactMesh::Face_index(f_idx);
         if (is_sprue_face[f_idx] && !opt1.source_faces.count(f_idx)) {
             unhandled_sprue_faces.push_back(f);
             FT dot = face_normals[f_idx] * d2;
@@ -240,18 +245,18 @@ int main() {
     std::cout << "    * Back-facing (dot < min_dot): " << unhandled_sprue_backfacing_d2 << std::endl;
 
     // Test connectivity: Group all visible faces under d2 into connected components
-    auto visible_faces_d2 = mold::compute_visible_patch_faces_fast(
+    auto visible_faces_d2 = compute_visible_patch_faces_fast(
         mesh_part, face_descriptors, face_normals, is_handled, d2, min_dot
     );
-    std::map<mold::ExactMesh::Face_index, int> face_to_local;
+    std::map<ExactMesh::Face_index, int> face_to_local;
     for (size_t i = 0; i < visible_faces_d2.size(); ++i) {
         face_to_local[visible_faces_d2[i]] = (int)i;
     }
-    mold::DSU patch_dsu((int)visible_faces_d2.size());
+    DSU patch_dsu((int)visible_faces_d2.size());
     for (const auto& [edge, faces] : edge_to_faces) {
         std::vector<int> visible_in_edge;
         for (int f_idx : faces) {
-            auto f = mold::ExactMesh::Face_index(f_idx);
+            auto f = ExactMesh::Face_index(f_idx);
             auto it = face_to_local.find(f);
             if (it != face_to_local.end()) {
                 visible_in_edge.push_back(it->second);
@@ -263,7 +268,7 @@ int main() {
             }
         }
     }
-    std::map<int, std::vector<mold::ExactMesh::Face_index>> components;
+    std::map<int, std::vector<ExactMesh::Face_index>> components;
     for (size_t i = 0; i < visible_faces_d2.size(); ++i) {
         int root = patch_dsu.find((int)i);
         components[root].push_back(visible_faces_d2[i]);
