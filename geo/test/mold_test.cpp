@@ -31,50 +31,32 @@ int main() {
     Shape box_mold = vfs.read<Shape>(mold_sel);
 
     assert(box_mold.components.size() >= 2); // mold pieces
-    bool found_box_piece1 = false;
+    std::cout << "    - Total box mold components: " << box_mold.components.size() << std::endl;
+    int moving_pieces = 0;
+    int stationary_pieces = 0;
     for (const auto& s : box_mold) {
-        if (s.has_tag("mold/piece", 1)) {
-            assert(s.has_tag("mold/pull_vector"));
-            std::cout << "    - Produced 1st demoldable pillar for Box successfully with pull_vector=" << s.tags["mold/pull_vector"] << std::endl;
-            found_box_piece1 = true;
-            break;
+        if (s.has_tag("mold/role", "piece")) {
+            int piece_id = s.tags["mold/piece"].get<int>();
+            double vol = 0.0;
+            if (s.geometry.has_value()) {
+                Geometry g = vfs.read<Geometry>(*s.geometry);
+                mold::ExactMesh m = boolean::Engine::geometry_to_mesh(g);
+                vol = CGAL::to_double(CGAL::Polygon_mesh_processing::volume(m));
+            }
+            if (s.has_tag("mold/pull_vector")) {
+                moving_pieces++;
+                std::cout << "      Moving Piece #" << piece_id
+                          << " pull_vector=" << s.tags["mold/pull_vector"]
+                          << " volume=" << vol << " mm^3" << std::endl;
+            } else {
+                stationary_pieces++;
+                std::cout << "      Stationary Dead Region #" << piece_id
+                          << " volume=" << vol << " mm^3" << std::endl;
+            }
         }
     }
-    assert(found_box_piece1);
+    assert(moving_pieces >= 2);
 
-    // 2. Test first demoldable pillar on bear.stl with explode
-    std::cout << "  - Testing 1st demoldable pillar on bear.stl with explode=15.0..." << std::endl;
-    Geometry bear_geo;
-    bool success = STLReader::read_file("../../scratch/bear.stl", bear_geo);
-    if (!success) {
-        success = STLReader::read_file("../../../scratch/bear.stl", bear_geo);
-    }
-    assert(success);
-
-    mold::ExactMesh bear_mesh = mold::normalize_and_repair_solid(bear_geo);
-    Geometry clean_bear = boolean::Engine::mesh_to_geometry(bear_mesh);
-    Shape bear_shape = JotVfsProtocol::make_shape(&vfs, clean_bear, {{"type", "closed"}});
-    fs::Selector bear_mold_sel("jot/mold");
-    bear_mold_sel.parameters["$in"] = bear_shape.to_json();
-    bear_mold_sel.parameters["padding"] = 10.0;
-    bear_mold_sel.parameters["explode"] = 15.0;
-    bear_mold_sel.parameters["draft"] = 1.0 / 360.0;
-    bear_mold_sel.output = "$out";
-
-    Processor::execute(&vfs, bear_mold_sel);
-    Shape bear_mold = vfs.read<Shape>(bear_mold_sel);
-
-    assert(bear_mold.components.size() >= 2); // mold pieces
-    bool found_bear_piece1 = false;
-    for (const auto& s : bear_mold) {
-        if (s.has_tag("mold/piece", 1)) {
-            assert(s.has_tag("mold/pull_vector"));
-            std::cout << "    - Produced 1st demoldable pillar for Bear successfully with pull_vector=" << s.tags["mold/pull_vector"] << std::endl;
-            found_bear_piece1 = true;
-            break;
-        }
-    }
-    assert(found_bear_piece1);
-    std::cout << "  ✅ jot/mold test passed." << std::endl;
+    std::cout << "  ✅ Box mold test passed." << std::endl;
     return 0;
 }

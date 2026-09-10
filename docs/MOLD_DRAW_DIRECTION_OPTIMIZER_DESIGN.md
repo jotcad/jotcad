@@ -196,12 +196,159 @@ This resolves the smoking gun bug where Piece 2 excluded the sprue and feet.
 * ✅ Replaced 1544-direction brute force scan in `geo/ops/mold/optimizer.h` with 5–10 continuous summit directions.
 * ✅ Achieved **120× speedup** in candidate scanning (~20 ms vs ~3,500 ms per piece).
 * ✅ Passed full C++ suite: all 83 unit test targets passed cleanly, completely resolving the `bear.stl` timeout in `mold_test.cpp`.
+* ✅ Committed cleanly at `3047db8`.
+
+### Phase 4: Step-by-Step Disassembly & Open-Air Bounded Pieces (IN PROGRESS)
+* 🔍 **Empirical Overlap Findings**:
+  * Unit test pairwise intersection audit (`mold_voxel_bear_test.cpp`) revealed severe volumetric overlap in exterior parting space:
+    * Pair (#1, #2): **260.418 mm³**
+    * Pair (#1, #3): **320.146 mm³**
+    * Pair (#1, #4): **5.330 mm³**
+  * Root cause: Current wedge builder in `envelope.h` extrudes every patch ceiling by an arbitrary flat `+50 mm` in rotated coordinates, ignoring neighboring pieces and actual stock walls, and later relies on post-hoc 3D boolean corefinement against an oversized bounding box.
+* 🎯 **The "Open Air" Principle**:
+  * Mold pieces do not need to reach the outer bounding box walls; they only need to reach the boundary of the assembly or open air.
+  * In sequential disassembly ($P_1 \to P_2 \to \dots \to P_N$), removing piece $P_k$ creates an immediate open void.
+  * The extraction corridor for piece $P_i$ along vector $\vec{d}_i$ only needs to reach **currently accessible open space**:
+    $$\text{OpenAir}_i = \text{Assembly Exterior} \cup \bigcup_{j=1}^{i-1} P_j$$
+  * *Example*: Cutting off the bottom of the mold exposes the bottom interface to open air. Adjacent pieces with downward draw components can exit directly through that bottom opening without extending to side or top bounding walls.
+* 🔄 **Pragmatic Generate-and-Test Loop (Fast Backtracking)**:
+  * Disassembly order forms a Directed Acyclic Graph (DAG), inherently preventing cyclic deadlocks ($A$ blocks $B$ and $B$ blocks $A$).
+  * To prevent greedy dead ends (where an early cut traps subsequent undercut patches), evaluate candidate draw directions from Phase 3's ranked spherical summits:
+    1. Propose candidate draw direction $\vec{d}$ and open-air bounded piece.
+    2. Verify demoldability (cavity draft clearance + unblocked exit sweep into $\text{OpenAir}_i$).
+    3. If valid and remaining faces retain line-of-sight to open air, accept; otherwise, backtrack to candidate #2, #3, etc.
+* ✂️ **Elimination of Redundant 3D Polyhedral Booleans**:
+  * Drop `boolean::corefine_difference(raw_block, model)` in `mold_op.h` (the wedge floor already sits directly on the model's outer shell).
+  * Eliminate post-hoc 3D bounding box clipping in `assembly.h` by terminating piece extrusions directly at the assembly boundary / open air.
 
 ---
 
-## 7. Design Decisions & Open Questions
+## 7. Parting Surface Generation: The Core Challenge & Physical Realities
+
+### 7.1 The Fundamental Problem Formulation
+Having identified the positive-draft surface patch $\mathcal{S}$ we wish to impress along draw direction $\vec{d}$, our core geometric challenge is:
+> **Cut from the 3D perimeter of that patch ($\partial\mathcal{S}$) outward to the boundary of the stock block ($\partial B$), strictly without intersecting the interior of the model ($\mathcal{M}$).**
+
+The resulting mold piece is the solid volume bounded by:
+1. **Cavity Floor**: The patch $\mathcal{S} \subset \partial\mathcal{M}$.
+2. **Parting Surface**: The cut $\Sigma$ spanning from $\partial\mathcal{S}$ to $\partial B$.
+3. **Exterior Shell**: The portion of the stock boundary $\partial B$ reached by $\Sigma$.
+
+```
+                    Stock Block Boundary ∂B
+       ┌─────────────────────────────────────────────────┐
+       │                 Mold Piece P_k                  │
+       │                                                 │
+       │     Parting Cut Σ             Parting Cut Σ     │
+       │   ┌───────────────┐         ┌───────────────┐   │
+       │   │               │         │               │   │
+       └───┼───────────────┴─────────┴───────────────┼───┘
+           │         Patch S (Cavity Floor)          │
+           │           ▲                 ▲           │
+           │           │   Draw Vector   │           │
+           │           │    d = +Z       │           │
+           │       ────┴─────────────────┴────       │
+           │             Model Body (M)              │
+           └─────────────────────────────────────────┘
+```
+
+---
+
+### 7.2 Dynamic Stock Reduction & Boundary Discovery
+Each extracted mold piece $P_k$ physically reduces the active stock volume for all subsequent stages:
+$$B_k = B_{k-1} \setminus P_k$$
+
+This transforms boundary discovery from a static global lookup into a local, progressive operation:
+1. **Dynamic Target Boundary**: $\partial B_k$ includes both the remaining outer stock faces and **the parting cut surfaces $\Sigma_1, \dots, \Sigma_k$ of prior pieces**.
+2. **Rapid Breakthrough to Open Air**: Later pieces (such as undercut keys between legs) do not travel to distant exterior walls; their target boundary is often only a few millimeters away (the parting face of an earlier piece).
+3. **Automatic Zero Overlap**: Because piece $P_k$ is carved strictly as a partition of the uncarved solid $B_{k-1}$, mutual volumetric overlap is **mathematically zero by construction** ($\text{Volume}(P_i \cap P_j) = 0$).
+
+---
+
+### 7.3 Real-World Geometric Complexities
+
+#### Complexity A: Non-Planar Patch Boundaries
+On real CAD parts and voxel models, the parting curve $\partial\mathcal{S}$ is almost never a flat 2D plane. It is a **3D space curve** $\mathcal{C}(s) = (x(s), y(s), z(s))$ that climbs over shoulders, drops into creases, and navigates voxel staircases.
+* Flat planar slicing is fundamentally impossible without cutting through model features.
+* The cut $\Sigma$ must be a true 3D surface anchoring seamlessly to the non-planar boundary $\partial\mathcal{S}$.
+
+#### Complexity B: Concave Patch Boundaries (Lessons from the `ribbon.h` Failure)
+Patch perimeters feature sharp concave bays (armpits, crotch, neck).
+* **The `ribbon.h` Disaster (Commit `c595f36`)**: Naive radial extrusion along 3D vertex normals causes adjacent normal rays to **converge and cross** at concave corners, creating twisted, self-intersecting "bowtie" quads that break 2-manifold validity and crash CGAL corefinement.
+* **Requirement**: The cut surface must be generated using **topological / planar representations** (e.g., 2D projection, Constrained Delaunay Triangulation, or medial axis skeletons) where edge intersections are mathematically impossible.
+
+#### Complexity C: Multiple Disjoint Outer Boundaries (Islands) & Intervening Features
+As proven in Phase 2, a single mold piece often demolds **multiple disconnected patches** along the same vector $\vec{d}$ (e.g. Piece 2 capturing flank, front paw, back paw, and sprue).
+* The boundary is a collection of disjoint loops: $\partial\mathcal{S} = \mathcal{C}_1 \cup \mathcal{C}_2 \cup \dots \cup \mathcal{C}_m$.
+* **Critical Invariant**: **The model itself occupies the space between these disjoint loops.**
+* Naive bridging between loops $\mathcal{C}_1$ and $\mathcal{C}_2$ will slice through intervening model undercuts. The cut from each loop must route into open air / stock boundary without encroaching on the model features residing between them, preserving those features for later mold pieces.
+
+---
+
+### 7.4 The Rising Tide + Patch Projection Architecture
+
+Instead of tortuous multi-level terracing, complex 3D Voronoi meshes, or radial curve offsets, we adopt the **Rising Tide + Patch Projection** model:
+
+```
+                      Stock Block Boundary
+      ┌───────────────────────────────────────────────────────┐
+      │                                                       │
+      │                  UNTOUCHED STOCK                      │
+      │                                                       │
+      │            ┌─────────────────────────────┐            │
+      │            │       Patch S (Cavity)      │            │
+      │    ┌───────┴─────────────────────────────┴───────┐    │
+      │    │  Vertical Skirt (parallel to d)             │    │
+      ├────┴─────────────────────────────────────────────┴────┤
+      │ ◄────────── Flat Parting Shelf at Z_margin ─────────► │
+      │                                                       │
+      │                   MOLD PIECE P_k                      │
+      │                                                       │
+      └───────────────────────────────────────────────────────┘
+                     Stock Bottom (Z_bottom)
+```
+
+1. **The Decoupled Margin Plane ($Z = Z_{\text{margin}}$)**:
+   - **Tide Decoupled from Draw Vector**: The rising tide operates in the **stock block coordinate frame** (e.g. rising from a face of the stock block), completely independent of the feature draw vector $\vec{d}$.
+   - **Cardinality Preference (Good to Have for Stackability)**: Tides prefer the principal cardinal axes of the stock block ($X, Y, Z$) whenever possible. This produces clean, orthogonal, box-aligned parting faces so that the resulting mold pieces can be squarely stacked on a workbench and clamped under tension without diagonal shear slippage. When geometry strictly requires off-axis cuts, the system remains flexible to adapt.
+   - A planar "water level" rises along the stock axis until it reaches $Z_{\text{margin}}$: the highest elevation that remains strictly **one safety margin below any forbidden non-patch feature**.
+   - Outside the footprint of the patch, the parting surface is simply this **flat shelf extending cleanly to the stock boundary**.
+
+2. **Vertical Skirt Projection (Bridging to the Draw Vector)**:
+   - From the 3D non-planar boundary $\partial\mathcal{S}$ of the patch, project along the feature draw vector $-\vec{d}$ to meet the horizontal shelf at $Z_{\text{margin}}$.
+   - As long as $\vec{d}$ has a separating normal component relative to the tide plane ($\vec{d} \cdot \vec{n}_{\text{shelf}} > 0$), pulling the piece along $\vec{d}$ separates both the model cavity and the flat shelf simultaneously with positive normal clearance.
+   - **Guaranteed Non-Self-Intersection**: Because projection rays along $-\vec{d}$ are parallel in $\mathbb{R}^3$, they **never cross each other**, naturally solving concave perimeters, non-planar 3D contours, and multiple disjoint boundary loops without any geometric singularities.
+
+3. **The Core Piece Solid**:
+   $$\text{Piece}_k = \Big( B_{k-1} \cap \{ Z \le Z_{\text{margin}} \} \Big) \;\cup\; \text{Extrude}(\mathcal{S} \to Z_{\text{margin}}) \;\setminus\; \mathcal{M}$$
+   - Flange separates with instant clearance upon pull along $\vec{d}$.
+   - Vertical skirt slides cleanly with zero undercuts.
+   - Cavity floor perfectly reproduces $\mathcal{S}$.
+
+---
+
+### 7.5 Post-Partition "Dead Region" Merging
+
+Because each core piece only consumes its flat shelf plus vertical column, the corners and exterior spaces between shelves become uncarved solid stock chunks (**"dead regions"**).
+
+Instead of leaving them as loose scrap pieces, a **Demold-Safe Merge Audit** is performed:
+1. **Identify Candidate Neighbors**: For each dead region $D$, identify the mold pieces ($P_1, P_2, \dots$) sharing a boundary face with $D$.
+2. **Verify Demoldability**: Check whether the combined block $P_k \cup D$ can still be cleanly withdrawn along $\vec{d}_k$ without colliding with the model or blocking subsequent pieces in the disassembly DAG.
+3. **Solid Union**: If safe, execute $P_k \leftarrow P_k \cup D$. This thickens mold walls, increases structural rigidity, reduces piece count, and completely eliminates stranded scraps.
+
+---
+
+## 8. Design Decisions & Open Questions
 
 1. **Mutual Occlusion Verification (DECIDED)**:
    * 2D projection non-overlap along $\mathbf{d}^*$ combined with `CGAL::upper_envelope_3` depth resolution provides exact, collision-free demolding without requiring expensive 3D Minkowski swept volumes.
-2. **Number of Initial Modes ($K$)**:
+2. **Piece Boundary Extents (DECIDED - Open Air Mandate)**:
+   * Mold pieces terminate as soon as their withdrawal path enters the expanding open-air boundary ($\text{OpenAir}_i$), eliminating monolithic sweeps to the bounding box.
+3. **Parting Generation (DECIDED - Rising Tide + Skirt Projection)**:
+   * 3D curve offset/ribbon normal extrusion is strictly rejected. Parting surfaces are formed by a flat horizontal margin shelf at $Z_{\text{margin}}$ paired with a vertical projection skirt from $\partial\mathcal{S}$, guaranteeing zero self-intersections across non-planar, concave, and multi-island boundaries.
+4. **Scrap Elimination (DECIDED - Demold-Safe Greedy Merge)**:
+   * Residual dead stock regions outside the primary core blocks are merged into adjacent pieces whenever withdrawal clearance along that piece's draw vector is preserved.
+5. **Number of Initial Modes ($K$)**:
    * For typical slipcast parts (figurines, cups, slip molds), $K = 6$ corresponds naturally to the 6 generalized faces (front, back, left, right, top, bottom). Should $K$ be dynamic based on eigenvalue ratios of the normal tensor?
+
+

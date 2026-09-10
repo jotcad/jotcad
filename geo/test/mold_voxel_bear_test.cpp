@@ -7,6 +7,7 @@
 #include "mold/types.h"
 #include "mold/optimizer.h"
 #include "mold/envelope.h"
+#include <CGAL/Polygon_mesh_processing/measure.h>
 #include <iostream>
 #include <iomanip>
 #include <cassert>
@@ -302,11 +303,100 @@ int main() {
     Shape mold_result = vfs.read<Shape>(mold_sel);
 
     int piece_count = 0;
+    struct PieceInfo {
+        int order;
+        std::string name;
+        ExactMesh mesh;
+    };
+    std::vector<PieceInfo> pieces;
     for (const auto& child : mold_result) {
-        if (child.has_tag("mold/role", "piece")) piece_count++;
+        if (child.has_tag("mold/role", "piece")) {
+            piece_count++;
+            if (child.geometry.has_value()) {
+                int order = piece_count;
+                std::string piece_name = "piece_" + std::to_string(piece_count);
+                if (child.tags.contains("mold/piece")) {
+                    if (child.tags["mold/piece"].is_number()) {
+                        order = child.tags["mold/piece"].get<int>();
+                    }
+                    piece_name = "piece_" + child.tags["mold/piece"].dump();
+                }
+                Geometry geo = vfs.read<Geometry>(*child.geometry);
+                ExactMesh m = boolean::Engine::geometry_to_mesh(geo);
+                boolean::Engine::transform_mesh(m, child.tf);
+                pieces.push_back({order, piece_name, std::move(m)});
+            }
+        }
     }
     std::cout << "  - Total mold pieces produced: " << piece_count << std::endl;
     assert(piece_count >= 2);
+
+    // 8. Analyze Mutual Overlaps Between All Mold Pieces
+    std::cout << "\n>>> Checking pairwise overlaps between " << pieces.size() << " mold pieces..." << std::endl;
+    struct OverlapPair {
+        int order_a;
+        int order_b;
+        std::string name_a;
+        std::string name_b;
+        double volume;
+    };
+    std::vector<OverlapPair> overlapping_pairs;
+
+    for (size_t i = 0; i < pieces.size(); ++i) {
+        for (size_t j = i + 1; j < pieces.size(); ++j) {
+            if (!boolean::do_meshes_overlap(pieces[i].mesh, pieces[j].mesh)) {
+                std::cout << "  - [Pair #" << pieces[i].order << " & #" << pieces[j].order 
+                          << "] Bounding boxes disjoint (0 mm^3 overlap)." << std::endl;
+                continue;
+            }
+
+            ExactMesh m_i = pieces[i].mesh;
+            ExactMesh m_j = pieces[j].mesh;
+            ExactMesh inter;
+            bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
+                m_i, m_j, inter,
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::throw_on_self_intersection(false),
+                CGAL::parameters::all_default()
+            );
+            assert(ok && "Corefine intersection check failed!");
+
+            FT inter_vol = FT(0);
+            if (!inter.is_empty() && inter.number_of_faces() > 0) {
+                if (!CGAL::is_closed(inter)) {
+                    CGAL::Polygon_mesh_processing::stitch_borders(inter);
+                }
+                if (CGAL::is_closed(inter)) {
+                    inter_vol = CGAL::Polygon_mesh_processing::volume(inter);
+                    if (inter_vol < FT(0)) inter_vol = -inter_vol;
+                }
+            }
+
+            double vol_d = to_double(inter_vol);
+            std::cout << "  - [Pair #" << pieces[i].order << " & #" << pieces[j].order << "] Intersection volume: "
+                      << vol_d << " mm^3" << std::endl;
+
+            if (inter_vol > FT(1e-4)) {
+                overlapping_pairs.push_back({
+                    pieces[i].order, pieces[j].order, pieces[i].name, pieces[j].name, vol_d
+                });
+            }
+        }
+    }
+
+    std::cout << "\n============================================================" << std::endl;
+    std::cout << "OVERLAPPING MOLD PIECE PAIRS (BY ORDER NUMBER):" << std::endl;
+    std::cout << "============================================================" << std::endl;
+    if (overlapping_pairs.empty()) {
+        std::cout << "  None (All mold pieces are mutually disjoint)." << std::endl;
+    } else {
+        for (const auto& op : overlapping_pairs) {
+            std::cout << "  - Pair (#" << op.order_a << ", #" << op.order_b << "): "
+                      << op.name_a << " & " << op.name_b << " -> Overlap Volume = "
+                      << op.volume << " mm^3" << std::endl;
+        }
+    }
+    std::cout << "============================================================" << std::endl;
 
     std::cout << "\n============================================================" << std::endl;
     std::cout << "✅ mold_voxel_bear_test completed successfully." << std::endl;
