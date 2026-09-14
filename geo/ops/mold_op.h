@@ -124,18 +124,6 @@ struct MoldOp : P {
             }
         }
 
-        // 4. Large Conservative Stock Envelope for Unconstrained Extraction
-        FT max_r_sq = 0;
-        for (auto v : mesh_part.vertices()) {
-            auto p = mesh_part.point(v);
-            FT r2 = p.x()*p.x() + p.y()*p.y() + p.z()*p.z();
-            if (r2 > max_r_sq) max_r_sq = r2;
-        }
-        double r_sphere = std::sqrt(CGAL::to_double(max_r_sq)) + CGAL::to_double(params.padding) + 100.0;
-        FT R = FT(r_sphere);
-        Geometry conservative_stock_geo = mold::build_box_geo(-R, R, -R, R, -R, R);
-        mold::ExactMesh conservative_stock = boolean::Engine::geometry_to_mesh(conservative_stock_geo);
-        fix::assert_well_formed_closed_mesh(conservative_stock, "conservative_stock in MoldOp");
 
         // 5. Multi-Piece Mold Decomposition Loop
         mold::FaceBoolMap is_handled = mesh_part.add_property_map<mold::ExactMesh::Face_index, bool>("f:is_handled", false).first;
@@ -166,21 +154,27 @@ struct MoldOp : P {
                 }
             }
 
-            // Corefine conservative stock intersection & model cavity difference
-            mold::ExactMesh stock_copy = conservative_stock;
-            mold::ExactMesh raw_block;
-            bool ok_inter = boolean::corefine_intersection(stock_copy, wedge, raw_block, params.kiss_mode, params.kiss_width, "stock ∩ wedge in MoldOp");
-            assert(ok_inter && "stock_copy ∩ wedge failed in MoldOp!");
-
+            mold::ExactMesh raw_block = wedge;
             mold::ExactMesh model_copy = mesh_part;
             mold::ExactMesh piece_mesh;
             bool ok_diff = boolean::corefine_difference(raw_block, model_copy, piece_mesh, params.kiss_mode, params.kiss_width, "raw_block \\ model_copy in MoldOp");
             assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
 
-            fix::assert_well_formed_closed_mesh(piece_mesh, "piece_mesh in MoldOp");
-
             std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
             std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
+
+            // Subtract all previously extracted mold pieces to guarantee 0 volumetric overlap
+            for (const auto& prev_piece : mold_pieces) {
+                if (prev_piece.mesh.is_empty() || prev_piece.mesh.number_of_faces() == 0) continue;
+                mold::ExactMesh non_overlapping_piece;
+                bool ok_pdiff = boolean::corefine_difference(piece_mesh, prev_piece.mesh, non_overlapping_piece, params.kiss_mode, params.kiss_width, piece_name + " \\ " + prev_piece.name);
+                if (ok_pdiff && non_overlapping_piece.number_of_faces() > 0) {
+                    piece_mesh = std::move(non_overlapping_piece);
+                    piece_mesh.collect_garbage();
+                }
+            }
+
+            fix::assert_well_formed_closed_mesh(piece_mesh, "piece_mesh in MoldOp");
             mold_pieces.push_back({piece_mesh, d_i, piece_name, color, piece_idx});
 
             std::cout << "  - Extracted " << piece_name << " along dir ("

@@ -382,7 +382,7 @@ inline PartingOptimizationResult optimize_parting_direction(
 
     // Compute exact Upper Envelope mesh along best_dir within the OBB corridor of best_patch_faces
     auto env_res = compute_exact_upper_envelope_mesh(
-        mesh_part, face_descriptors, face_normals, is_handled, best_dir, best_patch_faces
+        mesh_part, face_descriptors, face_normals, is_handled, best_dir, best_patch_faces, params.padding
     );
 
     if (env_res.solid_wedge.number_of_faces() == 0) {

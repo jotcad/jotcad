@@ -62,8 +62,8 @@ struct MoldAssembly {
         for (const auto& piece : mold_pieces) {
             if (piece.mesh.is_empty() || piece.mesh.number_of_faces() == 0) continue;
             ExactMesh next_rem;
-            boolean::corefine_difference(final_remaining, piece.mesh, next_rem, params.kiss_mode, params.kiss_width, "final_remaining \\ " + piece.name);
-            if (next_rem.number_of_faces() > 0) {
+            bool ok_diff = boolean::corefine_difference(final_remaining, piece.mesh, next_rem, params.kiss_mode, params.kiss_width, "final_remaining \\ " + piece.name);
+            if (ok_diff) {
                 final_remaining = next_rem;
             }
         }

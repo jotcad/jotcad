@@ -19,6 +19,8 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 | **`modes.h`** | ~135 | Area-weighted normal mode clustering on $\mathbb{S}^2$ via spherical $k$-means (`compute_normal_modes`). |
 | **`climb.h`** | ~100 | Continuous spherical gradient ascent on $\mathbb{S}^2$ with geodesic line search (`climb_spherical_hill`). |
 | **`optimizer.h`** | ~300 | Multi-component disjoint patch optimization, spherical hill climbing orchestration, and candidate evaluation. |
+| **`tide.h`** | ~230 | Rising Tide margin shelf CDT, outer stock box envelope, and cardinal tide basis. |
+| **`tide_wedge.h`** | ~200 | Direct Rising Tide solid mold block synthesis (`construct_rising_tide_wedge`). |
 | **`assembly.h`** | ~110 | Minimal-volume OBB trimming, stationary base block extraction (`pull_vector = "0 0 0"`), and scene graph assembly. |
 | **`verify.h`** | ~40 | Authoritative swept-volume demoldability assertions (`verify_piece_demoldability`). |
 

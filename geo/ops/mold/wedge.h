@@ -2,72 +2,12 @@
 
 #include "types.h"
 #include "walls.h"
+#include "tide.h"
 #include "diagnostics.h"
-#include "fix/kiss.h"
-#include "fix/assert_mesh.h"
-#include "fix/soup_repair.h"
-#include <CGAL/Constrained_Delaunay_triangulation_2.h>
-#include <CGAL/Triangulation_face_base_with_info_2.h>
-#include <CGAL/mark_domain_in_triangulation.h>
-#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
-#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
-#include <CGAL/Polygon_mesh_processing/orientation.h>
-#include <CGAL/Polygon_mesh_processing/measure.h>
-#include <CGAL/IO/polygon_mesh_io.h>
-#include <filesystem>
-#include <chrono>
-#include <set>
-#include <map>
-#include <vector>
-#include <functional>
 
 namespace jotcad {
 namespace geo {
 namespace mold {
-
-struct CDTFaceInfo {
-    bool in_domain = false;
-    int _nesting_level = 0;
-};
-
-template <typename Gt, typename Fb_base = CGAL::Constrained_triangulation_face_base_2<Gt>>
-class CDT_Face_with_info : public Fb_base {
-    CDTFaceInfo _info;
-public:
-    typedef Gt Geom_traits;
-    typedef typename Fb_base::Vertex_handle Vertex_handle;
-    typedef typename Fb_base::Face_handle   Face_handle;
-
-    template < typename TDS2 >
-    struct Rebind_TDS {
-        typedef typename Fb_base::template Rebind_TDS<TDS2>::Other Fb2;
-        typedef CDT_Face_with_info<Gt, Fb2> Other;
-    };
-
-    CDT_Face_with_info() : Fb_base() {}
-    CDT_Face_with_info(Vertex_handle v0, Vertex_handle v1, Vertex_handle v2)
-        : Fb_base(v0, v1, v2) {}
-    CDT_Face_with_info(Vertex_handle v0, Vertex_handle v1, Vertex_handle v2,
-                       Face_handle n0, Face_handle n1, Face_handle n2)
-        : Fb_base(v0, v1, v2, n0, n1, n2) {}
-    CDTFaceInfo& info() { return _info; }
-    const CDTFaceInfo& info() const { return _info; }
-    bool is_in_domain() const { return _info.in_domain; }
-    void set_in_domain(bool b) { _info.in_domain = b; }
-};
-
-typedef CGAL::Exact_predicates_exact_constructions_kernel CDT_Kernel;
-typedef CGAL::Triangulation_vertex_base_2<CDT_Kernel> CDT_Vb;
-typedef CDT_Face_with_info<CDT_Kernel> CDT_Fb;
-typedef CGAL::Triangulation_data_structure_2<CDT_Vb, CDT_Fb> CDT_TDS;
-typedef CGAL::Exact_intersections_tag CDT_Itag;
-typedef CGAL::Constrained_Delaunay_triangulation_2<CDT_Kernel, CDT_TDS, CDT_Itag> ExactCDT;
-
-struct EnvelopeWedgeResult {
-    ExactMesh solid_wedge;
-    std::set<size_t> source_faces;
-    FT total_area;
-};
 
 /**
  * @brief Constructs a closed, certified 2-manifold solid wedge from an upper envelope diagram.
@@ -80,7 +20,8 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     const std::function<FT(size_t, const FT&, const FT&)>& get_z,
     const FT& h_ceiling_rot,
     const CGAL::Aff_transformation_3<EK>& from_z,
-    const CGAL::Aff_transformation_3<EK>& to_z
+    const CGAL::Aff_transformation_3<EK>& to_z,
+    const TideParams& tide = {}
 ) {
     std::vector<EK::Point_3> soup_points;
     std::vector<std::vector<size_t>> soup_polygons;
@@ -143,10 +84,6 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
             EK::Point_3 floor_p1(p1_2d.x(), p1_2d.y(), vz1);
             EK::Point_3 floor_p2(p2_2d.x(), p2_2d.y(), vz2);
 
-            EK::Point_3 ceil_p0(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
-            EK::Point_3 ceil_p1(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
-            EK::Point_3 ceil_p2(floor_p2.x(), floor_p2.y(), h_ceiling_rot);
-
             // Floor triangle (matching CDT CCW winding -> CW in 3D for downward -Z outward normal)
             size_t idx0 = soup_points.size();
             soup_points.push_back(floor_p0);
@@ -154,19 +91,29 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
             soup_points.push_back(floor_p1);
             soup_polygons.push_back({idx0, idx0 + 1, idx0 + 2});
 
-            // Ceiling triangle (CCW winding for upward +Z outward normal)
-            size_t c_idx0 = soup_points.size();
-            soup_points.push_back(ceil_p0);
-            soup_points.push_back(ceil_p1);
-            soup_points.push_back(ceil_p2);
-            soup_polygons.push_back({c_idx0, c_idx0 + 1, c_idx0 + 2});
+            if (!tide.enabled) {
+                EK::Point_3 ceil_p0(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
+                EK::Point_3 ceil_p1(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
+                EK::Point_3 ceil_p2(floor_p2.x(), floor_p2.y(), h_ceiling_rot);
+
+                // Ceiling triangle (CCW winding for upward +Z outward normal)
+                size_t c_idx0 = soup_points.size();
+                soup_points.push_back(ceil_p0);
+                soup_points.push_back(ceil_p1);
+                soup_points.push_back(ceil_p2);
+                soup_polygons.push_back({c_idx0, c_idx0 + 1, c_idx0 + 2});
+            }
         }
     }
 
     // Precompute all active distinct surface heights at each arrangement vertex
     std::map<Envelope_diagram_2::Vertex_handle, std::set<FT>> vertex_heights;
     for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
-        vertex_heights[vit].insert(h_ceiling_rot);
+        if (!tide.enabled) {
+            vertex_heights[vit].insert(h_ceiling_rot);
+        } else {
+            vertex_heights[vit].insert(tide.z_margin);
+        }
         auto e_curr = vit->incident_halfedges();
         auto e_start = e_curr;
         do {
@@ -180,6 +127,8 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
         } while (e_curr != e_start);
     }
 
+    std::vector<std::pair<CDT_Kernel::Point_2, CDT_Kernel::Point_2>> outer_boundary_segments;
+
     // 2. Process all directed halfedges for both internal step cliffs and outer sidewalls
     auto process_halfedge_walls = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
         auto p1_2d = h->source()->point();
@@ -190,8 +139,18 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
 
         auto twin_face = h->twin()->face();
         if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
-            // Outer sidewall boundary: sweep from surface height up to ceiling
-            add_monotonic_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot, vertex_heights, soup_points, soup_polygons);
+            if (tide.enabled) {
+                // Outer boundary: drop vertical skirt strictly down to tide.z_margin
+                FT low_s = tide.z_margin;
+                FT low_t = tide.z_margin;
+                FT high_s = z1_s;
+                FT high_t = z1_t;
+                add_monotonic_vertical_wall(h, low_s, low_t, high_s, high_t, vertex_heights, soup_points, soup_polygons);
+                outer_boundary_segments.push_back({p1_2d, p2_2d});
+            } else {
+                // Outer sidewall boundary: sweep from surface height up to ceiling
+                add_monotonic_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot, vertex_heights, soup_points, soup_polygons);
+            }
         } else {
             // Internal boundary: process each undirected edge exactly once using pointer ordering
             if (h < h->twin()) {
@@ -234,6 +193,12 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
                 h_curr = h_curr->next();
             } while (h_curr != h_start);
         }
+    }
+
+    // 3. If Rising Tide is active, add 2D margin shelf CDT and stock outer envelope
+    if (tide.enabled) {
+        triangulate_margin_shelf(outer_boundary_segments, tide, soup_points, soup_polygons);
+        add_stock_box_outer_envelope(tide, soup_points, soup_polygons);
     }
 
     if (soup_polygons.empty()) return {};

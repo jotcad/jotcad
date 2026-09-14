@@ -73,6 +73,20 @@ struct MoldPiece {
     int mold_piece;
 };
 
+struct EnvelopeWedgeResult {
+    ExactMesh solid_wedge;
+    std::set<size_t> source_faces;
+    FT total_area = FT(0);
+};
+
+struct TideParams {
+    bool enabled = false;
+    FT u_min = FT(0), u_max = FT(0);
+    FT v_min = FT(0), v_max = FT(0);
+    FT z_margin = FT(0);
+    FT z_top = FT(0);
+};
+
 
 // Helper: Build exact rational bounding box in pure FT
 inline Geometry build_box_geo(FT xmin, FT xmax, FT ymin, FT ymax, FT zmin, FT zmax) {

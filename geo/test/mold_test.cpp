@@ -3,9 +3,15 @@
 #include "processor.h"
 #include "infra/stl.h"
 #include "mold/repair.h"
+#include "mold/tide.h"
+#include "boolean/corefine.h"
 
-using namespace jotcad;
-using namespace jotcad::geo;
+using namespace ::jotcad;
+using namespace ::jotcad::geo;
+using namespace ::jotcad::geo::mold;
+using namespace ::fs;
+using ExactMesh = ::jotcad::geo::mold::ExactMesh;
+using ::CGAL::to_double;
 
 int main() {
     MockVFS vfs("mold_test");
@@ -55,7 +61,50 @@ int main() {
             }
         }
     }
-    assert(moving_pieces >= 2);
+    assert(moving_pieces == 2);
+    assert(stationary_pieces == 0);
+
+    // 2. Direct Rising Tide Wedge Test on Box
+    std::cout << "  - Testing construct_rising_tide_wedge on Box..." << std::endl;
+    Geometry box_geo = vfs.read<Geometry>(*box_shape.geometry);
+    mold::ExactMesh box_mesh = boolean::Engine::geometry_to_mesh(box_geo);
+
+    std::vector<mold::ExactMesh::Face_index> top_faces;
+    std::vector<mold::ExactMesh::Face_index> bottom_faces;
+    for (auto f : box_mesh.faces()) {
+        auto h = box_mesh.halfedge(f);
+        auto p0 = box_mesh.point(box_mesh.source(h));
+        auto p1 = box_mesh.point(box_mesh.target(h));
+        auto p2 = box_mesh.point(box_mesh.target(box_mesh.next(h)));
+        auto n = CGAL::normal(p0, p1, p2);
+        if (n.z() > FT(0)) top_faces.push_back(f);
+        if (n.z() < FT(0)) bottom_faces.push_back(f);
+    }
+    assert(top_faces.size() == 2);
+    assert(bottom_faces.size() == 2);
+
+    auto top_wedge_res = mold::construct_rising_tide_wedge(box_mesh, top_faces, EK::Vector_3(0, 0, 1), FT(10), FT(0));
+    auto bot_wedge_res = mold::construct_rising_tide_wedge(box_mesh, bottom_faces, EK::Vector_3(0, 0, -1), FT(10), FT(0));
+
+    double top_wedge_vol = ::CGAL::to_double(::CGAL::Polygon_mesh_processing::volume(top_wedge_res.solid_wedge));
+    double bot_wedge_vol = ::CGAL::to_double(::CGAL::Polygon_mesh_processing::volume(bot_wedge_res.solid_wedge));
+    std::cout << "    - Top Rising Tide Wedge volume: " << top_wedge_vol << " mm^3" << std::endl;
+    std::cout << "    - Bottom Rising Tide Wedge volume: " << bot_wedge_vol << " mm^3" << std::endl;
+    assert(std::abs(top_wedge_vol - 3500.0) < 1e-4);
+    assert(std::abs(bot_wedge_vol - 3500.0) < 1e-4);
+
+    mold::ExactMesh overlap_mesh;
+    ::jotcad::geo::boolean::corefine_intersection(top_wedge_res.solid_wedge, bot_wedge_res.solid_wedge, overlap_mesh, fix::KissMode::WELD, FT(0.01), "top ∩ bot");
+    double overlap_vol = overlap_mesh.is_empty() ? 0.0 : ::CGAL::to_double(::CGAL::Polygon_mesh_processing::volume(overlap_mesh));
+    std::cout << "    - Overlap volume between top and bottom wedges: " << overlap_vol << " mm^3" << std::endl;
+    assert(overlap_vol < 1e-4);
+
+    mold::ExactMesh diff_mesh;
+    bool ok_diff = ::jotcad::geo::boolean::corefine_difference(top_wedge_res.solid_wedge, box_mesh, diff_mesh, fix::KissMode::WELD, FT(0.01), "top_wedge \\ box");
+    double diff_vol = diff_mesh.is_empty() ? 0.0 : ::CGAL::to_double(::CGAL::Polygon_mesh_processing::volume(diff_mesh));
+    std::cout << "    - Volume after corefine_difference(top_wedge \\ box): " << diff_vol << " mm^3 (ok=" << ok_diff << ")" << std::endl;
+    assert(ok_diff);
+    assert(std::abs(diff_vol - 3500.0) < 1e-4);
 
     std::cout << "  ✅ Box mold test passed." << std::endl;
     return 0;

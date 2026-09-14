@@ -81,6 +81,10 @@
 #include "part_line_op.h"
 #include "fix/repair.h"
 #include "fix/bridge.h"
+#include "fix/kiss.h"
+#include "boolean/corefine.h"
+#include "mold_op.h"
+#include "mold/tide.h"
 
 // Global namespace imports to ensure types like Selector and Shape are visible globally to all tests
 using namespace fs;
