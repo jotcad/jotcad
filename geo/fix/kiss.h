@@ -60,6 +60,12 @@ bool resolve_kissing_seams(
     std::vector<std::pair<typename Surface_mesh::Face_index, typename Surface_mesh::Face_index>> colliding_pairs;
     CGAL::Polygon_mesh_processing::self_intersections(mesh, std::back_inserter(colliding_pairs));
 
+    if (colliding_pairs.empty()) {
+        return false;
+    }
+
+    std::cout << "      [resolve_kissing_seams] Found " << colliding_pairs.size() << " colliding face pairs." << std::endl << std::flush;
+
     std::set<Point_3> contact_point_set;
     std::vector<SpatialSegment> raw_kissing_segments;
     std::vector<std::vector<Point_3>> contact_convex_polygons;
@@ -109,17 +115,23 @@ bool resolve_kissing_seams(
         tools.push_back(make_minkowski_tool_from_feature(poly, delta));
     }
 
+    std::cout << "      [resolve_kissing_seams] Built " << tools.size() << " Minkowski tools (mode=" 
+              << (mode == KissMode::PART ? "PART" : "WELD") << ")..." << std::endl << std::flush;
+
     // Step 3: Verify well-formedness of all generated tools
     for (const auto& tool : tools) {
         assert_well_formed_closed_mesh(tool, "Minkowski tool in kiss.h");
     }
 
     // Step 4: Apply Minkowski Corefinement directly per tool
+    size_t tool_idx = 0;
     for (auto& tool : tools) {
+        tool_idx++;
         if (tool.is_empty()) continue;
         assert_well_formed_for_corefinement(tool, "tool before corefinement in kiss.h");
         assert_well_formed_for_corefinement(mesh, "mesh before corefinement in kiss.h");
         Surface_mesh result;
+        auto t0 = std::chrono::steady_clock::now();
         bool ok = false;
         if (mode == KissMode::PART) {
             ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
@@ -136,6 +148,9 @@ bool resolve_kissing_seams(
                 CGAL::parameters::all_default()
             );
         }
+        auto t1 = std::chrono::steady_clock::now();
+        std::cout << "      [resolve_kissing_seams] Tool " << tool_idx << "/" << tools.size() 
+                  << " corefine done in " << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms." << std::endl << std::flush;
 
         assert(ok);
         assert_well_formed_for_corefinement(result, "result after tool in kiss.h");

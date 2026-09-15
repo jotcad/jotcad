@@ -64,6 +64,10 @@ struct Engine {
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
         );
+        if (success) {
+            CGAL::Polygon_mesh_processing::triangulate_faces(target);
+            target.collect_garbage();
+        }
         return success;
     }
 
@@ -110,6 +114,10 @@ struct Engine {
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
         );
+        if (success) {
+            CGAL::Polygon_mesh_processing::triangulate_faces(target);
+            target.collect_garbage();
+        }
         return success;
     }
 
@@ -129,6 +137,10 @@ struct Engine {
             target, tool, target,
             CGAL::parameters::throw_on_self_intersection(false)
         );
+        if (success) {
+            CGAL::Polygon_mesh_processing::triangulate_faces(target);
+            target.collect_garbage();
+        }
         return success;
     }
 
@@ -711,10 +723,14 @@ struct Engine {
                 if (!is_target_flat) {
                     ExactMesh target_mesh = geometry_to_mesh(target_geo);
                     for (const auto& tool : regular_tools) {
+                        if (target_mesh.is_empty()) break;
                         if (tool.type == "plane") clip_mesh_by_plane(target_mesh, (subject_world_inv * tool.world_tf).transform(EK::Plane_3(0,0,1,0)));
                         else if (tool.type == "closed" || tool.type == "open" || tool.type == "surface") { ExactMesh tool_mesh = geometry_to_mesh(tool.geo); transform_mesh(tool_mesh, subject_world_inv * tool.world_tf); clip_mesh_by_mesh(target_mesh, tool_mesh); }
                     }
-                    for (const auto& gap : gap_tools) if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_mesh_by_mesh(target_mesh, gap_mesh); }
+                    for (const auto& gap : gap_tools) {
+                        if (target_mesh.is_empty()) break;
+                        if (gap.type == "closed" || gap.type == "open" || gap.type == "surface") { ExactMesh gap_mesh = geometry_to_mesh(gap.geo); transform_mesh(gap_mesh, subject_world_inv * gap.world_tf); cut_mesh_by_mesh(target_mesh, gap_mesh); }
+                    }
                     target_geo = mesh_to_geometry(target_mesh);
                 }
             }
@@ -765,6 +781,93 @@ struct Engine {
             recursive_subtract(vfs, s.components[i], tool_nodes, false);
         }
         for (auto& child : s.components) deep_disjoint(vfs, child);
+    }
+
+    // --- Shape-Level Canonical Boolean APIs ---
+
+    static Shape join(fs::VFSNode* vfs, const Shape& in, const std::vector<Shape>& tools) {
+        Shape out = in;
+        if (tools.empty()) return out;
+
+        std::vector<ToolNode> tool_nodes;
+        for (const auto& tool : tools) {
+            collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
+        }
+
+        recursive_union(vfs, out, tool_nodes);
+        return out;
+    }
+
+    static Shape fuse(fs::VFSNode* vfs, const std::vector<Shape>& shapes) {
+        if (shapes.empty()) return Shape();
+
+        std::optional<Shape> base_shape;
+        std::vector<ToolNode> tool_nodes;
+
+        for (const auto& s : shapes) {
+            if (!base_shape.has_value() && s.has_real_geometry()) {
+                base_shape = s;
+                base_shape->components.clear();
+                for (const auto& child : s.components) {
+                    collect_tool_geometry(vfs, child, Matrix::identity(), tool_nodes);
+                }
+            } else {
+                collect_tool_geometry(vfs, s, Matrix::identity(), tool_nodes);
+            }
+        }
+
+        if (!base_shape.has_value()) {
+            if (tool_nodes.empty()) return Shape();
+            Shape s;
+            s.geometry = vfs->materialize<Geometry>(tool_nodes[0].geo);
+            s.tf = tool_nodes[0].world_tf;
+            s.add_tag("type", tool_nodes[0].type);
+            base_shape = s;
+            tool_nodes.erase(tool_nodes.begin());
+        }
+
+        Shape out = std::move(*base_shape);
+        if (!tool_nodes.empty()) {
+            recursive_union(vfs, out, tool_nodes);
+        }
+        out.components.clear();
+        return out;
+    }
+
+    static Shape cut(fs::VFSNode* vfs, const Shape& in, const std::vector<Shape>& tools, bool open = false) {
+        Shape out = in;
+        if (tools.empty()) return out;
+
+        std::vector<ToolNode> tool_nodes;
+        for (const auto& tool : tools) {
+            collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
+        }
+
+        recursive_subtract(vfs, out, tool_nodes, open);
+
+        for (const auto& tool : tools) {
+            out.components.push_back(Shape::make_ghost(tool));
+        }
+
+        return out;
+    }
+
+    static Shape clip(fs::VFSNode* vfs, const Shape& in, const std::vector<Shape>& tools) {
+        Shape out = in;
+        if (tools.empty()) return out;
+
+        std::vector<ToolNode> tool_nodes;
+        for (const auto& tool : tools) {
+            collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
+        }
+
+        recursive_intersect(vfs, out, tool_nodes);
+
+        for (const auto& tool : tools) {
+            out.components.push_back(Shape::make_ghost(tool));
+        }
+
+        return out;
     }
 };
 

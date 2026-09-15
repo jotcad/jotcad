@@ -5,6 +5,7 @@
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Polygon_mesh_processing/manifoldness.h>
+#include <CGAL/Polygon_mesh_processing/bbox.h>
 #include <string>
 
 namespace jotcad {
@@ -13,6 +14,14 @@ namespace boolean {
 
 using Mesh = CGAL::Surface_mesh<EK::Point_3>;
 using KissMode = fix::KissMode;
+
+inline bool do_meshes_overlap(const Mesh& m1, const Mesh& m2) {
+    if (m1.is_empty() || m2.is_empty()) return false;
+    return CGAL::do_overlap(
+        CGAL::Polygon_mesh_processing::bbox(m1),
+        CGAL::Polygon_mesh_processing::bbox(m2)
+    );
+}
 
 /**
  * Regularizes raw corefinement output to guarantee unambiguous geometry:
@@ -45,18 +54,31 @@ inline bool corefine_difference(
     EK::FT width = EK::FT(1) / 100,
     const std::string& label = "boolean::corefine_difference"
 ) {
+    if (target.is_empty()) {
+        out.clear();
+        return true;
+    }
+    if (tool.is_empty() || !do_meshes_overlap(target, tool)) {
+        out = target;
+        return true;
+    }
+
     fix::assert_well_formed_for_corefinement(target, label + " (target)");
     fix::assert_well_formed_for_corefinement(tool, label + " (tool)");
 
     Mesh target_copy = target;
     Mesh tool_copy = tool;
 
+    std::cout << "    [" << label << "] CGAL corefine difference... " << std::flush;
+    auto t0 = std::chrono::steady_clock::now();
     bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
         target_copy, tool_copy, out,
         CGAL::parameters::throw_on_self_intersection(false),
         CGAL::parameters::throw_on_self_intersection(false),
         CGAL::parameters::all_default()
     );
+    auto t1 = std::chrono::steady_clock::now();
+    std::cout << "Done in " << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms." << std::endl << std::flush;
     if (!ok) return false;
 
     if (out.is_empty() || out.number_of_faces() == 0) {
@@ -64,7 +86,11 @@ inline bool corefine_difference(
         return true;
     }
 
+    std::cout << "    [" << label << "] Checking kisses... " << std::flush;
+    auto t2 = std::chrono::steady_clock::now();
     regularize_and_resolve_kisses(out, kiss_mode, width);
+    auto t3 = std::chrono::steady_clock::now();
+    std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
     fix::assert_well_formed_for_corefinement(out, label + " (out)");
     return true;
 }
@@ -81,6 +107,11 @@ inline bool corefine_intersection(
     EK::FT width = EK::FT(1) / 100,
     const std::string& label = "boolean::corefine_intersection"
 ) {
+    if (target.is_empty() || tool.is_empty() || !do_meshes_overlap(target, tool)) {
+        out.clear();
+        return true;
+    }
+
     fix::assert_well_formed_for_corefinement(target, label + " (target)");
     fix::assert_well_formed_for_corefinement(tool, label + " (tool)");
 
@@ -117,6 +148,20 @@ inline bool corefine_union(
     EK::FT width = EK::FT(1) / 100,
     const std::string& label = "boolean::corefine_union"
 ) {
+    if (tool.is_empty()) {
+        out = target;
+        return true;
+    }
+    if (target.is_empty()) {
+        out = tool;
+        return true;
+    }
+    if (!do_meshes_overlap(target, tool)) {
+        out = target;
+        out.join(tool);
+        return true;
+    }
+
     fix::assert_well_formed_for_corefinement(target, label + " (target)");
     fix::assert_well_formed_for_corefinement(tool, label + " (tool)");
 

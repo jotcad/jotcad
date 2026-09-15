@@ -1,6 +1,7 @@
 #include "test_base.h"
 #include "protocols.h"
 #include "processor.h"
+#include "fuse_op.h"
 
 using namespace jotcad;
 using namespace jotcad::geo;
@@ -98,6 +99,59 @@ int main() {
 
     assert(l_mold_result.components.size() >= 3);
     std::cout << "    - Successfully produced L-bracket mold assembly with " << l_mold_result.components.size() << " components." << std::endl;
+
+    // 4. Test Mold Decomposition on Orthogonal Caltrop Cross WITHOUT Sprues/Vents
+    std::cout << "  - Testing mold decomposition directly on raw Caltrop Cross (no sprues/vents)..." << std::endl;
+    fs::Selector boxX_sel = fs::Selector{"jot/Box", {{"width", 30.0}, {"height", 10.0}, {"depth", 10.0}}}.with_output("$out");
+    fs::Selector boxY_sel = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 30.0}, {"depth", 10.0}}}.with_output("$out");
+    fs::Selector boxZ_sel = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 10.0}, {"depth", 30.0}}}.with_output("$out");
+
+    Shape sX = vfs.read<Shape>(boxX_sel);
+    Shape sY = vfs.read<Shape>(boxY_sel);
+    Shape sZ = vfs.read<Shape>(boxZ_sel);
+
+    fs::Selector cross_sel = fs::Selector{"jot/Fuse", {{"shapes", {vfs.materialize(sX), vfs.materialize(sY), vfs.materialize(sZ)}}}}.with_output("$out");
+    FusePrimitiveOp<>::execute(&vfs, cross_sel, {sX, sY, sZ});
+    Shape cross_shape = vfs.read<Shape>(cross_sel);
+
+    fs::Selector raw_cross_mold_sel("jot/mold");
+    raw_cross_mold_sel.parameters["$in"] = cross_shape.to_json();
+    raw_cross_mold_sel.parameters["padding"] = 5.0;
+    raw_cross_mold_sel.parameters["explode"] = 15.0;
+    raw_cross_mold_sel.output = "$out";
+
+    Processor::execute(&vfs, raw_cross_mold_sel);
+    Shape raw_cross_mold = vfs.read<Shape>(raw_cross_mold_sel);
+    assert(raw_cross_mold.components.size() >= 2);
+    std::cout << "    - Successfully produced raw caltrop cross mold assembly with " << raw_cross_mold.components.size() << " components." << std::endl;
+
+    // 5. Test Pour Prep + Mold on Orthogonal Caltrop Cross WITH Sprues and Delegated Vents
+    std::cout << "  - Testing pourPrep on Caltrop Cross with vents..." << std::endl;
+    fs::Selector cross_pour_sel("jot/pourPrep");
+    cross_pour_sel.parameters["$in"] = cross_shape.to_json();
+    cross_pour_sel.parameters["sprue_base"] = 6.0;
+    cross_pour_sel.parameters["sprue_top"] = 12.0;
+    cross_pour_sel.parameters["vent_dia"] = 2.0;
+    cross_pour_sel.parameters["auto_orient"] = true;
+    cross_pour_sel.parameters["vents"] = true;
+    cross_pour_sel.output = "$out";
+
+    Processor::execute(&vfs, cross_pour_sel);
+    Shape prepped_cross = vfs.read<Shape>(cross_pour_sel);
+    assert(prepped_cross.is_real());
+    std::cout << "    - Confirmed pourPrep generated prepped caltrop cross." << std::endl;
+
+    std::cout << "  - Testing mold decomposition on prepped caltrop cross..." << std::endl;
+    fs::Selector cross_mold_sel("jot/mold");
+    cross_mold_sel.parameters["$in"] = prepped_cross.to_json();
+    cross_mold_sel.parameters["padding"] = 5.0;
+    cross_mold_sel.parameters["explode"] = 15.0;
+    cross_mold_sel.output = "$out";
+
+    Processor::execute(&vfs, cross_mold_sel);
+    Shape cross_mold = vfs.read<Shape>(cross_mold_sel);
+    assert(cross_mold.components.size() >= 2);
+    std::cout << "    - Successfully produced caltrop cross mold assembly with " << cross_mold.components.size() << " components." << std::endl;
 
     std::cout << "✅ ALL Pour Prep Tests Passed" << std::endl;
     return 0;

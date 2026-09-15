@@ -166,6 +166,7 @@ struct MoldOp : P {
             // Subtract all previously extracted mold pieces to guarantee 0 volumetric overlap
             for (const auto& prev_piece : mold_pieces) {
                 if (prev_piece.mesh.is_empty() || prev_piece.mesh.number_of_faces() == 0) continue;
+                if (!boolean::do_meshes_overlap(piece_mesh, prev_piece.mesh)) continue;
                 mold::ExactMesh non_overlapping_piece;
                 bool ok_pdiff = boolean::corefine_difference(piece_mesh, prev_piece.mesh, non_overlapping_piece, params.kiss_mode, params.kiss_width, piece_name + " \\ " + prev_piece.name);
                 if (ok_pdiff && non_overlapping_piece.number_of_faces() > 0) {

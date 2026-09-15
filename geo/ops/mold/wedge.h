@@ -4,6 +4,7 @@
 #include "walls.h"
 #include "tide.h"
 #include "diagnostics.h"
+#include "boundary.h"
 
 namespace jotcad {
 namespace geo {
@@ -139,6 +140,7 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
 
         auto twin_face = h->twin()->face();
         if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
+            outer_boundary_segments.push_back({p1_2d, p2_2d});
             if (tide.enabled) {
                 // Outer boundary: drop vertical skirt strictly down to tide.z_margin
                 FT low_s = tide.z_margin;
@@ -146,7 +148,6 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
                 FT high_s = z1_s;
                 FT high_t = z1_t;
                 add_monotonic_vertical_wall(h, low_s, low_t, high_s, high_t, vertex_heights, soup_points, soup_polygons);
-                outer_boundary_segments.push_back({p1_2d, p2_2d});
             } else {
                 // Outer sidewall boundary: sweep from surface height up to ceiling
                 add_monotonic_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot, vertex_heights, soup_points, soup_polygons);
@@ -194,6 +195,9 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
             } while (h_curr != h_start);
         }
     }
+
+    // Audit extrusion polygon (2D envelope outer boundary) for simplicity
+    audit_2d_boundary_simplicity(outer_boundary_segments, "Extrusion Polygon (Envelope Outer Boundary)");
 
     // 3. If Rising Tide is active, add 2D margin shelf CDT and stock outer envelope
     if (tide.enabled) {

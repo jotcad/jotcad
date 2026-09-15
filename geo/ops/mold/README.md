@@ -8,6 +8,7 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 | File | Lines | Core Responsibility |
 | :--- | :--- | :--- |
 | **`types.h`** | ~100 | Exact rational data structures (`DSU`, `EdgeKey`, `UndercutCluster`, `MoldParams`, `MoldPiece`, `build_box_geo`). |
+| **`boundary.h`** | ~140 | 2D projected boundary loop and extrusion polygon simplicity audits via `CGAL::Polygon_2::is_simple`. |
 | **`rotation.h`** | ~40 | Pure exact rational rotation calculations via `CGAL::rational_rotation_approximation`. |
 | **`walls.h`** | ~80 | Monotonic zip vertical wall triangulation between height lists. |
 | **`diagnostics.h`** | ~140 | Umbrella topology audits, polygon soup adjacency verification, and self-intersection reporting. |

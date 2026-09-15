@@ -103,17 +103,32 @@ struct PourOp : P {
 
             // 6. Extend sprue & vents past the top of the mold stock box (box_zmax + 15mm) so they protrude through
             pour::FT sprue_top_z = box_zmax + pour::FT(15.0);
-            tool_components = pour::generate_sprue_and_vents(peaks, params, sprue_top_z);
+            tool_components = pour::generate_sprue_and_vents(oriented_mesh, peaks, params, sprue_top_z);
         } else {
             std::cout << "  [Pour Prep] Optimal up vector: (" 
                       << CGAL::to_double(up_dir.x()) << ", " << CGAL::to_double(up_dir.y()) << ", " << CGAL::to_double(up_dir.z())
                       << ") [vents disabled]" << std::endl << std::flush;
         }
 
-        // 7. Directly add the sprue and vents to the model
-        for (auto& tc : tool_components) {
-            boolean::Engine::join_mesh_by_mesh(oriented_mesh, tc.mesh);
+        // 7. Directly add the sprue and vents to the model via canonical boolean::Engine::join
+        std::vector<Shape> tool_shapes;
+        for (const auto& tc : tool_components) {
+            Geometry tc_geo = boolean::Engine::mesh_to_geometry(tc.mesh);
+            Shape tc_shape;
+            tc_shape.geometry = vfs->materialize<Geometry>(tc_geo);
+            tc_shape.tf = Matrix::identity();
+            tc_shape.add_tag("type", "closed");
+            tool_shapes.push_back(tc_shape);
         }
+
+        Shape oriented_shape;
+        oriented_shape.geometry = vfs->materialize<Geometry>(boolean::Engine::mesh_to_geometry(oriented_mesh));
+        oriented_shape.tf = Matrix::identity();
+        oriented_shape.add_tag("type", "closed");
+
+        Shape joined_shape = boolean::Engine::join(vfs, oriented_shape, tool_shapes);
+        Geometry joined_geo = vfs->read<Geometry>(joined_shape.geometry.value());
+        oriented_mesh = boolean::Engine::geometry_to_mesh(joined_geo);
         fix::assert_well_formed_closed_mesh(oriented_mesh, "oriented_mesh with sprue/vents in PourOp");
 
         // Create the oriented core casting shape

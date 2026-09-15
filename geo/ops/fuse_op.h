@@ -3,170 +3,21 @@
 #include "processor.h"
 #include "matrix.h"
 #include "boolean/engine.h"
-#include <map>
 
 namespace jotcad {
 namespace geo {
-
-struct FuseHelper {
-    struct GeometryNode {
-        Geometry geo;
-        Matrix tf;
-        std::string type;
-    };
-
-    static void collect_from_shape(fs::VFSNode* vfs, const Shape& s, std::vector<GeometryNode>& regular_nodes, std::vector<GeometryNode>& gap_nodes) {
-        for (const auto& node : s.shapes()) {
-            if (!node.has_real_geometry()) continue;
-            std::string type = node.tags.value("type", "");
-            Geometry geo = vfs->read<Geometry>(node.geometry.value());
-            if (node.has_negative_geometry()) {
-                gap_nodes.push_back({std::move(geo), node.tf, std::move(type)});
-            } else {
-                regular_nodes.push_back({std::move(geo), node.tf, std::move(type)});
-            }
-        }
-    }
-
-    static void execute_fuse_nodes(fs::VFSNode* vfs, const fs::Selector& fulfilling, 
-                                   const std::vector<GeometryNode>& regular_nodes, 
-                                   const std::vector<GeometryNode>& gap_nodes) {
-        if (regular_nodes.empty() && gap_nodes.empty()) {
-            vfs->write(fulfilling.with_output("$out"), Shape());
-            return;
-        }
-
-        // 2. Group components by type (Closed Solids vs Coplanar Surfaces)
-        boolean::Surface_mesh combined_solids;
-        std::vector<std::pair<EK::Plane_3, boolean::General_polygon_set_2>> plane_groups;
-
-        // Process Regular Nodes
-        for (const auto& node : regular_nodes) {
-            if (node.geo.vertices.empty()) continue;
-
-            if (node.type == "closed") {
-                // A. Watertight 3D Solids
-                boolean::Surface_mesh mesh = boolean::Engine::geometry_to_mesh(node.geo);
-                boolean::Engine::transform_mesh(mesh, node.tf);
-                
-                if (combined_solids.number_of_vertices() == 0) {
-                    combined_solids = mesh;
-                } else {
-                    boolean::Engine::join_mesh_by_mesh(combined_solids, mesh);
-                }
-            } else if (node.type == "surface") {
-                // B. 2D Planar Surfaces
-                // World plane is defined robustly by transforming local Z=0 plane using node.tf
-                EK::Plane_3 world_plane = node.tf.transform(EK::Plane_3(0, 0, 1, 0));
-
-                bool found_group = false;
-                for (auto& [existing_plane, gps] : plane_groups) {
-                    // Check if they represent the same 3D plane
-                    if (std::abs(CGAL::to_double(CGAL::squared_distance(existing_plane, world_plane.point()))) < 1e-6) {
-                        Vector_3 n1 = existing_plane.orthogonal_vector();
-                        Vector_3 n2 = world_plane.orthogonal_vector();
-                        if (CGAL::cross_product(n1, n2).squared_length() < 1e-6) {
-                            Matrix project_tf = Matrix::lookAt(existing_plane.point(), existing_plane.orthogonal_vector());
-                            boolean::Engine::add_geometry_to_gps(node.geo, project_tf * node.tf, gps);
-                            found_group = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!found_group) {
-                    Matrix project_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector());
-                    boolean::General_polygon_set_2 gps;
-                    boolean::Engine::add_geometry_to_gps(node.geo, project_tf * node.tf, gps);
-                    plane_groups.push_back({world_plane, gps});
-                }
-            }
-        }
-
-        // Process Gap Nodes
-        for (const auto& gap : gap_nodes) {
-            if (gap.geo.vertices.empty()) continue;
-
-            if (gap.type == "closed") {
-                // Closed volume gaps cut solids
-                boolean::Surface_mesh gap_mesh = boolean::Engine::geometry_to_mesh(gap.geo);
-                boolean::Engine::transform_mesh(gap_mesh, gap.tf);
-                if (combined_solids.number_of_vertices() > 0) {
-                    boolean::Engine::cut_mesh_by_mesh(combined_solids, gap_mesh);
-                }
-            } else if (gap.type == "surface") {
-                // Planar/2D surface gaps cut coplanar groups and solids
-                EK::Plane_3 gap_world_plane = gap.tf.transform(EK::Plane_3(0, 0, 1, 0));
-
-                if (combined_solids.number_of_vertices() > 0) {
-                    boolean::Engine::cut_mesh_by_plane(combined_solids, gap_world_plane);
-                }
-                for (auto& [existing_plane, gps] : plane_groups) {
-                    if (std::abs(CGAL::to_double(CGAL::squared_distance(existing_plane, gap_world_plane.point()))) < 1e-6) {
-                        Vector_3 n1 = existing_plane.orthogonal_vector();
-                        Vector_3 n2 = gap_world_plane.orthogonal_vector();
-                        if (CGAL::cross_product(n1, n2).squared_length() < 1e-6) {
-                            Matrix project_tf = Matrix::lookAt(existing_plane.point(), existing_plane.orthogonal_vector());
-                            boolean::General_polygon_set_2 gap_gps;
-                            boolean::Engine::add_geometry_to_gps(gap.geo, project_tf * gap.tf, gap_gps);
-                            gps.difference(gap_gps);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Rehydrate each non-empty joined class into discrete Shapes
-        std::vector<Shape> output_shapes;
-
-        // A. Closed Solids
-        if (combined_solids.number_of_vertices() > 0) {
-            Shape s_solid;
-            s_solid.geometry = vfs->materialize<Geometry>(boolean::Engine::mesh_to_geometry(combined_solids));
-            s_solid.tf = Matrix::identity();
-            s_solid.add_tag("type", "closed");
-            output_shapes.push_back(s_solid);
-        }
-
-        // B. Coplanar Surfaces
-        for (auto& [world_plane, gps] : plane_groups) {
-            if (gps.is_empty()) continue;
-            Matrix rehydrate_tf = Matrix::lookAt(world_plane.point(), world_plane.orthogonal_vector()).inverse();
-            Geometry plane_geo = boolean::Engine::gps_to_geometry(gps);
-            
-            Shape s_plane;
-            plane_geo.triangulate();
-            s_plane.geometry = vfs->materialize<Geometry>(plane_geo);
-            s_plane.tf = rehydrate_tf;
-            s_plane.add_tag("type", "surface");
-            output_shapes.push_back(s_plane);
-        }
-
-        // 4. Final output routing
-        if (output_shapes.empty()) {
-            vfs->write(fulfilling.with_output("$out"), Shape());
-        } else if (output_shapes.size() == 1) {
-            vfs->write(fulfilling.with_output("$out"), output_shapes[0]);
-        } else {
-            Shape out_group;
-            out_group.components = output_shapes;
-            out_group.add_tag("type", "group");
-            vfs->write(fulfilling.with_output("$out"), out_group);
-        }
-    }
-};
 
 template <typename P = JotVfsProtocol>
 struct FuseOp : P {
     static constexpr const char* path = "jot/fuse";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        std::vector<FuseHelper::GeometryNode> regular_nodes, gap_nodes;
-        FuseHelper::collect_from_shape(vfs, in, regular_nodes, gap_nodes);
-        for (const auto& tool : tools) {
-            FuseHelper::collect_from_shape(vfs, tool, regular_nodes, gap_nodes);
-        }
-        FuseHelper::execute_fuse_nodes(vfs, fulfilling, regular_nodes, gap_nodes);
+        std::vector<Shape> all_shapes;
+        all_shapes.reserve(1 + tools.size());
+        all_shapes.push_back(in);
+        all_shapes.insert(all_shapes.end(), tools.begin(), tools.end());
+        Shape out = boolean::Engine::fuse(vfs, all_shapes);
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 
     static std::vector<std::string> argument_keys() { return {"$in", "tools"}; }
@@ -187,11 +38,8 @@ struct FusePrimitiveOp : P {
     static constexpr const char* path = "jot/Fuse";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const std::vector<Shape>& shapes) {
-        std::vector<FuseHelper::GeometryNode> regular_nodes, gap_nodes;
-        for (const auto& shape : shapes) {
-            FuseHelper::collect_from_shape(vfs, shape, regular_nodes, gap_nodes);
-        }
-        FuseHelper::execute_fuse_nodes(vfs, fulfilling, regular_nodes, gap_nodes);
+        Shape out = boolean::Engine::fuse(vfs, shapes);
+        vfs->write(fulfilling.with_output("$out"), out);
     }
 
     static std::vector<std::string> argument_keys() { return {"shapes"}; }

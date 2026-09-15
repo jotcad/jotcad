@@ -12,18 +12,7 @@ struct JoinOp : P {
     static constexpr const char* path = "jot/join";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        Shape out = in;
-        if (tools.empty()) {
-            vfs->write(fulfilling.with_output("$out"), out);
-            return;
-        }
-
-        std::vector<boolean::Engine::ToolNode> tool_nodes;
-        for (const auto& tool : tools) {
-            boolean::Engine::collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
-        }
-
-        boolean::Engine::recursive_union(vfs, out, tool_nodes);
+        Shape out = boolean::Engine::join(vfs, in, tools);
         vfs->write(fulfilling.with_output("$out"), out);
     }
 

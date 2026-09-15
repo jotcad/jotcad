@@ -3,6 +3,7 @@
 #include "visibility.h"
 #include "modes.h"
 #include "climb.h"
+#include "boundary.h"
 #include <cmath>
 #include <CGAL/Polygon_mesh_processing/border.h>
 
@@ -379,6 +380,9 @@ inline PartingOptimizationResult optimize_parting_direction(
     if (best_loop_count > 1) {
         throw std::runtime_error("Demoldability Error: Geometry contains internal undercut islands along all tested draw vectors (requires multi-stage side lifters).");
     }
+
+    // Audit selected patch projected boundary for simplicity before envelope extraction
+    audit_patch_projected_boundary_simplicity(mesh_part, best_patch_faces, best_dir, "Selected Patch Projected Boundary");
 
     // Compute exact Upper Envelope mesh along best_dir within the OBB corridor of best_patch_faces
     auto env_res = compute_exact_upper_envelope_mesh(

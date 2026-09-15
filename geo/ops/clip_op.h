@@ -12,23 +12,7 @@ struct ClipOp : P {
     static constexpr const char* path = "jot/clip";
 
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, const Shape& in, const std::vector<Shape>& tools) {
-        Shape result = in;
-        if (tools.empty()) {
-            vfs->write(fulfilling.with_output("$out"), result);
-            return;
-        }
-
-        std::vector<boolean::Engine::ToolNode> tool_nodes;
-        for (const auto& tool : tools) {
-            boolean::Engine::collect_tool_geometry(vfs, tool, Matrix::identity(), tool_nodes);
-        }
-
-        boolean::Engine::recursive_intersect(vfs, result, tool_nodes);
-
-        for (const auto& tool : tools) {
-            result.components.push_back(Shape::make_ghost(tool));
-        }
-
+        Shape result = boolean::Engine::clip(vfs, in, tools);
         vfs->write(fulfilling.with_output("$out"), result);
     }
 

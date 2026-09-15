@@ -1,7 +1,13 @@
 #pragma once
 #include "types.h"
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/AABB_traits_3.h>
+#include <CGAL/AABB_face_graph_triangle_primitive.h>
+#include <CGAL/intersections.h>
+#include "fix/assert_mesh.h"
 #include <cmath>
+#include <variant>
 
 namespace jotcad {
 namespace geo {
@@ -121,14 +127,61 @@ struct ToolComponentMesh {
 };
 
 inline std::vector<ToolComponentMesh> generate_sprue_and_vents(
+    const ExactMesh& model_mesh,
     const std::vector<PeakCluster>& peaks,
     const PourParams& params,
     FT sprue_top_z
 ) {
     std::vector<ToolComponentMesh> result;
+    if (peaks.empty()) return result;
+
+    typedef CGAL::AABB_face_graph_triangle_primitive<ExactMesh> Primitive;
+    typedef CGAL::AABB_traits_3<EK, Primitive> Traits;
+    typedef CGAL::AABB_tree<Traits> Tree;
+    Tree tree(faces(model_mesh).first, faces(model_mesh).second, model_mesh);
+
     for (const auto& cluster : peaks) {
         FT h = sprue_top_z - cluster.apex.z();
         if (h <= FT(0)) h = FT(10.0);
+
+        if (!cluster.is_primary) {
+            // Check if the vertical riser re-enters the model above apex (delegated venting)
+            EK::Ray_3 ray(cluster.apex, EK::Vector_3(0, 0, 1));
+            std::vector<typename Tree::Intersection_and_primitive_id<EK::Ray_3>::Type> intersections;
+            tree.all_intersections(ray, std::back_inserter(intersections));
+
+            FT min_hit_z = FT(-1);
+            FT vent_r = params.vent_dia / FT(2);
+            for (const auto& inter : intersections) {
+                EK::Point_3 pt;
+                if (const EK::Point_3* pi = std::get_if<EK::Point_3>(&inter.first)) {
+                    pt = *pi;
+                } else if (const EK::Segment_3* ps = std::get_if<EK::Segment_3>(&inter.first)) {
+                    pt = ps->source();
+                } else {
+                    continue;
+                }
+
+                if (pt.z() > cluster.apex.z() + FT(0.5)) {
+                    if (min_hit_z < FT(0) || pt.z() < min_hit_z) {
+                        min_hit_z = pt.z();
+                    }
+                }
+            }
+
+            if (min_hit_z > FT(0)) {
+                FT reenter_h = (min_hit_z - cluster.apex.z()) + vent_r;
+                if (reenter_h < h) {
+                    h = reenter_h;
+                    std::cout << "  [Pour Prep] Delegated vent at apex ("
+                              << CGAL::to_double(cluster.apex.x()) << ", "
+                              << CGAL::to_double(cluster.apex.y()) << ", "
+                              << CGAL::to_double(cluster.apex.z()) << ") terminates at z="
+                              << CGAL::to_double(cluster.apex.z() + h) << " (re-enters model at z="
+                              << CGAL::to_double(min_hit_z) << ")." << std::endl << std::flush;
+                }
+            }
+        }
 
         ExactMesh vent_geom;
         if (cluster.is_primary) {
