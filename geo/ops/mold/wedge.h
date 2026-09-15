@@ -129,6 +129,7 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     }
 
     std::vector<std::pair<CDT_Kernel::Point_2, CDT_Kernel::Point_2>> outer_boundary_segments;
+    std::vector<std::pair<EK::Point_3, EK::Point_3>> outer_boundary_segments_3d;
 
     // 2. Process all directed halfedges for both internal step cliffs and outer sidewalls
     auto process_halfedge_walls = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
@@ -141,6 +142,10 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
         auto twin_face = h->twin()->face();
         if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
             outer_boundary_segments.push_back({p1_2d, p2_2d});
+            outer_boundary_segments_3d.push_back({
+                from_z(EK::Point_3(p1_2d.x(), p1_2d.y(), z1_s)),
+                from_z(EK::Point_3(p2_2d.x(), p2_2d.y(), z1_t))
+            });
             if (tide.enabled) {
                 // Outer boundary: drop vertical skirt strictly down to tide.z_margin
                 FT low_s = tide.z_margin;
@@ -197,7 +202,7 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     }
 
     // Audit extrusion polygon (2D envelope outer boundary) for simplicity
-    audit_2d_boundary_simplicity(outer_boundary_segments, "Extrusion Polygon (Envelope Outer Boundary)");
+    auto boundary_audit = audit_2d_boundary_simplicity(outer_boundary_segments, outer_boundary_segments_3d, "Extrusion Polygon (Envelope Outer Boundary)");
 
     // 3. If Rising Tide is active, add 2D margin shelf CDT and stock outer envelope
     if (tide.enabled) {
@@ -262,7 +267,7 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
 
     FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
     fix::assert_well_formed_closed_mesh(solid_wedge, "solid_wedge in construct_envelope_wedge");
-    return {solid_wedge, source_faces, total_area};
+    return {solid_wedge, source_faces, total_area, std::move(boundary_audit.loops_3d)};
 }
 
 } // namespace mold

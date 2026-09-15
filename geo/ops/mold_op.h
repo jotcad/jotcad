@@ -25,7 +25,7 @@ struct MoldOp : P {
         const Shape& in,
         double padding_val = 10.0,
         double explode_val = 0.0,
-        double draft_val = -0.003,
+        double draft_val = 0.0,
         std::string kiss_val = "weld",
         double kiss_width_val = 0.01
     ) {
@@ -145,6 +145,69 @@ struct MoldOp : P {
             auto wedge = opt.solid_wedge;
             piece_draw_dirs.push_back(d_i);
 
+            // =========================================================================
+            // VISUAL REVIEW MODE: Output model in gray with bright red parting polyline
+            // =========================================================================
+            Shape result = in;
+            result.geometry = std::nullopt;
+            result.components.clear();
+
+            // 1. Model in translucent neutral gray
+            Geometry model_geo = boolean::Engine::mesh_to_geometry(mesh_part);
+            typename P::json model_tags = {
+                {"mold/role", "model"},
+                {"name", "casting_model"},
+                {"color", "#aaaaaa"},
+                {"opacity", 0.5}
+            };
+            result.components.push_back(P::make_shape(vfs, model_geo, model_tags));
+
+            // 2. Parting polyline(s) in bright red
+            for (size_t li = 0; li < opt.boundary_loops_3d.size(); ++li) {
+                const auto& loop = opt.boundary_loops_3d[li];
+                if (loop.size() < 2) continue;
+                Geometry poly_geo;
+                for (const auto& pt : loop) {
+                    poly_geo.vertices.push_back({pt.x(), pt.y(), pt.z()});
+                }
+                size_t n_pts = loop.size();
+                for (size_t i = 0; i < n_pts; ++i) {
+                    poly_geo.segments.push_back({(int)i, (int)((i + 1) % n_pts)});
+                }
+                typename P::json poly_tags = {
+                    {"color", "#ff0000"},
+                    {"role", "mark"},
+                    {"name", "parting_polyline_" + std::to_string(li + 1)}
+                };
+                result.components.push_back(P::make_shape(vfs, poly_geo, poly_tags));
+            }
+
+            // 3. Draw direction vector in bright green
+            if (!opt.boundary_loops_3d.empty() && !opt.boundary_loops_3d[0].empty()) {
+                const auto& loop0 = opt.boundary_loops_3d[0];
+                Point_3 center(0, 0, 0);
+                for (const auto& pt : loop0) {
+                    center = Point_3(center.x() + pt.x() / FT(loop0.size()),
+                                     center.y() + pt.y() / FT(loop0.size()),
+                                     center.z() + pt.z() / FT(loop0.size()));
+                }
+                Geometry dir_geo;
+                dir_geo.vertices.push_back({center.x(), center.y(), center.z()});
+                dir_geo.vertices.push_back({center.x() + opt.best_dir.x() * FT(20),
+                                            center.y() + opt.best_dir.y() * FT(20),
+                                            center.z() + opt.best_dir.z() * FT(20)});
+                dir_geo.segments.push_back({0, 1});
+                typename P::json dir_tags = {
+                    {"color", "#00ff00"},
+                    {"role", "mark"},
+                    {"name", "draw_vector"}
+                };
+                result.components.push_back(P::make_shape(vfs, dir_geo, dir_tags));
+            }
+
+            vfs->write(fulfilling.with_output("$out"), result);
+            return;
+
             // Mark source faces as handled
             for (size_t src_f_idx : opt.source_faces) {
                 auto f = mold::ExactMesh::Face_index(src_f_idx);
@@ -215,7 +278,7 @@ struct MoldOp : P {
             {"arguments", {
                 {{"name", "padding"}, {"type", "jot:number"}, {"default", 10.0}, {"description", "Stock mold block wall thickness padding in mm."}},
                 {{"name", "explode"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Explosion distance along piece withdrawal vectors in mm."}},
-                {{"name", "draft"}, {"type", "jot:number"}, {"default", -0.003}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees). Defaults to -0.003 (~ -1.08 deg) negative draft allowance to account for slipcast shrinkage clearance."}},
+                {{"name", "draft"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees). Defaults to 0.0 (strictly on or above silhouette horizon)."}},
                 {{"name", "kiss"}, {"type", "jot:string"}, {"default", "weld"}, {"description", "Resolution mode for zero-volume contact singularities ('weld' or 'part')."}},
                 {{"name", "kiss_width"}, {"type", "jot:number"}, {"default", 0.01}, {"description", "Physical width in mm of structural bridge ('weld') or clearance gap ('part')."}}
             }},

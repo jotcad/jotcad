@@ -91,6 +91,7 @@ struct PartingOptimizationResult {
     ExactMesh solid_wedge;
     std::set<size_t> source_faces;
     int cycle_count;
+    std::vector<std::vector<Point_3>> boundary_loops_3d;
 };
 
 inline PartingOptimizationResult optimize_parting_direction(
@@ -382,7 +383,7 @@ inline PartingOptimizationResult optimize_parting_direction(
     }
 
     // Audit selected patch projected boundary for simplicity before envelope extraction
-    audit_patch_projected_boundary_simplicity(mesh_part, best_patch_faces, best_dir, "Selected Patch Projected Boundary");
+    auto audit = audit_patch_projected_boundary_simplicity(mesh_part, best_patch_faces, best_dir, "Selected Patch Projected Boundary");
 
     // Compute exact Upper Envelope mesh along best_dir within the OBB corridor of best_patch_faces
     auto env_res = compute_exact_upper_envelope_mesh(
@@ -390,7 +391,7 @@ inline PartingOptimizationResult optimize_parting_direction(
     );
 
     if (env_res.solid_wedge.number_of_faces() == 0) {
-        return {best_dir, {}, {}, 0};
+        return {best_dir, {}, {}, 0, env_res.boundary_loops_3d};
     }
 
     // Unite envelope diagram faces with seed patch faces (including negative-draft facets within tolerance)
@@ -399,7 +400,7 @@ inline PartingOptimizationResult optimize_parting_direction(
         all_handled_faces.insert((size_t)f);
     }
 
-    return {best_dir, env_res.solid_wedge, all_handled_faces, 1};
+    return {best_dir, env_res.solid_wedge, all_handled_faces, 1, env_res.boundary_loops_3d};
 }
 
 } // namespace mold

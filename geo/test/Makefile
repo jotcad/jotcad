@@ -82,10 +82,11 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                rig_test.cpp \
                pour_test.cpp \
                repair_test.cpp \
-               bridge_test.cpp
+               bridge_test.cpp \
+               extrude_polyloop_test.cpp
 
 # Filter out standalone tests from combined build
-COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp mold_voxel_bear_test.cpp, $(TEST_SOURCES))
+COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp mold_voxel_bear_test.cpp extrude_polyloop_test.cpp, $(TEST_SOURCES))
 
 # Targets
 all: $(LIB_GEO) $(BIN_DIR)/unit_tests $(BIN_DIR)/cid_consistency_test $(BIN_DIR)/mold_voxel_bear_test $(BIN_DIR)/test_zenoh_link $(BIN_DIR)/test_zenoh_queryable $(BIN_DIR)/test_zenoh_caching
@@ -150,6 +151,15 @@ $(BIN_DIR)/test_repair_wedge: $(OBJ_DIR)/test_repair_wedge.o $(LIB_GEO)
 	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
 $(OBJ_DIR)/test_repair_wedge.o: test_repair_wedge.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Rule for building the standalone extrude_polyloop_test binary
+$(BIN_DIR)/extrude_polyloop_test: $(OBJ_DIR)/extrude_polyloop_test.o $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/extrude_polyloop_test.o: extrude_polyloop_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
