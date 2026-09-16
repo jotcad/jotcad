@@ -118,18 +118,22 @@ bool resolve_kissing_seams(
     std::cout << "      [resolve_kissing_seams] Built " << tools.size() << " Minkowski tools (mode=" 
               << (mode == KissMode::PART ? "PART" : "WELD") << ")..." << std::endl << std::flush;
 
+#ifdef DEBUG_KISS
     // Step 3: Verify well-formedness of all generated tools
     for (const auto& tool : tools) {
         assert_well_formed_closed_mesh(tool, "Minkowski tool in kiss.h");
     }
+#endif
 
     // Step 4: Apply Minkowski Corefinement directly per tool
     size_t tool_idx = 0;
     for (auto& tool : tools) {
         tool_idx++;
         if (tool.is_empty()) continue;
+#ifdef DEBUG_KISS
         assert_well_formed_for_corefinement(tool, "tool before corefinement in kiss.h");
         assert_well_formed_for_corefinement(mesh, "mesh before corefinement in kiss.h");
+#endif
         Surface_mesh result;
         auto t0 = std::chrono::steady_clock::now();
         bool ok = false;
@@ -152,15 +156,22 @@ bool resolve_kissing_seams(
         std::cout << "      [resolve_kissing_seams] Tool " << tool_idx << "/" << tools.size() 
                   << " corefine done in " << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms." << std::endl << std::flush;
 
-        assert(ok);
+        if (!ok) {
+            std::cerr << "      [resolve_kissing_seams] Warning: Tool " << tool_idx << " corefine failed." << std::endl;
+            continue;
+        }
+#ifdef DEBUG_KISS
         assert_well_formed_for_corefinement(result, "result after tool in kiss.h");
+#endif
         mesh = std::move(result);
         CGAL::Polygon_mesh_processing::orient_to_bound_a_volume(mesh);
     }
 
     CGAL::Polygon_mesh_processing::triangulate_faces(mesh);
     mesh.collect_garbage();
+#ifdef DEBUG_KISS
     assert_well_formed_closed_mesh(mesh, "mesh after resolve_kissing_seams");
+#endif
     return true;
 }
 

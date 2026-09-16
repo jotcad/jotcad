@@ -76,6 +76,7 @@ struct MoldOp : P {
         fix::assert_well_formed_closed_mesh(mesh_part, "mesh_part in MoldOp");
 
         // 2. Trim model-with-sprue against stock box (if provided) so cavity is strictly bounded by stock
+        Shape in_scene = in;
         if (stock_box_mesh.has_value()) {
             mold::ExactMesh trimmed_model;
             bool ok_trim = boolean::corefine_intersection(mesh_part, *stock_box_mesh, trimmed_model, params.kiss_mode, params.kiss_width, "model ∩ stock_box in MoldOp");
@@ -83,6 +84,28 @@ struct MoldOp : P {
                 mesh_part = std::move(trimmed_model);
                 mesh_part.collect_garbage();
                 fix::assert_well_formed_closed_mesh(mesh_part, "trimmed mesh_part in MoldOp");
+
+                // Update center model geometry to match the trimmed cavity
+                Geometry trimmed_geo = boolean::Engine::mesh_to_geometry(mesh_part);
+                in_scene.geometry = vfs->template materialize<Geometry>(trimmed_geo);
+            }
+
+            // Also clip any visual tool components (sprue, vents) to the stock box
+            for (auto& child : in_scene.components) {
+                if (child.has_tag("mold/role", "box") || child.is_ghost()) continue;
+                if (child.geometry.has_value()) {
+                    Geometry child_geo = vfs->template readCID<Geometry>(*child.geometry);
+                    mold::ExactMesh child_m = boolean::Engine::geometry_to_mesh(child_geo);
+                    boolean::Engine::transform_mesh(child_m, child.tf);
+                    mold::ExactMesh trimmed_child;
+                    bool ok_c = boolean::corefine_intersection(child_m, *stock_box_mesh, trimmed_child, params.kiss_mode, params.kiss_width, "child ∩ stock_box in MoldOp");
+                    if (ok_c && trimmed_child.number_of_faces() > 0) {
+                        fix::assert_well_formed_closed_mesh(trimmed_child, "trimmed_child in MoldOp");
+                        Geometry trimmed_c_geo = boolean::Engine::mesh_to_geometry(trimmed_child);
+                        child.geometry = vfs->template materialize<Geometry>(trimmed_c_geo);
+                        child.tf = Matrix::identity();
+                    }
+                }
             }
         }
 
@@ -265,7 +288,7 @@ struct MoldOp : P {
         // 6. Minimal-Volume OBB Trimming & Stationary Remainder Extraction
         Geometry obb_geo;
         if (params.molds && !mold_pieces.empty()) {
-            mold::MoldAssembly<P>::trim_against_obb(vfs, in, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
+            mold::MoldAssembly<P>::trim_against_obb(vfs, in_scene, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
 
             // 7. Demoldability Verification
             mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
@@ -276,7 +299,7 @@ struct MoldOp : P {
         }
 
         // 8. Assemble Scene Graph & Apply Explosion Transforms
-        Shape result = mold::MoldAssembly<P>::assemble_scene(vfs, in, mold_pieces, obb_geo, params);
+        Shape result = mold::MoldAssembly<P>::assemble_scene(vfs, in_scene, mold_pieces, obb_geo, params);
 
         // 9. Attach Parting Line Shapes (if lines enabled)
         for (const auto& line_shape : parting_line_shapes) {
