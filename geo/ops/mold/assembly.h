@@ -94,6 +94,7 @@ struct MoldAssembly {
             Shape center_model = original_input;
             center_model.components.clear(); // Children (sprue/vents) are preserved below
             center_model.tags["mold/role"] = "model";
+            center_model.tags["opacity"] = 0.5;
             result.components.push_back(center_model);
         }
 
@@ -143,7 +144,9 @@ struct MoldAssembly {
             if (child.has_tag("mold/role", "box") || child.is_ghost()) {
                 continue; // Consumed as mold pieces or CAD construction ghost!
             }
-            result.components.push_back(child);
+            Shape child_copy = child;
+            child_copy.tags["opacity"] = 0.5;
+            result.components.push_back(child_copy);
         }
 
         return result;

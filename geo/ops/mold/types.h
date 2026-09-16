@@ -63,6 +63,8 @@ struct MoldParams {
     FT draft = FT(0); // Default 0.0 draft (strictly on or above silhouette horizon)
     fix::KissMode kiss_mode = fix::KissMode::WELD;
     FT kiss_width = pinch_bridge_width_ft();
+    bool lines = true;
+    bool molds = true;
 };
 
 struct MoldPiece {

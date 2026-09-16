@@ -27,12 +27,16 @@ struct MoldOp : P {
         double explode_val = 0.0,
         double draft_val = 0.0,
         std::string kiss_val = "weld",
-        double kiss_width_val = 0.01
+        double kiss_width_val = 0.01,
+        bool lines_val = true,
+        bool molds_val = true
     ) {
         mold::MoldParams params;
         params.padding = FT(padding_val);
         params.explode = FT(explode_val);
         params.draft = FT(draft_val);
+        params.lines = lines_val;
+        params.molds = molds_val;
 
         if (kiss_val == "weld") {
             params.kiss_mode = fix::KissMode::WELD;
@@ -132,81 +136,89 @@ struct MoldOp : P {
 
         std::vector<mold::MoldPiece> mold_pieces;
         std::vector<EK::Vector_3> piece_draw_dirs;
+        std::vector<Shape> parting_line_shapes;
         const std::vector<std::string> piece_colors = {"#2bee2b", "#2b80ee", "#ee802b", "#ee2b80", "#80ee2b", "#802bee"};
+
+        // Compute overall model centroid for outward radial normal offset
+        EK::Point_3 model_centroid(FT(0), FT(0), FT(0));
+        if (total_faces > 0) {
+            FT sum_x(0), sum_y(0), sum_z(0);
+            for (const auto& fc : face_centroids) {
+                sum_x += fc.x();
+                sum_y += fc.y();
+                sum_z += fc.z();
+            }
+            model_centroid = EK::Point_3(sum_x / FT(total_faces), sum_y / FT(total_faces), sum_z / FT(total_faces));
+        }
 
         int piece_idx = 1;
         while (handled_faces_count < total_faces && piece_idx <= 10) {
             auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params);
-            if (opt.source_faces.empty() || opt.solid_wedge.number_of_faces() == 0) {
+            if (opt.source_faces.empty()) {
                 break;
             }
 
             EK::Vector_3 d_i = opt.best_dir;
-            auto wedge = opt.solid_wedge;
             piece_draw_dirs.push_back(d_i);
+            std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
+            std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
 
-            // =========================================================================
-            // VISUAL REVIEW MODE: Output model in gray with bright red parting polyline
-            // =========================================================================
-            Shape result = in;
-            result.geometry = std::nullopt;
-            result.components.clear();
+            // 1. Parting polyline(s) in matching color of associated mold piece
+            if (params.lines) {
+                double len_d = std::sqrt(CGAL::to_double(d_i.squared_length()));
+                // Option B: 0.15 mm transverse shift along piece draw vector + 0.05 mm outward surface float
+                FT draw_shift_dist = FT(15) / FT(100);
+                EK::Vector_3 draw_shift_vec = (len_d > 1e-9) ? (d_i * (draw_shift_dist / FT(len_d))) : EK::Vector_3(FT(0), FT(0), FT(0));
+                FT normal_float_dist = FT(5) / FT(100);
 
-            // 1. Model in translucent neutral gray
-            Geometry model_geo = boolean::Engine::mesh_to_geometry(mesh_part);
-            typename P::json model_tags = {
-                {"mold/role", "model"},
-                {"name", "casting_model"},
-                {"color", "#aaaaaa"},
-                {"opacity", 0.5}
-            };
-            result.components.push_back(P::make_shape(vfs, model_geo, model_tags));
+                for (size_t li = 0; li < opt.boundary_loops_3d.size(); ++li) {
+                    const auto& loop = opt.boundary_loops_3d[li];
+                    if (loop.size() < 2) continue;
 
-            // 2. Parting polyline(s) in bright red
-            for (size_t li = 0; li < opt.boundary_loops_3d.size(); ++li) {
-                const auto& loop = opt.boundary_loops_3d[li];
-                if (loop.size() < 2) continue;
-                Geometry poly_geo;
-                for (const auto& pt : loop) {
-                    poly_geo.vertices.push_back({pt.x(), pt.y(), pt.z()});
+                    // Copy 1: On the unexploded model (Option B: outward float + transverse pull nudge)
+                    Geometry model_poly_geo;
+                    for (const auto& pt : loop) {
+                        EK::Vector_3 rad_vec = pt - model_centroid;
+                        double len_rad = std::sqrt(CGAL::to_double(rad_vec.squared_length()));
+                        EK::Vector_3 out_vec = (len_rad > 1e-9) ? (rad_vec * (normal_float_dist / FT(len_rad))) : EK::Vector_3(FT(0), FT(0), FT(0));
+                        EK::Point_3 shifted_pt = pt + draw_shift_vec + out_vec;
+                        model_poly_geo.vertices.push_back({shifted_pt.x(), shifted_pt.y(), shifted_pt.z()});
+                    }
+                    size_t n_pts = loop.size();
+                    for (size_t i = 0; i < n_pts; ++i) {
+                        model_poly_geo.segments.push_back({(int)i, (int)((i + 1) % n_pts)});
+                    }
+                    typename P::json model_poly_tags = {
+                        {"color", color},
+                        {"role", "mark"},
+                        {"name", "parting_line_model_" + std::to_string(piece_idx) + "_" + std::to_string(li + 1)}
+                    };
+                    parting_line_shapes.push_back(P::make_shape(vfs, model_poly_geo, model_poly_tags));
+
+                    // Copy 2: Carries the draw vector (explodes outward with the mold piece)
+                    if (params.molds && params.explode > FT(0)) {
+                        Geometry piece_poly_geo;
+                        for (const auto& pt : loop) {
+                            piece_poly_geo.vertices.push_back({pt.x(), pt.y(), pt.z()});
+                        }
+                        for (size_t i = 0; i < n_pts; ++i) {
+                            piece_poly_geo.segments.push_back({(int)i, (int)((i + 1) % n_pts)});
+                        }
+                        typename P::json piece_poly_tags = {
+                            {"color", color},
+                            {"role", "mark"},
+                            {"name", "parting_line_piece_" + std::to_string(piece_idx) + "_" + std::to_string(li + 1)}
+                        };
+                        Shape piece_line_shape = P::make_shape(vfs, piece_poly_geo, piece_poly_tags);
+                        if (len_d > 1e-9) {
+                            FT scale = params.explode / FT(len_d);
+                            EK::Vector_3 trans = d_i * scale;
+                            piece_line_shape.tf = Matrix(Transformation(CGAL::TRANSLATION, trans));
+                        }
+                        parting_line_shapes.push_back(piece_line_shape);
+                    }
                 }
-                size_t n_pts = loop.size();
-                for (size_t i = 0; i < n_pts; ++i) {
-                    poly_geo.segments.push_back({(int)i, (int)((i + 1) % n_pts)});
-                }
-                typename P::json poly_tags = {
-                    {"color", "#ff0000"},
-                    {"role", "mark"},
-                    {"name", "parting_polyline_" + std::to_string(li + 1)}
-                };
-                result.components.push_back(P::make_shape(vfs, poly_geo, poly_tags));
             }
-
-            // 3. Draw direction vector in bright green
-            if (!opt.boundary_loops_3d.empty() && !opt.boundary_loops_3d[0].empty()) {
-                const auto& loop0 = opt.boundary_loops_3d[0];
-                Point_3 center(0, 0, 0);
-                for (const auto& pt : loop0) {
-                    center = Point_3(center.x() + pt.x() / FT(loop0.size()),
-                                     center.y() + pt.y() / FT(loop0.size()),
-                                     center.z() + pt.z() / FT(loop0.size()));
-                }
-                Geometry dir_geo;
-                dir_geo.vertices.push_back({center.x(), center.y(), center.z()});
-                dir_geo.vertices.push_back({center.x() + opt.best_dir.x() * FT(20),
-                                            center.y() + opt.best_dir.y() * FT(20),
-                                            center.z() + opt.best_dir.z() * FT(20)});
-                dir_geo.segments.push_back({0, 1});
-                typename P::json dir_tags = {
-                    {"color", "#00ff00"},
-                    {"role", "mark"},
-                    {"name", "draw_vector"}
-                };
-                result.components.push_back(P::make_shape(vfs, dir_geo, dir_tags));
-            }
-
-            vfs->write(fulfilling.with_output("$out"), result);
-            return;
 
             // Mark source faces as handled
             for (size_t src_f_idx : opt.source_faces) {
@@ -217,55 +229,64 @@ struct MoldOp : P {
                 }
             }
 
-            mold::ExactMesh raw_block = wedge;
-            mold::ExactMesh model_copy = mesh_part;
-            mold::ExactMesh piece_mesh;
-            bool ok_diff = boolean::corefine_difference(raw_block, model_copy, piece_mesh, params.kiss_mode, params.kiss_width, "raw_block \\ model_copy in MoldOp");
-            assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
+            // 2. Solid mold piece extraction (if molds enabled)
+            if (params.molds && opt.solid_wedge.number_of_faces() > 0) {
+                auto wedge = opt.solid_wedge;
+                mold::ExactMesh raw_block = wedge;
+                mold::ExactMesh model_copy = mesh_part;
+                mold::ExactMesh piece_mesh;
+                bool ok_diff = boolean::corefine_difference(raw_block, model_copy, piece_mesh, params.kiss_mode, params.kiss_width, "raw_block \\ model_copy in MoldOp");
+                assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
 
-            std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
-            std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
-
-            // Subtract all previously extracted mold pieces to guarantee 0 volumetric overlap
-            for (const auto& prev_piece : mold_pieces) {
-                if (prev_piece.mesh.is_empty() || prev_piece.mesh.number_of_faces() == 0) continue;
-                if (!boolean::do_meshes_overlap(piece_mesh, prev_piece.mesh)) continue;
-                mold::ExactMesh non_overlapping_piece;
-                bool ok_pdiff = boolean::corefine_difference(piece_mesh, prev_piece.mesh, non_overlapping_piece, params.kiss_mode, params.kiss_width, piece_name + " \\ " + prev_piece.name);
-                if (ok_pdiff && non_overlapping_piece.number_of_faces() > 0) {
-                    piece_mesh = std::move(non_overlapping_piece);
-                    piece_mesh.collect_garbage();
+                // Subtract all previously extracted mold pieces to guarantee 0 volumetric overlap
+                for (const auto& prev_piece : mold_pieces) {
+                    if (prev_piece.mesh.is_empty() || prev_piece.mesh.number_of_faces() == 0) continue;
+                    if (!boolean::do_meshes_overlap(piece_mesh, prev_piece.mesh)) continue;
+                    mold::ExactMesh non_overlapping_piece;
+                    bool ok_pdiff = boolean::corefine_difference(piece_mesh, prev_piece.mesh, non_overlapping_piece, params.kiss_mode, params.kiss_width, piece_name + " \\ " + prev_piece.name);
+                    if (ok_pdiff && non_overlapping_piece.number_of_faces() > 0) {
+                        piece_mesh = std::move(non_overlapping_piece);
+                        piece_mesh.collect_garbage();
+                    }
                 }
+
+                fix::assert_well_formed_closed_mesh(piece_mesh, "piece_mesh in MoldOp");
+                mold_pieces.push_back({piece_mesh, d_i, piece_name, color, piece_idx});
+
+                std::cout << "  - Extracted " << piece_name << " along dir ("
+                          << CGAL::to_double(d_i.x()) << ", " << CGAL::to_double(d_i.y()) << ", " << CGAL::to_double(d_i.z())
+                          << ") covering " << opt.source_faces.size() << " faces (total handled: "
+                          << handled_faces_count << " / " << total_faces << ")." << std::endl << std::flush;
             }
-
-            fix::assert_well_formed_closed_mesh(piece_mesh, "piece_mesh in MoldOp");
-            mold_pieces.push_back({piece_mesh, d_i, piece_name, color, piece_idx});
-
-            std::cout << "  - Extracted " << piece_name << " along dir ("
-                      << CGAL::to_double(d_i.x()) << ", " << CGAL::to_double(d_i.y()) << ", " << CGAL::to_double(d_i.z())
-                      << ") covering " << opt.source_faces.size() << " faces (total handled: "
-                      << handled_faces_count << " / " << total_faces << ")." << std::endl << std::flush;
 
             piece_idx++;
         }
 
         // 6. Minimal-Volume OBB Trimming & Stationary Remainder Extraction
         Geometry obb_geo;
-        mold::MoldAssembly<P>::trim_against_obb(vfs, in, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
+        if (params.molds && !mold_pieces.empty()) {
+            mold::MoldAssembly<P>::trim_against_obb(vfs, in, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
 
-        // 7. Demoldability Verification
-        mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
-        model_tree.build();
-        for (const auto& piece : mold_pieces) {
-            mold::verify_piece_demoldability(piece, model_tree, params);
+            // 7. Demoldability Verification
+            mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
+            model_tree.build();
+            for (const auto& piece : mold_pieces) {
+                mold::verify_piece_demoldability(piece, model_tree, params);
+            }
         }
 
         // 8. Assemble Scene Graph & Apply Explosion Transforms
         Shape result = mold::MoldAssembly<P>::assemble_scene(vfs, in, mold_pieces, obb_geo, params);
+
+        // 9. Attach Parting Line Shapes (if lines enabled)
+        for (const auto& line_shape : parting_line_shapes) {
+            result.components.push_back(line_shape);
+        }
+
         vfs->write(fulfilling.with_output("$out"), result);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode", "draft", "kiss", "kiss_width"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode", "draft", "kiss", "kiss_width", "lines", "molds"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/mold"},
@@ -280,7 +301,9 @@ struct MoldOp : P {
                 {{"name", "explode"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Explosion distance along piece withdrawal vectors in mm."}},
                 {{"name", "draft"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Minimum draft angle in turns (tau, where 1.0 = 360 degrees). Defaults to 0.0 (strictly on or above silhouette horizon)."}},
                 {{"name", "kiss"}, {"type", "jot:string"}, {"default", "weld"}, {"description", "Resolution mode for zero-volume contact singularities ('weld' or 'part')."}},
-                {{"name", "kiss_width"}, {"type", "jot:number"}, {"default", 0.01}, {"description", "Physical width in mm of structural bridge ('weld') or clearance gap ('part')."}}
+                {{"name", "kiss_width"}, {"type", "jot:number"}, {"default", 0.01}, {"description", "Physical width in mm of structural bridge ('weld') or clearance gap ('part')."}},
+                {{"name", "lines"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to generate 3D parting boundary lines in the matching color of the associated mold piece."}},
+                {{"name", "molds"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to generate solid 3D mold pieces."}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The multi-piece mold assembly containing mold blocks and the centered model."}}}
@@ -290,7 +313,7 @@ struct MoldOp : P {
 };
 
 inline void mold_init(fs::VFSNode* vfs) {
-    Processor::register_op<MoldOp<>, Shape, double, double, double, std::string, double>(vfs, "jot/mold");
+    Processor::register_op<MoldOp<>, Shape, double, double, double, std::string, double, bool, bool>(vfs, "jot/mold");
 }
 
 } // namespace geo
