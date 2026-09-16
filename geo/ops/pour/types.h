@@ -15,13 +15,15 @@ typedef CGAL::Aff_transformation_3<EK> Transformation;
 typedef CGAL::Surface_mesh<EK::Point_3> ExactMesh;
 typedef EK::FT FT;
 
+constexpr double default_min_angle = 5.0 / 360.0; // 5 degrees physical bubble detachment threshold
+
 struct PourParams {
     FT sprue_base_dia = FT(16.0);    // Base diameter of main pour funnel in mm
     FT sprue_top_dia = FT(36.0);     // Top opening diameter of main pour funnel in mm
     FT sprue_height = FT(20.0);      // Extra height above model top
     FT vent_dia = FT(2.5);           // Secondary air bleed riser diameter in mm
-    bool auto_orient = true;             // Whether to optimize orientation for minimal bubble trapping
-    double min_angle = 15.0 / 360.0;     // Minimum ceiling drainage angle in turns (15.0 / 360.0 ~= 15 deg)
+    bool auto_orient = true;         // Whether to optimize orientation for minimal bubble trapping
+    double min_angle = default_min_angle; // Minimum ceiling drainage angle in turns
 };
 
 struct PeakCluster {

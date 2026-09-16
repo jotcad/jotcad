@@ -12,29 +12,27 @@ inline EK::Vector_3 find_optimal_pour_orientation(
     const ExactMesh& mesh,
     const std::vector<EK::Vector_3>& face_normals,
     const std::vector<FT>& face_areas,
-    double min_angle_turns = 15.0 / 360.0 // Default 15 degrees in turns
+    double min_angle_turns = default_min_angle
 ) {
     std::vector<EK::Vector_3> candidate_dirs;
 
-    // 1. Cardinal axes
-    candidate_dirs.push_back(EK::Vector_3(1, 0, 0));
-    candidate_dirs.push_back(EK::Vector_3(-1, 0, 0));
-    candidate_dirs.push_back(EK::Vector_3(0, 1, 0));
-    candidate_dirs.push_back(EK::Vector_3(0, -1, 0));
-    candidate_dirs.push_back(EK::Vector_3(0, 0, 1));
-    candidate_dirs.push_back(EK::Vector_3(0, 0, -1));
+    // 1. Cardinal axes (6 directions)
+    for (int s : {-1, 1}) {
+        candidate_dirs.push_back(EK::Vector_3(s, 0, 0));
+        candidate_dirs.push_back(EK::Vector_3(0, s, 0));
+        candidate_dirs.push_back(EK::Vector_3(0, 0, s));
+    }
 
-    // 2. Corner diagonals
-    candidate_dirs.push_back(EK::Vector_3(1, 1, 1));
-    candidate_dirs.push_back(EK::Vector_3(1, 1, -1));
-    candidate_dirs.push_back(EK::Vector_3(1, -1, 1));
-    candidate_dirs.push_back(EK::Vector_3(1, -1, -1));
-    candidate_dirs.push_back(EK::Vector_3(-1, 1, 1));
-    candidate_dirs.push_back(EK::Vector_3(-1, 1, -1));
-    candidate_dirs.push_back(EK::Vector_3(-1, -1, 1));
-    candidate_dirs.push_back(EK::Vector_3(-1, -1, -1));
+    // 2. Corner diagonals (8 directions)
+    for (int sx : {-1, 1}) {
+        for (int sy : {-1, 1}) {
+            for (int sz : {-1, 1}) {
+                candidate_dirs.push_back(EK::Vector_3(sx, sy, sz));
+            }
+        }
+    }
 
-    // 3. Edge diagonals (12 directions for planar 45-degree alignments)
+    // 3. Planar Edge diagonals (12 directions)
     for (int s1 : {-1, 1}) {
         for (int s2 : {-1, 1}) {
             candidate_dirs.push_back(EK::Vector_3(s1, s2, 0));
@@ -43,22 +41,64 @@ inline EK::Vector_3 find_optimal_pour_orientation(
         }
     }
 
-    // 4. Face normals
+    // 4. Face normals (dominant model facets)
     for (const auto& fn : face_normals) {
-        candidate_dirs.push_back(fn);
-        candidate_dirs.push_back(-fn);
+        double fn_len = std::sqrt(CGAL::to_double(fn.squared_length()));
+        if (fn_len > 1e-6) {
+            candidate_dirs.push_back(fn);
+            candidate_dirs.push_back(-fn);
+        }
     }
 
-    // 5. Fibonacci spherical grid
-    const int N_SPHERE = 150;
-    const double phi = (1.0 + std::sqrt(5.0)) / 2.0;
-    for (int i = 0; i < N_SPHERE; ++i) {
-        double y = 1.0 - (i / double(N_SPHERE - 1)) * 2.0;
-        double radius = std::sqrt((std::max)(0.0, 1.0 - y * y));
-        double theta = 2.0 * M_PI * i / phi;
-        double x = std::cos(theta) * radius;
-        double z = std::sin(theta) * radius;
-        candidate_dirs.push_back(EK::Vector_3(FT(x), FT(y), FT(z)));
+    // 5. Canonical Compound Tangent Offsets:
+    // For every primary candidate d0 (cardinals, planar diagonals, corner diagonals),
+    // construct an orthonormal tangent frame (u, v) and generate orthogonal compound roll offsets.
+    // An offset of delta = 6° (~0.1045) tilts adjacent perpendicular features across the 5° bubble detachment threshold.
+    const double delta_rad = 6.0 * M_PI / 180.0;
+    const double tan_delta = std::tan(delta_rad);
+
+    std::vector<EK::Vector_3> primary_bases = candidate_dirs;
+    for (const auto& raw_base : primary_bases) {
+        double len = std::sqrt(CGAL::to_double(raw_base.squared_length()));
+        if (len < 1e-6) continue;
+        double bx = CGAL::to_double(raw_base.x()) / len;
+        double by = CGAL::to_double(raw_base.y()) / len;
+        double bz = CGAL::to_double(raw_base.z()) / len;
+
+        // Construct orthonormal tangent frame (u, v) on S²
+        double ux, uy, uz;
+        if (std::abs(bz) < 0.9) {
+            double u_len = std::sqrt(bx * bx + by * by);
+            ux = -by / u_len;
+            uy = bx / u_len;
+            uz = 0.0;
+        } else {
+            double u_len = std::sqrt(bx * bx + bz * bz);
+            ux = -bz / u_len;
+            uy = 0.0;
+            uz = bx / u_len;
+        }
+        double vx = by * uz - bz * uy;
+        double vy = bz * ux - bx * uz;
+        double vz = bx * uy - by * ux;
+
+        // Single-axis compound offsets: ±6° in u, ±6° in v
+        for (double su : {-tan_delta, tan_delta}) {
+            candidate_dirs.push_back(EK::Vector_3(FT(bx + su * ux), FT(by + su * uy), FT(bz + su * uz)));
+        }
+        for (double sv : {-tan_delta, tan_delta}) {
+            candidate_dirs.push_back(EK::Vector_3(FT(bx + sv * vx), FT(by + sv * vy), FT(bz + sv * vz)));
+        }
+        // Dual-axis compound offsets: ±6° in u AND ±6° in v
+        for (double su : {-tan_delta, tan_delta}) {
+            for (double sv : {-tan_delta, tan_delta}) {
+                candidate_dirs.push_back(EK::Vector_3(
+                    FT(bx + su * ux + sv * vx),
+                    FT(by + su * uy + sv * vy),
+                    FT(bz + su * uz + sv * vz)
+                ));
+            }
+        }
     }
 
     // Pre-extract vertices and adjacency
@@ -69,20 +109,33 @@ inline EK::Vector_3 find_optimal_pour_orientation(
     }
 
     std::vector<std::vector<int>> neighbors(mesh.number_of_vertices());
-    struct EdgeInfo { int u; int v; double length; };
-    std::vector<EdgeInfo> edge_list;
     for (auto e : mesh.edges()) {
         auto h = mesh.halfedge(e);
         int u = (int)mesh.source(h);
         int v = (int)mesh.target(h);
         neighbors[u].push_back(v);
         neighbors[v].push_back(u);
-        double l = std::sqrt(CGAL::to_double((pts[v] - pts[u]).squared_length()));
-        edge_list.push_back({u, v, l});
     }
 
-    double best_score = 1e18;
-    EK::Vector_3 best_dir(0, 0, 1);
+    // Lexicographic Ranking Structure (ZERO arbitrary weights)
+    struct OrientationRank {
+        int peak_count = 999999;       // Tier 1: True hydraulic traps / peaks (fewer is strictly better)
+        double flat_area = 1e18;       // Tier 2: Flat ceiling area with α < min_angle (mm², lower is strictly better)
+        double height_span = 1e18;     // Tier 3: Vertical bounding span Z_max - Z_min (mm, lower is strictly better)
+        EK::Vector_3 dir = EK::Vector_3(0, 0, 1);
+
+        bool is_better_than(const OrientationRank& o) const {
+            if (peak_count != o.peak_count) {
+                return peak_count < o.peak_count; // Tier 1 dominates unconditionally
+            }
+            if (std::abs(flat_area - o.flat_area) > 1e-4) {
+                return flat_area < o.flat_area;   // Tier 2 tie-breaker
+            }
+            return height_span < o.height_span;   // Tier 3 tie-breaker
+        }
+    };
+
+    OrientationRank best_rank;
     double sin_min = std::sin(min_angle_turns * 2.0 * M_PI);
 
     for (const auto& raw_dir : candidate_dirs) {
@@ -100,86 +153,85 @@ inline EK::Vector_3 find_optimal_pour_orientation(
             if (h > max_h) max_h = h;
         }
 
-        // 2. Count 1-ring local peaks with plateau tie-breaking
-        std::vector<int> peak_indices;
+        // 2. Count plateau-aware local summits (Tier 1)
+        std::vector<bool> visited(pts.size(), false);
+        int peak_count = 0;
+
         for (size_t i = 0; i < pts.size(); ++i) {
-            bool is_peak = true;
-            for (int n_idx : neighbors[i]) {
-                if (heights[n_idx] > heights[i] + 1e-6) {
-                    is_peak = false;
-                    break;
-                }
-            }
-            if (is_peak) {
-                bool is_rep = true;
-                for (int n_idx : neighbors[i]) {
-                    if (std::abs(heights[n_idx] - heights[i]) <= 1e-6 && n_idx < (int)i) {
-                        is_rep = false;
-                        break;
+            if (visited[i]) continue;
+
+            // BFS across connected vertices of equal height (plateau)
+            std::vector<int> component;
+            std::queue<int> q;
+            q.push((int)i);
+            visited[i] = true;
+            double plateau_h = heights[i];
+            bool has_higher_neighbor = false;
+
+            while (!q.empty()) {
+                int curr = q.front();
+                q.pop();
+                component.push_back(curr);
+
+                for (int n_idx : neighbors[curr]) {
+                    double nh = heights[n_idx];
+                    if (nh > plateau_h + 1e-6) {
+                        has_higher_neighbor = true;
+                    } else if (std::abs(nh - plateau_h) <= 1e-6 && !visited[n_idx]) {
+                        visited[n_idx] = true;
+                        q.push(n_idx);
                     }
                 }
-                if (is_rep) peak_indices.push_back((int)i);
+            }
+
+            // A plateau is a peak if and only if NO neighbor is strictly higher
+            if (!has_higher_neighbor) {
+                peak_count++;
             }
         }
-        int peak_count = (int)peak_indices.size();
 
-        // 3. Calculate ceiling slope penalties (internal cavity ceiling: normal points upward into mold)
-        double ceiling_penalty = 0.0;
+        // 3. Calculate flat ceiling area with α < min_angle (Tier 2)
+        double flat_ceiling_area = 0.0;
         for (size_t f_idx = 0; f_idx < face_normals.size(); ++f_idx) {
             const auto& fn = face_normals[f_idx];
             double fn_len = std::sqrt(CGAL::to_double(fn.squared_length()));
             if (fn_len < 1e-9) continue;
 
-            double dot_up = CGAL::to_double((fn.x()*u_dir.x() + fn.y()*u_dir.y() + fn.z()*u_dir.z()) / FT(fn_len));
+            double dot_up = CGAL::to_double((fn.x() * u_dir.x() + fn.y() * u_dir.y() + fn.z() * u_dir.z()) / FT(fn_len));
             double area = CGAL::to_double(face_areas[f_idx]);
 
-            // Cavity ceiling surface
+            // Upward cavity ceiling facet
             if (dot_up > 0.001) {
                 double sin_phi = std::sqrt((std::max)(0.0, 1.0 - dot_up * dot_up));
-                if (sin_phi < sin_min) { // slope < min_angle: bubble stagnation trap!
-                    ceiling_penalty += area * 500.0 * (sin_min - sin_phi + 0.1);
-                } else {
-                    ceiling_penalty += area * (1.0 - sin_phi) * 2.0;
+                if (sin_phi < sin_min) { // slope < min_angle: bubble stagnation hazard
+                    flat_ceiling_area += area;
                 }
             }
         }
 
-        // 4. Calculate edge slope penalties for ridges connected to summit peaks
-        double edge_penalty = 0.0;
-        for (const auto& edge : edge_list) {
-            if (edge.length < 1e-6) continue;
-            bool connects_peak = false;
-            for (int p_idx : peak_indices) {
-                if (edge.u == p_idx || edge.v == p_idx) {
-                    connects_peak = true;
-                    break;
-                }
-            }
-            if (connects_peak) {
-                double dz = std::abs(heights[edge.v] - heights[edge.u]);
-                double sin_edge = dz / edge.length;
-                if (sin_edge < sin_min) {
-                    edge_penalty += edge.length * 100.0 * (sin_min - sin_edge + 0.05);
-                }
-            }
-        }
+        double height_span = max_h - min_h; // Tier 3
 
-        double height_span = max_h - min_h;
-        double score = double(peak_count) * 1000.0 + ceiling_penalty + edge_penalty - height_span * 0.1;
+        OrientationRank current_rank;
+        current_rank.peak_count = peak_count;
+        current_rank.flat_area = flat_ceiling_area;
+        current_rank.height_span = height_span;
+        current_rank.dir = u_dir;
 
-        if (score < best_score) {
-            best_score = score;
-            best_dir = u_dir;
+        if (current_rank.is_better_than(best_rank)) {
+            best_rank = current_rank;
         }
     }
 
-    std::cout << "  [Pour Orientation] Scanned " << candidate_dirs.size() 
-              << " candidate up-vectors (min_angle=" << min_angle_turns << " turns). Best score: " << best_score << " dir: ("
-              << CGAL::to_double(best_dir.x()) << ", "
-              << CGAL::to_double(best_dir.y()) << ", "
-              << CGAL::to_double(best_dir.z()) << ")" << std::endl << std::flush;
+    std::cout << "  [Pour Orientation] Evaluated " << candidate_dirs.size() 
+              << " candidate up-vectors (min_angle=" << min_angle_turns << " turns)." << std::endl
+              << "    Best Rank -> Peaks: " << best_rank.peak_count 
+              << ", Flat Ceiling Area: " << best_rank.flat_area << " mm²"
+              << ", Height Span: " << best_rank.height_span << " mm"
+              << ", Dir: (" << CGAL::to_double(best_rank.dir.x()) << ", "
+              << CGAL::to_double(best_rank.dir.y()) << ", "
+              << CGAL::to_double(best_rank.dir.z()) << ")" << std::endl << std::flush;
 
-    return best_dir;
+    return best_rank.dir;
 }
 
 inline Transformation get_gravity_rotation(const EK::Vector_3& up_dir) {

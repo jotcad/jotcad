@@ -25,62 +25,47 @@ inline std::vector<PeakCluster> detect_peaks_and_air_traps(const ExactMesh& mesh
         neighbors[v].push_back(u);
     }
 
-    // 1. Identify 1-ring local peak vertices in +Z
-    std::vector<bool> is_peak(pts.size(), false);
-    std::vector<int> peak_indices;
-
-    for (size_t i = 0; i < pts.size(); ++i) {
-        bool peak = true;
-        for (int n_idx : neighbors[i]) {
-            if (pts[n_idx].z() > pts[i].z()) {
-                peak = false;
-                break;
-            }
-        }
-        if (peak) {
-            is_peak[i] = true;
-            peak_indices.push_back((int)i);
-        }
-    }
-
-    // 2. Cluster adjacent peak vertices
+    // 1. Identify plateau-connected summit components in +Z
     std::vector<bool> visited(pts.size(), false);
     std::vector<PeakCluster> clusters;
 
-    for (int p_idx : peak_indices) {
-        if (visited[p_idx]) continue;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        if (visited[i]) continue;
 
-        PeakCluster cluster;
-        cluster.id = (int)clusters.size() + 1;
-
+        // BFS across connected vertices of equal elevation (plateau)
+        std::vector<int> component;
         std::queue<int> q;
-        q.push(p_idx);
-        visited[p_idx] = true;
-
-        EK::Point_3 apex_pt = pts[p_idx];
-        FT max_z = pts[p_idx].z();
+        q.push((int)i);
+        visited[i] = true;
+        FT plateau_z = pts[i].z();
+        bool has_higher_neighbor = false;
 
         while (!q.empty()) {
             int curr = q.front();
             q.pop();
-
-            cluster.vertices.push_back(ExactMesh::Vertex_index(curr));
-            if (pts[curr].z() > max_z) {
-                max_z = pts[curr].z();
-                apex_pt = pts[curr];
-            }
+            component.push_back(curr);
 
             for (int n_idx : neighbors[curr]) {
-                if (is_peak[n_idx] && !visited[n_idx]) {
+                if (pts[n_idx].z() > plateau_z) {
+                    has_higher_neighbor = true;
+                } else if (pts[n_idx].z() == plateau_z && !visited[n_idx]) {
                     visited[n_idx] = true;
                     q.push(n_idx);
                 }
             }
         }
 
-        cluster.apex = apex_pt;
-        cluster.max_z = max_z;
-        clusters.push_back(cluster);
+        // A plateau forms an air trap / summit IF AND ONLY IF no neighbor is strictly higher
+        if (!has_higher_neighbor) {
+            PeakCluster cluster;
+            cluster.id = (int)clusters.size() + 1;
+            cluster.max_z = plateau_z;
+            cluster.apex = pts[component[0]];
+            for (int v_idx : component) {
+                cluster.vertices.push_back(ExactMesh::Vertex_index(v_idx));
+            }
+            clusters.push_back(cluster);
+        }
     }
 
     // 3. Sort clusters by height descending: highest cluster is primary pour gate

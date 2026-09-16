@@ -2,6 +2,8 @@
 
 This directory implements automated gravity pour orientation optimization, topological Morse air-trap/peak detection, and parametric sprue/riser geometry generation for slipcasting.
 
+**Governing Specification**: [`docs/POUR_PREP_DRAINAGE_DESIGN.md`](../../../docs/POUR_PREP_DRAINAGE_DESIGN.md)
+
 ## Modular Component Index
 
 | Header File | Responsibility |

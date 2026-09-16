@@ -25,7 +25,7 @@ struct PourOp : P {
         double vent_dia,
         bool auto_orient,
         bool vents,
-        double min_angle = 15.0 / 360.0
+        double min_angle = pour::default_min_angle
     ) {
         pour::ExactMesh mesh_part;
         if (!boolean::Engine::shape_to_fused_mesh(vfs, in, mesh_part)) {
@@ -194,7 +194,7 @@ struct PourOp : P {
                 {{"name", "vent_dia"}, {"type", "jot:number"}, {"default", 2.5}, {"description", "Air bleed riser diameter in mm."}},
                 {{"name", "auto_orient"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to auto-orient along gravity."}},
                 {{"name", "vents"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to synthesize and attach pour sprues and vents."}},
-                {{"name", "min_angle"}, {"type", "jot:number"}, {"default", 15.0 / 360.0}, {"description", "Minimum ceiling and ridge drainage angle in turns (1.0 = 360 degrees, default 15.0/360.0 ~= 15 deg) to ensure bubble escape."}}
+                {{"name", "min_angle"}, {"type", "jot:number"}, {"default", pour::default_min_angle}, {"description", "Minimum ceiling and ridge drainage angle in turns (1.0 = 360 degrees, default 5.0/360.0 ~= 5 deg) to ensure bubble escape."}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The oriented shape with attached pour sprue and vents as gap components."}}}

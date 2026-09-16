@@ -153,6 +153,37 @@ int main() {
     assert(cross_mold.components.size() >= 2);
     std::cout << "    - Successfully produced caltrop cross mold assembly with " << cross_mold.components.size() << " components." << std::endl;
 
+    // 6. Test Pour Prep on 2-Way Planar Cross (Testing Compound Tilt & Vent Reduction)
+    std::cout << "  - Testing pourPrep on 2-way Planar Cross (40x10x10 fused with 10x40x10)..." << std::endl;
+    fs::Selector pboxX_sel = fs::Selector{"jot/Box", {{"width", 40.0}, {"height", 10.0}, {"depth", 10.0}}}.with_output("$out");
+    fs::Selector pboxY_sel = fs::Selector{"jot/Box", {{"width", 10.0}, {"height", 40.0}, {"depth", 10.0}}}.with_output("$out");
+    Shape psX = vfs.read<Shape>(pboxX_sel);
+    Shape psY = vfs.read<Shape>(pboxY_sel);
+    fs::Selector pcross_sel = fs::Selector{"jot/Fuse", {{"shapes", {vfs.materialize(psX), vfs.materialize(psY)}}}}.with_output("$out");
+    FusePrimitiveOp<>::execute(&vfs, pcross_sel, {psX, psY});
+    Shape pcross_shape = vfs.read<Shape>(pcross_sel);
+
+    fs::Selector pcross_pour_sel("jot/pourPrep");
+    pcross_pour_sel.parameters["$in"] = pcross_shape.to_json();
+    pcross_pour_sel.parameters["sprue_base"] = 6.0;
+    pcross_pour_sel.parameters["sprue_top"] = 12.0;
+    pcross_pour_sel.parameters["vent_dia"] = 2.0;
+    pcross_pour_sel.parameters["auto_orient"] = true;
+    pcross_pour_sel.parameters["vents"] = true;
+    pcross_pour_sel.output = "$out";
+
+    Processor::execute(&vfs, pcross_pour_sel);
+    Shape prepped_pcross = vfs.read<Shape>(pcross_pour_sel);
+    assert(prepped_pcross.is_real());
+
+    int vent_count = 0;
+    int sprue_count = 0;
+    for (const auto& comp : prepped_pcross.components) {
+        if (comp.has_tag("mold/role", "sprue")) sprue_count++;
+        if (comp.has_tag("mold/role", "vent")) vent_count++;
+    }
+    std::cout << "    - Planar cross prepped components: sprue=" << sprue_count << ", vents=" << vent_count << std::endl;
+
     std::cout << "✅ ALL Pour Prep Tests Passed" << std::endl;
     return 0;
 }

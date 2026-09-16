@@ -181,6 +181,15 @@ $(OBJ_DIR)/mold_voxel_bear_test.o: mold_voxel_bear_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
+# Rule for building the standalone pour_test binary
+$(BIN_DIR)/pour_test: $(OBJ_DIR)/pour_test.o $(REG_OBJS) $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/pour_test.o: pour_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
 # Compile unit_tests.o, generating unit_tests_run.h dynamically first
 $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h $(COMBINED_TEST_SOURCES)
 	@mkdir -p $(OBJ_DIR)
