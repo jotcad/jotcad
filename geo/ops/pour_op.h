@@ -61,6 +61,7 @@ struct PourOp : P {
             rot_tf = pour::get_gravity_rotation(up_dir);
             oriented_mesh = pour::rotate_mesh_to_gravity(mesh_part, rot_tf);
         }
+        fix::assert_well_formed_closed_mesh(oriented_mesh, "oriented_mesh before sprue/vent join");
 
         // 3. Compute unvented model bounding limits in pure FT
         pour::FT xmin = pour::FT(1e9), xmax = pour::FT(-1e9);
@@ -96,7 +97,7 @@ struct PourOp : P {
         std::vector<pour::ToolComponentMesh> tool_components;
         if (vents) {
             // 5. Detect local peak summits & air traps
-            auto peaks = pour::detect_peaks_and_air_traps(oriented_mesh);
+            auto peaks = pour::detect_peaks_and_air_traps(oriented_mesh, params.min_angle);
             std::cout << "  [Pour Prep] Optimal up vector: (" 
                       << CGAL::to_double(up_dir.x()) << ", " << CGAL::to_double(up_dir.y()) << ", " << CGAL::to_double(up_dir.z())
                       << ") with " << peaks.size() << " peak summits." << std::endl << std::flush;

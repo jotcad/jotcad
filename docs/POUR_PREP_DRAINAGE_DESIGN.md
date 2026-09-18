@@ -118,26 +118,26 @@ Instead of a single scalar score with magic weights, candidate orientations $\ve
         │ Count True Hydraulic Traps N_traps(d)        │ ◄── Pure Integer (0, 1, 2...)
         └──────────────────────┬───────────────────────┘     (Computed via Watershed DAG)
                                │ Only compare if N_traps is tied
-                               ▼
+                                ▼
         ┌──────────────────────────────────────────────┐
-        │ Tier 2 (Physical Drainage):                  │
-        │ Flat Ceiling Area with α < 5°                │ ◄── Pure Physical Area (mm²)
+        │ Tier 2 (Physical Drainage Hazard):           │
+        │ Flat Ceiling Hazard Area with α < 5°         │ ◄── Pure Physical Area (mm², lower is better)
         └──────────────────────┬───────────────────────┘
-                               │ Only compare if flat area is tied
+                               │ Only compare if flat hazard area is tied
                                ▼
         ┌──────────────────────────────────────────────┐
-        │ Tier 3 (Stock Compactness):                  │
-        │ Vertical Height (Z_max - Z_min)              │ ◄── Pure Millimeters (mm)
+        │ Tier 3 (Drainage Quality / Upright Stance):  │
+        │ Drainage Slope Power (∑ sin α_f · Area_f)    │ ◄── Pure Buoyancy Gradient (mm², higher is better)
         └──────────────────────────────────────────────┘
 ```
 
 ### 5.1 Strict Comparison Rule
 Candidate $\vec{d}_A$ is strictly better than $\vec{d}_B$ ($\vec{d}_A \prec \vec{d}_B$) if and only if:
-1. **Tier 1**: $N_{\text{traps}}(\vec{d}_A) < N_{\text{traps}}(\vec{d}_B)$ (Fewer vents ALWAYS wins; a 0-vent candidate strictly beats a 1-vent candidate. No slope penalty can ever justify drilling an extra vent).
-2. **Tier 2 (Tie-breaker)**: If $N_{\text{traps}}(\vec{d}_A) == N_{\text{traps}}(\vec{d}_B)$, then $\text{Area}_{\text{flat}}(\vec{d}_A) < \text{Area}_{\text{flat}}(\vec{d}_B)$.
-3. **Tier 3 (Tie-breaker)**: If flat ceiling areas are equal, then $\Delta Z(\vec{d}_A) < \Delta Z(\vec{d}_B)$ (more compact vertical mold box).
+1. **Tier 1 (Zero Vent Mandate)**: $N_{\text{traps}}(\vec{d}_A) < N_{\text{traps}}(\vec{d}_B)$ (Fewer vents ALWAYS wins; a 0-vent candidate strictly beats a 1-vent candidate. Computed via the Hydraulic Watershed DAG).
+2. **Tier 2 (Tie-breaker)**: If $N_{\text{traps}}(\vec{d}_A) == N_{\text{traps}}(\vec{d}_B)$, then $\text{Area}_{\text{flat}}(\vec{d}_A) < \text{Area}_{\text{flat}}(\vec{d}_B)$ (Minimizes surface area susceptible to bubble pinning).
+3. **Tier 3 (Tie-breaker)**: If flat ceiling hazard areas are equal, then $\text{Power}_{\text{drain}}(\vec{d}_A) > \text{Power}_{\text{drain}}(\vec{d}_B)$ (Maximizes average upward drainage slope $\sum \sin\alpha_f \cdot \text{Area}_f$, strictly favoring tall upright stances over flat orientations).
 
-**There are ZERO heuristic weights.** Integer vent counts, physical surface areas ($\text{mm}^2$), and lengths ($\text{mm}$) never mix.
+**There are ZERO arbitrary weights.** Pure integer vent counts, hazard areas ($\text{mm}^2$), and drainage gradients never cross-multiply.
 
 ---
 
