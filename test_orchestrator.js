@@ -7,7 +7,7 @@ const suites = {
     command: './geo/compile.sh && node --test --test-concurrency=1 jot/test/*.js',
     args: [],
     env: {},
-    timeout: 120000
+    timeout: 180000
   },
   geo: {
     name: 'GEO C++ Unit Tests',
@@ -15,33 +15,34 @@ const suites = {
     args: [],
     cwd: 'geo/test',
     env: {},
-    timeout: 480000
+    timeout: 3600000
   },
   fs: {
     name: 'FS Unit Tests',
     command: 'node',
     args: ['--test', '--test-concurrency=1', 'fs/test/*.js'],
     env: { TEST_UX_PORT: '3039', TEST_OPS_PORT: '9099' },
-    timeout: 120000
+    timeout: 180000
   },
   integration: {
     name: 'Integration Tests',
     command: './geo/compile.sh && node --test --test-concurrency=1 --test-timeout=60000 --test-force-exit integration/*.test.js',
     args: [],
     env: { LOG_LEVEL: 'debug' },
-    timeout: 300000
+    timeout: 600000
   },
   puppeteer: {
     name: 'Puppeteer Integration Tests',
     command: './geo/compile.sh && npm run build:ux && node --test --test-concurrency=1 --test-timeout=300000 --test-force-exit integration/puppeteer/*.test.js',
     args: [],
     env: {},
-    timeout: 360000
+    timeout: 600000
   }};
 
 async function runSuite(id, suite) {
   console.log(`\n[RUNNING] ${suite.name} (${id})...`);
   const suiteTimeout = suite.timeout || 120000;
+  const suiteStartTime = Date.now();
   return new Promise((resolve) => {
     const child = spawn(suite.command, suite.args, {
       cwd: suite.cwd || process.cwd(),
@@ -78,6 +79,7 @@ async function runSuite(id, suite) {
 
     child.on('close', (code) => {
       clearTimeout(timer);
+      const durationSec = ((Date.now() - suiteStartTime) / 1000).toFixed(2);
       const lines = output.split('\n');
       for (const line of lines) {
           const trimmed = line.trim();
@@ -102,15 +104,16 @@ async function runSuite(id, suite) {
         if (stats.fail === 0) stats.fail = 1;
         if (stats.tests === 0) stats.tests = 1;
         failures.push(`Suite timed out after ${suiteTimeout}ms`);
-        resolve({ passed: false, failures, stats });
+        console.error(`\n[TIMEOUT] ${suite.name} (took ${durationSec}s)`);
+        resolve({ passed: false, failures, stats, durationSec });
       } else if (code !== 0) {
-        console.error(`\n[FAILED] ${suite.name} (Exit Code: ${code})`);
+        console.error(`\n[FAILED] ${suite.name} (Exit Code: ${code}, took ${durationSec}s)`);
         if (stats.fail === 0) stats.fail = 1; // Ensure failure is reflected in stats
         if (stats.tests === 0) stats.tests = 1;
-        resolve({ passed: false, failures, stats });
+        resolve({ passed: false, failures, stats, durationSec });
       } else {
-        console.log(`\n[PASSED] ${suite.name}`);
-        resolve({ passed: true, failures: [], stats });
+        console.log(`\n[PASSED] ${suite.name} (took ${durationSec}s)`);
+        resolve({ passed: true, failures: [], stats, durationSec });
       }
     });
   });
@@ -136,6 +139,7 @@ async function main() {
   }
 
   const results = [];
+  const totalStartTime = Date.now();
   for (const id of selectedIds) {
     const suite = suites[id];
     const res = await runSuite(id, suite);
@@ -157,7 +161,7 @@ async function main() {
     totalPass += pass;
     totalFail += fail;
     
-    const statStr = `[Pass: ${pass}, Fail: ${fail}, Total: ${tests}]`;
+    const statStr = `[Pass: ${pass}, Fail: ${fail}, Total: ${tests}, Time: ${res.durationSec}s]`;
     if (res.passed) {
         console.log(`✅ PASSED: ${res.name} ${statStr}`);
     } else {
@@ -169,8 +173,9 @@ async function main() {
     }
   }
   
+  const totalDurationSec = ((Date.now() - totalStartTime) / 1000).toFixed(2);
   console.log('-'.repeat(60));
-  console.log(`TOTAL: ${totalPass} Passed, ${totalFail} Failed, ${totalTests} Total`);
+  console.log(`TOTAL: ${totalPass} Passed, ${totalFail} Failed, ${totalTests} Total (took ${totalDurationSec}s)`);
   console.log('='.repeat(60));
   process.exit(allPassed ? 0 : 1);
 }

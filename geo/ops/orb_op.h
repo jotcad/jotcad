@@ -33,7 +33,7 @@ struct OrbOp : P {
         double cz = z_range.center();
 
         if (method == "uv") {
-            // Legacy UV Grid method
+            // Well-formed closed UV Sphere
             double max_dim = std::max({w, h, d});
             int lon_sides = zag(max_dim, zag_val);
             int lat_sides = std::max(3, lon_sides / 2);
@@ -45,17 +45,22 @@ struct OrbOp : P {
             FT f_cy = FT(cy);
             FT f_cz = FT(cz);
 
-            std::vector<std::vector<int>> grid(lat_sides + 1, std::vector<int>(lon_sides));
+            // 1. South Pole vertex (phi = -0.25 turns)
+            int south_pole_idx = (int)res.vertices.size();
+            res.vertices.push_back({f_cx, f_cy, f_cz - d2});
 
-            for (int i = 0; i <= lat_sides; ++i) {
-                double phi_turns = (double)i / lat_sides * 0.5 - 0.25; // -0.25 to 0.25 turns
+            // 2. Intermediate rings (i = 1 to lat_sides - 1)
+            std::vector<std::vector<int>> ring(lat_sides);
+            for (int i = 1; i < lat_sides; ++i) {
+                double phi_turns = (double)i / lat_sides * 0.5 - 0.25;
                 auto [s_phi, c_phi] = get_approx_sincos(phi_turns);
+                ring[i].resize(lon_sides);
 
                 for (int j = 0; j < lon_sides; ++j) {
-                    double theta_turns = (double)j / lon_sides; // 0 to 1 turns
+                    double theta_turns = (double)j / lon_sides;
                     auto [s_theta, c_theta] = get_approx_sincos(theta_turns);
 
-                    grid[i][j] = (int)res.vertices.size();
+                    ring[i][j] = (int)res.vertices.size();
                     res.vertices.push_back({
                         f_cx + c_phi * c_theta * w2,
                         f_cy + c_phi * s_theta * h2,
@@ -64,22 +69,34 @@ struct OrbOp : P {
                 }
             }
 
-            for (int i = 0; i < lat_sides; ++i) {
+            // 3. North Pole vertex (phi = +0.25 turns)
+            int north_pole_idx = (int)res.vertices.size();
+            res.vertices.push_back({f_cx, f_cy, f_cz + d2});
+
+            // 4. Faces:
+            // South pole fan (pointing outward)
+            for (int j = 0; j < lon_sides; ++j) {
+                int next_j = (j + 1) % lon_sides;
+                res.faces.push_back({{{south_pole_idx, ring[1][next_j], ring[1][j]}}});
+            }
+
+            // Intermediate quads split into triangles
+            for (int i = 1; i < lat_sides - 1; ++i) {
                 for (int j = 0; j < lon_sides; ++j) {
                     int next_j = (j + 1) % lon_sides;
-                    int v1 = grid[i][j];
-                    int v2 = grid[i][next_j];
-                    int v3 = grid[i+1][next_j];
-                    int v4 = grid[i+1][j];
-
-                    if (i == 0) {
-                        res.faces.push_back({{{v1, v3, v4}}}); 
-                    } else if (i == lat_sides - 1) {
-                        res.faces.push_back({{{v1, v2, v3}}});
-                    } else {
-                        res.faces.push_back({{{v1, v2, v3, v4}}});
-                    }
+                    int v1 = ring[i][j];
+                    int v2 = ring[i][next_j];
+                    int v3 = ring[i+1][next_j];
+                    int v4 = ring[i+1][j];
+                    res.faces.push_back({{{v1, v2, v3}}});
+                    res.faces.push_back({{{v1, v3, v4}}});
                 }
+            }
+
+            // North pole fan (pointing outward)
+            for (int j = 0; j < lon_sides; ++j) {
+                int next_j = (j + 1) % lon_sides;
+                res.faces.push_back({{{ring[lat_sides - 1][j], ring[lat_sides - 1][next_j], north_pole_idx}}});
             }
         } else {
             // New Geodesic subdivision method

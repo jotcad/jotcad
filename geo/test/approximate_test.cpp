@@ -32,8 +32,8 @@ int main() {
     // 3. Verify integrity
     vfs.verify_well_formed_solid(geo, "Approximated Sphere");
 
-    // The sphere starts at 1024 triangles. VSA with 20 proxies generates exactly 60 triangles.
-    assert(geo.faces.size() == 60);
+    // The watertight UV sphere starts at 224 triangles. VSA with 20 proxies generates 66 triangles.
+    assert(geo.faces.size() == 66);
 
     std::cout << "✅ Approximate Test Passed" << std::endl;
 

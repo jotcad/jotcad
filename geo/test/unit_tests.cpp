@@ -3,6 +3,8 @@
 #include <string>
 #include <cstring>
 #include <exception>
+#include <chrono>
+#include <iomanip>
 
 // Global backend engine and utility headers included by tests
 #include "boolean/engine.h"
@@ -111,31 +113,47 @@ int main(int argc, char* argv[]) {
     if (target == "all" || target == "--all") {
         int passed = 0;
         int failed = 0;
+        auto suite_start = std::chrono::steady_clock::now();
         for (int i = 0; ALL_TESTS[i].name != nullptr; ++i) {
-            std::cout << "[RUN] " << ALL_TESTS[i].name << std::endl;
+            std::cout << "[RUN] (" << (i + 1) << ") " << ALL_TESTS[i].name << "..." << std::endl;
+            auto t_start = std::chrono::steady_clock::now();
             try {
                 int res = ALL_TESTS[i].func();
+                auto t_end = std::chrono::steady_clock::now();
+                double elapsed = std::chrono::duration<double>(t_end - t_start).count();
                 if (res == 0) {
                     passed++;
+                    std::cout << "✔ " << ALL_TESTS[i].name << " passed (took " << std::fixed << std::setprecision(3) << elapsed << "s)" << std::endl;
                 } else {
                     failed++;
-                    std::cerr << "✖ " << ALL_TESTS[i].name << " returned " << res << std::endl;
+                    std::cerr << "✖ " << ALL_TESTS[i].name << " returned " << res << " (took " << std::fixed << std::setprecision(3) << elapsed << "s)" << std::endl;
                 }
             } catch (const std::exception& e) {
+                auto t_end = std::chrono::steady_clock::now();
+                double elapsed = std::chrono::duration<double>(t_end - t_start).count();
                 failed++;
-                std::cerr << "✖ " << ALL_TESTS[i].name << " threw exception: " << e.what() << std::endl;
+                std::cerr << "✖ " << ALL_TESTS[i].name << " threw exception: " << e.what() << " (took " << std::fixed << std::setprecision(3) << elapsed << "s)" << std::endl;
             } catch (...) {
+                auto t_end = std::chrono::steady_clock::now();
+                double elapsed = std::chrono::duration<double>(t_end - t_start).count();
                 failed++;
-                std::cerr << "✖ " << ALL_TESTS[i].name << " threw unknown exception" << std::endl;
+                std::cerr << "✖ " << ALL_TESTS[i].name << " threw unknown exception (took " << std::fixed << std::setprecision(3) << elapsed << "s)" << std::endl;
             }
         }
-        std::cout << "\nℹ tests " << (passed + failed) << "\nℹ pass " << passed << "\nℹ fail " << failed << std::endl;
+        auto suite_end = std::chrono::steady_clock::now();
+        double total_elapsed = std::chrono::duration<double>(suite_end - suite_start).count();
+        std::cout << "\nℹ tests " << (passed + failed) << "\nℹ pass " << passed << "\nℹ fail " << failed << "\nℹ total time " << std::fixed << std::setprecision(3) << total_elapsed << "s" << std::endl;
         return failed > 0 ? 1 : 0;
     } else {
         // Find and run a specific test
         for (int i = 0; ALL_TESTS[i].name != nullptr; ++i) {
             if (target == ALL_TESTS[i].name) {
-                return ALL_TESTS[i].func();
+                auto t_start = std::chrono::steady_clock::now();
+                int res = ALL_TESTS[i].func();
+                auto t_end = std::chrono::steady_clock::now();
+                double elapsed = std::chrono::duration<double>(t_end - t_start).count();
+                std::cout << "\nDuration: " << std::fixed << std::setprecision(3) << elapsed << "s" << std::endl;
+                return res;
             }
         }
         std::cerr << "Unknown test: " << target << std::endl;

@@ -293,7 +293,11 @@ struct EmbossOp : P {
                     f_vs.push_back(old_to_new_outside[target_mesh.target(cur)]);
                     cur = target_mesh.next(cur);
                 } while (cur != h);
-                result_mesh.add_face(f_vs);
+                auto res_f = result_mesh.add_face(f_vs);
+                if (res_f == ExactMesh::null_face()) {
+                    std::cerr << "[EmbossOp] Failed to add outside face!" << std::endl;
+                }
+                assert(res_f != ExactMesh::null_face() && "EmbossOp: failed to add outside face");
             }
 
             // 9. Add inside faces to result
@@ -305,7 +309,11 @@ struct EmbossOp : P {
                     f_vs.push_back(old_to_new_inside[target_mesh.target(cur)]);
                     cur = target_mesh.next(cur);
                 } while (cur != h);
-                result_mesh.add_face(f_vs);
+                auto res_f = result_mesh.add_face(f_vs);
+                if (res_f == ExactMesh::null_face()) {
+                    std::cerr << "[EmbossOp] Failed to add inside face!" << std::endl;
+                }
+                assert(res_f != ExactMesh::null_face() && "EmbossOp: failed to add inside face");
             }
 
             // 10. Add side walls connecting outside and inside boundaries
@@ -318,9 +326,21 @@ struct EmbossOp : P {
                 auto is = old_to_new_inside[vs];
                 auto it = old_to_new_inside[vt];
                 
-                result_mesh.add_face(os, ot, it);
-                result_mesh.add_face(os, it, is);
+                auto f1 = result_mesh.add_face(os, ot, it);
+                if (f1 == ExactMesh::null_face()) {
+                    std::cerr << "[EmbossOp] Failed to add wall face 1: (" << os << ", " << ot << ", " << it << ")" << std::endl;
+                }
+                assert(f1 != ExactMesh::null_face() && "EmbossOp: failed to add wall face 1");
+
+                auto f2 = result_mesh.add_face(os, it, is);
+                if (f2 == ExactMesh::null_face()) {
+                    std::cerr << "[EmbossOp] Failed to add wall face 2: (" << os << ", " << it << ", " << is << ")" << std::endl;
+                }
+                assert(f2 != ExactMesh::null_face() && "EmbossOp: failed to add wall face 2");
             }
+
+            // 10.5. Stitch coincident borders along the split seam
+            CGAL::Polygon_mesh_processing::stitch_borders(result_mesh);
 
             // 11. Convert back to local space using in.tf.inverse()
             Matrix world_to_local = in.tf.inverse();

@@ -63,11 +63,13 @@ inline bool corefine_difference(
         return true;
     }
 
-    fix::assert_well_formed_for_corefinement(target, label + " (target)");
-    fix::assert_well_formed_for_corefinement(tool, label + " (tool)");
-
     Mesh target_copy = target;
     Mesh tool_copy = tool;
+    if (target_copy.has_garbage()) target_copy.collect_garbage();
+    if (tool_copy.has_garbage()) tool_copy.collect_garbage();
+
+    fix::assert_well_formed_for_corefinement(target_copy, label + " (target)");
+    fix::assert_well_formed_for_corefinement(tool_copy, label + " (tool)");
 
     std::cout << "    [" << label << "] CGAL corefine difference... " << std::flush;
     auto t0 = std::chrono::steady_clock::now();
@@ -112,11 +114,13 @@ inline bool corefine_intersection(
         return true;
     }
 
-    fix::assert_well_formed_for_corefinement(target, label + " (target)");
-    fix::assert_well_formed_for_corefinement(tool, label + " (tool)");
-
     Mesh target_copy = target;
     Mesh tool_copy = tool;
+    if (target_copy.has_garbage()) target_copy.collect_garbage();
+    if (tool_copy.has_garbage()) tool_copy.collect_garbage();
+
+    fix::assert_well_formed_for_corefinement(target_copy, label + " (target)");
+    fix::assert_well_formed_for_corefinement(tool_copy, label + " (tool)");
 
     bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
         target_copy, tool_copy, out,
@@ -162,18 +166,24 @@ inline bool corefine_union(
         return true;
     }
 
-    fix::assert_well_formed_for_corefinement(target, label + " (target)");
-    fix::assert_well_formed_for_corefinement(tool, label + " (tool)");
-
     Mesh target_copy = target;
     Mesh tool_copy = tool;
+    if (target_copy.has_garbage()) target_copy.collect_garbage();
+    if (tool_copy.has_garbage()) tool_copy.collect_garbage();
 
+    fix::assert_well_formed_for_corefinement(target_copy, label + " (target)");
+    fix::assert_well_formed_for_corefinement(tool_copy, label + " (tool)");
+
+    std::cout << "    [" << label << "] CGAL corefine union... " << std::flush;
+    auto t0 = std::chrono::steady_clock::now();
     bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
         target_copy, tool_copy, out,
         CGAL::parameters::throw_on_self_intersection(false),
         CGAL::parameters::throw_on_self_intersection(false),
         CGAL::parameters::all_default()
     );
+    auto t1 = std::chrono::steady_clock::now();
+    std::cout << (ok ? "Done" : "FAILED") << " in " << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms." << std::endl << std::flush;
     if (!ok) return false;
 
     if (out.is_empty() || out.number_of_faces() == 0) {
@@ -181,7 +191,11 @@ inline bool corefine_union(
         return true;
     }
 
+    std::cout << "    [" << label << "] Checking kisses... " << std::flush;
+    auto t2 = std::chrono::steady_clock::now();
     regularize_and_resolve_kisses(out, kiss_mode, width);
+    auto t3 = std::chrono::steady_clock::now();
+    std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
     fix::assert_well_formed_for_corefinement(out, label + " (out)");
     return true;
 }

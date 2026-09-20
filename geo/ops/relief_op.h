@@ -446,6 +446,16 @@ struct ReliefOp : P {
                             int i_min = std::min(idx_start, idx_end);
                             int i_max = std::max(idx_start, idx_end);
 
+                            // Orient segment (px1, py1) -> (px2, py2) so that the higher component
+                            // is on the LEFT and the lower component is on the RIGHT.
+                            // normal_right indicates whether component 'c' is on the right of p1 -> p2.
+                            bool c_is_higher = (comp_levels[c] > comp_levels[neighbor_label]);
+                            bool should_swap = c_is_higher ? normal_right : !normal_right;
+                            if (should_swap) {
+                                std::swap(px1, px2);
+                                std::swap(py1, py2);
+                            }
+
                             for (int idx = i_min; idx < i_max; ++idx) {
                                 int l1 = existing_levels[idx];
                                 int l2 = existing_levels[idx + 1];
@@ -463,19 +473,10 @@ struct ReliefOp : P {
                                 int a1 = add_vertex(px1, py1, hz2);
                                 int a2 = add_vertex(px2, py2, hz2);
 
-                                // Correct orientation: 
-                                // normal_right assumes the component 'c' is on the 'right' of the segment (p1->p2)
-                                // If the component level is HIGHER than the current wall level segment (idx), 
-                                // the wall is an exterior face of component 'c'.
-                                bool point_right = (comp_levels[c] > l1) ? normal_right : !normal_right;
-
-                                if (point_right) {
-                                    triangles.push_back({b1, b2, a1});
-                                    triangles.push_back({a1, b2, a2});
-                                } else {
-                                    triangles.push_back({b1, a1, b2});
-                                    triangles.push_back({a1, a2, b2});
-                                }
+                                // With higher component on LEFT, outward normal points to RIGHT.
+                                // Winding {b1, b2, a1} and {a1, b2, a2} matches CCW top caps.
+                                triangles.push_back({b1, b2, a1});
+                                triangles.push_back({a1, b2, a2});
                             }
                         };
 
@@ -498,11 +499,11 @@ struct ReliefOp : P {
                             }
                         } else {
                             if (v1 && v3) {
-                                add_wall(e0, e3, v0_lbl, true);
+                                add_wall(e0, e3, v0_lbl, false);
                             } else if (v1 && !v3) {
-                                add_wall(e0, d0, v0_lbl, true);
+                                add_wall(e0, d0, v0_lbl, false);
                             } else if (v3 && !v1) {
-                                add_wall(d0, e3, v0_lbl, true);
+                                add_wall(d0, e3, v0_lbl, false);
                             }
                         }
 
@@ -525,11 +526,11 @@ struct ReliefOp : P {
                             }
                         } else {
                             if (tv2 && tv3) {
-                                add_wall(e1, d0, v1_lbl, true);
+                                add_wall(e1, d0, v1_lbl, false);
                             } else if (tv2 && !tv3) {
-                                add_wall(e1, e2, v1_lbl, true);
+                                add_wall(e1, e2, v1_lbl, false);
                             } else if (tv3 && !tv2) {
-                                add_wall(e2, d0, v1_lbl, true);
+                                add_wall(e2, d0, v1_lbl, false);
                             }
                         }
                     }

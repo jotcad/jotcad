@@ -21,6 +21,7 @@
 #include <cassert>
 #include <iterator>
 #include "kernel.h"
+#include "corefine.h"
 #include "../data/geometry.h"
 #include "../data/shape.h"
 #include "../data/surface_mesh_geometry.h"
@@ -40,15 +41,6 @@ typedef CGAL::General_polygon_set_2<Gps_traits_2> General_polygon_set_2;
 typedef CGAL::Polygon_2<EK> Polygon_2;
 typedef CGAL::Polygon_with_holes_2<EK> Polygon_with_holes_2;
 
-template <typename MeshType>
-inline bool do_meshes_overlap(const MeshType& m1, const MeshType& m2) {
-    if (m1.is_empty() || m2.is_empty()) return false;
-    return CGAL::do_overlap(
-        CGAL::Polygon_mesh_processing::bbox(m1),
-        CGAL::Polygon_mesh_processing::bbox(m2)
-    );
-}
-
 struct Engine {
     /**
      * cut_mesh_by_mesh: 3D Volume-Volume subtraction OR Surface-Volume subtraction.
@@ -59,6 +51,16 @@ struct Engine {
 
         if (target.has_garbage()) target.collect_garbage();
         if (tool.has_garbage()) tool.collect_garbage();
+
+        if (CGAL::is_closed(target) && CGAL::is_closed(tool)) {
+            ExactMesh out;
+            bool success = corefine_difference(target, tool, out, KissMode::WELD, EK::FT(1)/100, "boolean::Engine::cut_mesh_by_mesh");
+            if (success) {
+                target = std::move(out);
+                return true;
+            }
+            return false;
+        }
 
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
             target, tool, target,
@@ -100,25 +102,28 @@ struct Engine {
     static bool join_mesh_by_mesh(ExactMesh& target, ExactMesh& tool) {
         if (tool.is_empty()) return true;
         if (target.is_empty()) { target = tool; return true; }
-        if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) return false;
-
-        if (!do_meshes_overlap(target, tool)) {
-            target.join(tool);
-            return true;
-        }
 
         if (target.has_garbage()) target.collect_garbage();
         if (tool.has_garbage()) tool.collect_garbage();
 
-        bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
-            target, tool, target,
-            CGAL::parameters::throw_on_self_intersection(false)
-        );
+        if (!CGAL::is_closed(target) || !CGAL::is_closed(tool)) return false;
+
+        ExactMesh out;
+        bool success = corefine_union(target, tool, out, KissMode::WELD, EK::FT(1)/100, "boolean::Engine::join_mesh_by_mesh");
         if (success) {
-            CGAL::Polygon_mesh_processing::triangulate_faces(target);
-            target.collect_garbage();
+            auto s = fix::check_solid_mesh(out);
+            if (s != fix::MeshStatus::OK) {
+                std::cerr << "    [join_mesh_by_mesh DIAGNOSTIC] out mesh status: " << fix::to_string(s) << std::endl;
+                if (s == fix::MeshStatus::SELF_INTERSECTING) {
+                    std::vector<std::pair<ExactMesh::Face_index, ExactMesh::Face_index>> pairs;
+                    CGAL::Polygon_mesh_processing::self_intersections(out, std::back_inserter(pairs));
+                    std::cerr << "    [join_mesh_by_mesh DIAGNOSTIC] self_intersections found " << pairs.size() << " pairs!" << std::endl;
+                }
+            }
+            target = std::move(out);
+            return true;
         }
-        return success;
+        return false;
     }
 
     /**
@@ -132,6 +137,16 @@ struct Engine {
 
         if (target.has_garbage()) target.collect_garbage();
         if (tool.has_garbage()) tool.collect_garbage();
+
+        if (CGAL::is_closed(target) && CGAL::is_closed(tool)) {
+            ExactMesh out;
+            bool success = corefine_intersection(target, tool, out, KissMode::WELD, EK::FT(1)/100, "boolean::Engine::clip_mesh_by_mesh");
+            if (success) {
+                target = std::move(out);
+                return true;
+            }
+            return false;
+        }
 
         bool success = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
             target, tool, target,

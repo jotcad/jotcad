@@ -48,12 +48,12 @@ int main() {
         {0,0,10}, {10,0,10}, {10,10,10}, {0,10,10}
     };
     geo.triangles = {
-        {0,1,2}, {0,2,3}, // Bottom
-        {4,5,6}, {4,6,7}, // Top
-        {0,1,5}, {0,5,4}, // Front
-        {1,2,6}, {1,6,5}, // Right
-        {2,3,7}, {2,7,6}, // Back
-        {3,0,4}, {3,4,7}  // Left
+        {0,3,2}, {0,2,1}, // Bottom (normal -Z)
+        {4,5,6}, {4,6,7}, // Top (normal +Z)
+        {0,1,5}, {0,5,4}, // Front (normal -Y)
+        {1,2,6}, {1,6,5}, // Right (normal +X)
+        {2,3,7}, {2,7,6}, // Back (normal +Y)
+        {3,0,4}, {3,4,7}  // Left (normal -X)
     };
     mesh = boolean::Engine::geometry_to_mesh(geo);
     
@@ -137,12 +137,12 @@ int main() {
         {0,0,10}, {10,0,10}, {10,10,10}, {0,10,10}
     };
     geo.triangles = {
-        {0,1,2}, {0,2,3}, // Bottom
-        {4,5,6}, {4,6,7}, // Top
-        {0,1,5}, {0,5,4}, // Front
-        {1,2,6}, {1,6,5}, // Right
-        {2,3,7}, {2,7,6}, // Back
-        {3,0,4}, {3,4,7}  // Left
+        {0,3,2}, {0,2,1}, // Bottom (normal -Z)
+        {4,5,6}, {4,6,7}, // Top (normal +Z)
+        {0,1,5}, {0,5,4}, // Front (normal -Y)
+        {1,2,6}, {1,6,5}, // Right (normal +X)
+        {2,3,7}, {2,7,6}, // Back (normal +Y)
+        {3,0,4}, {3,4,7}  // Left (normal -X)
     };
     mesh = boolean::Engine::geometry_to_mesh(geo);
 

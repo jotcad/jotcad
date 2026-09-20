@@ -6,6 +6,7 @@
 #include "math/interval.h"
 #include "boolean/engine.h"
 #include "fix/repair.h"
+#include <CGAL/simplest_rational_in_interval.h>
 #include <cmath>
 
 namespace jotcad {
@@ -14,24 +15,19 @@ namespace geo {
 template <typename P = JotVfsProtocol>
 struct ConeOpBase : P {
     static void execute_cone(fs::VFSNode* vfs, const fs::Selector& fulfilling, 
-                             Interval x_extent, Interval y_extent, Interval z_extent, 
+                             FT f_xmin, FT f_xmax, Interval y_extent, Interval z_extent, 
                              double zag_val) {
         Geometry res;
         
-        double x_min = x_extent.min;
-        double x_max = x_extent.max;
         double cy = y_extent.center();
         double cz = z_extent.center();
         double w = y_extent.size();
         double h = z_extent.size();
         
-        // Base is at x_min, Tip is at [x_max, cy, cz]
-        FT f_xmin = FT(x_min);
-        FT f_xmax = FT(x_max);
-        FT f_cy = FT(cy);
-        FT f_cz = FT(cz);
-        FT w2 = FT(w) / FT(2);
-        FT h2 = FT(h) / FT(2);
+        FT f_cy = CGAL::simplest_rational_in_interval<FT>(cy - 1e-5, cy + 1e-5);
+        FT f_cz = CGAL::simplest_rational_in_interval<FT>(cz - 1e-5, cz + 1e-5);
+        FT w2 = CGAL::simplest_rational_in_interval<FT>(w - 1e-5, w + 1e-5) / FT(2);
+        FT h2 = CGAL::simplest_rational_in_interval<FT>(h - 1e-5, h + 1e-5) / FT(2);
 
         int sides = zag(std::max(w, h), zag_val);
         if (sides < 3) sides = 3;
@@ -65,6 +61,14 @@ struct ConeOpBase : P {
 
         Shape out = P::make_shape(vfs, res, {{"type", "closed"}});
         vfs->write(fulfilling.with_output("$out"), out);
+    }
+
+    static void execute_cone(fs::VFSNode* vfs, const fs::Selector& fulfilling, 
+                             Interval x_extent, Interval y_extent, Interval z_extent, 
+                             double zag_val) {
+        FT f_xmin = CGAL::simplest_rational_in_interval<FT>(x_extent.min - 1e-5, x_extent.min + 1e-5);
+        FT f_xmax = CGAL::simplest_rational_in_interval<FT>(x_extent.max - 1e-5, x_extent.max + 1e-5);
+        execute_cone(vfs, fulfilling, f_xmin, f_xmax, y_extent, z_extent, zag_val);
     }
 };
 
@@ -117,13 +121,14 @@ template <typename P = JotVfsProtocol>
 struct ConeAngleOp : ConeOpBase<P> {
     static constexpr const char* path = "jot/Cone/angle";
     static void execute(fs::VFSNode* vfs, const fs::Selector& fulfilling, Interval diameter, double angle, double zag_val) {
-        double d = diameter.size();
-        double rad = d / 2.0;
+        FT rad = CGAL::simplest_rational_in_interval<FT>(diameter.size() - 1e-5, diameter.size() + 1e-5) / FT(2);
         double angle_rad = angle * 2.0 * M_PI;
-        double h = rad / std::tan(angle_rad);
-        
-        Interval x_extent = Interval::centered(h);
-        ConeOpBase<P>::execute_cone(vfs, fulfilling, x_extent, diameter, diameter, zag_val);
+        double cot_raw = 1.0 / std::tan(angle_rad);
+        FT cot_val = CGAL::simplest_rational_in_interval<FT>(cot_raw - 1e-5, cot_raw + 1e-5);
+        FT h = rad * cot_val;
+        FT f_xmin = -h / FT(2);
+        FT f_xmax = h / FT(2);
+        ConeOpBase<P>::execute_cone(vfs, fulfilling, f_xmin, f_xmax, diameter, diameter, zag_val);
     }
     static std::vector<std::string> argument_keys() { return {"diameter", "angle", "zag"}; }
     static typename P::json schema() {

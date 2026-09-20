@@ -6,20 +6,26 @@ import os from 'node:os';
 import net from 'node:net';
 import { info, warn, error } from './fs/src/log.js';
 
-function isPortInUse(port) {
+function isPortListening(port) {
   return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', (err) => {
-      if (err.code === 'EADDRINUSE') resolve(true);
-      else resolve(false);
+    const socket = net.connect({ port, host: '127.0.0.1' });
+    socket.setTimeout(500);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
     });
-    server.once('listening', () => {
-      server.close();
+    socket.once('error', () => {
+      socket.destroy();
       resolve(false);
     });
-    server.listen(port, '127.0.0.1');
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
   });
 }
+const isPortInUse = isPortListening;
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

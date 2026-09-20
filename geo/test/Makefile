@@ -28,6 +28,7 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                snap_test.cpp \
                spin_test.cpp \
                box_verification.cpp \
+               box_serialization_test.cpp \
                cut_3d_test.cpp join_test.cpp clip_test.cpp fuse_test.cpp \
                disjoint_test.cpp disk_arc_test.cpp arc_variants_test.cpp orb_test.cpp path_test.cpp \
                text_test.cpp \

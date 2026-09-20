@@ -90,12 +90,12 @@ test('E2E Integration: Box(15).Red().rz(0.25) -> C++ Cluster Fulfillment', { tim
     const result = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
 
     const expected = {
-        "geometry": "3946baf8a7f7a6bb24e9eebd1010f19b34437097858d2d071625ce1128750317",
+        "geometry": "4d7403ec786259a32a7a632a95bb389b0d4c8f12cdd3c2380786f4419fd63068",
         "tags": {
             "color": "red",
             "type": "surface"
         },
-        "tf": "-0 -1 -0 -0 1 0 0 0 0 0 1 0"
+        "tf": "0 -1 0 0 1 0 0 0 0 0 1 0"
     };
 
     assert.deepStrictEqual(result, expected, 'Returned shape should exactly match the expected expansion result');

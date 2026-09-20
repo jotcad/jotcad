@@ -26,12 +26,10 @@ struct Matrix {
 
     void update_string() {
         std::stringstream ss;
-        // Serialize the 3x4 affine matrix (12 coefficients) as exact CGAL ratios
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                ss << t.m(i, j) << ( (i == 2 && j == 3) ? "" : " ");
-            }
-        }
+        // Serialize the 3x4 affine matrix (12 coefficients) as exact CGAL rational fractions
+        ss << t.m(0, 0).exact() << ' ' << t.m(0, 1).exact() << ' ' << t.m(0, 2).exact() << ' ' << t.m(0, 3).exact() << ' '
+           << t.m(1, 0).exact() << ' ' << t.m(1, 1).exact() << ' ' << t.m(1, 2).exact() << ' ' << t.m(1, 3).exact() << ' '
+           << t.m(2, 0).exact() << ' ' << t.m(2, 1).exact() << ' ' << t.m(2, 2).exact() << ' ' << t.m(2, 3).exact();
         s = ss.str();
     }
 
@@ -96,13 +94,13 @@ struct Matrix {
 
     static Matrix from_vec(const std::string& tf_str) {
         std::stringstream ss(tf_str);
-        std::vector<FT> c;
-        FT val;
-        while (ss >> val) c.push_back(val);
-        if (c.size() == 12) {
-            return Matrix(Transformation(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11]));
-        } else if (c.size() == 16) {
-            return Matrix(Transformation(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[15]));
+        FT c[12];
+        if (ss >> c[0] >> c[1] >> c[2] >> c[3]
+               >> c[4] >> c[5] >> c[6] >> c[7]
+               >> c[8] >> c[9] >> c[10] >> c[11]) {
+            return Matrix(Transformation(c[0], c[1], c[2], c[3],
+                                         c[4], c[5], c[6], c[7],
+                                         c[8], c[9], c[10], c[11]));
         }
         return identity();
     }

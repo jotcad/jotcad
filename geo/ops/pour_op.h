@@ -112,24 +112,20 @@ struct PourOp : P {
         }
 
         // 7. Directly add the sprue and vents to the model via canonical boolean::Engine::join
-        std::vector<Shape> tool_shapes;
-        for (const auto& tc : tool_components) {
-            Geometry tc_geo = boolean::Engine::mesh_to_geometry(tc.mesh);
-            Shape tc_shape;
-            tc_shape.geometry = vfs->materialize<Geometry>(tc_geo);
-            tc_shape.tf = Matrix::identity();
-            tc_shape.add_tag("type", "closed");
-            tool_shapes.push_back(tc_shape);
+        std::cout << "  [Pour Diagnostic] Pre-union solid checks:" << std::endl;
+        std::cout << "    oriented_mesh: " << fix::to_string(fix::check_solid_mesh(oriented_mesh)) << std::endl;
+        for (size_t i = 0; i < tool_components.size(); ++i) {
+            std::cout << "    tool " << i << " (" << (tool_components[i].is_primary ? "sprue" : "vent") << "): "
+                      << fix::to_string(fix::check_solid_mesh(tool_components[i].mesh))
+                      << " (apex: " << CGAL::to_double(tool_components[i].apex.x()) << ", "
+                      << CGAL::to_double(tool_components[i].apex.y()) << ", "
+                      << CGAL::to_double(tool_components[i].apex.z()) << ")" << std::endl;
         }
 
-        Shape oriented_shape;
-        oriented_shape.geometry = vfs->materialize<Geometry>(boolean::Engine::mesh_to_geometry(oriented_mesh));
-        oriented_shape.tf = Matrix::identity();
-        oriented_shape.add_tag("type", "closed");
-
-        Shape joined_shape = boolean::Engine::join(vfs, oriented_shape, tool_shapes);
-        Geometry joined_geo = vfs->read<Geometry>(joined_shape.geometry.value());
-        oriented_mesh = boolean::Engine::geometry_to_mesh(joined_geo);
+        // 7. Directly add the sprue and vents to the model via boolean::Engine::join_mesh_by_mesh
+        for (auto& tc : tool_components) {
+            boolean::Engine::join_mesh_by_mesh(oriented_mesh, tc.mesh);
+        }
         fix::assert_well_formed_closed_mesh(oriented_mesh, "oriented_mesh with sprue/vents in PourOp");
 
         // Create the oriented core casting shape

@@ -40,7 +40,7 @@ struct Geometry {
         std::stringstream ss;
         ss << "V " << vertices.size() << "\n";
         for (const auto& v : vertices) {
-            ss << v.x << " " << v.y << " " << v.z << "\n";
+            ss << v.x.exact() << " " << v.y.exact() << " " << v.z.exact() << "\n";
         }
         ss << "F " << faces.size() << "\n";
         for (const auto& f : faces) {
