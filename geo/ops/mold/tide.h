@@ -49,45 +49,86 @@ public:
     void set_in_domain(bool b) { _info.in_domain = b; }
 };
 
+struct CDTVertexInfo {
+    EK::FT z = EK::FT(0);
+};
+
+template <typename Gt, typename Vb_base = CGAL::Triangulation_vertex_base_2<Gt>>
+class CDT_Vertex_with_info : public Vb_base {
+    CDTVertexInfo _info;
+public:
+    typedef Gt Geom_traits;
+    typedef typename Vb_base::Point Point;
+    typedef typename Vb_base::Face_handle Face_handle;
+
+    template < typename TDS2 >
+    struct Rebind_TDS {
+        typedef typename Vb_base::template Rebind_TDS<TDS2>::Other Vb2;
+        typedef CDT_Vertex_with_info<Gt, Vb2> Other;
+    };
+
+    CDT_Vertex_with_info() : Vb_base() {}
+    CDT_Vertex_with_info(const Point& p) : Vb_base(p) {}
+    CDT_Vertex_with_info(const Point& p, Face_handle f) : Vb_base(p, f) {}
+    CDT_Vertex_with_info(Face_handle f) : Vb_base(f) {}
+    CDTVertexInfo& info() { return _info; }
+    const CDTVertexInfo& info() const { return _info; }
+};
+
 typedef CGAL::Exact_predicates_exact_constructions_kernel CDT_Kernel;
-typedef CGAL::Triangulation_vertex_base_2<CDT_Kernel> CDT_Vb;
+typedef CDT_Vertex_with_info<CDT_Kernel> CDT_Vb;
 typedef CDT_Face_with_info<CDT_Kernel> CDT_Fb;
 typedef CGAL::Triangulation_data_structure_2<CDT_Vb, CDT_Fb> CDT_TDS;
 typedef CGAL::Exact_intersections_tag CDT_Itag;
 typedef CGAL::Constrained_Delaunay_triangulation_2<CDT_Kernel, CDT_TDS, CDT_Itag> ExactCDT;
 
+struct BoundarySegment3D {
+    CDT_Kernel::Point_2 p1_2d;
+    CDT_Kernel::Point_2 p2_2d;
+    EK::FT z1;
+    EK::FT z2;
+};
+
 /**
- * @brief Triangulates 2D margin shelf between projected boundary loops and stock box limits.
+ * @brief Triangulates ruled envelope annulus between 3D boundary segments and stock box limits.
  */
 inline void triangulate_margin_shelf(
-    const std::vector<std::pair<CDT_Kernel::Point_2, CDT_Kernel::Point_2>>& outer_segments,
+    const std::vector<BoundarySegment3D>& outer_segments,
     const TideParams& tide,
     std::vector<EK::Point_3>& soup_points,
     std::vector<std::vector<size_t>>& soup_polygons
 ) {
     ExactCDT shelf_cdt;
     std::map<CDT_Kernel::Point_2, ExactCDT::Vertex_handle> v_handles;
-    auto get_vh = [&](const CDT_Kernel::Point_2& pt) {
+    auto get_vh = [&](const CDT_Kernel::Point_2& pt, const EK::FT& z_val) {
         auto it = v_handles.find(pt);
-        if (it != v_handles.end()) return it->second;
+        if (it != v_handles.end()) {
+            if (z_val > it->second->info().z) {
+                it->second->info().z = z_val;
+            }
+            return it->second;
+        }
         auto vh = shelf_cdt.insert(pt);
+        vh->info().z = z_val;
         v_handles[pt] = vh;
         return vh;
     };
 
-    auto vh_c0 = get_vh(CDT_Kernel::Point_2(tide.u_min, tide.v_min));
-    auto vh_c1 = get_vh(CDT_Kernel::Point_2(tide.u_max, tide.v_min));
-    auto vh_c2 = get_vh(CDT_Kernel::Point_2(tide.u_max, tide.v_max));
-    auto vh_c3 = get_vh(CDT_Kernel::Point_2(tide.u_min, tide.v_max));
+    auto vh_c0 = get_vh(CDT_Kernel::Point_2(tide.u_min, tide.v_min), tide.z_margin);
+    auto vh_c1 = get_vh(CDT_Kernel::Point_2(tide.u_max, tide.v_min), tide.z_margin);
+    auto vh_c2 = get_vh(CDT_Kernel::Point_2(tide.u_max, tide.v_max), tide.z_margin);
+    auto vh_c3 = get_vh(CDT_Kernel::Point_2(tide.u_min, tide.v_max), tide.z_margin);
 
     shelf_cdt.insert_constraint(vh_c0, vh_c1);
     shelf_cdt.insert_constraint(vh_c1, vh_c2);
     shelf_cdt.insert_constraint(vh_c2, vh_c3);
     shelf_cdt.insert_constraint(vh_c3, vh_c0);
 
-    for (const auto& [seg_a, seg_b] : outer_segments) {
-        if (seg_a != seg_b) {
-            shelf_cdt.insert_constraint(get_vh(seg_a), get_vh(seg_b));
+    for (const auto& seg : outer_segments) {
+        if (seg.p1_2d != seg.p2_2d) {
+            auto vh_a = get_vh(seg.p1_2d, seg.z1);
+            auto vh_b = get_vh(seg.p2_2d, seg.z2);
+            shelf_cdt.insert_constraint(vh_a, vh_b);
         }
     }
 
@@ -96,16 +137,37 @@ inline void triangulate_margin_shelf(
     for (auto s_fit = shelf_cdt.finite_faces_begin(); s_fit != shelf_cdt.finite_faces_end(); ++s_fit) {
         if (!s_fit->info().in_domain) continue;
 
-        auto p0 = s_fit->vertex(0)->point();
-        auto p1 = s_fit->vertex(1)->point();
-        auto p2 = s_fit->vertex(2)->point();
+        auto v0 = s_fit->vertex(0);
+        auto v1 = s_fit->vertex(1);
+        auto v2 = s_fit->vertex(2);
+
+        auto p0_3d = EK::Point_3(v0->point().x(), v0->point().y(), v0->info().z);
+        auto p1_3d = EK::Point_3(v1->point().x(), v1->point().y(), v1->info().z);
+        auto p2_3d = EK::Point_3(v2->point().x(), v2->point().y(), v2->info().z);
 
         size_t s_idx = soup_points.size();
-        soup_points.push_back(EK::Point_3(p0.x(), p0.y(), tide.z_margin));
-        soup_points.push_back(EK::Point_3(p2.x(), p2.y(), tide.z_margin));
-        soup_points.push_back(EK::Point_3(p1.x(), p1.y(), tide.z_margin));
+        soup_points.push_back(p0_3d);
+        soup_points.push_back(p2_3d);
+        soup_points.push_back(p1_3d);
         soup_polygons.push_back({s_idx, s_idx + 1, s_idx + 2});
     }
+}
+
+/**
+ * @brief Legacy 2D fallback for triangulate_margin_shelf.
+ */
+inline void triangulate_margin_shelf(
+    const std::vector<std::pair<CDT_Kernel::Point_2, CDT_Kernel::Point_2>>& outer_segments,
+    const TideParams& tide,
+    std::vector<EK::Point_3>& soup_points,
+    std::vector<std::vector<size_t>>& soup_polygons
+) {
+    std::vector<BoundarySegment3D> segs_3d;
+    segs_3d.reserve(outer_segments.size());
+    for (const auto& [pa, pb] : outer_segments) {
+        segs_3d.push_back({pa, pb, tide.z_margin, tide.z_margin});
+    }
+    triangulate_margin_shelf(segs_3d, tide, soup_points, soup_polygons);
 }
 
 /**

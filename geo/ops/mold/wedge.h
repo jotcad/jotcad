@@ -22,7 +22,8 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     const FT& h_ceiling_rot,
     const CGAL::Aff_transformation_3<EK>& from_z,
     const CGAL::Aff_transformation_3<EK>& to_z,
-    const TideParams& tide = {}
+    const TideParams& tide = {},
+    const std::function<std::optional<FT>(const CDT_Kernel::Point_2&, const CDT_Kernel::Point_2&)>& get_vertical_drop = nullptr
 ) {
     std::vector<EK::Point_3> soup_points;
     std::vector<std::vector<size_t>> soup_polygons;
@@ -130,6 +131,67 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
 
     std::vector<std::pair<CDT_Kernel::Point_2, CDT_Kernel::Point_2>> outer_boundary_segments;
     std::vector<std::pair<EK::Point_3, EK::Point_3>> outer_boundary_segments_3d;
+    std::vector<BoundarySegment3D> outer_boundary_segments_3d_rot;
+
+    // Precompute consistent base height for each arrangement vertex on outer boundary
+    std::map<Envelope_diagram_2::Vertex_handle, FT> vertex_base_z;
+    if (tide.enabled) {
+        // 1. Any vertex where multiple envelope surfaces meet with different heights is an internal cliff terminal
+        for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
+            std::set<FT> s_zs;
+            auto e_curr = vit->incident_halfedges();
+            auto e_start = e_curr;
+            do {
+                auto f = e_curr->face();
+                if (!f->is_unbounded() && f->number_of_surfaces() > 0) {
+                    size_t orig_f = f->surfaces_begin()->data();
+                    s_zs.insert(get_z(orig_f, vit->point().x(), vit->point().y()));
+                }
+                ++e_curr;
+            } while (e_curr != e_start);
+
+            if (s_zs.size() > 1) {
+                // Internal cliff terminal: must drop to z_margin to close vertical cliff seam
+                vertex_base_z[vit] = tide.z_margin;
+            }
+        }
+
+        // 2. Any outer boundary edge with vertical model faces below it sets its endpoints to v_min
+        for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
+            if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
+
+            auto check_edge = [&](Envelope_diagram_2::Halfedge_handle h) {
+                auto twin_face = h->twin()->face();
+                if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
+                    auto p1_2d = h->source()->point();
+                    auto p2_2d = h->target()->point();
+                    if (get_vertical_drop) {
+                        auto v_drop = get_vertical_drop(p1_2d, p2_2d);
+                        if (v_drop.has_value()) {
+                            FT v_min = (*v_drop > tide.z_margin) ? *v_drop : tide.z_margin;
+                            auto it1 = vertex_base_z.find(h->source());
+                            if (it1 == vertex_base_z.end() || v_min < it1->second) {
+                                vertex_base_z[h->source()] = v_min;
+                            }
+                            auto it2 = vertex_base_z.find(h->target());
+                            if (it2 == vertex_base_z.end() || v_min < it2->second) {
+                                vertex_base_z[h->target()] = v_min;
+                            }
+                        }
+                    }
+                }
+            };
+
+            auto ccb = fit->outer_ccb();
+            auto curr = ccb;
+            do { check_edge(curr); curr = curr->next(); } while (curr != ccb);
+            for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
+                auto h_curr = *hole_it;
+                auto h_start = h_curr;
+                do { check_edge(h_curr); h_curr = h_curr->next(); } while (h_curr != h_start);
+            }
+        }
+    }
 
     // 2. Process all directed halfedges for both internal step cliffs and outer sidewalls
     auto process_halfedge_walls = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
@@ -147,12 +209,16 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
                 from_z(EK::Point_3(p2_2d.x(), p2_2d.y(), z1_t))
             });
             if (tide.enabled) {
-                // Outer boundary: drop vertical skirt strictly down to tide.z_margin
-                FT low_s = tide.z_margin;
-                FT low_t = tide.z_margin;
+                FT low_s = vertex_base_z.count(h->source()) ? vertex_base_z[h->source()] : z1_s;
+                FT low_t = vertex_base_z.count(h->target()) ? vertex_base_z[h->target()] : z1_t;
                 FT high_s = z1_s;
                 FT high_t = z1_t;
-                add_monotonic_vertical_wall(h, low_s, low_t, high_s, high_t, vertex_heights, soup_points, soup_polygons);
+                if (high_s > low_s || high_t > low_t) {
+                    add_monotonic_vertical_wall(h, low_s, low_t, high_s, high_t, vertex_heights, soup_points, soup_polygons);
+                }
+                outer_boundary_segments_3d_rot.push_back({
+                    p1_2d, p2_2d, low_s, low_t
+                });
             } else {
                 // Outer sidewall boundary: sweep from surface height up to ceiling
                 add_monotonic_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot, vertex_heights, soup_points, soup_polygons);
@@ -204,9 +270,9 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     // Audit extrusion polygon (2D envelope outer boundary) for simplicity
     auto boundary_audit = audit_2d_boundary_simplicity(outer_boundary_segments, outer_boundary_segments_3d, "Extrusion Polygon (Envelope Outer Boundary)");
 
-    // 3. If Rising Tide is active, add 2D margin shelf CDT and stock outer envelope
+    // 3. If Rising Tide is active, add Ruled Envelope annulus CDT and stock outer envelope
     if (tide.enabled) {
-        triangulate_margin_shelf(outer_boundary_segments, tide, soup_points, soup_polygons);
+        triangulate_margin_shelf(outer_boundary_segments_3d_rot, tide, soup_points, soup_polygons);
         add_stock_box_outer_envelope(tide, soup_points, soup_polygons);
     }
 

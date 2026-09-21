@@ -159,6 +159,14 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     std::vector<Data_triangle_3> triangles;
     std::map<size_t, std::vector<EK::Point_3>> rotated_tris;
 
+    struct VerticalFaceSegment {
+        CDT_Kernel::Point_2 p_a;
+        CDT_Kernel::Point_2 p_b;
+        FT min_z;
+    };
+    std::vector<VerticalFaceSegment> vertical_segments;
+
+    // 1. Collect non-degenerate upper triangles from candidate_faces
     for (auto f : candidate_faces) {
         size_t f_idx = f.idx();
         auto h = mesh_part.halfedge(f);
@@ -177,6 +185,36 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             EK::Triangle_3 tri(p0_flat, p1_flat, p2_flat);
             triangles.push_back(Data_triangle_3(tri, f_idx));
             rotated_tris[f_idx] = {p0_flat, p1_flat, p2_flat};
+        }
+    }
+
+    // 2. Collect all vertical model faces across the full part mesh parallel to draw direction d
+    for (auto f : face_descriptors) {
+        if (face_normals[f.idx()] * d == FT(0)) {
+            auto h = mesh_part.halfedge(f);
+            auto p0 = to_z(mesh_part.point(mesh_part.source(h)));
+            auto p1 = to_z(mesh_part.point(mesh_part.target(h)));
+            auto p2 = to_z(mesh_part.point(mesh_part.target(mesh_part.next(h))));
+
+            CDT_Kernel::Point_2 pt0(EK::FT(p0.x().exact()), EK::FT(p0.y().exact()));
+            CDT_Kernel::Point_2 pt1(EK::FT(p1.x().exact()), EK::FT(p1.y().exact()));
+            CDT_Kernel::Point_2 pt2(EK::FT(p2.x().exact()), EK::FT(p2.y().exact()));
+
+            std::vector<CDT_Kernel::Point_2> pts = {pt0, pt1, pt2};
+            size_t best_i = 0, best_j = 1;
+            FT max_d2 = (pts[1] - pts[0]).squared_length();
+            FT d2_02 = (pts[2] - pts[0]).squared_length();
+            if (d2_02 > max_d2) { max_d2 = d2_02; best_i = 0; best_j = 2; }
+            FT d2_12 = (pts[2] - pts[1]).squared_length();
+            if (d2_12 > max_d2) { max_d2 = d2_12; best_i = 1; best_j = 2; }
+
+            if (max_d2 > FT(0)) {
+                FT z0 = EK::FT(p0.z().exact());
+                FT z1 = EK::FT(p1.z().exact());
+                FT z2 = EK::FT(p2.z().exact());
+                FT min_z = (z0 < z1) ? ((z0 < z2) ? z0 : z2) : ((z1 < z2) ? z1 : z2);
+                vertical_segments.push_back({pts[best_i], pts[best_j], min_z});
+            }
         }
     }
 
@@ -268,7 +306,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         FT half_span_v = (rot_v_max - rot_v_min) / FT(2);
         FT half_span_z = (rot_z_max - rot_z_min) / FT(2);
         FT max_half = (half_span_u > half_span_v) ? ((half_span_u > half_span_z) ? half_span_u : half_span_z) : ((half_span_v > half_span_z) ? half_span_v : half_span_z);
-        FT R = max_half + padding + FT(200);
+        FT R = max_half + padding + FT(20);
 
         tide.enabled = true;
         tide.u_min = center_u - R;
@@ -277,15 +315,31 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         tide.v_max = center_v + R;
         FT mid_z = (rot_z_min + rot_z_max) / FT(2);
         tide.z_margin = (min_border_z < mid_z) ? min_border_z : mid_z;
-        tide.z_top = rot_z_max + padding + FT(200);
+        tide.z_top = rot_z_max + padding + FT(50);
     } else if (tide.enabled && min_border_z < tide.z_margin) {
         tide.z_margin = min_border_z;
     }
 
     FT h_ceiling_rot = tide.enabled ? tide.z_top : (max_vz_rot + FT(50));
 
+    auto get_vertical_drop = [&](const CDT_Kernel::Point_2& p1, const CDT_Kernel::Point_2& p2) -> std::optional<FT> {
+        std::optional<FT> best_min_z;
+        for (const auto& vseg : vertical_segments) {
+            if (CGAL::collinear(vseg.p_a, vseg.p_b, p1) && CGAL::collinear(vseg.p_a, vseg.p_b, p2)) {
+                bool p1_in = (p1 == vseg.p_a || p1 == vseg.p_b || CGAL::collinear_are_ordered_along_line(vseg.p_a, p1, vseg.p_b));
+                bool p2_in = (p2 == vseg.p_a || p2 == vseg.p_b || CGAL::collinear_are_ordered_along_line(vseg.p_a, p2, vseg.p_b));
+                if (p1_in && p2_in) {
+                    if (!best_min_z.has_value() || vseg.min_z < *best_min_z) {
+                        best_min_z = vseg.min_z;
+                    }
+                }
+            }
+        }
+        return best_min_z;
+    };
+
     // Delegate solid wedge extrusion, solid-aware soup repair, and world-space transformation
-    return construct_envelope_wedge(max_diag, get_z, h_ceiling_rot, from_z, to_z, tide);
+    return construct_envelope_wedge(max_diag, get_z, h_ceiling_rot, from_z, to_z, tide, get_vertical_drop);
 }
 
 } // namespace mold
