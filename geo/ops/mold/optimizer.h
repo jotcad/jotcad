@@ -99,7 +99,8 @@ inline PartingOptimizationResult optimize_parting_direction(
     const std::vector<EK::Vector_3>& face_normals,
     const std::map<EdgeKey, std::vector<int>>& edge_to_faces,
     FaceBoolMap is_handled,
-    const MoldParams& params
+    const MoldParams& params,
+    const std::vector<EK::Vector_3>& prior_draw_dirs = {}
 ) {
     FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
 
@@ -126,10 +127,60 @@ inline PartingOptimizationResult optimize_parting_direction(
 
     std::vector<EK::Vector_3> candidate_dirs;
 
-    // Phase 3: Area-Weighted Normal Mode Clustering + Continuous Spherical Hill Climbing
+    // 1. Antipodal directions of prior pieces as exploration candidates
+    for (const auto& pd : prior_draw_dirs) {
+        EK::Vector_3 opp_d = -pd;
+        candidate_dirs.push_back(opp_d);
+    }
+
+    // 2. Exact rational cardinal axes
+    const std::vector<EK::Vector_3> exact_cardinals = {
+        EK::Vector_3(FT( 0), FT( 0), FT( 1)),
+        EK::Vector_3(FT( 0), FT( 0), FT(-1)),
+        EK::Vector_3(FT( 1), FT( 0), FT( 0)),
+        EK::Vector_3(FT(-1), FT( 0), FT( 0)),
+        EK::Vector_3(FT( 0), FT( 1), FT( 0)),
+        EK::Vector_3(FT( 0), FT(-1), FT( 0))
+    };
+    for (const auto& card : exact_cardinals) {
+        candidate_dirs.push_back(card);
+    }
+
+    // 3. Dominant exact face normals from unhandled geometry
+    struct NormalCluster {
+        EK::Vector_3 normal;
+        FT total_area;
+    };
+    std::vector<NormalCluster> clusters;
+    for (auto f : face_descriptors) {
+        if (!is_handled[f]) {
+            size_t idx = f.idx();
+            const auto& n = face_normals[idx];
+            FT a = face_areas[idx];
+            bool found = false;
+            for (auto& cl : clusters) {
+                if (cl.normal == n) {
+                    cl.total_area += a;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                clusters.push_back({n, a});
+            }
+        }
+    }
+    std::sort(clusters.begin(), clusters.end(), [](const auto& a, const auto& b) {
+        return a.total_area > b.total_area;
+    });
+    for (size_t i = 0; i < (std::min)(size_t(8), clusters.size()); ++i) {
+        candidate_dirs.push_back(clusters[i].normal);
+        candidate_dirs.push_back(-clusters[i].normal);
+    }
+
+    // 4. Area-Weighted Normal Mode Clustering + Continuous Spherical Hill Climbing
     auto mode_seeds = compute_normal_modes(face_descriptors, face_normals, face_areas, is_handled, 6);
 
-    // Complement mode seeds with cardinal axes to guarantee full spatial coverage
     const std::vector<Vector3d> cardinal_dirs = {
         { 0,  0,  1}, { 0,  0, -1},
         { 1,  0,  0}, {-1,  0,  0},
@@ -165,9 +216,43 @@ inline PartingOptimizationResult optimize_parting_direction(
         }
     }
 
+    // 5. Angular deduplication of candidate directions (within ~0.8 degrees)
+    std::vector<EK::Vector_3> unique_candidate_dirs;
+    for (const auto& d : candidate_dirs) {
+        double d_len_sq = CGAL::to_double(d.squared_length());
+        if (d_len_sq < 1e-12) continue;
+        double inv_len = 1.0 / std::sqrt(d_len_sq);
+        double dx = CGAL::to_double(d.x()) * inv_len;
+        double dy = CGAL::to_double(d.y()) * inv_len;
+        double dz = CGAL::to_double(d.z()) * inv_len;
+
+        bool duplicate = false;
+        for (const auto& u : unique_candidate_dirs) {
+            double u_len_sq = CGAL::to_double(u.squared_length());
+            double u_inv = 1.0 / std::sqrt(u_len_sq);
+            double ux = CGAL::to_double(u.x()) * u_inv;
+            double uy = CGAL::to_double(u.y()) * u_inv;
+            double uz = CGAL::to_double(u.z()) * u_inv;
+            double dot = dx * ux + dy * uy + dz * uz;
+            if (dot > 0.9999) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) {
+            unique_candidate_dirs.push_back(d);
+        }
+    }
+    candidate_dirs = std::move(unique_candidate_dirs);
+
+    bool has_prior_handled = false;
+    for (auto f : face_descriptors) {
+        if (is_handled[f]) { has_prior_handled = true; break; }
+    }
+
     EK::Vector_3 best_dir(FT(1), FT(0), FT(0));
     int best_loop_count = 999999;
-    FT best_patch_score = -1;
+    FT best_patch_score = -FT(1e18);
     std::vector<ExactMesh::Face_index> best_patch_faces;
 
     struct CandidateLog {
@@ -240,10 +325,12 @@ inline PartingOptimizationResult optimize_parting_direction(
                 size_t f_idx = (size_t)f;
                 FT a = face_areas[f_idx];
                 FT dot = face_normals[f_idx] * d;
-                if (dot > min_dot) {
+                if (dot >= min_dot) {
                     const auto& c = face_centroids[f_idx];
                     FT depth = FT(r_bound) - (c.x()*d.x() + c.y()*d.y() + c.z()*d.z());
-                    comp_score += a * (dot - min_dot) * depth;
+                    FT w_base(optimizer_constants::BASE_DEMOLDABILITY_WEIGHT);
+                    FT factor = w_base + (FT(1) - w_base) * (dot - min_dot);
+                    comp_score += a * factor * depth;
                 }
 
                 auto h = mesh_part.halfedge(f);
@@ -318,17 +405,43 @@ inline PartingOptimizationResult optimize_parting_direction(
             continue;
         }
 
+        FT penalized_patch_score = current_patch_score;
+        if (has_prior_handled) {
+            std::set<ExactMesh::Face_index> cand_set(candidate_patch_faces.begin(), candidate_patch_faces.end());
+            FT penalty = 0;
+            for (auto f : face_descriptors) {
+                size_t f_idx = f.idx();
+                const auto& c = face_centroids[f_idx];
+                FT depth = FT(r_bound) - (c.x()*d.x() + c.y()*d.y() + c.z()*d.z());
+                if (depth < FT(1)) depth = FT(1);
+
+                if (!is_handled[f]) {
+                    if (cand_set.find(f) == cand_set.end()) {
+                        // Unhandled face left behind by this candidate: penalize residue
+                        penalty += FT(optimizer_constants::UNHANDLED_RESIDUE_PENALTY_WEIGHT) * face_areas[f_idx] * depth;
+                    }
+                } else {
+                    // Handled face: check if candidate direction encroaches into prior piece's normal
+                    FT dot = face_normals[f_idx] * d;
+                    if (dot > FT(0)) {
+                        penalty += FT(optimizer_constants::PRIOR_ENCROACHMENT_PENALTY_WEIGHT) * face_areas[f_idx] * dot * depth;
+                    }
+                }
+            }
+            penalized_patch_score -= penalty;
+        }
+
         if (cycle_count == 1) {
-            ranked_candidates.push_back({d, current_patch_score, candidate_patch_faces.size(), 1});
-            if (best_loop_count > 1 || current_patch_score > best_patch_score) {
+            ranked_candidates.push_back({d, penalized_patch_score, candidate_patch_faces.size(), 1});
+            if (best_loop_count > 1 || penalized_patch_score > best_patch_score) {
                 best_loop_count = 1;
-                best_patch_score = current_patch_score;
+                best_patch_score = penalized_patch_score;
                 best_dir = d;
                 best_patch_faces = candidate_patch_faces;
             }
-        } else if (best_loop_count > 1 && cycle_count > 0 && (best_patch_score < 0 || current_patch_score > best_patch_score)) {
+        } else if (best_loop_count > 1 && cycle_count > 0 && (best_patch_score < -FT(1e17) || penalized_patch_score > best_patch_score)) {
             best_loop_count = cycle_count;
-            best_patch_score = current_patch_score;
+            best_patch_score = penalized_patch_score;
             best_dir = d;
             best_patch_faces = candidate_patch_faces;
         }

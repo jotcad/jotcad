@@ -57,6 +57,12 @@ struct UndercutCluster {
 constexpr double kPinchBridgeWidthMM = 0.01;
 inline FT pinch_bridge_width_ft() { return FT(1) / FT(100); }
 
+namespace optimizer_constants {
+    constexpr double UNHANDLED_RESIDUE_PENALTY_WEIGHT = 10.0;
+    constexpr double PRIOR_ENCROACHMENT_PENALTY_WEIGHT = 3.0;
+    constexpr double BASE_DEMOLDABILITY_WEIGHT = 0.5;
+}
+
 struct MoldParams {
     FT padding = FT(10);
     FT explode = FT(0);

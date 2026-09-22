@@ -11,16 +11,19 @@
 
 The JotCAD mold decomposition engine automatically partitions a 3D CAD mesh into a minimal set of rigid mold blocks that can be extracted cleanly along directional pull vectors ($\vec{d}$) without collision, undercuts, or vacuum lock.
 
-In empirical tests on the **Voxel Bear** ([`geo/test/mold_voxel_bear_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/mold_voxel_bear_test.cpp)), the current baseline decomposition produced **6 mold pieces** (5 moving + 1 stationary) instead of an expected 3-piece assembly. Most critically, the test revealed the exact smoking-gun failure mechanism: **Piece 2 and Piece 4 shared the identical draw vector to 6 decimal places**:
-$$\vec{d}_2 = \vec{d}_4 = (-0.754409, \; -0.411371, \; +0.511508)$$
-
-The optimizer re-selected the identical vector in a later step because the current code strictly limited Piece 2 to its single largest DSU component (63 faces), discarding the disjoint foot faces (8 faces) and forward-facing sprue faces (111 faces), forcing the engine to generate redundant pieces.
+In empirical tests, two primary benchmarks define our validation suite:
+1. **The Voxel Bear** ([`geo/test/mold_voxel_bear_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/mold_voxel_bear_test.cpp)): Revealed duplicate draw vectors ($\vec{d}_2 = \vec{d}_4 = (-0.754409, -0.411371, +0.511508)$) caused by single-component DSU island rejection. Discarding disjoint foot and sprue faces forced redundant piece generation. Resolved by disjoint patch aggregation and spherical hill climbing.
+2. **The 2-Way Planar Cross** ([`geo/test/pour_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/pour_test.cpp)): Revealed a persistent stationary dead region ($141.55\,\text{mm}^3$, Component #3) and 17 backdraft warnings, despite Piece 1 and Piece 2 fitting flush with zero exterior gap. Detailed dissection revealed that 95% of the dead volume was trapped in re-entrant corner pockets shadowed by an oblique, corner-biased draw direction $\mathbf{d}_1 = (-0.63, -0.67, -0.40)$.
 
 This document synthesizes:
 1. **The physical kinematics of zero-draft and opposed perpendicular pulls** (friction, galling, vacuum lock, clay tearing).
-2. **The root causes of failure in the current optimizer** (Fibonacci lattice quantization, candidate clustering, and single-component island rejection).
-3. **The Preferred Design**: **Normal Mode Clustering + Continuous Spherical Hill Climbing** with **Disjoint Patch Support**.
+2. **The root causes of failure in the optimizer**:
+   - Fibonacci lattice quantization and single-component island rejection (Voxel Bear).
+   - The Corner-View Bias of projected area maximization ($\sum A_i (\mathbf{n}_i \cdot \mathbf{d})$), which favors oblique diagonals over feature normals and casts line-of-sight shadows across re-entrant bays.
+   - The False Equivalency Bug, which marked faces as handled based on normal orientation rather than upper envelope reachability.
+3. **The Preferred Design**: **Normal Mode Clustering + Continuous Spherical Hill Climbing** with **Authoritative Envelope Handled Purity**, **Disjoint Patch Support**, and **Feature-Aligned Mode Ingress**.
 4. **Analysis of Alternative Optimization Strategies** (Simulated Annealing, Great Circle Arrangements, Hierarchical Spherical Grids).
+5. **Boolean Complementation Invariants** for two-piece mold assemblies guaranteeing zero stationary scraps and zero mating gaps.
 
 ---
 
@@ -67,6 +70,88 @@ Our empirical verification in [`geo/test/mold_voxel_bear_test.cpp`](file:///home
 
 ---
 
+### 2.3 Case Study: The 2-Way Planar Cross & Re-Entrant Corner Pockets
+In [`geo/test/pour_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/pour_test.cpp) (Section 4), we benchmarked a symmetric 2-way planar cross constructed via:
+```cpp
+Box(30, 10, 10).fuse(Box(10, 30, 10))
+    .pourPrep(auto_orient=true, vents=true)
+    .mold(padding=5.0001, explode=15.0, draft=0.0);
+```
+
+#### Empirical Observations:
+1. **The Phantom Dead Volume**: The decomposition produced **Piece 1**, **Piece 2**, and **Component #3** ($141.55\,\text{mm}^3$ stationary dead space), along with 17 backdraft face warnings.
+2. **Zero Outer Gap Verification**: When rendered at `explode=0.0` (Snapshot 537), visual and geometric inspection verified that Piece 1 and Piece 2 fit together **completely flush with zero exterior gap**, perfectly enclosing the entire outer bounding box. There was no missing stock shell or boundary breach.
+3. **Dissection of Component #3 ($141.55\,\text{mm}^3$)**:
+   Analyzing the connected topological shells of Component #3 revealed **7 disconnected fragments**:
+   - **95% of the volume ($133.2\,\text{mm}^3$)** is concentrated in two symmetric rectangular blocks ($66.59\,\text{mm}^3$ each, Fragments 5 and 6):
+     - Fragment 5: `min=[-10.90, -4.73, 2.89], max=[-0.00, 4.22, 12.11]`
+     - Fragment 6: `min=[0.00, -4.22, -12.11], max=[10.90, 4.73, -2.89]`
+   - These two fragments sit directly in the **re-entrant corner pockets** between the intersecting perpendicular arms of the cross!
+   - The remaining 5% consists of thin slivers at the apexes of the conical pour sprue and air vents and an outer stock corner.
+
+```
+                  Arm B (+Y)
+                  ┌───────┐
+                  │       │
+                  │       │
+      ┌───────────┘       └───────────┐
+      │  Pocket 5           Pocket 6  │
+Arm A │  (66.6 mm³)         (66.6 mm³)│ Arm A
+(-X)  │  [STRANDED]         [STRANDED]│ (+X)
+      └───────────┐       ┌───────────┘
+                  │       │
+                  │       │
+                  └───────┘
+                  Arm B (-Y)
+```
+
+---
+
+### 2.4 Root Cause Analysis: The Corner-View Bias of Projected Area Maximization
+Why did the optimizer pick a slanted, oblique draw vector for a rectilinear planar cross?
+
+The optimizer objective function maximizes the unhandled projected area along vector $\mathbf{d}$:
+$$\text{Score}(\mathbf{d}) = \sum_{f \in S_{\text{rem}}, \, \mathbf{n}_f \cdot \mathbf{d} > 0} A_f (\mathbf{n}_f \cdot \mathbf{d})$$
+
+Consider what this function evaluates on a 3D orthogonal polyhedral body:
+* **Looking along a principal feature normal (e.g. Plate Normal $\mathbf{n} \approx (\pm 0.82, 0, \pm 0.58)$)**:
+  - The large top face ($750.5\,\text{mm}^2$) is viewed head-on ($\mathbf{n}_f \cdot \mathbf{d} \approx 1.0$), contributing $750.5$ directly.
+  - However, all four perpendicular side walls have $\mathbf{n}_f \cdot \mathbf{d} = 0.0$. They contribute exactly $0$ to the projected area sum!
+  - Total Score $\approx 62,783$.
+* **Looking from an oblique isometric corner diagonal ($\mathbf{d} \approx (-0.63, -0.67, -0.40)$)**:
+  - The vector is tilted $\sim 40^\circ$ off the plate normal.
+  - It views **three orthogonal faces simultaneously** (top, front, and side), projecting a combined visible area of $1,341.5\,\text{mm}^2$.
+  - Total Score $\approx 78,870$.
+
+**The Fatal Consequence**:
+The continuous spherical hill-climber (`climb.h`) greedily climbed to the corner diagonal summit $\mathbf{d}_1 = (-0.63, -0.67, -0.40)$ because tilted views see more orthogonal surfaces at once.
+However, because $\mathbf{d}_1$ is tilted $40^\circ$ across the arms of the cross, **the protruding arms physically overhang and cast a line-of-sight shadow over the interior corner pockets**.
+
+---
+
+### 2.5 The False Equivalency Bug: Normal Orientation $\neq$ Upper Envelope Handled
+Why didn't the optimizer penalize these shadowed corner pockets?
+
+In `geo/ops/mold/optimizer.h`:
+```cpp
+// Flawed implementation:
+std::set<size_t> all_handled_faces = env_res.source_faces;
+for (auto f : best_patch_faces) all_handled_faces.insert((size_t)f);
+```
+
+1. **`best_patch_faces` was populated purely by normal orientation**:
+   Any face with $\mathbf{n}_f \cdot \mathbf{d} \ge 0$ was included in `best_patch_faces`.
+2. **The Penalty Ignored Envelope Shadowing**:
+   The candidate penalty check evaluated `cand_set.count(f)` where `cand_set` was built purely from $\mathbf{n}_f \cdot \mathbf{d} \ge 0$. Because the pocket faces had positive normal projection toward the diagonal, they were present in `cand_set`. Thus, `unhandled_residue_count` evaluated to **0**, and **zero penalty was applied**!
+3. **The False Victory**:
+   The loop forcibly shoved all `best_patch_faces` into `all_handled_faces`, declaring all 560/560 faces "handled" on paper.
+4. **The Physical Reality**:
+   `CGAL::upper_envelope_3` projects triangles to form a single-valued 2.5D height-field wedge. It **cannot see behind overhanging geometry**. The envelope only carved `env_res.source_faces` (the faces actually visible on the envelope diagram).
+   Because the shadowed pocket faces were never in `env_res.source_faces`, the solid sweep wedge never touched them. But because they were falsely marked as "handled" in `all_handled_faces`, Piece 2 and subsequent search stages were barred from claiming them.
+   They remained completely untouched in the stock volume, stranding two $66.59\,\text{mm}^3$ chunks as stationary dead pieces.
+
+---
+
 ## 3. Core Design Goals & Requirements
 
 1. **Disjoint Patch Support (MANDATORY)**:
@@ -79,6 +164,18 @@ Our empirical verification in [`geo/test/mold_voxel_bear_test.cpp`](file:///home
    * All draw vectors, parting curves, and mold solid geometries must be bit-for-bit deterministic across platforms and builds. Stochastic or randomized algorithms are strictly unacceptable.
 5. **High Performance**:
    * Complete the optimization in $< 5\,\text{ms}$ with fewer than 25 candidate evaluations (down from 400+).
+6. **Handled Purity Mandate (CRITICAL INVARIANT)**:
+   * A mesh face $f$ is marked as "handled" **if and only if** it is physically contained in the upper envelope projection (`env_res.source_faces`).
+   * Faces satisfying normal draft ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$) that are occluded, shadowed, or excluded by the upper envelope must strictly remain in the unhandled set $S_{\text{rem}}$. Falsely marking uncarved faces as handled is strictly prohibited.
+7. **Dense Mesh Indexing Invariant (MANDATORY)**:
+   * Every topological boolean mesh operation (e.g., `corefine_union`, `corefine_difference`) must immediately be followed by `mesh.collect_garbage()`.
+   * Downstream algorithms (such as normal caching, topological property maps, and envelope projection) rely on dense contiguous face and vertex indexing ($0 \le \text{idx} < \text{num\_faces}$). Algorithmic patching with bounds checking to mask stale indices is prohibited.
+8. **Symbolic Constant Parameterization (NO MAGIC NUMBERS)**:
+   * All optimization weights, penalties, and thresholds must be declared as named constants in `namespace optimizer_constants` (e.g., `UNHANDLED_RESIDUE_PENALTY_WEIGHT`, `PRIOR_ENCROACHMENT_PENALTY_WEIGHT`, `DEDUP_COSINE_SIMILARITY_THRESHOLD`). Inline magic floating-point literals are forbidden.
+9. **Elimination of Corner-View Bias & Feature Normal Mode Prioritization**:
+   * Prismatic and polyhedral CAD models feature natural planar faces where perpendicular side walls have exact $0^\circ$ draft.
+   * Oblique isometric diagonals must not be selected purely because they sum projected areas across perpendicular walls if doing so causes self-occlusion of re-entrant pockets.
+   * Candidate ingress must explicitly include dominant feature normal modes, exact cardinal axes, and antipodal exploration vectors ($-\mathbf{d}_{\text{prior}}$).
 
 ---
 
@@ -102,16 +199,34 @@ graph TD
     K -- Yes --> L["Complete Mold Assembly"]
 ```
 
-### 4.1 Step 1: Normal Mode Clustering (Finding the Hills)
-Rather than spraying random rays or testing hundreds of mesh facets, compute the **Normal Orientation Tensor** of the remaining unhandled faces $S_{\text{rem}}$:
-$$\mathbf{T} = \sum_{f \in S_{\text{rem}}} A_f \, \mathbf{n}_f \mathbf{n}_f^T$$
+### 4.1 Step 1: Normal Mode Clustering & Candidate Ingress Pipeline
+Rather than spraying blind Fibonacci points or testing hundreds of mesh facets, the candidate generation pipeline seeds the optimizer with mathematically structured candidate directions on $\mathbb{S}^2$:
 
-The eigenvectors of $\mathbf{T}$ define the principal axes of the geometry. Together with a fast spherical $k$-means ($k = 6$), this partitions the normals into 4 to 6 dominant directional modes:
-$$\mathbf{C}_k = \frac{\sum_{f \in \text{Cluster}_k} A_f \mathbf{n}_f}{\left\| \sum_{f \in \text{Cluster}_k} A_f \mathbf{n}_f \right\|}$$
-Each centroid $\mathbf{C}_k \in \mathbb{S}^2$ sits directly at the base of one of the natural hills on the sphere.
+1. **Normal Orientation Tensor & Mode Centroids**:
+   Compute the covariance tensor of unhandled faces $S_{\text{rem}}$:
+   $$\mathbf{T} = \sum_{f \in S_{\text{rem}}} A_f \, \mathbf{n}_f \mathbf{n}_f^T$$
+   Spherical $k$-means ($k = 6$) groups face normals into dominant directional modes with area-weighted centroids:
+   $$\mathbf{C}_k = \frac{\sum_{f \in \text{Cluster}_k} A_f \mathbf{n}_f}{\left\| \sum_{f \in \text{Cluster}_k} A_f \mathbf{n}_f \right\|}$$
 
-### 4.2 Step 2: Continuous Spherical Hill Climbing
-From the top candidate mode $\mathbf{C}_k$, we perform **spherical gradient ascent** on the continuous manifold $\mathbb{S}^2$.
+2. **Continuous Summits**:
+   Each cluster centroid $\mathbf{C}_k$ is climbed via continuous spherical gradient ascent (Step 2) to locate its local summit on $\mathbb{S}^2$.
+
+3. **Dominant Face Normals**:
+   Extract exact face normals from large planar facets using `NormalCluster` vector accumulation in exact rational arithmetic (`EK::FT`).
+
+4. **Exact Cardinal Axes**:
+   Seed the 6 canonical orthogonal directions: $(\pm 1, 0, 0)$, $(0, \pm 1, 0)$, $(0, 0, \pm 1)$. Prismatic CAD models frequently possess orthogonal parting lines where perpendicular side walls have exact $0^\circ$ draft.
+
+5. **Antipodal Prior Piece Vectors ($-\mathbf{d}_{\text{prior}}$)**:
+   For every previously extracted piece $P_j$ with pull vector $\mathbf{d}_j$, inject $-\mathbf{d}_j$ into the candidate pool. In 2-piece and opposing multi-piece molds, the opposite direction is a prime physical candidate. It is evaluated **on merit** alongside all other candidates (not forced as an inflexible constraint).
+
+6. **Angular Deduplication**:
+   All candidates are filtered through angular deduplication with threshold $\cos\theta \ge \text{DEDUP\_COSINE\_SIMILARITY\_THRESHOLD} = 0.9999$ ($\sim 0.8^\circ$), eliminating redundant evaluations while preserving distinct directional modes.
+
+---
+
+### 4.2 Step 2: Continuous Spherical Hill Climbing & The Corner-View Bias Dilemma
+From candidate mode $\mathbf{C}_k$, we perform **spherical gradient ascent** on the continuous manifold $\mathbb{S}^2$.
 
 Let the objective function on $\mathbb{S}^2$ be:
 $$F(\mathbf{d}) = \sum_{f \in \text{Visible}(\mathbf{d}) \cap S_{\text{rem}}} A_f \cdot \left( \mathbf{n}_f \cdot \mathbf{d} - \sin\alpha_{\text{min}} \right)$$
@@ -127,7 +242,17 @@ $$\mathbf{d}^{(t+1)} = \frac{\mathbf{d}^{(t)} + \eta \mathbf{G}_{\mathbb{S}^2}(\
 
 Because $\mathbf{d}$ starts at the cluster centroid, the summit is typically reached in **5 to 8 iterations**.
 
-#### 4.3 Step 3: Disjoint Patch Support (Multi-Component Extraction)
+#### The Corner-View Bias Dilemma:
+On rectilinear and prismatic geometry, gradient ascent on $\sum A_f (\mathbf{n}_f \cdot \mathbf{d})$ naturally drives pull directions toward 3D corner diagonals because viewing multiple orthogonal planes simultaneously yields a larger total projected area than viewing a single plate face head-on.
+However, pulling along a corner diagonal tilts the line of sight across protruding arms or features, casting an **occlusion shadow over interior corner bays**.
+
+**The Architectural Remedy**:
+1. **Preserve Unclimbed Modes**: Candidate ingress retains both the unclimbed feature normal mode $\mathbf{C}_k$ and the climbed summit $\mathbf{d}^*$. If the climbed diagonal shadows interior pockets, the unclimbed orthogonal normal mode remains available as an alternative.
+2. **Authoritative Envelope Verification**: Candidates must be evaluated against actual upper envelope reachability rather than raw normal projection.
+
+---
+
+### 4.3 Step 3: Disjoint Patch Support (Multi-Component Extraction)
 This resolves the smoking gun bug where Piece 2 excluded the sprue and feet.
 
 1. **Extract All Positive-Draft Visible Faces**:
@@ -147,6 +272,32 @@ This resolves the smoking gun bug where Piece 2 excluded the sprue and feet.
    * Combine all non-occluding disk components into `united_patch_faces`.
 5. **United Upper Envelope**:
    Generate the sweep corridor / wedge envelope via `CGAL::upper_envelope_3`, which processes all triangles from all united components simultaneously and builds a single watertight mold block.
+
+---
+
+### 4.4 Step 4: Authoritative Upper Envelope Handled Purity
+The 2-Way Planar Cross exposed the fatal flaw of inserting unverified patch faces into the global handled set.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   The Handled Purity Invariant (Mandate)                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  A face f is marked as HANDLED if and only if:                              │
+│         f ∈ env_res.source_faces  (from CGAL::upper_envelope_3)             │
+│                                                                             │
+│  Faces with (n_f · d ≥ 0) that are NOT present in env_res.source_faces      │
+│  are physically shadowed/unreachable by the solid sweep wedge.              │
+│  They MUST remain in S_rem so downstream pieces or side lifters can demold  │
+│  them!                                                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Eliminate False Equivalency**:
+   In `geo/ops/mold/optimizer.h`, line 456 (`for (auto f : best_patch_faces) all_handled_faces.insert(f)`) is removed. `all_handled_faces` is assigned **strictly to `env_res.source_faces`**.
+2. **Accurate Residue Scoring**:
+   Candidate evaluation cannot assume that unhandled faces are covered merely because their normal points in the hemisphere ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$). Occluded faces incur the full symbolic penalty:
+   $$\text{Penalty}_{\text{residue}} = \text{UNHANDLED\_RESIDUE\_PENALTY\_WEIGHT} \cdot A_{\text{unhandled\_residue}}$$
+   This heavily penalizes slanted draw vectors that leave stranded corner pockets behind.
 
 ---
 
@@ -220,6 +371,19 @@ This resolves the smoking gun bug where Piece 2 excluded the sprue and feet.
 * ✂️ **Elimination of Redundant 3D Polyhedral Booleans**:
   * Drop `boolean::corefine_difference(raw_block, model)` in `mold_op.h` (the wedge floor already sits directly on the model's outer shell).
   * Eliminate post-hoc 3D bounding box clipping in `assembly.h` by terminating piece extrusions directly at the assembly boundary / open air.
+
+### Phase 5: Re-Entrant Corner Pocket Resolution & Handled Purity (IN PROGRESS)
+* 🔍 **Empirical Findings on Planar Cross (`Box(30,10,10).fuse(Box(10,30,10))` prepped with `pourPrep`)**:
+  - Decomposition produced Piece 1, Piece 2, and Component #3 ($141.55\,\text{mm}^3$ stationary dead region) with 17 backdraft warnings.
+  - Snapshot 537 (`explode=0.0`) proved that Piece 1 and Piece 2 fit together **completely flush with zero exterior gap**.
+  - Component #3 was 95% comprised of two symmetric $66.59\,\text{mm}^3$ corner pocket blocks (Fragments 5 and 6) trapped between perpendicular cross arms.
+  - Root cause: Corner-View Bias of projected area maximization caused greedy ascent to an oblique 3D diagonal $\mathbf{d}_1 = (-0.63, -0.67, -0.40)$ tilted $40^\circ$ off the plate normal, physically shadowing the corner pockets.
+  - The false equivalency bug in `optimizer.h` marked pocket faces as handled despite them being omitted by `CGAL::upper_envelope_3`.
+* 🎯 **Design Actions**:
+  - **Enforce Handled Purity**: Strictly assign `all_handled_faces = env_res.source_faces`.
+  - **Mitigate Corner-View Bias**: Seed candidate pool with unclimbed feature normal modes, exact cardinal axes, and antipodal vector $-\mathbf{d}_{\text{prior}}$.
+  - **Dense Mesh Invariant**: Execute `mesh.collect_garbage()` after all boolean unions.
+  - **Symbolic Penalty Parameterization**: Declare all weights and thresholds in `namespace optimizer_constants`.
 
 ---
 
@@ -338,6 +502,20 @@ Instead of leaving them as loose scrap pieces, a **Demold-Safe Merge Audit** is 
 
 ---
 
+### 7.6 Boolean Complementation Invariant for Two-Piece Decompositions
+
+In a classic two-piece mold assembly ($N = 2$), the parting surface $\Sigma$ bisects the stock volume enclosing the model:
+$$\text{Piece}_1 = \text{EnvelopeWedge}(\mathcal{S}_1, \mathbf{d}_1) \cap \text{Stock} \setminus \mathcal{M}$$
+$$\text{Piece}_2 = (\text{Stock} \setminus \text{Piece}_1) \setminus \mathcal{M}$$
+
+#### The Complementation Guarantees:
+1. **Zero Mating Gaps**: Because $\text{Piece}_2$ is carved directly from the exact spatial difference $\text{Stock} \setminus \text{Piece}_1$, the interior parting interface between $\text{Piece}_1$ and $\text{Piece}_2$ is geometrically complementary and airtight:
+   $$\text{Piece}_1 \cap \text{Piece}_2 = \emptyset \quad \text{and} \quad \text{Piece}_1 \cup \text{Piece}_2 \cup \mathcal{M} = \text{Stock}$$
+2. **Zero Stationary Dead Scrap**: No uncarved voids or residual fragments can remain stranded in the stock box. Every infinitesimal cubic millimeter of the mold enclosure is assigned to either Piece 1 or Piece 2.
+3. **Demoldability Assertion**: If Piece 2 contains undercuts along $-\mathbf{d}_1$ or its designated pull direction $\mathbf{d}_2$, it mathematically proves that the geometry cannot be demolded as a pure 2-piece assembly, signaling that a 3rd piece (side lifter or cheek) is physically required.
+
+---
+
 ## 8. Design Decisions & Open Questions
 
 1. **Mutual Occlusion Verification (DECIDED)**:
@@ -348,8 +526,16 @@ Instead of leaving them as loose scrap pieces, a **Demold-Safe Merge Audit** is 
    * 3D curve offset/ribbon normal extrusion is strictly rejected. Parting surfaces are formed by a flat horizontal margin shelf at $Z_{\text{margin}}$ paired with a vertical projection skirt from $\partial\mathcal{S}$, guaranteeing zero self-intersections across non-planar, concave, and multi-island boundaries.
 4. **Scrap Elimination (DECIDED - Demold-Safe Greedy Merge)**:
    * Residual dead stock regions outside the primary core blocks are merged into adjacent pieces whenever withdrawal clearance along that piece's draw vector is preserved.
-5. **Number of Initial Modes ($K$)**:
-   * For typical slipcast parts (figurines, cups, slip molds), $K = 6$ corresponds naturally to the 6 generalized faces (front, back, left, right, top, bottom). Should $K$ be dynamic based on eigenvalue ratios of the normal tensor?
+5. **Handled Set Source of Truth (DECIDED - Upper Envelope Purity)**:
+   * A face is handled only if it appears in `CGAL::upper_envelope_3` facet diagram (`env_res.source_faces`). Normal hemisphere projection ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$) does NOT imply handling.
+6. **Antipodal Prior Candidate (DECIDED - Active Exploration Vector)**:
+   * Candidate ingress seeds $-\mathbf{d}_{\text{prior}}$ from earlier pieces into the candidate pool to explore antipodal parting on its merits, without imposing rigid antipodal constraints.
+7. **Dense Mesh Garbage Collection (DECIDED - Dense Index Invariant)**:
+   * Every boolean CSG operation must be followed immediately by `mesh.collect_garbage()` to ensure contiguous indexing for downstream property maps and algorithms.
+8. **Symbolic Constants (DECIDED - No Magic Numbers)**:
+   * All optimization weights, penalties, and thresholds must be declared as named constants in `namespace optimizer_constants`.
+9. **Number of Initial Modes ($K$)**:
+   * For typical slipcast parts (figurines, cups, slip molds), $K = 6$ corresponds naturally to the 6 generalized faces (front, back, left, right, top, bottom).
 
 ---
 

@@ -73,6 +73,7 @@ struct MoldOp : P {
             vfs->write(fulfilling.with_output("$out"), in);
             return;
         }
+        mesh_part.collect_garbage();
         fix::assert_well_formed_closed_mesh(mesh_part, "mesh_part in MoldOp");
 
         // 2. Trim model-with-sprue against stock box (if provided) so cavity is strictly bounded by stock
@@ -108,6 +109,8 @@ struct MoldOp : P {
                 }
             }
         }
+
+        mesh_part.collect_garbage();
 
         // Flatten mesh_part vertex coordinates to pure rational leaves
         for (auto v : mesh_part.vertices()) {
@@ -176,7 +179,7 @@ struct MoldOp : P {
 
         int piece_idx = 1;
         while (handled_faces_count < total_faces && piece_idx <= 10) {
-            auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params);
+            auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params, piece_draw_dirs);
             if (opt.source_faces.empty()) {
                 break;
             }

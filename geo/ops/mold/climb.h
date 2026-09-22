@@ -22,6 +22,7 @@ inline std::pair<double, Vector3d> evaluate_draft_objective_and_gradient(
 ) {
     double score = 0.0;
     Vector3d grad(0.0, 0.0, 0.0);
+    double w_base = optimizer_constants::BASE_DEMOLDABILITY_WEIGHT;
 
     for (auto f : face_descriptors) {
         if (!is_handled[f]) {
@@ -30,8 +31,8 @@ inline std::pair<double, Vector3d> evaluate_draft_objective_and_gradient(
             double dot = n.dot(d);
             if (dot >= min_dot) {
                 double a = CGAL::to_double(face_areas[idx]);
-                score += a * (dot - min_dot);
-                grad = grad + (n * a);
+                score += a * (w_base + (1.0 - w_base) * (dot - min_dot));
+                grad = grad + (n * (a * (1.0 - w_base)));
             }
         }
     }
