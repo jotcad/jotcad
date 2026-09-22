@@ -34,7 +34,9 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
         if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
 
         size_t orig_f_idx = fit->surfaces_begin()->data();
-        source_faces.insert(orig_f_idx);
+        for (auto sit = fit->surfaces_begin(); sit != fit->surfaces_end(); ++sit) {
+            source_faces.insert(sit->data());
+        }
 
         ExactCDT cdt;
         auto ccb = fit->outer_ccb();
@@ -330,6 +332,17 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
 
     audit_polygon_soup(soup_points, soup_polygons);
     inspect_self_intersections(solid_wedge, to_z);
+
+    for (auto hit = max_diag.halfedges_begin(); hit != max_diag.halfedges_end(); ++hit) {
+        for (auto sit = hit->surfaces_begin(); sit != hit->surfaces_end(); ++sit) {
+            source_faces.insert(sit->data());
+        }
+    }
+    for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
+        for (auto sit = vit->surfaces_begin(); sit != vit->surfaces_end(); ++sit) {
+            source_faces.insert(sit->data());
+        }
+    }
 
     FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
     fix::assert_well_formed_closed_mesh(solid_wedge, "solid_wedge in construct_envelope_wedge");

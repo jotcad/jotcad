@@ -260,10 +260,11 @@ inline PartingOptimizationResult optimize_parting_direction(
         FT score;
         size_t face_count;
         int cycle_count;
+        std::vector<ExactMesh::Face_index> patch_faces;
     };
     std::vector<CandidateLog> ranked_candidates;
-    CandidateLog best_downward{EK::Vector_3(0, 0, 0), FT(-1), 0, -1};
-    CandidateLog best_upward{EK::Vector_3(0, 0, 0), FT(-1), 0, -1};
+    CandidateLog best_downward{EK::Vector_3(0, 0, 0), FT(-1), 0, -1, {}};
+    CandidateLog best_upward{EK::Vector_3(0, 0, 0), FT(-1), 0, -1, {}};
 
     std::cout << "    [Optimizer] Scanning " << candidate_dirs.size() << " candidate directions..." << std::flush;
     auto t_opt_start = std::chrono::steady_clock::now();
@@ -432,7 +433,7 @@ inline PartingOptimizationResult optimize_parting_direction(
         }
 
         if (cycle_count == 1) {
-            ranked_candidates.push_back({d, penalized_patch_score, candidate_patch_faces.size(), 1});
+            ranked_candidates.push_back({d, penalized_patch_score, candidate_patch_faces.size(), 1, candidate_patch_faces});
             if (best_loop_count > 1 || penalized_patch_score > best_patch_score) {
                 best_loop_count = 1;
                 best_patch_score = penalized_patch_score;
@@ -448,10 +449,10 @@ inline PartingOptimizationResult optimize_parting_direction(
 
         double dz_val = CGAL::to_double(d.z());
         if (dz_val < -0.85 && current_patch_score > best_downward.score) {
-            best_downward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count};
+            best_downward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count, candidate_patch_faces};
         }
         if (dz_val > 0.85 && current_patch_score > best_upward.score) {
-            best_upward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count};
+            best_upward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count, candidate_patch_faces};
         }
     }
 
@@ -487,6 +488,84 @@ inline PartingOptimizationResult optimize_parting_direction(
                   << " faces=" << best_upward.face_count << " (cycles=" << best_upward.cycle_count << ")" << std::endl;
     }
 
+    // --- Pass 2: Authoritative Upper Envelope Verification & Shadow Penalty ---
+    struct VerifiedCandidate {
+        EK::Vector_3 dir;
+        FT verified_score;
+        EnvelopeMeshResult env_res;
+        std::vector<ExactMesh::Face_index> patch_faces;
+        size_t shadowed_count;
+        FT shadowed_area;
+    };
+    std::vector<VerifiedCandidate> verified_candidates;
+
+    size_t pass2_evaluated = 0;
+    for (const auto& cand : ranked_candidates) {
+        if (cand.cycle_count != 1) continue;
+        if (pass2_evaluated >= 3) break;
+
+        auto env_res = compute_exact_upper_envelope_mesh(
+            mesh_part, face_descriptors, face_normals, is_handled, cand.dir, cand.patch_faces, params.padding
+        );
+        if (env_res.solid_wedge.number_of_faces() == 0) continue;
+
+        FT shadowed_area = 0;
+        size_t shadowed_count = 0;
+        for (auto f : cand.patch_faces) {
+            size_t f_idx = (size_t)f;
+            // Positive draft faces (> 1e-6) are expected to appear on the upper envelope.
+            // If missing from env_res.source_faces, they are physically occluded/shadowed.
+            FT dot = face_normals[f_idx] * cand.dir;
+            if (dot > FT(1e-6)) {
+                if (env_res.source_faces.find(f_idx) == env_res.source_faces.end()) {
+                    shadowed_area += face_areas[f_idx];
+                    shadowed_count++;
+                    std::cout << "\n      [Diagnostic Shadowed Face] f_idx=" << f_idx
+                              << " dot=" << CGAL::to_double(dot)
+                              << " area=" << CGAL::to_double(face_areas[f_idx])
+                              << " c=(" << CGAL::to_double(face_centroids[f_idx].x()) << ","
+                              << CGAL::to_double(face_centroids[f_idx].y()) << ","
+                              << CGAL::to_double(face_centroids[f_idx].z()) << ")" << std::endl;
+                }
+            }
+        }
+
+        FT shadow_penalty = FT(optimizer_constants::UNHANDLED_RESIDUE_PENALTY_WEIGHT) * shadowed_area * FT(r_bound);
+        FT verified_score = cand.score - shadow_penalty;
+        verified_candidates.push_back({cand.dir, verified_score, std::move(env_res), cand.patch_faces, shadowed_count, shadowed_area});
+        pass2_evaluated++;
+    }
+
+    if (!verified_candidates.empty()) {
+        std::sort(verified_candidates.begin(), verified_candidates.end(), [](const auto& a, const auto& b) {
+            return a.verified_score > b.verified_score;
+        });
+
+        const auto& winner = verified_candidates[0];
+        best_dir = winner.dir;
+        best_patch_faces = winner.patch_faces;
+        best_patch_score = winner.verified_score;
+        best_loop_count = 1;
+
+        std::cout << "      [Pass 2 Verified] Selected Best Dir: (" 
+                  << CGAL::to_double(best_dir.x()) << ", " << CGAL::to_double(best_dir.y()) << ", " << CGAL::to_double(best_dir.z())
+                  << ") with " << best_patch_faces.size() << " seed faces (verified score=" << CGAL::to_double(best_patch_score)
+                  << ", shadowed=" << winner.shadowed_count << ", shadowed_area=" << CGAL::to_double(winner.shadowed_area) << ")." << std::endl << std::flush;
+
+        // Build all_handled_faces: start strictly with verified envelope source faces
+        std::set<size_t> all_handled_faces = winner.env_res.source_faces;
+        // Include zero-draft vertical faces from seed patch (they have 2D area = 0 so are handled via vertical drops)
+        for (auto f : best_patch_faces) {
+            size_t f_idx = (size_t)f;
+            FT dot = face_normals[f_idx] * best_dir;
+            if (dot >= FT(0) && dot <= FT(1e-6)) {
+                all_handled_faces.insert(f_idx);
+            }
+        }
+
+        return {best_dir, winner.env_res.solid_wedge, all_handled_faces, 1, winner.env_res.boundary_loops_3d};
+    }
+
     std::cout << "      Selected Best Dir: (" 
               << CGAL::to_double(best_dir.x()) << ", " << CGAL::to_double(best_dir.y()) << ", " << CGAL::to_double(best_dir.z())
               << ") with " << best_patch_faces.size() << " seed faces (score=" << CGAL::to_double(best_patch_score) << ")." << std::endl << std::flush;
@@ -507,10 +586,14 @@ inline PartingOptimizationResult optimize_parting_direction(
         return {best_dir, {}, {}, 0, env_res.boundary_loops_3d};
     }
 
-    // Unite envelope diagram faces with seed patch faces (including negative-draft facets within tolerance)
+    // Fallback handled set: strictly envelope source faces plus zero-draft vertical walls
     std::set<size_t> all_handled_faces = env_res.source_faces;
     for (auto f : best_patch_faces) {
-        all_handled_faces.insert((size_t)f);
+        size_t f_idx = (size_t)f;
+        FT dot = face_normals[f_idx] * best_dir;
+        if (dot >= FT(0) && dot <= FT(1e-6)) {
+            all_handled_faces.insert(f_idx);
+        }
     }
 
     return {best_dir, env_res.solid_wedge, all_handled_faces, 1, env_res.boundary_loops_3d};
