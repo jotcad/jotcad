@@ -1,16 +1,19 @@
 #pragma once
 #include "types.h"
+#include "boolean/corefine.h"
+#include <CGAL/Polygon_mesh_processing/self_intersections.h>
 
 namespace jotcad {
 namespace geo {
 namespace mold {
 
-inline void verify_piece_demoldability(
+inline bool verify_piece_demoldability(
     const MoldPiece& piece,
     const Tree& model_tree,
-    const MoldParams& params = MoldParams()
+    const MoldParams& params = MoldParams(),
+    int* out_backdraft_count = nullptr
 ) {
-    if (piece.mesh.is_empty() || piece.mesh.number_of_faces() == 0) return;
+    if (piece.mesh.is_empty() || piece.mesh.number_of_faces() == 0) return true;
     int backdraft_count = 0;
     FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
     for (auto f : piece.mesh.faces()) {
@@ -25,19 +28,113 @@ inline void verify_piece_demoldability(
             EK::Vector_3 fn = CGAL::normal(p0, p1, p2);
             // On cavity faces, mold normal points inward toward model (-model_normal).
             // Opening clearance requires (-fn / |fn|) * d >= min_dot <=> (fn / |fn|) * d <= -min_dot
-            double len = std::sqrt(CGAL::to_double(fn.squared_length()));
-            if (len > 1e-9) {
-                FT dot = (fn * piece.draw_vector) / FT(len);
-                if (dot > -min_dot) {
-                    backdraft_count++;
+            FT len_sq = fn.squared_length();
+            if (len_sq > FT(0)) {
+                if (min_dot == FT(0)) {
+                    if (fn * piece.draw_vector > FT(0)) {
+                        backdraft_count++;
+                    }
+                } else {
+                    FT len = CGAL::approximate_sqrt(len_sq);
+                    FT dot = (fn * piece.draw_vector) / len;
+                    if (dot > -min_dot) {
+                        backdraft_count++;
+                    }
                 }
             }
         }
     }
 
-    if (backdraft_count > 0) {
-        std::cerr << "[Warning] Mold piece " << piece.name << " contains " << backdraft_count << " backdraft faces." << std::endl;
+    if (out_backdraft_count) {
+        *out_backdraft_count = backdraft_count;
     }
+
+    if (backdraft_count > 0) {
+        std::cerr << "[Demoldability Warning] Mold piece " << piece.name 
+                  << " contains " << backdraft_count << " backdraft faces along draw vector ("
+                  << CGAL::to_double(piece.draw_vector.x()) << ", "
+                  << CGAL::to_double(piece.draw_vector.y()) << ", "
+                  << CGAL::to_double(piece.draw_vector.z()) << ")." << std::endl;
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Strictly validates a tentative candidate piece prior to child derivation or selection.
+ * 
+ * 1. Cuts solid wedge against model (CSG difference: wedge \ model).
+ * 2. Subtracts all previously validated pieces in the chain.
+ * 3. Enforces 2-manifold closed watertight topology.
+ * 4. Verifies 0 backdraft faces via verify_piece_demoldability.
+ * 
+ * Returns true if validated (storing cut mesh in out_piece_mesh), false if eliminated.
+ */
+inline bool validate_tentative_candidate(
+    const ExactMesh& model_mesh,
+    const Tree& model_tree,
+    const ExactMesh& solid_wedge,
+    const EK::Vector_3& draw_dir,
+    const std::vector<ExactMesh>& prior_solid_pieces,
+    const MoldParams& params,
+    ExactMesh& out_piece_mesh,
+    int* out_backdraft_count = nullptr
+) {
+    if (solid_wedge.number_of_faces() == 0) return false;
+    if (!params.molds) {
+        return true;
+    }
+
+    // 1. Cut wedge against model: piece_mesh = solid_wedge \ model_mesh
+    ExactMesh piece_mesh;
+    ExactMesh wedge_copy = solid_wedge;
+    ExactMesh model_copy = model_mesh;
+    bool ok_diff = boolean::corefine_difference(
+        wedge_copy, model_copy, piece_mesh,
+        params.kiss_mode, params.kiss_width,
+        "tentative_wedge \\ model in validation"
+    );
+    if (!ok_diff || piece_mesh.is_empty() || piece_mesh.number_of_faces() == 0) {
+        return false;
+    }
+
+    // 2. Subtract all previously validated solid pieces: piece_mesh \ prior_pieces
+    for (const auto& prev_piece : prior_solid_pieces) {
+        if (prev_piece.is_empty() || prev_piece.number_of_faces() == 0) continue;
+        if (!boolean::do_meshes_overlap(piece_mesh, prev_piece)) continue;
+
+        ExactMesh non_overlapping;
+        bool ok_pdiff = boolean::corefine_difference(
+            piece_mesh, prev_piece, non_overlapping,
+            params.kiss_mode, params.kiss_width,
+            "tentative_piece \\ prev_piece in validation"
+        );
+        if (!ok_pdiff || non_overlapping.is_empty() || non_overlapping.number_of_faces() == 0) {
+            return false;
+        }
+        piece_mesh = std::move(non_overlapping);
+        piece_mesh.collect_garbage();
+    }
+
+    // 3. Topology check: must be a closed watertight 2-manifold
+    if (!CGAL::is_closed(piece_mesh)) {
+        return false;
+    }
+
+    // 4. Authoritative swept-volume demoldability check (0 backdraft faces)
+    MoldPiece cand_piece{piece_mesh, draw_dir, "tentative_piece", "#2bee2b", (int)prior_solid_pieces.size() + 1};
+    int backdraft_count = 0;
+    bool is_demoldable = verify_piece_demoldability(cand_piece, model_tree, params, &backdraft_count);
+    if (out_backdraft_count) {
+        *out_backdraft_count = backdraft_count;
+    }
+
+    if (!is_demoldable || backdraft_count > 0) {
+        return false;
+    }
+
+    out_piece_mesh = std::move(piece_mesh);
+    return true;
 }
 
 } // namespace mold

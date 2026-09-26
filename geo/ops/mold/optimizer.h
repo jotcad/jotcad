@@ -1,115 +1,44 @@
 #pragma once
+
 #include "types.h"
-#include "visibility.h"
-#include "modes.h"
-#include "climb.h"
-#include "boundary.h"
-#include <cmath>
-#include <CGAL/Polygon_mesh_processing/border.h>
+#include "envelope.h"
+#include "beam_search.h"
 
 namespace jotcad {
 namespace geo {
 namespace mold {
 
-// Pure EK::FT tangent basis orthogonal to d
-inline std::pair<EK::Vector_3, EK::Vector_3> compute_exact_tangent_basis(const EK::Vector_3& d) {
-    EK::FT dx = d.x();
-    EK::FT dy = d.y();
-    EK::FT dz = d.z();
-    EK::FT abs_dx = (dx < EK::FT(0)) ? -dx : dx;
-    EK::FT abs_dy = (dy < EK::FT(0)) ? -dy : dy;
-    EK::FT abs_dz = (dz < EK::FT(0)) ? -dz : dz;
-
-    EK::Vector_3 ref(EK::FT(0), EK::FT(0), EK::FT(0));
-    if (abs_dx <= abs_dy && abs_dx <= abs_dz) {
-        ref = EK::Vector_3(EK::FT(1), EK::FT(0), EK::FT(0));
-    } else if (abs_dy <= abs_dz) {
-        ref = EK::Vector_3(EK::FT(0), EK::FT(1), EK::FT(0));
-    } else {
-        ref = EK::Vector_3(EK::FT(0), EK::FT(0), EK::FT(1));
-    }
-
-    EK::Vector_3 u = CGAL::cross_product(d, ref);
-    EK::Vector_3 v = CGAL::cross_product(d, u);
-    return {u, v};
-}
-
-struct BoundingBox2D {
-    EK::FT u_min = 0, u_max = 0;
-    EK::FT v_min = 0, v_max = 0;
-
-    bool overlaps(const BoundingBox2D& other) const {
-        if (u_max < other.u_min || other.u_max < u_min) return false;
-        if (v_max < other.v_min || other.v_max < v_min) return false;
-        return true;
-    }
-};
-
-inline int count_component_boundary_cycles(
-    const std::vector<ExactMesh::Face_index>& comp_faces,
-    const ExactMesh& mesh_part
-) {
-    std::vector<ExactMesh::Halfedge_index> border_halfedges;
-    CGAL::Polygon_mesh_processing::border_halfedges(
-        comp_faces, mesh_part, std::back_inserter(border_halfedges)
-    );
-
-    std::map<int, int> next_v;
-    for (auto h : border_halfedges) {
-        int u = (int)mesh_part.source(h);
-        int v = (int)mesh_part.target(h);
-        next_v[u] = v;
-    }
-
-    std::set<int> visited;
-    int cycle_count = 0;
-    for (auto h : border_halfedges) {
-        int start = (int)mesh_part.source(h);
-        if (visited.count(start)) continue;
-
-        int curr = start;
-        int step = 0;
-        while (curr != -1 && !visited.count(curr)) {
-            visited.insert(curr);
-            auto it = next_v.find(curr);
-            if (it == next_v.end()) break;
-            int nxt = it->second;
-            step++;
-            curr = nxt;
-            if (curr == start) break;
-        }
-        if (curr == start && step >= 3) {
-            cycle_count++;
-        }
-    }
-    return cycle_count;
-}
-
-
+/**
+ * @brief Certified result of single-step parting direction optimization.
+ */
 struct PartingOptimizationResult {
     EK::Vector_3 best_dir;
     ExactMesh solid_wedge;
+    ExactMesh solid_piece;
     std::set<size_t> source_faces;
-    int cycle_count;
+    int cycle_count = 0;
     std::vector<std::vector<Point_3>> boundary_loops_3d;
 };
 
+/**
+ * @brief Facade that optimizes the next mold parting direction using the Energy-Minimizing Beam Search engine.
+ * 
+ * Evaluates candidate draw directions using true 3D surface area in mm^2, enforces Handled Purity
+ * against the 3D Upper Envelope, and returns the next certified demoldable piece.
+ */
 inline PartingOptimizationResult optimize_parting_direction(
     const ExactMesh& mesh_part,
     const std::vector<EK::Vector_3>& face_normals,
     const std::map<EdgeKey, std::vector<int>>& edge_to_faces,
     FaceBoolMap is_handled,
     const MoldParams& params,
-    const std::vector<EK::Vector_3>& prior_draw_dirs = {}
+    const std::vector<EK::Vector_3>& prior_draw_dirs = {},
+    const std::vector<ExactMesh>& prior_solid_pieces = {}
 ) {
-    FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
-
     std::vector<ExactMesh::Face_index> face_descriptors;
     std::vector<FT> face_areas(mesh_part.num_faces());
-    std::vector<EK::Point_3> face_centroids(mesh_part.num_faces());
     face_descriptors.reserve(mesh_part.number_of_faces());
 
-    FT max_r_sq = 0;
     for (auto f : mesh_part.faces()) {
         face_descriptors.push_back(f);
         size_t f_idx = f.idx();
@@ -117,486 +46,47 @@ inline PartingOptimizationResult optimize_parting_direction(
         auto p0 = mesh_part.point(mesh_part.source(h));
         auto p1 = mesh_part.point(mesh_part.target(h));
         auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
-        face_areas[f_idx] = std::sqrt(CGAL::to_double(CGAL::squared_area(p0, p1, p2)));
-        EK::Point_3 c((p0.x() + p1.x() + p2.x()) / 3, (p0.y() + p1.y() + p2.y()) / 3, (p0.z() + p1.z() + p2.z()) / 3);
-        face_centroids[f_idx] = c;
-        FT d_sq = c.x()*c.x() + c.y()*c.y() + c.z()*c.z();
-        if (d_sq > max_r_sq) max_r_sq = d_sq;
-    }
-    double r_bound = std::sqrt(CGAL::to_double(max_r_sq)) + 50.0;
-
-    std::vector<EK::Vector_3> candidate_dirs;
-
-    // 1. Antipodal directions of prior pieces as exploration candidates
-    for (const auto& pd : prior_draw_dirs) {
-        EK::Vector_3 opp_d = -pd;
-        candidate_dirs.push_back(opp_d);
+        face_areas[f_idx] = CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
     }
 
-    // 2. Exact rational cardinal axes
-    const std::vector<EK::Vector_3> exact_cardinals = {
-        EK::Vector_3(FT( 0), FT( 0), FT( 1)),
-        EK::Vector_3(FT( 0), FT( 0), FT(-1)),
-        EK::Vector_3(FT( 1), FT( 0), FT( 0)),
-        EK::Vector_3(FT(-1), FT( 0), FT( 0)),
-        EK::Vector_3(FT( 0), FT( 1), FT( 0)),
-        EK::Vector_3(FT( 0), FT(-1), FT( 0))
-    };
-    for (const auto& card : exact_cardinals) {
-        candidate_dirs.push_back(card);
-    }
-
-    // 3. Dominant exact face normals from unhandled geometry
-    struct NormalCluster {
-        EK::Vector_3 normal;
-        FT total_area;
-    };
-    std::vector<NormalCluster> clusters;
+    size_t unhandled_count = 0;
     for (auto f : face_descriptors) {
-        if (!is_handled[f]) {
-            size_t idx = f.idx();
-            const auto& n = face_normals[idx];
-            FT a = face_areas[idx];
-            bool found = false;
-            for (auto& cl : clusters) {
-                if (cl.normal == n) {
-                    cl.total_area += a;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                clusters.push_back({n, a});
-            }
-        }
+        if (!is_handled[f]) unhandled_count++;
     }
-    std::sort(clusters.begin(), clusters.end(), [](const auto& a, const auto& b) {
-        return a.total_area > b.total_area;
-    });
-    for (size_t i = 0; i < (std::min)(size_t(8), clusters.size()); ++i) {
-        candidate_dirs.push_back(clusters[i].normal);
-        candidate_dirs.push_back(-clusters[i].normal);
+    if (unhandled_count == 0) {
+        return {};
     }
 
-    // 4. Area-Weighted Normal Mode Clustering + Continuous Spherical Hill Climbing
-    auto mode_seeds = compute_normal_modes(face_descriptors, face_normals, face_areas, is_handled, 6);
-
-    const std::vector<Vector3d> cardinal_dirs = {
-        { 0,  0,  1}, { 0,  0, -1},
-        { 1,  0,  0}, {-1,  0,  0},
-        { 0,  1,  0}, { 0, -1,  0}
-    };
-    for (const auto& card : cardinal_dirs) {
-        bool duplicate = false;
-        for (const auto& s : mode_seeds) {
-            if (card.dot(s) > 0.95) {
-                duplicate = true;
-                break;
-            }
-        }
-        if (!duplicate) mode_seeds.push_back(card);
-    }
-
-    double min_dot_d = CGAL::to_double(min_dot);
-    std::vector<Vector3d> optimized_summits;
-    for (const auto& seed : mode_seeds) {
-        Vector3d summit = climb_spherical_hill(
-            seed, face_descriptors, face_normals, face_areas, is_handled, min_dot_d
-        );
-        bool duplicate = false;
-        for (const auto& opt_s : optimized_summits) {
-            if (summit.dot(opt_s) > 0.99) {
-                duplicate = true;
-                break;
-            }
-        }
-        if (!duplicate) {
-            optimized_summits.push_back(summit);
-            candidate_dirs.push_back(summit.to_exact());
-        }
-    }
-
-    // 5. Angular deduplication of candidate directions (within ~0.8 degrees)
-    std::vector<EK::Vector_3> unique_candidate_dirs;
-    for (const auto& d : candidate_dirs) {
-        double d_len_sq = CGAL::to_double(d.squared_length());
-        if (d_len_sq < 1e-12) continue;
-        double inv_len = 1.0 / std::sqrt(d_len_sq);
-        double dx = CGAL::to_double(d.x()) * inv_len;
-        double dy = CGAL::to_double(d.y()) * inv_len;
-        double dz = CGAL::to_double(d.z()) * inv_len;
-
-        bool duplicate = false;
-        for (const auto& u : unique_candidate_dirs) {
-            double u_len_sq = CGAL::to_double(u.squared_length());
-            double u_inv = 1.0 / std::sqrt(u_len_sq);
-            double ux = CGAL::to_double(u.x()) * u_inv;
-            double uy = CGAL::to_double(u.y()) * u_inv;
-            double uz = CGAL::to_double(u.z()) * u_inv;
-            double dot = dx * ux + dy * uy + dz * uz;
-            if (dot > 0.9999) {
-                duplicate = true;
-                break;
-            }
-        }
-        if (!duplicate) {
-            unique_candidate_dirs.push_back(d);
-        }
-    }
-    candidate_dirs = std::move(unique_candidate_dirs);
-
-    bool has_prior_handled = false;
-    for (auto f : face_descriptors) {
-        if (is_handled[f]) { has_prior_handled = true; break; }
-    }
-
-    EK::Vector_3 best_dir(FT(1), FT(0), FT(0));
-    int best_loop_count = 999999;
-    FT best_patch_score = -FT(1e18);
-    std::vector<ExactMesh::Face_index> best_patch_faces;
-
-    struct CandidateLog {
-        EK::Vector_3 dir;
-        FT score;
-        size_t face_count;
-        int cycle_count;
-        std::vector<ExactMesh::Face_index> patch_faces;
-    };
-    std::vector<CandidateLog> ranked_candidates;
-    CandidateLog best_downward{EK::Vector_3(0, 0, 0), FT(-1), 0, -1, {}};
-    CandidateLog best_upward{EK::Vector_3(0, 0, 0), FT(-1), 0, -1, {}};
-
-    std::cout << "    [Optimizer] Scanning " << candidate_dirs.size() << " candidate directions..." << std::flush;
-    auto t_opt_start = std::chrono::steady_clock::now();
-
-    for (const auto& d : candidate_dirs) {
-
-        auto visible_faces = compute_visible_patch_faces_fast(
-            mesh_part, face_descriptors, face_normals, is_handled, d, min_dot
-        );
-        if (visible_faces.empty()) continue;
-
-        // Group visible_faces into connected components via edge_to_faces
-        std::map<ExactMesh::Face_index, int> face_to_local;
-        for (size_t i = 0; i < visible_faces.size(); ++i) {
-            face_to_local[visible_faces[i]] = (int)i;
-        }
-
-        DSU patch_dsu((int)visible_faces.size());
-        for (const auto& [edge, faces] : edge_to_faces) {
-            std::vector<int> visible_in_edge;
-            for (int f_idx : faces) {
-                auto f = ExactMesh::Face_index(f_idx);
-                auto it = face_to_local.find(f);
-                if (it != face_to_local.end()) {
-                    visible_in_edge.push_back(it->second);
-                }
-            }
-            if (visible_in_edge.size() >= 2) {
-                for (size_t i = 1; i < visible_in_edge.size(); ++i) {
-                    patch_dsu.unite(visible_in_edge[0], visible_in_edge[i]);
-                }
-            }
-        }
-
-        std::map<int, std::vector<ExactMesh::Face_index>> components;
-        for (size_t i = 0; i < visible_faces.size(); ++i) {
-            int root = patch_dsu.find((int)i);
-            components[root].push_back(visible_faces[i]);
-        }
-
-        auto [u_basis, v_basis] = compute_exact_tangent_basis(d);
-
-        struct CompData {
-            std::vector<ExactMesh::Face_index> faces;
-            FT score = 0;
-            int cycle_count = 0;
-            BoundingBox2D bbox;
-        };
-
-        std::vector<CompData> disk_comps;
-        std::vector<CompData> non_disk_comps;
-
-        for (const auto& [root, comp_faces] : components) {
-            FT comp_score = 0;
-            BoundingBox2D bbox;
-            bool first_pt = true;
-
-            for (auto f : comp_faces) {
-                size_t f_idx = (size_t)f;
-                FT a = face_areas[f_idx];
-                FT dot = face_normals[f_idx] * d;
-                if (dot >= min_dot) {
-                    const auto& c = face_centroids[f_idx];
-                    FT depth = FT(r_bound) - (c.x()*d.x() + c.y()*d.y() + c.z()*d.z());
-                    FT w_base(optimizer_constants::BASE_DEMOLDABILITY_WEIGHT);
-                    FT factor = w_base + (FT(1) - w_base) * (dot - min_dot);
-                    comp_score += a * factor * depth;
-                }
-
-                auto h = mesh_part.halfedge(f);
-                for (int i = 0; i < 3; ++i) {
-                    const auto& p = mesh_part.point(mesh_part.target(h));
-                    FT up = p.x()*u_basis.x() + p.y()*u_basis.y() + p.z()*u_basis.z();
-                    FT vp = p.x()*v_basis.x() + p.y()*v_basis.y() + p.z()*v_basis.z();
-                    if (first_pt) {
-                        bbox.u_min = bbox.u_max = up;
-                        bbox.v_min = bbox.v_max = vp;
-                        first_pt = false;
-                    } else {
-                        if (up < bbox.u_min) bbox.u_min = up;
-                        if (up > bbox.u_max) bbox.u_max = up;
-                        if (vp < bbox.v_min) bbox.v_min = vp;
-                        if (vp > bbox.v_max) bbox.v_max = vp;
-                    }
-                    h = mesh_part.next(h);
-                }
-            }
-
-            if (comp_score <= FT(0)) continue;
-
-            int cycles = count_component_boundary_cycles(comp_faces, mesh_part);
-            CompData cd{comp_faces, comp_score, cycles, bbox};
-
-            if (cycles == 1) {
-                disk_comps.push_back(std::move(cd));
-            } else if (cycles > 1) {
-                non_disk_comps.push_back(std::move(cd));
-            }
-        }
-
-        std::vector<ExactMesh::Face_index> candidate_patch_faces;
-        FT current_patch_score = 0;
-        int cycle_count = 0;
-
-        if (!disk_comps.empty()) {
-            std::sort(disk_comps.begin(), disk_comps.end(), [](const auto& a, const auto& b) {
-                return a.score > b.score;
-            });
-
-            std::vector<BoundingBox2D> accepted_bboxes;
-            candidate_patch_faces = disk_comps[0].faces;
-            current_patch_score = disk_comps[0].score;
-            accepted_bboxes.push_back(disk_comps[0].bbox);
-
-            for (size_t i = 1; i < disk_comps.size(); ++i) {
-                const auto& cand = disk_comps[i];
-                bool overlaps = false;
-                for (const auto& acc_box : accepted_bboxes) {
-                    if (cand.bbox.overlaps(acc_box)) {
-                        overlaps = true;
-                        break;
-                    }
-                }
-                if (!overlaps) {
-                    candidate_patch_faces.insert(candidate_patch_faces.end(), cand.faces.begin(), cand.faces.end());
-                    current_patch_score += cand.score;
-                    accepted_bboxes.push_back(cand.bbox);
-                }
-            }
-            cycle_count = 1;
-        } else if (!non_disk_comps.empty()) {
-            std::sort(non_disk_comps.begin(), non_disk_comps.end(), [](const auto& a, const auto& b) {
-                return a.score > b.score;
-            });
-            candidate_patch_faces = non_disk_comps[0].faces;
-            current_patch_score = non_disk_comps[0].score;
-            cycle_count = non_disk_comps[0].cycle_count;
-        } else {
-            continue;
-        }
-
-        FT penalized_patch_score = current_patch_score;
-        if (has_prior_handled) {
-            std::set<ExactMesh::Face_index> cand_set(candidate_patch_faces.begin(), candidate_patch_faces.end());
-            FT penalty = 0;
-            for (auto f : face_descriptors) {
-                size_t f_idx = f.idx();
-                const auto& c = face_centroids[f_idx];
-                FT depth = FT(r_bound) - (c.x()*d.x() + c.y()*d.y() + c.z()*d.z());
-                if (depth < FT(1)) depth = FT(1);
-
-                if (!is_handled[f]) {
-                    if (cand_set.find(f) == cand_set.end()) {
-                        // Unhandled face left behind by this candidate: penalize residue
-                        penalty += FT(optimizer_constants::UNHANDLED_RESIDUE_PENALTY_WEIGHT) * face_areas[f_idx] * depth;
-                    }
-                } else {
-                    // Handled face: check if candidate direction encroaches into prior piece's normal
-                    FT dot = face_normals[f_idx] * d;
-                    if (dot > FT(0)) {
-                        penalty += FT(optimizer_constants::PRIOR_ENCROACHMENT_PENALTY_WEIGHT) * face_areas[f_idx] * dot * depth;
-                    }
-                }
-            }
-            penalized_patch_score -= penalty;
-        }
-
-        if (cycle_count == 1) {
-            ranked_candidates.push_back({d, penalized_patch_score, candidate_patch_faces.size(), 1, candidate_patch_faces});
-            if (best_loop_count > 1 || penalized_patch_score > best_patch_score) {
-                best_loop_count = 1;
-                best_patch_score = penalized_patch_score;
-                best_dir = d;
-                best_patch_faces = candidate_patch_faces;
-            }
-        } else if (best_loop_count > 1 && cycle_count > 0 && (best_patch_score < -FT(1e17) || penalized_patch_score > best_patch_score)) {
-            best_loop_count = cycle_count;
-            best_patch_score = penalized_patch_score;
-            best_dir = d;
-            best_patch_faces = candidate_patch_faces;
-        }
-
-        double dz_val = CGAL::to_double(d.z());
-        if (dz_val < -0.85 && current_patch_score > best_downward.score) {
-            best_downward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count, candidate_patch_faces};
-        }
-        if (dz_val > 0.85 && current_patch_score > best_upward.score) {
-            best_upward = {d, current_patch_score, candidate_patch_faces.size(), cycle_count, candidate_patch_faces};
-        }
-    }
-
-    auto t_opt_end = std::chrono::steady_clock::now();
-    double opt_ms = std::chrono::duration<double, std::milli>(t_opt_end - t_opt_start).count();
-    std::cout << " Done in " << opt_ms << "ms." << std::endl;
-
-    std::sort(ranked_candidates.begin(), ranked_candidates.end(), [](const auto& a, const auto& b) {
-        return a.score > b.score;
-    });
-
-    std::cout << "      Top Candidates (cycles=1):" << std::endl;
-    for (size_t i = 0; i < (std::min)(size_t(5), ranked_candidates.size()); ++i) {
-        const auto& c = ranked_candidates[i];
-        std::cout << "        #" << (i + 1) << ": dir=("
-                  << CGAL::to_double(c.dir.x()) << ", "
-                  << CGAL::to_double(c.dir.y()) << ", "
-                  << CGAL::to_double(c.dir.z()) << ") score=" << CGAL::to_double(c.score)
-                  << " faces=" << c.face_count << std::endl;
-    }
-    if (best_downward.face_count > 0) {
-        std::cout << "      Best Downward (-Z hemisphere): dir=("
-                  << CGAL::to_double(best_downward.dir.x()) << ", "
-                  << CGAL::to_double(best_downward.dir.y()) << ", "
-                  << CGAL::to_double(best_downward.dir.z()) << ") score=" << CGAL::to_double(best_downward.score)
-                  << " faces=" << best_downward.face_count << " (cycles=" << best_downward.cycle_count << ")" << std::endl;
-    }
-    if (best_upward.face_count > 0) {
-        std::cout << "      Best Upward (+Z hemisphere): dir=("
-                  << CGAL::to_double(best_upward.dir.x()) << ", "
-                  << CGAL::to_double(best_upward.dir.y()) << ", "
-                  << CGAL::to_double(best_upward.dir.z()) << ") score=" << CGAL::to_double(best_upward.score)
-                  << " faces=" << best_upward.face_count << " (cycles=" << best_upward.cycle_count << ")" << std::endl;
-    }
-
-    // --- Pass 2: Authoritative Upper Envelope Verification & Shadow Penalty ---
-    struct VerifiedCandidate {
-        EK::Vector_3 dir;
-        FT verified_score;
-        EnvelopeMeshResult env_res;
-        std::vector<ExactMesh::Face_index> patch_faces;
-        size_t shadowed_count;
-        FT shadowed_area;
-    };
-    std::vector<VerifiedCandidate> verified_candidates;
-
-    size_t pass2_evaluated = 0;
-    for (const auto& cand : ranked_candidates) {
-        if (cand.cycle_count != 1) continue;
-        if (pass2_evaluated >= 3) break;
-
-        auto env_res = compute_exact_upper_envelope_mesh(
-            mesh_part, face_descriptors, face_normals, is_handled, cand.dir, cand.patch_faces, params.padding
-        );
-        if (env_res.solid_wedge.number_of_faces() == 0) continue;
-
-        FT shadowed_area = 0;
-        size_t shadowed_count = 0;
-        for (auto f : cand.patch_faces) {
-            size_t f_idx = (size_t)f;
-            // Positive draft faces (> 1e-6) are expected to appear on the upper envelope.
-            // If missing from env_res.source_faces, they are physically occluded/shadowed.
-            FT dot = face_normals[f_idx] * cand.dir;
-            if (dot > FT(1e-6)) {
-                if (env_res.source_faces.find(f_idx) == env_res.source_faces.end()) {
-                    shadowed_area += face_areas[f_idx];
-                    shadowed_count++;
-                    std::cout << "\n      [Diagnostic Shadowed Face] f_idx=" << f_idx
-                              << " dot=" << CGAL::to_double(dot)
-                              << " area=" << CGAL::to_double(face_areas[f_idx])
-                              << " c=(" << CGAL::to_double(face_centroids[f_idx].x()) << ","
-                              << CGAL::to_double(face_centroids[f_idx].y()) << ","
-                              << CGAL::to_double(face_centroids[f_idx].z()) << ")" << std::endl;
-                }
-            }
-        }
-
-        FT shadow_penalty = FT(optimizer_constants::UNHANDLED_RESIDUE_PENALTY_WEIGHT) * shadowed_area * FT(r_bound);
-        FT verified_score = cand.score - shadow_penalty;
-        verified_candidates.push_back({cand.dir, verified_score, std::move(env_res), cand.patch_faces, shadowed_count, shadowed_area});
-        pass2_evaluated++;
-    }
-
-    if (!verified_candidates.empty()) {
-        std::sort(verified_candidates.begin(), verified_candidates.end(), [](const auto& a, const auto& b) {
-            return a.verified_score > b.verified_score;
-        });
-
-        const auto& winner = verified_candidates[0];
-        best_dir = winner.dir;
-        best_patch_faces = winner.patch_faces;
-        best_patch_score = winner.verified_score;
-        best_loop_count = 1;
-
-        std::cout << "      [Pass 2 Verified] Selected Best Dir: (" 
-                  << CGAL::to_double(best_dir.x()) << ", " << CGAL::to_double(best_dir.y()) << ", " << CGAL::to_double(best_dir.z())
-                  << ") with " << best_patch_faces.size() << " seed faces (verified score=" << CGAL::to_double(best_patch_score)
-                  << ", shadowed=" << winner.shadowed_count << ", shadowed_area=" << CGAL::to_double(winner.shadowed_area) << ")." << std::endl << std::flush;
-
-        // Build all_handled_faces: start strictly with verified envelope source faces
-        std::set<size_t> all_handled_faces = winner.env_res.source_faces;
-        // Include zero-draft vertical faces from seed patch (they have 2D area = 0 so are handled via vertical drops)
-        for (auto f : best_patch_faces) {
-            size_t f_idx = (size_t)f;
-            FT dot = face_normals[f_idx] * best_dir;
-            if (dot >= FT(0) && dot <= FT(1e-6)) {
-                all_handled_faces.insert(f_idx);
-            }
-        }
-
-        return {best_dir, winner.env_res.solid_wedge, all_handled_faces, 1, winner.env_res.boundary_loops_3d};
-    }
-
-    std::cout << "      Selected Best Dir: (" 
-              << CGAL::to_double(best_dir.x()) << ", " << CGAL::to_double(best_dir.y()) << ", " << CGAL::to_double(best_dir.z())
-              << ") with " << best_patch_faces.size() << " seed faces (score=" << CGAL::to_double(best_patch_score) << ")." << std::endl << std::flush;
-
-    if (best_loop_count > 1) {
-        throw std::runtime_error("Demoldability Error: Geometry contains internal undercut islands along all tested draw vectors (requires multi-stage side lifters).");
-    }
-
-    // Audit selected patch projected boundary for simplicity before envelope extraction
-    auto audit = audit_patch_projected_boundary_simplicity(mesh_part, best_patch_faces, best_dir, "Selected Patch Projected Boundary");
-
-    // Compute exact Upper Envelope mesh along best_dir within the OBB corridor of best_patch_faces
-    auto env_res = compute_exact_upper_envelope_mesh(
-        mesh_part, face_descriptors, face_normals, is_handled, best_dir, best_patch_faces, params.padding
+    // Run priority-driven search to determine the optimal next draw direction and certified piece
+    auto decomp = decompose_mold_beam_search(
+        mesh_part, face_descriptors, face_normals, face_areas,
+        edge_to_faces, is_handled, params,
+        /*beam_width=*/3,
+        /*max_pieces=*/prior_draw_dirs.size() + 2,
+        /*candidates_per_level=*/16,
+        prior_draw_dirs,
+        prior_solid_pieces
     );
 
-    if (env_res.solid_wedge.number_of_faces() == 0) {
-        return {best_dir, {}, {}, 0, env_res.boundary_loops_3d};
-    }
-
-    // Fallback handled set: strictly envelope source faces plus zero-draft vertical walls
-    std::set<size_t> all_handled_faces = env_res.source_faces;
-    for (auto f : best_patch_faces) {
-        size_t f_idx = (size_t)f;
-        FT dot = face_normals[f_idx] * best_dir;
-        if (dot >= FT(0) && dot <= FT(1e-6)) {
-            all_handled_faces.insert(f_idx);
+    PartingOptimizationResult res;
+    size_t target_idx = prior_draw_dirs.size();
+    if (decomp.draw_dirs.size() > target_idx) {
+        res.best_dir = decomp.draw_dirs[target_idx];
+        if (decomp.solid_wedges.size() > target_idx) {
+            res.solid_wedge = decomp.solid_wedges[target_idx];
+        }
+        if (decomp.solid_pieces.size() > target_idx) {
+            res.solid_piece = decomp.solid_pieces[target_idx];
+        }
+        if (decomp.piece_handled_faces.size() > target_idx) {
+            res.source_faces = decomp.piece_handled_faces[target_idx];
+        }
+        res.cycle_count = 1;
+        if (decomp.piece_boundary_loops.size() > target_idx) {
+            res.boundary_loops_3d = decomp.piece_boundary_loops[target_idx];
         }
     }
-
-    return {best_dir, env_res.solid_wedge, all_handled_faces, 1, env_res.boundary_loops_3d};
+    return res;
 }
 
 } // namespace mold

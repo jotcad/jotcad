@@ -73,6 +73,12 @@ struct MoldParams {
     bool molds = true;
 };
 
+enum class CandidateStatus {
+    TENTATIVE,
+    VALIDATED,
+    INVALID
+};
+
 struct MoldPiece {
     ExactMesh mesh;
     EK::Vector_3 draw_vector;

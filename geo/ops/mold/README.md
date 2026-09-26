@@ -19,7 +19,13 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 | **`repair.h`** | ~45 | Exact coordinate normalization and watertight solid mesh repair (`normalize_and_repair_solid`). |
 | **`modes.h`** | ~135 | Area-weighted normal mode clustering on $\mathbb{S}^2$ via spherical $k$-means (`compute_normal_modes`). |
 | **`climb.h`** | ~100 | Continuous spherical gradient ascent on $\mathbb{S}^2$ with geodesic line search (`climb_spherical_hill`). |
-| **`optimizer.h`** | ~300 | Multi-component disjoint patch optimization, spherical hill climbing orchestration, and candidate evaluation. |
+| **`optimizer.h`** | ~75 | Lightweight facade delegating parting direction optimization to `beam_search.h` (`optimize_parting_direction`). |
+| **`candidates.h`** | ~110 | Analytical normal cross products (n_i x n_j), cardinals, and exploratory S^2 candidate draw direction generation. |
+| **`snap.h`** | ~90 | Analytical geodesic cone-snapping toward dead-zone eliminating target vectors (uncovered stock and antipodal). |
+| **`scoring.h`** | ~60 | Pure surface area candidate draw direction scoring (`score_candidate_direction`, `CandidateScore`). |
+| **`patch.h`** | ~260 | Visible positive-draft face extraction, boundary cycle auditing, and disjoint component aggregation. |
+| **`compatibility.h`** | ~85 | Parting seam compatibility and knife-edge acute dead zone filtering. |
+| **`beam_search.h`** | ~240 | Multi-piece candidate chain beam search engine with energy minimization and parallel backtracking. |
 | **`tide.h`** | ~230 | Rising Tide margin shelf CDT, outer stock box envelope, and cardinal tide basis. |
 | **`tide_wedge.h`** | ~200 | Direct Rising Tide solid mold block synthesis (`construct_rising_tide_wedge`). |
 | **`assembly.h`** | ~110 | Minimal-volume OBB trimming, stationary base block extraction (`pull_vector = "0 0 0"`), and scene graph assembly. |

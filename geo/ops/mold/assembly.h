@@ -69,6 +69,21 @@ struct MoldAssembly {
         }
 
         if (final_remaining.number_of_faces() > 0 && CGAL::is_closed(final_remaining) && CGAL::Polygon_mesh_processing::volume(final_remaining) > FT(1)) {
+            FT r_xmin = 1e9, r_xmax = -1e9, r_ymin = 1e9, r_ymax = -1e9, r_zmin = 1e9, r_zmax = -1e9;
+            for (auto v : final_remaining.vertices()) {
+                auto p = final_remaining.point(v);
+                if (p.x() < r_xmin) r_xmin = p.x();
+                if (p.x() > r_xmax) r_xmax = p.x();
+                if (p.y() < r_ymin) r_ymin = p.y();
+                if (p.y() > r_ymax) r_ymax = p.y();
+                if (p.z() < r_zmin) r_zmin = p.z();
+                if (p.z() > r_zmax) r_zmax = p.z();
+            }
+            std::cout << "    [STATIONARY REMAINDER BBOX] X: [" << CGAL::to_double(r_xmin) << ", " << CGAL::to_double(r_xmax) << "] "
+                      << "Y: [" << CGAL::to_double(r_ymin) << ", " << CGAL::to_double(r_ymax) << "] "
+                      << "Z: [" << CGAL::to_double(r_zmin) << ", " << CGAL::to_double(r_zmax) << "] "
+                      << "faces=" << final_remaining.number_of_faces() << std::endl;
+
             const std::vector<std::string> piece_colors = {"#2bee2b", "#2b80ee", "#ee802b", "#ee2b80", "#80ee2b", "#802bee"};
             int next_piece_idx = (int)mold_pieces.size() + 1;
             std::string color = piece_colors[(next_piece_idx - 1) % piece_colors.size()];

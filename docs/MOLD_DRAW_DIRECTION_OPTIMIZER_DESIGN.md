@@ -113,6 +113,10 @@ Why did the optimizer pick a slanted, oblique draw vector for a rectilinear plan
 The optimizer objective function maximizes the unhandled projected area along vector $\mathbf{d}$:
 $$\text{Score}(\mathbf{d}) = \sum_{f \in S_{\text{rem}}, \, \mathbf{n}_f \cdot \mathbf{d} > 0} A_f (\mathbf{n}_f \cdot \mathbf{d})$$
 
+#### The Origin & Fallacy of "Projected Area":
+In industrial molding, **projected area** ($\sum A_f \cos\theta$) serves a single specific purpose: calculating the **clamping machine tonnage** ($F_{\text{clamp}} = P_{\text{injection}} \times A_{\text{projected}}$) required to keep mold platens sealed against internal injection pressure.
+In computational CAD geometry (Chen & Rosen, Priyadarshi & Gupta), **cavity partitioning is never formulated as projected area maximization**. Using projected area as an optimization objective was a conceptual conflation of *hydraulic machine sizing* with *geometric surface coverage*.
+
 Consider what this function evaluates on a 3D orthogonal polyhedral body:
 * **Looking along a principal feature normal (e.g. Plate Normal $\mathbf{n} \approx (\pm 0.82, 0, \pm 0.58)$)**:
   - The large top face ($750.5\,\text{mm}^2$) is viewed head-on ($\mathbf{n}_f \cdot \mathbf{d} \approx 1.0$), contributing $750.5$ directly.
@@ -179,80 +183,97 @@ for (auto f : best_patch_faces) all_handled_faces.insert((size_t)f);
 
 ---
 
-## 4. The Preferred Architecture: Normal Mode Clustering + Spherical Hill Climbing
+## 4. The Preferred Architecture: Energy-Minimizing Beam Search over Candidate Chains
 
-The core insight is that **the search space is a 2D surface ($\mathbb{S}^2$), and we already possess the complete normal distribution that generates all the hills.**
+Rather than relying on greedy single-step extraction or continuous spherical gradient hill-climbing that gets trapped in local creases, the optimizer formulates multi-piece mold decomposition as an **Energy-Minimizing Beam Search over Candidate Chains**:
 
 ```mermaid
 graph TD
-    A["Unhandled Mesh Faces S_rem"] --> B["Compute Area-Weighted Normal Covariance / Modes"]
-    B --> C["Identify 4–6 Principal Cluster Centroids on S²"]
-    C --> D["Rank Top 2 Modes by Unhandled Projected Area"]
-    D --> E["Continuous Spherical Gradient Ascent (5–10 steps)"]
-    E --> F["Optimal Continuous Draw Vector d*"]
-    F --> G["Visibility & Occlusion Ray-Cast Filter"]
-    G --> H["Multi-Component Disjoint Envelope & Shadow Check"]
-    H --> I["Form United Mold Piece (Retaining All Non-Shadowed Islands)"]
-    I --> J["Mark Faces Handled & Flatten Hill"]
-    J --> K{"All Faces Handled?"}
-    K -- No --> A
-    K -- Yes --> L["Complete Mold Assembly"]
+    A["Level 0: 100% Unhandled Model Mesh S_rem"] --> B["Generate Candidates: Analytical (n_i x n_j, Cardinals, Antipodals) + Exploratory S²"]
+    B --> C["Score Each Candidate: Model Surface Area Addressed (mm²)"]
+    C --> D["Level 1: Beam Maintains Top B Candidate Chains [d_1]"]
+    D --> E["Level 2: Expand Each Beam Chain with Next-Piece Candidates [d_1, d_2]"]
+    E --> F{"Evaluate Chain Energy: E(C) = A_unhandled + λ·k + Barrier"}
+    F -- "Backdraft > 0 (Dead-End)" --> G["Barrier = ∞: Prune Chain from Beam (Implicit Backtrack)"]
+    F -- "Valid Demoldable Chain" --> H["Keep Top B Lowest-Energy Chains"]
+    H --> I{"A_unhandled == 0?"}
+    I -- Yes --> J["Certified Decomposition Assembly (Global Minimum Energy)"]
+    I -- No --> E
 ```
 
-### 4.1 Step 1: Normal Mode Clustering & Candidate Ingress Pipeline
-Rather than spraying blind Fibonacci points or testing hundreds of mesh facets, the candidate generation pipeline seeds the optimizer with mathematically structured candidate directions on $\mathbb{S}^2$:
+### 4.1 Candidate Scoring: Physical Model Surface Area (Zero Projection Distortion)
 
-1. **Normal Orientation Tensor & Mode Centroids**:
-   Compute the covariance tensor of unhandled faces $S_{\text{rem}}$:
-   $$\mathbf{T} = \sum_{f \in S_{\text{rem}}} A_f \, \mathbf{n}_f \mathbf{n}_f^T$$
-   Spherical $k$-means ($k = 6$) groups face normals into dominant directional modes with area-weighted centroids:
-   $$\mathbf{C}_k = \frac{\sum_{f \in \text{Cluster}_k} A_f \mathbf{n}_f}{\left\| \sum_{f \in \text{Cluster}_k} A_f \mathbf{n}_f \right\|}$$
+The scoring function answers one physical manufacturing question: **How much physical product surface area does this candidate direction take responsibility for molding?**
 
-2. **Continuous Summits**:
-   Each cluster centroid $\mathbf{C}_k$ is climbed via continuous spherical gradient ascent (Step 2) to locate its local summit on $\mathbb{S}^2$.
+$$\text{Score}(\mathbf{d}) = \sum_{f \in S_{\text{rem}},\; \mathbf{n}_f \cdot \mathbf{d} \ge \text{min\_dot}} \text{TrueArea}(f) \quad (\text{in } \text{mm}^2)$$
 
-3. **Dominant Face Normals**:
-   Extract exact face normals from large planar facets using `NormalCluster` vector accumulation in exact rational arithmetic (`EK::FT`).
+#### Why Projected Area ($\sum A_f (\mathbf{n}_f \cdot \mathbf{d})$) Was Wrong:
+1. **Steep Walls Were Penalized**: A $1000\,\text{mm}^2$ surface with $80^\circ$ draft was discounted to $170\,\text{mm}^2$ simply because $\cos(80^\circ) = 0.17$, even though the mold block physically forms that entire $1000\,\text{mm}^2$ wall.
+2. **Vertical Walls Were Counted as Zero**: A vertical side wall ($\mathbf{n}_w \cdot \mathbf{d} = 0$) has $0\,\text{mm}^2$ of projected area, even though it represents hundreds of square millimeters of product surface that slides cleanly along the draw vector.
+3. **Corner-View Bias**: Projected area biased the optimizer toward oblique $45^\circ$ isometric angles because viewing three orthogonal planes simultaneously maximizes projected silhouette area, even while casting shadows across interior bays.
 
-4. **Exact Cardinal Axes**:
-   Seed the 6 canonical orthogonal directions: $(\pm 1, 0, 0)$, $(0, \pm 1, 0)$, $(0, 0, \pm 1)$. Prismatic CAD models frequently possess orthogonal parting lines where perpendicular side walls have exact $0^\circ$ draft.
-
-5. **Antipodal Prior Piece Vectors ($-\mathbf{d}_{\text{prior}}$)**:
-   For every previously extracted piece $P_j$ with pull vector $\mathbf{d}_j$, inject $-\mathbf{d}_j$ into the candidate pool. In 2-piece and opposing multi-piece molds, the opposite direction is a prime physical candidate. It is evaluated **on merit** alongside all other candidates (not forced as an inflexible constraint).
-
-6. **Angular Deduplication**:
-   All candidates are filtered through angular deduplication with threshold $\cos\theta \ge \text{DEDUP\_COSINE\_SIMILARITY\_THRESHOLD} = 0.9999$ ($\sim 0.8^\circ$), eliminating redundant evaluations while preserving distinct directional modes.
+#### Pure Model Surface Area Principles:
+* Every square millimeter of product surface counts for **$1\,\text{mm}^2$**, 1:1, regardless of its tilt.
+* Perpendicular vertical walls satisfying $\mathbf{n}_w \cdot \mathbf{d} = 0$ (at zero draft) are included at their **full physical area**.
+* Implemented in isolated module [`geo/ops/mold/scoring.h`](../geo/ops/mold/scoring.h).
 
 ---
 
-### 4.2 Step 2: Continuous Spherical Hill Climbing & The Corner-View Bias Dilemma
-From candidate mode $\mathbf{C}_k$, we perform **spherical gradient ascent** on the continuous manifold $\mathbb{S}^2$.
+### 4.2 Candidate Generation: Analytical Wall Cross Products ($\mathbf{n}_i \times \mathbf{n}_j$) & Exploratory Vectors
 
-Let the objective function on $\mathbb{S}^2$ be:
-$$F(\mathbf{d}) = \sum_{f \in \text{Visible}(\mathbf{d}) \cap S_{\text{rem}}} A_f \cdot \left( \mathbf{n}_f \cdot \mathbf{d} - \sin\alpha_{\text{min}} \right)$$
+A mold pull vector $\mathbf{d} \in \mathbb{S}^2$ is a global translation vector for a physical tooling block. It must never be derived from arbitrary triangular facets or microscopic crease slivers.
 
-The unconstrained gradient in $\mathbb{R}^3$ is simply the area-weighted sum of visible normals:
-$$\mathbf{G}(\mathbf{d}) = \nabla F(\mathbf{d}) = \sum_{f \in \text{Visible}(\mathbf{d}) \cap S_{\text{rem}}} A_f \mathbf{n}_f$$
+#### The Discontinuous Regime (Perpendicular Vertical Walls):
+* For a vertical wall with normal $\mathbf{n}_w$, the demoldability boundary $\mathbf{n}_w \cdot \mathbf{d} = 0$ is a step-function cliff: tilt one way, it is a valid zero-draft sliding surface; tilt the other way, it is an immediate backdraft undercut.
+* Because the gradient at this boundary is discontinuous, numerical optimizers cannot converge to $\mathbf{n}_w \cdot \mathbf{d} = 0$ incrementally.
+* **The Analytical Solution**: Intersecting wall normals are resolved directly:
+  $$\mathbf{d} \parallel \mathbf{n}_i \times \mathbf{n}_j$$
+  For any two non-parallel planar walls with normals $\mathbf{n}_i$ and $\mathbf{n}_j$, their cross product is the unique vector where $\mathbf{n}_i \cdot \mathbf{d} = 0$ and $\mathbf{n}_j \cdot \mathbf{d} = 0$ simultaneously.
 
-To remain on the unit sphere $\mathbb{S}^2$, project the gradient onto the tangent plane at $\mathbf{d}$:
-$$\mathbf{G}_{\mathbb{S}^2}(\mathbf{d}) = (\mathbf{I} - \mathbf{d}\mathbf{d}^T)\mathbf{G}(\mathbf{d})$$
-
-Update with step size $\eta$ and re-normalize:
-$$\mathbf{d}^{(t+1)} = \frac{\mathbf{d}^{(t)} + \eta \mathbf{G}_{\mathbb{S}^2}(\mathbf{d}^{(t)})}{\left\| \mathbf{d}^{(t)} + \eta \mathbf{G}_{\mathbb{S}^2}(\mathbf{d}^{(t)}) \right\|}$$
-
-Because $\mathbf{d}$ starts at the cluster centroid, the summit is typically reached in **5 to 8 iterations**.
-
-#### The Corner-View Bias Dilemma:
-On rectilinear and prismatic geometry, gradient ascent on $\sum A_f (\mathbf{n}_f \cdot \mathbf{d})$ naturally drives pull directions toward 3D corner diagonals because viewing multiple orthogonal planes simultaneously yields a larger total projected area than viewing a single plate face head-on.
-However, pulling along a corner diagonal tilts the line of sight across protruding arms or features, casting an **occlusion shadow over interior corner bays**.
-
-**The Architectural Remedy**:
-1. **Preserve Unclimbed Modes**: Candidate ingress retains both the unclimbed feature normal mode $\mathbf{C}_k$ and the climbed summit $\mathbf{d}^*$. If the climbed diagonal shadows interior pockets, the unclimbed orthogonal normal mode remains available as an alternative.
-2. **Authoritative Envelope Verification**: Candidates must be evaluated against actual upper envelope reachability rather than raw normal projection.
+#### Candidate Ingress Sources ([`geo/ops/mold/candidates.h`](../geo/ops/mold/candidates.h)):
+1. **Analytical Normal Cross Products ($\mathbf{n}_i \times \mathbf{n}_j$)**: For all dominant unhandled planar wall normals.
+2. **Exact Stock Box Cardinals**: $(\pm 1, 0, 0), (0, \pm 1, 0), (0, 0, \pm 1)$.
+3. **Antipodal Prior Piece Vectors ($-\mathbf{d}_{\text{prior}}$)**: Natural complement for opposing two-piece molds and side lifters.
+4. **Dominant Planar Face Normals**: Normals of major faces representing $> 2\%$ of part area.
+5. **Exploratory Sampling on $\mathbb{S}^2$**: Deterministic Fibonacci sphere lattice for rotation-invariant coverage of organic or compound-tilted surfaces.
+6. **Exact Collinear Deduplication**: In pure `EK::FT`, ensuring zero redundant or parallel vectors.
 
 ---
 
-### 4.3 Step 3: Disjoint Patch Support (Multi-Component Extraction)
+### 4.3 Candidate Chains & Energy-Minimizing Beam Search
+
+#### Why Greedy Sequential Extraction Fails (The Dead-End Trap):
+A pure greedy algorithm selects $\mathbf{d}_1$ based only on maximizing Piece 1's immediate surface area:
+1. Piece 1 greedily claims $75\%$ of the part surface.
+2. That choice strands the remaining $25\%$ of faces in re-entrant shadows or behind impossible undercuts.
+3. At step 3, no valid collision-free draw direction can reach the trapped residue, triggering an unrecoverable dead-end failure (`Demoldability Error`).
+
+#### The Energy-Minimizing Beam Search Formulation:
+A multi-piece mold decomposition is formulated as an **Energy-Minimizing Beam Search over Candidate Chains**:
+$$C = [(\mathbf{d}_1, P_1), (\mathbf{d}_2, P_2), \dots, (\mathbf{d}_k, P_k)]$$
+
+#### Connection to Disassembly Sequencing & Non-Directional Blocking Graphs (NDBG):
+In manufacturing and assembly planning (Wilson & Latombe 1995), a multi-piece mold is not a collection of independent blocks, but a **disassembly sequence** (a Directed Acyclic Graph of removals):
+1. **Sequential Space Liberation**: When Piece $P_1$ is extracted along $\mathbf{d}_1$, it vacates space. The exit envelope for $P_2$ along $\mathbf{d}_2$ only needs to reach the expanded open space $\text{OpenAir}_2 = \text{Assembly Exterior} \cup P_1$.
+2. **Directional Invariance**: A piece $P_k$ does not collide with pieces $P_1, \dots, P_{k-1}$ because they have already been removed. It only needs to avoid collisions with the model body $\mathcal{M}$ and unmoved pieces $\{P_{k+1}, \dots, P_K\}$.
+3. **Candidate Chains as Disassembly DAG**: By modeling state as a sequence of extraction steps, the candidate chain naturally captures this operational history, eliminating cyclic blocking locks.
+
+Each candidate chain is evaluated by a physical energy function:
+$$E(C) = A_{\text{unhandled}}(C) + \lambda_{\text{pieces}} \cdot k + \text{Barrier}(C)$$
+* **$A_{\text{unhandled}}(C)$**: Total remaining unhandled physical product surface area in $\text{mm}^2$. Global optimum is $A_{\text{unhandled}} = 0$.
+* **$\lambda_{\text{pieces}} \cdot k$**: Complexity regularizer favoring minimal piece count (e.g. $\lambda_{\text{pieces}} = 100.0\,\text{mm}^2$ equivalent penalty per piece, preferring a 2-piece mold over a 3-piece mold when both achieve $A_{\text{unhandled}} = 0$).
+* **$\text{Barrier}(C) = +\infty$ if $\text{BackdraftCount}(C) > 0$ or demoldability fails**: Any candidate piece that introduces undercuts, negative draft, or unresolvable internal voids incurs an infinite barrier penalty, immediately pruning that chain from the beam.
+
+#### Implicit Parallel Backtracking via Beam Width $B \ge 3$:
+1. At each depth $k$, the search maintains a priority queue of the top $B$ lowest-energy candidate chains (the "beam").
+2. To expand step $k+1$, each active chain generates its top $M$ candidate directions from its specific remaining unhandled surface geometry.
+3. If Chain 1 (which looked most promising at step 1) encounters a dead-end at step 2 (where no valid collision-free direction can demold the remaining faces without backdrafts), all its child branches incur an infinite barrier and are pruned.
+4. Meanwhile, Chain 2 (which initially took slightly less area at step 1, but preserved clean, accessible parting lines) successfully completes the part at step 2, achieves $E = 0 + 2\lambda$, and overtakes Chain 1 in the beam.
+5. This provides **implicit parallel backtracking** with a strictly bounded computational budget ($B \times M$ evaluations per level), completely avoiding complex recursive DFS call stacks or non-deterministic stochastic random walks.
+
+---
+
+### 4.4 Disjoint Patch Support (Multi-Component Extraction)
 This resolves the smoking gun bug where Piece 2 excluded the sprue and feet.
 
 1. **Extract All Positive-Draft Visible Faces**:
@@ -275,7 +296,7 @@ This resolves the smoking gun bug where Piece 2 excluded the sprue and feet.
 
 ---
 
-### 4.4 Step 4: Authoritative Upper Envelope Handled Purity
+### 4.5 Upper Envelope Handled Purity
 The 2-Way Planar Cross exposed the fatal flaw of inserting unverified patch faces into the global handled set.
 
 ```
@@ -293,37 +314,36 @@ The 2-Way Planar Cross exposed the fatal flaw of inserting unverified patch face
 ```
 
 1. **Eliminate False Equivalency**:
-   In `geo/ops/mold/optimizer.h`, line 456 (`for (auto f : best_patch_faces) all_handled_faces.insert(f)`) is removed. `all_handled_faces` is assigned **strictly to `env_res.source_faces`**.
+   In `geo/ops/mold/optimizer.h`, line 456 (`for (auto f : best_patch_faces) all_handled_faces.insert(f)`) is removed. `all_handled_faces` is assigned **strictly to `env_res.source_faces`** plus verified zero-draft vertical faces.
 2. **Accurate Residue Scoring**:
-   Candidate evaluation cannot assume that unhandled faces are covered merely because their normal points in the hemisphere ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$). Occluded faces incur the full symbolic penalty:
+   Candidate evaluation cannot assume that unhandled faces are covered merely because their normal points in the hemisphere ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$). Occluded faces incur the full physical penalty:
    $$\text{Penalty}_{\text{residue}} = \text{UNHANDLED\_RESIDUE\_PENALTY\_WEIGHT} \cdot A_{\text{unhandled\_residue}}$$
    This heavily penalizes slanted draw vectors that leave stranded corner pockets behind.
 
 ---
 
-## 5. Evaluation of Alternative Approaches
+## 5. Evaluation of Alternative Optimization Strategies
 
-| Approach | Determinism | Convergence Speed | Angular Precision | Risk / Weakness | Recommendation |
+| Approach | Determinism | Backtracking Support | Discontinuity Handling | Computational Cost | Recommendation |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **1. Mode Clustering + Spherical Hill Climb** | **100% Exact** | **5–10 evals (<1ms)** | **Continuous ($\ll 0.1^\circ$)** | Minor non-smoothness across shadow lines (handled by multi-start) | **PREFERRED** |
-| **2. Status Quo (300 Fibonacci + Feature Normals)** | 100% Exact | 400+ evals (~15ms) | Coarse ($\sim 11.7^\circ$) | Severe quantization error; extreme voxel clustering; blind spots | **DEPRECATE** |
-| **3. Simulated Annealing on $\mathbb{S}^2$** | Stochastic / Fragile | 150–300 evals | Variable | Non-deterministic (breaks JotCAD CIDs); wanders in 2D space | **REJECT** |
-| **4. Great Circle Spherical Arrangements** | 100% Exact | Combinatorial explosion | Exact boundaries | Targets zero-draft failure lines; $O(N^2)$ cells for 1,000 faces | **REJECT** |
-| **5. Hierarchical Adaptive Spherical Grid** | 100% Exact | 40–80 evals | High (multi-level) | More complex code than hill climbing; still grid-constrained | **BACKUP** |
+| **1. Energy-Minimizing Beam Search over Candidate Chains** | **100% Exact & Bit-for-Bit Deterministic** | **Yes (Parallel beam tracks $B$ chain histories)** | **Exact Analytical Ingress ($\mathbf{n}_i \times \mathbf{n}_j$, Cardinals, Antipodals)** | **Bounded ($B \times M$ evals/level, $<15\,\text{ms}$)** | **PREFERRED ARCHITECTURE** |
+| **2. Greedy Sequential Hill-Climber (Status Quo)** | 100% Exact | No (Locks into early decisions, trapping residue) | Poor (Discontinuous cliffs at $\mathbf{n}_w \cdot \mathbf{d} = 0$ trap gradients) | Low ($5\text{--}10$ evals/piece) | **SUPERSEDED / OBSOLETE** |
+| **3. Simulated Annealing (Stochastic Chain Search)** | Stochastic (Breaks JotCAD Stable CID Mandate) | Weak (Single-trajectory random walk, loses history) | Moderate (Overcomes local traps via $e^{-\Delta E/T}$ uphill steps) | High ($150\text{--}300$ evals, non-reproducible) | **REJECTED** |
+| **4. Great Circle Spherical Arrangements** | 100% Exact | No (Static geometric decomposition) | Poor (Directly targets dangerous $0.0^\circ$ knife edges) | Combinatorial explosion ($O(N^2)$ cells for $N$ faces) | **REJECTED** |
+| **5. Brute Force Fibonacci Sphere Grid (300+ pts)** | 100% Exact | No (Greedy per-piece scan) | Coarse ($\sim 11.7^\circ$ angular quantization error) | High ($400+$ evals/piece, blind spots) | **DEPRECATED** |
 
-### Detailed Evaluation of Alternatives
+### Detailed Evaluation of Strategic Alternatives
 
-#### A. Simulated Annealing
-* **Concept**: Randomly perturb $\mathbf{d}$ on $\mathbb{S}^2$, accepting downhill moves with probability $e^{-\Delta E / T}$.
-* **Why Rejected**:
-  1. *CID Stability*: In JotCAD, every compilation must produce stable cryptographic hashes. Stochastic steps require rigid pseudo-random seeding, which remains brittle across architectures and compilers.
-  2. *Dimensional Inefficiency*: Simulated Annealing is designed for high-dimensional combinatorial problems ($D > 10$). In a 2D space where the gradient $\nabla F(\mathbf{d})$ is directly computable in $O(M)$, stochastic random walking is wasteful and slow.
-
-#### B. Great Circle Arrangements (Spherical Gauss Map)
-* **Concept**: Intersect the zero-draft equators $\mathbf{n}_f \cdot \mathbf{d} = 0$ for all faces to create an exact cellular decomposition of $\mathbb{S}^2$.
-* **Why Rejected**:
-  1. *Zero-Draft Danger*: The vertices of great circle intersections are precisely where multiple faces have exact $0.0^\circ$ draft—the exact configuration that causes tooling galling and clay tearing.
-  2. *Complexity*: 1,000 faces yield up to 1,000,000 spherical cells, requiring heavy rational spherical geometry kernels for no practical gain.
+#### A. Simulated Annealing vs. Beam Search
+* **Simulated Annealing**:
+  - Perturbs draw directions stochastically, accepting uphill energy increases with Boltzmann probability $P = \exp(-\Delta E / T)$ to escape local traps.
+  - *Why Considered*: Solves the non-smooth gradient barrier created by vertical walls ($\mathbf{n}_w \cdot \mathbf{d} = 0$).
+  - *Why Rejected*:
+    1. **CID Stability Violation**: JotCAD requires bit-for-bit cryptographic determinism across OS platforms, CPU architectures, and compiler optimizations. Stochastic algorithms depend on pseudo-random seeds that produce divergent trajectories across platforms.
+    2. **Single-Trajectory Amnesia**: Simulated Annealing walks a single path. If an early piece choice traps an undercut at depth 3, annealing must randomly reheat and wander blindly backwards, whereas beam search preserves the top $B$ branching alternatives simultaneously.
+* **Energy-Minimizing Beam Search**:
+  - Evaluates discrete, mathematically rigorous candidate directions (analytical wall normal cross products, principal stock cardinals, antipodal prior piece vectors, and deterministic Fibonacci lattice points).
+  - Maintains the top $B$ candidate chains simultaneously, providing deterministic parallel backtracking with zero stochasticity and bounded CPU cost.
 
 ---
 
@@ -385,18 +405,64 @@ The 2-Way Planar Cross exposed the fatal flaw of inserting unverified patch face
   - **Dense Mesh Invariant**: Execute `mesh.collect_garbage()` after all boolean unions.
   - **Symbolic Penalty Parameterization**: Declare all weights and thresholds in `namespace optimizer_constants`.
 
+### Phase 6: Physical Surface Area Scoring & Analytical Candidate Ingress (COMPLETED)
+* ✅ Implemented `geo/ops/mold/scoring.h`: Pure model surface area candidate scoring in $\text{mm}^2$ (`score_candidate_direction`, `CandidateScore`), eliminating cosine-tilt projection distortions and zero-draft vertical wall penalties. Exact rational arithmetic in `EK::FT`, zero epsilons.
+* ✅ Implemented `geo/ops/mold/candidates.h`: Analytical wall normal cross products ($\mathbf{n}_i \times \mathbf{n}_j$ for perpendicular walls), stock box cardinals, antipodal prior piece vectors ($-\mathbf{d}_{\text{prior}}$), dominant face normals, deterministic Fibonacci lattice points, and exact collinear deduplication.
+* ✅ Verified standalone unit test [`geo/test/mold_scoring_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/mold_scoring_test.cpp) (PASSED, 0.010s).
+* ✅ Verified standalone unit test [`geo/test/mold_candidates_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/mold_candidates_test.cpp) on concave L-bracket (PASSED, 0.025s).
+
+### Phase 7: Energy-Minimizing Beam Search Orchestration (IN PROGRESS)
+
+#### Step 7.1: Atomic Visible Patch & Disjoint Component Extraction (`geo/ops/mold/patch.h`)
+* **Responsibility**: Given candidate vector $\mathbf{d}$ and unhandled face bitset:
+  1. Filter unhandled faces satisfying draft ($\mathbf{n}_f \cdot \mathbf{d} \ge \text{min\_dot}$). Global occlusion is resolved analytically by `CGAL::upper_envelope_3` (NO raycasting).
+  2. Partition into connected components using DSU over half-edge adjacencies (`edge_to_faces`).
+  3. Verify boundary cycles per component ($C(K_i) = 1$, rejecting internal undercut holes).
+  4. Project components onto orthogonal tangent frame $(\vec{u}, \vec{v})$ and aggregate non-overlapping disjoint disks.
+* **Output**: `CandidatePatch extract_candidate_patch(...)` returning verified faces, boundary cycle count, and validity.
+* **Target Size**: ~120–140 lines (Atomic File Mandate).
+* **Verification**: Standalone unit test [`geo/test/mold_patch_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/mold_patch_test.cpp).
+
+#### Step 7.2: Seam Compatibility & Knife-Edge Dead Zone Filter (`geo/ops/mold/compatibility.h`)
+* **Responsibility**: Ensure physical manufacturing feasibility between adjacent mold pieces along shared parting boundaries:
+  - If a candidate shares an unhandled boundary edge with a prior piece in the chain:
+    - Measure divergence angle $\theta$ from antipodal $-\mathbf{d}_{\text{prior}}$.
+    - Enforce the knife-edge rule: $\theta < 1^\circ$ (flush mating) OR $\theta \ge 30^\circ$ (wide-angle side-action opening).
+    - Disqualify acute divergences ($1^\circ < \theta < 30^\circ$) to prevent unextractable feather-edge dead space.
+* **Target Size**: ~40–50 lines.
+* **Verification**: Unit tests checking angular rejection in the acute dead zone and acceptance of flush/orthogonal directions.
+
+#### Step 7.3: Candidate Chain Beam Search Engine (`geo/ops/mold/beam_search.h`)
+* **Responsibility**: Implement candidate chain expansion, implicit parallel backtracking, and certified early termination:
+  - State: `MoldChainNode` containing `(draw_dirs, solid_wedges, source_faces, is_handled, unhandled_area, energy)`.
+  - Expansion:
+    1. Score candidates via [`scoring.h`](file:///home/brian/github/jotcad_ez/geo/ops/mold/scoring.h) and filter via `compatibility.h` to select top $M$ compatible directions.
+    2. Extract patch via `patch.h` and synthesize Upper Envelope wedge.
+    3. Handled purity: record strictly verified envelope `source_faces` + zero-draft vertical faces.
+    4. Demoldability / backdraft check: if backdrafts $> 0$, assign barrier $= +\infty$ (pruned).
+    5. Evaluate energy: $E(C) = A_{\text{unhandled}}(C) + \lambda_{\text{pieces}} \cdot k$.
+  - Beam Maintenance: Retain top $B$ lowest-energy chains across levels; terminate early when $A_{\text{unhandled}} == 0$.
+* **Target Size**: ~200–220 lines.
+* **Verification**: Standalone unit test [`geo/test/mold_beam_search_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/mold_beam_search_test.cpp).
+
+#### Step 7.4: Facade Refactor & End-to-End Validation (`geo/ops/mold/optimizer.h`)
+* **Responsibility**: Refactor `optimizer.h` from 652 lines down to a clean ~60-line facade delegating to `beam_search.h`.
+* **Validation Targets**:
+  - Run [`geo/test/mold_voxel_bear_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/mold_voxel_bear_test.cpp) to verify multi-piece assembly consistency.
+  - Run [`geo/test/pour_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/pour_test.cpp) to verify that the Planar Cross re-entrant corner dead space (Component #3) is eliminated with 0 backdraft warnings.
+
 ---
 
 ## 7. Parting Surface Generation: The Core Challenge & Physical Realities
 
 ### 7.1 The Fundamental Problem Formulation
-Having identified the positive-draft surface patch $\mathcal{S}$ we wish to impress along draw direction $\vec{d}$, our core geometric challenge is:
-> **Cut from the 3D perimeter of that patch ($\partial\mathcal{S}$) outward to the boundary of the stock block ($\partial B$), strictly without intersecting the interior of the model ($\mathcal{M}$).**
+Having identified the positive-draft surface patch $\mathcal{S}_k$ we wish to impress along draw direction $\mathbf{d}_k$, our core geometric challenge is:
+> **Cut from the 3D perimeter of that patch ($\partial\mathcal{S}_k$) outward to the wall of the active remaining stock box ($\partial B_{k-1}$), strictly staying clear of the model ($\mathcal{M}$).**
 
 The resulting mold piece is the solid volume bounded by:
-1. **Cavity Floor**: The patch $\mathcal{S} \subset \partial\mathcal{M}$.
-2. **Parting Surface**: The cut $\Sigma$ spanning from $\partial\mathcal{S}$ to $\partial B$.
-3. **Exterior Shell**: The portion of the stock boundary $\partial B$ reached by $\Sigma$.
+1. **Cavity Floor**: The patch $\mathcal{S}_k \subset \partial\mathcal{M}$.
+2. **Parting Surface**: The cut $\Sigma_k$ spanning from $\partial\mathcal{S}_k$ to $\partial B_{k-1}$ while maintaining non-negative draft along $\mathbf{d}_k$ and staying strictly outside $\operatorname{int}(\mathcal{M})$.
+3. **Exterior Shell**: The portion of the stock boundary $\partial B_{k-1}$ reached by $\Sigma_k$ and the forward sweep corridor.
 
 ```
                     Stock Block Boundary ∂B
@@ -449,70 +515,195 @@ As proven in Phase 2, a single mold piece often demolds **multiple disconnected 
 
 ---
 
-### 7.4 The Rising Tide + Patch Projection Architecture
+### 7.4 Direct Parting Surface Routing (Patch Perimeter to Remaining Stock Wall)
 
-Instead of tortuous multi-level terracing, complex 3D Voronoi meshes, or radial curve offsets, we adopt the **Rising Tide + Patch Projection** model:
+#### 1. Why Rising Tide is Eliminated
+The previous "Rising Tide" model attempted to turn a 2.5D upper envelope into a closed 3D block by placing an independent rectangular shoe-box with an artificial flat shelf at $Z_{\text{margin}}$ (and artificial midpoint cutoff planes $Z_{\text{mid}} = (Z_{\text{min}} + Z_{\text{max}})/2$) around each piece.
+* **Why it Failed**:
+  1. **Uncarved Wedges & Broken Volume Conservation**: In multi-piece molds with non-collinear pull directions ($\mathbf{d}_1 \neq \pm\mathbf{d}_2$), their independent flat shoe-box floors reside in non-parallel planes that do not meet, stranding massive uncarved wedges of solid stock (e.g. $3310\,\text{mm}^3$ of uncarved dead space in Step B of [`geo/test/pour_test.cpp`](file:///home/brian/github/jotcad_ez/geo/test/pour_test.cpp)).
+  2. **Fragile Knife Blades**: Dropping vertical projection skirts down to an arbitrary flat shelf creates paper-thin, fragile plaster blades on mating pieces wherever parting elevation varies.
+  3. **Artificial Midpoint Planes (`mid_z`)**: Clamping pieces at half-height arbitrarily bisected parts (such as chopping the Planar Cross in half at $X = 0$).
+  4. **Post-Hoc Band-Aids**: Relying on "Dead Region Merging" to clean up leftover scraps proved geometrically unsound and unstable.
+* **Verdict**: Rising Tide, synthetic shelf planes at $Z_{\text{margin}}$, `mid_z` cutoffs, and post-hoc dead region merging are **completely eliminated**.
+
+#### 2. The Direct Routing Architecture
+Having identified demoldable patch $\mathcal{S}_k$ on the model with pull direction $\mathbf{d}_k$, the parting surface $\Sigma_k$ is constructed by moving directly from the 3D patch boundary $\partial\mathcal{S}_k$ outward to the wall of the active remaining stock box $\partial B_{k-1}$ while strictly staying clear of the model $\mathcal{M}$:
 
 ```
-                      Stock Block Boundary
-      ┌───────────────────────────────────────────────────────┐
-      │                                                       │
-      │                  UNTOUCHED STOCK                      │
-      │                                                       │
-      │            ┌─────────────────────────────┐            │
-      │            │       Patch S (Cavity)      │            │
-      │    ┌───────┴─────────────────────────────┴───────┐    │
-      │    │  Vertical Skirt (parallel to d)             │    │
-      ├────┴─────────────────────────────────────────────┴────┤
-      │ ◄────────── Flat Parting Shelf at Z_margin ─────────► │
-      │                                                       │
-      │                   MOLD PIECE P_k                      │
-      │                                                       │
-      └───────────────────────────────────────────────────────┘
-                     Stock Bottom (Z_bottom)
+                     Remaining Stock Boundary ∂B_{k-1}
+       ┌────────────────────────────────────────────────────────┐
+       │                    Mold Piece P_k                      │
+       │                                                        │
+       │       Parting Surface Σ_k          Parting Surface Σ_k │
+       │      /                            \                    │
+       │     /                              \                   │
+       │    /                                \                  │
+       ├───┴──────────────────────────────────┴─────────────────┤
+       │               Patch S_k (Cavity Floor)                 │
+       │                 ▲                  ▲                   │
+       │                 │   Draw Vector    │                   │
+       │                 │      d_k         │                   │
+       │             ────┴──────────────────┴────               │
+       │                   Model Body (M)                       │
+       └────────────────────────────────────────────────────────┘
+                    Remaining Stock Volume B_k
 ```
 
-1. **The Decoupled Margin Plane ($Z = Z_{\text{margin}}$)**:
-   - **Tide Decoupled from Draw Vector**: The rising tide operates in the **stock block coordinate frame** (e.g. rising from a face of the stock block), completely independent of the feature draw vector $\vec{d}$.
-   - **Cardinality Preference (Good to Have for Stackability)**: Tides prefer the principal cardinal axes of the stock block ($X, Y, Z$) whenever possible. This produces clean, orthogonal, box-aligned parting faces so that the resulting mold pieces can be squarely stacked on a workbench and clamped under tension without diagonal shear slippage. When geometry strictly requires off-axis cuts, the system remains flexible to adapt.
-   - A planar "water level" rises along the stock axis until it reaches $Z_{\text{margin}}$: the highest elevation that remains strictly **one safety margin below any forbidden non-patch feature**.
-   - Outside the footprint of the patch, the parting surface is simply this **flat shelf extending cleanly to the stock boundary**.
+1. **Rotated Parameter Space**:
+   Rotate the system by exact rational transformation $\mathbf{R} \in SO(3)$ ([`geo/ops/mold/rotation.h`](file:///home/brian/github/jotcad_ez/geo/ops/mold/rotation.h)) such that draw vector $\mathbf{d}_k \mapsto +\hat{\mathbf{z}}$. In this frame:
+   - Transverse coordinates: $(u, v) = (x, y) \in \mathbb{Q}^2$.
+   - Pull axis: $w = z \in \mathbb{Q}$.
+   - Demoldability condition: $\mathbf{n}_{\Sigma} \cdot \mathbf{d}_k \ge 0$ (single-valued height field $w = f(u, v)$ without undercuts).
 
-2. **Vertical Skirt Projection (Bridging to the Draw Vector)**:
-   - From the 3D non-planar boundary $\partial\mathcal{S}$ of the patch, project along the feature draw vector $-\vec{d}$ to meet the horizontal shelf at $Z_{\text{margin}}$.
-   - As long as $\vec{d}$ has a separating normal component relative to the tide plane ($\vec{d} \cdot \vec{n}_{\text{shelf}} > 0$), pulling the piece along $\vec{d}$ separates both the model cavity and the flat shelf simultaneously with positive normal clearance.
-   - **Guaranteed Non-Self-Intersection**: Because projection rays along $-\vec{d}$ are parallel in $\mathbb{R}^3$, they **never cross each other**, naturally solving concave perimeters, non-planar 3D contours, and multiple disjoint boundary loops without any geometric singularities.
+2. **The Inner Obligation ($\Gamma_{\text{in}} = \partial\mathcal{S}_k$)**:
+   The closed 3D polygonal boundary loops of the visible patch:
+   $$\Gamma_{\text{in}} = \{(u_i, v_i, w_i)\}_{i=1}^{N_{\text{in}}}$$
+   Every point on $\Gamma_{\text{in}}$ is an authoritative boundary vertex on the model surface where the mold cavity terminates.
 
-3. **The Core Piece Solid**:
-   $$\text{Piece}_k = \Big( B_{k-1} \cap \{ Z \le Z_{\text{margin}} \} \Big) \;\cup\; \text{Extrude}(\mathcal{S} \to Z_{\text{margin}}) \;\setminus\; \mathcal{M}$$
-   - Flange separates with instant clearance upon pull along $\vec{d}$.
-   - Vertical skirt slides cleanly with zero undercuts.
-   - Cavity floor perfectly reproduces $\mathcal{S}$.
+3. **The Target Wall Obligation ($\Gamma_{\text{out}} \subset \partial B_{k-1}$)**:
+   In the transverse projection plane $(u, v)$, the boundary of the active remaining stock volume $B_{k-1}$ forms the outer constraint polygon $\Gamma_{\text{out}}$.
+   The region between them is the annular projection domain:
+   $$\Omega = \operatorname{int}\Big(\pi(\Gamma_{\text{out}})\Big) \setminus \pi(\Gamma_{\text{in}})$$
+
+4. **Annular Triangulation via Exact 2D CDT**:
+   In the transverse plane $(u, v)$, domain $\Omega$ is triangulated using CGAL's `Constrained_Delaunay_triangulation_2` (`ExactCDT`).
+   - Boundary constraints $\pi(\Gamma_{\text{in}})$ and $\pi(\Gamma_{\text{out}})$ are inserted as hard constraint edges.
+   - Vertices on $\pi(\Gamma_{\text{in}})$ inherit their fixed 3D model heights $w_i = z_{\text{model}}(u_i, v_i)$.
+   - All non-model vertices in $\Omega$ (and on $\Gamma_{\text{out}}$) have fixed $(u, v)$ coordinates, with heights $w$ along the pull vector to be determined.
+   - **Elimination of Bowtie Self-Intersections**: Because the triangulation is computed in the 2D planar projection $(u, v)$, constraint edges cannot cross, eliminating the twisted self-intersecting quads that doomed 3D curve offset methods (such as `ribbon.h`).
+
+5. **Harmonic Minimal Surface Formulation (3D Area Minimization)**:
+   To determine the heights $w$ of non-model vertices, we minimize the total 3D surface area of the parting triangles:
+   $$\operatorname{Area}_{3D}(T) = \sqrt{A_{\text{2D}}^2 + \frac{1}{4} \Big( (v_{12} w_{13} - w_{12} v_{13})^2 + (w_{12} u_{13} - u_{12} w_{13})^2 \Big)}$$
+   Minimizing this surface area is governed by the discrete Dirichlet energy / Laplace equation:
+   $$\Delta w = 0 \iff \sum_{j \in N(i)} w_{ij} (w_i - w_j) = 0 \quad (\forall \text{ non-model vertices } i)$$
+   where $w_{ij}$ are discrete cotangent or Tutte barycentric weights computed in pure `EK::FT`.
+   - **Physics of Minimal Area**: An area-minimizing surface naturally distributes elevation changes smoothly over the available run, completely eliminating vertical cliff drops and razor-thin plaster blades.
+   - **Maximum Principle**: $w(u, v)$ is strictly bounded by the boundary obligations ($\min_{\Gamma} w \le w(u, v) \le \max_{\Gamma} w$). No spurious peaks, pits, or localized oscillations can form.
+
+6. **Boundary Conditions on Stock Walls & Prior Seams**:
+   - **Natural / Free Boundary ($\frac{\partial w}{\partial n} = 0$) on Stock Walls**: On the outer stock enclosure faces, heights are not pinned to an artificial flat plane; they are allowed to satisfy the natural Neumann boundary condition. This causes the parting surface to **naturally level out and meet the stock wall orthogonally**, producing flat, square, clampable exterior mold faces with zero knife edges.
+   - **Fixed Dirichlet Seams on Prior Pieces**: Where $\Gamma_{\text{out}}$ touches a parting face $\Sigma_j$ from a prior piece ($j < k$), the heights are locked to the exact 3D coordinates of that prior parting face, ensuring airtight mating seams without gaps or steps.
+
+7. **The Obstacle Constraint (Staying Clear of the Model)**:
+   Across the transverse domain $\Omega$, if non-patch model features exist (e.g. an undercut boss or adjacent arm belonging to downstream mold pieces), its illuminated upper envelope defines a lower obstacle height $\psi(u_i, v_i)$.
+   We solve the **Discrete Obstacle Problem**:
+   $$\min E(w) \quad \text{subject to} \quad w_i \ge \psi(u_i, v_i)$$
+   This acts like an elastic membrane draped over the model: wherever there is clear space, it forms a smooth minimal surface; wherever model features protrude, it rests safely on top of them without ever cutting into the model interior:
+   $$\Sigma_k \cap \operatorname{int}(\mathcal{M}) = \emptyset$$
+   Downstream model features with $z < w_i$ remain intact within the remaining stock solid $B_k = B_{k-1} \setminus P_k$.
+
+8. **Mathematical Invariants of Harmonic Parting**:
+   - **Single-Valued Monotonicity & Undercut Invariant**: Because $w = f(u, v)$ is a single-valued height field over $(u, v)$, every point on the parting surface satisfies $\mathbf{n}_{\Sigma} \cdot \mathbf{d}_k \ge 0$. Pulling Piece $P_k$ along $\mathbf{d}_k$ produces immediate separation along both the model cavity $\mathcal{S}_k$ and the parting surface $\Sigma_k$ with zero undercuts.
+   - **Exact Kernel Purity (`EK::FT`)**: Solving the linear system $\mathbf{L} \mathbf{w} = \mathbf{b}$ requires only rational arithmetic $(+, -, \times, \div)$ in `EK::FT`. Zero square roots, zero float casts, and bit-for-bit platform determinism.
 
 ---
 
-### 7.5 Post-Partition "Dead Region" Merging
+### 7.5 Zero Scrap by Progressive Residual Stock Subtraction
 
-Because each core piece only consumes its flat shelf plus vertical column, the corners and exterior spaces between shelves become uncarved solid stock chunks (**"dead regions"**).
+Because mold pieces are carved directly as partitions of the active remaining stock volume, uncarved "dead regions" cannot exist.
 
-Instead of leaving them as loose scrap pieces, a **Demold-Safe Merge Audit** is performed:
-1. **Identify Candidate Neighbors**: For each dead region $D$, identify the mold pieces ($P_1, P_2, \dots$) sharing a boundary face with $D$.
-2. **Verify Demoldability**: Check whether the combined block $P_k \cup D$ can still be cleanly withdrawn along $\vec{d}_k$ without colliding with the model or blocking subsequent pieces in the disassembly DAG.
-3. **Solid Union**: If safe, execute $P_k \leftarrow P_k \cup D$. This thickens mold walls, increases structural rigidity, reduces piece count, and completely eliminates stranded scraps.
+#### 1. Progressive Subtraction Formulation
+1. **Initial Stock Volume**:
+   $$B_0 = V_{\text{stock}} \setminus \mathcal{M} \quad (\text{or } V_{\text{stock}})$$
+2. **Sequential Piece Extraction**:
+   For stages $k = 1, \dots, K-1$:
+   $$P_k = \operatorname{SweepCorridor}(\mathcal{S}_k, \mathbf{d}_k, \Sigma_k) \cap B_{k-1}$$
+   $$B_k = B_{k-1} \setminus P_k$$
+3. **Terminal Piece Complementation**:
+   When the remaining unhandled model surface is demoldable along final draw vector $\mathbf{d}_K$ (or when reaching the final stage $k = K$):
+   $$P_K = B_{K-1}$$
+   The terminal piece simply absorbs the entire remaining uncarved stock volume!
+
+#### 2. The Zero-Scrap Invariant
+By algebraic identity of progressive complementation:
+$$\bigcup_{k=1}^K P_k = V_{\text{stock}} \setminus \mathcal{M}$$
+$$P_i \cap P_j = \emptyset \quad (\forall i \neq j)$$
+$$\operatorname{Volume}(\text{Uncarved Dead Space}) = 0$$
+
+- **Zero Scrap**: Every cubic millimeter of the mold enclosure is assigned to a moving piece.
+- **Zero Gaps**: Adjacent pieces share mathematically coincident parting interfaces ($\Sigma_k = P_k \cap P_j$).
+- **No Dead Region Merging**: The artificial post-partition merge audit from Section 7.5 is rendered completely obsolete and discarded.
 
 ---
 
-### 7.6 Boolean Complementation Invariant for Two-Piece Decompositions
+### 7.6 Boolean Complementation Theorems
 
-In a classic two-piece mold assembly ($N = 2$), the parting surface $\Sigma$ bisects the stock volume enclosing the model:
-$$\text{Piece}_1 = \text{EnvelopeWedge}(\mathcal{S}_1, \mathbf{d}_1) \cap \text{Stock} \setminus \mathcal{M}$$
-$$\text{Piece}_2 = (\text{Stock} \setminus \text{Piece}_1) \setminus \mathcal{M}$$
+#### Theorem 1: Two-Piece Exact Complementation
+In a classic two-piece mold assembly ($N = 2$):
+$$P_1 = \operatorname{SweepCorridor}(\mathcal{S}_1, \mathbf{d}_1, \Sigma_1) \cap B_0$$
+$$P_2 = B_0 \setminus P_1 = (V_{\text{stock}} \setminus \mathcal{M}) \setminus P_1$$
 
-#### The Complementation Guarantees:
-1. **Zero Mating Gaps**: Because $\text{Piece}_2$ is carved directly from the exact spatial difference $\text{Stock} \setminus \text{Piece}_1$, the interior parting interface between $\text{Piece}_1$ and $\text{Piece}_2$ is geometrically complementary and airtight:
-   $$\text{Piece}_1 \cap \text{Piece}_2 = \emptyset \quad \text{and} \quad \text{Piece}_1 \cup \text{Piece}_2 \cup \mathcal{M} = \text{Stock}$$
-2. **Zero Stationary Dead Scrap**: No uncarved voids or residual fragments can remain stranded in the stock box. Every infinitesimal cubic millimeter of the mold enclosure is assigned to either Piece 1 or Piece 2.
-3. **Demoldability Assertion**: If Piece 2 contains undercuts along $-\mathbf{d}_1$ or its designated pull direction $\mathbf{d}_2$, it mathematically proves that the geometry cannot be demolded as a pure 2-piece assembly, signaling that a 3rd piece (side lifter or cheek) is physically required.
+1. **Airtight Mating**: $P_1 \cap P_2 = \emptyset$ and $P_1 \cup P_2 \cup \mathcal{M} = V_{\text{stock}}$.
+2. **Zero Dead Scrap**: No voids, loose fragments, or uncarved stock wedges can remain stranded.
+3. **Mutual Demoldability**: For antipodal draw ($\mathbf{d}_2 = -\mathbf{d}_1$), because $\mathbf{n}_1 \cdot \mathbf{d}_1 \ge 0$ on parting surface $\Sigma_1$, the opposing normal on $P_2$ is $\mathbf{n}_2 = -\mathbf{n}_1$. Therefore:
+   $$\mathbf{n}_2 \cdot \mathbf{d}_2 = (-\mathbf{n}_1) \cdot (-\mathbf{d}_1) = \mathbf{n}_1 \cdot \mathbf{d}_1 \ge 0$$
+   Any parting surface with non-negative draft for Piece 1 along $\mathbf{d}_1$ automatically has non-negative draft for Piece 2 along $-\mathbf{d}_1$.
+
+#### Theorem 2: Multi-Piece ($N > 2$) Progressive Complementation
+For complex models requiring side lifters or cheeks ($N > 2$):
+1. Pieces $P_1, \dots, P_{K-1}$ carve their certified draw corridors out of the remaining stock: $P_k = \operatorname{SweepCorridor}_k \cap B_{k-1}$.
+2. Each cut reduces the remaining stock: $B_k = B_{k-1} \setminus P_k$.
+3. The final piece $P_K$ consumes $B_{K-1}$ in its entirety.
+4. Complete tiling of the stock volume is guaranteed for any number of pieces $N \ge 2$.
+
+---
+
+### 7.7 Parting Seam Continuity & The Knife-Edge Dead Zone (Sliver Gap Elimination)
+
+In multi-piece mold decomposition, pieces do not exist in isolation; they must mate along continuous parting boundaries to partition the exterior mold stock enclosure ($S \setminus \mathcal{M}$).
+
+#### 1. The Physics of Parting Sheet Divergence
+When Piece 1 is extracted along $\mathbf{d}_1$, its parting surface extends outward from its boundary perimeter $E_{\text{shared}}$ into the plane $\mathbf{d}_1^\perp$. When a subsequent Piece 2 is evaluated along direction $\mathbf{d}_2$, its parting surface extends outward into the plane $\mathbf{d}_2^\perp$.
+
+Along their shared contact seam of length $L_{\text{shared}}$, the opening angle $\theta$ between the two parting sheets falls into three fundamentally distinct physical regimes:
+
+```
+           [ Regime 1: Flush ]                [ Regime 2: Knife-Edge Sliver ]             [ Regime 3: Viable Side Core ]
+            θ = 0° (Antiparallel)                   0° < θ < 30° (Acute Tilt)                   θ ≥ 45° - 90° (Orthogonal)
+
+           Piece 1 Pull (+d1)                    Piece 1 Pull (+d1)                           Piece 1 Pull (+d1)
+                 ▲                                     ▲                                            ▲
+                 │                                     │                                            │
+       ══════════╪══════════                 ══════════╪══════════                        ══════════╪
+                 │ Parting Sheet                       │ Parting Sheet 1                            │ Parting Sheet 1
+                 │ (Coincident)                        │                                            │
+       ══════════╪══════════                           \   θ ≈ 9.4°                                 ├─────────────► Piece 3 Pull
+                 │                                      \  Parting Sheet 2                          │
+                 ▼                                       ▼                                          ▼
+           Piece 2 Pull (-d1)                    Piece 2 Pull (d2)                            Piece 2 Pull (-d1)
+         [Zero Gap, Flush Seam]                 [Trapped 57mm³ Sliver Void]                  [Substantial 3rd Piece Opening]
+```
+
+1. **Flush Mating ($\theta = 0^\circ$)**:
+   $\mathbf{d}_2 = -\mathbf{d}_1$. The parting sheets are coplanar and coincident across the entire stock margin. Zero volumetric gap is created ($V_{\text{gap}} = 0$).
+2. **The Knife-Edge / Degenerate Sliver Zone ($0^\circ < \theta < 30^\circ$)**:
+   - A shallow angular divergence creates an acute wedge that expands outward into the stock:
+     $$V_{\text{gap}} \approx \frac{1}{2} L_{\text{shared}} R_{\text{stock}}^2 \sin\theta$$
+   - **Why Small Gaps Are Worst**: In tooling and casting, a shallow $5^\circ\text{--}15^\circ$ wedge is a structural disaster ("feather edge"). It is too razor-thin, fragile, and draft-locked to form a viable moving mold piece. Yet because the parting sheets diverge, neither primary shell can pull it. It is structurally condemned to become trapped stationary dead space.
+   - **The Asymmetric Area/Volume Fallacy**: Tilting the draw direction of an entire mold half by $9.4^\circ$ to chase a mere $0.15\,\text{mm}^2$ of surface area creates over $50\,\text{mm}^3$ of unextractable stationary scrap across the stock box.
+3. **Viable Side-Core Opening ($\theta \ge 30^\circ\text{--}90^\circ$)**:
+   - A substantial, wide-open angular opening provides generous clearance and draft for a robust, structurally sound third piece (side lifter or cheek) to be extracted cleanly in subsequent passes (as observed in the T-bracket test).
+
+#### 2. The Non-Monotonic Gap Penalty Formulation
+A naive linear penalty ($\text{Penalty} \propto \sin\theta$) has inverted polarity: it penalizes wide openings (which yield large, healthy mold pieces) while tolerating small slivers (which create dead space).
+
+To enforce manufacturing viability, the parting gap penalty is formulated as a **knife-edge barrier**:
+$$\text{Penalty}_{\text{gap}}(\theta) = \begin{cases} 
+0 & \text{if } \theta < \theta_{\text{flush}} \quad (\theta_{\text{flush}} \approx 1^\circ, \text{ flush mating}) \\
+\infty \text{ (or massive barrier)} & \text{if } \theta_{\text{flush}} \le \theta < \theta_{\text{viable}} \quad (\theta_{\text{viable}} \approx 30^\circ, \text{ degenerate sliver}) \\
+0 \text{ (or decaying)} & \text{if } \theta \ge \theta_{\text{viable}} \quad (\text{viable side-action cavity})
+\end{cases}$$
+
+Alternatively, expressed in terms of unpartitioned stock volume $V_{\text{gap}}$:
+$$\text{Penalty}_{\text{gap}}(V_{\text{gap}}) = \begin{cases}
+0 & \text{if } V_{\text{gap}} < V_{\text{tolerance}} \quad (\text{seamless}) \\
+\text{BARRIER\_WEIGHT} \times (V_{\text{viable}} - V_{\text{gap}}) & \text{if } V_{\text{tolerance}} \le V_{\text{gap}} < V_{\text{viable}} \quad (\text{unviable sliver}) \\
+0 & \text{if } V_{\text{gap}} \ge V_{\text{viable}} \quad (\text{viable piece opening})
+\end{cases}$$
+
+#### 3. Elimination of False "Completion" Overrides
+The candidate sorting logic must not use naive boolean surface completion (`patch_faces.size() == unhandled_total`) to bypass volumetric parting continuity. Claiming 100% of the model surface faces at the cost of opening a $57\,\text{mm}^3$ knife-edge parting gap produces a failed mold. Zero-gap parting continuity must govern primary shell selection, allowing subsequent passes to extract any localized undercut crease as clean, independent moving pieces.
 
 ---
 
@@ -522,10 +713,10 @@ $$\text{Piece}_2 = (\text{Stock} \setminus \text{Piece}_1) \setminus \mathcal{M}
    * 2D projection non-overlap along $\mathbf{d}^*$ combined with `CGAL::upper_envelope_3` depth resolution provides exact, collision-free demolding without requiring expensive 3D Minkowski swept volumes.
 2. **Piece Boundary Extents (DECIDED - Open Air Mandate)**:
    * Mold pieces terminate as soon as their withdrawal path enters the expanding open-air boundary ($\text{OpenAir}_i$), eliminating monolithic sweeps to the bounding box.
-3. **Parting Generation (DECIDED - Rising Tide + Skirt Projection)**:
-   * 3D curve offset/ribbon normal extrusion is strictly rejected. Parting surfaces are formed by a flat horizontal margin shelf at $Z_{\text{margin}}$ paired with a vertical projection skirt from $\partial\mathcal{S}$, guaranteeing zero self-intersections across non-planar, concave, and multi-island boundaries.
-4. **Scrap Elimination (DECIDED - Demold-Safe Greedy Merge)**:
-   * Residual dead stock regions outside the primary core blocks are merged into adjacent pieces whenever withdrawal clearance along that piece's draw vector is preserved.
+3. **Parting Generation (DECIDED - Harmonic Minimal Surface Parting Engine)**:
+   * Rising tide, synthetic shelf planes at $Z_{\text{margin}}$, and artificial midpoint planes (`mid_z`) are strictly eliminated. Parting surfaces are synthesized via a Harmonic Minimal Surface (Laplacian height field) over a 2D Constrained Delaunay Triangulation (CDT) between patch perimeter $\partial\mathcal{S}_k$ and remaining stock wall $\partial B_{k-1}$. Heights minimize 3D surface area ($\Delta w = 0$), meeting stock walls orthogonally with natural Neumann conditions ($\partial w / \partial n = 0$), mating flush with prior pieces via Dirichlet seams, and respecting an obstacle lower bound ($w_i \ge \psi_i$) to guarantee model clearance ($\Sigma_k \cap \operatorname{int}(\mathcal{M}) = \emptyset$) and zero undercuts along the pull direction ($\mathbf{n}_{\Sigma} \cdot \mathbf{d}_k \ge 0$).
+4. **Volume Conservation & Scrap Elimination (DECIDED - Progressive Residual Stock Subtraction $B_k = B_{k-1} \setminus P_k$)**:
+   * Post-hoc dead region merging heuristics are discarded. Mold pieces are carved sequentially from the active remaining stock ($P_k = \operatorname{SweepCorridor}_k \cap B_{k-1}$), updating $B_k = B_{k-1} \setminus P_k$. The final piece absorbs the remaining stock ($P_K = B_{K-1}$), guaranteeing zero uncarved scrap, zero voids, and airtight mating by algebraic identity.
 5. **Handled Set Source of Truth (DECIDED - Upper Envelope Purity)**:
    * A face is handled only if it appears in `CGAL::upper_envelope_3` facet diagram (`env_res.source_faces`). Normal hemisphere projection ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$) does NOT imply handling.
 6. **Antipodal Prior Candidate (DECIDED - Active Exploration Vector)**:
@@ -536,6 +727,20 @@ $$\text{Piece}_2 = (\text{Stock} \setminus \text{Piece}_1) \setminus \mathcal{M}
    * All optimization weights, penalties, and thresholds must be declared as named constants in `namespace optimizer_constants`.
 9. **Number of Initial Modes ($K$)**:
    * For typical slipcast parts (figurines, cups, slip molds), $K = 6$ corresponds naturally to the 6 generalized faces (front, back, left, right, top, bottom).
+10. **Knife-Edge Sliver Gap Elimination (DECIDED - Barrier Penalty Mandate)**:
+    * Candidates sharing a parting line with a prior piece must either meet flush ($\theta < 1^\circ$) or open wide ($\theta \ge 30^\circ$). Acute angular divergence ($1^\circ \le \theta < 30^\circ$) creates unextractable feather-edge dead space and is strictly disqualified via a knife-edge barrier penalty. Naive boolean surface completion (`patch_faces.size() == unhandled_total`) must never override volumetric parting continuity.
+11. **Energy-Minimizing Beam Search & Physical Surface Area Scoring (DECIDED - Physical Units Mandate)**:
+    * Replaced artificial heuristics (magic penalty weights, continuous spherical hill-climbing, 98% thresholds, projected area cosine distortions) with an Energy-Minimizing Beam Search over candidate chains:
+      * **Physical 3D Model Surface Area**: Candidates are scored strictly by the real product surface area in $\text{mm}^2$ ($\sum_{f \in S_{\text{rem}}} \text{TrueArea}(f)$) for all unhandled faces satisfying $\mathbf{n}_f \cdot \mathbf{d} \ge \text{min\_dot}$. Zero-draft vertical walls ($\mathbf{n}_w \cdot \mathbf{d} = 0$) count 1:1 for their full surface area.
+      * **Analytical + Exploratory Ingress**: Seeds candidate draw directions from analytical wall normal cross products ($\mathbf{n}_i \times \mathbf{n}_j$ for perpendicular walls), stock box cardinals, antipodal vectors ($-\mathbf{d}_{\text{prior}}$), dominant planar normals, and deterministic Fibonacci lattice points, deduplicated in pure `EK::FT`.
+      * **Candidate Chains with Backtracking**: Multi-piece mold generation tracks full operational history in candidate chains $C = [(\mathbf{d}_1, P_1), \dots, (\mathbf{d}_k, P_k)]$. The beam search maintains the top $B$ lowest-energy chains, pruning dead-end chains (where backdrafts occur or unhandled residue is stranded) via infinite barrier penalties, allowing alternative chains to overtake them.
+      * **Zero Backdraft Tolerance**: Any candidate piece exhibiting backdraft faces is strictly disqualified.
+12. **NO RAYCASTING FOR OCCLUSION OR DEMOLDABILITY (UPPER ENVELOPE PURITY MANDATE - CRITICAL)**:
+    * **Prohibition**: Raycasting is strictly forbidden for visibility, occlusion, or demoldability testing. Point-based ray queries (e.g. `model_tree.do_intersect(ray)`) are non-exact sampling heuristics that miss edge/corner collisions and require arbitrary epsilon standoffs (`0.01 mm`), directly violating the **Exact Kernel Purity (`EK::FT` over doubles)** directive.
+    * **Sole Source of Truth (`CGAL::upper_envelope_3`)**: The 3D Upper Envelope is the sole mathematical authority for surface visibility and line-of-sight along draw vector $\mathbf{d}$.
+    * **Corridor Geometry Ingress**: When computing the upper envelope along $\mathbf{d}$ (+Z in rotated coordinates), `envelope.h` MUST pass all forward-facing model triangles within the candidate patch's 2D bounding corridor to `CGAL::upper_envelope_3`.
+    * **Analytical Shadowing**: Overhanging geometry has higher $z$ coordinates ($z_{\text{overhang}} > z_{\text{floor}}$), so `CGAL::upper_envelope_3` analytically places the overhang on the envelope diagram, naturally omitting occluded floor surfaces from `env_res.source_faces`.
+    * **Handled Purity Enforcement**: A face is handled if and only if it appears in `env_res.source_faces`. If an overhang shadows a candidate's patch, those shadowed faces remain unhandled, penalizing the chain's energy ($E(C)$) and causing invalid occluded candidates to be pruned cleanly by the beam search without any ray queries.
 
 ---
 

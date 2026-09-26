@@ -66,32 +66,80 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     std::set<ExactMesh::Face_index> candidate_faces;
     bool has_seed = !seed_patch_faces.empty();
     if (has_seed) {
-        std::queue<ExactMesh::Face_index> q;
         for (auto f : seed_patch_faces) {
             if (is_forward_facing(f)) {
                 candidate_faces.insert(f);
-                q.push(f);
             }
         }
-        while (!q.empty()) {
-            auto curr_f = q.front();
-            q.pop();
-            auto h = mesh_part.halfedge(curr_f);
-            auto h_start = h;
-            do {
-                auto h_twin = mesh_part.opposite(h);
-                if (h_twin != ExactMesh::null_halfedge()) {
-                    auto neighbor_f = mesh_part.face(h_twin);
-                    if (neighbor_f != ExactMesh::null_face() && !is_handled[neighbor_f]) {
-                        if (is_forward_facing(neighbor_f)) {
-                            if (candidate_faces.insert(neighbor_f).second) {
-                                q.push(neighbor_f);
-                            }
-                        }
-                    }
+
+        bool first_seed_v = true;
+        FT seed_u_min = 0, seed_u_max = 0;
+        FT seed_v_min = 0, seed_v_max = 0;
+        FT seed_z_min = 0;
+
+        for (auto f : candidate_faces) {
+            auto h = mesh_part.halfedge(f);
+            for (int i = 0; i < 3; ++i) {
+                auto p_rot = to_z(mesh_part.point(mesh_part.target(h)));
+                FT u = p_rot.x().exact();
+                FT v = p_rot.y().exact();
+                FT z = p_rot.z().exact();
+                if (first_seed_v) {
+                    seed_u_min = seed_u_max = u;
+                    seed_v_min = seed_v_max = v;
+                    seed_z_min = z;
+                    first_seed_v = false;
+                } else {
+                    if (u < seed_u_min) seed_u_min = u;
+                    if (u > seed_u_max) seed_u_max = u;
+                    if (v < seed_v_min) seed_v_min = v;
+                    if (v > seed_v_max) seed_v_max = v;
+                    if (z < seed_z_min) seed_z_min = z;
                 }
                 h = mesh_part.next(h);
-            } while (h != h_start);
+            }
+        }
+
+        // Ingress all forward-facing model faces whose 2D projected bounding box overlaps
+        // the candidate patch corridor and whose max_z >= seed_z_min (analytical occluders / overhangs)
+        for (auto f : face_descriptors) {
+            if (!is_forward_facing(f)) continue;
+            if (candidate_faces.count(f)) continue;
+
+            auto h = mesh_part.halfedge(f);
+            FT f_u_min = 0, f_u_max = 0;
+            FT f_v_min = 0, f_v_max = 0;
+            FT f_z_max = 0;
+            bool first_v = true;
+
+            for (int i = 0; i < 3; ++i) {
+                auto p_rot = to_z(mesh_part.point(mesh_part.target(h)));
+                FT u = p_rot.x().exact();
+                FT v = p_rot.y().exact();
+                FT z = p_rot.z().exact();
+                if (first_v) {
+                    f_u_min = f_u_max = u;
+                    f_v_min = f_v_max = v;
+                    f_z_max = z;
+                    first_v = false;
+                } else {
+                    if (u < f_u_min) f_u_min = u;
+                    if (u > f_u_max) f_u_max = u;
+                    if (v < f_v_min) f_v_min = v;
+                    if (v > f_v_max) f_v_max = v;
+                    if (z > f_z_max) f_z_max = z;
+                }
+                h = mesh_part.next(h);
+            }
+
+            // Check 2D corridor overlap
+            if (f_u_max < seed_u_min || f_u_min > seed_u_max) continue;
+            if (f_v_max < seed_v_min || f_v_min > seed_v_max) continue;
+
+            // Check if it can occlude the seed patch (max z >= seed_z_min)
+            if (f_z_max >= seed_z_min) {
+                candidate_faces.insert(f);
+            }
         }
     } else {
         std::set<ExactMesh::Face_index> eligible;
@@ -140,7 +188,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
                 auto p0 = mesh_part.point(mesh_part.source(h));
                 auto p1 = mesh_part.point(mesh_part.target(h));
                 auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
-                a += std::sqrt(CGAL::to_double(CGAL::cross_product(p1 - p0, p2 - p0).squared_length())) / 2.0;
+                a += CGAL::approximate_sqrt(CGAL::cross_product(p1 - p0, p2 - p0).squared_length()) / FT(2);
             }
             if (a > best_area) {
                 best_area = a;

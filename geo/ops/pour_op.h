@@ -95,20 +95,28 @@ struct PourOp : P {
         });
 
         std::vector<pour::ToolComponentMesh> tool_components;
-        if (vents) {
-            // 5. Detect local peak summits & air traps
-            auto peaks = pour::detect_peaks_and_air_traps(oriented_mesh, params.min_angle);
-            std::cout << "  [Pour Prep] Optimal up vector: (" 
-                      << CGAL::to_double(up_dir.x()) << ", " << CGAL::to_double(up_dir.y()) << ", " << CGAL::to_double(up_dir.z())
-                      << ") with " << peaks.size() << " peak summits." << std::endl << std::flush;
+        // 5. Detect local peak summits & air traps
+        auto peaks = pour::detect_peaks_and_air_traps(oriented_mesh, params.min_angle);
+        std::cout << "  [Pour Prep] Optimal up vector: (" 
+                  << CGAL::to_double(up_dir.x()) << ", " << CGAL::to_double(up_dir.y()) << ", " << CGAL::to_double(up_dir.z())
+                  << ") with " << peaks.size() << " peak summits." << std::endl << std::flush;
 
-            // 6. Extend sprue & vents past the top of the mold stock box (box_zmax + 15mm) so they protrude through
+        if (!vents) {
+            std::vector<pour::PeakCluster> primary_peaks;
+            for (const auto& p : peaks) {
+                if (p.is_primary) {
+                    primary_peaks.push_back(p);
+                    break;
+                }
+            }
+            peaks = std::move(primary_peaks);
+            std::cout << "  [Pour Prep] Auxiliary air bleed vents disabled (retaining primary pour sprue only)." << std::endl << std::flush;
+        }
+
+        // 6. Extend sprue & vents past the top of the mold stock box (box_zmax + 15mm) so they protrude through
+        if (!peaks.empty() && params.sprue_base_dia > pour::FT(0)) {
             pour::FT sprue_top_z = box_zmax + pour::FT(15.0);
             tool_components = pour::generate_sprue_and_vents(oriented_mesh, peaks, params, sprue_top_z);
-        } else {
-            std::cout << "  [Pour Prep] Optimal up vector: (" 
-                      << CGAL::to_double(up_dir.x()) << ", " << CGAL::to_double(up_dir.y()) << ", " << CGAL::to_double(up_dir.z())
-                      << ") [vents disabled]" << std::endl << std::flush;
         }
 
         // 7. Directly add the sprue and vents to the model via canonical boolean::Engine::join

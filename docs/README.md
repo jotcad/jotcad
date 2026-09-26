@@ -28,6 +28,6 @@ The `/docs` directory serves as the single source of truth for the language gram
 | [TEST_SUITE_RECOVERY_PLAN.md](file:///home/brian/github/jotcad/docs/TEST_SUITE_RECOVERY_PLAN.md) | Fixing timing deadlocks and Puppeteer integration issues. |
 | [IMPLICIT_DISPLACEMENT_PLAN.md](file:///home/brian/github/jotcad/docs/IMPLICIT_DISPLACEMENT_PLAN.md) | Implicit volume modeling and voxelizer ideas. |
 | [TODO_SIMPLIFICATION.md](file:///home/brian/github/jotcad/docs/TODO_SIMPLIFICATION.md) | Simplifying mesh representations and topological trees. |
-| [MOLD_DRAW_DIRECTION_OPTIMIZER_DESIGN.md](file:///home/brian/github/jotcad_ez/docs/MOLD_DRAW_DIRECTION_OPTIMIZER_DESIGN.md) | Automated multi-piece mold decomposition, rising tide, and draw direction optimization. |
+| [MOLD_DRAW_DIRECTION_OPTIMIZER_DESIGN.md](file:///home/brian/github/jotcad_ez/docs/MOLD_DRAW_DIRECTION_OPTIMIZER_DESIGN.md) | Automated multi-piece mold decomposition, direct parting surface routing, and draw direction optimization. |
 | [POUR_PREP_DRAINAGE_DESIGN.md](file:///home/brian/github/jotcad_ez/docs/POUR_PREP_DRAINAGE_DESIGN.md) | Gravity pour orientation, topological air trap detection, bubble drainage physics, and compound tilt optimization. |
 

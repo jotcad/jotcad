@@ -87,6 +87,12 @@
 #include "boolean/corefine.h"
 #include "mold_op.h"
 #include "mold/tide.h"
+#include "mold/scoring.h"
+#include "mold/candidates.h"
+#include "mold/patch.h"
+#include "mold/compatibility.h"
+#include "mold/beam_search.h"
+#include "mold/harmonic.h"
 
 // Global namespace imports to ensure types like Selector and Shape are visible globally to all tests
 using namespace fs;

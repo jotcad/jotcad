@@ -135,13 +135,10 @@ struct MoldOp : P {
             auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
 
             EK::Vector_3 raw_n = CGAL::normal(p0, p1, p2);
-            double len = std::sqrt(CGAL::to_double(raw_n.squared_length()));
-            if (len > 1e-9) {
-                face_normals[f_idx] = EK::Vector_3(
-                    FT(CGAL::to_double(raw_n.x()) / len),
-                    FT(CGAL::to_double(raw_n.y()) / len),
-                    FT(CGAL::to_double(raw_n.z()) / len)
-                );
+            FT n_len_sq = raw_n.squared_length();
+            if (n_len_sq > FT(0)) {
+                FT len = CGAL::approximate_sqrt(n_len_sq);
+                face_normals[f_idx] = EK::Vector_3(raw_n.x() / len, raw_n.y() / len, raw_n.z() / len);
             } else {
                 face_normals[f_idx] = raw_n;
             }
@@ -177,28 +174,66 @@ struct MoldOp : P {
             model_centroid = EK::Point_3(sum_x / FT(total_faces), sum_y / FT(total_faces), sum_z / FT(total_faces));
         }
 
-        int piece_idx = 1;
-        while (handled_faces_count < total_faces && piece_idx <= 10) {
-            auto opt = mold::optimize_parting_direction(mesh_part, face_normals, edge_to_faces, is_handled, params, piece_draw_dirs);
-            if (opt.source_faces.empty()) {
-                break;
-            }
+        mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
+        model_tree.build();
 
-            EK::Vector_3 d_i = opt.best_dir;
-            piece_draw_dirs.push_back(d_i);
-            std::string color = piece_colors[(piece_idx - 1) % piece_colors.size()];
+        std::vector<mold::ExactMesh::Face_index> face_descriptors;
+        std::vector<FT> face_areas(total_faces);
+        face_descriptors.reserve(total_faces);
+        for (auto f : mesh_part.faces()) {
+            face_descriptors.push_back(f);
+            size_t f_idx = f.idx();
+            auto h = mesh_part.halfedge(f);
+            auto p0 = mesh_part.point(mesh_part.source(h));
+            auto p1 = mesh_part.point(mesh_part.target(h));
+            auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
+            face_areas[f_idx] = CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
+        }
+
+        // Run priority-driven beam search across all pieces from scratch
+        auto decomp = mold::decompose_mold_beam_search(
+            mesh_part, face_descriptors, face_normals, face_areas,
+            edge_to_faces, is_handled, params,
+            /*beam_width=*/3,
+            /*max_pieces=*/10,
+            /*candidates_per_level=*/16
+        );
+
+        for (size_t k = 0; k < decomp.draw_dirs.size(); ++k) {
+            int piece_idx = (int)k + 1;
+            EK::Vector_3 d_i = decomp.draw_dirs[k];
+            std::string color = piece_colors[k % piece_colors.size()];
             std::string piece_name = "mold_piece_" + std::to_string(piece_idx);
 
-            // 1. Parting polyline(s) in matching color of associated mold piece
-            if (params.lines) {
+            mold::ExactMesh piece_mesh;
+            if (params.molds && k < decomp.solid_pieces.size()) {
+                piece_mesh = decomp.solid_pieces[k];
+                fix::assert_well_formed_closed_mesh(piece_mesh, "piece_mesh in MoldOp");
+                mold::MoldPiece candidate_piece{piece_mesh, d_i, piece_name, color, piece_idx};
+                mold_pieces.push_back(candidate_piece);
+            }
+            piece_draw_dirs.push_back(d_i);
+
+            // Mark source faces as handled
+            if (k < decomp.piece_handled_faces.size()) {
+                for (size_t src_f_idx : decomp.piece_handled_faces[k]) {
+                    auto f = mold::ExactMesh::Face_index(src_f_idx);
+                    if (!is_handled[f]) {
+                        is_handled[f] = true;
+                        handled_faces_count++;
+                    }
+                }
+            }
+
+            // Parting polyline(s) in matching color of associated mold piece
+            if (params.lines && k < decomp.piece_boundary_loops.size()) {
                 double len_d = std::sqrt(CGAL::to_double(d_i.squared_length()));
-                // Option B: 0.15 mm transverse shift along piece draw vector + 0.05 mm outward surface float
                 FT draw_shift_dist = FT(15) / FT(100);
                 EK::Vector_3 draw_shift_vec = (len_d > 1e-9) ? (d_i * (draw_shift_dist / FT(len_d))) : EK::Vector_3(FT(0), FT(0), FT(0));
                 FT normal_float_dist = FT(5) / FT(100);
 
-                for (size_t li = 0; li < opt.boundary_loops_3d.size(); ++li) {
-                    const auto& loop = opt.boundary_loops_3d[li];
+                for (size_t li = 0; li < decomp.piece_boundary_loops[k].size(); ++li) {
+                    const auto& loop = decomp.piece_boundary_loops[k][li];
                     if (loop.size() < 2) continue;
 
                     // Copy 1: On the unexploded model (Option B: outward float + transverse pull nudge)
@@ -246,46 +281,16 @@ struct MoldOp : P {
                 }
             }
 
-            // Mark source faces as handled
-            for (size_t src_f_idx : opt.source_faces) {
-                auto f = mold::ExactMesh::Face_index(src_f_idx);
-                if (!is_handled[f]) {
-                    is_handled[f] = true;
-                    handled_faces_count++;
-                }
-            }
+            std::cout << "  - Extracted " << piece_name << " along dir ("
+                      << CGAL::to_double(d_i.x()) << ", " << CGAL::to_double(d_i.y()) << ", " << CGAL::to_double(d_i.z())
+                      << ") covering " << (k < decomp.piece_handled_faces.size() ? decomp.piece_handled_faces[k].size() : 0)
+                      << " faces (total handled: " << handled_faces_count << " / " << total_faces << ")." << std::endl << std::flush;
+        }
 
-            // 2. Solid mold piece extraction (if molds enabled)
-            if (params.molds && opt.solid_wedge.number_of_faces() > 0) {
-                auto wedge = opt.solid_wedge;
-                mold::ExactMesh raw_block = wedge;
-                mold::ExactMesh model_copy = mesh_part;
-                mold::ExactMesh piece_mesh;
-                bool ok_diff = boolean::corefine_difference(raw_block, model_copy, piece_mesh, params.kiss_mode, params.kiss_width, "raw_block \\ model_copy in MoldOp");
-                assert(ok_diff && "raw_block \\ model_copy failed in MoldOp!");
-
-                // Subtract all previously extracted mold pieces to guarantee 0 volumetric overlap
-                for (const auto& prev_piece : mold_pieces) {
-                    if (prev_piece.mesh.is_empty() || prev_piece.mesh.number_of_faces() == 0) continue;
-                    if (!boolean::do_meshes_overlap(piece_mesh, prev_piece.mesh)) continue;
-                    mold::ExactMesh non_overlapping_piece;
-                    bool ok_pdiff = boolean::corefine_difference(piece_mesh, prev_piece.mesh, non_overlapping_piece, params.kiss_mode, params.kiss_width, piece_name + " \\ " + prev_piece.name);
-                    if (ok_pdiff && non_overlapping_piece.number_of_faces() > 0) {
-                        piece_mesh = std::move(non_overlapping_piece);
-                        piece_mesh.collect_garbage();
-                    }
-                }
-
-                fix::assert_well_formed_closed_mesh(piece_mesh, "piece_mesh in MoldOp");
-                mold_pieces.push_back({piece_mesh, d_i, piece_name, color, piece_idx});
-
-                std::cout << "  - Extracted " << piece_name << " along dir ("
-                          << CGAL::to_double(d_i.x()) << ", " << CGAL::to_double(d_i.y()) << ", " << CGAL::to_double(d_i.z())
-                          << ") covering " << opt.source_faces.size() << " faces (total handled: "
-                          << handled_faces_count << " / " << total_faces << ")." << std::endl << std::flush;
-            }
-
-            piece_idx++;
+        if (handled_faces_count < total_faces) {
+            throw std::runtime_error("Demoldability Error: Part contains " + std::to_string(total_faces - handled_faces_count) + 
+                                     " unhandled undercut faces that cannot be demolded along any valid draw vector (stuck after " + 
+                                     std::to_string(mold_pieces.size()) + " pieces).");
         }
 
         // 6. Minimal-Volume OBB Trimming & Stationary Remainder Extraction
@@ -294,8 +299,6 @@ struct MoldOp : P {
             mold::MoldAssembly<P>::trim_against_obb(vfs, in_scene, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
 
             // 7. Demoldability Verification
-            mold::Tree model_tree(CGAL::faces(mesh_part).first, CGAL::faces(mesh_part).second, mesh_part);
-            model_tree.build();
             for (const auto& piece : mold_pieces) {
                 mold::verify_piece_demoldability(piece, model_tree, params);
             }
