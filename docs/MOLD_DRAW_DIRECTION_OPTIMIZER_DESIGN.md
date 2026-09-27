@@ -599,53 +599,58 @@ Having identified demoldable patch $\mathcal{S}_k$ on the model with pull direct
 
 ---
 
-### 7.5 Zero Scrap by Progressive Residual Stock Subtraction
+### 7.5 Isotropic Retriangulation & Soup-Free Prismatic Halfedge Construction
 
-Because mold pieces are carved directly as partitions of the active remaining stock volume, uncarved "dead regions" cannot exist.
+To ensure smooth harmonic decay and eliminate aspect-ratio bottlenecks, the annular free-space domain $\Omega_{\text{free}} = \text{Stock}_{2D} \setminus \text{EnvelopeOuterBoundary}_{2D}$ is retriangulated using an isotropic Delaunay criterion parameterized by maximum edge length $h$ (`max_edge_len`).
 
-#### 1. Progressive Subtraction Formulation
-1. **Initial Stock Volume**:
-   $$B_0 = V_{\text{stock}} \setminus \mathcal{M} \quad (\text{or } V_{\text{stock}})$$
-2. **Sequential Piece Extraction**:
-   For stages $k = 1, \dots, K-1$:
-   $$P_k = \operatorname{SweepCorridor}(\mathcal{S}_k, \mathbf{d}_k, \Sigma_k) \cap B_{k-1}$$
-   $$B_k = B_{k-1} \setminus P_k$$
-3. **Terminal Piece Complementation**:
-   When the remaining unhandled model surface is demoldable along final draw vector $\mathbf{d}_K$ (or when reaching the final stage $k = K$):
-   $$P_K = B_{K-1}$$
-   The terminal piece simply absorbs the entire remaining uncarved stock volume!
+#### The Two Classes of Refined Vertices:
+1. **Model Boundary Split Vertices**: Any vertex formed by subdividing a constraint edge on $\partial\mathcal{S}_k$ has **zero degrees of freedom** (strict Dirichlet) and is pinned via **exact rational linear interpolation** in pure `EK::FT`:
+   $$w = z_A + t(z_B - z_A) \quad \text{where } t = \frac{\mathbf{p} - \mathbf{p}_A}{\mathbf{p}_B - \mathbf{p}_A}$$
+   Preserves bit-exact 3D collinearity with adjacent cavity faces. Existing model vertices never move.
+2. **Stock Free-Space Vertices**: Interior Steiner points in $\Omega_{\text{free}}$ and outer stock perimeter edges have **full freedom** to relax via Gauss-Seidel ($\Delta w = 0$).
 
-#### 2. The Zero-Scrap Invariant
-By algebraic identity of progressive complementation:
-$$\bigcup_{k=1}^K P_k = V_{\text{stock}} \setminus \mathcal{M}$$
-$$P_i \cap P_j = \emptyset \quad (\forall i \neq j)$$
-$$\operatorname{Volume}(\text{Uncarved Dead Space}) = 0$$
+#### Elimination of Polygon Soup in Favor of Direct Prismatic Halfedge Construction:
+Dumping refined 2D Delaunay triangulation into polygon soup arrays (`soup_points`, `soup_polygons`) strips away topological connectivity. When Delaunay refinement splits boundary edges into smaller segments, unrefined adjacent polygons in soup create unstitched T-junctions that cause `stitch_borders` to fail (`Assertion CGAL::is_closed(piece) failed`).
 
-- **Zero Scrap**: Every cubic millimeter of the mold enclosure is assigned to a moving piece.
-- **Zero Gaps**: Adjacent pieces share mathematically coincident parting interfaces ($\Sigma_k = P_k \cap P_j$).
-- **No Dead Region Merging**: The artificial post-partition merge audit from Section 7.5 is rendered completely obsolete and discarded.
+Instead, $\mathcal{W}_k$ is constructed **directly as an `ExactMesh` by prismatic halfedge extrusion** from the 2D CDT:
+1. **Vertical Vertex Duplication**:
+   For each 2D vertex $v_i = (u_i, v_i)$ in the CDT:
+   - Bottom vertex: $V_{i,\text{bot}} = \big(u_i, v_i, w(u_i, v_i)\big)$
+   - Top vertex: $V_{i,\text{top}} = \big(u_i, v_i, w_{\text{top}}\big)$
+2. **Bottom & Top Face Triangulation**:
+   For each finite 2D triangle $(v_0, v_1, v_2)$ in the CDT:
+   - Bottom face: $(V_{0,\text{bot}}, V_{2,\text{bot}}, V_{1,\text{bot}})$ (CW in $(u, v) \implies$ outward normal pointing downward $-\hat{Z}$)
+   - Top face: $(V_{0,\text{top}}, V_{1,\text{top}}, V_{2,\text{top}})$ (CCW in $(u, v) \implies$ outward normal pointing upward $+\hat{Z}$)
+3. **Sidewall Boundary Quads**:
+   For each boundary edge $(v_a, v_b)$ along the outer perimeter of the stock box:
+   - Outward-oriented vertical quad: $(V_{a,\text{bot}}, V_{b,\text{bot}}, V_{b,\text{top}}, V_{a,\text{top}})$ (triangulated into two triangles).
+
+#### Topological Invariants of Prismatic Extrusion:
+- **Exact Manifold Degree**: Every interior edge has degree 2 on bottom and degree 2 on top. Every outer boundary edge has degree 2 (shared by 1 bottom/top triangle and 1 sidewall quad).
+- **Euler Characteristic**: $\chi = V_{3D} - E_{3D} + F_{3D} = 2V - (2E + B) + (2F + 2B) = 2(V - E + F) = 2(1) = 2$.
+- **Watertight by Definition**: Zero T-junctions, zero tolerance stitching, zero soup repair, zero point-matching searches. The mesh is an airtight, closed 2-manifold topological sphere directly upon construction.
 
 ---
 
-### 7.6 Boolean Complementation Theorems
+### 7.6 Irregular Stock Solids & Mandatory Stockbox Clipping
 
-#### Theorem 1: Two-Piece Exact Complementation
-In a classic two-piece mold assembly ($N = 2$):
-$$P_1 = \operatorname{SweepCorridor}(\mathcal{S}_1, \mathbf{d}_1, \Sigma_1) \cap B_0$$
-$$P_2 = B_0 \setminus P_1 = (V_{\text{stock}} \setminus \mathcal{M}) \setminus P_1$$
+At stage $k > 1$, the residual stock $B_{k-1}$ is **no longer a regular box**: it is an irregular 3D solid holding prior parting cuts, cavity faces, and remaining stock walls.
 
-1. **Airtight Mating**: $P_1 \cap P_2 = \emptyset$ and $P_1 \cup P_2 \cup \mathcal{M} = V_{\text{stock}}$.
-2. **Zero Dead Scrap**: No voids, loose fragments, or uncarved stock wedges can remain stranded.
-3. **Mutual Demoldability**: For antipodal draw ($\mathbf{d}_2 = -\mathbf{d}_1$), because $\mathbf{n}_1 \cdot \mathbf{d}_1 \ge 0$ on parting surface $\Sigma_1$, the opposing normal on $P_2$ is $\mathbf{n}_2 = -\mathbf{n}_1$. Therefore:
-   $$\mathbf{n}_2 \cdot \mathbf{d}_2 = (-\mathbf{n}_1) \cdot (-\mathbf{d}_1) = \mathbf{n}_1 \cdot \mathbf{d}_1 \ge 0$$
-   Any parting surface with non-negative draft for Piece 1 along $\mathbf{d}_1$ automatically has non-negative draft for Piece 2 along $-\mathbf{d}_1$.
-
-#### Theorem 2: Multi-Piece ($N > 2$) Progressive Complementation
-For complex models requiring side lifters or cheeks ($N > 2$):
-1. Pieces $P_1, \dots, P_{K-1}$ carve their certified draw corridors out of the remaining stock: $P_k = \operatorname{SweepCorridor}_k \cap B_{k-1}$.
-2. Each cut reduces the remaining stock: $B_k = B_{k-1} \setminus P_k$.
-3. The final piece $P_K$ consumes $B_{K-1}$ in its entirety.
-4. Complete tiling of the stock volume is guaranteed for any number of pieces $N \ge 2$.
+#### The Role of Stockbox Clipping:
+1. **$B_{k-1}$ is the Physical Source of Truth**:
+   The active stock $B_{k-1}$ encapsulates all geometric history: the CAD model cavity ($B_0 = V_{\text{stock}} \setminus \mathcal{M}$) and all previously demolded pieces ($B_{k-1} = B_{k-2} \setminus P_{k-1}$).
+2. **Oversized Cutting Corridor**:
+   The wedge $\mathcal{W}_k$ does not need to trace the irregular perimeter of $B_{k-1}$. $\mathcal{W}_k$ is synthesized cleanly over the rectangular bounding corridor $[u_{\min}, u_{\max}] \times [v_{\min}, v_{\max}] \times [w(u, v) \to w_{\text{top}}]$.
+3. **Authoritative Stock Clipping**:
+   The physical mold piece $P_k$ is extracted by clipping the cutting corridor against the active irregular stock:
+   $$P_k = B_{k-1} \cap \mathcal{W}_k$$
+   and the residual stock is updated for subsequent stages:
+   $$B_k = B_{k-1} \setminus P_k$$
+   CGAL's exact corefinement engine automatically annihilates any portion of $\mathcal{W}_k$ extending outside the active solid $B_{k-1}$.
+4. **Terminal Piece Complementation**:
+   At terminal stage $K$, the final piece is assigned by complementation:
+   $$P_K = B_{K-1}$$
+   guaranteeing $\operatorname{Vol}(B_{\text{scrap}}) \equiv 0$ with zero mating gaps.
 
 ---
 
@@ -713,10 +718,10 @@ The candidate sorting logic must not use naive boolean surface completion (`patc
    * 2D projection non-overlap along $\mathbf{d}^*$ combined with `CGAL::upper_envelope_3` depth resolution provides exact, collision-free demolding without requiring expensive 3D Minkowski swept volumes.
 2. **Piece Boundary Extents (DECIDED - Open Air Mandate)**:
    * Mold pieces terminate as soon as their withdrawal path enters the expanding open-air boundary ($\text{OpenAir}_i$), eliminating monolithic sweeps to the bounding box.
-3. **Parting Generation (DECIDED - Harmonic Minimal Surface Parting Engine)**:
-   * Rising tide, synthetic shelf planes at $Z_{\text{margin}}$, and artificial midpoint planes (`mid_z`) are strictly eliminated. Parting surfaces are synthesized via a Harmonic Minimal Surface (Laplacian height field) over a 2D Constrained Delaunay Triangulation (CDT) between patch perimeter $\partial\mathcal{S}_k$ and remaining stock wall $\partial B_{k-1}$. Heights minimize 3D surface area ($\Delta w = 0$), meeting stock walls orthogonally with natural Neumann conditions ($\partial w / \partial n = 0$), mating flush with prior pieces via Dirichlet seams, and respecting an obstacle lower bound ($w_i \ge \psi_i$) to guarantee model clearance ($\Sigma_k \cap \operatorname{int}(\mathcal{M}) = \emptyset$) and zero undercuts along the pull direction ($\mathbf{n}_{\Sigma} \cdot \mathbf{d}_k \ge 0$).
-4. **Volume Conservation & Scrap Elimination (DECIDED - Progressive Residual Stock Subtraction $B_k = B_{k-1} \setminus P_k$)**:
-   * Post-hoc dead region merging heuristics are discarded. Mold pieces are carved sequentially from the active remaining stock ($P_k = \operatorname{SweepCorridor}_k \cap B_{k-1}$), updating $B_k = B_{k-1} \setminus P_k$. The final piece absorbs the remaining stock ($P_K = B_{K-1}$), guaranteeing zero uncarved scrap, zero voids, and airtight mating by algebraic identity.
+3. **Parting Generation (DECIDED - Harmonic Minimal Surface with Soup-Free Prismatic Extrusion)**:
+   * Replaced Rising Tide flat shelves ($Z_{\text{margin}}$), ribbon extrusions, and polygon soup conversions with an area-minimizing Harmonic Minimal Surface ($\Delta w = 0$) over the 2D CDT domain, extruded **directly into a closed `ExactMesh` via prismatic halfedge construction**. Top ceiling and bottom floor share the identical triangulation (guaranteeing $\chi = 2$ and 100% watertight 2-manifold validity with zero T-junctions or soup repair). Boundary splits preserve bit-exact 3D linear interpolation in pure `EK::FT`; interior Steiner points relax freely via Gauss-Seidel without self-intersection.
+4. **Scrap Elimination & Stockbox Clipping (DECIDED - Progressive Residual Stock Subtraction $P_k = B_{k-1} \cap \mathcal{W}_k$)**:
+   * Residual dead stock is progressively reduced ($B_k = B_{k-1} \setminus P_k$) and the terminal piece is formed by complementation ($P_K = B_{K-1}$), guaranteeing identically zero stationary scrap ($\text{Vol}(B_{\text{scrap}}) \equiv 0$). The cutting corridor $\mathcal{W}_k$ is synthesized over the bounding stock corridor, and CGAL's exact 3D corefinement engine authoritatively clips $\mathcal{W}_k$ against the irregular stock solid $B_{k-1}$ ($P_k = B_{k-1} \cap \mathcal{W}_k$) to extract the piece directly from physical reality.
 5. **Handled Set Source of Truth (DECIDED - Upper Envelope Purity)**:
    * A face is handled only if it appears in `CGAL::upper_envelope_3` facet diagram (`env_res.source_faces`). Normal hemisphere projection ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$) does NOT imply handling.
 6. **Antipodal Prior Candidate (DECIDED - Active Exploration Vector)**:

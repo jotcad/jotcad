@@ -54,43 +54,6 @@ struct MoldAssembly {
                 std::cout << "    [OBB Trim] " << piece.name << " was outside stock envelope; preserved as empty piece for provenance." << std::endl;
             }
         }
-
-        // Extract stationary foundation remainder block from uncarved OBB stock
-        ExactMesh final_remaining;
-        boolean::corefine_difference(obb_mesh, mesh_part, final_remaining, params.kiss_mode, params.kiss_width, "obb \\ model in assembly");
-
-        for (const auto& piece : mold_pieces) {
-            if (piece.mesh.is_empty() || piece.mesh.number_of_faces() == 0) continue;
-            ExactMesh next_rem;
-            bool ok_diff = boolean::corefine_difference(final_remaining, piece.mesh, next_rem, params.kiss_mode, params.kiss_width, "final_remaining \\ " + piece.name);
-            if (ok_diff) {
-                final_remaining = next_rem;
-            }
-        }
-
-        if (final_remaining.number_of_faces() > 0 && CGAL::is_closed(final_remaining) && CGAL::Polygon_mesh_processing::volume(final_remaining) > FT(1)) {
-            FT r_xmin = 1e9, r_xmax = -1e9, r_ymin = 1e9, r_ymax = -1e9, r_zmin = 1e9, r_zmax = -1e9;
-            for (auto v : final_remaining.vertices()) {
-                auto p = final_remaining.point(v);
-                if (p.x() < r_xmin) r_xmin = p.x();
-                if (p.x() > r_xmax) r_xmax = p.x();
-                if (p.y() < r_ymin) r_ymin = p.y();
-                if (p.y() > r_ymax) r_ymax = p.y();
-                if (p.z() < r_zmin) r_zmin = p.z();
-                if (p.z() > r_zmax) r_zmax = p.z();
-            }
-            std::cout << "    [STATIONARY REMAINDER BBOX] X: [" << CGAL::to_double(r_xmin) << ", " << CGAL::to_double(r_xmax) << "] "
-                      << "Y: [" << CGAL::to_double(r_ymin) << ", " << CGAL::to_double(r_ymax) << "] "
-                      << "Z: [" << CGAL::to_double(r_zmin) << ", " << CGAL::to_double(r_zmax) << "] "
-                      << "faces=" << final_remaining.number_of_faces() << std::endl;
-
-            const std::vector<std::string> piece_colors = {"#2bee2b", "#2b80ee", "#ee802b", "#ee2b80", "#80ee2b", "#802bee"};
-            int next_piece_idx = (int)mold_pieces.size() + 1;
-            std::string color = piece_colors[(next_piece_idx - 1) % piece_colors.size()];
-            std::string piece_name = "mold_piece_" + std::to_string(next_piece_idx);
-            EK::Vector_3 base_dir(FT(0), FT(0), FT(0)); // Stationary foundation: pull vector "0 0 0"
-            mold_pieces.push_back({final_remaining, base_dir, piece_name, color, next_piece_idx});
-        }
     }
 
     static Shape assemble_scene(

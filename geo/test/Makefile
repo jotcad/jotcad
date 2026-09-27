@@ -215,6 +215,33 @@ $(OBJ_DIR)/mold_candidates_test.o: mold_candidates_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 
+# Rule for building the standalone mold_harmonic_test binary
+$(BIN_DIR)/mold_harmonic_test: $(OBJ_DIR)/mold_harmonic_test.o $(REG_OBJS) $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/mold_harmonic_test.o: mold_harmonic_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Rule for building the standalone mold_beam_search_test binary
+$(BIN_DIR)/mold_beam_search_test: $(OBJ_DIR)/mold_beam_search_test.o $(REG_OBJS) $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/mold_beam_search_test.o: mold_beam_search_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Rule for building the standalone mold_l_test binary
+$(BIN_DIR)/mold_l_test: $(OBJ_DIR)/mold_l_test.o $(REG_OBJS) $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/mold_l_test.o: mold_l_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
 # Compile unit_tests.o, generating unit_tests_run.h dynamically first
 $(OBJ_DIR)/unit_tests.o: unit_tests.cpp unit_tests_run.h $(COMBINED_TEST_SOURCES)
 	@mkdir -p $(OBJ_DIR)

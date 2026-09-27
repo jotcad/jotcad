@@ -50,10 +50,11 @@ struct MoldOp : P {
         // 1. Extract core casting mesh (mesh_part) and attached stock box in world space
         mold::ExactMesh mesh_part;
         std::optional<mold::ExactMesh> stock_box_mesh;
+        Geometry stock_box_geo;
         in.walk([&](const Shape& node) {
             if (node.has_tag("mold/role", "box") && node.geometry.has_value() && !stock_box_mesh.has_value()) {
-                Geometry box_geo = vfs->template readCID<Geometry>(*node.geometry);
-                mold::ExactMesh box_m = boolean::Engine::geometry_to_mesh(box_geo);
+                stock_box_geo = vfs->template readCID<Geometry>(*node.geometry);
+                mold::ExactMesh box_m = boolean::Engine::geometry_to_mesh(stock_box_geo);
                 boolean::Engine::transform_mesh(box_m, node.tf);
                 stock_box_mesh = std::move(box_m);
                 return;
@@ -76,20 +77,26 @@ struct MoldOp : P {
         mesh_part.collect_garbage();
         fix::assert_well_formed_closed_mesh(mesh_part, "mesh_part in MoldOp");
 
-        // 2. Trim model-with-sprue against stock box (if provided) so cavity is strictly bounded by stock
-        Shape in_scene = in;
-        if (stock_box_mesh.has_value()) {
-            mold::ExactMesh trimmed_model;
-            bool ok_trim = boolean::corefine_intersection(mesh_part, *stock_box_mesh, trimmed_model, params.kiss_mode, params.kiss_width, "model ∩ stock_box in MoldOp");
-            if (ok_trim && trimmed_model.number_of_faces() > 0) {
-                mesh_part = std::move(trimmed_model);
-                mesh_part.collect_garbage();
-                fix::assert_well_formed_closed_mesh(mesh_part, "trimmed mesh_part in MoldOp");
+        if (!stock_box_mesh.has_value()) {
+            auto opt_obb = mold::compute_min_volume_obb(mesh_part, params.padding);
+            stock_box_geo = opt_obb.to_geometry();
+            stock_box_mesh = boolean::Engine::geometry_to_mesh(stock_box_geo);
+        }
+        fix::assert_well_formed_for_corefinement(*stock_box_mesh, "stock_box_mesh in MoldOp");
 
-                // Update center model geometry to match the trimmed cavity
-                Geometry trimmed_geo = boolean::Engine::mesh_to_geometry(mesh_part);
-                in_scene.geometry = vfs->template materialize<Geometry>(trimmed_geo);
-            }
+        // 2. Trim model-with-sprue against stock box so cavity is strictly bounded by stock
+        Shape in_scene = in;
+        mold::ExactMesh trimmed_model;
+        bool ok_trim = boolean::corefine_intersection(mesh_part, *stock_box_mesh, trimmed_model, params.kiss_mode, params.kiss_width, "model ∩ stock_box in MoldOp");
+        if (ok_trim && trimmed_model.number_of_faces() > 0) {
+            mesh_part = std::move(trimmed_model);
+            mesh_part.collect_garbage();
+            fix::assert_well_formed_closed_mesh(mesh_part, "trimmed mesh_part in MoldOp");
+
+            // Update center model geometry to match the trimmed cavity
+            Geometry trimmed_geo = boolean::Engine::mesh_to_geometry(mesh_part);
+            in_scene.geometry = vfs->template materialize<Geometry>(trimmed_geo);
+        }
 
             // Also clip any visual tool components (sprue, vents) to the stock box
             for (auto& child : in_scene.components) {
@@ -108,9 +115,14 @@ struct MoldOp : P {
                     }
                 }
             }
-        }
 
         mesh_part.collect_garbage();
+
+        // 2.5 Compute initial residual stock volume B_0 = V_stock \ mesh_part
+        mold::ExactMesh s0;
+        boolean::corefine_difference(*stock_box_mesh, mesh_part, s0, params.kiss_mode, params.kiss_width, "stock_box \\ mesh_part in MoldOp");
+        fix::assert_well_formed_closed_mesh(s0, "initial_stock s0 in MoldOp");
+        auto initial_stock = std::make_shared<const mold::ExactMesh>(std::move(s0));
 
         // Flatten mesh_part vertex coordinates to pure rational leaves
         for (auto v : mesh_part.vertices()) {
@@ -194,9 +206,11 @@ struct MoldOp : P {
         auto decomp = mold::decompose_mold_beam_search(
             mesh_part, face_descriptors, face_normals, face_areas,
             edge_to_faces, is_handled, params,
-            /*beam_width=*/3,
             /*max_pieces=*/10,
-            /*candidates_per_level=*/16
+            /*candidates_per_level=*/16,
+            /*prior_draw_dirs=*/{},
+            /*prior_solid_pieces=*/{},
+            initial_stock
         );
 
         for (size_t k = 0; k < decomp.draw_dirs.size(); ++k) {
@@ -293,19 +307,15 @@ struct MoldOp : P {
                                      std::to_string(mold_pieces.size()) + " pieces).");
         }
 
-        // 6. Minimal-Volume OBB Trimming & Stationary Remainder Extraction
-        Geometry obb_geo;
+        // 6. Demoldability Verification
         if (params.molds && !mold_pieces.empty()) {
-            mold::MoldAssembly<P>::trim_against_obb(vfs, in_scene, mesh_part, params, mold_pieces, piece_draw_dirs, obb_geo);
-
-            // 7. Demoldability Verification
             for (const auto& piece : mold_pieces) {
                 mold::verify_piece_demoldability(piece, model_tree, params);
             }
         }
 
-        // 8. Assemble Scene Graph & Apply Explosion Transforms
-        Shape result = mold::MoldAssembly<P>::assemble_scene(vfs, in_scene, mold_pieces, obb_geo, params);
+        // 7. Assemble Scene Graph & Apply Explosion Transforms
+        Shape result = mold::MoldAssembly<P>::assemble_scene(vfs, in_scene, mold_pieces, stock_box_geo, params);
 
         // 9. Attach Parting Line Shapes (if lines enabled)
         for (const auto& line_shape : parting_line_shapes) {

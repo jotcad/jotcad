@@ -61,7 +61,6 @@ inline PartingOptimizationResult optimize_parting_direction(
     auto decomp = decompose_mold_beam_search(
         mesh_part, face_descriptors, face_normals, face_areas,
         edge_to_faces, is_handled, params,
-        /*beam_width=*/3,
         /*max_pieces=*/prior_draw_dirs.size() + 2,
         /*candidates_per_level=*/16,
         prior_draw_dirs,

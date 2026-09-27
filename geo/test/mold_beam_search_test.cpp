@@ -53,7 +53,7 @@ int main() {
         params.padding = FT(5);
 
         auto result = decompose_mold_beam_search(
-            mesh, edge_to_faces, params, /*beam_width=*/3, /*max_pieces=*/4, /*candidates_per_level=*/4
+            mesh, edge_to_faces, params, /*max_pieces=*/4, /*candidates_per_level=*/4
         );
 
         assert(result.is_complete && "Beam search MUST complete 100% surface decomposition of a simple box!");
@@ -120,7 +120,7 @@ int main() {
         params.padding = FT(5);
 
         auto result = decompose_mold_beam_search(
-            mesh, edge_to_faces, params, /*beam_width=*/3, /*max_pieces=*/4, /*candidates_per_level=*/4
+            mesh, edge_to_faces, params, /*max_pieces=*/4, /*candidates_per_level=*/4
         );
 
         assert(result.is_complete && "Beam search MUST complete 100% surface decomposition of L-bracket!");

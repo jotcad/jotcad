@@ -290,7 +290,6 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     };
 
     FT max_vz_rot = -1000000;
-    FT min_border_z = 1000000;
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
         if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
         size_t orig_f_idx = fit->surfaces_begin()->data();
@@ -300,33 +299,8 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             auto p2d = curr->target()->point();
             FT vz = get_z(orig_f_idx, p2d.x(), p2d.y());
             if (vz > max_vz_rot) max_vz_rot = vz;
-
-            auto twin_face = curr->twin()->face();
-            if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
-                auto p_src = curr->source()->point();
-                FT z_s = get_z(orig_f_idx, p_src.x(), p_src.y());
-                if (z_s < min_border_z) min_border_z = z_s;
-                if (vz < min_border_z) min_border_z = vz;
-            }
             curr = curr->next();
         } while (curr != ccb);
-
-        for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
-            auto h_curr = *hole_it;
-            auto h_start = h_curr;
-            do {
-                auto twin_face = h_curr->twin()->face();
-                if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
-                    auto p_src = h_curr->source()->point();
-                    auto p_tgt = h_curr->target()->point();
-                    FT z_s = get_z(orig_f_idx, p_src.x(), p_src.y());
-                    FT z_t = get_z(orig_f_idx, p_tgt.x(), p_tgt.y());
-                    if (z_s < min_border_z) min_border_z = z_s;
-                    if (z_t < min_border_z) min_border_z = z_t;
-                }
-                h_curr = h_curr->next();
-            } while (h_curr != h_start);
-        }
     }
 
     TideParams tide = override_tide;
@@ -348,27 +322,15 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
             if (rz > rot_z_max) rot_z_max = rz;
         }
 
-        FT center_u = (rot_u_min + rot_u_max) / FT(2);
-        FT center_v = (rot_v_min + rot_v_max) / FT(2);
-        FT half_span_u = (rot_u_max - rot_u_min) / FT(2);
-        FT half_span_v = (rot_v_max - rot_v_min) / FT(2);
-        FT half_span_z = (rot_z_max - rot_z_min) / FT(2);
-        FT max_half = (half_span_u > half_span_v) ? ((half_span_u > half_span_z) ? half_span_u : half_span_z) : ((half_span_v > half_span_z) ? half_span_v : half_span_z);
-        FT R = max_half + padding + FT(20);
-
         tide.enabled = true;
-        tide.u_min = center_u - R;
-        tide.u_max = center_u + R;
-        tide.v_min = center_v - R;
-        tide.v_max = center_v + R;
-        FT mid_z = (rot_z_min + rot_z_max) / FT(2);
-        tide.z_margin = (min_border_z < mid_z) ? min_border_z : mid_z;
-        tide.z_top = rot_z_max + padding + FT(50);
-    } else if (tide.enabled && min_border_z < tide.z_margin) {
-        tide.z_margin = min_border_z;
+        tide.u_min = rot_u_min - padding;
+        tide.u_max = rot_u_max + padding;
+        tide.v_min = rot_v_min - padding;
+        tide.v_max = rot_v_max + padding;
+        tide.z_top = rot_z_max + padding;
     }
 
-    FT h_ceiling_rot = tide.enabled ? tide.z_top : (max_vz_rot + FT(50));
+    FT h_ceiling_rot = tide.enabled ? tide.z_top : (max_vz_rot + padding);
 
     auto get_vertical_drop = [&](const CDT_Kernel::Point_2& p1, const CDT_Kernel::Point_2& p2) -> std::optional<FT> {
         std::optional<FT> best_min_z;

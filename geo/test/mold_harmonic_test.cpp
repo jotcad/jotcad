@@ -136,13 +136,9 @@ int main() {
         stock.v_min = FT(-10);
         stock.v_max = FT(10);
         stock.w_top = FT(10);
+        stock.max_edge_len = 2.0;
 
-        std::vector<EK::Point_3> soup_points = patch.floor_soup_points;
-        std::vector<std::vector<size_t>> soup_polygons = patch.floor_soup_polygons;
-
-        solve_harmonic_parting_surface(patch.inner_segments, stock, soup_points, soup_polygons);
-
-        ExactMesh piece1 = soup_to_solid(soup_points, soup_polygons);
+        ExactMesh piece1 = construct_harmonic_wedge(patch.inner_segments, stock);
 
         assert(CGAL::is_closed(piece1) && "Cube piece 1 must be a closed watertight 2-manifold!");
         double vol1 = CGAL::to_double(CGAL::Polygon_mesh_processing::volume(piece1));
@@ -183,13 +179,9 @@ int main() {
         stock.v_min = FT(-15);
         stock.v_max = FT(15);
         stock.w_top = FT(10);
+        stock.max_edge_len = 3.0;
 
-        std::vector<EK::Point_3> soup_points = patch.floor_soup_points;
-        std::vector<std::vector<size_t>> soup_polygons = patch.floor_soup_polygons;
-
-        solve_harmonic_parting_surface(patch.inner_segments, stock, soup_points, soup_polygons);
-
-        ExactMesh l_piece = soup_to_solid(soup_points, soup_polygons);
+        ExactMesh l_piece = construct_harmonic_wedge(patch.inner_segments, stock);
 
         assert(CGAL::is_closed(l_piece) && "L-bracket piece must be a closed watertight 2-manifold!");
         double vol_l = CGAL::to_double(CGAL::Polygon_mesh_processing::volume(l_piece));
@@ -225,13 +217,9 @@ int main() {
         stock.v_min = FT(-10);
         stock.v_max = FT(30);
         stock.w_top = FT(10);
+        stock.max_edge_len = 4.0;
 
-        std::vector<EK::Point_3> soup_points = patch.floor_soup_points;
-        std::vector<std::vector<size_t>> soup_polygons = patch.floor_soup_polygons;
-
-        solve_harmonic_parting_surface(patch.inner_segments, stock, soup_points, soup_polygons);
-
-        ExactMesh t_piece = soup_to_solid(soup_points, soup_polygons);
+        ExactMesh t_piece = construct_harmonic_wedge(patch.inner_segments, stock);
 
         assert(CGAL::is_closed(t_piece) && "T-bracket piece must be a closed watertight 2-manifold!");
         double vol_t = CGAL::to_double(CGAL::Polygon_mesh_processing::volume(t_piece));
@@ -263,13 +251,9 @@ int main() {
         stock.v_min = FT(-20);
         stock.v_max = FT(20);
         stock.w_top = FT(10);
+        stock.max_edge_len = 4.0;
 
-        std::vector<EK::Point_3> soup_points = patch.floor_soup_points;
-        std::vector<std::vector<size_t>> soup_polygons = patch.floor_soup_polygons;
-
-        solve_harmonic_parting_surface(patch.inner_segments, stock, soup_points, soup_polygons);
-
-        ExactMesh cross_piece = soup_to_solid(soup_points, soup_polygons);
+        ExactMesh cross_piece = construct_harmonic_wedge(patch.inner_segments, stock);
 
         assert(CGAL::is_closed(cross_piece) && "Planar cross piece must be a closed watertight 2-manifold!");
         double vol_cross = CGAL::to_double(CGAL::Polygon_mesh_processing::volume(cross_piece));

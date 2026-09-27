@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "walls.h"
-#include "tide.h"
+#include "harmonic.h"
 #include "diagnostics.h"
 #include "boundary.h"
 
@@ -13,8 +13,8 @@ namespace mold {
 /**
  * @brief Constructs a closed, certified 2-manifold solid wedge from an upper envelope diagram.
  * 
- * Extrudes floor triangles (CDT), ceiling triangles (CDT), and vertical cliff/sidewalls (monotonic zip),
- * repairing the soup with solid-aware hangnail elimination and kissing seam resolution.
+ * Extrudes floor triangles (CDT), internal step cliff walls (monotonic zip), and synthesizes
+ * the parting surface and stock enclosure via the Harmonic Minimal Surface Parting Engine.
  */
 inline EnvelopeWedgeResult construct_envelope_wedge(
     Envelope_diagram_2& max_diag,
@@ -29,7 +29,7 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     std::vector<std::vector<size_t>> soup_polygons;
     std::set<size_t> source_faces;
 
-    // 1. Add all illuminated surface cells (floor + symmetrical ceiling) via uniform 2D CDT
+    // 1. Add all illuminated surface cells (floor) via uniform 2D CDT
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
         if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
 
@@ -115,8 +115,6 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
         if (!tide.enabled) {
             vertex_heights[vit].insert(h_ceiling_rot);
-        } else {
-            vertex_heights[vit].insert(tide.z_margin);
         }
         auto e_curr = vit->incident_halfedges();
         auto e_start = e_curr;
@@ -135,67 +133,15 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     std::vector<std::pair<EK::Point_3, EK::Point_3>> outer_boundary_segments_3d;
     std::vector<BoundarySegment3D> outer_boundary_segments_3d_rot;
 
-    // Precompute consistent base height for each arrangement vertex on outer boundary
     std::map<Envelope_diagram_2::Vertex_handle, FT> vertex_base_z;
     if (tide.enabled) {
-        // 1. Any vertex where multiple envelope surfaces meet with different heights is an internal cliff terminal
-        for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
-            std::set<FT> s_zs;
-            auto e_curr = vit->incident_halfedges();
-            auto e_start = e_curr;
-            do {
-                auto f = e_curr->face();
-                if (!f->is_unbounded() && f->number_of_surfaces() > 0) {
-                    size_t orig_f = f->surfaces_begin()->data();
-                    s_zs.insert(get_z(orig_f, vit->point().x(), vit->point().y()));
-                }
-                ++e_curr;
-            } while (e_curr != e_start);
-
-            if (s_zs.size() > 1) {
-                // Internal cliff terminal: must drop to z_margin to close vertical cliff seam
-                vertex_base_z[vit] = tide.z_margin;
-            }
-        }
-
-        // 2. Any outer boundary edge with vertical model faces below it sets its endpoints to v_min
-        for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
-            if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
-
-            auto check_edge = [&](Envelope_diagram_2::Halfedge_handle h) {
-                auto twin_face = h->twin()->face();
-                if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
-                    auto p1_2d = h->source()->point();
-                    auto p2_2d = h->target()->point();
-                    if (get_vertical_drop) {
-                        auto v_drop = get_vertical_drop(p1_2d, p2_2d);
-                        if (v_drop.has_value()) {
-                            FT v_min = (*v_drop > tide.z_margin) ? *v_drop : tide.z_margin;
-                            auto it1 = vertex_base_z.find(h->source());
-                            if (it1 == vertex_base_z.end() || v_min < it1->second) {
-                                vertex_base_z[h->source()] = v_min;
-                            }
-                            auto it2 = vertex_base_z.find(h->target());
-                            if (it2 == vertex_base_z.end() || v_min < it2->second) {
-                                vertex_base_z[h->target()] = v_min;
-                            }
-                        }
-                    }
-                }
-            };
-
-            auto ccb = fit->outer_ccb();
-            auto curr = ccb;
-            do { check_edge(curr); curr = curr->next(); } while (curr != ccb);
-            for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
-                auto h_curr = *hole_it;
-                auto h_start = h_curr;
-                do { check_edge(h_curr); h_curr = h_curr->next(); } while (h_curr != h_start);
-            }
+        vertex_base_z = compute_outer_boundary_base_heights(max_diag, get_z, get_vertical_drop);
+        for (const auto& [vh, bz] : vertex_base_z) {
+            vertex_heights[vh].insert(bz);
         }
     }
 
-    // 2. Process all directed halfedges for both internal step cliffs and outer sidewalls
+    // 2. Process all directed halfedges for both internal step cliffs and outer boundaries
     auto process_halfedge_walls = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
         auto p1_2d = h->source()->point();
         auto p2_2d = h->target()->point();
@@ -237,10 +183,10 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
                     FT sum2 = z2_s + z2_t;
 
                     if (sum1 > sum2) {
-                        // Face 1 is higher: use h (p1 -> p2), drop from Face 1 down to Face 2
+                        // Face 1 is higher: drop from Face 1 down to Face 2
                         add_monotonic_vertical_wall(h, z2_s, z2_t, z1_s, z1_t, vertex_heights, soup_points, soup_polygons);
                     } else if (sum2 > sum1) {
-                        // Face 2 is higher: use twin (p2 -> p1), drop from Face 2 down to Face 1
+                        // Face 2 is higher: drop from Face 2 down to Face 1
                         add_monotonic_vertical_wall(h->twin(), z1_t, z1_s, z2_t, z2_s, vertex_heights, soup_points, soup_polygons);
                     }
                 }
@@ -272,16 +218,46 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     // Audit extrusion polygon (2D envelope outer boundary) for simplicity
     auto boundary_audit = audit_2d_boundary_simplicity(outer_boundary_segments, outer_boundary_segments_3d, "Extrusion Polygon (Envelope Outer Boundary)");
 
-    // 3. If Rising Tide is active, add Ruled Envelope annulus CDT and stock outer envelope
+    // 3. Synthesize Harmonic Minimal Parting Surface to stock box limits
     if (tide.enabled) {
-        triangulate_margin_shelf(outer_boundary_segments_3d_rot, tide, soup_points, soup_polygons);
-        add_stock_box_outer_envelope(tide, soup_points, soup_polygons);
+        HarmonicStockParams stock;
+        stock.u_min = tide.u_min;
+        stock.u_max = tide.u_max;
+        stock.v_min = tide.v_min;
+        stock.v_max = tide.v_max;
+        stock.w_top = h_ceiling_rot;
+        stock.max_edge_len = CGAL::to_double(std::max(stock.u_max - stock.u_min, stock.v_max - stock.v_min)) / 10.0;
+
+        ExactMesh solid_wedge = construct_harmonic_wedge(
+            outer_boundary_segments_3d_rot,
+            stock
+        );
+        if (solid_wedge.is_empty() || !CGAL::is_closed(solid_wedge)) {
+            std::cout << "    [Wedge] Prismatic harmonic wedge is not closed or empty; discarding." << std::endl;
+            return {};
+        }
+
+        // Transform solid_wedge back from +Z frame to world space in one exact affine operation
+        for (auto v : solid_wedge.vertices()) {
+            solid_wedge.point(v) = from_z(solid_wedge.point(v));
+        }
+
+        for (auto hit = max_diag.halfedges_begin(); hit != max_diag.halfedges_end(); ++hit) {
+            for (auto sit = hit->surfaces_begin(); sit != hit->surfaces_end(); ++sit) {
+                source_faces.insert(sit->data());
+            }
+        }
+        for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
+            for (auto sit = vit->surfaces_begin(); sit != vit->surfaces_end(); ++sit) {
+                source_faces.insert(sit->data());
+            }
+        }
+
+        FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
+        return {solid_wedge, source_faces, total_area, std::move(boundary_audit.loops_3d)};
     }
 
     if (soup_polygons.empty()) return {};
-
-    // Diagnostic audits
-    audit_vertex_umbrella(soup_points, soup_polygons, EK::Point_3(FT(-11882) / FT(1000), FT(-10501) / FT(1000), FT(-8174) / FT(1000)));
 
     std::cout << "    [Wedge] Polygon soup has " << soup_polygons.size() << " polygons (" << soup_points.size() << " points). Regularizing solid soup..." << std::flush;
     auto t_soup_start = std::chrono::steady_clock::now();
@@ -298,6 +274,9 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     CGAL::Polygon_mesh_processing::stitch_borders(solid_wedge);
     CGAL::Polygon_mesh_processing::triangulate_faces(solid_wedge);
     solid_wedge.collect_garbage();
+    if (!CGAL::is_closed(solid_wedge) || solid_wedge.number_of_faces() == 0) {
+        return {};
+    }
     fix::assert_well_formed_for_corefinement(solid_wedge, "raw solid_wedge from polygon soup in wedge.h");
 
     if (CGAL::is_closed(solid_wedge)) {
@@ -314,24 +293,9 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     std::cout << " Done in " << soup_ms << "ms." << std::endl << std::flush;
 
     bool is_closed = CGAL::is_closed(solid_wedge);
-    bool self_intersects = CGAL::Polygon_mesh_processing::does_self_intersect(solid_wedge);
     std::cout << "  [Wedge Validation] is_closed: " << (is_closed ? "YES" : "NO")
-              << " | does_self_intersect: " << (self_intersects ? "YES" : "NO")
               << " | vertices: " << solid_wedge.number_of_vertices()
               << " | faces: " << solid_wedge.number_of_faces() << std::endl << std::flush;
-
-    if (self_intersects) {
-        std::filesystem::create_directories("scratch");
-        CGAL::IO::write_polygon_mesh("scratch/self_touch_wedge.off", solid_wedge);
-        std::cout << "    [Disambiguation] Resolving zero-volume touches with separate_kissing_columns..." << std::endl << std::flush;
-        fix::separate_kissing_columns(solid_wedge, pinch_bridge_width_ft());
-        CGAL::Polygon_mesh_processing::triangulate_faces(solid_wedge);
-        self_intersects = CGAL::Polygon_mesh_processing::does_self_intersect(solid_wedge);
-        std::cout << "    [Disambiguation Result] does_self_intersect: " << (self_intersects ? "YES" : "NO") << std::endl << std::flush;
-    }
-
-    audit_polygon_soup(soup_points, soup_polygons);
-    inspect_self_intersections(solid_wedge, to_z);
 
     for (auto hit = max_diag.halfedges_begin(); hit != max_diag.halfedges_end(); ++hit) {
         for (auto sit = hit->surfaces_begin(); sit != hit->surfaces_end(); ++sit) {
@@ -345,7 +309,10 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     }
 
     FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
-    fix::assert_well_formed_closed_mesh(solid_wedge, "solid_wedge in construct_envelope_wedge");
+    if (!CGAL::is_closed(solid_wedge) || solid_wedge.number_of_faces() == 0) {
+        std::cout << "    [Wedge] Candidate wedge is not a closed 2-manifold; discarding candidate." << std::endl;
+        return {};
+    }
     return {solid_wedge, source_faces, total_area, std::move(boundary_audit.loops_3d)};
 }
 

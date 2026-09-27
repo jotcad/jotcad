@@ -83,6 +83,78 @@ inline void add_monotonic_vertical_wall(
     }
 }
 
+/**
+ * @brief Precomputes consistent base elevations for outer boundary vertices.
+ * 
+ * 1. For internal cliff terminals meeting the perimeter, drops to minimum incident surface height.
+ * 2. For outer boundary edges with vertical model faces below them, drops to minimum vertical face height.
+ */
+inline std::map<Envelope_diagram_2::Vertex_handle, FT> compute_outer_boundary_base_heights(
+    Envelope_diagram_2& max_diag,
+    const std::function<FT(size_t, const FT&, const FT&)>& get_z,
+    const std::function<std::optional<FT>(const CDT_Kernel::Point_2&, const CDT_Kernel::Point_2&)>& get_vertical_drop
+) {
+    std::map<Envelope_diagram_2::Vertex_handle, FT> vertex_base_z;
+
+    // 1. Any vertex where multiple envelope surfaces meet with different heights is an internal cliff terminal
+    for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
+        std::set<FT> s_zs;
+        auto e_curr = vit->incident_halfedges();
+        auto e_start = e_curr;
+        do {
+            auto f = e_curr->face();
+            if (!f->is_unbounded() && f->number_of_surfaces() > 0) {
+                size_t orig_f = f->surfaces_begin()->data();
+                s_zs.insert(get_z(orig_f, vit->point().x(), vit->point().y()));
+            }
+            ++e_curr;
+        } while (e_curr != e_start);
+
+        if (s_zs.size() > 1) {
+            // Drop to minimum surface height among incident faces to close cliff seam
+            vertex_base_z[vit] = *s_zs.begin();
+        }
+    }
+
+    // 2. Any outer boundary edge with vertical model faces below it sets its endpoints to v_min
+    for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
+        if (fit->is_unbounded() || fit->number_of_surfaces() == 0) continue;
+
+        auto check_edge = [&](Envelope_diagram_2::Halfedge_handle h) {
+            auto twin_face = h->twin()->face();
+            if (twin_face->is_unbounded() || twin_face->number_of_surfaces() == 0) {
+                auto p1_2d = h->source()->point();
+                auto p2_2d = h->target()->point();
+                if (get_vertical_drop) {
+                    auto v_drop = get_vertical_drop(p1_2d, p2_2d);
+                    if (v_drop.has_value()) {
+                        FT v_min = *v_drop;
+                        auto it1 = vertex_base_z.find(h->source());
+                        if (it1 == vertex_base_z.end() || v_min < it1->second) {
+                            vertex_base_z[h->source()] = v_min;
+                        }
+                        auto it2 = vertex_base_z.find(h->target());
+                        if (it2 == vertex_base_z.end() || v_min < it2->second) {
+                            vertex_base_z[h->target()] = v_min;
+                        }
+                    }
+                }
+            }
+        };
+
+        auto ccb = fit->outer_ccb();
+        auto curr = ccb;
+        do { check_edge(curr); curr = curr->next(); } while (curr != ccb);
+        for (auto hole_it = fit->holes_begin(); hole_it != fit->holes_end(); ++hole_it) {
+            auto h_curr = *hole_it;
+            auto h_start = h_curr;
+            do { check_edge(h_curr); h_curr = h_curr->next(); } while (h_curr != h_start);
+        }
+    }
+
+    return vertex_base_z;
+}
+
 } // namespace mold
 } // namespace geo
 } // namespace jotcad
