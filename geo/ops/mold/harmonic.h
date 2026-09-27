@@ -21,6 +21,8 @@ namespace geo {
 namespace mold {
 
 struct HarmonicStockParams {
+    std::vector<CDT_Kernel::Point_2> outer_polygon;
+    std::vector<std::vector<CDT_Kernel::Point_2>> hole_polygons;
     FT u_min = FT(0), u_max = FT(0);
     FT v_min = FT(0), v_max = FT(0);
     FT w_top = FT(0);
@@ -125,15 +127,39 @@ inline ExactMesh construct_harmonic_wedge(
     };
 
     // 1. Insert outer stock boundary frame
-    auto vh_c0 = get_or_insert(CDT_Kernel::Point_2(stock.u_min, stock.v_min), FT(0), false);
-    auto vh_c1 = get_or_insert(CDT_Kernel::Point_2(stock.u_max, stock.v_min), FT(0), false);
-    auto vh_c2 = get_or_insert(CDT_Kernel::Point_2(stock.u_max, stock.v_max), FT(0), false);
-    auto vh_c3 = get_or_insert(CDT_Kernel::Point_2(stock.u_min, stock.v_max), FT(0), false);
+    if (!stock.outer_polygon.empty()) {
+        size_t n = stock.outer_polygon.size();
+        std::vector<HarmonicCDT::Vertex_handle> frame_vh(n);
+        for (size_t i = 0; i < n; ++i) {
+            frame_vh[i] = get_or_insert(stock.outer_polygon[i], FT(0), false);
+        }
+        for (size_t i = 0; i < n; ++i) {
+            cdt.insert_constraint(frame_vh[i], frame_vh[(i + 1) % n]);
+        }
+    } else {
+        auto vh_c0 = get_or_insert(CDT_Kernel::Point_2(stock.u_min, stock.v_min), FT(0), false);
+        auto vh_c1 = get_or_insert(CDT_Kernel::Point_2(stock.u_max, stock.v_min), FT(0), false);
+        auto vh_c2 = get_or_insert(CDT_Kernel::Point_2(stock.u_max, stock.v_max), FT(0), false);
+        auto vh_c3 = get_or_insert(CDT_Kernel::Point_2(stock.u_min, stock.v_max), FT(0), false);
 
-    cdt.insert_constraint(vh_c0, vh_c1);
-    cdt.insert_constraint(vh_c1, vh_c2);
-    cdt.insert_constraint(vh_c2, vh_c3);
-    cdt.insert_constraint(vh_c3, vh_c0);
+        cdt.insert_constraint(vh_c0, vh_c1);
+        cdt.insert_constraint(vh_c1, vh_c2);
+        cdt.insert_constraint(vh_c2, vh_c3);
+        cdt.insert_constraint(vh_c3, vh_c0);
+    }
+
+    // 1.5 Insert stock through-holes (if any)
+    for (const auto& hole : stock.hole_polygons) {
+        if (hole.size() < 3) continue;
+        size_t m = hole.size();
+        std::vector<HarmonicCDT::Vertex_handle> hole_vh(m);
+        for (size_t j = 0; j < m; ++j) {
+            hole_vh[j] = get_or_insert(hole[j], FT(0), false);
+        }
+        for (size_t j = 0; j < m; ++j) {
+            cdt.insert_constraint(hole_vh[j], hole_vh[(j + 1) % m]);
+        }
+    }
 
     // 2. Insert any optional interior patch vertices
     for (const auto& pt : interior_patch_points) {
@@ -169,8 +195,36 @@ inline ExactMesh construct_harmonic_wedge(
 
     double avg_fixed_w = (count_fixed_w > 0) ? (sum_fixed_w / static_cast<double>(count_fixed_w)) : 0.0;
 
-    // 5. Mark domain in triangulation (annular region between inner patch and outer stock)
-    CGAL::mark_domain_in_triangulation(cdt);
+    // 5. Mark domain in triangulation (strictly on physical stock volume)
+    for (auto fit = cdt.finite_faces_begin(); fit != cdt.finite_faces_end(); ++fit) {
+        auto p0 = fit->vertex(0)->point();
+        auto p1 = fit->vertex(1)->point();
+        auto p2 = fit->vertex(2)->point();
+        CDT_Kernel::Point_2 centroid((p0.x() + p1.x() + p2.x()) / FT(3), (p0.y() + p1.y() + p2.y()) / FT(3));
+
+        bool inside_stock = true;
+        if (!stock.outer_polygon.empty()) {
+            auto side = CGAL::bounded_side_2(stock.outer_polygon.begin(), stock.outer_polygon.end(), centroid);
+            inside_stock = (side != CGAL::ON_UNBOUNDED_SIDE);
+        } else {
+            inside_stock = (centroid.x() >= stock.u_min && centroid.x() <= stock.u_max &&
+                            centroid.y() >= stock.v_min && centroid.y() <= stock.v_max);
+        }
+
+        if (inside_stock) {
+            for (const auto& hole : stock.hole_polygons) {
+                if (hole.size() >= 3) {
+                    auto side = CGAL::bounded_side_2(hole.begin(), hole.end(), centroid);
+                    if (side != CGAL::ON_UNBOUNDED_SIDE) {
+                        inside_stock = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        fit->set_in_domain(inside_stock);
+    }
 
     // 6. Optional Isotropic Delaunay Refinement of the free space domain
     if (stock.max_edge_len > 0.0) {
@@ -317,6 +371,7 @@ inline ExactMesh construct_harmonic_wedge(
     }
 
     for (auto fit = cdt.finite_faces_begin(); fit != cdt.finite_faces_end(); ++fit) {
+        if (!fit->is_in_domain()) continue;
         size_t i0 = vert_idx[fit->vertex(0)];
         size_t i1 = vert_idx[fit->vertex(1)];
         size_t i2 = vert_idx[fit->vertex(2)];
@@ -329,8 +384,11 @@ inline ExactMesh construct_harmonic_wedge(
     }
 
     for (auto fit = cdt.finite_faces_begin(); fit != cdt.finite_faces_end(); ++fit) {
+        if (!fit->is_in_domain()) continue;
         for (int i = 0; i < 3; ++i) {
-            if (cdt.is_infinite(fit->neighbor(i))) {
+            auto n_face = fit->neighbor(i);
+            bool is_boundary = cdt.is_infinite(n_face) || !n_face->is_in_domain();
+            if (is_boundary) {
                 auto va = fit->vertex((i + 1) % 3);
                 auto vb = fit->vertex((i + 2) % 3);
                 size_t ia = vert_idx[va];

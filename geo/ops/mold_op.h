@@ -210,7 +210,8 @@ struct MoldOp : P {
             /*candidates_per_level=*/16,
             /*prior_draw_dirs=*/{},
             /*prior_solid_pieces=*/{},
-            initial_stock
+            initial_stock,
+            stock_box_mesh.has_value() ? &(*stock_box_mesh) : nullptr
         );
 
         for (size_t k = 0; k < decomp.draw_dirs.size(); ++k) {

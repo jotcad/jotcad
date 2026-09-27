@@ -221,12 +221,29 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     // 3. Synthesize Harmonic Minimal Parting Surface to stock box limits
     if (tide.enabled) {
         HarmonicStockParams stock;
+        stock.outer_polygon = tide.outer_polygon;
+        stock.hole_polygons = tide.hole_polygons;
         stock.u_min = tide.u_min;
         stock.u_max = tide.u_max;
         stock.v_min = tide.v_min;
         stock.v_max = tide.v_max;
         stock.w_top = h_ceiling_rot;
-        stock.max_edge_len = CGAL::to_double(std::max(stock.u_max - stock.u_min, stock.v_max - stock.v_min)) / 10.0;
+
+        FT max_dim = FT(0);
+        if (!stock.outer_polygon.empty()) {
+            FT u_min_p = stock.outer_polygon[0].x(), u_max_p = u_min_p;
+            FT v_min_p = stock.outer_polygon[0].y(), v_max_p = v_min_p;
+            for (const auto& pt : stock.outer_polygon) {
+                if (pt.x() < u_min_p) u_min_p = pt.x();
+                if (pt.x() > u_max_p) u_max_p = pt.x();
+                if (pt.y() < v_min_p) v_min_p = pt.y();
+                if (pt.y() > v_max_p) v_max_p = pt.y();
+            }
+            max_dim = std::max(u_max_p - u_min_p, v_max_p - v_min_p);
+        } else {
+            max_dim = std::max(stock.u_max - stock.u_min, stock.v_max - stock.v_min);
+        }
+        stock.max_edge_len = CGAL::to_double(max_dim) / 10.0;
 
         ExactMesh solid_wedge = construct_harmonic_wedge(
             outer_boundary_segments_3d_rot,

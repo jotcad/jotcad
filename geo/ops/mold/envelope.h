@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "rotation.h"
+#include "stock_footprint.h"
 #include "wedge.h"
 #include <CGAL/envelope_3.h>
 #include <CGAL/Env_triangle_traits_3.h>
@@ -54,7 +55,8 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     const EK::Vector_3& d,
     const std::vector<ExactMesh::Face_index>& seed_patch_faces = {},
     const FT& padding = FT(10),
-    const TideParams& override_tide = {}
+    const TideParams& override_tide = {},
+    const ExactMesh* stock_mesh = nullptr
 ) {
     auto [to_z, from_z] = compute_exact_z_rotation(d);
 
@@ -304,30 +306,38 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     }
 
     TideParams tide = override_tide;
-    if (!tide.enabled && padding > FT(0)) {
-        FT rot_u_min = 1000000, rot_u_max = -1000000;
-        FT rot_v_min = 1000000, rot_v_max = -1000000;
-        FT rot_z_min = 1000000, rot_z_max = -1000000;
+    if (!tide.enabled) {
+        if (stock_mesh != nullptr && !stock_mesh->is_empty()) {
+            StockFootprint fp = compute_stock_footprint(*stock_mesh, to_z);
+            tide.enabled = true;
+            tide.outer_polygon = std::move(fp.outer_polygon);
+            tide.hole_polygons = std::move(fp.hole_polygons);
+            tide.z_top = fp.w_max + (padding > FT(0) ? padding : FT(1));
+        } else if (padding > FT(0)) {
+            FT rot_u_min = 1000000, rot_u_max = -1000000;
+            FT rot_v_min = 1000000, rot_v_max = -1000000;
+            FT rot_z_min = 1000000, rot_z_max = -1000000;
 
-        for (auto v : mesh_part.vertices()) {
-            auto p_rot = to_z(mesh_part.point(v));
-            FT rx = p_rot.x().exact();
-            FT ry = p_rot.y().exact();
-            FT rz = p_rot.z().exact();
-            if (rx < rot_u_min) rot_u_min = rx;
-            if (rx > rot_u_max) rot_u_max = rx;
-            if (ry < rot_v_min) rot_v_min = ry;
-            if (ry > rot_v_max) rot_v_max = ry;
-            if (rz < rot_z_min) rot_z_min = rz;
-            if (rz > rot_z_max) rot_z_max = rz;
+            for (auto v : mesh_part.vertices()) {
+                auto p_rot = to_z(mesh_part.point(v));
+                FT rx = p_rot.x().exact();
+                FT ry = p_rot.y().exact();
+                FT rz = p_rot.z().exact();
+                if (rx < rot_u_min) rot_u_min = rx;
+                if (rx > rot_u_max) rot_u_max = rx;
+                if (ry < rot_v_min) rot_v_min = ry;
+                if (ry > rot_v_max) rot_v_max = ry;
+                if (rz < rot_z_min) rot_z_min = rz;
+                if (rz > rot_z_max) rot_z_max = rz;
+            }
+
+            tide.enabled = true;
+            tide.u_min = rot_u_min - padding;
+            tide.u_max = rot_u_max + padding;
+            tide.v_min = rot_v_min - padding;
+            tide.v_max = rot_v_max + padding;
+            tide.z_top = rot_z_max + padding;
         }
-
-        tide.enabled = true;
-        tide.u_min = rot_u_min - padding;
-        tide.u_max = rot_u_max + padding;
-        tide.v_min = rot_v_min - padding;
-        tide.v_max = rot_v_max + padding;
-        tide.z_top = rot_z_max + padding;
     }
 
     FT h_ceiling_rot = tide.enabled ? tide.z_top : (max_vz_rot + padding);

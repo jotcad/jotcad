@@ -69,7 +69,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     size_t candidates_per_level = 16,
     const std::vector<EK::Vector_3>& prior_draw_dirs = {},
     const std::vector<ExactMesh>& prior_solid_pieces = {},
-    ExactMeshPtr initial_stock = nullptr
+    ExactMeshPtr initial_stock = nullptr,
+    const ExactMesh* stock_box_mesh = nullptr
 ) {
     FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
     FT total_area = FT(0);
@@ -216,7 +217,9 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
             auto env_res = compute_exact_upper_envelope_mesh(
                 mesh_part, face_descriptors, face_normals, is_handled_map,
-                sc.dir, patch.faces, params.padding
+                sc.dir, patch.faces, params.padding,
+                /*override_tide=*/{},
+                stock_box_mesh
             );
             if (env_res.solid_wedge.number_of_faces() == 0 || env_res.source_faces.empty()) continue;
 

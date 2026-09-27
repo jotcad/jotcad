@@ -177,6 +177,8 @@ struct TideParams {
     FT v_min = FT(0), v_max = FT(0);
     FT z_margin = FT(0);
     FT z_top = FT(0);
+    std::vector<CDT_Kernel::Point_2> outer_polygon;
+    std::vector<std::vector<CDT_Kernel::Point_2>> hole_polygons;
 };
 
 
