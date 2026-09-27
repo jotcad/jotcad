@@ -278,10 +278,14 @@ inline ExactMesh construct_harmonic_wedge(
             }
         }
 
-        for (size_t i = 0; i < V; ++i) {
-            if (!active_vertices[i]->info().is_fixed) {
-                active_vertices[i]->info().exact_w = EK::FT(active_vertices[i]->info().w);
-            }
+    }
+
+    // 10.5 Round final solved heights to nearest 0.01 mm (exact centi / 100)
+    for (auto vit = cdt.finite_vertices_begin(); vit != cdt.finite_vertices_end(); ++vit) {
+        if (!vit->info().is_fixed) {
+            long long centi = std::llround(vit->info().w * 100.0);
+            vit->info().w = static_cast<double>(centi) / 100.0;
+            vit->info().exact_w = EK::FT(centi) / EK::FT(100);
         }
     }
 
@@ -304,7 +308,7 @@ inline ExactMesh construct_harmonic_wedge(
 
     for (size_t i = 0; i < num_v; ++i) {
         auto vh = all_finite_verts[i];
-        EK::FT z_bot = vh->info().is_fixed ? vh->info().exact_w : EK::FT(vh->info().w);
+        EK::FT z_bot = vh->info().exact_w;
         EK::Point_3 p_bot(vh->point().x(), vh->point().y(), z_bot);
         EK::Point_3 p_top(vh->point().x(), vh->point().y(), stock.w_top);
 

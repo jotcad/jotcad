@@ -15,9 +15,30 @@ export function ratioToNumber(s) {
   const nStr = s.substring(0, slash);
   const dStr = s.substring(slash + 1);
 
-  const n = parseFloat(nStr);
-  const d = parseFloat(dStr);
-  return d !== 0 ? n / d : 0;
+  try {
+    const n = BigInt(nStr);
+    const d = BigInt(dStr);
+    
+    if (d === 0n) return 0;
+
+    const num = Number(n);
+    const den = Number(d);
+
+    if (isFinite(num) && isFinite(den)) {
+      return num / den;
+    }
+
+    // Overflow path: if components > 1.8e308, scale down proportionally using BigInt shift.
+    const nLen = nStr.length;
+    const dLen = dStr.length;
+    const maxLen = Math.max(nLen, dLen);
+    const shift = BigInt(Math.max(0, maxLen - 15));
+    const factor = 10n ** shift;
+    
+    return Number(n / factor) / Number(d / factor);
+  } catch (e) {
+    return parseFloat(s);
+  }
 }
 
 // Normalize ID helper (from ux/src/lib/render/AssetManager.js)

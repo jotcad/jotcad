@@ -38,3 +38,6 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 3. **Unconstrained Stock Carving**: Intersects each envelope wedge with the conservative stock envelope and carves the model cavity via CGAL exact boolean corefinement.
 4. **OBB Trimming & Stationary Remainder Extraction** (`assembly.h`): Computes the minimal-volume OBB aligned with all extracted draw vectors, trims each piece, and extracts any uncarved stock remainder as a stationary base foundation block (`pull_vector = "0 0 0"`).
 5. **Demoldability Assertion & Scene Graph Synthesis** (`assembly.h`, `verify.h`): Tags each piece with its withdrawal vector, assigns 50% opacity and 6-digit hex colors, applies explosion offsets along withdrawal vectors, and attaches the centered model cavity.
+
+## Known Issues & Tracked Work
+- [TODO: Mold Decomposition Rational Coordinate Precision & OBB Optimization](../../../docs/TODO_MOLD_RATIONAL_PRECISION.md): Tracking OBB rotation bias and exact rational bit-growth mitigation during cascaded corefinements.
