@@ -140,6 +140,13 @@ namespace optimizer_constants {
     constexpr double BASE_DEMOLDABILITY_WEIGHT = 0.5;
 }
 
+namespace mold_constants {
+    inline const FT& zero_draft_dot_epsilon() {
+        static const FT kEps = FT(1) / FT(1000000);
+        return kEps;
+    }
+}
+
 struct MoldParams {
     FT padding = FT(10);
     FT explode = FT(0);
@@ -148,6 +155,8 @@ struct MoldParams {
     FT kiss_width = pinch_bridge_width_ft();
     bool lines = true;
     bool molds = true;
+    bool remesh = false; // Isotropic CDT refinement disabled by default
+    double max_edge_len = 0.0;
 };
 
 enum class CandidateStatus {
@@ -173,6 +182,8 @@ struct EnvelopeWedgeResult {
 
 struct TideParams {
     bool enabled = false;
+    bool remesh = false; // Isotropic CDT refinement disabled by default
+    double max_edge_len = 0.0;
     FT u_min = FT(0), u_max = FT(0);
     FT v_min = FT(0), v_max = FT(0);
     FT z_margin = FT(0);

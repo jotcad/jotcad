@@ -29,7 +29,9 @@ struct MoldOp : P {
         std::string kiss_val = "weld",
         double kiss_width_val = 0.01,
         bool lines_val = true,
-        bool molds_val = true
+        bool molds_val = true,
+        bool remesh_val = false,
+        double max_edge_len_val = 0.0
     ) {
         mold::MoldParams params;
         params.padding = FT(padding_val);
@@ -37,6 +39,8 @@ struct MoldOp : P {
         params.draft = FT(draft_val);
         params.lines = lines_val;
         params.molds = molds_val;
+        params.remesh = remesh_val;
+        params.max_edge_len = max_edge_len_val;
 
         if (kiss_val == "weld") {
             params.kiss_mode = fix::KissMode::WELD;
@@ -146,14 +150,7 @@ struct MoldOp : P {
             auto p1 = mesh_part.point(mesh_part.target(h));
             auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
 
-            EK::Vector_3 raw_n = CGAL::normal(p0, p1, p2);
-            FT n_len_sq = raw_n.squared_length();
-            if (n_len_sq > FT(0)) {
-                FT len = CGAL::approximate_sqrt(n_len_sq);
-                face_normals[f_idx] = EK::Vector_3(raw_n.x() / len, raw_n.y() / len, raw_n.z() / len);
-            } else {
-                face_normals[f_idx] = raw_n;
-            }
+            face_normals[f_idx] = CGAL::normal(p0, p1, p2);
             face_centroids[f_idx] = EK::Point_3((p0.x() + p1.x() + p2.x()) / FT(3), (p0.y() + p1.y() + p2.y()) / FT(3), (p0.z() + p1.z() + p2.z()) / FT(3));
 
             std::array<std::pair<int, int>, 3> edges = {std::make_pair(v0, v1), std::make_pair(v1, v2), std::make_pair(v2, v0)};
@@ -326,7 +323,7 @@ struct MoldOp : P {
         vfs->write(fulfilling.with_output("$out"), result);
     }
 
-    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode", "draft", "kiss", "kiss_width", "lines", "molds"}; }
+    static std::vector<std::string> argument_keys() { return {"$in", "padding", "explode", "draft", "kiss", "kiss_width", "lines", "molds", "remesh", "max_edge_len"}; }
     static typename P::json schema() {
         return {
             {"path", "jot/mold"},
@@ -343,7 +340,9 @@ struct MoldOp : P {
                 {{"name", "kiss"}, {"type", "jot:string"}, {"default", "weld"}, {"description", "Resolution mode for zero-volume contact singularities ('weld' or 'part')."}},
                 {{"name", "kiss_width"}, {"type", "jot:number"}, {"default", 0.01}, {"description", "Physical width in mm of structural bridge ('weld') or clearance gap ('part')."}},
                 {{"name", "lines"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to generate 3D parting boundary lines in the matching color of the associated mold piece."}},
-                {{"name", "molds"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to generate solid 3D mold pieces."}}
+                {{"name", "molds"}, {"type", "jot:boolean"}, {"default", true}, {"description", "Whether to generate solid 3D mold pieces."}},
+                {{"name", "remesh"}, {"type", "jot:boolean"}, {"default", false}, {"description", "Whether to perform isotropic Delaunay mesh refinement on the 2D parting domain."}},
+                {{"name", "max_edge_len"}, {"type", "jot:number"}, {"default", 0.0}, {"description", "Target maximum edge length in mm for isotropic remeshing (0.0 uses stock_dim / 10.0)."}}
             }},
             {"outputs", {
                 {"$out", {{"type", "jot:shape"}, {"description", "The multi-piece mold assembly containing mold blocks and the centered model."}}}
@@ -353,7 +352,7 @@ struct MoldOp : P {
 };
 
 inline void mold_init(fs::VFSNode* vfs) {
-    Processor::register_op<MoldOp<>, Shape, double, double, double, std::string, double, bool, bool>(vfs, "jot/mold");
+    Processor::register_op<MoldOp<>, Shape, double, double, double, std::string, double, bool, bool, bool, double>(vfs, "jot/mold");
 }
 
 } // namespace geo

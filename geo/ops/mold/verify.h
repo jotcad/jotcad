@@ -31,7 +31,7 @@ inline bool verify_piece_demoldability(
             FT len_sq = fn.squared_length();
             if (len_sq > FT(0)) {
                 if (min_dot == FT(0)) {
-                    if (fn * piece.draw_vector > FT(0)) {
+                    if (fn * piece.draw_vector > mold_constants::zero_draft_dot_epsilon()) {
                         backdraft_count++;
                     }
                 } else {

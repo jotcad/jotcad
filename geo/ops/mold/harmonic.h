@@ -103,7 +103,8 @@ inline ExactMesh construct_harmonic_wedge(
     const std::vector<EK::Point_3>& interior_patch_points = {},
     const std::function<std::optional<FT>(const CDT_Kernel::Point_2&)>& obstacle_fn = nullptr,
     const std::vector<BoundarySegment3D>& prior_seams = {},
-    int max_iterations = 60
+    int max_iterations = 60,
+    const std::vector<BoundarySegment3D>& cavity_segments = {}
 ) {
     HarmonicCDT cdt;
     std::map<CDT_Kernel::Point_2, HarmonicCDT::Vertex_handle> v_map;
@@ -164,6 +165,15 @@ inline ExactMesh construct_harmonic_wedge(
     // 2. Insert any optional interior patch vertices
     for (const auto& pt : interior_patch_points) {
         get_or_insert(CDT_Kernel::Point_2(pt.x(), pt.y()), pt.z(), true);
+    }
+
+    // 2.5 Insert exact cavity floor triangles as pinned constraints
+    for (const auto& seg : cavity_segments) {
+        if (seg.p1_2d != seg.p2_2d) {
+            auto vh_a = get_or_insert(seg.p1_2d, seg.z1, true);
+            auto vh_b = get_or_insert(seg.p2_2d, seg.z2, true);
+            cdt.insert_constraint(vh_a, vh_b);
+        }
     }
 
     // 3. Insert inner model patch boundary obligations (fixed Dirichlet boundary)
@@ -236,6 +246,7 @@ inline ExactMesh construct_harmonic_wedge(
 
     // 7. Audit and pin all vertices post-refinement
     for (auto vit = cdt.finite_vertices_begin(); vit != cdt.finite_vertices_end(); ++vit) {
+        if (vit->info().is_fixed) continue;
         const auto& pt = vit->point();
         bool is_pinned = false;
         for (const auto& seg : all_boundary_segments) {

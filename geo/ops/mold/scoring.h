@@ -60,19 +60,20 @@ inline CandidateScore score_candidate_direction(
     FT encroachment_penalty = FT(0);
     const FT w_encroach = FT(optimizer_constants::PRIOR_ENCROACHMENT_PENALTY_WEIGHT);
 
+    const FT& dot_eps = mold_constants::zero_draft_dot_epsilon();
     for (auto f : face_descriptors) {
         size_t idx = f.idx();
         FT dot = face_normals[idx] * d;
         if (!is_handled[f]) {
-            if (dot >= min_dot) {
+            if (dot >= min_dot || (min_dot == FT(0) && dot >= -dot_eps)) {
                 FT a = face_areas[idx];
                 score.responsible_area += a;
-                score.draft_weighted_area += a * dot;
+                score.draft_weighted_area += dot;
             }
         } else {
             has_prior_handled = true;
-            if (dot > FT(0)) {
-                encroachment_penalty += w_encroach * face_areas[idx] * dot;
+            if (dot > dot_eps) {
+                encroachment_penalty += w_encroach * dot;
             }
         }
     }

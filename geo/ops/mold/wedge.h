@@ -28,6 +28,7 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     std::vector<EK::Point_3> soup_points;
     std::vector<std::vector<size_t>> soup_polygons;
     std::set<size_t> source_faces;
+    std::vector<BoundarySegment3D> cavity_segments;
 
     // 1. Add all illuminated surface cells (floor) via uniform 2D CDT
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
@@ -83,6 +84,10 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
             FT vz0 = get_z(orig_f_idx, p0_2d.x(), p0_2d.y());
             FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
             FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
+
+            cavity_segments.push_back({p0_2d, p1_2d, vz0, vz1});
+            cavity_segments.push_back({p1_2d, p2_2d, vz1, vz2});
+            cavity_segments.push_back({p2_2d, p0_2d, vz2, vz0});
 
             EK::Point_3 floor_p0(p0_2d.x(), p0_2d.y(), vz0);
             EK::Point_3 floor_p1(p1_2d.x(), p1_2d.y(), vz1);
@@ -243,11 +248,22 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
         } else {
             max_dim = std::max(stock.u_max - stock.u_min, stock.v_max - stock.v_min);
         }
-        stock.max_edge_len = CGAL::to_double(max_dim) / 10.0;
+        if (tide.remesh) {
+            stock.max_edge_len = (tide.max_edge_len > 0.0)
+                ? tide.max_edge_len
+                : (CGAL::to_double(max_dim) / 10.0);
+        } else {
+            stock.max_edge_len = 0.0; // Disabled by default
+        }
 
         ExactMesh solid_wedge = construct_harmonic_wedge(
             outer_boundary_segments_3d_rot,
-            stock
+            stock,
+            {},
+            nullptr,
+            {},
+            60,
+            cavity_segments
         );
         if (solid_wedge.is_empty() || !CGAL::is_closed(solid_wedge)) {
             std::cout << "    [Wedge] Prismatic harmonic wedge is not closed or empty; discarding." << std::endl;
