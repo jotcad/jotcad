@@ -990,3 +990,78 @@ It pulls the candidate vector inward away from boundary edges directly into the 
 ```
 
 By identifying and indexing candidates by **topological patch signatures** while utilizing **continuous vectors for half-space selection**, the decomposition engine eliminates search explosion, bypasses boundary trapping, and guarantees fast, certified convergence on complex CAD parts.
+
+### 11.6 Competition Between Disjoint Patches
+
+Disjoint cavity patches (features that do not share faces or edges on the part surface, such as the distinct arms of the planar cross or the feet and sprue of the voxel bear) compete across three distinct geometric and physical arenas:
+
+#### 1. Line-of-Sight Competition (Intra-Piece Shadowing along the Same Vector)
+Can a single mold block pull along direction $\vec{d}$ and extract two disjoint patches $\mathcal{P}_A$ and $\mathcal{P}_B$ simultaneously?
+* **Condition**: Their extrusion corridors must not collide in 3D projection:
+  $$\Pi_{\vec{d}}(\mathcal{P}_A) \cap \Pi_{\vec{d}}(\mathcal{P}_B) = \emptyset$$
+* **If they overlap in 2D tangent projection**: One patch physically shadows the other along the draw stroke. A single rigid mold piece cannot grab both without interlocking. The component with the larger projected area wins the direction $\vec{d}$; the shadowed component is excluded from that piece.
+* **If they do not overlap**: They **cooperate**. They are merged into a single multi-cavity piece (e.g., extracting the sprue and feet together in one draw).
+
+#### 2. Volumetric Stock Competition (Order of Extraction in the Tree)
+The sequence in which disjoint patches are carved fundamentally reshapes the remaining stock $B_k = B_{k-1} \setminus P_k$:
+* **Top Cap First**: Slicing the $+Z$ cap first produces a flat ceiling across the residual stock, simplifying horizontal sliding pulls for the side arms ($\pm X, \pm Y$) with zero vertical undercuts.
+* **Side Arm First**: Carving a horizontal side arm first cuts a step right through the top stock block, potentially introducing backdraft steps against the ceiling for subsequent pieces.
+* Because extraction order dictates downstream parting surface viability, **disjoint patches must compete as distinct alternative branches in the search frontier**.
+
+#### 3. Frontier Priority Competition (Energy & Scoring)
+In the priority queue, candidate branches competing for the next level are ranked by:
+$$E(\text{node}) = \text{Unhandled Area} + \lambda \cdot (\text{Piece Count})$$
+The disjoint feature that resolves the largest virgin area with the lowest geometric resistance is expanded first, while alternative disjoint branches remain in the queue as certified fallbacks.
+
+#### The Patch Deduplication Invariant
+> **Patch Deduplication must ONLY merge candidate directions that target the SAME patch (or same cluster of patches).**
+>
+> **Disjoint, distinct patches must NEVER be merged — they must remain independent competitors in the frontier priority queue.**
+
+---
+
+## 12. Step-by-Step Implementation & Verification Plan
+
+### Phase 1: Microsecond Patch Signature & Jaccard Deduplication (`beam_search.h`)
+* **Objective**: Collapse hundreds of redundant candidate directions targeting the same feature into a single optimal representative before they are inserted into the search frontier.
+* **Implementation Steps**:
+  1. In the child expansion loop of `decompose_mold_beam_search`, compute the candidate patch for each viable direction:
+     $$\mathcal{P}(d) = \text{extract\_candidate\_patch}(d)$$
+  2. For each candidate, build a compact `std::vector<size_t>` of virgin face indices sorted ascending.
+  3. Compare against previously admitted candidates in the current expansion batch using the **Jaccard Area Similarity Metric**:
+     $$J(\mathcal{P}_A, \mathcal{P}_B) = \frac{\text{Area}(\mathcal{P}_A \cap \mathcal{P}_B)}{\text{Area}(\mathcal{P}_A \cup \mathcal{P}_B)}$$
+  4. If $J(\mathcal{P}_A, \mathcal{P}_B) \ge 0.85$:
+     * Merge them into the same candidate slot.
+     * Retain the vector that maximizes the worst-case draft clearance margin:
+       $$\vec{d}^* = \operatorname*{argmax}_{\vec{d} \in \{\vec{d}_A, \vec{d}_B\}} \left( \min_{f \in \mathcal{P}} (\mathbf{n}_f \cdot \vec{d}) \right)$$
+  5. Only queue the unique champion candidate per distinct topological feature (reducing fanout from ~1,800 to ~4–6).
+
+### Phase 2: Microsecond Mean-Shift Centering on $\mathbb{S}^2$ (`candidates.h`)
+* **Objective**: Snap near-boundary or oblique candidate vectors directly into the core of their ideal normal cone in $<0.2\,\text{ms}$, bypassing boundary trapping.
+* **Implementation Steps**:
+  1. For each discrete ingress candidate $\vec{d}_0$ (face normals, corner bisectors):
+     * If $\vec{d}_0$ is a zero-draft sliding axis ($\mathbf{n}_1 \times \mathbf{n}_2$), preserve it strictly on its 1D manifold.
+     * Otherwise, perform 3–5 iterations of normal centroid flow:
+       $$\vec{d}_{k+1} = \text{normalize}\left(\sum_{f \in \mathcal{P}(\vec{d}_k)} \text{Area}(f) \cdot \mathbf{n}_f\right)$$
+  2. Stop when angular change $\Delta\theta < 0.01^\circ$ or max 5 iterations reached.
+  3. Replace the raw sampled direction with the converged centroid $\vec{d}^*$.
+
+### Phase 3: Single-Flight Request Deduplication (`mold_op.h` / `ops_tooling`)
+* **Objective**: Prevent duplicate concurrent 20-minute search threads from running simultaneously when multiple client ports (`png_file`, `jot_file`) query the same recipe or experience timeout retries.
+* **Implementation Steps**:
+  1. Maintain an active in-flight query map in `ops_tooling` keyed by Selector hash (CID).
+  2. If a query for the same model is already computing in an active worker thread, attach subsequent listeners to the in-flight future rather than launching a redundant search thread.
+
+### Phase 4: Verification & Performance Benchmark Suite
+* **Test 1: The 2-Way Planar Cross (`pour_test.cpp` / CLI)**:
+  * Command:
+    ```bash
+    npm run cli -- -p dev -t 120 -e "boxX = Box(30.0, 10.0, 10.0); boxY = Box(10.0, 30.0, 10.0); cross = boxX.fuse([boxY]); molded = cross.pourPrep(sprue_base=6.0, sprue_top=12.0, vent_dia=2.0, auto_orient=true, vents=true).mold(padding=5.0002, explode=7.5, lines=true, molds=true, draft=0.0); molded.png() -> png_file; molded -> jot_file;" -o png_file=preview.png -o jot_file=model.jot
+    ```
+  * **Success Criteria**:
+    1. Search converges in **$< 120\text{ seconds}$** (down from $> 1200\text{s}$).
+    2. Exact airtight partition of $V_{\text{stock}} \setminus \text{Part}$ with **$0.000\,\text{mm}^3$ dead volume**.
+    3. **Zero backdraft undercuts** across all decomposed mold pieces.
+    4. Exact closed preview snapshot rendered and written to disk.
+* **Test 2: The Voxel Bear (`mold_voxel_bear_test.cpp`)**:
+  * Verify that disjoint feet and sprue are correctly handled without duplicate draw vectors ($\vec{d}_2 = \vec{d}_4$ bug eliminated).
