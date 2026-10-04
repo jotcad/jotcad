@@ -29,5 +29,6 @@ The `/docs` directory serves as the single source of truth for the language gram
 | [IMPLICIT_DISPLACEMENT_PLAN.md](file:///home/brian/github/jotcad/docs/IMPLICIT_DISPLACEMENT_PLAN.md) | Implicit volume modeling and voxelizer ideas. |
 | [TODO_SIMPLIFICATION.md](file:///home/brian/github/jotcad/docs/TODO_SIMPLIFICATION.md) | Simplifying mesh representations and topological trees. |
 | [MOLD_DRAW_DIRECTION_OPTIMIZER_DESIGN.md](file:///home/brian/github/jotcad_ez/docs/MOLD_DRAW_DIRECTION_OPTIMIZER_DESIGN.md) | Automated multi-piece mold decomposition, direct parting surface routing, and draw direction optimization. |
+| [MOLD_PATCH_PLAN_REVIEW.md](file:///home/brian/github/jotcad_ez/docs/MOLD_PATCH_PLAN_REVIEW.md) | Open review of the patch-first candidate plan (§11–12 of the optimizer design): correctness issues, internal conflicts, rule violations, and revised step order. |
 | [POUR_PREP_DRAINAGE_DESIGN.md](file:///home/brian/github/jotcad_ez/docs/POUR_PREP_DRAINAGE_DESIGN.md) | Gravity pour orientation, topological air trap detection, bubble drainage physics, and compound tilt optimization. |
 

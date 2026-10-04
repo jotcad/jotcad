@@ -945,18 +945,23 @@ To prevent boundary trapping while simultaneously collapsing redundant candidate
 * Exact 3D CSG Difference (`CGAL::corefine`): **~30,000 to 45,000 ms**.
 * 2D Surface Dot Products & DSU Connectivity: **~0.01 to 0.05 ms** ($1,000,000\times$ faster).
 
-#### The Mean-Shift Algorithm
+#### The Mean-Shift Algorithm & Chebyshev Center Proxy
 Given any candidate vector $\vec{d}_0$ (from feature normals, edge bisectors, or seeds):
 1. Extract candidate faces:
    $$\mathcal{P}_k = \{f \in \mathcal{F}_{\text{unhandled}} \mid \mathbf{n}_f \cdot \vec{d}_k \ge \sin(\text{draft})\}$$
-2. Compute the new center as the area-weighted normal centroid:
-   $$\vec{d}_{k+1} = \text{normalize}\left(\sum_{f \in \mathcal{P}_k} \text{Area}(f) \cdot \mathbf{n}_f\right)$$
-3. Repeat until angular convergence ($\|\vec{d}_{k+1} - \vec{d}_k\| < 10^{-4}$), typically **3 to 5 iterations**.
-4. **Total execution time: $< 0.2\,\text{ms}$**.
+2. **Sliding Wall Exclusion Invariant (Zero-Draft Protection)**:
+   Faces with $\mathbf{n}_f \cdot \vec{d}_k = 0$ (sliding walls) belong to the extracted patch, but **MUST be excluded from the centroid sum**. On asymmetric features, vertical wall normals pull the direction sideways, immediately causing opposing walls to undercut ($\mathbf{n} \cdot \vec{d} < 0$).
+3. Compute the new center as the area-weighted normal centroid over forward-facing faces ($\mathbf{n}_f \cdot \vec{d}_k > 0$):
+   $$\vec{d}_{k+1} = \text{normalize}\left(\sum_{f \in \mathcal{P}_k, \mathbf{n}_f \cdot \vec{d}_k > 0} \text{face\_normals}[f]\right)$$
+   *(Note: The normal centroid is a fast heuristic proxy for the true Chebyshev center $\operatorname*{argmax}_{\vec{d}} \min_f (\mathbf{n}_f \cdot \vec{d})$).*
+4. **Exact Kernel Purity (`EK::FT`)**:
+   Since stored `face_normals` in JotCAD are unnormalized cross products $(p_1 - p_0) \times (p_2 - p_0)$ with exact magnitude $2 \cdot \text{Area}(f)$, the sum $\sum \text{face\_normals}[f]$ is computed entirely in exact rational arithmetic with **zero square roots**, normalizing once at the final boundary.
+5. Repeat until angular convergence ($\|\vec{d}_{k+1} - \vec{d}_k\| < 10^{-4}$), typically **3 to 5 iterations**.
+6. **Total execution time: $< 0.2\,\text{ms}$**.
 
 #### Why It Breaks the Boundary Trap
 Because the main planar surfaces of a CAD feature possess vastly greater surface area than boundary bevels or corner slivers, the area-weighted normal sum acts like a **geometric gravitational pull**:
-$$\sum_{f} \text{Area}(f) \mathbf{n}_f$$
+$$\sum_{f, \mathbf{n}_f \cdot \vec{d} > 0} \text{Area}(f) \mathbf{n}_f$$
 It pulls the candidate vector inward away from boundary edges directly into the deep center of the feature's ideal cone $\vec{d}^*$.
 
 ### 11.5 The Unified Patch-First Candidate Architecture
@@ -967,6 +972,7 @@ It pulls the candidate vector inward away from boundary edges directly into the 
                                   ▼
              [Mean-Shift Centering on S^2 (3-5 iterations)]
              • Snaps perturbed vectors to feature cone centers
+             • Sliding walls (n·d = 0) excluded from flow sum
              • Execution time: < 0.2 ms per candidate
                                   │
                                   ▼
@@ -976,8 +982,8 @@ It pulls the candidate vector inward away from boundary edges directly into the 
                [Patch Signature Hashing: Set<Face_index>]
              • Compute Jaccard overlap on unhandled faces:
                  J(P_A, P_B) = |P_A ∩ P_B| / |P_A ∪ P_B|
-             • If J > 0.85: MERGE candidates! Retain single
-               vector maximizing min_f (n_f . d)
+             • If J >= 0.85: MERGE candidates! Retain candidate
+               maximizing virgin cavity area (tie-break on margin)
                                   │
                                   ▼
             [Frontier Queue: Exactly 3 to 6 Distinct Patches!]
@@ -986,10 +992,10 @@ It pulls the candidate vector inward away from boundary edges directly into the 
                                   │
                                   ▼
              [Lazy CSG Carving & Terminal Block Closure]
-             • Full multi-piece solution converges in < 60s
+             • Full multi-piece solution converges in < 10 min
 ```
 
-By identifying and indexing candidates by **topological patch signatures** while utilizing **continuous vectors for half-space selection**, the decomposition engine eliminates search explosion, bypasses boundary trapping, and guarantees fast, certified convergence on complex CAD parts.
+By identifying and indexing candidates by **topological patch signatures** while utilizing **continuous vectors for half-space selection**, the decomposition engine eliminates search explosion, bypasses boundary trapping, and guarantees fast, certified convergence on complex CAD parts. Note that pre-screen patch deduplication is a **candidate reduction heuristic** before line-of-sight occlusion; the authoritative visibility and cavity volume are verified downstream by `CGAL::upper_envelope_3`.
 
 ### 11.6 Competition Between Disjoint Patches
 
@@ -1022,46 +1028,50 @@ The disjoint feature that resolves the largest virgin area with the lowest geome
 
 ## 12. Step-by-Step Implementation & Verification Plan
 
-### Phase 1: Microsecond Patch Signature & Jaccard Deduplication (`beam_search.h`)
-* **Objective**: Collapse hundreds of redundant candidate directions targeting the same feature into a single optimal representative before they are inserted into the search frontier.
-* **Implementation Steps**:
-  1. In the child expansion loop of `decompose_mold_beam_search`, compute the candidate patch for each viable direction:
-     $$\mathcal{P}(d) = \text{extract\_candidate\_patch}(d)$$
-  2. For each candidate, build a compact `std::vector<size_t>` of virgin face indices sorted ascending.
-  3. Compare against previously admitted candidates in the current expansion batch using the **Jaccard Area Similarity Metric**:
+### Phase 1: Microsecond Patch Signature & Jaccard Deduplication (`geo/ops/mold/patch_dedup.h`)
+* **Objective**: Collapse hundreds of redundant candidate directions targeting the same feature into a single optimal representative before insertion into the search frontier.
+* **Implementation Steps** (Atomic file under 300 lines per [`GEMINI.md`](../GEMINI.md)):
+  1. In `decompose_mold_beam_search`, extract candidate virgin face indices for each viable direction:
+     $$\mathcal{P}_{\text{virgin}}(d) = \{f \in \mathcal{P}(d) \mid \text{not handled by parent}\}$$
+  2. Compare against previously admitted candidates using the **Jaccard Area Similarity Metric**:
      $$J(\mathcal{P}_A, \mathcal{P}_B) = \frac{\text{Area}(\mathcal{P}_A \cap \mathcal{P}_B)}{\text{Area}(\mathcal{P}_A \cup \mathcal{P}_B)}$$
-  4. If $J(\mathcal{P}_A, \mathcal{P}_B) \ge 0.85$:
-     * Merge them into the same candidate slot.
-     * Retain the vector that maximizes the worst-case draft clearance margin:
+  3. If $J(\mathcal{P}_A, \mathcal{P}_B) \ge 0.85$:
+     * Merge into the existing candidate cluster.
+     * Retain the candidate that maximizes **virgin surface area captured ($A_{\text{virgin}}$)**.
+     * Break ties using worst-case draft clearance margin:
        $$\vec{d}^* = \operatorname*{argmax}_{\vec{d} \in \{\vec{d}_A, \vec{d}_B\}} \left( \min_{f \in \mathcal{P}} (\mathbf{n}_f \cdot \vec{d}) \right)$$
-  5. Only queue the unique champion candidate per distinct topological feature (reducing fanout from ~1,800 to ~4–6).
+  4. Emit candidate reduction log: `[Dedup] Filtered N candidates -> K unique feature patches`.
+  5. Queue only unique champion candidates into `frontier` (reducing fanout from ~1,800 to ~4–6).
 
-### Phase 2: Microsecond Mean-Shift Centering on $\mathbb{S}^2$ (`candidates.h`)
+### Phase 2: Microsecond Mean-Shift Centering on $\mathbb{S}^2$ (`geo/ops/mold/mean_shift.h`)
 * **Objective**: Snap near-boundary or oblique candidate vectors directly into the core of their ideal normal cone in $<0.2\,\text{ms}$, bypassing boundary trapping.
-* **Implementation Steps**:
+* **Implementation Steps** (Atomic file under 300 lines):
   1. For each discrete ingress candidate $\vec{d}_0$ (face normals, corner bisectors):
      * If $\vec{d}_0$ is a zero-draft sliding axis ($\mathbf{n}_1 \times \mathbf{n}_2$), preserve it strictly on its 1D manifold.
      * Otherwise, perform 3–5 iterations of normal centroid flow:
-       $$\vec{d}_{k+1} = \text{normalize}\left(\sum_{f \in \mathcal{P}(\vec{d}_k)} \text{Area}(f) \cdot \mathbf{n}_f\right)$$
+       $$\vec{d}_{k+1} = \text{normalize}\left(\sum_{f \in \mathcal{P}(\vec{d}_k), \mathbf{n}_f \cdot \vec{d}_k > 0} \text{face\_normals}[f]\right)$$
+       *(Excluding sliding walls with $\mathbf{n}_f \cdot \vec{d} = 0$ from the sum to prevent sideways deflection into backdraft).*
   2. Stop when angular change $\Delta\theta < 0.01^\circ$ or max 5 iterations reached.
   3. Replace the raw sampled direction with the converged centroid $\vec{d}^*$.
 
-### Phase 3: Single-Flight Request Deduplication (`mold_op.h` / `ops_tooling`)
-* **Objective**: Prevent duplicate concurrent 20-minute search threads from running simultaneously when multiple client ports (`png_file`, `jot_file`) query the same recipe or experience timeout retries.
+### Phase 3: Single-Flight Request Deduplication (VFS Layer)
+* **Objective**: Prevent duplicate concurrent search threads from running when multiple client outputs (`png_file`, `jot_file`) query the same recipe or experience retry triggers.
 * **Implementation Steps**:
-  1. Maintain an active in-flight query map in `ops_tooling` keyed by Selector hash (CID).
-  2. If a query for the same model is already computing in an active worker thread, attach subsequent listeners to the in-flight future rather than launching a redundant search thread.
+  1. Governed by [`docs/VFS_SPECIFICATION.md`](./VFS_SPECIFICATION.md): ensure VFS request router coalesces in-flight queries targeting the same CID or Selector into a single shared execution task with `PENDING` state.
+  2. Avoid hardcoding ad-hoc mutexes or single-flight maps inside geometric operation headers (`mold_op.h`).
 
 ### Phase 4: Verification & Performance Benchmark Suite
-* **Test 1: The 2-Way Planar Cross (`pour_test.cpp` / CLI)**:
+* **Test 1: Fast Level-0 Candidate Reduction Assertion**:
+  * Verify in $<10\text{ms}$ that candidate ingress on the 2-Way Planar Cross collapses from 1,800 vectors to 4–6 feature champions (`[Dedup] 1800 -> 5`).
+* **Test 2: The 2-Way Planar Cross End-to-End (`pour_test.cpp` / CLI)**:
   * Command:
     ```bash
-    npm run cli -- -p dev -t 120 -e "boxX = Box(30.0, 10.0, 10.0); boxY = Box(10.0, 30.0, 10.0); cross = boxX.fuse([boxY]); molded = cross.pourPrep(sprue_base=6.0, sprue_top=12.0, vent_dia=2.0, auto_orient=true, vents=true).mold(padding=5.0002, explode=7.5, lines=true, molds=true, draft=0.0); molded.png() -> png_file; molded -> jot_file;" -o png_file=preview.png -o jot_file=model.jot
+    npm run cli -- -p dev -t 600 -e "boxX = Box(30.0, 10.0, 10.0); boxY = Box(10.0, 30.0, 10.0); cross = boxX.fuse([boxY]); molded = cross.pourPrep(sprue_base=6.0, sprue_top=12.0, vent_dia=2.0, auto_orient=true, vents=true).mold(padding=5.0002, explode=7.5, lines=true, molds=true, draft=0.0); molded.png() -> png_file; molded -> jot_file;" -o png_file=preview.png -o jot_file=model.jot
     ```
   * **Success Criteria**:
-    1. Search converges in **$< 120\text{ seconds}$** (down from $> 1200\text{s}$).
+    1. Search converges in **$< 600\text{ seconds}$** (< 10 minutes, down from $> 1200\text{s}$ timeout).
     2. Exact airtight partition of $V_{\text{stock}} \setminus \text{Part}$ with **$0.000\,\text{mm}^3$ dead volume**.
     3. **Zero backdraft undercuts** across all decomposed mold pieces.
     4. Exact closed preview snapshot rendered and written to disk.
-* **Test 2: The Voxel Bear (`mold_voxel_bear_test.cpp`)**:
+* **Test 3: The Voxel Bear (`mold_voxel_bear_test.cpp`)**:
   * Verify that disjoint feet and sprue are correctly handled without duplicate draw vectors ($\vec{d}_2 = \vec{d}_4$ bug eliminated).
