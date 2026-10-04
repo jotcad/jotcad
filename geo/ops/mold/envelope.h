@@ -55,7 +55,6 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     const EK::Vector_3& d,
     const std::vector<ExactMesh::Face_index>& seed_patch_faces = {},
     const FT& padding = FT(10),
-    const TideParams& override_tide = {},
     const ExactMesh* stock_mesh = nullptr
 ) {
     auto [to_z, from_z] = compute_exact_z_rotation(d);
@@ -66,138 +65,10 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     };
 
     std::set<ExactMesh::Face_index> candidate_faces;
-    bool has_seed = !seed_patch_faces.empty();
-    if (has_seed) {
-        for (auto f : seed_patch_faces) {
-            if (is_forward_facing(f)) {
-                candidate_faces.insert(f);
-            }
+    for (auto f : face_descriptors) {
+        if (is_forward_facing(f)) {
+            candidate_faces.insert(f);
         }
-
-        bool first_seed_v = true;
-        FT seed_u_min = 0, seed_u_max = 0;
-        FT seed_v_min = 0, seed_v_max = 0;
-        FT seed_z_min = 0;
-
-        for (auto f : candidate_faces) {
-            auto h = mesh_part.halfedge(f);
-            for (int i = 0; i < 3; ++i) {
-                auto p_rot = to_z(mesh_part.point(mesh_part.target(h)));
-                FT u = p_rot.x().exact();
-                FT v = p_rot.y().exact();
-                FT z = p_rot.z().exact();
-                if (first_seed_v) {
-                    seed_u_min = seed_u_max = u;
-                    seed_v_min = seed_v_max = v;
-                    seed_z_min = z;
-                    first_seed_v = false;
-                } else {
-                    if (u < seed_u_min) seed_u_min = u;
-                    if (u > seed_u_max) seed_u_max = u;
-                    if (v < seed_v_min) seed_v_min = v;
-                    if (v > seed_v_max) seed_v_max = v;
-                    if (z < seed_z_min) seed_z_min = z;
-                }
-                h = mesh_part.next(h);
-            }
-        }
-
-        // Ingress all forward-facing model faces whose 2D projected bounding box overlaps
-        // the candidate patch corridor and whose max_z >= seed_z_min (analytical occluders / overhangs)
-        for (auto f : face_descriptors) {
-            if (!is_forward_facing(f)) continue;
-            if (candidate_faces.count(f)) continue;
-
-            auto h = mesh_part.halfedge(f);
-            FT f_u_min = 0, f_u_max = 0;
-            FT f_v_min = 0, f_v_max = 0;
-            FT f_z_max = 0;
-            bool first_v = true;
-
-            for (int i = 0; i < 3; ++i) {
-                auto p_rot = to_z(mesh_part.point(mesh_part.target(h)));
-                FT u = p_rot.x().exact();
-                FT v = p_rot.y().exact();
-                FT z = p_rot.z().exact();
-                if (first_v) {
-                    f_u_min = f_u_max = u;
-                    f_v_min = f_v_max = v;
-                    f_z_max = z;
-                    first_v = false;
-                } else {
-                    if (u < f_u_min) f_u_min = u;
-                    if (u > f_u_max) f_u_max = u;
-                    if (v < f_v_min) f_v_min = v;
-                    if (v > f_v_max) f_v_max = v;
-                    if (z > f_z_max) f_z_max = z;
-                }
-                h = mesh_part.next(h);
-            }
-
-            // Check 2D corridor overlap
-            if (f_u_max < seed_u_min || f_u_min > seed_u_max) continue;
-            if (f_v_max < seed_v_min || f_v_min > seed_v_max) continue;
-
-            // Check if it can occlude the seed patch (max z >= seed_z_min)
-            if (f_z_max >= seed_z_min) {
-                candidate_faces.insert(f);
-            }
-        }
-    } else {
-        std::set<ExactMesh::Face_index> eligible;
-        for (auto f : face_descriptors) {
-            if (!is_handled[f] && is_forward_facing(f)) {
-                eligible.insert(f);
-            }
-        }
-        std::set<ExactMesh::Face_index> visited;
-        std::vector<std::vector<ExactMesh::Face_index>> components;
-        for (auto f : eligible) {
-            if (visited.count(f)) continue;
-            std::vector<ExactMesh::Face_index> comp;
-            std::queue<ExactMesh::Face_index> q;
-            q.push(f);
-            visited.insert(f);
-            while (!q.empty()) {
-                auto curr = q.front();
-                q.pop();
-                comp.push_back(curr);
-                auto h = mesh_part.halfedge(curr);
-                auto h_start = h;
-                do {
-                    auto h_twin = mesh_part.opposite(h);
-                    if (h_twin != ExactMesh::null_halfedge()) {
-                        auto neighbor_f = mesh_part.face(h_twin);
-                        if (neighbor_f != ExactMesh::null_face() && eligible.count(neighbor_f) && !visited.count(neighbor_f)) {
-                            visited.insert(neighbor_f);
-                            q.push(neighbor_f);
-                        }
-                    }
-                    h = mesh_part.next(h);
-                } while (h != h_start);
-            }
-            components.push_back(comp);
-        }
-
-        if (components.empty()) return {};
-
-        size_t best_c = 0;
-        FT best_area = FT(0);
-        for (size_t c = 0; c < components.size(); ++c) {
-            FT a = FT(0);
-            for (auto f : components[c]) {
-                auto h = mesh_part.halfedge(f);
-                auto p0 = mesh_part.point(mesh_part.source(h));
-                auto p1 = mesh_part.point(mesh_part.target(h));
-                auto p2 = mesh_part.point(mesh_part.target(mesh_part.next(h)));
-                a += CGAL::approximate_sqrt(CGAL::cross_product(p1 - p0, p2 - p0).squared_length()) / FT(2);
-            }
-            if (a > best_area) {
-                best_area = a;
-                best_c = c;
-            }
-        }
-        candidate_faces.insert(components[best_c].begin(), components[best_c].end());
     }
 
     if (candidate_faces.empty()) return {};
@@ -305,61 +176,14 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
         } while (curr != ccb);
     }
 
-    TideParams tide = override_tide;
-    if (!tide.enabled) {
-        if (stock_mesh != nullptr && !stock_mesh->is_empty()) {
-            StockFootprint fp = compute_stock_footprint(*stock_mesh, to_z);
-            tide.enabled = true;
-            tide.outer_polygon = std::move(fp.outer_polygon);
-            tide.hole_polygons = std::move(fp.hole_polygons);
-            tide.z_top = fp.w_max + (padding > FT(0) ? padding : FT(1));
-        } else if (padding > FT(0)) {
-            FT rot_u_min = 1000000, rot_u_max = -1000000;
-            FT rot_v_min = 1000000, rot_v_max = -1000000;
-            FT rot_z_min = 1000000, rot_z_max = -1000000;
-
-            for (auto v : mesh_part.vertices()) {
-                auto p_rot = to_z(mesh_part.point(v));
-                FT rx = p_rot.x().exact();
-                FT ry = p_rot.y().exact();
-                FT rz = p_rot.z().exact();
-                if (rx < rot_u_min) rot_u_min = rx;
-                if (rx > rot_u_max) rot_u_max = rx;
-                if (ry < rot_v_min) rot_v_min = ry;
-                if (ry > rot_v_max) rot_v_max = ry;
-                if (rz < rot_z_min) rot_z_min = rz;
-                if (rz > rot_z_max) rot_z_max = rz;
-            }
-
-            tide.enabled = true;
-            tide.u_min = rot_u_min - padding;
-            tide.u_max = rot_u_max + padding;
-            tide.v_min = rot_v_min - padding;
-            tide.v_max = rot_v_max + padding;
-            tide.z_top = rot_z_max + padding;
-        }
+    FT h_ceiling_rot = max_vz_rot + (padding > FT(0) ? padding : FT(1));
+    if (stock_mesh != nullptr && !stock_mesh->is_empty()) {
+        StockFootprint fp = compute_stock_footprint(*stock_mesh, to_z);
+        h_ceiling_rot = fp.w_max + (padding > FT(0) ? padding : FT(1));
     }
 
-    FT h_ceiling_rot = tide.enabled ? tide.z_top : (max_vz_rot + padding);
-
-    auto get_vertical_drop = [&](const CDT_Kernel::Point_2& p1, const CDT_Kernel::Point_2& p2) -> std::optional<FT> {
-        std::optional<FT> best_min_z;
-        for (const auto& vseg : vertical_segments) {
-            if (CGAL::collinear(vseg.p_a, vseg.p_b, p1) && CGAL::collinear(vseg.p_a, vseg.p_b, p2)) {
-                bool p1_in = (p1 == vseg.p_a || p1 == vseg.p_b || CGAL::collinear_are_ordered_along_line(vseg.p_a, p1, vseg.p_b));
-                bool p2_in = (p2 == vseg.p_a || p2 == vseg.p_b || CGAL::collinear_are_ordered_along_line(vseg.p_a, p2, vseg.p_b));
-                if (p1_in && p2_in) {
-                    if (!best_min_z.has_value() || vseg.min_z < *best_min_z) {
-                        best_min_z = vseg.min_z;
-                    }
-                }
-            }
-        }
-        return best_min_z;
-    };
-
     // Delegate solid wedge extrusion, solid-aware soup repair, and world-space transformation
-    return construct_envelope_wedge(max_diag, get_z, h_ceiling_rot, from_z, to_z, tide, get_vertical_drop);
+    return construct_envelope_wedge(max_diag, get_z, h_ceiling_rot, from_z, to_z);
 }
 
 } // namespace mold

@@ -202,40 +202,54 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     ports.zenoh_bridge = ports.zenoh_router + 1000;
   }
 
-  const usedPorts = new Set();
   const launchedPortsSet = new Set();
 
-  try {
-    const portsToClean = Object.values(ports).filter(Boolean);
-    if (portsToClean.length > 0) {
-      const portList = portsToClean.map(p => `${p}/tcp`).join(' ');
-      info(`[Orchestrator] Cleaning up ports: ${portList}`);
-      execSync(`fuser -k ${portList} || true`, { stdio: 'ignore' });
-    }
-    // Native VFS cache cleanup
-    const vfsStorageDir = '.vfs_storage';
-    if (fs.existsSync(vfsStorageDir)) {
-      try {
-        const files = fs.readdirSync(vfsStorageDir);
-        const prefixToken = storagePrefix.split('/').pop(); // Extract prefix (e.g., 'live_')
-        for (const file of files) {
-          if (prefixToken && file.startsWith(prefixToken)) {
-            fs.rmSync(path.join(vfsStorageDir, file), { recursive: true, force: true });
-          }
+  const portsToClean = Object.values(ports).filter(Boolean);
+  if (portsToClean.length > 0) {
+    const portList = portsToClean.map(p => `${p}/tcp`).join(' ');
+    info(`[Orchestrator] Cleaning up ports: ${portList}`);
+    try {
+      execSync(`fuser -k -9 ${portList} || true`, { stdio: 'ignore' });
+    } catch (e) {}
+  }
+
+  // Native VFS cache cleanup
+  const vfsStorageDir = '.vfs_storage';
+  if (fs.existsSync(vfsStorageDir)) {
+    try {
+      const files = fs.readdirSync(vfsStorageDir);
+      const prefixToken = storagePrefix.split('/').pop(); // Extract prefix (e.g., 'live_')
+      for (const file of files) {
+        if (prefixToken && file.startsWith(prefixToken)) {
+          fs.rmSync(path.join(vfsStorageDir, file), { recursive: true, force: true });
         }
-      } catch (err) {
-        warn(`[Orchestrator] Error reading cache directory: ${err.message}`);
       }
+    } catch (err) {
+      warn(`[Orchestrator] Error reading cache directory: ${err.message}`);
+    }
+    try {
       fs.rmSync(path.join(vfsStorageDir, 'cli'), { recursive: true, force: true });
       fs.rmSync(path.join(vfsStorageDir, 'scratch-client'), { recursive: true, force: true });
-    }
-    execSync('sleep 1');
-  } catch (e) {}
+    } catch (e) {}
+  }
 
-  for (const port of Object.values(ports).filter(Boolean)) {
-    if (await isPortInUse(port)) {
-      usedPorts.add(port);
+  // Authoritatively wait for all target ports to be released
+  let lingeringPorts = [];
+  for (let attempt = 0; attempt < 30; attempt++) {
+    lingeringPorts = [];
+    for (const [id, port] of Object.entries(ports)) {
+      if (port && await isPortInUse(port)) {
+        lingeringPorts.push(`${id} (${port})`);
+      }
     }
+    if (lingeringPorts.length === 0) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  if (lingeringPorts.length > 0) {
+    const errorMsg = `CRITICAL: Ports could not be freed after cleanup: ${lingeringPorts.join(', ')}. Old processes are still lingering. Aborting launch.`;
+    error(`[Orchestrator] ${errorMsg}`);
+    throw new Error(errorMsg);
   }
 
   const gatewayNode = componentMap[gateway];
@@ -474,10 +488,6 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
       if (proc.name.startsWith('Zenoh Bridge')) {
         procPort = cfg.port + 1000;
       }
-      if (procPort && usedPorts.has(procPort)) {
-        info(`[Orchestrator] Process "${proc.name}" is already running on port ${procPort}. Skipping launch.`);
-        continue;
-      }
       if (procPort) {
         launchedPortsSet.add(procPort);
       }
@@ -511,7 +521,7 @@ export async function launchSystem(profileKey, globalLogLevel = process.env.LOG_
     try {
         const portsToKill = Array.from(launchedPortsSet).map(p => `${p}/tcp`).join(' ');
         if (portsToKill.trim()) {
-            execSync(`fuser -k ${portsToKill} || true`, { stdio: 'ignore' });
+            execSync(`fuser -k -9 ${portsToKill} || true`, { stdio: 'ignore' });
         }
     } catch (e) {}
   };
@@ -662,8 +672,20 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     
     try {
         const sys = await launchSystem(profileKey, logLevel);
-        process.on('SIGINT', () => sys.stop().then(() => process.exit(0)));
-        process.on('SIGTERM', () => sys.stop().then(() => process.exit(0)));
+        const handleExit = () => sys.stop().then(() => process.exit(0));
+        process.on('SIGINT', handleExit);
+        process.on('SIGTERM', handleExit);
+        process.on('SIGHUP', handleExit);
+        process.on('uncaughtException', async (err) => {
+            error(`[Orchestrator] Uncaught exception: ${err.message}\n${err.stack}`);
+            await sys.stop();
+            process.exit(1);
+        });
+        process.on('unhandledRejection', async (err) => {
+            error(`[Orchestrator] Unhandled rejection: ${err?.message || err}`);
+            await sys.stop();
+            process.exit(1);
+        });
     } catch (err) {
         error(`[Orchestrator] Failed to launch: ${err.message}`);
         process.exit(1);

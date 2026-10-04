@@ -2,9 +2,10 @@
 
 #include "types.h"
 #include "walls.h"
-#include "harmonic.h"
 #include "diagnostics.h"
 #include "boundary.h"
+#include "fix/assert_mesh.h"
+#include "fix/soup_repair.h"
 
 namespace jotcad {
 namespace geo {
@@ -21,14 +22,11 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
     const std::function<FT(size_t, const FT&, const FT&)>& get_z,
     const FT& h_ceiling_rot,
     const CGAL::Aff_transformation_3<EK>& from_z,
-    const CGAL::Aff_transformation_3<EK>& to_z,
-    const TideParams& tide = {},
-    const std::function<std::optional<FT>(const CDT_Kernel::Point_2&, const CDT_Kernel::Point_2&)>& get_vertical_drop = nullptr
+    const CGAL::Aff_transformation_3<EK>& to_z
 ) {
     std::vector<EK::Point_3> soup_points;
     std::vector<std::vector<size_t>> soup_polygons;
     std::set<size_t> source_faces;
-    std::vector<BoundarySegment3D> cavity_segments;
 
     // 1. Add all illuminated surface cells (floor) via uniform 2D CDT
     for (auto fit = max_diag.faces_begin(); fit != max_diag.faces_end(); ++fit) {
@@ -85,10 +83,6 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
             FT vz1 = get_z(orig_f_idx, p1_2d.x(), p1_2d.y());
             FT vz2 = get_z(orig_f_idx, p2_2d.x(), p2_2d.y());
 
-            cavity_segments.push_back({p0_2d, p1_2d, vz0, vz1});
-            cavity_segments.push_back({p1_2d, p2_2d, vz1, vz2});
-            cavity_segments.push_back({p2_2d, p0_2d, vz2, vz0});
-
             EK::Point_3 floor_p0(p0_2d.x(), p0_2d.y(), vz0);
             EK::Point_3 floor_p1(p1_2d.x(), p1_2d.y(), vz1);
             EK::Point_3 floor_p2(p2_2d.x(), p2_2d.y(), vz2);
@@ -100,27 +94,23 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
             soup_points.push_back(floor_p1);
             soup_polygons.push_back({idx0, idx0 + 1, idx0 + 2});
 
-            if (!tide.enabled) {
-                EK::Point_3 ceil_p0(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
-                EK::Point_3 ceil_p1(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
-                EK::Point_3 ceil_p2(floor_p2.x(), floor_p2.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p0(p0_2d.x(), p0_2d.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p1(p1_2d.x(), p1_2d.y(), h_ceiling_rot);
+            EK::Point_3 ceil_p2(floor_p2.x(), floor_p2.y(), h_ceiling_rot);
 
-                // Ceiling triangle (CCW winding for upward +Z outward normal)
-                size_t c_idx0 = soup_points.size();
-                soup_points.push_back(ceil_p0);
-                soup_points.push_back(ceil_p1);
-                soup_points.push_back(ceil_p2);
-                soup_polygons.push_back({c_idx0, c_idx0 + 1, c_idx0 + 2});
-            }
+            // Ceiling triangle (CCW winding for upward +Z outward normal)
+            size_t c_idx0 = soup_points.size();
+            soup_points.push_back(ceil_p0);
+            soup_points.push_back(ceil_p1);
+            soup_points.push_back(ceil_p2);
+            soup_polygons.push_back({c_idx0, c_idx0 + 1, c_idx0 + 2});
         }
     }
 
     // Precompute all active distinct surface heights at each arrangement vertex
     std::map<Envelope_diagram_2::Vertex_handle, std::set<FT>> vertex_heights;
     for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
-        if (!tide.enabled) {
-            vertex_heights[vit].insert(h_ceiling_rot);
-        }
+        vertex_heights[vit].insert(h_ceiling_rot);
         auto e_curr = vit->incident_halfedges();
         auto e_start = e_curr;
         do {
@@ -136,15 +126,6 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
 
     std::vector<std::pair<CDT_Kernel::Point_2, CDT_Kernel::Point_2>> outer_boundary_segments;
     std::vector<std::pair<EK::Point_3, EK::Point_3>> outer_boundary_segments_3d;
-    std::vector<BoundarySegment3D> outer_boundary_segments_3d_rot;
-
-    std::map<Envelope_diagram_2::Vertex_handle, FT> vertex_base_z;
-    if (tide.enabled) {
-        vertex_base_z = compute_outer_boundary_base_heights(max_diag, get_z, get_vertical_drop);
-        for (const auto& [vh, bz] : vertex_base_z) {
-            vertex_heights[vh].insert(bz);
-        }
-    }
 
     // 2. Process all directed halfedges for both internal step cliffs and outer boundaries
     auto process_halfedge_walls = [&](Envelope_diagram_2::Halfedge_handle h, size_t orig_f) {
@@ -161,21 +142,8 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
                 from_z(EK::Point_3(p1_2d.x(), p1_2d.y(), z1_s)),
                 from_z(EK::Point_3(p2_2d.x(), p2_2d.y(), z1_t))
             });
-            if (tide.enabled) {
-                FT low_s = vertex_base_z.count(h->source()) ? vertex_base_z[h->source()] : z1_s;
-                FT low_t = vertex_base_z.count(h->target()) ? vertex_base_z[h->target()] : z1_t;
-                FT high_s = z1_s;
-                FT high_t = z1_t;
-                if (high_s > low_s || high_t > low_t) {
-                    add_monotonic_vertical_wall(h, low_s, low_t, high_s, high_t, vertex_heights, soup_points, soup_polygons);
-                }
-                outer_boundary_segments_3d_rot.push_back({
-                    p1_2d, p2_2d, low_s, low_t
-                });
-            } else {
-                // Outer sidewall boundary: sweep from surface height up to ceiling
-                add_monotonic_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot, vertex_heights, soup_points, soup_polygons);
-            }
+            // Outer sidewall boundary: sweep from surface height up to ceiling
+            add_monotonic_vertical_wall(h, z1_s, z1_t, h_ceiling_rot, h_ceiling_rot, vertex_heights, soup_points, soup_polygons);
         } else {
             // Internal boundary: process each undirected edge exactly once using pointer ordering
             if (h < h->twin()) {
@@ -222,73 +190,6 @@ inline EnvelopeWedgeResult construct_envelope_wedge(
 
     // Audit extrusion polygon (2D envelope outer boundary) for simplicity
     auto boundary_audit = audit_2d_boundary_simplicity(outer_boundary_segments, outer_boundary_segments_3d, "Extrusion Polygon (Envelope Outer Boundary)");
-
-    // 3. Synthesize Harmonic Minimal Parting Surface to stock box limits
-    if (tide.enabled) {
-        HarmonicStockParams stock;
-        stock.outer_polygon = tide.outer_polygon;
-        stock.hole_polygons = tide.hole_polygons;
-        stock.u_min = tide.u_min;
-        stock.u_max = tide.u_max;
-        stock.v_min = tide.v_min;
-        stock.v_max = tide.v_max;
-        stock.w_top = h_ceiling_rot;
-
-        FT max_dim = FT(0);
-        if (!stock.outer_polygon.empty()) {
-            FT u_min_p = stock.outer_polygon[0].x(), u_max_p = u_min_p;
-            FT v_min_p = stock.outer_polygon[0].y(), v_max_p = v_min_p;
-            for (const auto& pt : stock.outer_polygon) {
-                if (pt.x() < u_min_p) u_min_p = pt.x();
-                if (pt.x() > u_max_p) u_max_p = pt.x();
-                if (pt.y() < v_min_p) v_min_p = pt.y();
-                if (pt.y() > v_max_p) v_max_p = pt.y();
-            }
-            max_dim = std::max(u_max_p - u_min_p, v_max_p - v_min_p);
-        } else {
-            max_dim = std::max(stock.u_max - stock.u_min, stock.v_max - stock.v_min);
-        }
-        if (tide.remesh) {
-            stock.max_edge_len = (tide.max_edge_len > 0.0)
-                ? tide.max_edge_len
-                : (CGAL::to_double(max_dim) / 10.0);
-        } else {
-            stock.max_edge_len = 0.0; // Disabled by default
-        }
-
-        ExactMesh solid_wedge = construct_harmonic_wedge(
-            outer_boundary_segments_3d_rot,
-            stock,
-            {},
-            nullptr,
-            {},
-            60,
-            cavity_segments
-        );
-        if (solid_wedge.is_empty() || !CGAL::is_closed(solid_wedge)) {
-            std::cout << "    [Wedge] Prismatic harmonic wedge is not closed or empty; discarding." << std::endl;
-            return {};
-        }
-
-        // Transform solid_wedge back from +Z frame to world space in one exact affine operation
-        for (auto v : solid_wedge.vertices()) {
-            solid_wedge.point(v) = from_z(solid_wedge.point(v));
-        }
-
-        for (auto hit = max_diag.halfedges_begin(); hit != max_diag.halfedges_end(); ++hit) {
-            for (auto sit = hit->surfaces_begin(); sit != hit->surfaces_end(); ++sit) {
-                source_faces.insert(sit->data());
-            }
-        }
-        for (auto vit = max_diag.vertices_begin(); vit != max_diag.vertices_end(); ++vit) {
-            for (auto sit = vit->surfaces_begin(); sit != vit->surfaces_end(); ++sit) {
-                source_faces.insert(sit->data());
-            }
-        }
-
-        FT total_area = CGAL::Polygon_mesh_processing::area(solid_wedge);
-        return {solid_wedge, source_faces, total_area, std::move(boundary_audit.loops_3d)};
-    }
 
     if (soup_polygons.empty()) return {};
 

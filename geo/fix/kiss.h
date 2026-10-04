@@ -19,6 +19,7 @@ namespace geo {
 namespace fix {
 
 enum class KissMode {
+    NONE, // Bypass kissing seam resolution (instantaneous)
     PART, // Carve clearance gap via Minkowski Difference
     WELD  // Add structural bridge via Minkowski Union
 };
@@ -46,6 +47,9 @@ bool resolve_kissing_seams(
     KissMode mode = KissMode::PART,
     typename K::FT delta = 0.01
 ) {
+    if (mode == KissMode::NONE || mesh.is_empty()) {
+        return false;
+    }
     typedef CGAL::Surface_mesh<typename K::Point_3> Surface_mesh;
     typedef typename Surface_mesh::Vertex_index Vertex_index;
     typedef typename Surface_mesh::Halfedge_index Halfedge_index;

@@ -25,6 +25,29 @@ inline bool is_candidate_compatible_with_chain(
     if (candidate_faces.empty()) {
         return false;
     }
+
+    FT d_len_sq = d.squared_length();
+    if (d_len_sq == FT(0)) {
+        return false;
+    }
+
+    // Kinematic Independence Mandate:
+    // A demolding sequence cannot pull in the same direction or within an acute cone (< 25 degrees)
+    // of an earlier piece in the same chain (d . p > 0 and (d . p)^2 / (|d|^2 |p|^2) >= 0.8).
+    for (const auto& p : prior_draw_dirs) {
+        FT p_len_sq = p.squared_length();
+        if (p_len_sq == FT(0)) continue;
+
+        FT dot = d * p;
+        if (dot > FT(0)) {
+            FT lhs = dot * dot;
+            FT rhs = (FT(8) / FT(10)) * d_len_sq * p_len_sq;
+            if (lhs >= rhs) {
+                return false; // Incompatible: near-parallel to an existing draw direction in chain
+            }
+        }
+    }
+
     return true;
 }
 

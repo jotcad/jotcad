@@ -7,6 +7,7 @@
 #include "compatibility.h"
 #include "envelope.h"
 #include "verify.h"
+#include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
 #include <vector>
 #include <map>
 #include <set>
@@ -17,22 +18,48 @@ namespace jotcad {
 namespace geo {
 namespace mold {
 
+inline std::string format_vec(const EK::Vector_3& v) {
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "(%.2f, %.2f, %.2f)",
+                  CGAL::to_double(v.x()), CGAL::to_double(v.y()), CGAL::to_double(v.z()));
+    return std::string(buf);
+}
+
+inline std::string format_chain(const std::vector<EK::Vector_3>& dirs) {
+    if (dirs.empty()) return "[]";
+    std::string s = "[";
+    for (size_t i = 0; i < dirs.size(); ++i) {
+        if (i > 0) s += " -> ";
+        s += format_vec(dirs[i]);
+    }
+    s += "]";
+    return s;
+}
+
 /**
  * @brief Node representing an active candidate chain in the search frontier.
  */
 struct MoldChainNode {
+    std::shared_ptr<MoldChainNode> parent = nullptr;
     std::vector<EK::Vector_3> draw_dirs;
     std::vector<ExactMeshPtr> solid_wedges;
     std::vector<ExactMeshPtr> solid_pieces; // Realized and certified validated solid pieces
-    ExactMeshPtr remaining_stock;           // Active residual stock: B_k = B_{k-1} \ P_k
+    ExactMeshPtr raw_stock = nullptr;       // Exact CSG residual stock: B_k = B_{k-1} \ P_k (KissMode::NONE)
+    ExactMeshPtr clean_stock = nullptr;     // Kiss-resolved stock (params.kiss_mode) for downstream booleans
     std::vector<std::set<size_t>> piece_handled_faces;
     std::vector<std::vector<std::vector<Point_3>>> piece_boundary_loops;
     std::vector<bool> is_handled;
+    std::vector<ExactMesh::Face_index> tentative_patch_faces;
     size_t handled_count = 0;
     FT unhandled_area = FT(0);
     FT energy = FT(0);
     FT total_score = FT(0);
-    CandidateStatus status = CandidateStatus::TENTATIVE;
+    FT failure_penalty = FT(0);
+    bool is_invalid = false;
+
+    FT effective_energy() const {
+        return energy;
+    }
 };
 
 /**
@@ -50,12 +77,264 @@ struct MoldDecompositionResult {
 };
 
 /**
- * @brief Orchestrates multi-piece mold decomposition as a Priority-Driven Search with Tentative & Validated Candidates.
- * 
- * 1. Generates large pools of Tentative Candidates, fully scored up front with encroachment penalties.
- * 2. Carves each candidate directly from active residual stock: P_k = B_{k-1} ∩ W_k.
- * 3. Enforces that only VALIDATED candidates may derive child candidates or be selected as final solutions.
- * 4. At terminal piece K, assigns remaining residual stock by complementation: P_K = B_{K-1}.
+ * @brief Exact key for vector lookup in envelope memoization cache.
+ */
+struct VectorKey {
+    FT x, y, z;
+    bool operator<(const VectorKey& other) const {
+        if (x != other.x) return x < other.x;
+        if (y != other.y) return y < other.y;
+        return z < other.z;
+    }
+};
+
+/**
+ * @brief Memoized recursive stock accessor: ensures parent stock is carved, then carves this candidate on demand.
+ */
+inline ExactMeshPtr get_raw_stock(
+    MoldChainNode* node,
+    const ExactMesh& mesh_part,
+    const std::vector<ExactMesh::Face_index>& face_descriptors,
+    const std::vector<EK::Vector_3>& face_normals,
+    const std::vector<FT>& face_areas,
+    const MoldParams& params,
+    const ExactMesh* stock_box_mesh,
+    const Tree& model_tree,
+    FaceBoolMap is_handled_map,
+    const ExactMeshPtr& initial_stock,
+    size_t& validations_count,
+    std::map<VectorKey, EnvelopeMeshResult>& envelope_cache
+);
+
+/**
+ * @brief Memoized clean stock accessor: resolves zero-volume kissing seams on demand
+ * for nodes that will be used as parent stock in downstream booleans or terminal closure.
+ */
+inline ExactMeshPtr get_clean_stock(
+    MoldChainNode* node,
+    const ExactMesh& mesh_part,
+    const std::vector<ExactMesh::Face_index>& face_descriptors,
+    const std::vector<EK::Vector_3>& face_normals,
+    const std::vector<FT>& face_areas,
+    const MoldParams& params,
+    const ExactMesh* stock_box_mesh,
+    const Tree& model_tree,
+    FaceBoolMap is_handled_map,
+    const ExactMeshPtr& initial_stock,
+    size_t& validations_count,
+    std::map<VectorKey, EnvelopeMeshResult>& envelope_cache
+) {
+    if (!node) return initial_stock;
+    if (node->clean_stock) return node->clean_stock; // Memoized clean stock hit!
+    if (node->is_invalid) return nullptr;
+
+    ExactMeshPtr raw = get_raw_stock(
+        node, mesh_part, face_descriptors, face_normals, face_areas,
+        params, stock_box_mesh, model_tree, is_handled_map, initial_stock, validations_count,
+        envelope_cache
+    );
+    if (!raw || raw->is_empty()) return nullptr;
+
+    if (params.kiss_mode == fix::KissMode::NONE) {
+        node->clean_stock = raw;
+        return node->clean_stock;
+    }
+
+    ExactMesh cleaned = *raw;
+    std::cout << "      ↳ [Clean Stock] Resolving kissing seams on residual stock (mode=" 
+              << (params.kiss_mode == fix::KissMode::WELD ? "WELD" : "PART") << ")... " << std::flush;
+    auto t0 = std::chrono::steady_clock::now();
+    boolean::regularize_and_resolve_kisses(cleaned, params.kiss_mode, params.kiss_width);
+    auto t1 = std::chrono::steady_clock::now();
+    std::cout << "Done in " << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms." << std::endl << std::flush;
+
+    node->clean_stock = std::make_shared<const ExactMesh>(std::move(cleaned));
+    return node->clean_stock;
+}
+
+/**
+ * @brief Memoized raw stock accessor: ensures clean parent stock, then carves this candidate with exact CSG (KissMode::NONE).
+ */
+inline ExactMeshPtr get_raw_stock(
+    MoldChainNode* node,
+    const ExactMesh& mesh_part,
+    const std::vector<ExactMesh::Face_index>& face_descriptors,
+    const std::vector<EK::Vector_3>& face_normals,
+    const std::vector<FT>& face_areas,
+    const MoldParams& params,
+    const ExactMesh* stock_box_mesh,
+    const Tree& model_tree,
+    FaceBoolMap is_handled_map,
+    const ExactMeshPtr& initial_stock,
+    size_t& validations_count,
+    std::map<VectorKey, EnvelopeMeshResult>& envelope_cache
+) {
+    if (!node) return initial_stock;
+    if (node->raw_stock) return node->raw_stock; // Memoized cache hit!
+    if (node->is_invalid) return nullptr;
+
+    // 1. Ensure parent stock is clean of self-touches before we cut into it
+    ExactMeshPtr parent_stock = get_clean_stock(
+        node->parent.get(), mesh_part, face_descriptors, face_normals, face_areas,
+        params, stock_box_mesh, model_tree, is_handled_map, initial_stock, validations_count,
+        envelope_cache
+    );
+    if (!parent_stock || parent_stock->is_empty()) {
+        node->is_invalid = true;
+        return nullptr;
+    }
+
+    validations_count++;
+    EK::Vector_3 cand_dir = node->draw_dirs.back();
+
+    // Set up is_handled_map for the parent's state before this piece
+    for (auto f : face_descriptors) {
+        is_handled_map[f] = node->parent ? node->parent->is_handled[f.idx()] : false;
+    }
+    for (auto f : node->tentative_patch_faces) {
+        is_handled_map[f] = false;
+    }
+
+    VectorKey vkey{cand_dir.x(), cand_dir.y(), cand_dir.z()};
+    auto it = envelope_cache.find(vkey);
+    if (it == envelope_cache.end()) {
+        auto env_computed = compute_exact_upper_envelope_mesh(
+            mesh_part, face_descriptors, face_normals, is_handled_map,
+            cand_dir, node->tentative_patch_faces, params.padding,
+            stock_box_mesh
+        );
+        it = envelope_cache.emplace(vkey, std::move(env_computed)).first;
+    }
+    const auto& env_res = it->second;
+
+    if (env_res.solid_wedge.number_of_faces() == 0 || env_res.source_faces.empty()) {
+        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: empty upper envelope along " << format_vec(cand_dir) << std::endl;
+        node->is_invalid = true;
+        return nullptr;
+    }
+
+    FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
+    const FT& dot_eps = mold_constants::zero_draft_dot_epsilon();
+    FT eff_min_dot = (min_dot == FT(0)) ? -dot_eps : min_dot;
+
+    for (size_t f_idx : env_res.source_faces) {
+        FT dot = face_normals[f_idx] * cand_dir;
+        if (dot < eff_min_dot) {
+            std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: corridor face in backdraft along " << format_vec(cand_dir) << std::endl;
+            node->is_invalid = true;
+            return nullptr;
+        }
+    }
+
+    ExactMesh solid_wedge_mesh = env_res.solid_wedge;
+    auto boundary_loops_3d = env_res.boundary_loops_3d;
+
+    // Carve tentative piece from parent residual stock: P_k = B_{k-1} ∩ W_k
+    ExactMesh validated_piece_mesh;
+    bool ok_trim = boolean::corefine_intersection(
+        *parent_stock, solid_wedge_mesh, validated_piece_mesh,
+        fix::KissMode::NONE, params.kiss_width,
+        "parent_stock ∩ wedge in beam search"
+    );
+    if (!ok_trim || validated_piece_mesh.is_empty() || !CGAL::is_closed(validated_piece_mesh)) {
+        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: CSG wedge trim failed or non-closed along " << format_vec(cand_dir) << std::endl;
+        node->is_invalid = true;
+        return nullptr;
+    }
+    validated_piece_mesh.collect_garbage();
+
+    MoldPiece cand_piece{validated_piece_mesh, cand_dir, "tentative_piece", "#2bee2b", (int)node->draw_dirs.size()};
+    int backdraft_count = 0;
+    FT backdraft_area = FT(0);
+    if (!verify_piece_demoldability(cand_piece, model_tree, params, &backdraft_count, &backdraft_area)) {
+        node->is_invalid = true;
+        return nullptr;
+    }
+
+    // Realized Forward-Progress Mandate:
+    // A candidate piece is only physically viable if it captures newly handled cavity faces
+    // not already handled by its parent. Prune immediately to bypass expensive stock difference!
+    FT newly_handled_area = FT(0);
+    size_t newly_handled_count = 0;
+    for (size_t f_idx : env_res.source_faces) {
+        bool was_handled = node->parent ? node->parent->is_handled[f_idx] : false;
+        if (!was_handled) {
+            newly_handled_count++;
+            newly_handled_area += face_areas[f_idx];
+        }
+    }
+    if (newly_handled_count == 0 || newly_handled_area <= FT(1) / FT(1000)) {
+        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: zero virgin cavity area captured along " << format_vec(cand_dir) << std::endl;
+        node->is_invalid = true;
+        return nullptr;
+    }
+
+    // Subtract validated piece from parent residual stock: B_k = B_{k-1} \ P_k
+    ExactMesh next_stock;
+    bool ok_sub = boolean::corefine_difference(
+        *parent_stock, validated_piece_mesh, next_stock,
+        fix::KissMode::NONE, params.kiss_width,
+        "residual_stock \\ piece in beam search"
+    );
+    if (!ok_sub || (!next_stock.is_empty() && !CGAL::is_closed(next_stock))) {
+        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: residual stock subtraction failed along " << format_vec(cand_dir) << std::endl;
+        node->is_invalid = true;
+        return nullptr;
+    }
+
+    std::set<size_t> new_handled_faces;
+    for (size_t f_idx : env_res.source_faces) {
+        new_handled_faces.insert(f_idx);
+    }
+
+    if (node->parent) {
+        node->is_handled = node->parent->is_handled;
+        node->handled_count = node->parent->handled_count;
+        node->unhandled_area = node->parent->unhandled_area;
+    } else {
+        node->is_handled.assign(face_descriptors.size(), false);
+        node->handled_count = 0;
+        node->unhandled_area = FT(0);
+        for (auto a : face_areas) node->unhandled_area += a;
+    }
+
+    for (size_t f_idx : env_res.source_faces) {
+        if (!node->is_handled[f_idx]) {
+            node->is_handled[f_idx] = true;
+            node->handled_count++;
+            node->unhandled_area = (node->unhandled_area > face_areas[f_idx]) ? (node->unhandled_area - face_areas[f_idx]) : FT(0);
+        }
+    }
+    const FT lambda_pieces(50);
+    node->energy = node->unhandled_area + lambda_pieces * FT(node->draw_dirs.size());
+
+    if (node->parent && node->solid_pieces.empty()) {
+        node->solid_pieces = node->parent->solid_pieces;
+        node->solid_wedges = node->parent->solid_wedges;
+        node->piece_handled_faces = node->parent->piece_handled_faces;
+        node->piece_boundary_loops = node->parent->piece_boundary_loops;
+    }
+
+    node->solid_wedges.push_back(std::make_shared<const ExactMesh>(solid_wedge_mesh));
+    node->solid_pieces.push_back(std::make_shared<const ExactMesh>(std::move(validated_piece_mesh)));
+    node->raw_stock = std::make_shared<const ExactMesh>(std::move(next_stock));
+    node->clean_stock = nullptr; // Lazily generated when needed for downstream booleans
+    node->piece_handled_faces.push_back(std::move(new_handled_faces));
+    node->piece_boundary_loops.push_back(boundary_loops_3d);
+
+    double delta_unhandled = CGAL::to_double(node->parent ? (node->parent->unhandled_area - node->unhandled_area) : FT(0));
+    std::cout << "      ↳ [CARVED & VALIDATED #" << validations_count << "] Piece #" << node->draw_dirs.size()
+              << " along " << format_vec(cand_dir) << " | Handled " << node->handled_count << "/" << face_descriptors.size()
+              << " faces | Δ Area: -" << std::fixed << std::setprecision(1) << delta_unhandled << " mm²\n"
+              << "         Remaining Unhandled: " << CGAL::to_double(node->unhandled_area) 
+              << " mm² | Energy: " << CGAL::to_double(node->energy) << " mm²"
+              << std::endl << std::flush;
+
+    return node->raw_stock;
+}
+
+/**
+ * @brief Orchestrates multi-piece mold decomposition as a Priority-Driven Search with Memoized Stock Carving.
  */
 inline MoldDecompositionResult decompose_mold_beam_search(
     const ExactMesh& mesh_part,
@@ -87,7 +366,6 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     for (const auto& p : prior_solid_pieces) {
         root.solid_pieces.push_back(std::make_shared<const ExactMesh>(p));
     }
-    root.status = CandidateStatus::VALIDATED;
     root.is_handled.resize(mesh_part.num_faces());
     for (auto f : face_descriptors) {
         bool handled = is_handled_map[f];
@@ -123,7 +401,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
         boolean::corefine_difference(box_m, mesh_part, s0, params.kiss_mode, params.kiss_width, "default stock \\ model in beam search");
         active_stock = std::make_shared<const ExactMesh>(std::move(s0));
     }
-    root.remaining_stock = active_stock;
+    root.raw_stock = active_stock;
+    root.clean_stock = active_stock;
 
     // If initial state is already 100% complete, return certified complete
     if (root.handled_count == face_descriptors.size() || root.unhandled_area <= FT(0)) {
@@ -134,6 +413,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     std::vector<MoldChainNode> frontier = { root };
     const size_t max_frontier_size = 50;
     size_t validations_count = 0;
+    std::map<VectorKey, EnvelopeMeshResult> envelope_cache;
 
     MoldChainNode best_complete;
     bool found_complete = false;
@@ -144,156 +424,136 @@ inline MoldDecompositionResult decompose_mold_beam_search(
               << ", unhandled_area=" << CGAL::to_double(root.unhandled_area) 
               << " mm^2)..." << std::endl;
 
+    size_t iter = 0;
     while (!frontier.empty()) {
+        iter++;
         // Pop lowest-energy candidate node from frontier
         MoldChainNode curr = std::move(frontier.front());
         frontier.erase(frontier.begin());
 
-        // 1. Validation Gate: If node is TENTATIVE, realize and validate its 3D geometry
-        if (curr.status == CandidateStatus::TENTATIVE) {
-            validations_count++;
-            EK::Vector_3 cand_dir = curr.draw_dirs.back();
-
-            // Set up is_handled_map for the parent's handled state
-            for (auto f : face_descriptors) {
-                is_handled_map[f] = curr.is_handled[f.idx()];
-            }
-
-            // Extract candidate patch
-            CandidatePatch patch = extract_candidate_patch(
-                mesh_part, face_descriptors, face_normals, face_areas, edge_to_faces,
-                is_handled_map, cand_dir, eff_min_dot
-            );
-            if (!patch.is_valid || patch.faces.empty()) {
-                continue; // Discard (prune)
-            }
-
-            TideParams cand_tide;
-            cand_tide.remesh = params.remesh;
-            cand_tide.max_edge_len = params.max_edge_len;
-
-            auto env_res = compute_exact_upper_envelope_mesh(
-                mesh_part, face_descriptors, face_normals, is_handled_map,
-                cand_dir, patch.faces, params.padding,
-                cand_tide, stock_box_mesh
-            );
-            if (env_res.solid_wedge.number_of_faces() == 0 || env_res.source_faces.empty()) {
-                continue; // Discard (prune)
-            }
-
-            // Handled purity: actual handled faces from upper envelope
-            std::set<size_t> new_handled_faces = env_res.source_faces;
-            for (auto f : patch.faces) {
-                size_t f_idx = (size_t)f;
-                FT dot = face_normals[f_idx] * cand_dir;
-                if (dot >= eff_min_dot) {
-                    new_handled_faces.insert(f_idx);
-                }
-            }
-
-            // Check for backdraft faces in source faces
-            bool backdraft_in_source = false;
-            for (size_t f_idx : new_handled_faces) {
-                FT dot = face_normals[f_idx] * cand_dir;
-                if (dot < eff_min_dot) {
-                    backdraft_in_source = true;
-                    break;
-                }
-            }
-            if (backdraft_in_source) {
-                continue; // Discard (prune)
-            }
-
-            // Incremental CSG Carving against prior validated pieces
-            ExactMesh validated_piece_mesh = env_res.solid_wedge;
-            bool carve_ok = true;
-            for (const auto& prior_ptr : curr.solid_pieces) {
-                if (!prior_ptr || prior_ptr->is_empty() || prior_ptr->number_of_faces() == 0) continue;
-                if (!boolean::do_meshes_overlap(validated_piece_mesh, *prior_ptr)) continue;
-
-                ExactMesh non_overlapping;
-                bool ok_pdiff = boolean::corefine_difference(
-                    validated_piece_mesh, *prior_ptr, non_overlapping,
-                    params.kiss_mode, params.kiss_width,
-                    "piece \\ prior_piece in beam search"
-                );
-                if (!ok_pdiff || non_overlapping.is_empty() || non_overlapping.number_of_faces() == 0) {
-                    carve_ok = false;
-                    break;
-                }
-                validated_piece_mesh = std::move(non_overlapping);
-                validated_piece_mesh.collect_garbage();
-            }
-            if (!carve_ok || !CGAL::is_closed(validated_piece_mesh) || validated_piece_mesh.number_of_faces() == 0) {
-                continue; // Discard (prune)
-            }
-
-            // Authoritative demoldability verification
-            MoldPiece cand_piece{validated_piece_mesh, cand_dir, "tentative_piece", "#2bee2b", (int)curr.solid_pieces.size() + 1};
-            int backdraft_count = 0;
-            if (!verify_piece_demoldability(cand_piece, model_tree, params, &backdraft_count)) {
-                continue; // Discard (prune)
-            }
-
-            // Compute exact newly handled area and update unhandled area
-            FT newly_handled_area = FT(0);
-            for (size_t f_idx : new_handled_faces) {
-                if (!curr.is_handled[f_idx]) {
-                    curr.is_handled[f_idx] = true;
-                    curr.handled_count++;
-                    newly_handled_area += face_areas[f_idx];
-                }
-            }
-            if (newly_handled_area <= FT(0)) {
-                continue; // Discard (prune)
-            }
-
-            curr.unhandled_area = FT(0);
-            for (size_t f_idx = 0; f_idx < face_descriptors.size(); ++f_idx) {
-                if (!curr.is_handled[f_idx]) {
-                    curr.unhandled_area += face_areas[f_idx];
-                }
-            }
-
-            // Update energy with true measured unhandled area
-            curr.energy = curr.unhandled_area + lambda_pieces * FT(curr.draw_dirs.size());
-            curr.solid_wedges.push_back(std::make_shared<const ExactMesh>(env_res.solid_wedge));
-            curr.solid_pieces.push_back(std::make_shared<const ExactMesh>(std::move(validated_piece_mesh)));
-            curr.piece_handled_faces.push_back(new_handled_faces);
-            curr.piece_boundary_loops.push_back(env_res.boundary_loops_3d);
-            curr.status = CandidateStatus::VALIDATED;
-
-            // Track and log score convergence
-            std::cout << "    [BeamSearch] Level " << curr.draw_dirs.size()
-                      << " candidate along dir (" << CGAL::to_double(cand_dir.x())
-                      << ", " << CGAL::to_double(cand_dir.y())
-                      << ", " << CGAL::to_double(cand_dir.z())
-                      << ") VALIDATED (#" << validations_count << "): handled " 
-                      << curr.handled_count << "/" << face_descriptors.size()
-                      << " faces (remaining unhandled=" << CGAL::to_double(curr.unhandled_area)
-                      << " mm^2, delta_A=" << -CGAL::to_double(newly_handled_area)
-                      << " mm^2, energy=" << CGAL::to_double(curr.energy) << ")."
-                      << std::endl << std::flush;
+        // Branch-and-bound dominance check: if dominated by best complete solution, discard
+        if (found_complete && curr.effective_energy() >= best_complete.effective_energy()) {
+            continue;
         }
 
-        // 2. Track best validated partial solution
-        if (curr.handled_count > best_partial.handled_count || 
-           (curr.handled_count == best_partial.handled_count && curr.energy < best_partial.energy)) {
-            best_partial = curr;
-        }
+        std::cout << "\n    [Frontier Iter #" << iter << " | Queue: " << frontier.size() + 1 
+                  << "] Expanding Level " << curr.draw_dirs.size()
+                  << " | Path: " << format_chain(curr.draw_dirs)
+                  << " | Energy: " << CGAL::to_double(curr.effective_energy()) << " mm²"
+                  << std::endl << std::flush;
 
-        // 3. Selection Gate: Certified complete decomposition?
-        if (curr.unhandled_area <= FT(0) || curr.handled_count == face_descriptors.size()) {
-            std::cout << "    [BeamSearch] Certified complete decomposition found with "
-                      << curr.draw_dirs.size() << " pieces! (Energy=" << CGAL::to_double(curr.energy) << ")" << std::endl;
-            best_complete = std::move(curr);
-            found_complete = true;
-            break;
+        // 1. Selection Gate: Can this candidate achieve certified complete decomposition?
+        bool is_terminal_claimed = (curr.unhandled_area <= FT(0) || curr.handled_count == face_descriptors.size());
+        if (is_terminal_claimed) {
+            ExactMeshPtr parent_stock = get_clean_stock(
+                curr.parent.get(), mesh_part, face_descriptors, face_normals, face_areas,
+                params, stock_box_mesh, model_tree, is_handled_map, active_stock, validations_count,
+                envelope_cache
+            );
+            if (parent_stock && !parent_stock->is_empty()) {
+                EK::Vector_3 cand_dir = curr.draw_dirs.back();
+                MoldPiece cand_piece{*parent_stock, cand_dir, "terminal_piece", "#2bee2b", (int)curr.draw_dirs.size()};
+                int backdraft_count = 0;
+                FT backdraft_area = FT(0);
+                if (verify_piece_demoldability(cand_piece, model_tree, params, &backdraft_count, &backdraft_area)) {
+                    if (curr.parent) {
+                        curr.solid_pieces = curr.parent->solid_pieces;
+                        curr.solid_wedges = curr.parent->solid_wedges;
+                        curr.piece_handled_faces = curr.parent->piece_handled_faces;
+                        curr.piece_boundary_loops = curr.parent->piece_boundary_loops;
+                    }
+                    std::set<size_t> new_handled_faces;
+                    for (auto f : curr.tentative_patch_faces) {
+                        new_handled_faces.insert(f.idx());
+                    }
+                    curr.solid_wedges.push_back(parent_stock);
+                    curr.solid_pieces.push_back(parent_stock);
+                    curr.raw_stock = nullptr; // Residual stock fully consumed
+                    curr.clean_stock = nullptr;
+                    curr.piece_handled_faces.push_back(std::move(new_handled_faces));
+                    curr.piece_boundary_loops.push_back({});
+                    curr.tentative_patch_faces.clear();
+
+                    std::cout << "    [BeamSearch] Level " << curr.draw_dirs.size()
+                              << " TERMINAL piece along dir (" << CGAL::to_double(cand_dir.x())
+                              << ", " << CGAL::to_double(cand_dir.y())
+                              << ", " << CGAL::to_double(cand_dir.z())
+                              << ") VALIDATED: directly took remaining stock (handled "
+                              << curr.handled_count << "/" << face_descriptors.size()
+                              << " faces, energy=" << CGAL::to_double(curr.energy) << ")."
+                              << std::endl << std::flush;
+
+                    std::cout << "    [BeamSearch] Certified complete decomposition found with "
+                              << curr.draw_dirs.size() << " pieces! (Energy=" << CGAL::to_double(curr.energy) << ")" << std::endl;
+                    if (!found_complete || curr.energy < best_complete.energy) {
+                        best_complete = std::move(curr);
+                        found_complete = true;
+                    }
+                    frontier.erase(
+                        std::remove_if(frontier.begin(), frontier.end(), [&](const MoldChainNode& n) {
+                            return n.effective_energy() >= best_complete.effective_energy();
+                        }),
+                        frontier.end()
+                    );
+                    if (frontier.empty()) {
+                        std::cout << "    [BeamSearch] Frontier fully converged to global optimum!" << std::endl;
+                        break;
+                    }
+                    continue;
+                } else {
+                    // Terminal closure along cand_dir failed because parent_stock cannot be extracted as a single block.
+                    // Fall back seamlessly to an intermediate progressive piece (do NOT prune)!
+                    std::cout << "    [BeamSearch] Level " << curr.draw_dirs.size()
+                              << " terminal closure along (" << CGAL::to_double(cand_dir.x())
+                              << ", " << CGAL::to_double(cand_dir.y())
+                              << ", " << CGAL::to_double(cand_dir.z())
+                              << ") has " << backdraft_count << " undercuts (" << CGAL::to_double(backdraft_area)
+                              << " mm^2). Falling back to progressive intermediate carving..." << std::endl << std::flush;
+                }
+            }
         }
 
         // If max pieces reached for this chain, cannot derive further
         if (curr.draw_dirs.size() >= max_pieces) {
             continue;
+        }
+
+        // 2. Carve curr's latest piece ON DEMAND via get_raw_stock as an intermediate piece
+        ExactMeshPtr curr_stock = get_raw_stock(
+            &curr, mesh_part, face_descriptors, face_normals, face_areas,
+            params, stock_box_mesh, model_tree, is_handled_map, active_stock, validations_count,
+            envelope_cache
+        );
+        if (!curr_stock) {
+            continue; // Discard (prune) if carving or demoldability failed
+        }
+
+        // Check if carving this intermediate piece completed all remaining faces!
+        if (curr.unhandled_area <= FT(0) || curr.handled_count == face_descriptors.size()) {
+            std::cout << "    [BeamSearch] Certified complete decomposition found with "
+                      << curr.draw_dirs.size() << " pieces via envelope carving! (Energy="
+                      << CGAL::to_double(curr.energy) << ")" << std::endl;
+            if (!found_complete || curr.energy < best_complete.energy) {
+                best_complete = std::move(curr);
+                found_complete = true;
+            }
+            frontier.erase(
+                std::remove_if(frontier.begin(), frontier.end(), [&](const MoldChainNode& n) {
+                    return n.effective_energy() >= best_complete.effective_energy();
+                }),
+                frontier.end()
+            );
+            if (frontier.empty()) {
+                std::cout << "    [BeamSearch] Frontier fully converged to global optimum!" << std::endl;
+                break;
+            }
+            continue;
+        }
+
+        // 3. Track best validated partial solution
+        if (curr.handled_count > best_partial.handled_count || 
+           (curr.handled_count == best_partial.handled_count && curr.energy < best_partial.energy)) {
+            best_partial = curr;
         }
 
         // 4. Derivation Gate: Generate large pool of TENTATIVE children from validated parent
@@ -303,85 +563,117 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
         auto candidate_dirs = generate_candidate_directions(
             mesh_part, face_descriptors, face_normals, face_areas,
-            is_handled_map, curr.draw_dirs, /*num_exploratory=*/32
+            is_handled_map, curr.draw_dirs, /*num_exploratory=*/0
         );
 
-        // Deduplicate candidate directions including near-collinear vectors
-        std::vector<EK::Vector_3> unique_dirs;
-        for (const auto& d : candidate_dirs) {
-            FT len_sq_d = d.squared_length();
-            if (len_sq_d == FT(0)) continue;
-            bool dup = false;
-            for (const auto& u : unique_dirs) {
-                FT dot = d * u;
-                if (dot > FT(0)) {
-                    EK::Vector_3 cp = CGAL::cross_product(d, u);
-                    FT cp_len_sq = cp.squared_length();
-                    // Near-collinear filter (angle < 0.5 degrees: sin^2(theta) < 1e-4)
-                    if (cp_len_sq == FT(0) || (cp_len_sq / (len_sq_d * u.squared_length())) < FT(1) / FT(10000)) {
-                        dup = true;
-                        break;
-                    }
-                }
-            }
-            if (!dup) unique_dirs.push_back(d);
-        }
+        auto parent_ptr = std::make_shared<MoldChainNode>(std::move(curr));
 
         struct ScoredCandidate {
             EK::Vector_3 dir;
-            CandidateScore score;
+            CandidatePatch patch;
+            FT virgin_area;
+            FT total_patch_area;
         };
         std::vector<ScoredCandidate> scored_cands;
-        for (const auto& d : unique_dirs) {
-            auto score = score_candidate_direction(
-                d, face_descriptors, face_normals, face_areas, is_handled_map, eff_min_dot
-            );
-            if (score.responsible_area > FT(0)) {
-                scored_cands.push_back({d, score});
-            }
-        }
 
-        std::sort(scored_cands.begin(), scored_cands.end(), [](const auto& a, const auto& b) {
-            return a.score > b.score;
-        });
-
-        // Insert up to candidates_per_level TENTATIVE children into frontier
-        size_t added = 0;
-        for (const auto& sc : scored_cands) {
-            if (added >= candidates_per_level) break;
-
+        for (const auto& d : candidate_dirs) {
             CandidatePatch patch = extract_candidate_patch(
                 mesh_part, face_descriptors, face_normals, face_areas, edge_to_faces,
-                is_handled_map, sc.dir, eff_min_dot
+                is_handled_map, d, eff_min_dot
             );
             if (!patch.is_valid || patch.faces.empty()) continue;
 
             if (!is_candidate_compatible_with_chain(
-                patch.faces, edge_to_faces, is_handled_map, sc.dir, curr.draw_dirs
+                patch.faces, edge_to_faces, is_handled_map, d, parent_ptr->draw_dirs
             )) continue;
 
-            MoldChainNode child = curr;
-            child.draw_dirs.push_back(sc.dir);
-            child.status = CandidateStatus::TENTATIVE;
+            FT virgin_area = FT(0);
+            FT total_patch_area = FT(0);
+            for (auto f : patch.faces) {
+                size_t f_idx = (size_t)f.idx();
+                FT a = face_areas[f_idx];
+                total_patch_area += a;
+                if (!parent_ptr->is_handled[f_idx]) {
+                    virgin_area += a;
+                }
+            }
 
-            FT encroachment = sc.score.responsible_area - sc.score.net_score;
-            child.total_score = curr.total_score + sc.score.net_score;
-            FT predicted_unhandled = (curr.unhandled_area > sc.score.net_score) ? (curr.unhandled_area - sc.score.net_score) : FT(0);
-            child.energy = predicted_unhandled + lambda_pieces * FT(child.draw_dirs.size()) + encroachment;
+            // Forward Progress Mandate: must handle virgin cavity area
+            if (virgin_area <= FT(1) / FT(1000)) continue;
 
-            frontier.push_back(std::move(child));
-            added++;
+            // Majority Unexplored Mandate: virgin_area / total_patch_area >= 0.5
+            if (total_patch_area > FT(0) && (virgin_area * FT(2) < total_patch_area)) {
+                continue;
+            }
+
+            scored_cands.push_back({d, std::move(patch), virgin_area, total_patch_area});
         }
 
-        // 5. Sort frontier by energy ascending (lowest energy / complete candidates first)
+        // Sort descending by virgin responsible area (largest new patch first)
+        std::sort(scored_cands.begin(), scored_cands.end(), [](const auto& a, const auto& b) {
+            return a.virgin_area > b.virgin_area;
+        });
+
+        if (!scored_cands.empty()) {
+            std::cout << "      ↳ [Expansion] Spawned " << scored_cands.size() << " viable candidates. "
+                      << "Top child: " << format_vec(scored_cands[0].dir)
+                      << " (new area=" << CGAL::to_double(scored_cands[0].virgin_area) << " mm²)" << std::endl;
+        } else {
+            std::cout << "      ↳ [Expansion] 0 viable candidate directions from this branch." << std::endl;
+        }
+
+        // Insert physically viable TENTATIVE children into frontier (governed by energy dominance)
+        for (auto& sc : scored_cands) {
+            MoldChainNode child;
+            child.parent = parent_ptr;
+            child.draw_dirs = parent_ptr->draw_dirs;
+            child.draw_dirs.push_back(sc.dir);
+            child.tentative_patch_faces = std::move(sc.patch.faces);
+            child.raw_stock = nullptr; // Uncarved: evaluated on demand
+            child.clean_stock = nullptr;
+            child.is_handled = parent_ptr->is_handled;
+            child.handled_count = parent_ptr->handled_count;
+            child.unhandled_area = parent_ptr->unhandled_area;
+            child.total_score = sc.virgin_area;
+
+            FT newly_handled_area = FT(0);
+            for (auto f : child.tentative_patch_faces) {
+                size_t f_idx = (size_t)f.idx();
+                if (!child.is_handled[f_idx]) {
+                    child.is_handled[f_idx] = true;
+                    child.handled_count++;
+                    newly_handled_area += face_areas[f_idx];
+                }
+            }
+            child.unhandled_area = (child.unhandled_area > newly_handled_area) ? (child.unhandled_area - newly_handled_area) : FT(0);
+            if (child.unhandled_area <= FT(1) / FT(1000)) {
+                child.unhandled_area = FT(0);
+            }
+            child.energy = child.unhandled_area + lambda_pieces * FT(child.draw_dirs.size());
+
+            // Energy Dominance Pruning: If a complete solution already exists and child's lower-bound energy
+            // already meets or exceeds it, prune immediately.
+            if (found_complete && child.energy >= best_complete.energy) {
+                continue;
+            }
+
+            frontier.push_back(std::move(child));
+        }
+
+        // 5. Sort frontier by effective energy ascending (lowest energy / complete candidates first)
         std::sort(frontier.begin(), frontier.end(), [](const auto& a, const auto& b) {
+            FT a_eff = a.effective_energy();
+            FT b_eff = b.effective_energy();
+            if (a_eff != b_eff) return a_eff < b_eff;
+
             bool a_comp = (a.unhandled_area <= FT(0));
             bool b_comp = (b.unhandled_area <= FT(0));
             if (a_comp != b_comp) return a_comp > b_comp;
 
-            // Prefer VALIDATED over TENTATIVE if energy is equal
-            if (a.energy != b.energy) return a.energy < b.energy;
-            if (a.status != b.status) return a.status == CandidateStatus::VALIDATED;
+            // Prefer already carved over uncarved if energy is equal
+            bool a_carved = (a.raw_stock != nullptr);
+            bool b_carved = (b.raw_stock != nullptr);
+            if (a_carved != b_carved) return a_carved > b_carved;
             if (a.unhandled_area != b.unhandled_area) return a.unhandled_area < b.unhandled_area;
             if (a.handled_count != b.handled_count) return a.handled_count > b.handled_count;
             if (a.draw_dirs.size() != b.draw_dirs.size()) return a.draw_dirs.size() > b.draw_dirs.size();
@@ -391,6 +683,13 @@ inline MoldDecompositionResult decompose_mold_beam_search(
         if (frontier.size() > max_frontier_size) {
             frontier.resize(max_frontier_size);
         }
+
+        FT best_front_energy = frontier.empty() ? FT(0) : frontier.front().effective_energy();
+        std::cout << "      ↳ [Frontier Status] Queue: " << frontier.size()
+                  << " | Min Energy: " << CGAL::to_double(best_front_energy)
+                  << " mm² | Certified Bound: " 
+                  << (found_complete ? (std::to_string((int)CGAL::to_double(best_complete.energy)) + " mm²") : "NONE")
+                  << std::endl << std::flush;
     }
 
     // Restore is_handled_map to initial state

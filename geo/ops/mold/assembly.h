@@ -84,7 +84,7 @@ struct MoldAssembly {
                 {"mold/role", "piece"},
                 {"mold/piece", piece.mold_piece},
                 {"color", piece.color},
-                {"opacity", 0.5}
+                {"opacity", 1.0}
             };
             if (!is_stationary) {
                 std::stringstream ss;

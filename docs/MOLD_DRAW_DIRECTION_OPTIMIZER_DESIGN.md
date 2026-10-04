@@ -724,16 +724,17 @@ The candidate sorting logic must not use naive boolean surface completion (`patc
    * Residual dead stock is progressively reduced ($B_k = B_{k-1} \setminus P_k$) and the terminal piece is formed by complementation ($P_K = B_{K-1}$), guaranteeing identically zero stationary scrap ($\text{Vol}(B_{\text{scrap}}) \equiv 0$). The cutting corridor $\mathcal{W}_k$ is synthesized over the bounding stock corridor, and CGAL's exact 3D corefinement engine authoritatively clips $\mathcal{W}_k$ against the irregular stock solid $B_{k-1}$ ($P_k = B_{k-1} \cap \mathcal{W}_k$) to extract the piece directly from physical reality.
 5. **Handled Set Source of Truth (DECIDED - Upper Envelope Purity)**:
    * A face is handled only if it appears in `CGAL::upper_envelope_3` facet diagram (`env_res.source_faces`). Normal hemisphere projection ($\mathbf{n}_f \cdot \mathbf{d} \ge 0$) does NOT imply handling.
-6. **Antipodal Prior Candidate (DECIDED - Active Exploration Vector)**:
-   * Candidate ingress seeds $-\mathbf{d}_{\text{prior}}$ from earlier pieces into the candidate pool to explore antipodal parting on its merits, without imposing rigid antipodal constraints.
+6. **Organic Reverse Parting via Stock Box Subtraction (DECIDED - Elimination of Target Vectors & Snapping)**:
+   * The stock box difference ($B_k = B_{k-1} \setminus P_k$) automatically sculpts the reverse volume and mating parting seam organically. The terminal piece simply inherits the entire remaining stock directly ($P_K = B_{K-1}$).
+   * Artificial "target vectors" (e.g. $-\mathbf{d}_{\text{prior}}$ or bounding box normals) and continuous random cone-snapping are strictly eliminated. Forcing an artificial target like $(0, -1, 0)$ flooded the search with near-identical directional clusters, blinding the optimizer to natural diagonal clamshell parting vectors.
 7. **Dense Mesh Garbage Collection (DECIDED - Dense Index Invariant)**:
    * Every boolean CSG operation must be followed immediately by `mesh.collect_garbage()` to ensure contiguous indexing for downstream property maps and algorithms.
 8. **Symbolic Constants (DECIDED - No Magic Numbers)**:
    * All optimization weights, penalties, and thresholds must be declared as named constants in `namespace optimizer_constants`.
 9. **Number of Initial Modes ($K$)**:
    * For typical slipcast parts (figurines, cups, slip molds), $K = 6$ corresponds naturally to the 6 generalized faces (front, back, left, right, top, bottom).
-10. **Knife-Edge Sliver Gap Elimination (DECIDED - Barrier Penalty Mandate)**:
-    * Candidates sharing a parting line with a prior piece must either meet flush ($\theta < 1^\circ$) or open wide ($\theta \ge 30^\circ$). Acute angular divergence ($1^\circ \le \theta < 30^\circ$) creates unextractable feather-edge dead space and is strictly disqualified via a knife-edge barrier penalty. Naive boolean surface completion (`patch_faces.size() == unhandled_total`) must never override volumetric parting continuity.
+10. **Physical Validation Over Heuristic Dead Zones (DECIDED - Elimination of Ad-Hoc Angular Exclusion)**:
+    * Arbitrary angular exclusion windows ($1^\circ \le \theta < 30^\circ$) based on prior draw vectors are eliminated. Physical viability is enforced authoritatively via exact 3D CSG difference and `verify_piece_demoldability` (0 backdrafts, watertight 2-manifold).
 11. **Energy-Minimizing Beam Search & Physical Surface Area Scoring (DECIDED - Physical Units Mandate)**:
     * Replaced artificial heuristics (magic penalty weights, continuous spherical hill-climbing, 98% thresholds, projected area cosine distortions) with an Energy-Minimizing Beam Search over candidate chains:
       * **Physical 3D Model Surface Area**: Candidates are scored strictly by the real product surface area in $\text{mm}^2$ ($\sum_{f \in S_{\text{rem}}} \text{TrueArea}(f)$) for all unhandled faces satisfying $\mathbf{n}_f \cdot \mathbf{d} \ge \text{min\_dot}$. Zero-draft vertical walls ($\mathbf{n}_w \cdot \mathbf{d} = 0$) count 1:1 for their full surface area.
@@ -746,6 +747,32 @@ The candidate sorting logic must not use naive boolean surface completion (`patc
     * **Corridor Geometry Ingress**: When computing the upper envelope along $\mathbf{d}$ (+Z in rotated coordinates), `envelope.h` MUST pass all forward-facing model triangles within the candidate patch's 2D bounding corridor to `CGAL::upper_envelope_3`.
     * **Analytical Shadowing**: Overhanging geometry has higher $z$ coordinates ($z_{\text{overhang}} > z_{\text{floor}}$), so `CGAL::upper_envelope_3` analytically places the overhang on the envelope diagram, naturally omitting occluded floor surfaces from `env_res.source_faces`.
     * **Handled Purity Enforcement**: A face is handled if and only if it appears in `env_res.source_faces`. If an overhang shadows a candidate's patch, those shadowed faces remain unhandled, penalizing the chain's energy ($E(C)$) and causing invalid occluded candidates to be pruned cleanly by the beam search without any ray queries.
+13. **Deterministic, Discrete Candidate Ingress & Wall-Parallel Zero-Draft Protection (DECIDED)**:
+    * Candidates are derived strictly and deterministically from active geometry:
+      - **Wall-Parallel Sliding Axes**: $\pm(\mathbf{n}_1 \times \mathbf{n}_2)$ along non-coplanar edges (the 1D zero-draft sliding manifold). Because zero-draft sliding planes are lower-dimensional manifold features, they cannot be converged upon by random sampling or coarse binning; they must be generated directly from adjacent wall normal cross products and protected from premature elimination.
+      - **Corner Opening Bisectors**: $\mathbf{n}_1 + \mathbf{n}_2$ along concave edges (natural diagonal opening angles).
+      - **Unhandled Face Normals**: $\mathbf{n}_f$ for remaining cavity faces.
+      - **Stock Principal Axes**: $\pm X, \pm Y, \pm Z$.
+    * Exact rational deduplication in pure `EK::FT` (`cp.squared_length() == 0`).
+14. **Lazy Evaluation & Trapped Half-Space Elimination (DECIDED - Vector Space Coverage)**:
+    * Instead of an artificial rigid grid (e.g. 26 canonical directions, which fails on non-orthogonal, drafted, or freeform geometry):
+    * **Lazy Evaluation**: Children are spawned uncarved (`remaining_stock = nullptr`) and screened in microseconds (visible area, patch connectivity, chain compatibility). Carving (`get_stock`) occurs only on demand when a candidate is popped from the priority frontier.
+    * **Trapped Face Half-Space Pruning**: When an evaluated candidate $\mathbf{d}$ fails demoldability due to trapped cavity faces $\{f_{\text{trapped}}\}$, it identifies the exact failure half-spaces on $\mathbb{S}^2$:
+      $$\mathcal{H}^-(f) = \{ \mathbf{v} \in \mathbb{S}^2 \mid \mathbf{n}_f \cdot \mathbf{v} < 0 \}$$
+      Any upcoming candidate $\mathbf{d}'$ with $\mathbf{n}_f \cdot \mathbf{d}' < 0$ is guaranteed to also undercut that same face and is pruned in $0\,\text{ms}$.
+    * **Natural Wall-Parallel Protection**: Wall-parallel sliding vectors have $\mathbf{n}_{\text{wall}} \cdot \mathbf{d}_{\text{slide}} = 0 \ge 0$. They lie on the boundary, not inside the illegal half-space of their own walls, so they are naturally preserved without requiring artificial cone exemptions.
+15. **Dual-Path Execution: Opportunistic Closure with Intermediate Fallback (DECIDED)**:
+    * When a candidate claims complete surface coverage ($A_{\text{unhandled}} \le 0$), the engine checks if the entire residual stock $B_{k-1}$ is already demoldable along $\mathbf{d}$ with zero backdrafts ($P_K = B_{K-1}$).
+    * If demoldable: **Certified terminal closure found!** Done.
+    * If trapped ($A_{\text{backdraft}} > 0$): **The candidate is NOT killed.** The failure simply proves that $B_{k-1}$ cannot be extracted in a single block. The candidate falls back seamlessly to an **intermediate progressive piece**: it computes an Upper Envelope along $\mathbf{d}$, carves whatever its envelope can cleanly extract ($P_k = B_{k-1} \cap \mathcal{W}_k$), updates actual handled faces from the envelope, and derives subsequent pieces ($P_{k+1}, \dots$) to decompose the remaining stock.
+16. **Largest Patches, Fewest Pieces, Majority Unexplored Mandate (DECIDED)**:
+    * **Largest Patches**: Candidates are ranked by newly handled virgin surface area ($A_{\text{new}}$), ensuring each mold piece takes a substantial, meaningful bite out of the cavity.
+    * **Majority Unexplored Filter**: Patches must satisfy:
+      $$\frac{A_{\text{new}}}{A_{\text{total}}} \ge 0.5$$
+      Directions whose visible patch consists primarily of already-handled faces (< 50% virgin territory) are redundant and discarded in $0\,\text{ms}$.
+    * **Fewest Mold Parts**: Global search frontier is ordered by Energy:
+      $$\text{Energy}(C) = A_{\text{unhandled}} + \lambda_{\text{pieces}} \cdot K$$
+      This naturally prioritizes 2-piece closures first, but allows seamless progressive expansion to 3-piece and 4-piece solutions when 2 pieces are physically impossible.
 
 ---
 
@@ -761,5 +788,82 @@ Multi-piece mold decomposition assumes the part has been pre-oriented for gravit
   3. **Compound Tilt Spherical Search**: Uses continuous spherical hill-climbing to discover compound rolls ($5^\circ\text{--}8^\circ$) on prismatic sections, minimizing auxiliary vent counts.
   4. **Flush Envelope Trimming**: Primary sprues and secondary vents are trimmed flush to the stock boundary envelope ($Z_{\text{stock,max}}$) so mold blocks demold cleanly without intersecting proud riser geometries.
 
+---
 
+## 10. Lazy Geometry-Driven Candidate Generation & Dynamic Angular Elimination
 
+### 10.1 The Fallacy of Artificial Targets and Continuous Snapping
+
+Prior iterations relied on "dead-zone eliminating target directions" and continuous random cone-snapping (`snap.h`):
+1. **The Target Distortion**: An artificial target (e.g. $-\mathbf{d}_{\text{prior}} = (0, -1, 0)$) was designated to represent "untouched" stock.
+2. **The Cluster Explosion**: 32 random unit vectors were sampled on $\mathbb{S}^2$ and rotated toward this target until encountering draft boundaries. Because each random vector began at an arbitrary angle, each snapped vector terminated at a slightly different fraction of the rotation arc, generating 10–15 near-identical continuous vectors clustered within $5^\circ\text{--}15^\circ$ of $(0, -1, 0)$.
+3. **The Search Blind Spot**: These clustered variations dominated the priority queue. The search was forced to evaluate and carve multiple variations of the exact same physical piece, exhausting time and timeouts while never reaching natural diagonal clamshell or orthogonal directions.
+
+**Resolution**: The stock box difference ($B_k = B_{k-1} \setminus P_k$) already shapes the reverse volume analytically and organically. The terminal piece $P_K$ simply takes $B_{K-1}$ with zero additional booleans. Artificial targets and continuous snapping are eliminated.
+
+### 10.2 The 1D Zero-Draft Sliding Manifold (Wall-Parallel Vectors)
+
+In mold design, extraction along intersecting walls requires zero-draft sliding:
+$$\mathbf{n}_1 \cdot \mathbf{d} = 0 \quad \text{and} \quad \mathbf{n}_2 \cdot \mathbf{d} = 0 \iff \mathbf{d} \parallel (\mathbf{n}_1 \times \mathbf{n}_2)$$
+* **Sensitivity**: The zero-draft sliding directions represent lower-dimensional 1D curves or isolated points on $\mathbb{S}^2$. A deviation of even $0.1^\circ$ creates an immediate undercut ($\mathbf{n} \cdot \mathbf{d} < 0$).
+* **Computational Cost**: Random sampling or coarse spherical binning cannot reliably land on this exact 1D manifold.
+* **Invariant**: The candidate generator directly computes the exact cross products $\pm (\mathbf{n}_1 \times \mathbf{n}_2)$ for all adjacent non-coplanar face pairs sharing an edge. These vectors are injected directly into the candidate set and preserved as primary candidate draw directions.
+
+### 10.3 Vector Space Coverage via Trapped Face Half-Spaces
+
+Rather than imposing a rigid 26-direction grid or symmetric radial cones (which spill over boundaries and falsely eliminate sliding vectors):
+
+1. **Failure Half-Spaces**:
+   When candidate $\mathbf{d}$ fails demoldability during validation, it fails because specific cavity faces $\{f_{\text{trapped}}\}$ produce backdrafts:
+   $$\mathbf{n}_{\text{trapped}} \cdot \mathbf{d} < 0$$
+2. **Exact Half-Space Elimination**:
+   Any other candidate $\mathbf{d}'$ is disqualified if it lies in the same illegal half-space:
+   $$\mathbf{n}_{\text{trapped}} \cdot \mathbf{d}' < 0$$
+   Evaluated in pure `EK::FT` exact rational arithmetic via a single dot product in $0\,\text{ms}$.
+3. **Wall-Parallel Natural Protection**:
+   For wall-parallel vectors, $\mathbf{n}_{\text{wall}} \cdot \mathbf{d}_{\text{slide}} = 0 \ge 0$. They lie on the boundary, not inside the illegal half-space of the wall, so they are never falsely pruned by their own walls.
+
+### 10.4 Lazy Memoized Priority Search Execution Model
+
+```
+[Candidate Ingress: Discrete Geometry (Normals, Bisectors, Sliding Axes)]
+                                  │
+                                  ▼
+         [Microsecond Pre-Screening: Area, Patch, Compatibility]
+           • Majority Unexplored: A_new / A_total >= 0.5
+           • Score: A_new
+                                  │
+                                  ▼
+        [Frontier Priority Queue: Uncarved Candidates (B_rem = null)]
+                                  │
+                                  ▼
+                         [Pop Highest-Score]
+                                  │
+         ┌────────────────────────┴────────────────────────┐
+         ▼                                                 ▼
+[Claimed Terminal? (A_rem <= 0)]                  [Standard Intermediate]
+         │                                                 │
+         ├─ Residual B_{k-1} 0 Backdrafts?                 │
+         │    ├─ YES ──> [CERTIFIED TERMINAL CLOSURE]      │
+         │    │           • P_K = B_{k-1} directly         │
+         │    │           • 0 additional booleans          │
+         │    │                                            │
+         │    └─ NO  ──> [FALLBACK TO INTERMEDIATE]        │
+         │                (Does not kill candidate!)       │
+         │                         │                       │
+         └─────────────────────────┼───────────────────────┘
+                                   │
+                                   ▼
+                    [Compute Upper Envelope along d]
+                                   │
+                                   ▼
+               [Carve Piece: P_k = B_{k-1} ∩ W_k (get_stock)]
+                                   │
+                                   ▼
+               [Update Residual: B_k = B_{k-1} \ P_k]
+                                   │
+                                   ▼
+                 [Derive Children for Next Piece!]
+```
+
+This ensures zero booleans are wasted on dead-end directions, eliminates clusters, and allows multi-piece solutions to emerge naturally.

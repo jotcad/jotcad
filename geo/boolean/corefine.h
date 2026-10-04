@@ -38,6 +38,8 @@ inline void regularize_and_resolve_kisses(
     // 1. Restore combinatorial 2-manifold validity
     CGAL::Polygon_mesh_processing::duplicate_non_manifold_vertices(mesh);
 
+    if (kiss_mode == KissMode::NONE) return;
+
     // 2. Eliminate zero-volume contact singularities (0D points, 1D seams, 2D surfaces)
     fix::resolve_kissing_seams(mesh, kiss_mode, width);
 }
@@ -88,11 +90,15 @@ inline bool corefine_difference(
         return true;
     }
 
-    std::cout << "    [" << label << "] Checking kisses... " << std::flush;
-    auto t2 = std::chrono::steady_clock::now();
-    regularize_and_resolve_kisses(out, kiss_mode, width);
-    auto t3 = std::chrono::steady_clock::now();
-    std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
+    if (kiss_mode != KissMode::NONE) {
+        std::cout << "    [" << label << "] Checking kisses... " << std::flush;
+        auto t2 = std::chrono::steady_clock::now();
+        regularize_and_resolve_kisses(out, kiss_mode, width);
+        auto t3 = std::chrono::steady_clock::now();
+        std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
+    } else {
+        regularize_and_resolve_kisses(out, kiss_mode, width);
+    }
     fix::assert_well_formed_for_corefinement(out, label + " (out)");
     return true;
 }

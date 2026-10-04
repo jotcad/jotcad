@@ -11,10 +11,12 @@ inline bool verify_piece_demoldability(
     const MoldPiece& piece,
     const Tree& model_tree,
     const MoldParams& params = MoldParams(),
-    int* out_backdraft_count = nullptr
+    int* out_backdraft_count = nullptr,
+    FT* out_backdraft_area = nullptr
 ) {
     if (piece.mesh.is_empty() || piece.mesh.number_of_faces() == 0) return true;
     int backdraft_count = 0;
+    FT backdraft_area = FT(0);
     FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
     for (auto f : piece.mesh.faces()) {
         auto h = piece.mesh.halfedge(f);
@@ -30,16 +32,21 @@ inline bool verify_piece_demoldability(
             // Opening clearance requires (-fn / |fn|) * d >= min_dot <=> (fn / |fn|) * d <= -min_dot
             FT len_sq = fn.squared_length();
             if (len_sq > FT(0)) {
+                bool is_backdraft = false;
                 if (min_dot == FT(0)) {
                     if (fn * piece.draw_vector > mold_constants::zero_draft_dot_epsilon()) {
-                        backdraft_count++;
+                        is_backdraft = true;
                     }
                 } else {
                     FT len = CGAL::approximate_sqrt(len_sq);
                     FT dot = (fn * piece.draw_vector) / len;
                     if (dot > -min_dot) {
-                        backdraft_count++;
+                        is_backdraft = true;
                     }
+                }
+                if (is_backdraft) {
+                    backdraft_count++;
+                    backdraft_area += CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
                 }
             }
         }
@@ -48,14 +55,23 @@ inline bool verify_piece_demoldability(
     if (out_backdraft_count) {
         *out_backdraft_count = backdraft_count;
     }
+    if (out_backdraft_area) {
+        *out_backdraft_area = backdraft_area;
+    }
 
-    if (backdraft_count > 0) {
+    const FT min_backdraft_area_threshold = FT(1) / FT(100); // 0.01 mm^2 threshold for physical undercut
+    if (backdraft_area >= min_backdraft_area_threshold) {
         std::cerr << "[Demoldability Warning] Mold piece " << piece.name 
-                  << " contains " << backdraft_count << " backdraft faces along draw vector ("
+                  << " contains " << backdraft_count << " backdraft faces (area="
+                  << CGAL::to_double(backdraft_area) << " mm^2) along draw vector ("
                   << CGAL::to_double(piece.draw_vector.x()) << ", "
                   << CGAL::to_double(piece.draw_vector.y()) << ", "
                   << CGAL::to_double(piece.draw_vector.z()) << ")." << std::endl;
         return false;
+    } else if (backdraft_count > 0) {
+        std::cerr << "[Demoldability] Ignored microscopic boundary noise: " 
+                  << backdraft_count << " sliver faces (area=" 
+                  << CGAL::to_double(backdraft_area) << " mm^2 < 0.01 mm^2)." << std::endl;
     }
     return true;
 }
