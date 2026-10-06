@@ -51,9 +51,7 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     const ExactMesh& mesh_part,
     const std::vector<ExactMesh::Face_index>& face_descriptors,
     const std::vector<EK::Vector_3>& face_normals,
-    FaceBoolMap is_handled,
     const EK::Vector_3& d,
-    const std::vector<ExactMesh::Face_index>& seed_patch_faces = {},
     const FT& padding = FT(10),
     const ExactMesh* stock_mesh = nullptr
 ) {

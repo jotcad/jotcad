@@ -6,6 +6,7 @@
 #include "patch.h"
 #include "compatibility.h"
 #include "envelope.h"
+#include "patch_dedup.h"
 #include "verify.h"
 #include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
 #include <vector>
@@ -199,8 +200,8 @@ inline ExactMeshPtr get_raw_stock(
     auto it = envelope_cache.find(vkey);
     if (it == envelope_cache.end()) {
         auto env_computed = compute_exact_upper_envelope_mesh(
-            mesh_part, face_descriptors, face_normals, is_handled_map,
-            cand_dir, node->tentative_patch_faces, params.padding,
+            mesh_part, face_descriptors, face_normals,
+            cand_dir, params.padding,
             stock_box_mesh
         );
         it = envelope_cache.emplace(vkey, std::move(env_computed)).first;
@@ -568,12 +569,6 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
         auto parent_ptr = std::make_shared<MoldChainNode>(std::move(curr));
 
-        struct ScoredCandidate {
-            EK::Vector_3 dir;
-            CandidatePatch patch;
-            FT virgin_area;
-            FT total_patch_area;
-        };
         std::vector<ScoredCandidate> scored_cands;
 
         for (const auto& d : candidate_dirs) {
@@ -606,7 +601,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                 continue;
             }
 
-            scored_cands.push_back({d, std::move(patch), virgin_area, total_patch_area});
+            scored_cands.push_back({d, std::move(patch), virgin_area, total_patch_area, FT(0)});
         }
 
         // Sort descending by virgin responsible area (largest new patch first)
@@ -615,7 +610,16 @@ inline MoldDecompositionResult decompose_mold_beam_search(
         });
 
         if (!scored_cands.empty()) {
-            std::cout << "      ↳ [Expansion] Spawned " << scored_cands.size() << " viable candidates. "
+            std::cout << "      ↳ [Expansion] Evaluated " << scored_cands.size() << " raw viable candidates." << std::endl;
+        }
+
+        // Deduplicate candidates targeting the same physical feature patch via Jaccard similarity
+        scored_cands = deduplicate_candidate_patches(
+            scored_cands, face_normals, face_areas, parent_ptr->is_handled
+        );
+
+        if (!scored_cands.empty()) {
+            std::cout << "      ↳ [Expansion] Queued " << scored_cands.size() << " unique feature champions. "
                       << "Top child: " << format_vec(scored_cands[0].dir)
                       << " (new area=" << CGAL::to_double(scored_cands[0].virgin_area) << " mm²)" << std::endl;
         } else {

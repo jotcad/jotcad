@@ -25,6 +25,7 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 | **`snap.h`** | ~90 | Analytical geodesic cone-snapping toward dead-zone eliminating target vectors (uncovered stock and antipodal). |
 | **`scoring.h`** | ~60 | Pure surface area candidate draw direction scoring (`score_candidate_direction`, `CandidateScore`). |
 | **`patch.h`** | ~260 | Visible positive-draft face extraction, boundary cycle auditing, and disjoint component aggregation. |
+| **`patch_dedup.h`** | ~140 | Microsecond Jaccard virgin patch similarity clustering and champion candidate selection (`deduplicate_candidate_patches`). |
 | **`compatibility.h`** | ~85 | Parting seam compatibility and knife-edge acute dead zone filtering. |
 | **`beam_search.h`** | ~240 | Multi-piece candidate chain beam search engine with energy minimization and parallel backtracking. |
 | **`tide.h`** | ~230 | Rising Tide margin shelf CDT, outer stock box envelope, and cardinal tide basis. |
