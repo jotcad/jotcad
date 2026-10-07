@@ -90,7 +90,8 @@ TEST_SOURCES = hexagon_test.cpp box_test.cpp triangle_test.cpp \
                mold_patch_test.cpp \
                mold_compatibility_test.cpp \
                mold_beam_search_test.cpp \
-               mold_harmonic_test.cpp
+               mold_harmonic_test.cpp \
+               mold_policy_test.cpp
 
 # Filter out standalone tests from combined build
 COMBINED_TEST_SOURCES = $(filter-out cid_consistency_test.cpp mold_voxel_bear_test.cpp extrude_polyloop_test.cpp, $(TEST_SOURCES))
@@ -239,6 +240,15 @@ $(BIN_DIR)/mold_l_test: $(OBJ_DIR)/mold_l_test.o $(REG_OBJS) $(LIB_GEO)
 	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
 
 $(OBJ_DIR)/mold_l_test.o: mold_l_test.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
+
+# Rule for building the standalone mold_policy_test binary
+$(BIN_DIR)/mold_policy_test: $(OBJ_DIR)/mold_policy_test.o $(REG_OBJS) $(LIB_GEO)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(CXXFLAGS) $^ -Wl,--start-group $(LIB_GEO) $(LIBS) -Wl,--end-group -o $@
+
+$(OBJ_DIR)/mold_policy_test.o: mold_policy_test.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(DEFS) -c $< -o $@
 

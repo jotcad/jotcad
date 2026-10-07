@@ -7,7 +7,9 @@
 #include "compatibility.h"
 #include "envelope.h"
 #include "patch_dedup.h"
+#include "realized_coverage.h"
 #include "verify.h"
+#include "stop_rule.h"
 #include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
 #include <vector>
 #include <map>
@@ -75,18 +77,6 @@ struct MoldDecompositionResult {
     bool is_complete = false;
     FT final_energy = FT(0);
     FT remaining_unhandled_area = FT(0);
-};
-
-/**
- * @brief Exact key for vector lookup in envelope memoization cache.
- */
-struct VectorKey {
-    FT x, y, z;
-    bool operator<(const VectorKey& other) const {
-        if (x != other.x) return x < other.x;
-        if (y != other.y) return y < other.y;
-        return z < other.z;
-    }
 };
 
 /**
@@ -196,17 +186,10 @@ inline ExactMeshPtr get_raw_stock(
         is_handled_map[f] = false;
     }
 
-    VectorKey vkey{cand_dir.x(), cand_dir.y(), cand_dir.z()};
-    auto it = envelope_cache.find(vkey);
-    if (it == envelope_cache.end()) {
-        auto env_computed = compute_exact_upper_envelope_mesh(
-            mesh_part, face_descriptors, face_normals,
-            cand_dir, params.padding,
-            stock_box_mesh
-        );
-        it = envelope_cache.emplace(vkey, std::move(env_computed)).first;
-    }
-    const auto& env_res = it->second;
+    const auto& env_res = get_cached_envelope(
+        cand_dir, mesh_part, face_descriptors, face_normals,
+        params.padding, stock_box_mesh, envelope_cache
+    );
 
     if (env_res.solid_wedge.number_of_faces() == 0 || env_res.source_faces.empty()) {
         std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: empty upper envelope along " << format_vec(cand_dir) << std::endl;
@@ -254,10 +237,20 @@ inline ExactMeshPtr get_raw_stock(
 
     // Realized Forward-Progress Mandate:
     // A candidate piece is only physically viable if it captures newly handled cavity faces
+    std::set<size_t> candidate_handled;
+    if (!node->tentative_patch_faces.empty()) {
+        for (auto f : node->tentative_patch_faces) {
+            candidate_handled.insert(f.idx());
+        }
+    } else {
+        candidate_handled = env_res.source_faces;
+    }
+
+    // Verify forward progress: piece MUST capture virgin (unhandled) cavity area
     // not already handled by its parent. Prune immediately to bypass expensive stock difference!
     FT newly_handled_area = FT(0);
     size_t newly_handled_count = 0;
-    for (size_t f_idx : env_res.source_faces) {
+    for (size_t f_idx : candidate_handled) {
         bool was_handled = node->parent ? node->parent->is_handled[f_idx] : false;
         if (!was_handled) {
             newly_handled_count++;
@@ -277,16 +270,18 @@ inline ExactMeshPtr get_raw_stock(
         fix::KissMode::NONE, params.kiss_width,
         "residual_stock \\ piece in beam search"
     );
-    if (!ok_sub || (!next_stock.is_empty() && !CGAL::is_closed(next_stock))) {
-        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: residual stock subtraction failed along " << format_vec(cand_dir) << std::endl;
+    if (!ok_sub) {
+        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: residual stock subtraction failed (corefine returned false) along " << format_vec(cand_dir) << std::endl;
+        node->is_invalid = true;
+        return nullptr;
+    }
+    if (!next_stock.is_empty() && !CGAL::is_closed(next_stock)) {
+        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: residual stock subtraction produced non-closed mesh along " << format_vec(cand_dir) << std::endl;
         node->is_invalid = true;
         return nullptr;
     }
 
-    std::set<size_t> new_handled_faces;
-    for (size_t f_idx : env_res.source_faces) {
-        new_handled_faces.insert(f_idx);
-    }
+    std::set<size_t> new_handled_faces = candidate_handled;
 
     if (node->parent) {
         node->is_handled = node->parent->is_handled;
@@ -299,7 +294,7 @@ inline ExactMeshPtr get_raw_stock(
         for (auto a : face_areas) node->unhandled_area += a;
     }
 
-    for (size_t f_idx : env_res.source_faces) {
+    for (size_t f_idx : candidate_handled) {
         if (!node->is_handled[f_idx]) {
             node->is_handled[f_idx] = true;
             node->handled_count++;
@@ -350,7 +345,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     const std::vector<EK::Vector_3>& prior_draw_dirs = {},
     const std::vector<ExactMesh>& prior_solid_pieces = {},
     ExactMeshPtr initial_stock = nullptr,
-    const ExactMesh* stock_box_mesh = nullptr
+    const ExactMesh* stock_box_mesh = nullptr,
+    SearchVisitor* visitor = nullptr
 ) {
     FT min_dot(std::sin(CGAL::to_double(params.draft) * 2.0 * M_PI));
     const FT& dot_eps = mold_constants::zero_draft_dot_epsilon();
@@ -420,6 +416,9 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     bool found_complete = false;
     MoldChainNode best_partial = root;
 
+    ConvergenceStopRule default_stop_rule;
+    SearchVisitor& active_visitor = visitor ? *visitor : default_stop_rule;
+
     std::cout << "    [BeamSearch] Starting Level-by-Level Priority Search (frontier_bound=" << max_frontier_size 
               << ", max_pieces=" << max_pieces << ", prior_pieces=" << prior_draw_dirs.size()
               << ", unhandled_area=" << CGAL::to_double(root.unhandled_area) 
@@ -428,14 +427,29 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     size_t iter = 0;
     while (!frontier.empty()) {
         iter++;
+
+        SearchProgress progress;
+        progress.iteration = iter;
+        progress.validations_count = validations_count;
+        progress.frontier_size = frontier.size();
+        progress.found_complete = found_complete;
+        progress.best_complete_pieces = found_complete ? best_complete.draw_dirs.size() : 0;
+        progress.best_complete_energy = found_complete ? best_complete.effective_energy() : FT(-1);
+        progress.current_pieces = frontier.front().draw_dirs.size();
+        progress.current_energy = frontier.front().effective_energy();
+        progress.min_frontier_energy = frontier.front().effective_energy();
+
+        std::string stop_reason;
+        if (active_visitor.should_terminate(progress, &stop_reason)) {
+            std::cout << "    [BeamSearch] Termination policy triggered: " << stop_reason << std::endl;
+            break;
+        }
+
+        active_visitor.on_iteration_start(progress);
+
         // Pop lowest-energy candidate node from frontier
         MoldChainNode curr = std::move(frontier.front());
         frontier.erase(frontier.begin());
-
-        // Branch-and-bound dominance check: if dominated by best complete solution, discard
-        if (found_complete && curr.effective_energy() >= best_complete.effective_energy()) {
-            continue;
-        }
 
         std::cout << "\n    [Frontier Iter #" << iter << " | Queue: " << frontier.size() + 1 
                   << "] Expanding Level " << curr.draw_dirs.size()
@@ -445,7 +459,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
         // 1. Selection Gate: Can this candidate achieve certified complete decomposition?
         bool is_terminal_claimed = (curr.unhandled_area <= FT(0) || curr.handled_count == face_descriptors.size());
-        if (is_terminal_claimed) {
+        if (params.policy.enable_terminal_closure && is_terminal_claimed) {
             ExactMeshPtr parent_stock = get_clean_stock(
                 curr.parent.get(), mesh_part, face_descriptors, face_normals, face_areas,
                 params, stock_box_mesh, model_tree, is_handled_map, active_stock, validations_count,
@@ -464,8 +478,16 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                         curr.piece_boundary_loops = curr.parent->piece_boundary_loops;
                     }
                     std::set<size_t> new_handled_faces;
-                    for (auto f : curr.tentative_patch_faces) {
-                        new_handled_faces.insert(f.idx());
+                    std::set<size_t> previously_handled;
+                    if (curr.parent) {
+                        for (const auto& p_faces : curr.parent->piece_handled_faces) {
+                            previously_handled.insert(p_faces.begin(), p_faces.end());
+                        }
+                    }
+                    for (size_t f_idx = 0; f_idx < face_descriptors.size(); ++f_idx) {
+                        if (previously_handled.find(f_idx) == previously_handled.end()) {
+                            new_handled_faces.insert(f_idx);
+                        }
                     }
                     curr.solid_wedges.push_back(parent_stock);
                     curr.solid_pieces.push_back(parent_stock);
@@ -490,14 +512,13 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                         best_complete = std::move(curr);
                         found_complete = true;
                     }
-                    frontier.erase(
-                        std::remove_if(frontier.begin(), frontier.end(), [&](const MoldChainNode& n) {
-                            return n.effective_energy() >= best_complete.effective_energy();
-                        }),
-                        frontier.end()
-                    );
-                    if (frontier.empty()) {
-                        std::cout << "    [BeamSearch] Frontier fully converged to global optimum!" << std::endl;
+                    progress.found_complete = true;
+                    progress.best_complete_pieces = best_complete.draw_dirs.size();
+                    progress.best_complete_energy = best_complete.effective_energy();
+                    active_visitor.on_complete_found(progress);
+
+                    if (active_visitor.should_terminate(progress, &stop_reason)) {
+                        std::cout << "    [BeamSearch] Termination policy triggered: " << stop_reason << std::endl;
                         break;
                     }
                     continue;
@@ -538,14 +559,13 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                 best_complete = std::move(curr);
                 found_complete = true;
             }
-            frontier.erase(
-                std::remove_if(frontier.begin(), frontier.end(), [&](const MoldChainNode& n) {
-                    return n.effective_energy() >= best_complete.effective_energy();
-                }),
-                frontier.end()
-            );
-            if (frontier.empty()) {
-                std::cout << "    [BeamSearch] Frontier fully converged to global optimum!" << std::endl;
+            progress.found_complete = true;
+            progress.best_complete_pieces = best_complete.draw_dirs.size();
+            progress.best_complete_energy = best_complete.effective_energy();
+            active_visitor.on_complete_found(progress);
+
+            if (active_visitor.should_terminate(progress, &stop_reason)) {
+                std::cout << "    [BeamSearch] Termination policy triggered: " << stop_reason << std::endl;
                 break;
             }
             continue;
@@ -571,6 +591,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
         std::vector<ScoredCandidate> scored_cands;
 
+        // Cheap normal-only prediction: used ONLY to rank and deduplicate, never to credit coverage.
+        auto t_pred0 = std::chrono::steady_clock::now();
         for (const auto& d : candidate_dirs) {
             CandidatePatch patch = extract_candidate_patch(
                 mesh_part, face_descriptors, face_normals, face_areas, edge_to_faces,
@@ -603,6 +625,10 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
             scored_cands.push_back({d, std::move(patch), virgin_area, total_patch_area, FT(0)});
         }
+        auto t_pred1 = std::chrono::steady_clock::now();
+        double pred_ms = std::chrono::duration<double, std::milli>(t_pred1 - t_pred0).count();
+        std::cout << "      ↳ [Predict] " << candidate_dirs.size() << " directions in " << pred_ms << " ms ("
+                  << (candidate_dirs.empty() ? 0.0 : pred_ms / candidate_dirs.size()) << " ms/direction)." << std::endl;
 
         // Sort descending by virgin responsible area (largest new patch first)
         std::sort(scored_cands.begin(), scored_cands.end(), [](const auto& a, const auto& b) {
@@ -616,6 +642,14 @@ inline MoldDecompositionResult decompose_mold_beam_search(
         // Deduplicate candidates targeting the same physical feature patch via Jaccard similarity
         scored_cands = deduplicate_candidate_patches(
             scored_cands, face_normals, face_areas, parent_ptr->is_handled
+        );
+
+        // Realized coverage: replace predicted patches with CGAL::upper_envelope_3 visible faces.
+        // From here on, is_handled / energy / terminal claims are driven by occlusion-aware coverage.
+        scored_cands = realize_candidate_coverage(
+            scored_cands, mesh_part, face_descriptors, face_normals, face_areas,
+            parent_ptr->is_handled, params.padding, stock_box_mesh, envelope_cache,
+            params.policy
         );
 
         if (!scored_cands.empty()) {
@@ -653,13 +687,25 @@ inline MoldDecompositionResult decompose_mold_beam_search(
             if (child.unhandled_area <= FT(1) / FT(1000)) {
                 child.unhandled_area = FT(0);
             }
-            child.energy = child.unhandled_area + lambda_pieces * FT(child.draw_dirs.size());
 
-            // Energy Dominance Pruning: If a complete solution already exists and child's lower-bound energy
-            // already meets or exceeds it, prune immediately.
-            if (found_complete && child.energy >= best_complete.energy) {
-                continue;
+            // Under RESIDUAL_STOCK_CONTACT: if all remaining unhandled faces are non-backdrafting (n * d >= 0)
+            // along sc.dir, this candidate can act as the terminal piece consuming residual stock.
+            if (params.policy.certification == CoverageCertificationPolicy::RESIDUAL_STOCK_CONTACT && child.parent) {
+                bool all_remaining_releasable = true;
+                for (size_t f_idx = 0; f_idx < face_descriptors.size(); ++f_idx) {
+                    if (!child.is_handled[f_idx]) {
+                        if (face_normals[f_idx] * sc.dir < FT(0)) {
+                            all_remaining_releasable = false;
+                            break;
+                        }
+                    }
+                }
+                if (all_remaining_releasable) {
+                    child.unhandled_area = FT(0);
+                    child.handled_count = face_descriptors.size();
+                }
             }
+            child.energy = child.unhandled_area + lambda_pieces * FT(child.draw_dirs.size());
 
             frontier.push_back(std::move(child));
         }
@@ -694,6 +740,15 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                   << " mm² | Certified Bound: " 
                   << (found_complete ? (std::to_string((int)CGAL::to_double(best_complete.energy)) + " mm²") : "NONE")
                   << std::endl << std::flush;
+
+        progress.frontier_size = frontier.size();
+        progress.min_frontier_energy = best_front_energy;
+        active_visitor.on_frontier_updated(progress);
+
+        if (active_visitor.should_terminate(progress, &stop_reason)) {
+            std::cout << "    [BeamSearch] Termination policy triggered: " << stop_reason << std::endl;
+            break;
+        }
     }
 
     // Restore is_handled_map to initial state
@@ -736,7 +791,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     size_t candidates_per_level = 16,
     const std::vector<EK::Vector_3>& prior_draw_dirs = {},
     const std::vector<ExactMesh>& prior_solid_pieces = {},
-    ExactMeshPtr initial_stock = nullptr
+    ExactMeshPtr initial_stock = nullptr,
+    SearchVisitor* visitor = nullptr
 ) {
     std::vector<ExactMesh::Face_index> face_descriptors;
     std::vector<EK::Vector_3> face_normals(mesh_part.num_faces());
@@ -758,7 +814,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
         mesh_part, face_descriptors, face_normals, face_areas,
         edge_to_faces, is_handled_map, params,
         max_pieces, candidates_per_level, prior_draw_dirs, prior_solid_pieces,
-        initial_stock
+        initial_stock, nullptr, visitor
     );
 }
 

@@ -300,6 +300,62 @@ struct MoldOp : P {
         }
 
         if (handled_faces_count < total_faces) {
+            // Diagnostic: Cluster unhandled faces via DSU and print bounding boxes and normal distributions
+            mold::DSU dsu(total_faces);
+            std::vector<size_t> unhandled_indices;
+            for (auto f : face_descriptors) {
+                if (!is_handled[f]) {
+                    unhandled_indices.push_back(f.idx());
+                }
+            }
+            for (const auto& [edge, adj_faces] : edge_to_faces) {
+                for (size_t i = 0; i < adj_faces.size(); ++i) {
+                    for (size_t j = i + 1; j < adj_faces.size(); ++j) {
+                        int f1 = adj_faces[i], f2 = adj_faces[j];
+                        if (f1 >= 0 && f1 < (int)total_faces && f2 >= 0 && f2 < (int)total_faces) {
+                            if (!is_handled[mold::ExactMesh::Face_index(f1)] && !is_handled[mold::ExactMesh::Face_index(f2)]) {
+                                dsu.unite(f1, f2);
+                            }
+                        }
+                    }
+                }
+            }
+            std::map<int, std::vector<size_t>> clusters;
+            for (size_t idx : unhandled_indices) {
+                clusters[dsu.find((int)idx)].push_back(idx);
+            }
+            std::cerr << "\n[Demoldability Diagnostic] Breakdown of " << unhandled_indices.size() 
+                      << " unhandled faces across " << clusters.size() << " connected clusters:" << std::endl;
+            int cl_num = 0;
+            for (const auto& [root_id, faces] : clusters) {
+                cl_num++;
+                FT cl_area = 0;
+                FT xmin = 1e9, xmax = -1e9, ymin = 1e9, ymax = -1e9, zmin = 1e9, zmax = -1e9;
+                EK::Vector_3 avg_n(0, 0, 0);
+                for (size_t idx : faces) {
+                    cl_area += face_areas[idx];
+                    avg_n = avg_n + face_normals[idx];
+                    auto f = mold::ExactMesh::Face_index(idx);
+                    auto h = mesh_part.halfedge(f);
+                    for (int vi = 0; vi < 3; ++vi) {
+                        auto p = mesh_part.point(mesh_part.target(h));
+                        if (p.x() < xmin) xmin = p.x();
+                        if (p.x() > xmax) xmax = p.x();
+                        if (p.y() < ymin) ymin = p.y();
+                        if (p.y() > ymax) ymax = p.y();
+                        if (p.z() < zmin) zmin = p.z();
+                        if (p.z() > zmax) zmax = p.z();
+                        h = mesh_part.next(h);
+                    }
+                }
+                std::cerr << "  ↳ Cluster #" << cl_num << " (" << faces.size() << " faces, area="
+                          << CGAL::to_double(cl_area) << " mm²): BB=[" 
+                          << CGAL::to_double(xmin) << ".." << CGAL::to_double(xmax) << "] x ["
+                          << CGAL::to_double(ymin) << ".." << CGAL::to_double(ymax) << "] x ["
+                          << CGAL::to_double(zmin) << ".." << CGAL::to_double(zmax) << "] | "
+                          << "Sum Normal: (" << CGAL::to_double(avg_n.x()) << ", " << CGAL::to_double(avg_n.y()) << ", " << CGAL::to_double(avg_n.z()) << ")"
+                          << std::endl;
+            }
             throw std::runtime_error("Demoldability Error: Part contains " + std::to_string(total_faces - handled_faces_count) + 
                                      " unhandled undercut faces that cannot be demolded along any valid draw vector (stuck after " + 
                                      std::to_string(mold_pieces.size()) + " pieces).");
