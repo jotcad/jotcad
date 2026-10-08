@@ -19,12 +19,13 @@ namespace mold {
  * 3. Unhandled cavity face normals (n_f)
  * 4. Cardinal stock boundary axes (+/-X, +/-Y, +/-Z)
  */
+template <typename FaceHandledMap = FaceBoolMap>
 inline std::vector<EK::Vector_3> generate_candidate_directions(
     const boolean::ExactMesh& mesh_part,
     const std::vector<boolean::ExactMesh::Face_index>& face_descriptors,
     const std::vector<EK::Vector_3>& face_normals,
     const std::vector<FT>& face_areas,
-    boolean::ExactMesh::Property_map<boolean::ExactMesh::Face_index, bool> is_handled,
+    FaceHandledMap is_handled,
     const std::vector<EK::Vector_3>& prior_draw_dirs = {},
     size_t num_exploratory = 0
 ) {

@@ -67,6 +67,7 @@ struct MoldDecompositionPolicy {
     FT lambda_pieces = FT(50);                          ///< 50 mm^2 piece complexity regularizer
     FT unhandled_area_zero_epsilon = FT(1) / FT(1000);  ///< 0.001 mm^2 residual cavity zeroing threshold
     size_t frontier_bound = 50;                         ///< Max priority queue capacity
+    size_t search_threads = 0;                          ///< 0 = automatic (std::thread::hardware_concurrency()), >0 = fixed worker count
 
     // Mesh Synthesis Tolerances
     FT pinch_bridge_width = FT(1) / FT(100);            ///< 0.01 mm bridge for 2D boundary polygon pinch points

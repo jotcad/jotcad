@@ -117,13 +117,14 @@ struct CandidatePatch {
  * 3. Audits each component for disk topology (cycle_count == 1).
  * 4. Aggregates non-overlapping disk components in projected tangent space (u, v).
  */
+template <typename FaceHandledMap = FaceBoolMap>
 inline CandidatePatch extract_candidate_patch(
     const ExactMesh& mesh_part,
     const std::vector<ExactMesh::Face_index>& face_descriptors,
     const std::vector<EK::Vector_3>& face_normals,
     const std::vector<FT>& face_areas,
     const std::map<EdgeKey, std::vector<int>>& edge_to_faces,
-    FaceBoolMap is_handled,
+    FaceHandledMap is_handled,
     const EK::Vector_3& d,
     const FT& min_dot = FT(0)
 ) {

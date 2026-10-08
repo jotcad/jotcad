@@ -12,6 +12,7 @@
 #include <set>
 #include <map>
 #include <chrono>
+#include <mutex>
 
 namespace jotcad {
 namespace geo {
@@ -24,11 +25,12 @@ inline bool is_visible(const EK::Vector_3& normal, const EK::Vector_3& d, const 
     return normal * d >= min_dot;
 }
 
+template <typename FaceHandledMap = FaceBoolMap>
 inline std::vector<ExactMesh::Face_index> compute_visible_patch_faces_fast(
     const ExactMesh& mesh_part,
     const std::vector<ExactMesh::Face_index>& face_descriptors,
     const std::vector<EK::Vector_3>& face_normals,
-    FaceBoolMap is_handled,
+    FaceHandledMap is_handled,
     const EK::Vector_3& d,
     FT min_dot
 ) {
@@ -111,14 +113,20 @@ inline EnvelopeMeshResult compute_exact_upper_envelope_mesh(
     if (triangles.empty()) return {};
 
     auto diag_ptr = std::make_shared<Envelope_diagram_2>();
-    std::cout << "    [Envelope] Computing CGAL::upper_envelope_3 on " << triangles.size() << " triangles..." << std::flush;
     auto t_env_start = std::chrono::steady_clock::now();
 
     CGAL::upper_envelope_3(triangles.begin(), triangles.end(), *diag_ptr);
 
     auto t_env_end = std::chrono::steady_clock::now();
     double env_ms = std::chrono::duration<double, std::milli>(t_env_end - t_env_start).count();
-    std::cout << " Done in " << env_ms << "ms (faces in diagram: " << diag_ptr->number_of_faces() << ")." << std::endl << std::flush;
+    {
+        static std::mutex s_log_mtx;
+        std::lock_guard<std::mutex> lock(s_log_mtx);
+        std::cout << "    [Envelope] Computing CGAL::upper_envelope_3 on " << triangles.size()
+                  << " triangles... Done in " << env_ms << "ms (faces in diagram: "
+                  << diag_ptr->number_of_faces() << ")." << std::endl << std::flush;
+    }
+
 
     EnvelopeMeshResult res;
     res.has_solid_wedge = false;

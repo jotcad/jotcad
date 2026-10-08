@@ -404,6 +404,7 @@ int main() {
         params.draft = FT(0);
         params.padding = FT(5);
         params.policy = MoldDecompositionPolicy::analytical_envelope();
+        params.policy.search_threads = 1; // Sequential fallback execution verification
 
         auto result = decompose_mold_beam_search(
             c_mesh, c_analysis.edge_to_faces, params, /*max_pieces=*/6, /*candidates_per_level=*/4

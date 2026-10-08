@@ -9,9 +9,10 @@ INCLUDES = -I.. -I../ops -I../core -I../data -I../math -I../algorithms -I../rend
            -I../cgal/freetype/include \
            -I../cgal/zenoh/include \
            -I../pack
-DEFS = -DCGAL_DISABLE_GMP=1 -DCPPHTTPLIB_OPENSSL_SUPPORT
+DEFS = -DCPPHTTPLIB_OPENSSL_SUPPORT
 LIBS = ../cgal/freetype/build/libfreetype.a \
        ../cgal/zenoh/lib/libzenohc.a \
+       -lgmpxx -lgmp -lmpfr \
        -lpthread -lssl -lcrypto -lz -ldl
 
 BIN_DIR = bin

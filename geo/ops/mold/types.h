@@ -101,6 +101,17 @@ typedef boolean::ExactMesh ExactMesh;
 typedef std::shared_ptr<const ExactMesh> ExactMeshPtr;
 typedef std::shared_ptr<ExactMesh> ExactMeshMutablePtr;
 typedef ExactMesh::Property_map<ExactMesh::Face_index, bool> FaceBoolMap;
+
+/**
+ * @brief Zero-overhead adapter wrapping a std::vector<bool> for thread-local face property access.
+ */
+struct FaceBoolAdapter {
+    const std::vector<bool>& vec;
+    explicit FaceBoolAdapter(const std::vector<bool>& v) : vec(v) {}
+    bool operator[](ExactMesh::Face_index f) const {
+        return vec[f.idx()];
+    }
+};
 typedef CGAL::AABB_face_graph_triangle_primitive<ExactMesh> Primitive;
 typedef CGAL::AABB_traits_3<EK, Primitive> Traits;
 typedef CGAL::AABB_tree<Traits> Tree;
