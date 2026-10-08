@@ -9,12 +9,45 @@
 #include <iomanip>
 #include <cassert>
 #include <cmath>
+#include <numeric>
 
 using namespace jotcad;
 using namespace jotcad::geo;
 using namespace jotcad::geo::mold;
 
+struct MeshAnalysis {
+    std::map<EdgeKey, std::vector<int>> edge_to_faces;
+    std::vector<ExactMesh::Face_index> face_descriptors;
+    std::vector<EK::Vector_3> face_normals;
+    std::vector<FT> face_areas;
+};
+
+inline MeshAnalysis analyze_mesh(const ExactMesh& mesh) {
+    MeshAnalysis a;
+    a.face_normals.resize(mesh.num_faces());
+    a.face_areas.resize(mesh.num_faces());
+    for (auto f : mesh.faces()) {
+        size_t idx = f.idx();
+        a.face_descriptors.push_back(f);
+        auto h = mesh.halfedge(f);
+        for (int i = 0; i < 3; ++i) {
+            int u = (int)mesh.source(h);
+            int v = (int)mesh.target(h);
+            if (u > v) std::swap(u, v);
+            a.edge_to_faces[{u, v}].push_back((int)idx);
+            h = mesh.next(h);
+        }
+        auto p0 = mesh.point(mesh.source(h));
+        auto p1 = mesh.point(mesh.target(h));
+        auto p2 = mesh.point(mesh.target(mesh.next(h)));
+        a.face_normals[idx] = CGAL::normal(p0, p1, p2);
+        a.face_areas[idx] = CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
+    }
+    return a;
+}
+
 int main() {
+    std::cout << std::unitbuf;
     MockVFS vfs("mold_policy_test");
     register_all_ops(&vfs);
 
@@ -36,28 +69,11 @@ int main() {
     Geometry box_geo = vfs.read<Geometry>(*box_shape.geometry);
     ExactMesh mesh = boolean::Engine::geometry_to_mesh(box_geo);
 
-    std::map<EdgeKey, std::vector<int>> edge_to_faces;
-    std::vector<ExactMesh::Face_index> face_descriptors;
-    std::vector<EK::Vector_3> face_normals(mesh.num_faces());
-    std::vector<FT> face_areas(mesh.num_faces());
-
-    for (auto f : mesh.faces()) {
-        size_t idx = f.idx();
-        face_descriptors.push_back(f);
-        auto h = mesh.halfedge(f);
-        for (int i = 0; i < 3; ++i) {
-            int u = (int)mesh.source(h);
-            int v = (int)mesh.target(h);
-            if (u > v) std::swap(u, v);
-            edge_to_faces[{u, v}].push_back((int)idx);
-            h = mesh.next(h);
-        }
-        auto p0 = mesh.point(mesh.source(h));
-        auto p1 = mesh.point(mesh.target(h));
-        auto p2 = mesh.point(mesh.target(mesh.next(h)));
-        face_normals[idx] = CGAL::normal(p0, p1, p2);
-        face_areas[idx] = CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
-    }
+    MeshAnalysis box_analysis = analyze_mesh(mesh);
+    const auto& edge_to_faces = box_analysis.edge_to_faces;
+    const auto& face_descriptors = box_analysis.face_descriptors;
+    const auto& face_normals = box_analysis.face_normals;
+    const auto& face_areas = box_analysis.face_areas;
 
     FaceBoolMap is_handled_map = mesh.add_property_map<ExactMesh::Face_index, bool>("f:is_handled", false).first;
     std::vector<bool> no_parent_handled(mesh.num_faces(), false);
@@ -260,6 +276,185 @@ int main() {
     {
         MoldDecompositionPolicy p = MoldDecompositionPolicy::analytical_envelope();
         run_sweep("RESIDUAL_STOCK_CONTACT (Analytical 2-Piece & 1:1 Contact)", p);
+    }
+
+    // =========================================================================
+    // Part 3: L-Bracket Solid (Concave Re-entrant Corner)
+    // =========================================================================
+    std::cout << "\n--- Part 3: L-Bracket Solid (Concave Re-entrant Corner) ---\n";
+    {
+        fs::Selector block_sel("jot/Box");
+        block_sel.parameters["width"] = 20.0;
+        block_sel.parameters["height"] = 20.0;
+        block_sel.parameters["depth"] = 10.0;
+        block_sel.output = "$out";
+        Processor::execute(&vfs, block_sel);
+        Shape block_shape = vfs.read<Shape>(block_sel);
+
+        fs::Selector notch_sel("jot/Box");
+        notch_sel.parameters["width"] = nlohmann::json::array({0.0, 11.0});
+        notch_sel.parameters["height"] = nlohmann::json::array({0.0, 11.0});
+        notch_sel.parameters["depth"] = nlohmann::json::array({-6.0, 6.0});
+        notch_sel.output = "$out";
+        Processor::execute(&vfs, notch_sel);
+        Shape notch_shape = vfs.read<Shape>(notch_sel);
+
+        fs::Selector cut_sel("jot/cut");
+        cut_sel.parameters["$in"] = block_shape.to_json();
+        cut_sel.parameters["tools"] = nlohmann::json::array({notch_shape.to_json()});
+        cut_sel.output = "$out";
+        Processor::execute(&vfs, cut_sel);
+        Shape l_shape = vfs.read<Shape>(cut_sel);
+
+        assert(l_shape.is_real() && l_shape.geometry.has_value());
+        Geometry l_geo = vfs.read<Geometry>(*l_shape.geometry);
+        ExactMesh l_mesh = boolean::Engine::geometry_to_mesh(l_geo);
+
+        auto l_analysis = analyze_mesh(l_mesh);
+
+        MoldParams params;
+        params.draft = FT(0);
+        params.padding = FT(5);
+        params.policy = MoldDecompositionPolicy::analytical_envelope();
+
+        auto result = decompose_mold_beam_search(
+            l_mesh, l_analysis.edge_to_faces, params, /*max_pieces=*/4, /*candidates_per_level=*/4
+        );
+
+        std::cout << "  L-Bracket Decomposition: " << result.draw_dirs.size() << " pieces, complete: " 
+                  << (result.is_complete ? "YES" : "NO") << "\n";
+        for (size_t p = 0; p < result.draw_dirs.size(); ++p) {
+            const auto& d = result.draw_dirs[p];
+            std::cout << "    Piece #" << (p + 1) << ": (" 
+                      << CGAL::to_double(d.x()) << ", " << CGAL::to_double(d.y()) << ", " << CGAL::to_double(d.z()) << ")\n";
+        }
+        assert(result.is_complete && "L-bracket decomposition must succeed completely");
+
+        double total_l_area = 0.0;
+        for (const auto& a : l_analysis.face_areas) total_l_area += CGAL::to_double(a);
+
+        // Verify physical demoldability of each piece
+        Tree l_tree(l_mesh.faces().begin(), l_mesh.faces().end(), l_mesh);
+        double l_physical_contact = 0.0;
+        for (size_t p = 0; p < result.solid_pieces.size(); ++p) {
+            FT contact_area = FT(0);
+            for (auto f : result.solid_pieces[p].faces()) {
+                auto h = result.solid_pieces[p].halfedge(f);
+                auto p0 = result.solid_pieces[p].point(result.solid_pieces[p].source(h));
+                auto p1 = result.solid_pieces[p].point(result.solid_pieces[p].target(h));
+                auto p2 = result.solid_pieces[p].point(result.solid_pieces[p].target(result.solid_pieces[p].next(h)));
+                EK::Point_3 mid((p0.x() + p1.x() + p2.x()) / FT(3), (p0.y() + p1.y() + p2.y()) / FT(3), (p0.z() + p1.z() + p2.z()) / FT(3));
+                if (l_tree.squared_distance(mid) < FT(1) / FT(10000)) {
+                    contact_area += CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
+                }
+            }
+            double piece_phys = CGAL::to_double(contact_area);
+            l_physical_contact += piece_phys;
+
+            MoldPiece mp{result.solid_pieces[p], result.draw_dirs[p], "piece", "#ffffff", (int)p};
+            int backdraft_count = 0;
+            FT backdraft_area = FT(0);
+            bool is_demoldable = verify_piece_demoldability(mp, l_tree, params, &backdraft_count, &backdraft_area);
+            std::cout << "    Piece #" << (p + 1) << " -> Contact: " << std::fixed << std::setprecision(1)
+                      << piece_phys << " mm² | Demoldable: " << (is_demoldable ? "YES" : "NO")
+                      << " (" << backdraft_count << " backdrafts)" << std::endl;
+            assert(is_demoldable && backdraft_count == 0 && "L-bracket piece must demold with zero backdrafts");
+        }
+        std::cout << "  Total Physical Model Surface Covered: " << std::fixed << std::setprecision(1)
+                  << l_physical_contact << " / " << total_l_area << " mm²" << std::endl;
+        assert(l_physical_contact >= total_l_area - 0.1 && "Pieces must physically contact 100% of L-bracket model surface");
+    }
+
+    // =========================================================================
+    // Part 4: C-Channel Solid (Overhang Occlusion & Fallback Verification)
+    // =========================================================================
+    std::cout << "\n--- Part 4: C-Channel Solid (Overhang Occlusion & Fallback Verification) ---\n";
+    {
+        fs::Selector box_sel("jot/Box");
+        box_sel.parameters["width"] = 20.0;
+        box_sel.parameters["height"] = 20.0;
+        box_sel.parameters["depth"] = 20.0;
+        box_sel.output = "$out";
+        Processor::execute(&vfs, box_sel);
+        Shape box_shape = vfs.read<Shape>(box_sel);
+
+        // Horizontal slot cutting through Y: X in [0, 11], Y in [-11, 11], Z in [-3, 3]
+        fs::Selector slot_sel("jot/Box");
+        slot_sel.parameters["width"] = nlohmann::json::array({0.0, 11.0});
+        slot_sel.parameters["height"] = nlohmann::json::array({-11.0, 11.0});
+        slot_sel.parameters["depth"] = nlohmann::json::array({-3.0, 3.0});
+        slot_sel.output = "$out";
+        Processor::execute(&vfs, slot_sel);
+        Shape slot_shape = vfs.read<Shape>(slot_sel);
+
+        fs::Selector cut_sel("jot/cut");
+        cut_sel.parameters["$in"] = box_shape.to_json();
+        cut_sel.parameters["tools"] = nlohmann::json::array({slot_shape.to_json()});
+        cut_sel.output = "$out";
+        Processor::execute(&vfs, cut_sel);
+        Shape c_shape = vfs.read<Shape>(cut_sel);
+
+        assert(c_shape.is_real() && c_shape.geometry.has_value());
+        Geometry c_geo = vfs.read<Geometry>(*c_shape.geometry);
+        ExactMesh c_mesh = boolean::Engine::geometry_to_mesh(c_geo);
+
+        auto c_analysis = analyze_mesh(c_mesh);
+
+        MoldParams params;
+        params.draft = FT(0);
+        params.padding = FT(5);
+        params.policy = MoldDecompositionPolicy::analytical_envelope();
+
+        auto result = decompose_mold_beam_search(
+            c_mesh, c_analysis.edge_to_faces, params, /*max_pieces=*/6, /*candidates_per_level=*/4
+        );
+
+        std::cout << "  C-Channel Decomposition: " << result.draw_dirs.size() << " pieces, complete: " 
+                  << (result.is_complete ? "YES" : "NO") << "\n";
+        for (size_t p = 0; p < result.draw_dirs.size(); ++p) {
+            const auto& d = result.draw_dirs[p];
+            std::cout << "    Piece #" << (p + 1) << ": (" 
+                      << CGAL::to_double(d.x()) << ", " << CGAL::to_double(d.y()) << ", " << CGAL::to_double(d.z()) << ")\n";
+        }
+        assert(result.is_complete && "C-channel decomposition must succeed completely");
+
+        double total_c_area = 0.0;
+        for (const auto& a : c_analysis.face_areas) total_c_area += CGAL::to_double(a);
+
+        // Verify physical demoldability of each piece: zero backdrafts allowed
+        Tree c_tree(c_mesh.faces().begin(), c_mesh.faces().end(), c_mesh);
+        double c_physical_contact = 0.0;
+        for (size_t p = 0; p < result.solid_pieces.size(); ++p) {
+            FT contact_area = FT(0);
+            for (auto f : result.solid_pieces[p].faces()) {
+                auto h = result.solid_pieces[p].halfedge(f);
+                auto p0 = result.solid_pieces[p].point(result.solid_pieces[p].source(h));
+                auto p1 = result.solid_pieces[p].point(result.solid_pieces[p].target(h));
+                auto p2 = result.solid_pieces[p].point(result.solid_pieces[p].target(result.solid_pieces[p].next(h)));
+                EK::Point_3 mid((p0.x() + p1.x() + p2.x()) / FT(3), (p0.y() + p1.y() + p2.y()) / FT(3), (p0.z() + p1.z() + p2.z()) / FT(3));
+                if (c_tree.squared_distance(mid) < FT(1) / FT(10000)) {
+                    contact_area += CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
+                }
+            }
+            double piece_phys = CGAL::to_double(contact_area);
+            c_physical_contact += piece_phys;
+
+            MoldPiece mp{result.solid_pieces[p], result.draw_dirs[p], "piece", "#ffffff", (int)p};
+            int backdraft_count = 0;
+            FT backdraft_area = FT(0);
+            bool is_demoldable = verify_piece_demoldability(mp, c_tree, params, &backdraft_count, &backdraft_area);
+            std::cout << "    Piece #" << (p + 1) << " -> Contact: " << std::fixed << std::setprecision(1)
+                      << piece_phys << " mm² | Demoldable: " << (is_demoldable ? "YES" : "NO")
+                      << " (" << backdraft_count << " backdrafts)" << std::endl;
+            assert(is_demoldable && backdraft_count == 0 && "C-channel piece must demold with zero backdrafts");
+        }
+        std::cout << "  Total Physical Model Surface Covered: " << std::fixed << std::setprecision(1)
+                  << c_physical_contact << " / " << total_c_area << " mm²" << std::endl;
+        assert(c_physical_contact >= total_c_area - 0.1 && "Pieces must physically contact 100% of C-channel model surface");
+
+        // Verify that terminal demoldability fallback executed at least once on occluded faces
+        std::cout << "  C-Channel Fallback Count: " << result.terminal_fallbacks << std::endl;
+        assert(result.terminal_fallbacks >= 1 && "C-channel must trigger terminal fallback on occluded faces");
     }
 
     std::cout << "\n========================================================\n"

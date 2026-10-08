@@ -5,6 +5,7 @@
 #include "fix/kiss.h"
 #include "boolean/engine.h"
 #include "policy.h"
+#include "stopping_policy.h"
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits_3.h>
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
@@ -159,6 +160,7 @@ struct MoldParams {
     bool remesh = false; // Isotropic CDT refinement disabled by default
     double max_edge_len = 0.0;
     MoldDecompositionPolicy policy;
+    MoldStoppingPolicy stopping;
 };
 
 enum class CandidateStatus {

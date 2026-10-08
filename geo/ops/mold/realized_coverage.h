@@ -138,7 +138,7 @@ inline std::vector<ScoredCandidate> realize_candidate_coverage(
               << " ms)." << std::endl << std::flush;
 
     if (realized.size() > 1) {
-        realized = deduplicate_candidate_patches(realized, face_normals, face_areas, parent_is_handled);
+        realized = deduplicate_candidate_patches(realized, face_normals, face_areas, parent_is_handled, policy.jaccard_threshold);
     }
     return realized;
 }

@@ -61,14 +61,19 @@ int main() {
         assert(result.solid_wedges.size() == 2 && "Must extract exactly 2 solid wedges!");
         assert(result.remaining_unhandled_area == FT(0) && "Remaining unhandled area must be exactly 0!");
 
-        // Verify antipodal pull directions (+Z and -Z)
+        // Verify demoldability of both extracted pieces with zero backdrafts
+        Tree model_tree(CGAL::faces(mesh).first, CGAL::faces(mesh).second, mesh);
+        model_tree.build();
+        for (size_t p = 0; p < result.solid_pieces.size(); ++p) {
+            MoldPiece mp{result.solid_pieces[p], result.draw_dirs[p], "piece", "#ffffff", (int)p};
+            int backdraft_count = 0;
+            FT backdraft_area = FT(0);
+            bool is_demoldable = verify_piece_demoldability(mp, model_tree, params, &backdraft_count, &backdraft_area);
+            assert(is_demoldable && backdraft_count == 0 && "Piece must demold with zero backdrafts");
+        }
+
         const auto& d1 = result.draw_dirs[0];
         const auto& d2 = result.draw_dirs[1];
-        FT dot_opp = d1 * (-d2);
-        FT len_sq1 = d1.squared_length();
-        FT len_sq2 = d2.squared_length();
-        assert(dot_opp * dot_opp == len_sq1 * len_sq2 && "Piece 1 and Piece 2 draw directions must be strictly antipodal!");
-
         std::cout << "    [Passed] 2-Piece certified decomposition: Piece 1 dir=("
                   << CGAL::to_double(d1.x()) << ", " << CGAL::to_double(d1.y()) << ", " << CGAL::to_double(d1.z())
                   << "), Piece 2 dir=("

@@ -70,17 +70,41 @@ inline bool corefine_difference(
     if (target_copy.has_garbage()) target_copy.collect_garbage();
     if (tool_copy.has_garbage()) tool_copy.collect_garbage();
 
-    fix::assert_well_formed_for_corefinement(target_copy, label + " (target)");
-    fix::assert_well_formed_for_corefinement(tool_copy, label + " (tool)");
+    // Validate input meshes and check for self-intersections before corefinement
+    bool target_valid = fix::validate_corefinement_input(target_copy, label + " (target)");
+    bool tool_valid = fix::validate_corefinement_input(tool_copy, label + " (tool)");
+    if (!target_valid || !tool_valid) {
+        std::cerr << "❌ [" << label << "] Input mesh validation failed before corefinement! Aborting operation." << std::endl;
+        throw std::runtime_error("[" + label + "] Input mesh validation failed (self-intersection or invalid topology)");
+    }
 
     std::cout << "    [" << label << "] CGAL corefine difference... " << std::flush;
     auto t0 = std::chrono::steady_clock::now();
-    bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
-        target_copy, tool_copy, out,
-        CGAL::parameters::throw_on_self_intersection(false),
-        CGAL::parameters::throw_on_self_intersection(false),
-        CGAL::parameters::all_default()
-    );
+    bool ok = false;
+    try {
+        ok = CGAL::Polygon_mesh_processing::corefine_and_compute_difference(
+            target_copy, tool_copy, out,
+            CGAL::parameters::throw_on_self_intersection(true),
+            CGAL::parameters::throw_on_self_intersection(true),
+            CGAL::parameters::all_default()
+        );
+    } catch (const std::exception& e) {
+        auto t_err = std::chrono::steady_clock::now();
+        std::cerr << "FAILED after " << std::chrono::duration<double, std::milli>(t_err - t0).count() << "ms!" << std::endl;
+        std::cerr << "❌ [" << label << "] Corefinement exception caught: " << e.what() << std::endl;
+        std::cerr << "   Diagnostic: target vertices=" << target_copy.number_of_vertices()
+                  << " faces=" << target_copy.number_of_faces()
+                  << " self_intersects=" << CGAL::Polygon_mesh_processing::does_self_intersect(target_copy)
+                  << std::endl;
+        std::cerr << "   Diagnostic: tool vertices=" << tool_copy.number_of_vertices()
+                  << " faces=" << tool_copy.number_of_faces()
+                  << " self_intersects=" << CGAL::Polygon_mesh_processing::does_self_intersect(tool_copy)
+                  << std::endl;
+        throw; // Log failure reason and rethrow the original exception
+    } catch (...) {
+        std::cerr << "❌ [" << label << "] Unknown corefinement exception caught!" << std::endl;
+        throw; // Log failure reason and rethrow the original exception
+    }
     auto t1 = std::chrono::steady_clock::now();
     std::cout << "Done in " << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms." << std::endl << std::flush;
     if (!ok) return false;
@@ -90,16 +114,36 @@ inline bool corefine_difference(
         return true;
     }
 
-    if (kiss_mode != KissMode::NONE) {
-        std::cout << "    [" << label << "] Checking kisses... " << std::flush;
-        auto t2 = std::chrono::steady_clock::now();
-        regularize_and_resolve_kisses(out, kiss_mode, width);
-        auto t3 = std::chrono::steady_clock::now();
-        std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
-    } else {
-        regularize_and_resolve_kisses(out, kiss_mode, width);
+    try {
+        if (kiss_mode != KissMode::NONE) {
+            std::cout << "    [" << label << "] Checking kisses... " << std::flush;
+            auto t2 = std::chrono::steady_clock::now();
+            regularize_and_resolve_kisses(out, kiss_mode, width);
+            auto t3 = std::chrono::steady_clock::now();
+            std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
+        } else {
+            regularize_and_resolve_kisses(out, kiss_mode, width);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "❌ [" << label << "] Kiss resolution exception: " << e.what() << std::endl;
+        throw; // Rethrow original exception
+    } catch (...) {
+        std::cerr << "❌ [" << label << "] Kiss resolution unknown exception!" << std::endl;
+        throw; // Rethrow original exception
     }
-    fix::assert_well_formed_for_corefinement(out, label + " (out)");
+
+    if (kiss_mode != KissMode::NONE) {
+        if (!fix::validate_corefinement_input(out, label + " (out)")) {
+            std::cerr << "❌ [" << label << "] Result mesh validation failed (self-intersection or invalid topology)!" << std::endl;
+            throw std::runtime_error("[" + label + "] Corefinement output validation failed");
+        }
+    } else {
+        fix::MeshStatus status = fix::check_corefinement_preconditions(out);
+        if (status != fix::MeshStatus::OK) {
+            std::cerr << "❌ [" << label << "] Result mesh failed topological validity: " << fix::to_string(status) << "!" << std::endl;
+            throw std::runtime_error("[" + label + "] Corefinement output topological validation failed");
+        }
+    }
     return true;
 }
 
@@ -125,15 +169,37 @@ inline bool corefine_intersection(
     if (target_copy.has_garbage()) target_copy.collect_garbage();
     if (tool_copy.has_garbage()) tool_copy.collect_garbage();
 
-    fix::assert_well_formed_for_corefinement(target_copy, label + " (target)");
-    fix::assert_well_formed_for_corefinement(tool_copy, label + " (tool)");
+    // Validate input meshes and check for self-intersections before corefinement
+    bool target_valid = fix::validate_corefinement_input(target_copy, label + " (target)");
+    bool tool_valid = fix::validate_corefinement_input(tool_copy, label + " (tool)");
+    if (!target_valid || !tool_valid) {
+        std::cerr << "❌ [" << label << "] Input mesh validation failed before corefinement! Aborting operation." << std::endl;
+        throw std::runtime_error("[" + label + "] Input mesh validation failed (self-intersection or invalid topology)");
+    }
 
-    bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
-        target_copy, tool_copy, out,
-        CGAL::parameters::throw_on_self_intersection(false),
-        CGAL::parameters::throw_on_self_intersection(false),
-        CGAL::parameters::all_default()
-    );
+    bool ok = false;
+    try {
+        ok = CGAL::Polygon_mesh_processing::corefine_and_compute_intersection(
+            target_copy, tool_copy, out,
+            CGAL::parameters::throw_on_self_intersection(true),
+            CGAL::parameters::throw_on_self_intersection(true),
+            CGAL::parameters::all_default()
+        );
+    } catch (const std::exception& e) {
+        std::cerr << "❌ [" << label << "] Corefinement intersection exception caught: " << e.what() << std::endl;
+        std::cerr << "   Diagnostic: target vertices=" << target_copy.number_of_vertices()
+                  << " faces=" << target_copy.number_of_faces()
+                  << " self_intersects=" << CGAL::Polygon_mesh_processing::does_self_intersect(target_copy)
+                  << std::endl;
+        std::cerr << "   Diagnostic: tool vertices=" << tool_copy.number_of_vertices()
+                  << " faces=" << tool_copy.number_of_faces()
+                  << " self_intersects=" << CGAL::Polygon_mesh_processing::does_self_intersect(tool_copy)
+                  << std::endl;
+        throw; // Log failure reason and rethrow the original exception
+    } catch (...) {
+        std::cerr << "❌ [" << label << "] Unknown corefinement intersection exception caught!" << std::endl;
+        throw; // Log failure reason and rethrow the original exception
+    }
     if (!ok) return false;
 
     if (out.is_empty() || out.number_of_faces() == 0) {
@@ -141,8 +207,28 @@ inline bool corefine_intersection(
         return true;
     }
 
-    regularize_and_resolve_kisses(out, kiss_mode, width);
-    fix::assert_well_formed_for_corefinement(out, label + " (out)");
+    try {
+        regularize_and_resolve_kisses(out, kiss_mode, width);
+    } catch (const std::exception& e) {
+        std::cerr << "❌ [" << label << "] Kiss resolution exception: " << e.what() << std::endl;
+        throw; // Rethrow original exception
+    } catch (...) {
+        std::cerr << "❌ [" << label << "] Kiss resolution unknown exception!" << std::endl;
+        throw; // Rethrow original exception
+    }
+
+    if (kiss_mode != KissMode::NONE) {
+        if (!fix::validate_corefinement_input(out, label + " (out)")) {
+            std::cerr << "❌ [" << label << "] Result mesh validation failed (self-intersection or invalid topology)!" << std::endl;
+            throw std::runtime_error("[" + label + "] Corefinement output validation failed");
+        }
+    } else {
+        fix::MeshStatus status = fix::check_corefinement_preconditions(out);
+        if (status != fix::MeshStatus::OK) {
+            std::cerr << "❌ [" << label << "] Result mesh failed topological validity: " << fix::to_string(status) << "!" << std::endl;
+            throw std::runtime_error("[" + label + "] Corefinement output topological validation failed");
+        }
+    }
     return true;
 }
 
@@ -177,17 +263,39 @@ inline bool corefine_union(
     if (target_copy.has_garbage()) target_copy.collect_garbage();
     if (tool_copy.has_garbage()) tool_copy.collect_garbage();
 
-    fix::assert_well_formed_for_corefinement(target_copy, label + " (target)");
-    fix::assert_well_formed_for_corefinement(tool_copy, label + " (tool)");
+    // Validate input meshes and check for self-intersections before corefinement
+    bool target_valid = fix::validate_corefinement_input(target_copy, label + " (target)");
+    bool tool_valid = fix::validate_corefinement_input(tool_copy, label + " (tool)");
+    if (!target_valid || !tool_valid) {
+        std::cerr << "❌ [" << label << "] Input mesh validation failed before corefinement! Aborting operation." << std::endl;
+        throw std::runtime_error("[" + label + "] Input mesh validation failed (self-intersection or invalid topology)");
+    }
 
     std::cout << "    [" << label << "] CGAL corefine union... " << std::flush;
     auto t0 = std::chrono::steady_clock::now();
-    bool ok = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
-        target_copy, tool_copy, out,
-        CGAL::parameters::throw_on_self_intersection(false),
-        CGAL::parameters::throw_on_self_intersection(false),
-        CGAL::parameters::all_default()
-    );
+    bool ok = false;
+    try {
+        ok = CGAL::Polygon_mesh_processing::corefine_and_compute_union(
+            target_copy, tool_copy, out,
+            CGAL::parameters::throw_on_self_intersection(true),
+            CGAL::parameters::throw_on_self_intersection(true),
+            CGAL::parameters::all_default()
+        );
+    } catch (const std::exception& e) {
+        std::cerr << "FAILED with exception: " << e.what() << std::endl << std::flush;
+        std::cerr << "   Diagnostic: target vertices=" << target_copy.number_of_vertices()
+                  << " faces=" << target_copy.number_of_faces()
+                  << " self_intersects=" << CGAL::Polygon_mesh_processing::does_self_intersect(target_copy)
+                  << std::endl;
+        std::cerr << "   Diagnostic: tool vertices=" << tool_copy.number_of_vertices()
+                  << " faces=" << tool_copy.number_of_faces()
+                  << " self_intersects=" << CGAL::Polygon_mesh_processing::does_self_intersect(tool_copy)
+                  << std::endl;
+        throw; // Log failure reason and rethrow the original exception
+    } catch (...) {
+        std::cerr << "FAILED with unknown exception" << std::endl << std::flush;
+        throw; // Log failure reason and rethrow the original exception
+    }
     auto t1 = std::chrono::steady_clock::now();
     std::cout << (ok ? "Done" : "FAILED") << " in " << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms." << std::endl << std::flush;
     if (!ok) return false;
@@ -197,12 +305,32 @@ inline bool corefine_union(
         return true;
     }
 
-    std::cout << "    [" << label << "] Checking kisses... " << std::flush;
-    auto t2 = std::chrono::steady_clock::now();
-    regularize_and_resolve_kisses(out, kiss_mode, width);
-    auto t3 = std::chrono::steady_clock::now();
-    std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
-    fix::assert_well_formed_for_corefinement(out, label + " (out)");
+    try {
+        std::cout << "    [" << label << "] Checking kisses... " << std::flush;
+        auto t2 = std::chrono::steady_clock::now();
+        regularize_and_resolve_kisses(out, kiss_mode, width);
+        auto t3 = std::chrono::steady_clock::now();
+        std::cout << "Done in " << std::chrono::duration<double, std::milli>(t3 - t2).count() << "ms." << std::endl << std::flush;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ [" << label << "] Kiss resolution exception: " << e.what() << std::endl;
+        throw; // Rethrow original exception
+    } catch (...) {
+        std::cerr << "❌ [" << label << "] Kiss resolution unknown exception!" << std::endl;
+        throw; // Rethrow original exception
+    }
+
+    if (kiss_mode != KissMode::NONE) {
+        if (!fix::validate_corefinement_input(out, label + " (out)")) {
+            std::cerr << "❌ [" << label << "] Result mesh validation failed (self-intersection or invalid topology)!" << std::endl;
+            throw std::runtime_error("[" + label + "] Corefinement output validation failed");
+        }
+    } else {
+        fix::MeshStatus status = fix::check_corefinement_preconditions(out);
+        if (status != fix::MeshStatus::OK) {
+            std::cerr << "❌ [" << label << "] Result mesh failed topological validity: " << fix::to_string(status) << "!" << std::endl;
+            throw std::runtime_error("[" + label + "] Corefinement output topological validation failed");
+        }
+    }
     return true;
 }
 

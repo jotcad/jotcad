@@ -59,8 +59,13 @@ struct MoldChainNode {
     FT total_score = FT(0);
     FT failure_penalty = FT(0);
     bool is_invalid = false;
+    bool is_potential_terminal = false;
 
     FT effective_energy() const {
+        if (is_potential_terminal) {
+            const FT lambda_pieces(50);
+            return lambda_pieces * FT(draw_dirs.size());
+        }
         return energy;
     }
 };
@@ -77,6 +82,7 @@ struct MoldDecompositionResult {
     bool is_complete = false;
     FT final_energy = FT(0);
     FT remaining_unhandled_area = FT(0);
+    size_t terminal_fallbacks = 0;
 };
 
 /**
@@ -373,8 +379,9 @@ inline MoldDecompositionResult decompose_mold_beam_search(
             root.unhandled_area += face_areas[f.idx()];
         }
     }
-    const FT lambda_pieces(50); // Regularizer: 50 mm^2 penalty per piece
+    const FT lambda_pieces = params.policy.lambda_pieces; // Regularizer penalty per piece
     root.energy = root.unhandled_area + lambda_pieces * FT(root.draw_dirs.size());
+    size_t terminal_fallbacks_count = 0;
 
     // Initialize root residual stock B_0 = B \ M
     ExactMeshPtr active_stock = initial_stock;
@@ -408,7 +415,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
     // Global Priority Frontier across all search depths (stores exclusively VALIDATED candidates)
     std::vector<MoldChainNode> frontier = { root };
-    const size_t max_frontier_size = 50;
+    const size_t max_frontier_size = params.policy.frontier_bound;
     size_t validations_count = 0;
     std::map<VectorKey, EnvelopeMeshResult> envelope_cache;
 
@@ -416,7 +423,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
     bool found_complete = false;
     MoldChainNode best_partial = root;
 
-    ConvergenceStopRule default_stop_rule;
+    ConvergenceStopRule default_stop_rule(params.stopping);
     SearchVisitor& active_visitor = visitor ? *visitor : default_stop_rule;
 
     std::cout << "    [BeamSearch] Starting Level-by-Level Priority Search (frontier_bound=" << max_frontier_size 
@@ -458,7 +465,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                   << std::endl << std::flush;
 
         // 1. Selection Gate: Can this candidate achieve certified complete decomposition?
-        bool is_terminal_claimed = (curr.unhandled_area <= FT(0) || curr.handled_count == face_descriptors.size());
+        bool is_terminal_claimed = (curr.unhandled_area <= FT(0) || curr.handled_count == face_descriptors.size() || curr.is_potential_terminal);
         if (params.policy.enable_terminal_closure && is_terminal_claimed) {
             ExactMeshPtr parent_stock = get_clean_stock(
                 curr.parent.get(), mesh_part, face_descriptors, face_normals, face_areas,
@@ -497,6 +504,12 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                     curr.piece_boundary_loops.push_back({});
                     curr.tentative_patch_faces.clear();
 
+                    curr.handled_count = face_descriptors.size();
+                    curr.unhandled_area = FT(0);
+                    std::fill(curr.is_handled.begin(), curr.is_handled.end(), true);
+                    curr.is_potential_terminal = false;
+                    curr.energy = lambda_pieces * FT(curr.draw_dirs.size());
+
                     std::cout << "    [BeamSearch] Level " << curr.draw_dirs.size()
                               << " TERMINAL piece along dir (" << CGAL::to_double(cand_dir.x())
                               << ", " << CGAL::to_double(cand_dir.y())
@@ -531,6 +544,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                               << ", " << CGAL::to_double(cand_dir.z())
                               << ") has " << backdraft_count << " undercuts (" << CGAL::to_double(backdraft_area)
                               << " mm^2). Falling back to progressive intermediate carving..." << std::endl << std::flush;
+                    curr.is_potential_terminal = false;
+                    terminal_fallbacks_count++;
                 }
             }
         }
@@ -641,7 +656,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
 
         // Deduplicate candidates targeting the same physical feature patch via Jaccard similarity
         scored_cands = deduplicate_candidate_patches(
-            scored_cands, face_normals, face_areas, parent_ptr->is_handled
+            scored_cands, face_normals, face_areas, parent_ptr->is_handled,
+            params.policy.jaccard_threshold
         );
 
         // Realized coverage: replace predicted patches with CGAL::upper_envelope_3 visible faces.
@@ -684,7 +700,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                 }
             }
             child.unhandled_area = (child.unhandled_area > newly_handled_area) ? (child.unhandled_area - newly_handled_area) : FT(0);
-            if (child.unhandled_area <= FT(1) / FT(1000)) {
+            if (child.unhandled_area <= params.policy.unhandled_area_zero_epsilon) {
                 child.unhandled_area = FT(0);
             }
 
@@ -701,8 +717,7 @@ inline MoldDecompositionResult decompose_mold_beam_search(
                     }
                 }
                 if (all_remaining_releasable) {
-                    child.unhandled_area = FT(0);
-                    child.handled_count = face_descriptors.size();
+                    child.is_potential_terminal = true;
                 }
             }
             child.energy = child.unhandled_area + lambda_pieces * FT(child.draw_dirs.size());
@@ -716,8 +731,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
             FT b_eff = b.effective_energy();
             if (a_eff != b_eff) return a_eff < b_eff;
 
-            bool a_comp = (a.unhandled_area <= FT(0));
-            bool b_comp = (b.unhandled_area <= FT(0));
+            bool a_comp = (a.unhandled_area <= FT(0) || a.is_potential_terminal);
+            bool b_comp = (b.unhandled_area <= FT(0) || b.is_potential_terminal);
             if (a_comp != b_comp) return a_comp > b_comp;
 
             // Prefer already carved over uncarved if energy is equal
@@ -776,7 +791,8 @@ inline MoldDecompositionResult decompose_mold_beam_search(
         winner.piece_boundary_loops,
         complete,
         winner.energy,
-        winner.unhandled_area
+        winner.unhandled_area,
+        terminal_fallbacks_count
     };
 }
 

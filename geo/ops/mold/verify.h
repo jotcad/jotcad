@@ -25,8 +25,9 @@ inline bool verify_piece_demoldability(
         auto p2 = piece.mesh.point(piece.mesh.target(piece.mesh.next(h)));
         EK::Point_3 mid((p0.x()+p1.x()+p2.x())/FT(3), (p0.y()+p1.y()+p2.y())/FT(3), (p0.z()+p1.z()+p2.z())/FT(3));
         
+        FT dist_sq = model_tree.squared_distance(mid);
         // Check if this face touches the model (cavity face)
-        if (model_tree.squared_distance(mid) < FT(1) / FT(10000)) {
+        if (dist_sq < params.policy.cavity_contact_distance_sq) {
             EK::Vector_3 fn = CGAL::normal(p0, p1, p2);
             // On cavity faces, mold normal points inward toward model (-model_normal).
             // Opening clearance requires (-fn / |fn|) * d >= min_dot <=> (fn / |fn|) * d <= -min_dot
@@ -34,7 +35,7 @@ inline bool verify_piece_demoldability(
             if (len_sq > FT(0)) {
                 bool is_backdraft = false;
                 if (min_dot == FT(0)) {
-                    if (fn * piece.draw_vector > mold_constants::zero_draft_dot_epsilon()) {
+                    if (fn * piece.draw_vector > params.policy.zero_draft_dot_epsilon) {
                         is_backdraft = true;
                     }
                 } else {
@@ -45,8 +46,11 @@ inline bool verify_piece_demoldability(
                     }
                 }
                 if (is_backdraft) {
-                    backdraft_count++;
-                    backdraft_area += CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
+                    bool is_seam = (dist_sq >= params.policy.boundary_seam_distance_sq);
+                    if (!params.policy.ignore_boundary_seams || !is_seam) {
+                        backdraft_count++;
+                        backdraft_area += CGAL::approximate_sqrt(CGAL::squared_area(p0, p1, p2));
+                    }
                 }
             }
         }
@@ -59,8 +63,7 @@ inline bool verify_piece_demoldability(
         *out_backdraft_area = backdraft_area;
     }
 
-    const FT min_backdraft_area_threshold = FT(1) / FT(100); // 0.01 mm^2 threshold for physical undercut
-    if (backdraft_area >= min_backdraft_area_threshold) {
+    if (backdraft_area >= params.policy.min_backdraft_area_threshold) {
         std::cerr << "[Demoldability Warning] Mold piece " << piece.name 
                   << " contains " << backdraft_count << " backdraft faces (area="
                   << CGAL::to_double(backdraft_area) << " mm^2) along draw vector ("
@@ -83,10 +86,10 @@ inline bool verify_piece_demoldability(
             auto p2 = piece.mesh.point(piece.mesh.target(piece.mesh.next(h)));
             EK::Point_3 mid((p0.x()+p1.x()+p2.x())/FT(3), (p0.y()+p1.y()+p2.y())/FT(3), (p0.z()+p1.z()+p2.z())/FT(3));
             FT dist_sq = model_tree.squared_distance(mid);
-            if (dist_sq < FT(1) / FT(10000)) {
+            if (dist_sq < params.policy.cavity_contact_distance_sq) {
                 EK::Vector_3 fn = CGAL::normal(p0, p1, p2);
                 if (fn.squared_length() > FT(0)) {
-                    bool is_bd = (min_dot == FT(0)) ? (fn * piece.draw_vector > mold_constants::zero_draft_dot_epsilon())
+                    bool is_bd = (min_dot == FT(0)) ? (fn * piece.draw_vector > params.policy.zero_draft_dot_epsilon)
                                                     : ((fn * piece.draw_vector) / CGAL::approximate_sqrt(fn.squared_length()) > -min_dot);
                     if (is_bd) {
                         if (mid.x() < min_x) min_x = mid.x();
@@ -96,7 +99,7 @@ inline bool verify_piece_demoldability(
                         if (mid.z() < min_z_val) min_z_val = mid.z();
                         if (mid.z() > max_z_val) max_z_val = mid.z();
                         sum_mid = EK::Point_3(sum_mid.x() + mid.x(), sum_mid.y() + mid.y(), sum_mid.z() + mid.z());
-                        if (dist_sq < FT(1) / FT(1000000)) {
+                        if (dist_sq < params.policy.boundary_seam_distance_sq) {
                             exact_part_faces++;
                         } else {
                             boundary_seam_faces++;
@@ -127,7 +130,8 @@ inline bool verify_piece_demoldability(
     } else if (backdraft_count > 0) {
         std::cerr << "[Demoldability] Ignored microscopic boundary noise: " 
                   << backdraft_count << " sliver faces (area=" 
-                  << CGAL::to_double(backdraft_area) << " mm^2 < 0.01 mm^2)." << std::endl;
+                  << CGAL::to_double(backdraft_area) << " mm^2 < "
+                  << CGAL::to_double(params.policy.min_backdraft_area_threshold) << " mm^2)." << std::endl;
     }
     return true;
 }

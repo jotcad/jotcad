@@ -54,24 +54,6 @@ public:
 };
 
 /**
- * @brief Configuration parameters for convergence tracking stop rule.
- */
-struct ConvergenceParams {
-    /// If true, stop immediately when a complete solution achieving theoretical lower bound (K <= target_min_pieces) is found.
-    bool stop_on_minimal_pieces = true;
-    size_t target_min_pieces = 2; // Physical lower bound for any closed 3D solid mold
-
-    /// Maximum iterations without improvement in complete solution energy after the first complete solution is found.
-    size_t stagnation_iterations = 20;
-
-    /// Hard cap on total search iterations.
-    size_t max_iterations = 200;
-
-    /// Hard cap on expensive 3D CSG stock carving validations.
-    size_t max_validations = 100;
-};
-
-/**
  * @brief Convergence tracking stop-rule class that manages search termination policy.
  * 
  * Replaces ad-hoc queue pruning with principled convergence detection:
@@ -81,13 +63,13 @@ struct ConvergenceParams {
  */
 class ConvergenceStopRule : public SearchVisitor {
 private:
-    ConvergenceParams params_;
+    MoldStoppingPolicy params_;
     size_t stagnant_count_ = 0;
     FT best_energy_ = FT(-1);
     bool had_complete_ = false;
 
 public:
-    explicit ConvergenceStopRule(const ConvergenceParams& params = ConvergenceParams())
+    explicit ConvergenceStopRule(const MoldStoppingPolicy& params = MoldStoppingPolicy())
         : params_(params) {}
 
     void on_iteration_start(const SearchProgress& progress) override {
@@ -155,7 +137,8 @@ public:
 
     size_t stagnant_count() const { return stagnant_count_; }
     FT best_energy() const { return best_energy_; }
-    const ConvergenceParams& params() const { return params_; }
+    const MoldStoppingPolicy& policy() const { return params_; }
+    const MoldStoppingPolicy& params() const { return params_; }
 };
 
 } // namespace mold

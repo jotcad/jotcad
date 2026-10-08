@@ -28,7 +28,8 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 | **`patch_dedup.h`** | ~140 | Microsecond Jaccard virgin patch similarity clustering and champion candidate selection (`deduplicate_candidate_patches`). |
 | **`realized_coverage.h`** | ~140 | Per-direction envelope memoization (`VectorKey`, `get_cached_envelope`) and replacement of normal-only predicted patches with `upper_envelope_3` visible faces (`realize_candidate_coverage`). |
 | **`stop_rule.h`** | ~130 | Search visitor interface (`SearchVisitor`, `SearchProgress`) and convergence tracking termination policy (`ConvergenceStopRule`). |
-| **`policy.h`** | ~80 | Modular policy configuration (`MoldDecompositionPolicy`) for vertical wall inclusion, scoring weights, wedge skirts, and terminal closure. |
+| **`stopping_policy.h`** | ~40 | Search lifecycle and termination policy (`MoldStoppingPolicy`) decoupled from physical geometry. |
+| **`policy.h`** | ~100 | Modular physical decomposition policy (`MoldDecompositionPolicy`) for demoldability shrinkage, vertical walls, wedge skirts, and terminal closure. |
 | **`compatibility.h`** | ~85 | Parting seam compatibility and knife-edge acute dead zone filtering. |
 | **`beam_search.h`** | ~240 | Multi-piece candidate chain beam search engine with energy minimization and parallel backtracking. |
 | **`tide.h`** | ~230 | Rising Tide margin shelf CDT, outer stock box envelope, and cardinal tide basis. |

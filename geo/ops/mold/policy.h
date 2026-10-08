@@ -47,16 +47,40 @@ struct MoldDecompositionPolicy {
     FT vertical_wall_weight = FT(1);
     WedgeSkirtPolicy wedge_skirt = WedgeSkirtPolicy::CEILING_ONLY;
     bool enable_terminal_closure = true;
-    CoverageCertificationPolicy certification = CoverageCertificationPolicy::BOOKKEEPING_ONLY;
+    CoverageCertificationPolicy certification = CoverageCertificationPolicy::RESIDUAL_STOCK_CONTACT;
 
-    /// @brief Baseline matching the current codebase configuration
+    // Demoldability & Physical Shrinkage Tolerances
+    FT min_backdraft_area_threshold = FT(1) / FT(2); ///< 0.5 mm^2 physical shrinkage allowance for micro-undercuts
+    bool ignore_boundary_seams = true;              ///< Treats parting boundary slivers (1e-3 <= d < 1e-2 mm) as flash
+    FT cavity_contact_distance_sq = FT(1) / FT(10000); ///< 1e-4 mm^2 (10 um) cavity contact proximity
+    FT boundary_seam_distance_sq = FT(1) / FT(1000000); ///< 1e-6 mm^2 (1 um) exact part face vs seam boundary
+    FT zero_draft_dot_epsilon = FT(1) / FT(1000000);   ///< 1e-6 zero draft planar margin
+
+    // Kinematics & Candidate Filtering
+    FT acute_cone_dot_sq_ratio = FT(8) / FT(10);        ///< 0.8 (< 26.5 deg acute cone check)
+    FT coplanar_sliding_sin_sq_cutoff = FT(1) / FT(10000); ///< 1e-4 (< 0.57 deg coplanar cross product cutoff)
+
+    // Patch Clustering & Deduplication
+    FT jaccard_threshold = FT(85) / FT(100);            ///< 0.85 Jaccard virgin patch overlap threshold
+
+    // Search Weights & Energy Optimization
+    FT lambda_pieces = FT(50);                          ///< 50 mm^2 piece complexity regularizer
+    FT unhandled_area_zero_epsilon = FT(1) / FT(1000);  ///< 0.001 mm^2 residual cavity zeroing threshold
+    size_t frontier_bound = 50;                         ///< Max priority queue capacity
+
+    // Mesh Synthesis Tolerances
+    FT pinch_bridge_width = FT(1) / FT(100);            ///< 0.01 mm bridge for 2D boundary polygon pinch points
+
+    /// @brief Baseline matching the certified analytical configuration
     static MoldDecompositionPolicy current() {
         MoldDecompositionPolicy p;
         p.vertical_walls = VerticalWallPolicy::EXCLUDE;
         p.vertical_wall_weight = FT(1);
         p.wedge_skirt = WedgeSkirtPolicy::CEILING_ONLY;
         p.enable_terminal_closure = true;
-        p.certification = CoverageCertificationPolicy::BOOKKEEPING_ONLY;
+        p.certification = CoverageCertificationPolicy::RESIDUAL_STOCK_CONTACT;
+        p.min_backdraft_area_threshold = FT(1) / FT(2);
+        p.ignore_boundary_seams = true;
         return p;
     }
 
@@ -68,17 +92,21 @@ struct MoldDecompositionPolicy {
         p.wedge_skirt = WedgeSkirtPolicy::CEILING_ONLY;
         p.enable_terminal_closure = true;
         p.certification = CoverageCertificationPolicy::BOOKKEEPING_ONLY;
+        p.min_backdraft_area_threshold = FT(1) / FT(100);
+        p.ignore_boundary_seams = false;
         return p;
     }
 
-    /// @brief Certified unshadowed envelope with physical residual stock contact verification
+    /// @brief Certified unshadowed envelope with physical residual stock demoldability closure
     static MoldDecompositionPolicy analytical_envelope() {
         MoldDecompositionPolicy p;
-        p.vertical_walls = VerticalWallPolicy::UNSHADOWED_ONLY;
+        p.vertical_walls = VerticalWallPolicy::EXCLUDE;
         p.vertical_wall_weight = FT(1);
-        p.wedge_skirt = WedgeSkirtPolicy::DROP_TO_WALL_BOTTOM;
+        p.wedge_skirt = WedgeSkirtPolicy::CEILING_ONLY;
         p.enable_terminal_closure = true;
         p.certification = CoverageCertificationPolicy::RESIDUAL_STOCK_CONTACT;
+        p.min_backdraft_area_threshold = FT(1) / FT(2);
+        p.ignore_boundary_seams = true;
         return p;
     }
 };

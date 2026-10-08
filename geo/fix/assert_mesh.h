@@ -58,6 +58,28 @@ inline MeshStatus check_corefinement_preconditions(const Mesh& m) {
     return MeshStatus::OK;
 }
 
+// Full Corefinement Invariants: topological preconditions + non-self-intersection check
+template <typename Mesh>
+inline MeshStatus check_corefinement_validity(const Mesh& m) {
+    MeshStatus status = check_corefinement_preconditions(m);
+    if (status != MeshStatus::OK) return status;
+
+    if (CGAL::Polygon_mesh_processing::does_self_intersect(m)) {
+        return MeshStatus::SELF_INTERSECTING;
+    }
+    return MeshStatus::OK;
+}
+
+template <typename Mesh>
+inline bool validate_corefinement_input(const Mesh& m, const std::string& label) {
+    MeshStatus status = check_corefinement_validity(m);
+    if (status != MeshStatus::OK) {
+        std::cerr << "    [" << label << "] Validation failed: " << to_string(status) << "!" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 // 2. Solid Mesh Invariants: Full topological & geometric correctness (checks in increasing cost order)
 template <typename Mesh>
 inline MeshStatus check_solid_mesh(const Mesh& m) {
