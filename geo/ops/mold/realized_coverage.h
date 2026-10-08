@@ -49,7 +49,7 @@ inline const EnvelopeMeshResult& get_cached_envelope(
     if (out_was_cached) *out_was_cached = (it != envelope_cache.end());
     if (it == envelope_cache.end()) {
         auto env_computed = compute_exact_upper_envelope_mesh(
-            mesh_part, face_descriptors, face_normals, d, padding, stock_box_mesh
+            mesh_part, face_descriptors, face_normals, d, padding, stock_box_mesh, /*build_wedge=*/false
         );
         it = envelope_cache.emplace(vkey, std::move(env_computed)).first;
     }

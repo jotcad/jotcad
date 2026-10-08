@@ -197,7 +197,7 @@ inline ExactMeshPtr get_raw_stock(
         params.padding, stock_box_mesh, envelope_cache
     );
 
-    if (env_res.solid_wedge.number_of_faces() == 0 || env_res.source_faces.empty()) {
+    if (env_res.source_faces.empty()) {
         std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: empty upper envelope along " << format_vec(cand_dir) << std::endl;
         node->is_invalid = true;
         return nullptr;
@@ -216,8 +216,20 @@ inline ExactMeshPtr get_raw_stock(
         }
     }
 
-    ExactMesh solid_wedge_mesh = env_res.solid_wedge;
-    auto boundary_loops_3d = env_res.boundary_loops_3d;
+    // Lazy wedge construction: construct certified 3D solid wedge only on demand from cached envelope context
+    VectorKey vkey{cand_dir.x(), cand_dir.y(), cand_dir.z()};
+    auto& cached_res = envelope_cache[vkey];
+    if (!cached_res.has_solid_wedge || cached_res.solid_wedge.is_empty()) {
+        build_solid_wedge_from_context(cached_res, params.padding, stock_box_mesh);
+    }
+    if (cached_res.solid_wedge.number_of_faces() == 0) {
+        std::cout << "      ↳ [Candidate #" << validations_count << "] Pruned: empty wedge along " << format_vec(cand_dir) << std::endl;
+        node->is_invalid = true;
+        return nullptr;
+    }
+
+    ExactMesh solid_wedge_mesh = cached_res.solid_wedge;
+    auto boundary_loops_3d = cached_res.boundary_loops_3d;
 
     // Carve tentative piece from parent residual stock: P_k = B_{k-1} ∩ W_k
     ExactMesh validated_piece_mesh;

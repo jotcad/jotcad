@@ -12,7 +12,7 @@ This directory implements the modular, mathematically rigorous **Automated Multi
 | **`rotation.h`** | ~40 | Pure exact rational rotation calculations via `CGAL::rational_rotation_approximation`. |
 | **`walls.h`** | ~80 | Monotonic zip vertical wall triangulation between height lists. |
 | **`diagnostics.h`** | ~140 | Umbrella topology audits, polygon soup adjacency verification, and self-intersection reporting. |
-| **`envelope.h`** | ~215 | Exact 3D Upper envelope calculation on visible component patches via `CGAL::upper_envelope_3`. |
+| **`envelope.h`** | ~190 | Exact 3D Upper envelope calculation via `CGAL::upper_envelope_3` in pure `EK::FT` with lazy solid wedge construction. |
 | **`stock_footprint.h`** | ~135 | Exact 2D projected boundary polygon (with interior through-holes) and height limits of stock mesh via `CGAL::convex_hull_2` and `CGAL::Polygon_set_2`. |
 | **`wedge.h`** | ~300 | Solid 3D wedge mesh synthesis via 2D CDT floor/ceiling, monotonic cliff walls, and `fix::repair_solid_soup`. |
 | **`visibility.h`** | ~20 | Aggregating facade for mold visibility and envelope submodules. |

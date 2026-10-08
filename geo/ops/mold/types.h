@@ -13,10 +13,14 @@
 #include <CGAL/Triangulation_face_base_with_info_2.h>
 #include <CGAL/Triangulation_vertex_base_2.h>
 #include <CGAL/mark_domain_in_triangulation.h>
+#include <CGAL/envelope_3.h>
+#include <CGAL/Env_triangle_traits_3.h>
+#include <CGAL/Env_surface_data_traits_3.h>
 #include <vector>
 #include <string>
 #include <map>
 #include <set>
+#include <memory>
 
 namespace jotcad {
 namespace geo {
@@ -177,11 +181,25 @@ struct MoldPiece {
     int mold_piece;
 };
 
+typedef CGAL::Env_triangle_traits_3<EK> Env_traits;
+typedef CGAL::Env_surface_data_traits_3<Env_traits, size_t> Data_traits;
+typedef Data_traits::Surface_3 Data_triangle_3;
+typedef CGAL::Envelope_diagram_2<Data_traits> Envelope_diagram_2;
+
+struct EnvelopeContext {
+    std::shared_ptr<Envelope_diagram_2> diag;
+    std::map<size_t, std::vector<EK::Point_3>> rotated_tris;
+    CGAL::Aff_transformation_3<EK> to_z;
+    CGAL::Aff_transformation_3<EK> from_z;
+};
+
 struct EnvelopeWedgeResult {
     ExactMesh solid_wedge;
     std::set<size_t> source_faces;
     FT total_area = FT(0);
     std::vector<std::vector<Point_3>> boundary_loops_3d;
+    bool has_solid_wedge = false;
+    std::shared_ptr<EnvelopeContext> context;
 };
 
 struct TideParams {

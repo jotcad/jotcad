@@ -6,6 +6,10 @@ namespace jotcad {
 namespace geo {
 namespace mold {
 
+// TODO: Review replacing cascaded Euler rotations (phi and theta, which produce w ~ 10^12)
+// with a low-denominator proper SO(3) isometry (e.g. Cayley transform or Cartan-Dieudonné composition of two reflections).
+// Note: A single Householder reflection has det = -1 (improper isometry), which inverts spatial handedness and face winding order.
+// See docs/TODO_MOLD_RATIONAL_PRECISION.md for details.
 // Computes exact rational forward (to_z) and inverse (from_z) transformations to align direction d with +Z
 inline std::pair<CGAL::Aff_transformation_3<EK>, CGAL::Aff_transformation_3<EK>> compute_exact_z_rotation(const EK::Vector_3& d) {
     double dx_d = CGAL::to_double(d.x());
